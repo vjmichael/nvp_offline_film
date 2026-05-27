@@ -1,0 +1,1 @@
+The nvp_ue5_connector should go into the UE5 directory /YourUE5Project/Content/Python/ folder.

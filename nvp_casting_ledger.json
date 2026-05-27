@@ -1,0 +1,28 @@
+{
+  "NVP_Casting_004": {
+    "metadata": {
+      "character_name": "Detective Miller",
+      "archetype": "Noir Protagonist"
+    },
+    "physical_metrics": {
+      "height_cm": 182.5,
+      "eye_line_offset_cm": 12.0
+    },
+    "generative_dna": {
+      "base_model": "nvp_photoreal_v4_fp8.safetensors",
+      "base_seed": 847291047,
+      "lora_stack": [
+        {
+          "path": "loras/faces/miller_likeness_v2.safetensors",
+          "weight": 0.85
+        }
+      ],
+      "mandatory_positive_tokens": "sharp facial features, stubble, 35mm photography",
+      "mandatory_negative_tokens": "smooth skin, anime, illustration, smiling"
+    },
+    "wardrobe_states": {
+      "default": "worn beige trench coat, white button-up shirt, loose tie",
+      "action_damaged": "torn beige trench coat, blood-stained shirt, dusty trousers"
+    }
+  }
+}

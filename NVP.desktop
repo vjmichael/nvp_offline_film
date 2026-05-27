@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=NVP Director Dashboard
+Comment=Launch the Neural Video Producer AI Pipeline
+# USER: Change the paths below to where you saved the NVP_Core folder
+Exec=/path/to/NVP_Core/start_nvp.sh
+Icon=/path/to/NVP_Core/frontend/public/nvp_logo.png
+Terminal=false
+Type=Application
+Categories=AudioVideo;Development;AI;
