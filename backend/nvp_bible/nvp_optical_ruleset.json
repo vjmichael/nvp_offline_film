@@ -1,0 +1,24 @@
+{
+  "NVP_CamPkg_001": {
+    "metadata": {
+      "package_name": "Vintage Anamorphic Prime Kit"
+    },
+    "filmback_sensor": {
+      "sensor_width_mm": 28.12,
+      "sensor_height_mm": 11.76
+    },
+    "lens_kit": {
+      "allowed_focal_lengths_mm": [
+        35.0,
+        50.0,
+        75.0,
+        100.0
+      ],
+      "min_aperture_f_stop": 2.0
+    },
+    "movement_constraints": {
+      "max_pan_speed_deg_per_sec": 15.0,
+      "max_dolly_speed_cm_per_sec": 120.0
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "NVP_Set_002": {
+    "metadata": {
+      "set_name": "Cyberpunk Neon Alleyway",
+      "interior": false
+    },
+    "ue5_asset_path": "/Game/Environments/CyberAlley/Maps/L_CyberAlley_Main.L_CyberAlley_Main",
+    "spatial_bounds": {
+      "x_min": -1500.0,
+      "x_max": 2500.0,
+      "y_min": -400.0,
+      "y_max": 400.0,
+      "z_min": 0.0,
+      "z_max": 800.0
+    },
+    "lighting_states": {
+      "moody_rain": {
+        "ue5_lighting_scenario": "LS_Alley_RainyNight",
+        "global_illumination_intensity": 0.4
+      }
+    },
+    "generative_environmental_dna": {
+      "mandatory_positive_tokens": "wet asphalt, neon reflections",
+      "environment_loras": []
+    }
+  }
+}
