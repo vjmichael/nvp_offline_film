@@ -39,14 +39,40 @@ System RAM of more than 32GB DDR4 ECC RDIMM or server grade memory modules. A si
 A nVidia Tesla V100 is okay but a nVidia RTX 3090 with a NVLINK would be suitable. Recommended newer generation graphics card or AI accelerator card. Meaning at least a A100 or at least a RTX 5060. The best would obviously be the Blackwell Tesla H200.
 A NVMe solid state drive of 2TB.
 
-Minimum Specs
-AMD THreadripper Pro 3000 series or equivalent
-32GB DDR4 ECC RDIMM
-nVidia Tesla V100 16GB HBM  or equivalent
-NVMe SSD 1TB
+Hardware Configurations
+Running multiple neural networks concurrently alongside Unreal Engine 5 is highly resource-intensive. Below are the specific requirements to avoid Out-Of-Memory (OOM) failures and ensure a seamless, real-time director experience.
 
-Recommended Specs
-AMD Threadripper Pro 7000 series  or equivalent
-128GB DDR5 ECC RDIMM
-nVidia Tsela A100 or RTX 5090 32GB GDDR7X  or equivalent
-NVMe SSD 2TB
+Minimum Specifications (1080p / High Latency)
+This configuration will run the system, but you may experience latency during voice processing and lower framerates in Unreal Engine.
+
+GPU: NVIDIA RTX 3060, RTX 4060 Ti, or equivalent with 12GB to 16GB VRAM.
+VRAM Budgeting: UE5 (~6GB) + XTTSv2 Base (~4GB) + faster-whisper INT8 (~3GB).
+CPU: Multi-core processor (e.g., Intel Core i5 12th Gen or AMD Ryzen 5 5000 series).
+System RAM: 32GB DDR4.
+Storage: PCIe Gen 3 NVMe SSD.
+Recommended Specifications (4K / Real-Time Inference)
+This configuration provides the intended seamless, low-latency "touchless" experience.
+
+GPU: NVIDIA RTX 3090, RTX 4090, or RTX A6000 with 24GB+ VRAM.
+VRAM Budgeting: 24GB provides ample headroom for UE5 asset caching, XTTSv2 peak generation (~10GB), faster-whisper, and your localized VideoMamba Vision SSM without context switching.
+CPU: Intel Core i9 13th/14th Gen or AMD Ryzen 9 7000/8000 series (Required to handle asynchronous I/O and continuous FFmpeg memory decoding without blocking).
+System RAM: 64GB DDR5 memory.
+Storage: PCIe Gen 4 or Gen 5 NVMe SSD (Required for rapid initialization of heavy model weights and daily version control).
+Required Software Dependencies
+Windows Deployment
+Ensure the following are installed and properly configured in your Windows environment before running the Start_NVP.vbs orchestrator:
+
+Operating System: Windows 10 or Windows 11.
+Core Engine: Unreal Engine 5.x.
+Backend Environment: Python 3.10+ (with pip and venv recommended).
+Frontend Environment: Node.js (v18.x or higher) and npm.
+System Libraries & Accelerators:
+FFmpeg: Must be installed and added to the Windows System PATH variables for on-the-fly WebM to raw PCM audio decoding.
+NVIDIA CUDA Toolkit & cuDNN: Explicitly required for hardware-accelerated local model inference.
+Linux Alternative Deployment
+For developers deploying on Linux (e.g., Ubuntu 22.04 LTS), the backend services run natively with superior performance, but Unreal Engine 5 configuration requires additional steps.
+
+Operating System: Ubuntu 22.04 LTS or equivalent Debian-based distribution.
+Core Engine: Unreal Engine 5 for Linux (Must be compiled from source via the Epic Games GitHub repository; pre-compiled binaries are not provided by Epic).
+Environment Managers: Conda or standard Python venv.
+System Packages: Install FFmpeg via package manager: sudo apt install ffmpeg.
