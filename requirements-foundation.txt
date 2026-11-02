@@ -1,0 +1,5 @@
+# This foundation requires no GPU runtime. Versions are minimums, not pinned releases.
+fastapi>=0.110,<1
+uvicorn>=0.27,<1
+pydantic>=2,<3
+# API tests additionally use httpx (installed separately).

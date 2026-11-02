@@ -1,113 +1,74 @@
-Python
-import asyncio
-import io
-import numpy as np
-import scipy.io.wavfile as wavfile
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from TTS.api import TTS
+"""Truthful local NVP planning API. Film rendering and AI are not connected yet."""
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from backend.nvp_studio import Studio
 
-# Explicitly mapping to your core and db modules in the backend folder
-from nvp_core import VideoMambaDirectorPipeline 
-from nvp_db import NvpDatabase
+app = FastAPI(title="NVP — Your movie, your way", version="0.2.0-foundation")
+studio = Studio()
 
-app = FastAPI(title="NVP Core - Multimodal SSM Engine")
 
-# Initialize models into GPU VRAM
-print("Initializing neural network models onto CUDA device...")
-tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
-vision_ssm = VideoMambaDirectorPipeline(model_path="models/videomamba-nvp-v1")
+class NewProject(BaseModel):
+    title: str = Field(min_length=1, max_length=150)
+    idea: str = Field(default="", max_length=10000)
 
-@app.get("/api/verify_system")
-async def verify_system_endpoint():
-    """GUI-triggered health check for ports and file integrity."""
-    report = {
-        "status": "optimal",
-        "details": {
-            "main_api": "Connected",
-            "stt_service": "Disconnected",
-            "casting_ledger": "Missing",
-            "projects_directory": "Accessible"
-        }
-    }
-    
-    # 1. Test connection to the STT service (Port 8001)
+
+class ScreenplayUpdate(BaseModel):
+    screenplay: str = Field(max_length=1_000_000)
+    expected_revision: int = Field(ge=0)
+
+
+class ShotUpdate(BaseModel):
+    framing: str
+    subject: str = Field(max_length=200)
+    intent: str = Field(max_length=500)
+    notes: str = Field(max_length=2000)
+    approved: bool = False
+
+
+def run(action):
     try:
-        _, writer = await asyncio.open_connection("127.0.0.1", 8001)
-        report["details"]["stt_service"] = "Connected"
-        writer.close()
-        await writer.wait_closed()
-    except Exception:
-        report["status"] = "degraded"
-        report["details"]["stt_service"] = "Offline (Port 8001)"
+        return action()
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
-    # 2. Verify Ledger and Project path integrity via NvpDatabase constants
-    if NvpDatabase.ACTORS_FILE.exists():
-        report["details"]["casting_ledger"] = "Valid"
-    else:
-        report["status"] = "degraded"
-        report["details"]["casting_ledger"] = "Error: Missing Ledger"
-        
-    if NvpDatabase.PROJECTS_DIR.exists():
-        report["details"]["projects_directory"] = "Writable"
-    else:
-        report["status"] = "degraded"
-        report["details"]["projects_directory"] = "Error: Missing Projects Folder"
 
-    return report
+@app.get("/api/status")
+def status():
+    return {"status": "ready", "mode": "offline_planning", "gpu_required": False,
+            "capabilities": {"project_storage": "ready", "script_breakdown": "basic_fountain",
+                             "editable_shots": "ready", "local_llm": "not_connected",
+                             "3d_renderer": "not_connected", "voice": "not_connected"}}
 
-@app.websocket("/ws/touchless_director")
-async def touchless_director_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    current_scene_id = "scene_001_take_01" 
-    
-    try:
-        while True:
-            transcription = await websocket.receive_text()
-            engine_state = await vision_ssm.capture_ue5_viewport_ndi()
-            
-            ssm_decision = await vision_ssm.evaluate_and_adjust(
-                prompt=transcription, 
-                visual_context=engine_state,
-                current_scene=current_scene_id
-            )
-            
-            db_actions = getattr(ssm_decision, "db_actions", {})
-            ue5_commands = getattr(ssm_decision, "ue5_commands", [])
-            
-            # Workflow: Scene/Take Cloning
-            if db_actions.get("action") == "clone_scene":
-                new_scene = NvpDatabase.clone_scene(current_scene_id)
-                current_scene_id = new_scene["scene_id"]
 
-            # Appearance: Aging and Costumes
-            actor_updates = db_actions.get("update_actor")
-            if actor_updates:
-                actor_id = actor_updates.pop("actor_id")
-                NvpDatabase.update_actor_look(actor_id, actor_updates)
-                updated_profile = NvpDatabase.get_actor(actor_id)
-                ue5_commands.append({"target": actor_id, "apply_profile": updated_profile})
-                
-            await dispatch_to_ue5_bridge(ue5_commands)
-            
-            # Vocal Consistency: Fetch reference from Ledger
-            active_speaker_id = db_actions.get("speaker_id", "default_ai_voice")
-            actor_profile = NvpDatabase.get_actor(active_speaker_id)
-            voice_ref = actor_profile.get("voice_sample_path", "personas/dp_voice_ref.wav")
-            
-            audio_response = tts_model.tts(
-                text=ssm_decision.verbal_response,
-                speaker_wav=voice_ref,
-                language="en"
-            )
-            
-            # Header Fix for Browser Playback
-            audio_np = np.array(audio_response, dtype=np.float32)
-            wav_io = io.BytesIO()
-            wavfile.write(wav_io, 24000, audio_np)
-            await websocket.send_bytes(wav_io.getvalue())
-            
-    except WebSocketDisconnect:
-        print("Director disconnected.")
+@app.get("/api/projects")
+def projects():
+    return studio.list_projects()
 
-async def dispatch_to_ue5_bridge(commands):
-    pass
+
+@app.post("/api/projects", status_code=201)
+def create_project(payload: NewProject):
+    return run(lambda: studio.create_project(payload.title, payload.idea))
+
+
+@app.get("/api/projects/{project_id}")
+def get_project(project_id: str):
+    return run(lambda: studio.get_project(project_id))
+
+
+@app.put("/api/projects/{project_id}/screenplay")
+def save_screenplay(project_id: str, payload: ScreenplayUpdate):
+    return run(lambda: studio.save_screenplay(project_id, payload.screenplay, payload.expected_revision))
+
+
+@app.post("/api/projects/{project_id}/scenes/{scene_id}/shot-plan")
+def plan_scene(project_id: str, scene_id: str):
+    return run(lambda: studio.plan_scene(project_id, scene_id))
+
+
+@app.put("/api/projects/{project_id}/scenes/{scene_id}/shots/{shot_id}")
+def edit_shot(project_id: str, scene_id: str, shot_id: str, payload: ShotUpdate):
+    return run(lambda: studio.edit_shot(project_id, scene_id, shot_id, **payload.model_dump()))
