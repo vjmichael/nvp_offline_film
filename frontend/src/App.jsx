@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import StoryTimeline from './StoryTimeline.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -391,8 +392,9 @@ export default function App() {
           <button className={tab === 'develop' ? 'active' : ''} onClick={() => setTab('develop')}>1 · Develop the idea</button>
           <button className={tab === 'story' ? 'active' : ''} onClick={() => setTab('story')}>2 · Screenplay</button>
           <button className={tab === 'bible' ? 'active' : ''} onClick={() => setTab('bible')}>3 · Story Bible</button>
-          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>4 · Plan scenes</button>
-          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>5 · Make the film</button>
+          <button className={tab === 'timeline' ? 'active' : ''} onClick={() => setTab('timeline')}>4 · Story timeline</button>
+          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>5 · Plan scenes</button>
+          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>6 · Make the film</button>
         </nav>
         {tab === 'develop' && <div className="columns">
           <section className="card">
@@ -625,6 +627,7 @@ export default function App() {
             <button className="secondary" disabled={busy} onClick={() => action(async () => refreshBible(project.id))}>Refresh impact report</button>
           </section>
         </div>}
+        {tab === 'timeline' && <StoryTimeline project={project} api={api} />}
         {tab === 'scenes' && <div className="columns">
           <section className="card"><h2>Your scenes</h2><p className="muted">Choose a scene to plan camera views.</p>
             {project.scenes.length === 0 && <p>Write your first scene under “Tell your story.”</p>}

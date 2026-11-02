@@ -1,5 +1,12 @@
 # NVP — A personal film-making pipeline
 
+> **NVP-WRITE-05 (November 2, 2026):** A project-scoped Story Timeline now
+> records creator-approved event ordering, explicit scene time anchors and
+> character knowledge. These are used conservatively by the writing assistant,
+> with revision checks preventing stale approvals. Lu work remains frozen until
+> Lu v1.0. See
+> [Story chronology and knowledge](docs/STORY_CHRONOLOGY_KNOWLEDGE_20261102.md).
+>
 > **Development focus (2026-11-02):** All Lu work is deferred until Lu v1.0.
 > NVP continues film-specific development independently, while retaining its
 > eventual Lu Film Workspace DLC product contract. This development branch

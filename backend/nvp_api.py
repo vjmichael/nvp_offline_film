@@ -273,3 +273,74 @@ def story_bible_link_scene(project_id: str, entity_id: str, payload: BibleSceneL
 def story_bible_ack_change(project_id: str, change_id: str, payload: BibleAcknowledge):
     return run(lambda: StoryBible(studio).acknowledge_change(
         project_id, change_id, payload.expected_screenplay_revision))
+
+
+# Chronology belongs to the NVP film domain, not Lu or the model runtime.
+from backend.nvp_story_timeline import StoryTimeline
+
+
+class TimelinePrecedence(BaseModel):
+    before_id: str = Field(min_length=1, max_length=64)
+    after_id: str = Field(min_length=1, max_length=64)
+    expected_revision: int = Field(ge=0)
+    note: str = Field(default="", max_length=1000)
+
+
+class TimelineSceneAnchor(BaseModel):
+    event_id: str = Field(min_length=1, max_length=64)
+    phase: str
+    expected_revision: int = Field(ge=0)
+    note: str = Field(default="", max_length=1000)
+
+
+class TimelineKnowledgeProposal(BaseModel):
+    character_id: str = Field(min_length=1, max_length=64)
+    fact_id: str = Field(min_length=1, max_length=64)
+    learned_at_event_id: str | None = Field(default=None, max_length=64)
+    source_note: str = Field(default="", max_length=1000)
+
+
+class TimelineKnowledgeDecision(BaseModel):
+    decision: str
+    expected_revision: int = Field(ge=0)
+
+
+@app.get("/api/projects/{project_id}/timeline")
+def timeline_snapshot(project_id: str, scene_id: str | None = None):
+    return run(lambda: StoryTimeline(studio).snapshot(project_id, scene_id))
+
+
+@app.post("/api/projects/{project_id}/timeline/precedence")
+def timeline_add_order(project_id: str, payload: TimelinePrecedence):
+    return run(lambda: StoryTimeline(studio).add_precedence(
+        project_id, payload.before_id, payload.after_id, payload.expected_revision, payload.note))
+
+
+@app.post("/api/projects/{project_id}/timeline/precedence/remove")
+def timeline_remove_order(project_id: str, payload: TimelinePrecedence):
+    return run(lambda: StoryTimeline(studio).remove_precedence(
+        project_id, payload.before_id, payload.after_id, payload.expected_revision))
+
+
+@app.put("/api/projects/{project_id}/timeline/scenes/{scene_id}")
+def timeline_bind_scene(project_id: str, scene_id: str, payload: TimelineSceneAnchor):
+    return run(lambda: StoryTimeline(studio).bind_scene(
+        project_id, scene_id, payload.event_id, payload.phase, payload.expected_revision, payload.note))
+
+
+@app.delete("/api/projects/{project_id}/timeline/scenes/{scene_id}")
+def timeline_unbind_scene(project_id: str, scene_id: str, expected_revision: int):
+    return run(lambda: StoryTimeline(studio).unbind_scene(project_id, scene_id, expected_revision))
+
+
+@app.post("/api/projects/{project_id}/timeline/knowledge", status_code=201)
+def timeline_propose_knowledge(project_id: str, payload: TimelineKnowledgeProposal):
+    return run(lambda: StoryTimeline(studio).propose_knowledge(
+        project_id, payload.character_id, payload.fact_id, payload.learned_at_event_id,
+        payload.source_note))
+
+
+@app.post("/api/projects/{project_id}/timeline/knowledge/{claim_id}/decision")
+def timeline_decide_knowledge(project_id: str, claim_id: str, payload: TimelineKnowledgeDecision):
+    return run(lambda: StoryTimeline(studio).decide_knowledge(
+        project_id, claim_id, payload.decision, payload.expected_revision))
