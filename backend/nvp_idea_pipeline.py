@@ -112,17 +112,22 @@ class IdeaPipeline:
                 raise ValueError("A screenplay draft needs at least one INT./EXT. scene heading")
             parse_screenplay(content)
 
-    def create(self, project_id: str, stage: str, content: str, instructions: str = "", origin: str = "creator"):
+    def create(self, project_id: str, stage: str, content: str, instructions: str = "", origin: str = "creator", expected_project_revision: int | None = None):
         self._check(stage, content, instructions)
         if origin not in ("creator", "local_ai"):
             raise ValueError("Unknown draft origin")
         project = self.studio.get_project(project_id)
         draft_id, stamp = uuid.uuid4().hex, timestamp()
         with self.studio._connection() as db:
+            revision_now = db.execute("SELECT revision FROM projects WHERE id=?", (project_id,)).fetchone()
+            if revision_now is None:
+                raise KeyError("Project not found")
+            if expected_project_revision is not None and revision_now["revision"] != expected_project_revision:
+                raise RuntimeError("Screenplay changed while the AI was generating; discard and retry")
             db.execute("""INSERT INTO creative_drafts
                 (id,project_id,stage,content,instructions,origin,project_revision,created_at,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?)""",
-                (draft_id,project_id,stage,content,instructions,origin,project["revision"],stamp,stamp))
+                (draft_id,project_id,stage,content,instructions,origin,revision_now["revision"],stamp,stamp))
         return self.get(project_id, draft_id)
 
     def get(self, project_id: str, draft_id: str):
@@ -159,7 +164,7 @@ class IdeaPipeline:
                 raise KeyError("Creative draft not found")
             if row["status"] != "proposed":
                 raise RuntimeError("This draft has already been decided")
-            project = db.execute("SELECT revision FROM projects WHERE id=?", (project_id,)).fetchone()
+            project = db.execute("SELECT revision,screenplay FROM projects WHERE id=?", (project_id,)).fetchone()
             if project is None:
                 raise KeyError("Project not found")
             if (project["revision"] != expected_project_revision
@@ -169,6 +174,9 @@ class IdeaPipeline:
                 if row["stage"] != "screenplay":
                     raise ValueError("Only a screenplay draft can replace the screenplay")
                 parse_screenplay(row["content"])
+                db.execute("""INSERT OR IGNORE INTO screenplay_revisions
+                    (project_id,revision,screenplay,saved_at,reason) VALUES (?,?,?,?,?)""",
+                    (project_id,project["revision"],project["screenplay"],timestamp(),"before_ai_draft"))
                 db.execute("UPDATE projects SET screenplay=?,revision=revision+1,updated_at=? WHERE id=?",
                            (row["content"],timestamp(),project_id))
             status = "discarded" if decision == "discard" else "accepted"
@@ -204,4 +212,4 @@ class IdeaPipeline:
                 f"Existing script/context:\n{context}\n"
                 "Write a focused, editable proposal for this stage; treat ambiguous choices as creative proposals.")
         text = (self.llm or LocalScriptModel()).complete(system, user)
-        return self.create(project_id, stage, text, instructions, "local_ai")
+        return self.create(project_id, stage, text, instructions, "local_ai", project["revision"])

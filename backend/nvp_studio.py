@@ -126,6 +126,38 @@ class Studio:
                 notes TEXT NOT NULL, status TEXT NOT NULL, updated_at TEXT NOT NULL,
                 PRIMARY KEY (project_id, scene_id, shot_id),
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS screenplay_revisions (
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                revision INTEGER NOT NULL, screenplay TEXT NOT NULL,
+                saved_at TEXT NOT NULL, reason TEXT NOT NULL,
+                PRIMARY KEY(project_id,revision))""")
+
+    def screenplay_history(self, project_id: str):
+        self.get_project(project_id)
+        with self._connection() as db:
+            rows = db.execute("""SELECT revision, screenplay, saved_at, reason
+                FROM screenplay_revisions WHERE project_id=? ORDER BY revision DESC""",
+                (project_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def restore_screenplay(self, project_id: str, source_revision: int, expected_revision: int):
+        with self._connection() as db:
+            current = db.execute("SELECT revision,screenplay FROM projects WHERE id=?",
+                                 (project_id,)).fetchone()
+            if current is None:
+                raise KeyError("Project not found")
+            if current["revision"] != expected_revision:
+                raise RuntimeError("Screenplay changed; reload before restoring an older version")
+            source = db.execute("""SELECT screenplay FROM screenplay_revisions
+                    WHERE project_id=? AND revision=?""", (project_id,source_revision)).fetchone()
+            if source is None:
+                raise KeyError("Requested screenplay revision not found")
+            db.execute("""INSERT OR IGNORE INTO screenplay_revisions
+                (project_id,revision,screenplay,saved_at,reason) VALUES (?,?,?,?,?)""",
+                (project_id,current["revision"],current["screenplay"],now(),"before_restore"))
+            db.execute("UPDATE projects SET screenplay=?,revision=revision+1,updated_at=? WHERE id=?",
+                       (source["screenplay"],now(),project_id))
+        return self.get_project(project_id)
 
     def create_project(self, title: str, idea: str):
         title, idea = title.strip(), idea.strip()
@@ -168,12 +200,17 @@ class Studio:
     def save_screenplay(self, project_id: str, screenplay: str, expected_revision: int):
         parse_screenplay(screenplay)
         with self._connection() as db:
-            changed = db.execute("""UPDATE projects SET screenplay=?, revision=revision+1, updated_at=?
-                    WHERE id=? AND revision=?""", (screenplay, now(), project_id, expected_revision))
-            if changed.rowcount != 1:
-                if not db.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone():
-                    raise KeyError("Project not found")
+            current = db.execute("SELECT screenplay,revision FROM projects WHERE id=?",
+                                 (project_id,)).fetchone()
+            if current is None:
+                raise KeyError("Project not found")
+            if current["revision"] != expected_revision:
                 raise RuntimeError("Project changed elsewhere. Reload before saving to avoid overwriting edits")
+            db.execute("""INSERT OR IGNORE INTO screenplay_revisions
+                (project_id,revision,screenplay,saved_at,reason) VALUES (?,?,?,?,?)""",
+                (project_id,current["revision"],current["screenplay"],now(),"before_manual_edit"))
+            db.execute("""UPDATE projects SET screenplay=?,revision=revision+1,updated_at=?
+                    WHERE id=?""", (screenplay,now(),project_id))
         return self.get_project(project_id)
 
     def plan_scene(self, project_id: str, scene_id: str):

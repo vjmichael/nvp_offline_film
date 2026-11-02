@@ -144,3 +144,18 @@ def edit_creative_draft(project_id: str, draft_id: str, payload: EditCreativeDra
 def decide_creative_draft(project_id: str, draft_id: str, payload: DecideCreativeDraft):
     return run(lambda: IdeaPipeline(studio).decide(
         project_id, draft_id, payload.decision, payload.expected_project_revision))
+
+
+class RestoreScreenplay(BaseModel):
+    expected_revision: int = Field(ge=0)
+
+
+@app.get("/api/projects/{project_id}/screenplay-history")
+def screenplay_history(project_id: str):
+    return run(lambda: studio.screenplay_history(project_id))
+
+
+@app.post("/api/projects/{project_id}/screenplay-history/{source_revision}/restore")
+def restore_screenplay(project_id: str, source_revision: int, payload: RestoreScreenplay):
+    return run(lambda: studio.restore_screenplay(
+        project_id, source_revision, payload.expected_revision))

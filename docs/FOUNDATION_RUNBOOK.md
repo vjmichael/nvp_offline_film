@@ -47,3 +47,20 @@ For the API test install httpx, then run:
 - Build Windows GUI/installer and tests independent of GitHub CI.
 - Add story-bible persistence, actor/prop continuity, camera geometry,
   animation and real media rendering in subsequent work.
+
+
+## Creative development and local AI
+Creators can start with an idea or import/paste a plain-text/Fountain script.
+The Develop the idea tab saves editable loglines, synopses, beat sheets,
+treatments and screenplay drafts. A local writing model is optional.
+
+To connect a separately running OpenAI-compatible loopback server, set:
+    NVP_LLM_URL=http://127.0.0.1:8080/v1/chat/completions
+    NVP_LLM_MODEL=local
+These are examples, not a verified running model or installer requirement.
+NVP rejects remote addresses, HTTP redirects and proxy routing for scripts.
+
+An AI draft is never auto-applied. "Use as screenplay" is an explicit action
+that checks revisions, preserves the previous screenplay in local history and
+retains shot planning data when scenes change. Manual screenplay saves also
+record old revisions; the history API allows restoring a prior script.
