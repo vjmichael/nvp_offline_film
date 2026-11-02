@@ -204,10 +204,14 @@ export default function StoryTimeline({ project, api }) {
         </select>
       </label>
       <button className="secondary" disabled={busy || !inspectScene}
-        onClick={() => action(async () => {
-          const snapshot = await api(root + '?scene_id=' + encodeURIComponent(inspectScene));
-          setSceneKnowledge(snapshot);
-        }, 'Scene knowledge examined.')}>Inspect knowledge state</button>
+        onClick={() => {
+          setBusy(true);
+          setError('');
+          api(root + '?scene_id=' + encodeURIComponent(inspectScene))
+            .then((snapshot) => { setSceneKnowledge(snapshot); setNotice('Knowledge evaluated at the selected point.'); })
+            .catch((err) => { setSceneKnowledge(null); setError(err.message); })
+            .finally(() => setBusy(false));
+        }}>Inspect knowledge state</button>
       {sceneKnowledge && <div>
         <p className="fineprint">{sceneKnowledge.scene_marker
           ? 'Explicit point: ' + sceneKnowledge.scene_marker.phase.toUpperCase()
