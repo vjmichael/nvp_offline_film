@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from backend.nvp_studio import parse_screenplay, SCENE_HEADING
-from backend.nvp_idea_pipeline import STAGES, MAX_DRAFT, MAX_NOTES
+from backend.nvp_creative_schema import STAGES, MAX_DRAFT, MAX_NOTES
 
 MAX_CONTEXT_CHARS = 1_000_000
 MAX_OUTPUT_TOKENS = 2_800

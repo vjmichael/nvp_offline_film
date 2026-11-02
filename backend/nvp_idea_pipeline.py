@@ -13,9 +13,7 @@ from urllib.request import Request, ProxyHandler, HTTPRedirectHandler, build_ope
 
 from backend.nvp_studio import Studio, parse_screenplay, SCENE_HEADING
 
-STAGES = ("logline", "synopsis", "beat_sheet", "treatment", "screenplay")
-MAX_DRAFT = 120_000
-MAX_NOTES = 5_000
+from backend.nvp_creative_schema import STAGES, MAX_DRAFT, MAX_NOTES
 
 
 def timestamp() -> str:
