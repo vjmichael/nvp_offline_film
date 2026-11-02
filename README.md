@@ -1,3 +1,34 @@
+# NVP — A personal film-making pipeline
+
+**Product direction (November 2026):** NVP is for *one person with an idea*,
+including someone who has never written a screenplay or made a film. Its purpose
+is to help that person create their own movie through a guided, offline-first
+workflow. Studio terminology is optional, the creator retains final control,
+and AMD/NVIDIA/CPU support is a design requirement.
+
+**Canonical product architecture:** NVP is the **Film/NVP DLC Workspace
+for Lu**, not a second standalone AI application. Lu hosts model loading,
+inference, the Workspace lifecycle, native tools and Protobuf IPC, security,
+resource admission and supervised workers. NVP retains its specialized
+screenplay, film production, continuity, shot/editing interface and project
+data. This repository is the source for that DLC, and the current Python/React
+standalone entrypoint is a **development harness only**. It must not be
+shipped as a separate NVP consumer installer. See
+[Lu DLC integration contract](docs/LU_DLC_WORKSPACE_CONTRACT.md).
+
+**Current working foundation:** local project storage, basic screenplay scene
+breakdown, cast/location summaries, editable shot ideas, revision recovery,
+and creator-reviewed story drafts. A local OpenAI-compatible writing model can
+be connected as an **optional developer-configured service**; no writing model
+is bundled or verified on the user's GPU. **Not yet connected:** 3D production,
+animation, TTS, rendering, or video export. See [foundation runbook](docs/FOUNDATION_RUNBOOK.md)
+and [design contract](docs/SOLO_CREATOR_DIRECTION.md).
+
+The original project description, development history and proprietary terms
+remain below.
+
+---
+
 # nvp_offline_film
 The neural virtual production (NVP) is a AI coded film studio utilizing a SSM hybrid combining a VLM to realize serious film production. The goal of the creation of a NVP that features data accuracy, consistency and a production bible was made for serious AI film making. The NVP will be an offline model utiling a SSM-VLM and other tools. The NVP has files that will enforce certain rules to ensure consistency. The NVP relies on the demployment of AI agents to perform certain roles like director (orchestrator), DP (director of photography), acting coach, script supervisor, asset management and etc. I have worked on it and may continue to work on it. It features asynchronous process with scaling in mind and potential deployment into a distributed computing environment utilizing interconnected mutlicore and multi-gpu machines.
 

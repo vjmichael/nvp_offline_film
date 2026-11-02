@@ -1,3 +1,5 @@
-Set WshShell = CreateObject("WScript.Shell")
-' Run the Python launcher completely invisibly (0 means hide window)
-WshShell.Run "pythonw.exe nvp_launcher.py", 0, False
+' NVP developer preview launcher. Not a packaged desktop installer.
+Set Shell = CreateObject("WScript.Shell")
+Set Fso = CreateObject("Scripting.FileSystemObject")
+BaseDir = Fso.GetParentFolderName(WScript.ScriptFullName)
+Shell.Run Chr(34) & BaseDir & "\launch_npv.bat" & Chr(34), 1, False
