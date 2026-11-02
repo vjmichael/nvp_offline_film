@@ -78,7 +78,7 @@ class LocalScriptModel:
 class IdeaPipeline:
     def __init__(self, studio: Studio, llm=None):
         self.studio = studio
-        self.llm = llm if llm is not None else LocalScriptModel()
+        self.llm = llm
         with self.studio._connection() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS creative_drafts (
                 id TEXT PRIMARY KEY,
@@ -203,5 +203,5 @@ class IdeaPipeline:
                 f"Writing stage: {stage}\nDirector's instructions: {instructions or 'Preserve creator intent'}\n"
                 f"Existing script/context:\n{context}\n"
                 "Write a focused, editable proposal for this stage; treat ambiguous choices as creative proposals.")
-        text = self.llm.complete(system, user)
+        text = (self.llm or LocalScriptModel()).complete(system, user)
         return self.create(project_id, stage, text, instructions, "local_ai")

@@ -1,9 +1,10 @@
-"""Truthful local NVP planning API. Film rendering and AI are not connected yet."""
+"""Truthful local NVP planning API and optional local screenplay-writing proposals."""
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from backend.nvp_studio import Studio
+from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
 
-app = FastAPI(title="NVP — Your movie, your way", version="0.2.0-foundation")
+app = FastAPI(title="NVP — Your movie, your way", version="0.3.0-creative-foundation")
 studio = Studio()
 
 
@@ -72,3 +73,74 @@ def plan_scene(project_id: str, scene_id: str):
 @app.put("/api/projects/{project_id}/scenes/{scene_id}/shots/{shot_id}")
 def edit_shot(project_id: str, scene_id: str, shot_id: str, payload: ShotUpdate):
     return run(lambda: studio.edit_shot(project_id, scene_id, shot_id, **payload.model_dump()))
+
+
+class NewCreativeDraft(BaseModel):
+    stage: str
+    content: str = Field(min_length=1, max_length=120000)
+    instructions: str = Field(default="", max_length=5000)
+
+
+class GenerateCreativeDraft(BaseModel):
+    stage: str
+    instructions: str = Field(default="", max_length=5000)
+    scene_id: str | None = None
+
+
+class EditCreativeDraft(BaseModel):
+    content: str = Field(min_length=1, max_length=120000)
+    expected_edit_revision: int = Field(ge=0)
+
+
+class DecideCreativeDraft(BaseModel):
+    decision: str
+    expected_project_revision: int = Field(ge=0)
+
+
+@app.get("/api/creative/status")
+def creative_status():
+    try:
+        configured = bool(local_llm_endpoint())
+        detail = "configured_unverified" if configured else "not_configured"
+    except ValueError:
+        configured = False
+        detail = "invalid_loopback_configuration"
+    return {
+        "stages": list(STAGES),
+        "draft_storage": "ready",
+        "local_writer": detail,
+        "ai_model_bundled": False,
+        "film_renderer_connected": False,
+    }
+
+
+@app.get("/api/projects/{project_id}/creative-drafts")
+def list_creative_drafts(project_id: str):
+    return run(lambda: IdeaPipeline(studio).list(project_id))
+
+
+@app.post("/api/projects/{project_id}/creative-drafts", status_code=201)
+def add_creative_draft(project_id: str, payload: NewCreativeDraft):
+    return run(lambda: IdeaPipeline(studio).create(
+        project_id, payload.stage, payload.content, payload.instructions))
+
+
+@app.post("/api/projects/{project_id}/creative-drafts/generate", status_code=201)
+def generate_creative_draft(project_id: str, payload: GenerateCreativeDraft):
+    try:
+        return run(lambda: IdeaPipeline(studio).generate(
+            project_id, payload.stage, payload.instructions, payload.scene_id))
+    except LocalModelUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.put("/api/projects/{project_id}/creative-drafts/{draft_id}")
+def edit_creative_draft(project_id: str, draft_id: str, payload: EditCreativeDraft):
+    return run(lambda: IdeaPipeline(studio).edit(
+        project_id, draft_id, payload.content, payload.expected_edit_revision))
+
+
+@app.post("/api/projects/{project_id}/creative-drafts/{draft_id}/decision")
+def decide_creative_draft(project_id: str, draft_id: str, payload: DecideCreativeDraft):
+    return run(lambda: IdeaPipeline(studio).decide(
+        project_id, draft_id, payload.decision, payload.expected_project_revision))
