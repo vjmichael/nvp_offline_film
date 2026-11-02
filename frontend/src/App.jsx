@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
+const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
+
 const SAMPLE = "INT. KITCHEN - NIGHT\n\nSomeone waits at the table.\n\nALEX\nI didn't think you would come.\n\nSAM\nNeither did I.";
 
 async function api(path, method = 'GET', data) {
@@ -30,6 +32,11 @@ export default function App() {
   const [drafts, setDrafts] = useState([]);
   const [scriptHistory, setScriptHistory] = useState([]);
   const [writingStage, setWritingStage] = useState('logline');
+  const approvedForStage = STORY_STAGE_ORDER.slice(0, STORY_STAGE_ORDER.indexOf(writingStage))
+    .map((stage) => drafts.filter((d) => d.stage === stage && d.status === 'accepted')
+      .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '') || b.id.localeCompare(a.id))[0])
+    .filter(Boolean);
+  const storyNeedsReview = approvedForStage.some((draft) => draft.context_status === 'needs_review');
   const [writingNotes, setWritingNotes] = useState('');
   const [writingSceneId, setWritingSceneId] = useState('');
   const [selectedDraft, setSelectedDraft] = useState(null);
@@ -308,6 +315,20 @@ export default function App() {
                 <option value="screenplay">Actual screenplay scene(s)</option>
               </select>
             </label>
+            {approvedForStage.length > 0 && <div className="context-panel">
+              <h3>Approved story decisions used for this stage</h3>
+              <p className="fineprint">Only your approved earlier stages become story context. AI proposals remain suggestions.</p>
+              {approvedForStage.map((draft) => <p key={draft.id} className="fineprint">
+                <strong>{draft.stage.replaceAll('_', ' ')}</strong>
+                {draft.context_status === 'needs_review'
+                  ? ' — Needs review: ' + (draft.changed_upstream_stages || []).join(', ')
+                  : draft.context_status === 'legacy_untracked' ? ' — Older decision: lineage not recorded' : ' — Current'}
+                <span> · {draft.content.slice(0,160)}{draft.content.length > 160 ? '…' : ''}</span>
+              </p>)}
+            </div>}
+            {storyNeedsReview && <p role="alert" className="fineprint">
+              An earlier approved decision has changed. Revisit the affected story stage before asking AI to write later stages.
+            </p>}
             {writingStage === 'screenplay' && project.scenes.length > 0 &&
               <label>Focus on a scene, or leave blank for a new scene
                 <select value={writingSceneId} onChange={(e) => setWritingSceneId(e.target.value)}>
@@ -320,7 +341,7 @@ export default function App() {
                 placeholder="Make the conversation tense but keep both characters sympathetic."/>
             </label>
             <div className="actions">
-              <button className="secondary" disabled={busy || !selectedModelId || localModelStatus?.state !== 'available'} onClick={generateWriting}>Ask selected local AI to draft</button>
+              <button className="secondary" disabled={busy || storyNeedsReview || !selectedModelId || localModelStatus?.state !== 'available'} onClick={generateWriting}>Ask selected local AI to draft</button>
             </div>
             <p className="fineprint">NVP uses only the local model server. A model listed above is not necessarily loaded or tested. Drafts remain proposals until you approve them.</p>
             <label>Draft (write it yourself, edit AI output, or paste an existing draft)
@@ -344,7 +365,10 @@ export default function App() {
                 key={d.id} onClick={() => selectDraft(d)}>
               <small>{d.stage.replaceAll('_', ' ')} · {d.origin === 'local_ai' ? 'Local AI proposal' : 'Written by you'}</small>
               <strong>{d.content.slice(0,110)}{d.content.length > 110 ? '…' : ''}</strong>
-              <span>{d.status} · revision {d.edit_revision}</span>
+              <span>{d.status} · revision {d.edit_revision}
+                {d.context_status === 'needs_review'
+                  ? ' · Needs review (' + (d.changed_upstream_stages || []).join(', ') + ')' : ''}
+              </span>
             </button>)}
             {selectedDraft?.status === 'proposed' && <div className="actions">
               <button className="secondary" disabled={busy} onClick={() => decideWriting('discard')}>Discard this draft</button>
