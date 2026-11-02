@@ -1,17 +1,17 @@
 """Additional partial-order, stale-source, concurrency and scope regressions."""
 import unittest
-from tests.test_story_timeline import TimelineTests
+from tests.test_story_timeline import TimelineTests as _TimelineFixture
 
 
 class TimelineInvariantTests(unittest.TestCase):
     # Reuse fixture helpers without inheriting another 21 test methods.
-    setUp = TimelineTests.setUp
-    tearDown = TimelineTests.tearDown
-    edge = TimelineTests.edge
-    mark = TimelineTests.mark
-    accepted_knowledge = TimelineTests.accepted_knowledge
-    link_mara = TimelineTests.link_mara
-    know = TimelineTests.know
+    setUp = _TimelineFixture.setUp
+    tearDown = _TimelineFixture.tearDown
+    edge = _TimelineFixture.edge
+    mark = _TimelineFixture.mark
+    accepted_knowledge = _TimelineFixture.accepted_knowledge
+    link_mara = _TimelineFixture.link_mara
+    know = _TimelineFixture.know
 
     def test_transitive_knowledge_proven_without_direct_edge(self):
         self.edge()
@@ -67,6 +67,9 @@ class TimelineInvariantTests(unittest.TestCase):
         preview = self.pipeline.bible_context(self.pid, self.diner)["timeline"]["text"]
         self.assertNotIn("[KNOWLEDGE: KNOWN] Partner", preview)
 
+
+# Prevent duplicate collection of the imported fixture's 21 tests.
+del _TimelineFixture
 
 if __name__ == "__main__":
     unittest.main()
