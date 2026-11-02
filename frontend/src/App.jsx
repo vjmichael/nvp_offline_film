@@ -21,6 +21,15 @@ export default function App() {
   const [project, setProject] = useState(null);
   const [title, setTitle] = useState('');
   const [idea, setIdea] = useState('');
+  const [startMode, setStartMode] = useState('idea');
+  const [openingScript, setOpeningScript] = useState('');
+  const [creativeStatus, setCreativeStatus] = useState(null);
+  const [drafts, setDrafts] = useState([]);
+  const [writingStage, setWritingStage] = useState('logline');
+  const [writingNotes, setWritingNotes] = useState('');
+  const [writingSceneId, setWritingSceneId] = useState('');
+  const [selectedDraft, setSelectedDraft] = useState(null);
+  const [draftText, setDraftText] = useState('');
   const [script, setScript] = useState('');
   const [selectedScene, setSelectedScene] = useState(null);
   const [selectedShot, setSelectedShot] = useState(null);
@@ -49,20 +58,102 @@ export default function App() {
     setShotEdit(null);
   }
 
+  async function refreshCreative(projectId) {
+    const [status, list] = await Promise.all([
+      api('/creative/status'),
+      api('/projects/' + projectId + '/creative-drafts')
+    ]);
+    setCreativeStatus(status);
+    setDrafts(list);
+  }
+
+  async function importScript(event, setter) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!/\.(fountain|txt)$/i.test(file.name) || file.size > 1000000) {
+      setError('Choose a .fountain or .txt script smaller than 1 MB. FDX and PDF import are not available yet.');
+      return;
+    }
+    setError('');
+    setter(await file.text());
+  }
+
+  function selectDraft(item) {
+    setSelectedDraft(item);
+    setDraftText(item.content);
+    setWritingStage(item.stage);
+  }
+
+  function generateWriting() {
+    action(async () => {
+      const draft = await api('/projects/' + project.id + '/creative-drafts/generate', 'POST', {
+        stage: writingStage, instructions: writingNotes, scene_id: writingSceneId || null
+      });
+      await refreshCreative(project.id);
+      selectDraft(draft);
+      setNotice('Local AI produced a proposal. Review and edit before approving it.');
+    });
+  }
+
+  function saveWriting() {
+    action(async () => {
+      let draft;
+      if (selectedDraft?.status === 'proposed') {
+        draft = await api('/projects/' + project.id + '/creative-drafts/' + selectedDraft.id,
+          'PUT', { content: draftText, expected_edit_revision: selectedDraft.edit_revision });
+      } else {
+        draft = await api('/projects/' + project.id + '/creative-drafts', 'POST', {
+          stage: writingStage, content: draftText, instructions: writingNotes
+        });
+      }
+      await refreshCreative(project.id);
+      selectDraft(draft);
+      setNotice('Your draft is saved separately from the screenplay.');
+    });
+  }
+
+  function decideWriting(decision) {
+    action(async () => {
+      if (!selectedDraft) throw Error('Choose a saved draft first.');
+      if (selectedDraft.content !== draftText) throw Error('Save your draft changes before approval.');
+      if (decision === 'use_as_screenplay' && project.screenplay.trim() &&
+          !window.confirm('Replace your current screenplay with this draft? The previous script will be kept in revision history.')) return;
+      const changed = await api('/projects/' + project.id + '/creative-drafts/' + selectedDraft.id +
+        '/decision', 'POST', { decision, expected_project_revision: project.revision });
+      accept(changed);
+      await refreshCreative(project.id);
+      setSelectedDraft(null);
+      setDraftText('');
+      if (decision === 'use_as_screenplay') {
+        setTab('story');
+        setNotice('Approved screenplay applied. Check any affected scene and shot plans.');
+      } else {
+        setNotice(decision === 'discard' ? 'Proposal discarded.' : 'Creative draft approved.');
+      }
+    });
+  }
+
   function create() {
     action(async () => {
-      const result = await api('/projects', 'POST', { title, idea });
+      let result = await api('/projects', 'POST', { title, idea });
+      if (startMode === 'script' && openingScript.trim()) {
+        result = await api('/projects/' + result.id + '/screenplay', 'PUT', {
+          screenplay: openingScript, expected_revision: result.revision
+        });
+      }
       accept(result);
       setProjects(await api('/projects'));
+      await refreshCreative(result.id);
       setNotice('Your movie is saved on this computer.');
-      setTab('story');
+      setTab(startMode === 'script' ? 'story' : 'develop');
     });
   }
 
   function open(id) {
     action(async () => {
       accept(await api('/projects/' + id));
-      setTab('story');
+      await refreshCreative(id);
+      setTab('develop');
     });
   }
 
@@ -130,23 +221,90 @@ export default function App() {
       {!project ? <div className="page introduction">
         <div className="kicker">START HERE</div>
         <h1>What's the movie you've been imagining?</h1>
-        <p className="lead">You don't need a screenplay, a camera or filmmaking experience. Tell NVP what you have in mind.</p>
+        <p className="lead">Start with a sentence or bring the script you've already written. NVP helps you develop the story and plan how it looks on screen.</p>
         <section className="card">
+          <div className="mode-choices">
+            <button className={startMode === 'idea' ? 'active' : ''} onClick={() => setStartMode('idea')}>I have an idea</button>
+            <button className={startMode === 'script' ? 'active' : ''} onClick={() => setStartMode('script')}>I have a script</button>
+          </div>
           <label>A name for your movie<input value={title} maxLength={150} placeholder="The long way home" onChange={(e) => setTitle(e.target.value)}/></label>
-          <label>Your idea, in your words<textarea rows={6} maxLength={10000} value={idea} placeholder="A person returns home and discovers..." onChange={(e) => setIdea(e.target.value)}/></label>
-          <div className="actions"><button className="primary" disabled={busy || !title.trim()} onClick={create}>Create my movie →</button></div>
+          {startMode === 'idea'
+            ? <label>What's your idea? Write it however you like.<textarea rows={6} maxLength={10000} value={idea} placeholder="A person returns home and discovers..." onChange={(e) => setIdea(e.target.value)}/></label>
+            : <><label>Bring your existing script (.fountain or .txt)<input type="file" accept=".fountain,.txt" onChange={(e) => importScript(e, setOpeningScript)}/></label>
+                <label>Or paste it here<textarea rows={9} value={openingScript} maxLength={1000000} onChange={(e) => setOpeningScript(e.target.value)} placeholder="INT. APARTMENT - NIGHT..."/></label></>}
+          <div className="actions"><button className="primary" disabled={busy || !title.trim() || (startMode === 'script' && !openingScript.trim())} onClick={create}>Start making my movie →</button></div>
         </section>
-        <p className="fineprint">This foundation build organizes your story and camera ideas. AI writing, actors and film rendering are not connected yet.</p>
+        <p className="fineprint">Your ideas stay on this computer. This is a working planning prototype; actual film rendering is not connected yet.</p>
       </div> : <div className="page">
         <div className="kicker">YOUR MOVIE</div><h1>{project.title}</h1><p className="lead">{project.idea || 'Every story starts somewhere.'}</p>
         <nav className="tabs">
-          <button className={tab === 'story' ? 'active' : ''} onClick={() => setTab('story')}>1 · Tell your story</button>
-          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>2 · Plan your scenes</button>
-          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>3 · Make your movie</button>
+          <button className={tab === 'develop' ? 'active' : ''} onClick={() => setTab('develop')}>1 · Develop the idea</button>
+          <button className={tab === 'story' ? 'active' : ''} onClick={() => setTab('story')}>2 · Screenplay</button>
+          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>3 · Plan scenes</button>
+          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>4 · Make the film</button>
         </nav>
+        {tab === 'develop' && <div className="columns">
+          <section className="card">
+            <h2>Develop your story</h2>
+            <p className="muted">Work on as much or as little of the script as you want. Every AI suggestion is editable and waits for your approval.</p>
+            <label>What are we working on?
+              <select value={writingStage} onChange={(e) => { setWritingStage(e.target.value); setSelectedDraft(null); setDraftText(''); }}>
+                <option value="logline">One-sentence movie idea</option>
+                <option value="synopsis">Story summary</option>
+                <option value="beat_sheet">Story beats</option>
+                <option value="treatment">Detailed story treatment</option>
+                <option value="screenplay">Actual screenplay scene(s)</option>
+              </select>
+            </label>
+            {writingStage === 'screenplay' && project.scenes.length > 0 &&
+              <label>Focus on a scene, or leave blank for a new scene
+                <select value={writingSceneId} onChange={(e) => setWritingSceneId(e.target.value)}>
+                  <option value="">New scene / overall story</option>
+                  {project.scenes.map((s) => <option value={s.id} key={s.id}>{s.number}. {s.heading}</option>)}
+                </select>
+              </label>}
+            <label>What would you like the writing assistant to do?
+              <textarea rows={4} maxLength={5000} value={writingNotes} onChange={(e) => setWritingNotes(e.target.value)}
+                placeholder="Make the conversation tense but keep both characters sympathetic."/>
+            </label>
+            <div className="actions">
+              <button className="secondary" disabled={busy || !creativeStatus || creativeStatus.local_writer !== 'configured_unverified'} onClick={generateWriting}>Ask local AI to draft</button>
+            </div>
+            <p className="fineprint">{creativeStatus?.local_writer === 'configured_unverified'
+              ? 'Local AI endpoint configured, but not yet tested with a loaded model.'
+              : 'AI writing requires a locally running model, configured by the developer. You can still write and save drafts below.'}</p>
+            <label>Draft (write it yourself, edit AI output, or paste an existing draft)
+              <textarea className="script" rows={16} value={draftText} maxLength={120000} onChange={(e) => setDraftText(e.target.value)}
+                placeholder={writingStage === 'screenplay' ? 'INT. HOME - NIGHT\n\nA door opens...' : 'Write your story idea here...'}/>
+            </label>
+            <div className="actions">
+              <button className="secondary" disabled={busy || !draftText.trim() || (selectedDraft && selectedDraft.status !== 'proposed')} onClick={saveWriting}>
+                {selectedDraft ? 'Save revised draft' : 'Save my draft'}
+              </button>
+              {selectedDraft?.status === 'proposed' && <>
+                <button className="secondary" disabled={busy || draftText !== selectedDraft.content} onClick={() => decideWriting('accept')}>Approve as story note</button>
+                {selectedDraft.stage === 'screenplay' && <button className="primary" disabled={busy || draftText !== selectedDraft.content} onClick={() => decideWriting('use_as_screenplay')}>Use as screenplay</button>}
+              </>}
+            </div>
+            <p className="fineprint">Using a draft as the screenplay replaces its current text with your explicit approval. Non-screenplay drafts are stored as approved story notes.</p>
+          </section>
+          <section className="card"><h2>Your creative drafts</h2>
+            {drafts.length === 0 && <p className="muted">No writing proposals yet. Your original idea remains saved.</p>}
+            {drafts.map((d) => <button className={'scene-item ' + (selectedDraft?.id === d.id ? 'active' : '')}
+                key={d.id} onClick={() => selectDraft(d)}>
+              <small>{d.stage.replaceAll('_', ' ')} · {d.origin === 'local_ai' ? 'Local AI proposal' : 'Written by you'}</small>
+              <strong>{d.content.slice(0,110)}{d.content.length > 110 ? '…' : ''}</strong>
+              <span>{d.status} · revision {d.edit_revision}</span>
+            </button>)}
+            {selectedDraft?.status === 'proposed' && <div className="actions">
+              <button className="secondary" disabled={busy} onClick={() => decideWriting('discard')}>Discard this draft</button>
+            </div>}
+          </section>
+        </div>}
         {tab === 'story' && <div className="columns">
           <section className="card">
-            <h2>Your screenplay</h2><p className="muted">Paste or write a scene. Use headings like INT. KITCHEN - NIGHT and character names above dialogue.</p>
+            <h2>Your screenplay</h2><p className="muted">Write or edit any scene directly, or develop it collaboratively in the previous tab. Use headings such as INT. KITCHEN - NIGHT.</p>
+            <label>Import a .fountain or .txt screenplay<input type="file" accept=".fountain,.txt" onChange={(e) => importScript(e, setScript)} /></label>
             <textarea className="script" rows={18} value={script} onChange={(e) => setScript(e.target.value)} placeholder="INT. BEDROOM - NIGHT&#10;&#10;A character opens a letter..." />
             <div className="actions">
               <button className="secondary" disabled={busy || script.trim().length > 0} onClick={() => setScript(SAMPLE)}>Try a sample</button>
