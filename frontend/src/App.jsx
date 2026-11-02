@@ -25,6 +25,7 @@ export default function App() {
   const [openingScript, setOpeningScript] = useState('');
   const [creativeStatus, setCreativeStatus] = useState(null);
   const [drafts, setDrafts] = useState([]);
+  const [scriptHistory, setScriptHistory] = useState([]);
   const [writingStage, setWritingStage] = useState('logline');
   const [writingNotes, setWritingNotes] = useState('');
   const [writingSceneId, setWritingSceneId] = useState('');
@@ -65,6 +66,7 @@ export default function App() {
     ]);
     setCreativeStatus(status);
     setDrafts(list);
+    setScriptHistory(await api('/projects/' + projectId + '/screenplay-history'));
   }
 
   async function importScript(event, setter) {
@@ -157,12 +159,24 @@ export default function App() {
     });
   }
 
+  function restoreScriptRevision(revision) {
+    action(async () => {
+      if (!window.confirm('Restore this earlier screenplay? Your current screenplay will be kept in history.')) return;
+      const restored = await api('/projects/' + project.id + '/screenplay-history/' + revision + '/restore',
+        'POST', { expected_revision: project.revision });
+      accept(restored);
+      await refreshCreative(project.id);
+      setNotice('An earlier screenplay has been restored. Review the affected scene plans.');
+    });
+  }
+
   function saveScript() {
     action(async () => {
       const result = await api('/projects/' + project.id + '/screenplay', 'PUT', {
         screenplay: script, expected_revision: project.revision,
       });
       accept(result);
+      await refreshCreative(project.id);
       setNotice('Screenplay saved. Review the extracted scenes.');
     });
   }
@@ -319,6 +333,13 @@ export default function App() {
               : <p className="muted">Character names appear after you save dialogue.</p>}
             <h3>Locations</h3>{project.bible.locations.map((name) => <p key={name}>{name}</p>)}
             {project.archived_shots > 0 && <p className="warning">{project.archived_shots} old shot plans are preserved after scene-heading changes. Reconciliation is a future feature.</p>}
+            <h3>Earlier screenplay versions</h3>
+            {scriptHistory.length === 0 && <p className="muted">No earlier versions yet.</p>}
+            {scriptHistory.map((version) => <div className="history-item" key={version.revision}>
+              <span>Revision {version.revision} · {version.reason.replaceAll('_', ' ')}</span>
+              <button className="secondary" disabled={busy || !!unsaved} onClick={() => restoreScriptRevision(version.revision)}>Restore</button>
+            </div>)}
+            {unsaved && <p className="fineprint">Save or discard your unsaved screenplay edits before restoring a version.</p>}
             <p className="fineprint">This is simple screenplay extraction, not AI understanding of your story.</p>
           </section>
         </div>}

@@ -38,3 +38,7 @@ button.primary,button.secondary{border:1px solid transparent;padding:12px 18px;b
 .mode-choices button{border:1px solid #45434f;background:#2a2935;color:#d1ced4;border-radius:9px;padding:12px 20px;font-size:13px;font-weight:700}
 .mode-choices button.active{border-color:#eeb77d;color:#f8cf9e;background:#3b2f39}
 @media(max-width:700px){.mode-choices{flex-direction:column}.tabs{overflow-x:auto;white-space:nowrap}}
+
+.history-item{display:flex;align-items:center;justify-content:space-between;gap:10px;
+ padding:10px 0;border-top:1px solid #3e3d49;font-size:12px;color:#bbb9c6}
+.history-item button{padding:7px 10px;font-size:11px}
