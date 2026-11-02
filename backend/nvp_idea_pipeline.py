@@ -273,7 +273,7 @@ class IdeaPipeline:
                         raise RuntimeError("Story Bible scene context changed; refresh before approval") from exc
                     if latest_bible["digest"] != bible_row["canon_digest"]:
                         raise RuntimeError("Story Bible canon changed; refresh and revise the draft before approval")
-                elif canon_snapshot(db, project_id)["facts_total"]:
+                elif canon_snapshot(db, project_id)["entities_count"]:
                     raise RuntimeError("Legacy draft lacks Story Bible provenance; recreate and review before approval")
                 if any(self._annotate(db, source)[field] == "needs_review"
                        for source in self._approved_upstream(db, project_id, row["stage"])

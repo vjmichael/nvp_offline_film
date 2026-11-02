@@ -30,7 +30,7 @@ def canon_snapshot(db, project_id: str, scene_id: str | None = None) -> dict:
     rows = db.execute("""SELECT e.id, e.kind, e.name, n.display_name AS alias,
                               f.id AS fact_id, f.fact_key, f.fact_value, f.story_scope
                          FROM bible_entities e
-                         JOIN bible_facts f ON f.entity_id=e.id AND f.project_id=e.project_id
+                         LEFT JOIN bible_facts f ON f.entity_id=e.id AND f.project_id=e.project_id
                               AND f.status='accepted'
                          LEFT JOIN bible_names n ON n.entity_id=e.id AND n.is_primary=0
                         WHERE e.project_id=? ORDER BY e.kind,e.id,f.id,n.normalized_name""",
@@ -44,10 +44,11 @@ def canon_snapshot(db, project_id: str, scene_id: str | None = None) -> dict:
         })
         if row['alias'] is not None:
             entry['aliases'].add(row['alias'])
-        entry['facts'][row['fact_id']] = {
-            'id': row['fact_id'], 'key': row['fact_key'],
-            'value': row['fact_value'], 'scope': row['story_scope'],
-        }
+        if row['fact_id'] is not None:
+            entry['facts'][row['fact_id']] = {
+                'id': row['fact_id'], 'key': row['fact_key'],
+                'value': row['fact_value'], 'scope': row['story_scope'],
+            }
     links = []
     if scene is not None:
         links = [dict(row) for row in db.execute(
@@ -81,13 +82,15 @@ def canon_snapshot(db, project_id: str, scene_id: str | None = None) -> dict:
         header = f"[{entity['kind'].upper()}] {entity['name']} (ID {entity['id']})"
         if entity['aliases']:
             header += " | aliases: " + ', '.join(entity['aliases'])
-        for fact in entity['facts']:
-            line = f"{header}\n  {fact['key']} [scope={fact['scope']}]: {fact['value']}"
+        for fact in entity['facts'] or [None]:
+            line = (f"{header}\n  {fact['key']} [scope={fact['scope']}]: {fact['value']}"
+                    if fact is not None else header + "\n  [no approved facts yet]")
             if used + len(line) + 1 > MAX_BIBLE_PROMPT:
                 break
             text.append(line)
             used += len(line) + 1
-            included += 1
+            if fact is not None:
+                included += 1
     if scene_id is not None and not links:
         text.insert(0, "[NO APPROVED BIBLE ENTITIES LINKED TO THIS SCENE; DO NOT INVENT CANON]")
     if total_facts > included:
