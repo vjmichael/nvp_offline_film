@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from backend import nvp_api
-from backend.nvp_model_service import discover_models, model_family
+from backend.nvp_model_service import discover_models, model_family, configured_endpoint
 from backend.nvp_studio import Studio
 
 
@@ -100,6 +100,19 @@ class WriterRoutingTest(unittest.TestCase):
                                  json={"model_id": "unknown-cloud-writer", "stage": "logline"})
         self.assertEqual(response.status_code, 422)
         self.assertIsNone(LocalServer.received)
+
+    def test_direct_local_port_without_env(self):
+        with patch.dict(os.environ, {"NVP_LLM_URL": ""}):
+            port = self.server.server_port
+            self.assertEqual(discover_models(port)["state"], "available")
+            self.assertEqual(configured_endpoint(port), self.url)
+            response = self.api.post(
+                f"/api/projects/{self.project['id']}/creative-drafts/generate",
+                json={"model_id": "qwen3.6-35b-a3b-Q4.gguf", "model_port": port, "stage": "logline"})
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertEqual(LocalServer.received["model"], "qwen3.6-35b-a3b-Q4.gguf")
+        with self.assertRaises(ValueError):
+            configured_endpoint(1)
 
     def test_redirect_refused(self):
         LocalServer.redirect = True

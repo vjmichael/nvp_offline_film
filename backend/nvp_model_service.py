@@ -39,10 +39,18 @@ def _models_url(chat_url: str) -> str:
     return f"{endpoint.scheme}://{endpoint.netloc}/v1/models"
 
 
-def discover_models() -> dict:
+def configured_endpoint(port: int | None = None) -> str | None:
+    if port is None:
+        return local_llm_endpoint()
+    if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535:
+        raise ValueError("Select a valid local model server port (1024–65535)")
+    return f"http://127.0.0.1:{port}/v1/chat/completions"
+
+
+def discover_models(port: int | None = None) -> dict:
     """Non-throwing status for UI; no proxy, redirect, auth, or remote calls."""
     try:
-        url = local_llm_endpoint()
+        url = configured_endpoint(port)
     except ValueError:
         return {"state": "invalid_configuration", "models": [],
                 "message": "Invalid NVP_LLM_URL: use a local loopback /v1/chat/completions endpoint"}
@@ -80,12 +88,12 @@ def discover_models() -> dict:
                 "message": "Local model server is unreachable or returned an invalid model list"}
 
 
-def writer_for(model_id: str) -> LocalScriptModel:
+def writer_for(model_id: str, port: int | None = None) -> LocalScriptModel:
     if not isinstance(model_id, str) or not model_id or len(model_id) > MAX_MODEL_ID_LEN:
         raise ValueError("Select a valid model from the local server")
-    models = discover_models()
+    models = discover_models(port)
     if models["state"] != "available":
         raise LocalModelUnavailable(models["message"])
     if model_id not in {m["id"] for m in models["models"]}:
         raise ValueError("The selected model is not reported by the local server; refresh the model list")
-    return LocalScriptModel(model_name=model_id)
+    return LocalScriptModel(endpoint=configured_endpoint(port), model_name=model_id)

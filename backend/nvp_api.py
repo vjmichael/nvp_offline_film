@@ -84,6 +84,7 @@ class NewCreativeDraft(BaseModel):
 
 class GenerateCreativeDraft(BaseModel):
     model_id: str | None = Field(default=None, max_length=256)
+    model_port: int | None = Field(default=None, ge=1024, le=65535)
     stage: str
     instructions: str = Field(default="", max_length=5000)
     scene_id: str | None = None
@@ -117,8 +118,8 @@ def creative_status():
 
 
 @app.get("/api/creative/models")
-def creative_models():
-    return discover_models()
+def creative_models(port: int | None = None):
+    return discover_models(port)
 
 
 @app.get("/api/projects/{project_id}/creative-drafts")
@@ -135,7 +136,7 @@ def add_creative_draft(project_id: str, payload: NewCreativeDraft):
 @app.post("/api/projects/{project_id}/creative-drafts/generate", status_code=201)
 def generate_creative_draft(project_id: str, payload: GenerateCreativeDraft):
     try:
-        return run(lambda: IdeaPipeline(studio, llm=(writer_for(payload.model_id) if payload.model_id else None)).generate(
+        return run(lambda: IdeaPipeline(studio, llm=(writer_for(payload.model_id, payload.model_port) if payload.model_id else None)).generate(
             project_id, payload.stage, payload.instructions, payload.scene_id))
     except LocalModelUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
