@@ -11,6 +11,7 @@ import json
 
 from backend.nvp_studio import parse_screenplay
 from backend.nvp_story_bible import sha_scene
+from backend.nvp_story_timeline import timeline_snapshot
 
 MAX_BIBLE_PROMPT = 8500
 
@@ -69,9 +70,12 @@ def canon_snapshot(db, project_id: str, scene_id: str | None = None) -> dict:
         })
     # The hash includes facts beyond the prompt budget, and exact selected
     # link identity. Unapproved/rejected/superseded facts never enter it.
+    temporal = timeline_snapshot(db, project_id, scene_id, relevant_entity_ids=set(grouped))
     fingerprint_source = {'entities': entities, 'links': links,
                           'scope': 'whole_project' if scene_id is None else 'linked_scene',
                           'scene_id': scene_id}
+    if temporal['digest_payload'] is not None:
+        fingerprint_source['timeline'] = temporal['digest_payload']
     digest = hashlib.sha256(json.dumps(fingerprint_source, sort_keys=True,
                                         ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
     text = []
@@ -95,12 +99,52 @@ def canon_snapshot(db, project_id: str, scene_id: str | None = None) -> dict:
         text.insert(0, "[NO APPROVED BIBLE ENTITIES LINKED TO THIS SCENE; DO NOT INVENT CANON]")
     if total_facts > included:
         text.append(f"[{total_facts - included} APPROVED FACT(S) OMITTED DUE TO CONTEXT LIMIT; do not assume omitted details]")
+    # Keep chronological knowledge separate from objective canon. A fact can
+    # be true while a specific character has not learned it yet.
+    knowledge_lines = []
+    names = {event['id']: event['name'] for event in temporal['events']}
+    used_order = 0
+    for edge in temporal['edges']:
+        line = (f"[APPROVED STORY ORDER] {names.get(edge['before_id'], '?')} "
+                f"BEFORE {names.get(edge['after_id'], '?')}")
+        if used_order + len(line) + 1 > 2400:
+            knowledge_lines.append('[ADDITIONAL STORY ORDER EDGES OMITTED; do not assume missing order]')
+            break
+        knowledge_lines.append(line)
+        used_order += len(line) + 1
+    marker = temporal['scene_marker']
+    if scene_id is not None:
+        if marker:
+            knowledge_lines.append(
+                f"[EXPLICIT SCENE POINT] {marker['phase'].upper()} event {marker['anchor_event_id']}")
+        else:
+            knowledge_lines.append("[NO AUTHOR-APPROVED SCENE TIME ANCHOR: knowledge timing is unverified]")
+    for entry in temporal['knowledge']:
+        # Never promote an already superseded truth into current canon.
+        if entry['state'] == 'source_fact_changed':
+            line = (f"[KNOWLEDGE: SOURCE_FACT_CHANGED] {entry['character_name']} "
+                    f"(knowledge ID {entry['id']}); source fact is no longer approved. "
+                    "Review and create a new knowledge approval.")
+        else:
+            line = (f"[KNOWLEDGE: {entry['state'].upper()}] {entry['character_name']} — "
+                    f"{entry['fact_key']}: {entry['fact_value']} "
+                    f"(learned at {entry['learned_at_name'] or 'story start'}; "
+                    f"scope={entry['story_scope']})")
+        if len('\n'.join(knowledge_lines)) + len(line) > 3200:
+            knowledge_lines.append('[ADDITIONAL KNOWLEDGE OMITTED: cannot infer character awareness]')
+            break
+        knowledge_lines.append(line)
+    timeline_text = '\n'.join(knowledge_lines) if knowledge_lines else 'No approved character-knowledge timing assertions.'
     return {
+        'timeline': {'scene_marker': marker, 'events': temporal['events'],
+                     'edges': temporal['edges'], 'knowledge': temporal['knowledge'],
+                     'text': timeline_text, 'limitations': temporal['limitations']},
         'digest': digest, 'scene_id': scene_id, 'entities_count': len(entities),
         'facts_total': total_facts, 'facts_included': included,
         'text': '\n'.join(text) or 'No creator-approved Story Bible facts in this scope.',
         'limitations': ('Only creator-approved facts are authoritative. Story scopes are labels, '
                         'not an inferred timeline: e.g. after_reveal does not imply which '
                         'screenplay scene follows the reveal. A scene-specific request uses '
-                        'explicit manual scene links only; unlinked entities are not included.'),
+                        'explicit manual scene links only; unlinked entities are not included. '
+                        'A separate event graph governs character knowledge timing; never infer event order from screenplay position.'),
     }

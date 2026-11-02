@@ -67,5 +67,8 @@ def build_story_messages(project: dict, stage: str, instructions: str,
             f"Approved Story Bible facts (creator-reviewed):\n"
             f"{bible_context['text'] if bible_context is not None else 'No Story Bible context available.'}\n"
             f"{bible_context['limitations'] if bible_context is not None else ''}\n"
+            f"Character knowledge and explicit story-event timing (distinct from objective facts):\n"
+            f"{bible_context['timeline']['text'] if bible_context is not None else 'No approved timeline supplied.'}\n"
+            f"{bible_context['timeline']['limitations'] if bible_context is not None else ''}\n"
             "Create an editable proposal. Do not replace a previously approved decision without an explicit creator instruction.")
     return system, user

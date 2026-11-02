@@ -17,6 +17,7 @@ from backend.nvp_creative_schema import STAGES, MAX_DRAFT, MAX_NOTES
 from backend.nvp_story_context import build_story_messages
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_bible_context import canon_snapshot
+from backend.nvp_story_timeline import StoryTimeline
 
 
 def timestamp() -> str:
@@ -81,6 +82,7 @@ class IdeaPipeline:
         self.studio = studio
         self.llm = llm
         StoryBible(studio)  # schema only; film bible remains independent from model transport
+        StoryTimeline(studio)  # explicit chronology schema; no model/Lu dependency
         with self.studio._connection() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS creative_drafts (
                 id TEXT PRIMARY KEY,
