@@ -64,3 +64,11 @@ An AI draft is never auto-applied. "Use as screenplay" is an explicit action
 that checks revisions, preserves the previous screenplay in local history and
 retains shot planning data when scenes change. Manual screenplay saves also
 record old revisions; the history API allows restoring a prior script.
+
+
+## Verification record, 2026-11-02
+On a local mirror of the backend modules, 15 Python unit/API regressions passed:
+story drafting, proposal approval, revision conflicts, screenplay restoration,
+and recovery of previously approved shot plans. The new branch also includes
+creative-development regression tests. This is not a claim that the React UI,
+actual local LLM, video/3D renderer, or Windows installer have passed acceptance.

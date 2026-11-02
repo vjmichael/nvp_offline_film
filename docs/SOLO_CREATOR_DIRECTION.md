@@ -56,3 +56,18 @@ shot rows as archived, but automatic reconciliation is future work.
 Produce and edit a 60–90 second two-person scene in one interior with durable 3D
 actors, 6–8 shots, spoken dialogue, basic performance and exportable 1080p/24-fps video.
 Do not claim success without independently replaying the actual generated media.
+
+
+## Idea/script entry and AI writing status (Nov 2)
+The creator can enter with a free-form idea **or** an existing screenplay.
+The new story-development UI offers logline, synopsis, beat sheet, treatment
+and editable screenplay drafts. A loopback-only LLM adapter can draft those
+stages when a separate local model server is configured, but NVP does not
+yet install or load the model itself.
+
+The screenplay and approved camera plans now retain revision history/approval
+records. Restoration is accessible in the screenplay UI. Script-to-video and
+video-to-script dependency tracking remain **design goals**, not functioning
+production capabilities. The new backend has been exercised with local
+fake-model/API fixtures; a real local LLM and the frontend installer still
+require integration testing.

@@ -7,9 +7,11 @@ workflow. Studio terminology is optional, the creator retains final control,
 and AMD/NVIDIA/CPU support is a design requirement.
 
 **Current working foundation:** local project storage, basic screenplay scene
-breakdown, cast/location summaries, editable shot ideas, and durable approval
-records. **Not yet connected:** AI screenwriting, 3D production, animation,
-TTS, rendering, or video export. See [foundation runbook](docs/FOUNDATION_RUNBOOK.md)
+breakdown, cast/location summaries, editable shot ideas, revision recovery,
+and creator-reviewed story drafts. A local OpenAI-compatible writing model can
+be connected as an **optional developer-configured service**; no writing model
+is bundled or verified on the user's GPU. **Not yet connected:** 3D production,
+animation, TTS, rendering, or video export. See [foundation runbook](docs/FOUNDATION_RUNBOOK.md)
 and [design contract](docs/SOLO_CREATOR_DIRECTION.md).
 
 The original project description, development history and proprietary terms
