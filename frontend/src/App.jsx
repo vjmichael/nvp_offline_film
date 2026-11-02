@@ -47,8 +47,10 @@ export default function App() {
     .map((stage) => drafts.filter((d) => d.stage === stage && d.status === 'accepted')
       .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '') || b.id.localeCompare(a.id))[0])
     .filter(Boolean);
-  const storyNeedsReview = approvedForStage.some((draft) => draft.context_status === 'needs_review');
+  const storyNeedsReview = approvedForStage.some((draft) =>
+    draft.context_status === 'needs_review' || draft.bible_context_status === 'needs_review');
   const [writingNotes, setWritingNotes] = useState('');
+  const [bibleWritingContext, setBibleWritingContext] = useState(null);
   const [writingSceneId, setWritingSceneId] = useState('');
   const [selectedDraft, setSelectedDraft] = useState(null);
   const [draftText, setDraftText] = useState('');
@@ -258,6 +260,17 @@ export default function App() {
     return () => { active = false; };
   }, [project?.id, tab, project?.revision]);
 
+  useEffect(() => {
+    if (!project?.id || tab !== 'develop') return;
+    let current = true;
+    setBibleWritingContext(null);
+    const suffix = writingSceneId ? '?scene_id=' + encodeURIComponent(writingSceneId) : '';
+    api('/projects/' + project.id + '/creative/bible-context' + suffix)
+      .then((context) => { if (current) setBibleWritingContext({ ...context, error: '' }); })
+      .catch((error) => { if (current) setBibleWritingContext({ error: error.message }); });
+    return () => { current = false; };
+  }, [project?.id, project?.revision, tab, writingSceneId]);
+
   function create() {
     action(async () => {
       let result = await api('/projects', 'POST', { title, idea });
@@ -443,12 +456,28 @@ export default function App() {
                   {project.scenes.map((s) => <option value={s.id} key={s.id}>{s.number}. {s.heading}</option>)}
                 </select>
               </label>}
+            <section className="context-panel" aria-label="Story Bible context for AI writing">
+              <h3>Story Bible facts for this draft</h3>
+              <p className="fineprint">Only facts you approved are passed to the writing model.
+                For a focused scene, only explicitly linked people, places, props and events are used.</p>
+              {bibleWritingContext?.error
+                ? <p role="alert">Bible context unavailable: {bibleWritingContext.error}. Review scene links before drafting.</p>
+                : <p className="fineprint">{bibleWritingContext
+                  ? bibleWritingContext.facts_included + ' of ' + bibleWritingContext.facts_total
+                    + ' approved facts in context (' + bibleWritingContext.entities_count + ' entities)'
+                  : 'Loading approved Story Bible context...'}</p>}
+              {bibleWritingContext?.text && <details>
+                <summary>Inspect exactly what the model receives</summary>
+                <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{bibleWritingContext.text}</pre>
+                <p className="fineprint">{bibleWritingContext.limitations}</p>
+              </details>}
+            </section>
             <label>What would you like the writing assistant to do?
               <textarea rows={4} maxLength={5000} value={writingNotes} onChange={(e) => setWritingNotes(e.target.value)}
                 placeholder="Make the conversation tense but keep both characters sympathetic."/>
             </label>
             <div className="actions">
-              <button className="secondary" disabled={busy || storyNeedsReview || !selectedModelId || localModelStatus?.state !== 'available'} onClick={generateWriting}>Ask selected local AI to draft</button>
+              <button className="secondary" disabled={busy || storyNeedsReview || !!bibleWritingContext?.error || !selectedModelId || localModelStatus?.state !== 'available'} onClick={generateWriting}>Ask selected local AI to draft</button>
             </div>
             <p className="fineprint">NVP uses only the local model server. A model listed above is not necessarily loaded or tested. Drafts remain proposals until you approve them.</p>
             <label>Draft (write it yourself, edit AI output, or paste an existing draft)
@@ -460,10 +489,13 @@ export default function App() {
                 {selectedDraft ? 'Save revised draft' : 'Save my draft'}
               </button>
               {selectedDraft?.status === 'proposed' && <>
-                <button className="secondary" disabled={busy || draftText !== selectedDraft.content} onClick={() => decideWriting('accept')}>Approve as story note</button>
-                {selectedDraft.stage === 'screenplay' && <button className="primary" disabled={busy || draftText !== selectedDraft.content} onClick={() => decideWriting('use_as_screenplay')}>Use as screenplay</button>}
+                <button className="secondary" disabled={busy || selectedDraft.bible_context_status === 'needs_review' || draftText !== selectedDraft.content} onClick={() => decideWriting('accept')}>Approve as story note</button>
+                {selectedDraft.stage === 'screenplay' && <button className="primary" disabled={busy || selectedDraft.bible_context_status === 'needs_review' || draftText !== selectedDraft.content} onClick={() => decideWriting('use_as_screenplay')}>Use as screenplay</button>}
               </>}
             </div>
+            {selectedDraft?.bible_context_status === 'needs_review' && <p role="alert">
+              This draft references outdated Story Bible facts or scene links. Create a new proposal from current canon before approval.
+            </p>}
             <p className="fineprint">Using a draft as the screenplay replaces its current text with your explicit approval. Non-screenplay drafts are stored as approved story notes.</p>
           </section>
           <section className="card"><h2>Your creative drafts</h2>
@@ -475,6 +507,7 @@ export default function App() {
               <span>{d.status} · revision {d.edit_revision}
                 {d.context_status === 'needs_review'
                   ? ' · Needs review (' + (d.changed_upstream_stages || []).join(', ') + ')' : ''}
+                {d.bible_context_status === 'needs_review' ? ' · Story Bible changed' : ''}
               </span>
             </button>)}
             {selectedDraft?.status === 'proposed' && <div className="actions">
