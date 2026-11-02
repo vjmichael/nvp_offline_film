@@ -150,6 +150,21 @@ class ApprovedBibleWritingTests(unittest.TestCase):
         self.replace(mara, old, old["fact_key"], "revised")
         self.assertEqual(self.pipe.get(self.pid, draft["id"])["bible_context_status"], "needs_review")
 
+    def test_named_character_without_facts_enters_canon_and_rename_stales(self):
+        mara = self.character()
+        draft = self.pipe.generate(self.pid, "screenplay")
+        self.assertIn("[no approved facts yet]", self.writer.calls[-1][1])
+        self.assertEqual(draft["bible_facts_total"], 0)
+        current = self.bible.get_entity(self.pid, mara["id"])
+        self.bible.rename_entity(self.pid, mara["id"], "Mara Wells", current["revision"])
+        self.assertEqual(self.pipe.get(self.pid, draft["id"])["bible_context_status"], "needs_review")
+
+    def test_new_character_mid_completion_invalidates_whole_project_snapshot(self):
+        self.writer.on_generation = lambda: self.character("Unknown Witness")
+        with self.assertRaisesRegex(RuntimeError, "Story Bible changed while AI"):
+            self.pipe.generate(self.pid, "screenplay")
+        self.assertEqual(self.pipe.list(self.pid), [])
+
     def test_api_scoped_preview_and_missing_project(self):
         mara = self.character()
         self.fact(mara, "cannot_drive", "cannot drive")
