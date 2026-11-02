@@ -2,6 +2,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from backend.nvp_studio import Studio
+from backend.nvp_story_bible import StoryBible
 from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
 from backend.nvp_model_service import discover_models, writer_for
 
@@ -172,3 +173,98 @@ def screenplay_history(project_id: str):
 def restore_screenplay(project_id: str, source_revision: int, payload: RestoreScreenplay):
     return run(lambda: studio.restore_screenplay(
         project_id, source_revision, payload.expected_revision))
+
+
+# Story Bible is a film-specific development service. The eventual product is
+# an optional Lu DLC, but no Lu code is touched until Lu v1.0.
+class BibleEntityCreate(BaseModel):
+    kind: str
+    name: str = Field(min_length=1, max_length=150)
+    description: str = Field(default="", max_length=3000)
+
+
+class BibleRename(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    expected_revision: int = Field(ge=0)
+
+
+class BibleAlias(BaseModel):
+    alias: str = Field(min_length=1, max_length=150)
+    expected_revision: int = Field(ge=0)
+
+
+class BibleFactProposal(BaseModel):
+    key: str = Field(min_length=1, max_length=64)
+    value: str = Field(min_length=1, max_length=2000)
+    scope: str = Field(default="global", max_length=96)
+    origin: str = "creator"
+    source_note: str = Field(default="", max_length=500)
+
+
+class BibleFactDecision(BaseModel):
+    decision: str
+    expected_entity_revision: int = Field(ge=0)
+    replaces_fact_id: str | None = None
+
+
+class BibleSceneLink(BaseModel):
+    scene_id: str
+    expected_entity_revision: int = Field(ge=0)
+    note: str = Field(default="", max_length=1000)
+
+
+class BibleAcknowledge(BaseModel):
+    expected_screenplay_revision: int = Field(ge=0)
+
+
+@app.get("/api/projects/{project_id}/story-bible")
+def story_bible(project_id: str):
+    return run(lambda: {"entities": StoryBible(studio).list_entities(project_id),
+                        "continuity": StoryBible(studio).report(project_id)})
+
+
+@app.get("/api/projects/{project_id}/story-bible/continuity")
+def story_bible_continuity(project_id: str):
+    return run(lambda: StoryBible(studio).report(project_id))
+
+
+@app.post("/api/projects/{project_id}/story-bible/entities", status_code=201)
+def story_bible_create_entity(project_id: str, payload: BibleEntityCreate):
+    return run(lambda: StoryBible(studio).create_entity(project_id, payload.kind,
+                                                          payload.name, payload.description))
+
+
+@app.put("/api/projects/{project_id}/story-bible/entities/{entity_id}/name")
+def story_bible_rename(project_id: str, entity_id: str, payload: BibleRename):
+    return run(lambda: StoryBible(studio).rename_entity(project_id, entity_id,
+                                                        payload.name, payload.expected_revision))
+
+
+@app.post("/api/projects/{project_id}/story-bible/entities/{entity_id}/aliases")
+def story_bible_add_alias(project_id: str, entity_id: str, payload: BibleAlias):
+    return run(lambda: StoryBible(studio).add_alias(project_id, entity_id,
+                                                    payload.alias, payload.expected_revision))
+
+
+@app.post("/api/projects/{project_id}/story-bible/entities/{entity_id}/facts", status_code=201)
+def story_bible_propose_fact(project_id: str, entity_id: str, payload: BibleFactProposal):
+    return run(lambda: StoryBible(studio).propose_fact(project_id, entity_id, payload.key,
+               payload.value, payload.scope, payload.origin, payload.source_note))
+
+
+@app.post("/api/projects/{project_id}/story-bible/facts/{fact_id}/decision")
+def story_bible_decide_fact(project_id: str, fact_id: str, payload: BibleFactDecision):
+    return run(lambda: StoryBible(studio).decide_fact(project_id, fact_id,
+        payload.decision, payload.expected_entity_revision, payload.replaces_fact_id))
+
+
+@app.post("/api/projects/{project_id}/story-bible/entities/{entity_id}/scene-links")
+def story_bible_link_scene(project_id: str, entity_id: str, payload: BibleSceneLink):
+    return run(lambda: StoryBible(studio).link_scene(project_id, entity_id,
+        payload.scene_id, payload.expected_entity_revision, payload.note))
+
+
+@app.post("/api/projects/{project_id}/story-bible/changes/{change_id}/acknowledge")
+def story_bible_ack_change(project_id: str, change_id: str, payload: BibleAcknowledge):
+    return run(lambda: StoryBible(studio).acknowledge_change(
+        project_id, change_id, payload.expected_screenplay_revision))

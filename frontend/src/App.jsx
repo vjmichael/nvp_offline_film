@@ -30,6 +30,17 @@ export default function App() {
   const [selectedModelId, setSelectedModelId] = useState('');
   const [modelServerPort, setModelServerPort] = useState('1234');
   const [drafts, setDrafts] = useState([]);
+  const [bible, setBible] = useState(null);
+  const [bibleEntityId, setBibleEntityId] = useState('');
+  const [bibleKind, setBibleKind] = useState('character');
+  const [bibleNewName, setBibleNewName] = useState('');
+  const [bibleRename, setBibleRename] = useState('');
+  const [bibleAlias, setBibleAlias] = useState('');
+  const [bibleFactKey, setBibleFactKey] = useState('');
+  const [bibleFactValue, setBibleFactValue] = useState('');
+  const [bibleFactScope, setBibleFactScope] = useState('global');
+  const [bibleSceneId, setBibleSceneId] = useState('');
+  const selectedBibleEntity = bible?.entities?.find((e) => e.id === bibleEntityId) || null;
   const [scriptHistory, setScriptHistory] = useState([]);
   const [writingStage, setWritingStage] = useState('logline');
   const approvedForStage = STORY_STAGE_ORDER.slice(0, STORY_STAGE_ORDER.indexOf(writingStage))
@@ -131,6 +142,88 @@ export default function App() {
     });
   }
 
+  async function refreshBible(projectId) {
+    const snapshot = await api('/projects/' + projectId + '/story-bible');
+    setBible(snapshot);
+    setBibleEntityId((old) => snapshot.entities.some((e) => e.id === old)
+      ? old : (snapshot.entities[0]?.id || ''));
+  }
+
+  function createBibleEntity() {
+    action(async () => {
+      if (!bibleNewName.trim()) throw new Error('Enter a character, location, prop or event name.');
+      const added = await api('/projects/' + project.id + '/story-bible/entities', 'POST', {
+        kind: bibleKind, name: bibleNewName,
+      });
+      await refreshBible(project.id);
+      setBibleEntityId(added.id);
+      setBibleNewName('');
+      setNotice('Story Bible entry saved. Its identity survives renaming.');
+    });
+  }
+
+  function updateBibleEntity(kind) {
+    action(async () => {
+      if (!selectedBibleEntity) throw new Error('Choose a Story Bible entry.');
+      const path = '/projects/' + project.id + '/story-bible/entities/' + selectedBibleEntity.id;
+      if (kind === 'rename') {
+        await api(path + '/name', 'PUT', {
+          name: bibleRename, expected_revision: selectedBibleEntity.revision,
+        });
+        setBibleRename('');
+      } else {
+        await api(path + '/aliases', 'POST', {
+          alias: bibleAlias, expected_revision: selectedBibleEntity.revision,
+        });
+        setBibleAlias('');
+      }
+      await refreshBible(project.id);
+    });
+  }
+
+  function proposeBibleFact() {
+    action(async () => {
+      if (!selectedBibleEntity) throw new Error('Choose a Story Bible entry.');
+      await api('/projects/' + project.id + '/story-bible/entities/' + selectedBibleEntity.id + '/facts',
+        'POST', {key: bibleFactKey, value: bibleFactValue, scope: bibleFactScope});
+      await refreshBible(project.id);
+      setBibleFactValue('');
+      setNotice('New fact proposed. You must explicitly approve it before it becomes canon.');
+    });
+  }
+
+  function decideBibleFact(fact, decision, replacesFactId = null) {
+    action(async () => {
+      if (!selectedBibleEntity) throw new Error('Choose a Story Bible entry.');
+      if (replacesFactId && !window.confirm('Replace this previously approved fact? The original is retained in history.')) return;
+      await api('/projects/' + project.id + '/story-bible/facts/' + fact.id + '/decision', 'POST', {
+        decision, expected_entity_revision: selectedBibleEntity.revision,
+        replaces_fact_id: replacesFactId,
+      });
+      await refreshBible(project.id);
+      setNotice(decision === 'accept' ? 'Fact accepted into the Story Bible.' : 'Proposed fact rejected.');
+    });
+  }
+
+  function linkBibleScene() {
+    action(async () => {
+      if (!selectedBibleEntity || !bibleSceneId) throw new Error('Choose an entry and a screenplay scene.');
+      await api('/projects/' + project.id + '/story-bible/entities/' + selectedBibleEntity.id + '/scene-links',
+        'POST', {scene_id: bibleSceneId, expected_entity_revision: selectedBibleEntity.revision});
+      await refreshBible(project.id);
+      setNotice('Scene reference recorded. Changes to that scene will be flagged.');
+    });
+  }
+
+  function reviewBibleChange(changeId) {
+    action(async () => {
+      await api('/projects/' + project.id + '/story-bible/changes/' + changeId + '/acknowledge',
+        'POST', {expected_screenplay_revision: project.revision});
+      await refreshBible(project.id);
+      setNotice('Canon change marked as reviewed. No screenplay or shot was changed.');
+    });
+  }
+
   function decideWriting(decision) {
     action(async () => {
       if (!selectedDraft) throw Error('Choose a saved draft first.');
@@ -151,6 +244,19 @@ export default function App() {
       }
     });
   }
+
+  useEffect(() => {
+    if (!project?.id || tab !== 'bible') return;
+    let active = true;
+    api('/projects/' + project.id + '/story-bible')
+      .then((snapshot) => { if (active) {
+        setBible(snapshot);
+        setBibleEntityId((old) => snapshot.entities.some((e) => e.id === old)
+          ? old : (snapshot.entities[0]?.id || ''));
+      } })
+      .catch((error) => { if (active) setError(error.message); });
+    return () => { active = false; };
+  }, [project?.id, tab, project?.revision]);
 
   function create() {
     action(async () => {
@@ -271,8 +377,9 @@ export default function App() {
         <nav className="tabs">
           <button className={tab === 'develop' ? 'active' : ''} onClick={() => setTab('develop')}>1 · Develop the idea</button>
           <button className={tab === 'story' ? 'active' : ''} onClick={() => setTab('story')}>2 · Screenplay</button>
-          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>3 · Plan scenes</button>
-          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>4 · Make the film</button>
+          <button className={tab === 'bible' ? 'active' : ''} onClick={() => setTab('bible')}>3 · Story Bible</button>
+          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>4 · Plan scenes</button>
+          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>5 · Make the film</button>
         </nav>
         {tab === 'develop' && <div className="columns">
           <section className="card">
@@ -401,6 +508,88 @@ export default function App() {
             </div>)}
             {unsaved && <p className="fineprint">Save or discard your unsaved screenplay edits before restoring a version.</p>}
             <p className="fineprint">This is simple screenplay extraction, not AI understanding of your story.</p>
+          </section>
+        </div>}
+        {tab === 'bible' && <div className="columns">
+          <section className="card">
+            <h2>People, places, props and events</h2>
+            <p className="muted">Give each recurring story element a stable identity. Screenplay mentions are suggestions, not automatically approved facts.</p>
+            <label>Entry type
+              <select value={bibleKind} onChange={(e) => setBibleKind(e.target.value)}>
+                <option value="character">Character</option>
+                <option value="location">Location</option>
+                <option value="prop">Prop</option>
+                <option value="event">Story event</option>
+              </select>
+            </label>
+            <label>Name<input maxLength={150} value={bibleNewName} onChange={(e) => setBibleNewName(e.target.value)}
+              placeholder="Mara, the family farmhouse, the silver key..." /></label>
+            <button className="secondary" disabled={busy || !bibleNewName.trim()} onClick={createBibleEntity}>Add to Story Bible</button>
+            <h3>Saved entries</h3>
+            {(bible?.entities || []).length === 0 && <p className="muted">No approved story identities yet. Add a character or location to begin.</p>}
+            {(bible?.entities || []).map((item) => <button key={item.id}
+              className={'scene-item ' + (bibleEntityId === item.id ? 'active' : '')}
+              onClick={() => { setBibleEntityId(item.id); setBibleFactKey(''); setBibleFactValue(''); }}>
+              <small>{item.kind} · revision {item.revision}</small>
+              <strong>{item.name}</strong>
+              <span>{item.facts.filter((f) => f.status === 'accepted').length} approved fact(s) · {item.scene_links.length} scene link(s)</span>
+            </button>)}
+          </section>
+          <section className="card">
+            <h2>{selectedBibleEntity?.name || 'Choose an entry'}</h2>
+            {selectedBibleEntity && <>
+              <p className="fineprint">{selectedBibleEntity.kind} · stable ID {selectedBibleEntity.id}</p>
+              <label>Rename (keeps old name as an alias)
+                <input maxLength={150} value={bibleRename} onChange={(e) => setBibleRename(e.target.value)} />
+              </label>
+              <button className="secondary" disabled={busy || !bibleRename.trim()} onClick={() => updateBibleEntity('rename')}>Rename</button>
+              <label>Add another name or nickname
+                <input maxLength={150} value={bibleAlias} onChange={(e) => setBibleAlias(e.target.value)} />
+              </label>
+              <button className="secondary" disabled={busy || !bibleAlias.trim()} onClick={() => updateBibleEntity('alias')}>Add alias</button>
+              {selectedBibleEntity.aliases.length > 0 && <p className="fineprint">Aliases: {selectedBibleEntity.aliases.join(', ')}</p>}
+              <h3>Story facts</h3>
+              <p className="fineprint">Key is a short snake_case label such as eye_color or owns_key. Use separate time scopes for changes that happen during the story.</p>
+              <label>Fact key<input value={bibleFactKey} maxLength={64} onChange={(e) => setBibleFactKey(e.target.value)} placeholder="eye_color" /></label>
+              <label>Fact value<textarea rows={2} maxLength={2000} value={bibleFactValue} onChange={(e) => setBibleFactValue(e.target.value)} /></label>
+              <label>Timeline/context
+                <input maxLength={96} value={bibleFactScope} onChange={(e) => setBibleFactScope(e.target.value)} placeholder="global or after_crash" />
+              </label>
+              <button className="secondary" disabled={busy || !bibleFactKey || !bibleFactValue.trim()} onClick={proposeBibleFact}>Propose fact</button>
+              {selectedBibleEntity.facts.map((fact) => {
+                const previous = selectedBibleEntity.facts.find((f) =>
+                  f.status === 'accepted' && f.fact_key === fact.fact_key && f.story_scope === fact.story_scope);
+                return <div key={fact.id} className="scene-item">
+                  <small>{fact.status} · {fact.fact_key} · {fact.story_scope}</small>
+                  <strong>{fact.fact_value}</strong>
+                  {fact.status === 'proposed' && <div className="actions">
+                    <button className="secondary" disabled={busy} onClick={() => decideBibleFact(fact, 'accept', previous?.id || null)}>
+                      {previous ? 'Replace approved fact' : 'Approve fact'}
+                    </button>
+                    <button className="secondary" disabled={busy} onClick={() => decideBibleFact(fact, 'reject')}>Reject</button>
+                  </div>}
+                </div>;
+              })}
+              <h3>Link to a screenplay scene</h3>
+              <label>Referenced scene<select value={bibleSceneId} onChange={(e) => setBibleSceneId(e.target.value)}>
+                <option value="">Choose an active scene</option>
+                {project.scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.number}. {scene.heading}</option>)}
+              </select></label>
+              <button className="secondary" disabled={busy || !bibleSceneId} onClick={linkBibleScene}>Link or refresh scene reference</button>
+              {selectedBibleEntity.scene_links.map((link) => <p className="fineprint" key={link.id}>{link.scene_heading} · recorded at screenplay revision {link.screenplay_revision}</p>)}
+            </>}
+            <h3>Continuity impact report</h3>
+            <p className="fineprint">{bible?.continuity?.limitations || 'Checks are limited to approved facts and linked screenplay scenes.'}</p>
+            <p className="muted">{bible?.continuity?.unreviewed_count || 0} possible impact(s) to review</p>
+            {(bible?.continuity?.issues || []).map((issue, i) => <div className="scene-item" key={issue.change_id || issue.fact_id || issue.scene_id + '-' + i}>
+              <small>{issue.type.replaceAll('_', ' ')}</small>
+              <strong>{issue.entity_name}</strong>
+              {issue.scene_id && <span>Scene: {issue.stored_heading || issue.current_heading || issue.scene_id}</span>}
+              {issue.shot_ids?.length > 0 && <span>Existing shot IDs: {issue.shot_ids.join(', ')}</span>}
+              {issue.affected_scenes?.length > 0 && <span>Affected scene references: {issue.affected_scenes.map((s) => s.scene_id).join(', ')}</span>}
+              {issue.change_id && <button className="secondary" disabled={busy} onClick={() => reviewBibleChange(issue.change_id)}>Mark canon impact reviewed</button>}
+            </div>)}
+            <button className="secondary" disabled={busy} onClick={() => action(async () => refreshBible(project.id))}>Refresh impact report</button>
           </section>
         </div>}
         {tab === 'scenes' && <div className="columns">
