@@ -79,13 +79,13 @@ Suggested workflows: idea_to_script; script_to_scene; scene_to_shots;
 shots_to_edit; edit_to_export.
 
 Suggested tool families (IDs are placeholders, NOT accepted tool definitions):
-- nvp.story.propose: host model inference, creates a proposal only.
-- nvp.project.read: read authorized film project data.
-- nvp.project.commit: explicit revisioned project write.
-- nvp.scene.layout: bounded geometry/scene-generation worker.
-- nvp.performance.animate: supervised animation worker.
-- nvp.render.shot: supervised render worker.
-- nvp.edit.export: supervised edit/audio/export worker.
+- nvp.film.story.propose: host model inference, creates a proposal only.
+- nvp.film.project.read: read authorized film project data.
+- nvp.film.project.commit: explicit revisioned project write.
+- nvp.film.scene.layout: bounded geometry/scene-generation worker.
+- nvp.film.performance.animate: supervised animation worker.
+- nvp.film.render.shot: supervised render worker.
+- nvp.film.edit.export: supervised edit/audio/export worker.
 
 Actual registration must use the host's then-current contract version,
 approved Protobuf input/output codecs, exact ToolEffect classifications,
@@ -148,3 +148,5 @@ Develop the film pipeline independently; integrate via Lu's generic
 Workspace interfaces when those are verified. GitHub is a repository and
 milestone record only, not the development hub. Do not merge into alpha
 or change Lu core to special-case NVP.
+
+Lu registry compatibility: all declared tools, panels, and workflow IDs must begin with the `nvp.film.` namespace. The actual Lu host remains authoritative over approved IDs, Protobuf types, effect classes and grants.

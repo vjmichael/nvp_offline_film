@@ -76,3 +76,5 @@ No Rust toolchain exists in this authoring environment. Mark the Rust test
   implemented. Do not hook the current independent FastAPI server into Lu.
 - Test real Windows worker containment + Broker + revocation before enabling
   untrusted media-render workers, then first actual film render.
+
+Lu registry compatibility: module ID `nvp.film`; every tool/panel/workflow ID must start with `nvp.film.`. The Lu-side smoke fixture enforces instance ownership and independent policy. The port has no host-issued credentials of its own.
