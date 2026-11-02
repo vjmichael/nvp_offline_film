@@ -1,3 +1,22 @@
+# NVP — A personal film-making pipeline
+
+**Product direction (November 2026):** NVP is for *one person with an idea*,
+including someone who has never written a screenplay or made a film. Its purpose
+is to help that person create their own movie through a guided, offline-first
+workflow. Studio terminology is optional, the creator retains final control,
+and AMD/NVIDIA/CPU support is a design requirement.
+
+**Current working foundation:** local project storage, basic screenplay scene
+breakdown, cast/location summaries, editable shot ideas, and durable approval
+records. **Not yet connected:** AI screenwriting, 3D production, animation,
+TTS, rendering, or video export. See [foundation runbook](docs/FOUNDATION_RUNBOOK.md)
+and [design contract](docs/SOLO_CREATOR_DIRECTION.md).
+
+The original project description, development history and proprietary terms
+remain below.
+
+---
+
 # nvp_offline_film
 The neural virtual production (NVP) is a AI coded film studio utilizing a SSM hybrid combining a VLM to realize serious film production. The goal of the creation of a NVP that features data accuracy, consistency and a production bible was made for serious AI film making. The NVP will be an offline model utiling a SSM-VLM and other tools. The NVP has files that will enforce certain rules to ensure consistency. The NVP relies on the demployment of AI agents to perform certain roles like director (orchestrator), DP (director of photography), acting coach, script supervisor, asset management and etc. I have worked on it and may continue to work on it. It features asynchronous process with scaling in mind and potential deployment into a distributed computing environment utilizing interconnected mutlicore and multi-gpu machines.
 
