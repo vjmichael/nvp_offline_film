@@ -18,7 +18,7 @@ must be able to choose affordable hardware and accept slower rendering.
 
 ## Candidate paths (not yet integrated)
 - Local LLM: llama.cpp Vulkan backend on supported AMD/Windows systems;
-  CPU fallback. Lu integration may be optional later.
+  CPU fallback. Production inference is Lu-managed and shared; the existing separate NVP HTTP model adapter remains a temporary testing harness only.
 - 3D rendering: Blender EEVEE or Cycles with supported AMD HIP devices;
   CPU rendering when needed. Unreal remains an optional provider.
 - Lip sync: CPU phoneme-to-viseme baseline; advanced facial generation

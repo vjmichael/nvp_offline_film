@@ -6,6 +6,16 @@ is to help that person create their own movie through a guided, offline-first
 workflow. Studio terminology is optional, the creator retains final control,
 and AMD/NVIDIA/CPU support is a design requirement.
 
+**Canonical product architecture:** NVP is the **Film/NVP DLC Workspace
+for Lu**, not a second standalone AI application. Lu hosts model loading,
+inference, the Workspace lifecycle, native tools and Protobuf IPC, security,
+resource admission and supervised workers. NVP retains its specialized
+screenplay, film production, continuity, shot/editing interface and project
+data. This repository is the source for that DLC, and the current Python/React
+standalone entrypoint is a **development harness only**. It must not be
+shipped as a separate NVP consumer installer. See
+[Lu DLC integration contract](docs/LU_DLC_WORKSPACE_CONTRACT.md).
+
 **Current working foundation:** local project storage, basic screenplay scene
 breakdown, cast/location summaries, editable shot ideas, revision recovery,
 and creator-reviewed story drafts. A local OpenAI-compatible writing model can

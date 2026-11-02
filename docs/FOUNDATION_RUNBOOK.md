@@ -1,3 +1,8 @@
+> **PRODUCT ARCHITECTURE CORRECTION (2026-11-02):** NVP is an optional Lu
+> Film Workspace DLC. This standalone Python/React runbook is for isolated
+> development tests only, not a consumer installation or another Lu app.
+> See the Lu DLC contract in docs/LU_DLC_WORKSPACE_CONTRACT.md.
+
 # NVP foundation: local development and test runbook
 
 ## What works now

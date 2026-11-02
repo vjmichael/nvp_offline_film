@@ -1,3 +1,8 @@
+> **Host boundary:** Production NVP is Lu's optional Film/NVP DLC Workspace.
+> NVP owns film-specific project and scene data; Lu owns inference and
+> authorized tool/worker execution. The existing local AI server is a
+> temporary test harness, not a separate production runtime.
+
 # NVP idea → screenplay ↔ video contract (2026-11-02)
 
 ## Product identity

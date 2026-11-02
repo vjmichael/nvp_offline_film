@@ -18,8 +18,7 @@ performs technical production work, and retains the creator's authority.
    which require external dependencies, and which are future work.
 7. **Safe iterative production:** changes have scopes, checkpoints, rollback and receipts.
 8. **Simple UI by default:** a guided flow; expert controls only when requested.
-9. **One human installer eventually:** packaging must avoid requiring the creator
-   to install Python, Node, CUDA, Unreal, or separate services by hand.
+9. **One Lu DLC installation eventually:** the user installs Lu and enables the optional NVP Workspace through Lu's add-on lifecycle. NVP must not require a separate model server, desktop installer, Python, Node, CUDA or Docker setup for normal use.
 
 ## Intended experience
 Idea -> guided story/storyboard -> screenplay -> characters and locations -> blocking and
@@ -39,7 +38,7 @@ This is a destination, **not** the current implementation state.
   regeneration and reload.
 - **Backends:** Blender-first candidate for open rendering, optional Unreal, optional
   generative video. Runtime capability probing avoids vendor lock-in.
-- **Lu integration:** later optional NVP workspace/DLC, not an NVP dependency.
+- **Lu integration — product requirement:** NVP is the Film/NVP DLC Workspace hosted by Lu, not an independent consumer application. Lu owns the loaded models, inference runtime, registration, scoped permissions, native Protobuf IPC, worker admission and effect journal. The existing Python/React app is a temporary development harness, not the production launch path.
 - **GitHub:** repository and milestone record, not the production runner or development hub.
 
 ## Foundation build (this branch)

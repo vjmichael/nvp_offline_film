@@ -1,3 +1,7 @@
+> **Model ownership:** Compare Gemma and Qwen using the existing development
+> bakeoff, but in production invoke the chosen model through Lu's shared
+> inference manager. There is no independent NVP model loader.
+
 # NVP Model Bakeoff — Existing Local Models (November 2, 2026)
 
 **Do not download another model yet.** Compare the creator's existing quantized models:
