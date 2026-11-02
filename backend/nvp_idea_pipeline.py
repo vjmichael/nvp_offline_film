@@ -15,6 +15,8 @@ from backend.nvp_studio import Studio, parse_screenplay, SCENE_HEADING
 
 from backend.nvp_creative_schema import STAGES, MAX_DRAFT, MAX_NOTES
 from backend.nvp_story_context import build_story_messages
+from backend.nvp_story_bible import StoryBible
+from backend.nvp_bible_context import canon_snapshot
 
 
 def timestamp() -> str:
@@ -78,6 +80,7 @@ class IdeaPipeline:
     def __init__(self, studio: Studio, llm=None):
         self.studio = studio
         self.llm = llm
+        StoryBible(studio)  # schema only; film bible remains independent from model transport
         with self.studio._connection() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS creative_drafts (
                 id TEXT PRIMARY KEY,
@@ -96,6 +99,13 @@ class IdeaPipeline:
             db.execute("""CREATE TABLE IF NOT EXISTS creative_draft_contexts (
                 draft_id TEXT PRIMARY KEY REFERENCES creative_drafts(id) ON DELETE CASCADE,
                 upstream_json TEXT NOT NULL
+            )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS creative_draft_bible_contexts (
+                draft_id TEXT PRIMARY KEY REFERENCES creative_drafts(id) ON DELETE CASCADE,
+                canon_digest TEXT NOT NULL,
+                scene_id TEXT,
+                facts_total INTEGER NOT NULL,
+                facts_included INTEGER NOT NULL
             )""")
 
     @staticmethod
@@ -123,6 +133,10 @@ class IdeaPipeline:
             selected = self._approved_upstream(db, project_id, stage)
             return [self._annotate(db, item) for item in selected]
 
+    def bible_context(self, project_id: str, scene_id: str | None = None) -> dict:
+        with self.studio._connection() as db:
+            return canon_snapshot(db, project_id, scene_id)
+
     def _annotate(self, db, row: dict) -> dict:
         result = dict(row)
         stored = db.execute("SELECT upstream_json FROM creative_draft_contexts WHERE draft_id=?",
@@ -130,14 +144,31 @@ class IdeaPipeline:
         if stored is None:
             result.update(context_status="legacy_untracked", changed_upstream_stages=[],
                           upstream_sources=[])
-            return result
-        sources = json.loads(stored["upstream_json"])
-        current = self._source_ids(self._approved_upstream(db, result["project_id"], result["stage"]))
-        recorded = self._source_ids(sources)
-        changed = [stage for stage in STAGES if stage in set(current) | set(recorded)
-                   and current.get(stage) != recorded.get(stage)]
-        result.update(context_status="needs_review" if changed else "current",
-                      changed_upstream_stages=changed, upstream_sources=sources)
+        else:
+            sources = json.loads(stored["upstream_json"])
+            current = self._source_ids(self._approved_upstream(db, result["project_id"], result["stage"]))
+            recorded = self._source_ids(sources)
+            changed = [stage for stage in STAGES if stage in set(current) | set(recorded)
+                       and current.get(stage) != recorded.get(stage)]
+            result.update(context_status="needs_review" if changed else "current",
+                          changed_upstream_stages=changed, upstream_sources=sources)
+        bible = db.execute("SELECT canon_digest,scene_id,facts_total,facts_included "
+                           "FROM creative_draft_bible_contexts WHERE draft_id=?",
+                           (result["id"],)).fetchone()
+        if bible is None:
+            result.update(bible_context_status="legacy_untracked", bible_scene_id=None,
+                          bible_facts_total=None, bible_facts_included=None)
+        else:
+            try:
+                current_bible = canon_snapshot(db, result["project_id"], bible["scene_id"])
+                bible_status = ("current" if current_bible["digest"] == bible["canon_digest"]
+                                else "needs_review")
+            except (KeyError, RuntimeError):
+                bible_status = "needs_review"
+            result.update(bible_context_status=bible_status,
+                          bible_scene_id=bible["scene_id"],
+                          bible_facts_total=bible["facts_total"],
+                          bible_facts_included=bible["facts_included"])
         return result
 
     def list(self, project_id: str):
@@ -157,7 +188,8 @@ class IdeaPipeline:
                 raise ValueError("A screenplay draft needs at least one INT./EXT. scene heading")
             parse_screenplay(content)
 
-    def create(self, project_id: str, stage: str, content: str, instructions: str = "", origin: str = "creator", expected_project_revision: int | None = None, expected_upstream: list[dict] | None = None):
+    def create(self, project_id: str, stage: str, content: str, instructions: str = "", origin: str = "creator", expected_project_revision: int | None = None, expected_upstream: list[dict] | None = None,
+               expected_bible_digest: str | None = None, bible_scene_id: str | None = None):
         self._check(stage, content, instructions)
         if origin not in ("creator", "local_ai"):
             raise ValueError("Unknown draft origin")
@@ -171,6 +203,9 @@ class IdeaPipeline:
             if expected_project_revision is not None and revision_now["revision"] != expected_project_revision:
                 raise RuntimeError("Screenplay changed while the AI was generating; discard and retry")
             upstream = self._approved_upstream(db, project_id, stage)
+            bible = canon_snapshot(db, project_id, bible_scene_id)
+            if expected_bible_digest is not None and bible["digest"] != expected_bible_digest:
+                raise RuntimeError("Approved Story Bible changed while AI was generating; discard and retry")
             if expected_upstream is not None and self._source_ids(upstream) != self._source_ids(expected_upstream):
                 raise RuntimeError("Accepted story decisions changed while the AI was generating; discard and retry")
             db.execute("""INSERT INTO creative_drafts
@@ -180,6 +215,11 @@ class IdeaPipeline:
             db.execute("INSERT INTO creative_draft_contexts (draft_id,upstream_json) VALUES (?,?)",
                        (draft_id,json.dumps([{ "stage": r["stage"], "id": r["id"] }
                                              for r in upstream], sort_keys=True)))
+            db.execute("INSERT INTO creative_draft_bible_contexts "
+                       "(draft_id,canon_digest,scene_id,facts_total,facts_included) "
+                       "VALUES (?,?,?,?,?)",
+                       (draft_id, bible["digest"], bible_scene_id,
+                        bible["facts_total"], bible["facts_included"]))
         return self.get(project_id, draft_id)
 
     def get(self, project_id: str, draft_id: str):
@@ -224,8 +264,20 @@ class IdeaPipeline:
                     or project["revision"] != row["project_revision"]):
                 raise RuntimeError("Screenplay changed since this draft; reload and review before applying")
             if decision != "discard":
-                if any(self._annotate(db, source)["context_status"] == "needs_review"
-                       for source in self._approved_upstream(db, project_id, row["stage"])):
+                bible_row = db.execute("SELECT canon_digest,scene_id FROM creative_draft_bible_contexts "
+                                       "WHERE draft_id=?", (draft_id,)).fetchone()
+                if bible_row is not None:
+                    try:
+                        latest_bible = canon_snapshot(db, project_id, bible_row["scene_id"])
+                    except (KeyError, RuntimeError) as exc:
+                        raise RuntimeError("Story Bible scene context changed; refresh before approval") from exc
+                    if latest_bible["digest"] != bible_row["canon_digest"]:
+                        raise RuntimeError("Story Bible canon changed; refresh and revise the draft before approval")
+                elif canon_snapshot(db, project_id)["facts_total"]:
+                    raise RuntimeError("Legacy draft lacks Story Bible provenance; recreate and review before approval")
+                if any(self._annotate(db, source)[field] == "needs_review"
+                       for source in self._approved_upstream(db, project_id, row["stage"])
+                       for field in ("context_status", "bible_context_status")):
                     raise RuntimeError("Earlier accepted story stages need review before approving this draft")
                 metadata = db.execute("SELECT upstream_json FROM creative_draft_contexts WHERE draft_id=?",
                                       (draft_id,)).fetchone()
@@ -256,9 +308,13 @@ class IdeaPipeline:
             raise ValueError("Unknown writing stage or instructions too long")
         project = self.studio.get_project(project_id)
         approved = self.approved_story(project_id, stage)
-        if any(source["context_status"] == "needs_review" for source in approved):
+        if any(source[field] == "needs_review" for source in approved
+               for field in ("context_status", "bible_context_status")):
             raise RuntimeError("Earlier accepted story stages are out of date; review those decisions before generating this stage")
-        system, user = build_story_messages(project, stage, instructions, scene_id, approved)
+        bible = self.bible_context(project_id, scene_id)
+        system, user = build_story_messages(project, stage, instructions, scene_id, approved,
+                                            bible_context=bible)
         text = (self.llm or LocalScriptModel()).complete(system, user)
         return self.create(project_id, stage, text, instructions, "local_ai",
-                           project["revision"], expected_upstream=approved)
+                           project["revision"], expected_upstream=approved,
+                           expected_bible_digest=bible["digest"], bible_scene_id=scene_id)

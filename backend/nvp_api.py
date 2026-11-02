@@ -123,6 +123,11 @@ def creative_models(port: int | None = None):
     return discover_models(port)
 
 
+@app.get("/api/projects/{project_id}/creative/bible-context")
+def creative_bible_context(project_id: str, scene_id: str | None = None):
+    return run(lambda: IdeaPipeline(studio).bible_context(project_id, scene_id))
+
+
 @app.get("/api/projects/{project_id}/approved-story")
 def approved_story(project_id: str, stage: str):
     return {"stage": stage, "approved": run(lambda: IdeaPipeline(studio).approved_story(project_id, stage))}
