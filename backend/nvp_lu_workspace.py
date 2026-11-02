@@ -1,4 +1,11 @@
-"""NVP's first Lu Workspace port: film logic without a second model runtime.
+"""Development-only NVP film prompt port, not the native Lu Protobuf client.
+
+The real Lu-owned core bridge is in vjmichael/jan_alt:
+src-tauri/lu-core/src/nvp_film_bridge.rs. This Python port remains a test
+harness to evaluate film-writing prompt/revision behavior while the Tauri
+Workspace UI/transport is under development. No consumer NVP server ships.
+
+NVP's first Lu Workspace port: film logic without a second model runtime.
 
 The Lu host must supply a real, host-issued opaque scope and an implementation
 of LuFilmHostPort; this module is neither a DLC installer nor a credential

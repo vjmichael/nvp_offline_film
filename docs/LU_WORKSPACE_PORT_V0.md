@@ -1,8 +1,14 @@
 # NVP ↔ Lu host interface: first executable seam
 
 **Milestone:** NVP-HOST-00 (initial port and contract fixture), 2026-11-02.
-**Status:** NVP Python integration tested with fake Lu broker; Lu Rust
-workspace fixture committed but not compiled; **no real Lu-to-NVP IPC**.
+**Status:** NVP Python integration tested with a fake Lu port (32 local
+tests passed). The **real Lu-owned Rust core bridge is now implemented in
+isolated Lu draft PR #107**: typed Protobuf project read/proposal writes,
+live Workspace + owner checks, shared loaded-model inference, streaming,
+cancellation and durable proposal journal. Its 13 Rust tests are committed
+but NOT compiled or executed, and the Tauri desktop has NOT mounted NVP.
+The Python port below remains a temporary film-prompt/testing harness,
+NOT an end-to-end Lu IPC client.
 
 ## Scope of this slice
 
@@ -78,3 +84,32 @@ No Rust toolchain exists in this authoring environment. Mark the Rust test
   untrusted media-render workers, then first actual film render.
 
 Lu registry compatibility: module ID `nvp.film`; every tool/panel/workflow ID must start with `nvp.film.`. The Lu-side smoke fixture enforces instance ownership and independent policy. The port has no host-issued credentials of its own.
+
+
+## Lu native bridge v1 (implementation added 2026-11-02)
+
+**Lu source:** https://github.com/vjmichael/jan_alt/pull/107
+**Host implementation:** src-tauri/lu-core/src/nvp_film_bridge.rs
+**Host source of truth:** src-tauri/lu-core/proto/lu/v1/core.proto
+
+Typed requests and receipts:
+- NvpProjectReadRequest -> NvpProjectSnapshot (project derived from trusted
+  Lu scope, never a WebView-selected host path)
+- NvpGenerateProposalRequest -> sequence of NvpStreamFrame {text,
+  proposal receipt, stopped/error}; model is already loaded by Lu
+- NvpSaveProposalRequest -> NvpProposalReceipt, status permanently "proposed"
+  until a separate creator-approved script update is implemented
+- Stream cancellation uses the same host-issued scope and generation ID;
+  the Lu supervisor itself receives the cancellation
+
+The current Python NvpLuWorkspace class still tests separate abstract
+read/generate/save calls and must not be mistaken for a native IPC client.
+Production NVP will use the Lu-owned Protobuf transport and a host-vetted
+Workspace UI adapter; **no NVP Python service, new model server, or separate
+consumer installer** is required. A future UI bridge may project safe host
+events into JSON while retaining Protobuf inside Lu.
+
+**Open blockers:** Rust compile/test, real GGUF stream with physical Windows
+Lu, host-attested Tauri window/profile registration, signed external
+Workspace enable/install, explicit durable effect grants and audit, and
+a Lu Workspace UI surface. NVP movie rendering comes after these.

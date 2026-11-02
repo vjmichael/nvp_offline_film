@@ -150,3 +150,21 @@ milestone record only, not the development hub. Do not merge into alpha
 or change Lu core to special-case NVP.
 
 Lu registry compatibility: all declared tools, panels, and workflow IDs must begin with the `nvp.film.` namespace. The actual Lu host remains authoritative over approved IDs, Protobuf types, effect classes and grants.
+
+
+## Implementation checkpoint: Lu native bridge v1 (2026-11-02)
+
+Lu draft PR #107 now contains a real host-owned Rust bridge, built on Lu's
+generic DLC containment branch. It uses Lu's registered Workspace instances,
+HostSessionRegistry/OwnershipStore, native Protobuf, PolicyEngine-compatible
+per-operation authorization, existing TrustedInferenceSupervisor, token stream
+and task cancellation, SQLite proposal-only persistence and EffectJournal.
+The Lu desktop has a trusted Rust-only accessor to its current supervisor,
+but **no NVP Workspace has been mounted in Tauri** and no signed Windows
+external DLC has been installed or tested.
+
+Do not mix up implementation with runtime acceptance: 13 new Rust tests are
+present but not executed, while the existing NVP-side Python tests (32)
+passed locally with simulated Lu host operations. Film/NVP remains a DLC
+and Lu Core is not to absorb film production logic. The Rust implementation
+is an integration branch subject to security/code review before productization.
