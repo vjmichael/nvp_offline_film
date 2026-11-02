@@ -24,6 +24,8 @@ export default function App() {
   const [startMode, setStartMode] = useState('idea');
   const [openingScript, setOpeningScript] = useState('');
   const [creativeStatus, setCreativeStatus] = useState(null);
+  const [localModelStatus, setLocalModelStatus] = useState(null);
+  const [selectedModelId, setSelectedModelId] = useState('');
   const [drafts, setDrafts] = useState([]);
   const [scriptHistory, setScriptHistory] = useState([]);
   const [writingStage, setWritingStage] = useState('logline');
@@ -60,11 +62,15 @@ export default function App() {
   }
 
   async function refreshCreative(projectId) {
-    const [status, list] = await Promise.all([
+    const [status, list, modelInfo] = await Promise.all([
       api('/creative/status'),
-      api('/projects/' + projectId + '/creative-drafts')
+      api('/projects/' + projectId + '/creative-drafts'),
+      api('/creative/models')
     ]);
     setCreativeStatus(status);
+    setLocalModelStatus(modelInfo);
+    setSelectedModelId((prior) => modelInfo.models.some((item) => item.id === prior)
+      ? prior : (modelInfo.models[0]?.id || ''));
     setDrafts(list);
     setScriptHistory(await api('/projects/' + projectId + '/screenplay-history'));
   }
@@ -88,7 +94,9 @@ export default function App() {
 
   function generateWriting() {
     action(async () => {
+      if (!selectedModelId) throw new Error('Load a local model and refresh the list first.');
       const draft = await api('/projects/' + project.id + '/creative-drafts/generate', 'POST', {
+        model_id: selectedModelId,
         stage: writingStage, instructions: writingNotes, scene_id: writingSceneId || null
       });
       await refreshCreative(project.id);
@@ -261,6 +269,23 @@ export default function App() {
           <section className="card">
             <h2>Develop your story</h2>
             <p className="muted">Work on as much or as little of the script as you want. Every AI suggestion is editable and waits for your approval.</p>
+            <label>Local writing model
+              <select value={selectedModelId} disabled={!localModelStatus?.models?.length}
+                onChange={(e) => setSelectedModelId(e.target.value)}>
+                {(!localModelStatus?.models?.length) && <option value="">No local model reported</option>}
+                {(localModelStatus?.models || []).map((model) => <option key={model.id} value={model.id}>
+                  {model.family_hint} — {model.id}
+                </option>)}
+              </select>
+            </label>
+            <div className="actions">
+              <button className="secondary" disabled={busy}
+                onClick={() => action(async () => {
+                  await refreshCreative(project.id);
+                  setNotice('Local model list refreshed. The server may still need to load the weights.');
+                })}>Refresh local models</button>
+            </div>
+            <p className="fineprint">{localModelStatus?.message || 'Checking for a local model server...'}</p>
             <label>What are we working on?
               <select value={writingStage} onChange={(e) => { setWritingStage(e.target.value); setSelectedDraft(null); setDraftText(''); }}>
                 <option value="logline">One-sentence movie idea</option>
@@ -282,11 +307,9 @@ export default function App() {
                 placeholder="Make the conversation tense but keep both characters sympathetic."/>
             </label>
             <div className="actions">
-              <button className="secondary" disabled={busy || !creativeStatus || creativeStatus.local_writer !== 'configured_unverified'} onClick={generateWriting}>Ask local AI to draft</button>
+              <button className="secondary" disabled={busy || !selectedModelId || localModelStatus?.state !== 'available'} onClick={generateWriting}>Ask selected local AI to draft</button>
             </div>
-            <p className="fineprint">{creativeStatus?.local_writer === 'configured_unverified'
-              ? 'Local AI endpoint configured, but not yet tested with a loaded model.'
-              : 'AI writing requires a locally running model, configured by the developer. You can still write and save drafts below.'}</p>
+            <p className="fineprint">NVP uses only the local model server. A model listed above is not necessarily loaded or tested. Drafts remain proposals until you approve them.</p>
             <label>Draft (write it yourself, edit AI output, or paste an existing draft)
               <textarea className="script" rows={16} value={draftText} maxLength={120000} onChange={(e) => setDraftText(e.target.value)}
                 placeholder={writingStage === 'screenplay' ? 'INT. HOME - NIGHT\n\nA door opens...' : 'Write your story idea here...'}/>
