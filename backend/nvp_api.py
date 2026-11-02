@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from backend.nvp_studio import Studio
 from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
+from backend.nvp_model_service import discover_models, writer_for
 
 app = FastAPI(title="NVP — Your movie, your way", version="0.3.0-creative-foundation")
 studio = Studio()
@@ -82,6 +83,7 @@ class NewCreativeDraft(BaseModel):
 
 
 class GenerateCreativeDraft(BaseModel):
+    model_id: str | None = Field(default=None, max_length=256)
     stage: str
     instructions: str = Field(default="", max_length=5000)
     scene_id: str | None = None
@@ -114,6 +116,11 @@ def creative_status():
     }
 
 
+@app.get("/api/creative/models")
+def creative_models():
+    return discover_models()
+
+
 @app.get("/api/projects/{project_id}/creative-drafts")
 def list_creative_drafts(project_id: str):
     return run(lambda: IdeaPipeline(studio).list(project_id))
@@ -128,7 +135,7 @@ def add_creative_draft(project_id: str, payload: NewCreativeDraft):
 @app.post("/api/projects/{project_id}/creative-drafts/generate", status_code=201)
 def generate_creative_draft(project_id: str, payload: GenerateCreativeDraft):
     try:
-        return run(lambda: IdeaPipeline(studio).generate(
+        return run(lambda: IdeaPipeline(studio, llm=(writer_for(payload.model_id) if payload.model_id else None)).generate(
             project_id, payload.stage, payload.instructions, payload.scene_id))
     except LocalModelUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
