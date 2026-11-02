@@ -45,7 +45,9 @@ def status():
     return {"status": "ready", "mode": "offline_planning", "gpu_required": False,
             "capabilities": {"project_storage": "ready", "script_breakdown": "basic_fountain",
                              "editable_shots": "ready", "local_llm": "not_connected",
-                             "3d_renderer": "not_connected", "voice": "not_connected"}}
+                             "3d_renderer": "not_connected", "voice": "not_connected",
+                             "3d_stage_planning": "deterministic_proxies_ready",
+                             "blender_export": "bpy_script_only_not_executed"}}
 
 
 @app.get("/api/projects")
@@ -461,3 +463,94 @@ def screenplay_review_decision(project_id: str, scene_id: str, suggestion_id: st
 @app.get("/api/projects/{project_id}/screenplay-review/history")
 def screenplay_review_history(project_id: str, scene_id: str | None = None, limit: int = 100):
     return run(lambda: ScreenplayContinuityReview(studio).history(project_id, scene_id, limit))
+
+# NVP-PROD-01: development-only deterministic 3D staging. This API never runs
+# Blender itself; it exports a reviewer-approved, self-contained bpy script.
+from backend.nvp_production_scene import ProductionScene
+
+
+class ProductionAssetInput(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    category: str
+    dimensions: list[float]
+    anchors: dict[str, list[float]] = Field(default_factory=dict)
+    license: str = Field(default="creator_procedural", max_length=200)
+
+
+class ProductionStageInput(BaseModel):
+    room: list[float] = Field(default_factory=lambda: [8, 6, 3])
+
+
+class ProductionInstanceInput(BaseModel):
+    asset_id: str
+    instance_id: str
+    expected_plan_revision: int = Field(ge=0)
+    wall: str | None = None
+    attachment: dict | None = None
+
+
+class ProductionRevisionInput(BaseModel):
+    expected_plan_revision: int = Field(ge=0)
+
+
+class ProductionSolveInput(ProductionRevisionInput):
+    max_nodes: int = Field(default=100000, ge=1, le=100000)
+
+
+@app.get("/api/projects/{project_id}/production/assets")
+def prod_list_assets(project_id: str):
+    return run(lambda: ProductionScene(studio).list_assets(project_id))
+
+
+@app.post("/api/projects/{project_id}/production/assets", status_code=201)
+def prod_create_asset(project_id: str, payload: ProductionAssetInput):
+    return run(lambda: ProductionScene(studio).create_asset(project_id, payload.model_dump()))
+
+
+@app.post("/api/projects/{project_id}/production/scenes/{scene_id}/stage", status_code=201)
+def prod_stage(project_id: str, scene_id: str, payload: ProductionStageInput):
+    return run(lambda: ProductionScene(studio).stage_scene(project_id, scene_id, payload.room))
+
+
+@app.get("/api/projects/{project_id}/production/scenes/{scene_id}")
+def prod_get_scene(project_id: str, scene_id: str):
+    return run(lambda: ProductionScene(studio).get_plan(project_id, scene_id))
+
+
+@app.post("/api/projects/{project_id}/production/scenes/{scene_id}/resync")
+def prod_resync_scene(project_id: str, scene_id: str, payload: ProductionRevisionInput):
+    return run(lambda: ProductionScene(studio).resync_scene(project_id, scene_id, payload.expected_plan_revision))
+
+
+@app.post("/api/projects/{project_id}/production/scenes/{scene_id}/instances")
+def prod_add_instance(project_id: str, scene_id: str, payload: ProductionInstanceInput):
+    return run(lambda: ProductionScene(studio).add_instance(
+        project_id, scene_id, payload.asset_id, payload.instance_id, payload.expected_plan_revision,
+        wall=payload.wall, attachment=payload.attachment))
+
+
+@app.post("/api/projects/{project_id}/production/scenes/{scene_id}/solve")
+def prod_solve(project_id: str, scene_id: str, payload: ProductionSolveInput):
+    return run(lambda: ProductionScene(studio).solve_scene(
+        project_id, scene_id, payload.expected_plan_revision, payload.max_nodes))
+
+
+@app.post("/api/projects/{project_id}/production/scenes/{scene_id}/approve")
+def prod_approve(project_id: str, scene_id: str, payload: ProductionRevisionInput):
+    return run(lambda: ProductionScene(studio).approve_scene(project_id, scene_id, payload.expected_plan_revision))
+
+
+@app.get("/api/projects/{project_id}/production/scenes/{scene_id}/manifest")
+def prod_manifest(project_id: str, scene_id: str):
+    return run(lambda: ProductionScene(studio).export_manifest(project_id, scene_id))
+
+
+@app.get("/api/projects/{project_id}/production/scenes/{scene_id}/blender-script")
+def prod_blender(project_id: str, scene_id: str):
+    return {"script": run(lambda: ProductionScene(studio).export_blender_script(project_id, scene_id)),
+            "execution": "not_started", "note": "Export only. Blender must be run separately by the creator."}
+
+
+@app.get("/api/projects/{project_id}/production/scenes/{scene_id}/history")
+def prod_history(project_id: str, scene_id: str):
+    return run(lambda: ProductionScene(studio).history(project_id, scene_id))
