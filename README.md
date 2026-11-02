@@ -1,5 +1,12 @@
 # NVP — A personal film-making pipeline
 
+> **Development focus (2026-11-02):** All Lu work is deferred until Lu v1.0.
+> NVP continues film-specific development independently, while retaining its
+> eventual Lu Film Workspace DLC product contract. This development branch
+> strengthens the creator-approved idea-to-screenplay chain and does not
+> change the Lu repository. See
+> [Creator-approved story context](docs/CREATOR_APPROVED_STORY_CONTEXT.md).
+
 **Product direction (November 2026):** NVP is for *one person with an idea*,
 including someone who has never written a screenplay or made a film. Its purpose
 is to help that person create their own movie through a guided, offline-first

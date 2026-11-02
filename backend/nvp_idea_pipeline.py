@@ -14,6 +14,7 @@ from urllib.request import Request, ProxyHandler, HTTPRedirectHandler, build_ope
 from backend.nvp_studio import Studio, parse_screenplay, SCENE_HEADING
 
 from backend.nvp_creative_schema import STAGES, MAX_DRAFT, MAX_NOTES
+from backend.nvp_story_context import build_story_messages
 
 
 def timestamp() -> str:
@@ -92,11 +93,57 @@ class IdeaPipeline:
                 updated_at TEXT NOT NULL
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS idx_creative_drafts_project ON creative_drafts(project_id,created_at)")
+            db.execute("""CREATE TABLE IF NOT EXISTS creative_draft_contexts (
+                draft_id TEXT PRIMARY KEY REFERENCES creative_drafts(id) ON DELETE CASCADE,
+                upstream_json TEXT NOT NULL
+            )""")
+
+    @staticmethod
+    def _approved_upstream(db, project_id: str, stage: str) -> list[dict]:
+        """Newest *creator-approved* decision for each earlier stage."""
+        sources = []
+        for upstream in STAGES[:STAGES.index(stage)]:
+            row = db.execute("""SELECT id,project_id,stage,content,edit_revision FROM creative_drafts
+                    WHERE project_id=? AND stage=? AND status='accepted'
+                    ORDER BY updated_at DESC,id DESC LIMIT 1""",
+                    (project_id, upstream)).fetchone()
+            if row is not None:
+                sources.append(dict(row))
+        return sources
+
+    @staticmethod
+    def _source_ids(rows: list[dict]) -> dict[str, str]:
+        return {row["stage"]: row["id"] for row in rows}
+
+    def approved_story(self, project_id: str, stage: str) -> list[dict]:
+        if stage not in STAGES:
+            raise ValueError("Unknown writing stage")
+        self.studio.get_project(project_id)
+        with self.studio._connection() as db:
+            selected = self._approved_upstream(db, project_id, stage)
+            return [self._annotate(db, item) for item in selected]
+
+    def _annotate(self, db, row: dict) -> dict:
+        result = dict(row)
+        stored = db.execute("SELECT upstream_json FROM creative_draft_contexts WHERE draft_id=?",
+                            (result["id"],)).fetchone()
+        if stored is None:
+            result.update(context_status="legacy_untracked", changed_upstream_stages=[],
+                          upstream_sources=[])
+            return result
+        sources = json.loads(stored["upstream_json"])
+        current = self._source_ids(self._approved_upstream(db, result["project_id"], result["stage"]))
+        recorded = self._source_ids(sources)
+        changed = [stage for stage in STAGES if stage in set(current) | set(recorded)
+                   and current.get(stage) != recorded.get(stage)]
+        result.update(context_status="needs_review" if changed else "current",
+                      changed_upstream_stages=changed, upstream_sources=sources)
+        return result
 
     def list(self, project_id: str):
         self.studio.get_project(project_id)
         with self.studio._connection() as db:
-            return [dict(row) for row in db.execute(
+            return [self._annotate(db, dict(row)) for row in db.execute(
                 "SELECT * FROM creative_drafts WHERE project_id=? ORDER BY created_at DESC,id DESC",
                 (project_id,)).fetchall()]
 
@@ -110,22 +157,29 @@ class IdeaPipeline:
                 raise ValueError("A screenplay draft needs at least one INT./EXT. scene heading")
             parse_screenplay(content)
 
-    def create(self, project_id: str, stage: str, content: str, instructions: str = "", origin: str = "creator", expected_project_revision: int | None = None):
+    def create(self, project_id: str, stage: str, content: str, instructions: str = "", origin: str = "creator", expected_project_revision: int | None = None, expected_upstream: list[dict] | None = None):
         self._check(stage, content, instructions)
         if origin not in ("creator", "local_ai"):
             raise ValueError("Unknown draft origin")
-        project = self.studio.get_project(project_id)
+        self.studio.get_project(project_id)
         draft_id, stamp = uuid.uuid4().hex, timestamp()
         with self.studio._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
             revision_now = db.execute("SELECT revision FROM projects WHERE id=?", (project_id,)).fetchone()
             if revision_now is None:
                 raise KeyError("Project not found")
             if expected_project_revision is not None and revision_now["revision"] != expected_project_revision:
                 raise RuntimeError("Screenplay changed while the AI was generating; discard and retry")
+            upstream = self._approved_upstream(db, project_id, stage)
+            if expected_upstream is not None and self._source_ids(upstream) != self._source_ids(expected_upstream):
+                raise RuntimeError("Accepted story decisions changed while the AI was generating; discard and retry")
             db.execute("""INSERT INTO creative_drafts
                 (id,project_id,stage,content,instructions,origin,project_revision,created_at,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?)""",
                 (draft_id,project_id,stage,content,instructions,origin,revision_now["revision"],stamp,stamp))
+            db.execute("INSERT INTO creative_draft_contexts (draft_id,upstream_json) VALUES (?,?)",
+                       (draft_id,json.dumps([{ "stage": r["stage"], "id": r["id"] }
+                                             for r in upstream], sort_keys=True)))
         return self.get(project_id, draft_id)
 
     def get(self, project_id: str, draft_id: str):
@@ -134,7 +188,7 @@ class IdeaPipeline:
                              (draft_id,project_id)).fetchone()
             if row is None:
                 raise KeyError("Creative draft not found")
-            return dict(row)
+            return self._annotate(db, dict(row))
 
     def edit(self, project_id: str, draft_id: str, content: str, expected_edit_revision: int):
         with self.studio._connection() as db:
@@ -156,6 +210,7 @@ class IdeaPipeline:
         if decision not in ("accept", "discard", "use_as_screenplay"):
             raise ValueError("Unknown draft decision")
         with self.studio._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT * FROM creative_drafts WHERE project_id=? AND id=?",
                              (project_id,draft_id)).fetchone()
             if row is None:
@@ -168,6 +223,17 @@ class IdeaPipeline:
             if (project["revision"] != expected_project_revision
                     or project["revision"] != row["project_revision"]):
                 raise RuntimeError("Screenplay changed since this draft; reload and review before applying")
+            if decision != "discard":
+                if any(self._annotate(db, source)["context_status"] == "needs_review"
+                       for source in self._approved_upstream(db, project_id, row["stage"])):
+                    raise RuntimeError("Earlier accepted story stages need review before approving this draft")
+                metadata = db.execute("SELECT upstream_json FROM creative_draft_contexts WHERE draft_id=?",
+                                      (draft_id,)).fetchone()
+                if metadata is not None:
+                    previous = self._source_ids(json.loads(metadata["upstream_json"]))
+                    current = self._source_ids(self._approved_upstream(db, project_id, row["stage"]))
+                    if previous != current:
+                        raise RuntimeError("Approved story context changed; review and regenerate this draft before accepting")
             if decision == "use_as_screenplay":
                 if row["stage"] != "screenplay":
                     raise ValueError("Only a screenplay draft can replace the screenplay")
@@ -189,28 +255,10 @@ class IdeaPipeline:
         if stage not in STAGES or len(instructions) > MAX_NOTES:
             raise ValueError("Unknown writing stage or instructions too long")
         project = self.studio.get_project(project_id)
-        if scene_id:
-            scene = next((s for s in project["scenes"] if s["id"] == scene_id), None)
-            if scene is None:
-                raise KeyError("Selected scene not found")
-            context = f"Selected scene ({scene['heading']}):\n{scene['text'][:12000]}"
-        else:
-            script = project["screenplay"]
-            if len(script) > 16000:
-                context = ("Screenplay excerpt only; full script exceeds this local writing request. "
-                           "Do not pretend to have read the whole screenplay.\n" + script[:16000])
-            else:
-                context = script or "No screenplay yet"
-        system = ("You are NVP's collaborative screenplay-development assistant. "
-                  "The human creator decides the story. Offer concrete creative writing, not production hype. "
-                  "Keep named characters and established plot facts consistent with supplied context. "
-                  "Do not claim that any video was generated or any software ran. "
-                  "For screenplay output, write real Fountain-style dramatic scenes with INT./EXT. "
-                  "headings, action, character cues and speakable dialogue. Avoid camera directions "
-                  "except where narratively indispensable. Output the requested draft only; no markdown fences.")
-        user = (f"Movie: {project['title']}\nOriginal creator idea: {project['idea']}\n"
-                f"Writing stage: {stage}\nDirector's instructions: {instructions or 'Preserve creator intent'}\n"
-                f"Existing script/context:\n{context}\n"
-                "Write a focused, editable proposal for this stage; treat ambiguous choices as creative proposals.")
+        approved = self.approved_story(project_id, stage)
+        if any(source["context_status"] == "needs_review" for source in approved):
+            raise RuntimeError("Earlier accepted story stages are out of date; review those decisions before generating this stage")
+        system, user = build_story_messages(project, stage, instructions, scene_id, approved)
         text = (self.llm or LocalScriptModel()).complete(system, user)
-        return self.create(project_id, stage, text, instructions, "local_ai", project["revision"])
+        return self.create(project_id, stage, text, instructions, "local_ai",
+                           project["revision"], expected_upstream=approved)
