@@ -1,11 +1,13 @@
-"""Local creative-development ledger and optional offline screenplay-writing adapter.
+"""NVP's local creative-development ledger and optional loopback AI writer.
 
-AI suggestions are separate draft records, not writes to the creator's screenplay.
+The screenplay remains the user's editable source. AI suggestions are draft records,
+never automatic writes to the screenplay. Video integration is a future subsystem.
 """
 from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -18,6 +20,7 @@ from backend.nvp_story_context import build_story_messages
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_bible_context import canon_snapshot
 from backend.nvp_story_timeline import StoryTimeline
+from backend.nvp_scene_mind import SceneMind
 
 
 def timestamp() -> str:
@@ -46,9 +49,10 @@ class LocalModelUnavailable(Exception):
 
 
 class LocalScriptModel:
-    """Connects to a local OpenAI-compatible llama.cpp-style server.
+    """OpenAI-compatible loopback endpoint (e.g. llama.cpp server).
 
-    This adapter does not bundle, load, or verify any actual writing model.
+    This is an adapter, not a bundled LLM. A configured URL is NOT evidence a
+    model is actually loaded or that it can generate an acceptable screenplay.
     """
     def __init__(self, endpoint: str | None = None, model_name: str | None = None):
         self.endpoint = endpoint if endpoint is not None else local_llm_endpoint()
@@ -61,9 +65,10 @@ class LocalScriptModel:
                            "messages": [{"role": "system", "content": system},
                                         {"role": "user", "content": user}],
                            "temperature": 0.65, "max_tokens": 2800, "stream": False}).encode("utf-8")
-        request = Request(self.endpoint, body, {"Content-Type": "application/json"}, method="POST")
+        request = Request(self.endpoint, body,
+                          {"Content-Type": "application/json"}, method="POST")
         try:
-            # Never follow HTTP redirects or system HTTP_PROXY settings with private scripts.
+            # Do not route local scripts through HTTP_PROXY settings.
             with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=90) as resp:
                 raw = resp.read(512_001)
                 if len(raw) > 512_000:
@@ -82,7 +87,8 @@ class IdeaPipeline:
         self.studio = studio
         self.llm = llm
         StoryBible(studio)  # schema only; film bible remains independent from model transport
-        StoryTimeline(studio)  # explicit chronology schema; no model/Lu dependency
+        StoryTimeline(studio)  # chronology schema; no Lu/model dependency
+        SceneMind(studio)  # within-scene beliefs, lies, reviewed suggestions
         with self.studio._connection() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS creative_drafts (
                 id TEXT PRIMARY KEY,
@@ -297,7 +303,7 @@ class IdeaPipeline:
                     (project_id,project["revision"],project["screenplay"],timestamp(),"before_ai_draft"))
                 changed = db.execute("""UPDATE projects SET screenplay=?,revision=revision+1,updated_at=?
                                   WHERE id=? AND revision=?""",
-                                     (row["content"],timestamp(),project_id,expected_project_revision))
+                           (row["content"],timestamp(),project_id,expected_project_revision))
                 if changed.rowcount != 1:
                     raise RuntimeError("Screenplay changed during approval; reload and try again")
             status = "discarded" if decision == "discard" else "accepted"
@@ -317,6 +323,7 @@ class IdeaPipeline:
         system, user = build_story_messages(project, stage, instructions, scene_id, approved,
                                             bible_context=bible)
         text = (self.llm or LocalScriptModel()).complete(system, user)
+        # AI drafts remain proposals. Never directly overwrite the screenplay.
         return self.create(project_id, stage, text, instructions, "local_ai",
                            project["revision"], expected_upstream=approved,
                            expected_bible_digest=bible["digest"], bible_scene_id=scene_id)

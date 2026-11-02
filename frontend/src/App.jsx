@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import StoryTimeline from './StoryTimeline.jsx';
+import SceneMindPanel from './SceneMindPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -393,8 +394,9 @@ export default function App() {
           <button className={tab === 'story' ? 'active' : ''} onClick={() => setTab('story')}>2 · Screenplay</button>
           <button className={tab === 'bible' ? 'active' : ''} onClick={() => setTab('bible')}>3 · Story Bible</button>
           <button className={tab === 'timeline' ? 'active' : ''} onClick={() => setTab('timeline')}>4 · Story timeline</button>
-          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>5 · Plan scenes</button>
-          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>6 · Make the film</button>
+          <button className={tab === 'mind' ? 'active' : ''} onClick={() => setTab('mind')}>5 · Scene minds</button>
+          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>6 · Plan scenes</button>
+          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>7 · Make the film</button>
         </nav>
         {tab === 'develop' && <div className="columns">
           <section className="card">
@@ -628,6 +630,7 @@ export default function App() {
           </section>
         </div>}
         {tab === 'timeline' && <StoryTimeline project={project} api={api} />}
+        {tab === 'mind' && <SceneMindPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'scenes' && <div className="columns">
           <section className="card"><h2>Your scenes</h2><p className="muted">Choose a scene to plan camera views.</p>
             {project.scenes.length === 0 && <p>Write your first scene under “Tell your story.”</p>}
