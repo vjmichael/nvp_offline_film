@@ -26,6 +26,7 @@ export default function App() {
   const [creativeStatus, setCreativeStatus] = useState(null);
   const [localModelStatus, setLocalModelStatus] = useState(null);
   const [selectedModelId, setSelectedModelId] = useState('');
+  const [modelServerPort, setModelServerPort] = useState('1234');
   const [drafts, setDrafts] = useState([]);
   const [scriptHistory, setScriptHistory] = useState([]);
   const [writingStage, setWritingStage] = useState('logline');
@@ -65,7 +66,7 @@ export default function App() {
     const [status, list, modelInfo] = await Promise.all([
       api('/creative/status'),
       api('/projects/' + projectId + '/creative-drafts'),
-      api('/creative/models')
+      api('/creative/models' + (modelServerPort ? '?port=' + modelServerPort : ''))
     ]);
     setCreativeStatus(status);
     setLocalModelStatus(modelInfo);
@@ -97,6 +98,7 @@ export default function App() {
       if (!selectedModelId) throw new Error('Load a local model and refresh the list first.');
       const draft = await api('/projects/' + project.id + '/creative-drafts/generate', 'POST', {
         model_id: selectedModelId,
+        model_port: modelServerPort ? Number(modelServerPort) : null,
         stage: writingStage, instructions: writingNotes, scene_id: writingSceneId || null
       });
       await refreshCreative(project.id);
@@ -269,6 +271,17 @@ export default function App() {
           <section className="card">
             <h2>Develop your story</h2>
             <p className="muted">Work on as much or as little of the script as you want. Every AI suggestion is editable and waits for your approval.</p>
+            <label>Local AI server
+              <select value={modelServerPort} onChange={(e) => {
+                setModelServerPort(e.target.value);
+                setLocalModelStatus(null);
+                setSelectedModelId('');
+              }}>
+                <option value="1234">LM Studio — port 1234</option>
+                <option value="8080">llama.cpp server — port 8080</option>
+                <option value="">Developer-configured local server</option>
+              </select>
+            </label>
             <label>Local writing model
               <select value={selectedModelId} disabled={!localModelStatus?.models?.length}
                 onChange={(e) => setSelectedModelId(e.target.value)}>
