@@ -122,6 +122,11 @@ def creative_models(port: int | None = None):
     return discover_models(port)
 
 
+@app.get("/api/projects/{project_id}/approved-story")
+def approved_story(project_id: str, stage: str):
+    return {"stage": stage, "approved": run(lambda: IdeaPipeline(studio).approved_story(project_id, stage))}
+
+
 @app.get("/api/projects/{project_id}/creative-drafts")
 def list_creative_drafts(project_id: str):
     return run(lambda: IdeaPipeline(studio).list(project_id))
