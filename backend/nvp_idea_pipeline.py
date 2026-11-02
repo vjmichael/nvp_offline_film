@@ -177,8 +177,11 @@ class IdeaPipeline:
                 db.execute("""INSERT OR IGNORE INTO screenplay_revisions
                     (project_id,revision,screenplay,saved_at,reason) VALUES (?,?,?,?,?)""",
                     (project_id,project["revision"],project["screenplay"],timestamp(),"before_ai_draft"))
-                db.execute("UPDATE projects SET screenplay=?,revision=revision+1,updated_at=? WHERE id=?",
-                           (row["content"],timestamp(),project_id))
+                changed = db.execute("""UPDATE projects SET screenplay=?,revision=revision+1,updated_at=?
+                                  WHERE id=? AND revision=?""",
+                                     (row["content"],timestamp(),project_id,expected_project_revision))
+                if changed.rowcount != 1:
+                    raise RuntimeError("Screenplay changed during approval; reload and try again")
             status = "discarded" if decision == "discard" else "accepted"
             db.execute("UPDATE creative_drafts SET status=?,updated_at=? WHERE id=?",
                        (status,timestamp(),draft_id))

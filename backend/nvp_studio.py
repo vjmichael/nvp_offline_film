@@ -155,8 +155,11 @@ class Studio:
             db.execute("""INSERT OR IGNORE INTO screenplay_revisions
                 (project_id,revision,screenplay,saved_at,reason) VALUES (?,?,?,?,?)""",
                 (project_id,current["revision"],current["screenplay"],now(),"before_restore"))
-            db.execute("UPDATE projects SET screenplay=?,revision=revision+1,updated_at=? WHERE id=?",
-                       (source["screenplay"],now(),project_id))
+            changed = db.execute("""UPDATE projects SET screenplay=?,revision=revision+1,updated_at=?
+                                  WHERE id=? AND revision=?""",
+                                 (source["screenplay"],now(),project_id,expected_revision))
+            if changed.rowcount != 1:
+                raise RuntimeError("Screenplay changed during restore; reload and try again")
         return self.get_project(project_id)
 
     def create_project(self, title: str, idea: str):
@@ -209,8 +212,10 @@ class Studio:
             db.execute("""INSERT OR IGNORE INTO screenplay_revisions
                 (project_id,revision,screenplay,saved_at,reason) VALUES (?,?,?,?,?)""",
                 (project_id,current["revision"],current["screenplay"],now(),"before_manual_edit"))
-            db.execute("""UPDATE projects SET screenplay=?,revision=revision+1,updated_at=?
-                    WHERE id=?""", (screenplay,now(),project_id))
+            changed = db.execute("""UPDATE projects SET screenplay=?,revision=revision+1,updated_at=?
+                    WHERE id=? AND revision=?""", (screenplay,now(),project_id,expected_revision))
+            if changed.rowcount != 1:
+                raise RuntimeError("Project changed during save; reload before editing")
         return self.get_project(project_id)
 
     def plan_scene(self, project_id: str, scene_id: str):
