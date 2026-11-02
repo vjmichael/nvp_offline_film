@@ -274,7 +274,6 @@ def story_bible_ack_change(project_id: str, change_id: str, payload: BibleAcknow
     return run(lambda: StoryBible(studio).acknowledge_change(
         project_id, change_id, payload.expected_screenplay_revision))
 
-
 # Chronology belongs to the NVP film domain, not Lu or the model runtime.
 from backend.nvp_story_timeline import StoryTimeline
 
@@ -341,6 +340,96 @@ def timeline_propose_knowledge(project_id: str, payload: TimelineKnowledgePropos
 
 
 @app.post("/api/projects/{project_id}/timeline/knowledge/{claim_id}/decision")
-def timeline_decide_knowledge(project_id: str, claim_id: str, payload: TimelineKnowledgeDecision):
+def timeline_decide_knowledge(project_id: str, claim_id: str,
+                              payload: TimelineKnowledgeDecision):
     return run(lambda: StoryTimeline(studio).decide_knowledge(
         project_id, claim_id, payload.decision, payload.expected_revision))
+
+# WR06: Film-domain epistemic records only. A statement is not objective truth,
+# and a continuity-review decision cannot silently rewrite the screenplay.
+from backend.nvp_scene_mind import SceneMind
+
+class SceneBeatCreate(BaseModel):
+    scene_id: str = Field(min_length=1, max_length=64)
+    line_number: int = Field(ge=1, le=1000000)
+    label: str = Field(min_length=1, max_length=150)
+    expected_revision: int = Field(ge=0)
+    note: str = Field(default="", max_length=1000)
+
+class SceneBeatReanchor(BaseModel):
+    line_number: int = Field(ge=1, le=1000000)
+    expected_revision: int = Field(ge=0)
+
+class SceneMindChangeCreate(BaseModel):
+    beat_id: str = Field(min_length=1, max_length=64)
+    character_id: str = Field(min_length=1, max_length=64)
+    fact_id: str = Field(min_length=1, max_length=64)
+    mode: str
+    belief_value: str | None = Field(default=None, max_length=2000)
+    note: str = Field(default="", max_length=1000)
+
+class SceneStatementCreate(BaseModel):
+    beat_id: str = Field(min_length=1, max_length=64)
+    speaker_id: str = Field(min_length=1, max_length=64)
+    audience_id: str = Field(min_length=1, max_length=64)
+    fact_id: str = Field(min_length=1, max_length=64)
+    claimed_value: str = Field(min_length=1, max_length=2000)
+    intent: str
+    note: str = Field(default="", max_length=1000)
+
+class MindDecision(BaseModel):
+    decision: str
+    expected_revision: int = Field(ge=0)
+
+class SuggestionDecision(MindDecision):
+    resolution: str = ""
+    review_note: str = Field(default="", max_length=1000)
+
+@app.get("/api/projects/{project_id}/scene-mind")
+def scene_mind(project_id: str, scene_id: str | None = None,
+               at_beat_id: str | None = None, phase: str = "before"):
+    return run(lambda: SceneMind(studio).snapshot(project_id, scene_id, at_beat_id, phase))
+
+@app.post("/api/projects/{project_id}/scene-mind/beats", status_code=201)
+def scene_mind_create_beat(project_id: str, payload: SceneBeatCreate):
+    return run(lambda: SceneMind(studio).add_beat(
+        project_id, payload.scene_id, payload.line_number, payload.label,
+        payload.expected_revision, payload.note))
+
+@app.put("/api/projects/{project_id}/scene-mind/beats/{beat_id}")
+def scene_mind_reanchor(project_id: str, beat_id: str, payload: SceneBeatReanchor):
+    return run(lambda: SceneMind(studio).reanchor_beat(
+        project_id, beat_id, payload.line_number, payload.expected_revision))
+
+@app.post("/api/projects/{project_id}/scene-mind/changes", status_code=201)
+def scene_mind_propose_change(project_id: str, payload: SceneMindChangeCreate):
+    return run(lambda: SceneMind(studio).propose_change(
+        project_id, payload.beat_id, payload.character_id, payload.fact_id,
+        payload.mode, payload.belief_value, payload.note))
+
+@app.post("/api/projects/{project_id}/scene-mind/changes/{change_id}/decision")
+def scene_mind_decide_change(project_id: str, change_id: str, payload: MindDecision):
+    return run(lambda: SceneMind(studio).decide_change(
+        project_id, change_id, payload.decision, payload.expected_revision))
+
+@app.post("/api/projects/{project_id}/scene-mind/statements", status_code=201)
+def scene_mind_propose_statement(project_id: str, payload: SceneStatementCreate):
+    return run(lambda: SceneMind(studio).propose_statement(
+        project_id, payload.beat_id, payload.speaker_id, payload.audience_id,
+        payload.fact_id, payload.claimed_value, payload.intent, payload.note))
+
+@app.post("/api/projects/{project_id}/scene-mind/statements/{statement_id}/decision")
+def scene_mind_decide_statement(project_id: str, statement_id: str, payload: MindDecision):
+    return run(lambda: SceneMind(studio).decide_statement(
+        project_id, statement_id, payload.decision, payload.expected_revision))
+
+@app.get("/api/projects/{project_id}/scene-mind/scenes/{scene_id}/suggestions")
+def scene_mind_suggestions(project_id: str, scene_id: str):
+    return run(lambda: SceneMind(studio).suggestions(project_id, scene_id))
+
+@app.post("/api/projects/{project_id}/scene-mind/scenes/{scene_id}/suggestions/{suggestion_id}/decision")
+def scene_mind_decide_suggestion(project_id: str, scene_id: str, suggestion_id: str,
+                                 payload: SuggestionDecision):
+    return run(lambda: SceneMind(studio).decide_suggestion(
+        project_id, scene_id, suggestion_id, payload.decision, payload.expected_revision,
+        payload.resolution, payload.review_note))

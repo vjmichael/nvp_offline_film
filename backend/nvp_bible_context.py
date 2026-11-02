@@ -12,6 +12,7 @@ import json
 from backend.nvp_studio import parse_screenplay
 from backend.nvp_story_bible import sha_scene
 from backend.nvp_story_timeline import timeline_snapshot
+from backend.nvp_scene_mind import scene_mind_snapshot
 
 MAX_BIBLE_PROMPT = 8500
 
@@ -71,11 +72,14 @@ def canon_snapshot(db, project_id: str, scene_id: str | None = None) -> dict:
     # The hash includes facts beyond the prompt budget, and exact selected
     # link identity. Unapproved/rejected/superseded facts never enter it.
     temporal = timeline_snapshot(db, project_id, scene_id, relevant_entity_ids=set(grouped))
+    mind = scene_mind_snapshot(db, project_id, scene_id)
     fingerprint_source = {'entities': entities, 'links': links,
                           'scope': 'whole_project' if scene_id is None else 'linked_scene',
                           'scene_id': scene_id}
     if temporal['digest_payload'] is not None:
         fingerprint_source['timeline'] = temporal['digest_payload']
+    if mind['digest_payload'] is not None:
+        fingerprint_source['scene_mind'] = mind['digest_payload']
     digest = hashlib.sha256(json.dumps(fingerprint_source, sort_keys=True,
                                         ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
     text = []
@@ -102,6 +106,8 @@ def canon_snapshot(db, project_id: str, scene_id: str | None = None) -> dict:
     # Keep chronological knowledge separate from objective canon. A fact can
     # be true while a specific character has not learned it yet.
     knowledge_lines = []
+    # An event graph is a partial order. Only direct author-approved edges
+    # are provided, never assumed chronology based on scene display order.
     names = {event['id']: event['name'] for event in temporal['events']}
     used_order = 0
     for edge in temporal['edges']:
@@ -120,7 +126,8 @@ def canon_snapshot(db, project_id: str, scene_id: str | None = None) -> dict:
         else:
             knowledge_lines.append("[NO AUTHOR-APPROVED SCENE TIME ANCHOR: knowledge timing is unverified]")
     for entry in temporal['knowledge']:
-        # Never promote an already superseded truth into current canon.
+        # Never present a superseded truth as current canon, even as a quoted
+        # character-knowledge item. Expose only an auditable stale reference.
         if entry['state'] == 'source_fact_changed':
             line = (f"[KNOWLEDGE: SOURCE_FACT_CHANGED] {entry['character_name']} "
                     f"(knowledge ID {entry['id']}); source fact is no longer approved. "
@@ -135,7 +142,70 @@ def canon_snapshot(db, project_id: str, scene_id: str | None = None) -> dict:
             break
         knowledge_lines.append(line)
     timeline_text = '\n'.join(knowledge_lines) if knowledge_lines else 'No approved character-knowledge timing assertions.'
+    # Film-specific epistemic snapshots: statements and subjective beliefs are
+    # not objective truth. Only creator-accepted records can reach the model.
+    names_by_id = {r['id']: r['name'] for r in db.execute(
+        "SELECT id,name FROM bible_entities WHERE project_id=?", (project_id,))}
+    beat_by_id = {b['id']: b for b in mind['beats']}
+    stale_beats = set(mind['stale_beat_ids'])
+    mind_lines = []
+    for record in mind['changes']:
+        if record['status'] != 'accepted':
+            continue
+        if record['beat_id'] in stale_beats:
+            continue
+        owner = names_by_id.get(record['character_id'], '[missing character]')
+        beat = beat_by_id[record['beat_id']]
+        if record['source_state'] != 'current':
+            mind_lines.append(f"[BELIEF: SOURCE_FACT_CHANGED] {owner} at {beat['label']}; "
+                              'previous fact is no longer approved; review before reuse')
+            continue
+        if record['mode'] == 'learn_truth':
+            state = 'KNOWS_TRUE'
+            value = record['world_value']
+        elif record['mode'] == 'believe':
+            state = ('BELIEVES_TRUE' if record['belief_value'] == record['world_value']
+                     else 'BELIEVES_FALSE')
+            value = record['belief_value']
+        elif record['mode'] == 'doubt':
+            state, value = 'DOUBTS', '[uncertain]'
+        else:
+            state, value = 'DOES_NOT_RECALL', '[not recalled]'
+        mind_lines.append(f"[BELIEF: {state}] {owner} at beat {beat['label']} "
+                          f"(scene line {beat['line_number']}) — {record['fact_key']} "
+                          f"believed/known as {value}; distinct from world canon")
+    for record in mind['statements']:
+        if record['status'] != 'accepted' or record['beat_id'] in stale_beats:
+            continue
+        beat = beat_by_id[record['beat_id']]
+        speaker = names_by_id.get(record['speaker_id'], '[missing speaker]')
+        audience = names_by_id.get(record['audience_id'], '[missing listener]')
+        if record['source_state'] != 'current':
+            mind_lines.append(f"[STATEMENT: SOURCE_FACT_CHANGED] {speaker} to {audience} "
+                              f"at {beat['label']}; review superseded canon")
+            continue
+        mind_lines.append(f"[STATEMENT: {record['intent'].upper()}] {speaker} to {audience} "
+                          f"at beat {beat['label']} (scene line {beat['line_number']}): "
+                          f"claims {record['fact_key']} = {record['claimed_value']}; "
+                          'listener belief is NOT implied')
+    if stale_beats:
+        mind_lines.append('[STALE SCENE BEATS OMITTED: re-anchor them to updated screenplay]')
+    for review in mind['reviews']:
+        if review['decision'] != 'accept':
+            continue  # rejection is a dismissal, never an instruction to model
+        note = review['review_note'] or '[no explanation supplied]'
+        mind_lines.append(f"[CREATOR CONTINUITY REVIEW: {review['resolution'].upper()}] "
+                          f"{note}; this review does not change world canon or screenplay")
+    full_mind_lines = '\n'.join(mind_lines)
+    # Bound the presentation and disclose truncation. Digest above covers all
+    # the accepted records even when they do not fit this smaller budget.
+    if len(full_mind_lines) > 3500:
+        full_mind_lines = full_mind_lines[:3500] +             '\n[ADDITIONAL REVIEWED MIND RECORDS OMITTED; do not invent knowledge]'
+    mind_text = full_mind_lines or 'No creator-approved within-scene belief or disclosure changes.'
     return {
+        'scene_mind': {'text': mind_text, 'limitations': mind['limitations'],
+                       'states': mind['states'], 'reviews': mind['reviews'],
+                       'stale_beat_ids': mind['stale_beat_ids']},
         'timeline': {'scene_marker': marker, 'events': temporal['events'],
                      'edges': temporal['edges'], 'knowledge': temporal['knowledge'],
                      'text': timeline_text, 'limitations': temporal['limitations']},
