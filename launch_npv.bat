@@ -1,25 +1,29 @@
 @echo off
-title Neural Virtual Production Studio Ingestion
-echo =======================================================
-echo     BOOTING NEURAL VIRTUAL PRODUCTION OPERATING SYSTEM
-echo =======================================================
-
-:: 1. Navigate to your backend directory and boot FastAPI silently
-echo [1/3] Launching Local AI Validation Server...
-cd /d "C:\path\to\your\nvp_v2_workspace\backend"
-start /b uvicorn nvp_api:app --host 127.0.0.1 --port 8000
-
-:: 2. Navigate to your frontend directory and boot the UI server
-echo [2/3] Launching Web Interface System Hub...
-cd /d "C:\path\to\your\nvp_v2_workspace\frontend"
-start /b npm start
-
-:: 3. Give the local node servers 3 seconds to spin up, then open the browser
-echo [3/3] Initializing Control Room View...
-timeout /t 3 /nobreak >nul
-start http://localhost:3000
-
-echo =======================================================
-echo     NVP RUNNING SECURELY IN BACKGROUND Engine Log Active
-echo     Close this window to shut down the virtual studio.
-echo =======================================================
+setlocal
+cd /d "%~dp0"
+echo NVP local foundation - developer preview
+echo ---------------------------------------
+where python >nul 2>nul
+if errorlevel 1 (
+  echo Python is missing. See docs\FOUNDATION_RUNBOOK.md
+  pause
+  exit /b 1
+)
+where npm >nul 2>nul
+if errorlevel 1 (
+  echo Node/npm is missing. See docs\FOUNDATION_RUNBOOK.md
+  pause
+  exit /b 1
+)
+if not exist "frontend\node_modules" (
+  echo Frontend dependencies are not installed.
+  echo Run npm install inside the frontend folder once.
+  pause
+  exit /b 1
+)
+start "NVP Local API" /D "%~dp0" cmd /k python -m uvicorn backend.nvp_api:app --host 127.0.0.1 --port 8000
+start "NVP UI" /D "%~dp0frontend" cmd /k npm run dev
+echo Open http://127.0.0.1:3000 in your browser.
+echo This is a local development preview, not a packaged installer.
+start "" "http://127.0.0.1:3000"
+endlocal
