@@ -2,6 +2,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from backend.nvp_studio import Studio
+from backend.nvp_screenplay_review import ScreenplayContinuityReview
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
 from backend.nvp_model_service import discover_models, writer_for
@@ -433,3 +434,30 @@ def scene_mind_decide_suggestion(project_id: str, scene_id: str, suggestion_id: 
     return run(lambda: SceneMind(studio).decide_suggestion(
         project_id, scene_id, suggestion_id, payload.decision, payload.expected_revision,
         payload.resolution, payload.review_note))
+
+
+class ScreenplayReviewDecision(BaseModel):
+    decision: str
+    expected_review_revision: int = Field(ge=0)
+    expected_screenplay_revision: int = Field(ge=0)
+    resolution: str = ""
+    note: str = Field(default="", max_length=1200)
+
+
+@app.get("/api/projects/{project_id}/screenplay-review/scenes/{scene_id}")
+def screenplay_review_scene(project_id: str, scene_id: str):
+    return run(lambda: ScreenplayContinuityReview(studio).report(project_id, scene_id))
+
+
+@app.post("/api/projects/{project_id}/screenplay-review/scenes/{scene_id}/suggestions/{suggestion_id}/decision")
+def screenplay_review_decision(project_id: str, scene_id: str, suggestion_id: str,
+                               payload: ScreenplayReviewDecision):
+    return run(lambda: ScreenplayContinuityReview(studio).decide(
+        project_id, scene_id, suggestion_id, payload.decision,
+        payload.expected_review_revision, payload.expected_screenplay_revision,
+        payload.resolution, payload.note))
+
+
+@app.get("/api/projects/{project_id}/screenplay-review/history")
+def screenplay_review_history(project_id: str, scene_id: str | None = None, limit: int = 100):
+    return run(lambda: ScreenplayContinuityReview(studio).history(project_id, scene_id, limit))
