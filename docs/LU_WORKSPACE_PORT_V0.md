@@ -5,7 +5,7 @@
 tests passed). The **real Lu-owned Rust core bridge is now implemented in
 isolated Lu draft PR #107**: typed Protobuf project read/proposal writes,
 live Workspace + owner checks, shared loaded-model inference, streaming,
-cancellation and durable proposal journal. Its 13 Rust tests are committed
+cancellation and durable proposal journal. Its 14 Rust tests are committed
 but NOT compiled or executed, and the Tauri desktop has NOT mounted NVP.
 The Python port below remains a temporary film-prompt/testing harness,
 NOT an end-to-end Lu IPC client.
@@ -113,3 +113,18 @@ events into JSON while retaining Protobuf inside Lu.
 Lu, host-attested Tauri window/profile registration, signed external
 Workspace enable/install, explicit durable effect grants and audit, and
 a Lu Workspace UI surface. NVP movie rendering comes after these.
+
+
+**Lu Core separation gate:** NVP-specific Rust logic is guarded behind
+the non-default nvp-integration-fixture feature in the Lu integration branch.
+The generic Lu WorkspaceHost authorization method remains universally
+available. Root Lu builds opt in through lu-nvp-dev, which is OFF by default.
+This prevents experimental film logic from becoming a mandatory Lu Core
+feature while NVP's external Workspace package is still being developed.
+Compile the bridge with:
+
+    cd src-tauri/lu-core
+    cargo test --features nvp-integration-fixture --test nvp_film_bridge
+
+The current Lu desktop has a trusted Rust-only supervisor accessor; it does
+not expose user-installable NVP, a Tauri command bridge, or a signed NVP worker.
