@@ -4,25 +4,30 @@ NVP now lists models reported by an optional, *locally running* OpenAI-compatibl
 server. This does **not** download GGUF files or guarantee the reported models
 are in GPU memory. The user can choose a model in **Develop the idea**.
 
-## Windows with LM Studio
-1. Load one of your existing GGUF models in LM Studio.
-2. Start its local server from **Developer** and check which port it uses.
-   LM Studio commonly uses port 1234.
-3. In the Command Prompt you use to launch NVP, set:
+## Windows with LM Studio — no terminal configuration needed
+1. In LM Studio, load an existing GGUF, such as Gemma 4 31B or Qwen3.8.
+2. Open LM Studio's **Developer** page and start its local server.
+   LM Studio commonly uses port 1234. Leave the server on loopback.
+3. Launch the NVP developer preview through its normal launcher.
+4. Open **Develop the idea**, select **LM Studio — port 1234**, and press
+   **Refresh local models**.
+5. Select the model ID that LM Studio reports, then try generating a short
+   logline. You may switch to another model after loading it in LM Studio
+   and refreshing the list.
 
-       set NVP_LLM_URL=http://127.0.0.1:1234/v1/chat/completions
+For llama.cpp's OpenAI-compatible **llama-server**, choose the
+**llama.cpp server — port 8080** preset when using port 8080.
+Both use GET /v1/models and POST /v1/chat/completions.
 
-   Or in PowerShell:
+## Optional developer-configured port
+If your local model server uses another port, set NVP_LLM_URL before launch,
+then choose **Developer-configured local server** in the NVP UI. For example:
 
-       $env:NVP_LLM_URL="http://127.0.0.1:1234/v1/chat/completions"
+    set NVP_LLM_URL=http://127.0.0.1:5000/v1/chat/completions
 
-4. Launch the NVP developer preview *from that same environment*, create/open
-   a project, choose **Develop the idea**, and press **Refresh local models**.
-5. Select the exact model ID that the local server returns.
-6. Request a *logline first*, check the proposal, then try a screenplay scene.
-
-If using llama.cpp's llama-server, use its bound loopback port instead.
-The endpoint must support GET /v1/models and POST /v1/chat/completions.
+Only loopback HTTP URLs are accepted. Environment configuration is **optional**
+for the common 1234 and 8080 presets; NVP does not yet start or switch
+GGUF models automatically.
 
 ## Limits and protections
 - Project creation, screenplay editing, and saved draft review work without any

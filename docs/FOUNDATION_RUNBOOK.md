@@ -72,3 +72,10 @@ story drafting, proposal approval, revision conflicts, screenplay restoration,
 and recovery of previously approved shot plans. The new branch also includes
 creative-development regression tests. This is not a claim that the React UI,
 actual local LLM, video/3D renderer, or Windows installer have passed acceptance.
+
+## Local model picker (Nov 2)
+The **Develop the idea** screen now offers LM Studio on port 1234 or llama-server
+on port 8080 with a model ID picker and an explicit Refresh action. It can use a
+configured custom loopback NVP_LLM_URL if necessary. Advertised models are not
+proof of successful inference; validate with the actual GGUF loaded on the
+physical Windows/R9700 machine. See docs/LOCAL_MODEL_CONNECTION.md.
