@@ -1,13 +1,14 @@
 # NVP MASTER DESIGN — World-Aware Personal Film Studio
 
 **Document ID:** NVP-MASTER-001  
-**Revision:** 1.0 — 2026-11-03  
+**Revision:** 1.1 — 2026-11-03  
 **State:** Established architecture and product-requirements baseline; individual open decisions remain explicitly open  
 **Product:** Neural Virtual Production (NVP), the future Film Workspace DLC for Lu  
 **Development baseline:** nvp/prod06e2c3b-anatomical-landmarks-bvh-20261103  
-**Scope of this revision:** Design consolidation only. No solver, host, model, or renderer implementation change.
+**Scope of this revision:** Design consolidation plus creator-approved **data-first capture/presentation/editing architecture amendment**. No new capture pipeline, model adapter, renderer or editor implementation is claimed as complete.
+**Governing amendment:** [NVP-ADR-DATA-FIRST-001](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md), with [technical package/index specification](NVP_DIGITAL_FILM_PACKAGES_AND_REGENERATION.md).
 
-> **Governing idea:** NVP makes a film, not a chain of unrelated AI-generated clips. The creator authors and approves the narrative and production decisions. A persistent, editable 3D world, versioned character identities, physical geometry, virtual cameras, animation, audio, and editing supply the film's continuity. AI proposes creative choices and structured production instructions; conventional tools calculate and verify physical results. Rendered media is an output of the project, not its source of truth.
+> **Governing idea:** NVP creates **the structured, creator-approved data from which a film is captured and produced**, not merely unrelated AI-generated video clips. An editable Digital Film World supplies immutable Digital Take Packages; selectable conventional or AI engines produce versioned Presentation Packages; an indexed editor assembles those outputs into a final 2D film. Lo-fi preview is the director's inexpensive visualization, not the full production data or final visual quality. AI proposes or renders; verified domain data and the director remain authoritative. **The flat movie is a deliverable, not the only editable source.**
 
 ## 0. How this document governs development
 
@@ -70,6 +71,8 @@ A beginner can write a sentence or import an existing script, inspect understand
 
 **Bidirectional revisions:** Script edits mark affected dialogue, performances, shots, and media stale while retaining earlier takes. Physical/action changes may *suggest* script or continuity updates but never rewrite the screenplay silently. Re-render only dependent shots when possible.
 
+**New capture/render/editor distinction [C/B]:** Filming occurs against cheap proxy/LOD geometry and cached draft audio, while capturing **camera, actors, world, props, dialogue, timing and production approvals** as a frozen, immutable Digital Take Package, **not a low-quality video as the only master**. One take can be interpreted into multiple presentations using different permitted styles or generators. The user can edit that take's source or rerun only affected presentations, then assemble a flat 2D movie with audio. All versions remain indexed. See the [data-first ADR](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md).
+
 ## 3. Canonical authority: narrative, world, and media
 
 The **authoritative production ledger** is a versioned collection of creator-approved screenplay revisions, Story Bible facts and chronology, identity/asset registries, approved base staging, layered WorldState edits, performance/shot decisions, and approvals. It is not a single image, one prompt, a mutable Blender scene, or a video model's implicit memory.
@@ -92,6 +95,23 @@ The public 3D stage is a reproducible *derived realization* of the ledger. Blend
 
 One **canonical character ID** may have multiple approved physical/stylized representations and LODs (photoreal, anime, cartoon, clay, stop-motion). Appearance, body/face rigs, materials, and animation timing may differ; scene identity, relationships, dialogue ownership, approved actions, and prop continuity do not silently change. A Style Profile records palette, shader, rig mapping, cadence, allowed alterations and provenance. Learned image/video models are *optional finishers*, never canonical historians.
 
+### 3.4 Digital Film World -> Digital Take -> Presentation -> Final Film [C/B]
+
+**New formal product architecture (2026-11-03):** See [NVP-ADR-DATA-FIRST-001](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md) and [NVP-DATA-SPEC-001](NVP_DIGITAL_FILM_PACKAGES_AND_REGENERATION.md).
+
+| Production layer | Authority | Why it matters |
+| --- | --- | --- |
+| **Digital Film World** | Mutable only through reviewed, versioned changes to authoritative film records: story, scenes, actor/asset identity, spatial environment, style, lighting, performance intents, cameras and sound | Defines the world and actions, independent of preview quality |
+| **Digital Take Package** | Immutable approved snapshot/manifest of specific scene and time interval, camera/mic/performance, dialogue/sound timing, and exact frozen asset/scene references | Can be reproduced, audited, branched and processed again without re-filming |
+| **Presentation Package** | Derived video/audio/render passes and receipts produced by a selected conventional or AI backend, with style, model, constraints and quality review | One take may generate many visually different presentations, without secretly rewriting source |
+| **Editorial revision and final 2D master** | Exact selected presentations/audio, cuts and mix, then decodable video file with lineage receipts | Audience sees a flat film, but director retains every editable production layer |
+
+**Single indexed graph:** stable project-scoped IDs, content digests, typed dependency links, versioned approvals and backwards/forwards lookup connect the layers. A new world revision does not mutate a frozen take. Presentation revisions cannot rewrite world canon. A request to change only one actor, line, shot, camera or style re-executes **only the actual dependent shot/time window**, including temporal overlaps as needed by the chosen model; unaffected approved hashes remain intact.
+
+**Low-spec contract:** no user requirement to keep hi-fi assets or diffusion/voice models resident while directing or editing. The lo-fi stage is an efficient **visualization of authoritative production data**. Expensive rendering or generation runs later, per selected scope, with measured resource admission and recoverable outputs. A creator can select video and voice engines independently, while adapters must disclose unsupported conditioning. The host or Lu schedules worker loading/unloading; model runtime requirements remain real.
+
+**Acceptance priority:** demonstrate the complete Digital Film World -> frozen Digital Take -> two presentations -> source-aware selective revision -> playable 2D film vertical slice **before** treating advanced foot anatomy/photorealism as a blocker. Existing Blender geometry/rig work remains relevant but is not proof of this pipeline.
+
 ## 4. Stable production data model and invariants
 
 All data stores use project-scoped opaque IDs, typed schema versions, explicit reference ownership and semantic units. SQLite transactions protect authoritative records. SHA-256 content digests identify immutable source bytes, approval input graphs, and outputs. An approval hash is evidence of an exact reviewed revision, not a substitute for a trusted authorization boundary.
@@ -99,6 +119,10 @@ All data stores use project-scoped opaque IDs, typed schema versions, explicit r
 | Record family | Required identity and content | Key invariant |
 | --- | --- | --- |
 | Project/Film | Project ID, working data root, style profiles, format, history | Cross-project reads/writes forbidden |
+| WorldRevision/SceneRevision | Project-scoped accepted exact revisions, approved dependency manifests and source hashes | A current edit cannot mutate an earlier captured take |
+| DigitalTake/TakeManifest | Take ID, immutable capture SHA, actual approved scene revisions, camera/performance/audio time tracks and asset references | Capture is frozen; revisions create new captures/branches, not in-place overwrites |
+| PresentationRevision/ProductionJob | Presentation ID, exact take SHA, model/backend/style/conditioning, audio/video passes, status and output digest | Rendering/AI may not rewrite source; unsupported model controls must be surfaced |
+| EditorialRevision/FilmMaster | Selected precise presentation/audio spans, cuts/mix, encoded flat film and output lineage | Re-editing/rerendering preserves source, unrelated takes and historical masters |
 | ScriptRevision/Scene/Dialogue | Text revision, scene ID, cue/line ID, source span, speaker/listener links | Authored words preserved unless explicitly edited |
 | StoryEvent/CanonFact/MindState | Event/fact/actor IDs, chronology edges, approvals, belief/claim state | Objective truth not inferred from belief or utterance |
 | CharacterIdentity/Representation | Actor ID, rig/mesh/style/voice references, rights, mappings | Representation change does not change identity |
@@ -170,7 +194,7 @@ Director/planner, writer, script supervisor/continuity, production designer, DP/
 
 ### 6.2 Visual output strategy
 
-First deliver a complete **deterministic 3D-to-video film**. It should be possible to create an intentionally simple but coherent film without a video diffusion model. Then benchmark optional structural conditioning (depth, segmentation, pose, identity, camera paths) and style enhancement. Any fine-tuning or new world-model research needs a demonstrated failure, a lawful dataset, hardware cost measurements and an independent comparison baseline.
+First deliver a complete **deterministic data-first 3D-to-video film**: proxy visualization -> approved immutable capture -> conventional 3D presentation -> edit -> decodable final 2D film. It should be possible to create an intentionally simple but coherent film without a video diffusion model. Next, generate additional presentations of the *same captured take* and benchmark optional structural conditioning (depth, segmentation, pose, identity, camera paths), user-selected video/voice models and style enhancement. Unsupported controls require explicit warning/refusal; output-model hallucinations are not source truth. Any fine-tuning or world-model research needs demonstrated failure, lawful data, hardware cost measurements and independent comparison. Keep interactive filming separate from heavy AI model residency.
 
 ## 7. Actor and performance design
 
@@ -252,6 +276,7 @@ This table describes code and observed tests on the active *development branch*,
 | PROD-06E2C3A | Approval-bound, bounded skinned vertex-to-floor correction using actual imported thigh/shin IK, separate native output, independent full-take source/output audit | **Verified scoped real toe-marker contact** on Linux and Windows Blender 5.2.3, run 41670220453: 120 take frames, 25 modified contact leg-frames, 215 preserved noncontact leg-frames; limb-length residual below 0.0000004 m; **not certified plantar anatomy/gait** |
 | PROD-06E2C3B | Provenance-bound heel/MT1/MT5/hallux underside attachments; read-only skinned anatomy observation; actual Blender triangle BVH floor and slope support verification | **Cross-platform native BVH geometry verified**, Linux/Windows Blender 5.2.3, workflow run 41674405456: 25 real corrected toe-marker samples, zero penetration and max gap ≈0.273 mm; 12-degree sloped test verified and unsupported 70-degree slope refused. **No independently reviewed actual Cesium Man anatomical foot attachment has been supplied; physical anatomy certification remains blocked** |
 | PROD-06E2C3C and later | Reviewed/rights-cleared actual plantar pad annotations, moving characters on sloped and changing floors, whole-skinned-mesh surface collision, support forces and true gait biomechanics | **Not complete** |
+| NVP-DATA-FIRST-001 (creator decision) | Four-layer Film World -> frozen Digital Take -> indexed derived Presentation -> editorial/final film authority; model/backend choice; low-spec stage and selective re-render | **Documented and accepted as direction [C]; end-to-end engineering gates deferred**. See ADR and SPEC; no source/runtime feature implied |
 | Lu Workspace package | Signed, registered, contained NVP DLC running inside Lu | **Deferred and not verified** |
 | Physical target machine | Windows NVP film workflow with AMD R9700 GPU, finished output, integrated input | **Not yet verified** |
 
@@ -262,6 +287,10 @@ This table describes code and observed tests on the active *development branch*,
 | Gate | Deliverable | Cannot be declared finished until |
 | --- | --- | --- |
 | NVP-DESIGN-00 | This cross-subsystem master baseline and source traceability | Master exists in active repo, linked for discoverability; open options labeled |
+| NVP-DATA-01 | Versioned world/asset/scene/actor/style production index, typed dependency links and immutable source manifests | Reopen/restart, full source SHA integrity, correct project isolation, no frozen-take drift |
+| NVP-CAPTURE-01 | Actual low-fi rehearsal -> frozen complete Digital Take Package | Independent reload of recorded actor/camera/microphone/world state and exact timecodes, no hi-fi dependency |
+| NVP-PIPE-01 | User-selectable conventional/video/voice backend adapters produce multiple presentations per take | One immutable take, two distinct versioned outputs, real capability negotiation and truthful unsupported conditions |
+| NVP-RECOVERY-01 | Transactional capture/render jobs and recoverable media artifacts | Kill/restart on incomplete job leaves prior approved source/output unchanged and reconciles job journal |
 | NVP-PERF-01 / PROD-06E2B | Completed *scoped ankle IK* on explicitly mapped imported rigs | Independently reopened ankle-lock, preserved roots/cameras and original non-contact motion on Linux/Windows: **verified** |
 | NVP-PERF-01C / PROD-06E2C3C | Bind independently reviewed actual plantar landmarks to real characters, then integrate full-foot support and moving characters | Licensed and independently reviewed heel/MT1/MT5/hallux attachment, validated mesh floor/slope contacts, whole-foot penetration, contact force and turning/rolling gait |
 | NVP-CHAR-01 | Anatomically credible character structure: proportions, skeletal joints, physical constraints, mesh topology and weighted skin deformation | More than one licensed character/shape, measured geometry, pose/collision tests, stable skin volume and independently reviewed rendered performances |
@@ -270,12 +299,12 @@ This table describes code and observed tests on the active *development branch*,
 | NVP-LIGHT-01 | Motivated lighting, exposure and style management | Scene/camera-consistent rendered passes with color/provenance checks |
 | NVP-VOICE-01 | Licensed local speech, speaker timing, visemes, dialog stems | True audio measured and synchronized to character and shot frames |
 | NVP-AUDIO-01 | Spatial microphone presets, ambience, foley and mix | Sound tied to shot geometry/contact/time; loudness and sync acceptance |
-| NVP-EDIT-01 | Versioned non-destructive multi-shot editorial representation | Timeline references immutable takes and passes cut continuity validators |
-| NVP-MASTER-01 | 60–90 second playable film vertical slice | Reopen, regenerate targeted shot, render/export/decode actual 1080p24 movie with sound |
+| NVP-EDIT-01 | Indexed source-aware editor, non-destructive timeline, presentation review and selective regeneration | Change one shot/line/style, preserve unrelated approved hashes, regenerate actual dependency scope, compare/rollback and verify cut continuity |
+| NVP-MASTER-01 | Complete linked Digital Film World -> Take -> Presentation -> 2D film vertical slice | Reopen indexed world/take/presentations, selectively rerender a chosen shot, export/decode actual playable film with synchronized sound and provenance |
 | NVP-HOST-00–05 | Integrated Lu Film Workspace DLC *after Lu v1.0* | Signed admission, typed scoped IPC, shared model, containment, restart/cancel/cleanup on target OS |
 | NVP-RESEARCH | Optional conditioned generative finishing and learned physical support | Beats deterministic baseline on recorded quality, cost, consistency and rights criteria |
 
-This roadmap is dependency-based rather than a rigid promise about dates. Work in parallel only when source IDs, types, approval boundaries and recovery semantics are fixed. **The next solver task starts only after this master baseline is established; no solver completion is implied by this document.**
+This roadmap is dependency-based rather than a rigid promise about dates. Work in parallel only when source IDs, types, approval boundaries and recovery semantics are fixed. **The next implementation emphasis should establish the core data-first film workflow, not require detailed foot biomechanics to prove the first actual film.** Documentation and acceptance contracts do not themselves establish implemented functionality.
 
 ## 12. Open architecture decisions — do not silently settle these in code
 
@@ -291,6 +320,10 @@ This roadmap is dependency-based rather than a rigid promise about dates. Work i
 10. **[O] Exact Lu DLC registration:** package signing/version, actual Workspace API/tool codec, effect declarations and review UX when Lu integration is authorized.
 
 ## 13. Source traceability and reconciliation
+
+**2026-11-03 creator architecture decision:** [NVP-ADR-DATA-FIRST-001](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md) is the governing accepted decision for source data, frozen takes, presentations, low-spec previews, model/backend selection, non-destructive selective regeneration and final flat film. [NVP-DATA-SPEC-001](NVP_DIGITAL_FILM_PACKAGES_AND_REGENERATION.md) translates it into proposed records and acceptance gates. **Neither file represents a tested implementation.** Older use of “take” or “render” must be interpreted consistently with this more precise layering; existing actual source and tests remain the arbiter of implemented status.
+
+
 
 **Direct working source files:** README.md (original mission and preserved proprietary terms); docs/SOLO_CREATOR_DIRECTION.md; docs/IDEA_SCREENPLAY_VIDEO_PIPELINE.md; docs/LU_DLC_WORKSPACE_CONTRACT.md; docs/PROD01_TO_PROD04_ENGINEERING_ACCEPTANCE.md; all PROD-05/06 milestone specifications; approved Bible and chronology/Scene Mind docs; and implementation modules/tests on the development branch.
 
