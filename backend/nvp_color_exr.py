@@ -16,8 +16,11 @@ PIXEL_CONTRACTS = frozenset((PIXEL_PNG, PIXEL_EXR))
 def exr_info(raw: bytes) -> dict:
     if len(raw) < 32 or raw[:4] != MAGIC:
         raise RuntimeError("Invalid OpenEXR frame header")
-    if struct.unpack("<I", raw[4:8])[0] != 2:
-        raise RuntimeError("Unsupported multipart/deep OpenEXR frame")
+    version = struct.unpack("<I", raw[4:8])[0]
+    # Blender 5.2.3 sets the OpenEXR LONG_NAMES bit (0x400), including for
+    # single-part scanline files. Reject tiled, deep, multipart, unknown flags.
+    if (version & 0xff) != 2 or version & ~(0xff | 0x400):
+        raise RuntimeError("Unsupported tiled/multipart/deep OpenEXR frame")
     p, attrs = 8, {}
     def cstr(start):
         end = raw.find(b"\x00", start)
