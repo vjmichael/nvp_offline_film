@@ -22,7 +22,9 @@ from backend.nvp_production_scene import compact
 from backend.nvp_studio import Studio
 
 ENGINE = "blender_workbench"
+PBR_ENGINE = "blender_cycles"
 STYLES = frozenset(("studio", "flat"))
+PBR_STYLES = frozenset(("pbr_studio", "pbr_noir"))
 FRAME_MODES = frozenset(("keyframes", "full"))
 MAX_FULL_FRAMES = 2400
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -44,16 +46,59 @@ if take["format"]!="nvp.production.timed_proxy.v1" or \
    scene.get("nvp_take_sha")!=take["sequence_sha"] or \
    scene.get("nvp_take_dependencies")!=take["dependency_sha"]:
     raise RuntimeError("Frozen approved take does not match reopened Blender scene")
-if plan["style"] not in ("studio","flat") or plan["engine"]!="blender_workbench":
+if plan["engine"]=="blender_workbench" and plan["style"] in ("studio","flat"):
+    scene.render.engine="BLENDER_WORKBENCH"
+    scene.display.shading.color_type="OBJECT"
+    scene.display.shading.light="STUDIO" if plan["style"]=="studio" else "FLAT"
+elif plan["engine"]=="blender_cycles" and plan["style"] in ("pbr_studio","pbr_noir"):
+    # Presentation-only conversion; never edits the frozen World/Take ledger.
+    # Physically based lights, shaders and softened geometry, still proxies.
+    scene.render.engine="CYCLES"
+    scene.cycles.device="CPU"
+    scene.cycles.samples=plan["samples"]
+    scene.cycles.use_denoising=False
+    scene.view_settings.view_transform="AgX"
+    world=bpy.data.worlds.new("NVP_PBR_WORLD")
+    scene.world=world
+    world.use_nodes=True
+    bg=world.node_tree.nodes.get("Background")
+    bg.inputs["Color"].default_value=(.25,.3,.42,1) if plan["style"]=="pbr_studio" else (.025,.04,.08,1)
+    bg.inputs["Strength"].default_value=.5 if plan["style"]=="pbr_studio" else .18
+    for ob in scene.objects:
+        if ob.type!="MESH":
+            continue
+        rgba=list(ob.color)
+        m=bpy.data.materials.new("NVP_PBR_"+ob.name)
+        m.use_nodes=True
+        bsdf=m.node_tree.nodes.get("Principled BSDF")
+        bsdf.inputs["Base Color"].default_value=(rgba[0],rgba[1],rgba[2],1)
+        bsdf.inputs["Roughness"].default_value=.46 if ob.name.startswith("NVP_") else .74
+        bsdf.inputs["Metallic"].default_value=.12 if ob.name.startswith("NVP_") else 0
+        ob.data.materials.clear()
+        ob.data.materials.append(m)
+        if ob.name.startswith("NVP_") and all(v>.15 for v in ob.dimensions):
+            bevel=ob.modifiers.new(name="NVP_PresentationOnlyBevel",type="BEVEL")
+            bevel.width=min(float(v) for v in ob.dimensions)*.045
+            bevel.segments=2
+    for light in list(bpy.data.lights):
+        light.energy=light.energy*(1.4 if plan["style"]=="pbr_studio" else .8)
+    if plan["style"]=="pbr_noir":
+        ld=bpy.data.lights.new("NVP_NOIR_RIM","AREA")
+        lo=bpy.data.objects.new("NVP_NOIR_RIM",ld)
+        scene.collection.objects.link(lo)
+        room=[ob for ob in scene.objects if ob.name=="NVP_FLOOR"][0]
+        lo.location=(room.dimensions.x*.7,room.dimensions.y*.7,4.0)
+        ld.energy=850.0
+        ld.color=(.45,.62,1)
+        ld.shape="DISK"
+        ld.size=3.0
+else:
     raise RuntimeError("Unsupported Blender presentation backend")
-scene.render.engine="BLENDER_WORKBENCH"
 scene.render.image_settings.file_format="PNG"
 scene.render.resolution_x=plan["width"]
 scene.render.resolution_y=plan["height"]
 scene.render.resolution_percentage=100
 scene.render.film_transparent=False
-scene.display.shading.color_type="OBJECT"
-scene.display.shading.light="STUDIO" if plan["style"]=="studio" else "FLAT"
 scene.render.fps=take["fps"]
 shots={x["id"]:x for x in take["shots"]}
 observed=[]
@@ -80,7 +125,7 @@ for job in plan["frames"]:
                      "source_sha":scene["nvp_take_sha"]})
 Path(args[3]+".receipt.json").write_text(json.dumps({
     "format":"nvp.blender.presentation.render_receipt.v1",
-    "engine":"blender_workbench","style":plan["style"],"frames":observed,
+    "engine":plan["engine"],"style":plan["style"],"samples":plan["samples"],"frames":observed,
     "take_sequence_sha":take["sequence_sha"],
     "take_dependency_sha":take["dependency_sha"],
     "blender_version":bpy.app.version_string
@@ -132,8 +177,8 @@ def _png_info(raw: bytes):
 class PresentationPipeline:
     """User-selected presentation adapter with strict capability reporting.
 
-    Blender Workbench is supported now. External video/voice AI adapters will
-    be separately registered when their capabilities and rights are verified.
+    Blender Workbench and CPU Cycles PBR are supported now. Detailed
+    character geometry and neural video/voice adapters remain separate work.
     """
 
     def __init__(self,studio:Studio,index:FilmIndex|None=None):
@@ -143,27 +188,41 @@ class PresentationPipeline:
 
     @staticmethod
     def available_engines():
+        common=["frozen_take","camera_cuts","actor_paths","world_proxy_geometry"]
         return [{
             "engine":ENGINE,
             "styles":sorted(STYLES),
             "frame_modes":sorted(FRAME_MODES),
-            "inputs":["frozen_take","camera_cuts","actor_paths","world_proxy_geometry"],
+            "inputs":common,
             "outputs":["image/png"],
-            "limitations":["3D Workbench proxy rasterization; NOT photorealistic",
-                           "No generative video, audio, voice, dialogue playback or lip sync",
-                           "Keyframes mode yields selected stills, NOT full movie",
-                           "Full mode renders a bounded 24-fps PNG sequence, no encoder yet"],
+            "limitations":["Fast proxy rendering; not photorealistic",
+                           "No generated video/voice/audio or lip synchronization",
+                           "Keyframes mode yields sampled stills, not full motion"],
+        },{
+            "engine":PBR_ENGINE,
+            "styles":sorted(PBR_STYLES),
+            "frame_modes":sorted(FRAME_MODES),
+            "inputs":common,
+            "outputs":["image/png"],
+            "limitations":["Physically based Cycles CPU lighting and materials only",
+                           "Characters and set remain proxy meshes until licensed detailed assets are integrated",
+                           "Slower than Workbench and not photorealistic by itself",
+                           "No generative voice/video, no audio rendering"],
         }]
 
     def render(self,project_id,take_id,presentation_id,output_dir, *,
                engine=ENGINE,style="studio",frame_mode="keyframes",
-               width=320,height=180,executable="blender",timeout=180):
+               width=320,height=180,executable="blender",timeout=180,
+               samples=8):
         _id(take_id,"digital take ID")
         _id(presentation_id,"presentation ID")
-        if engine!=ENGINE:
+        if engine not in (ENGINE,PBR_ENGINE):
             raise ValueError("Selected video/renderer backend is not installed or unsupported")
-        if style not in STYLES or frame_mode not in FRAME_MODES:
+        if (engine==ENGINE and style not in STYLES) or \
+           (engine==PBR_ENGINE and style not in PBR_STYLES) or frame_mode not in FRAME_MODES:
             raise ValueError("Unsupported presentation style or frame mode")
+        if type(samples) is not int or not 1<=samples<=128:
+            raise ValueError("Samples must be between 1 and 128")
         if type(width) is not int or type(height) is not int or \
            not (64<=width<=1920 and 64<=height<=1080):
             raise ValueError("Presentation dimensions exceed allowed bounded output")
@@ -197,7 +256,7 @@ class PresentationPipeline:
         take.write_text(compact(frozen["timed_take"]),"utf-8")
         plan=working/"plan.json"
         plan.write_text(compact({"engine":engine,"style":style,"frames":frames,
-                                "width":width,"height":height}),"utf-8")
+                                "width":width,"height":height,"samples":samples}),"utf-8")
         render_py=working/"render.py"
         render_py.write_text(RENDER_SCRIPT,"utf-8")
         rendered=working/"frames"
@@ -238,7 +297,7 @@ class PresentationPipeline:
         data={"format":"nvp.presentation.blender.v1",
               "status":"rendered_unreviewed",
               "engine":engine,"engine_version":receipt.get("blender_version"),
-              "style":style,"frame_mode":frame_mode,"frame_rate":frozen["timed_take"]["fps"],
+              "style":style,"samples":samples,"frame_mode":frame_mode,"frame_rate":frozen["timed_take"]["fps"],
               "width":width,"height":height,"rendered_frames":stored,
               "source_take_id":take_id,"source_take_revision":1,
               "source_take_sha256":take_sha,
@@ -263,7 +322,9 @@ class PresentationPipeline:
         data=record["data"]
         if data.get("format")!="nvp.presentation.blender.v1" or \
            data.get("status")!="rendered_unreviewed" or \
-           data.get("engine")!=ENGINE or data.get("style") not in STYLES:
+           data.get("engine") not in (ENGINE,PBR_ENGINE) or \
+           (data["engine"]==ENGINE and data.get("style") not in STYLES) or \
+           (data["engine"]==PBR_ENGINE and data.get("style") not in PBR_STYLES):
             raise RuntimeError("Unsupported or untrusted presentation record")
         expected=[{"object_id":data["source_take_id"],"revision":1,"role":"source_take"}]
         if record["dependencies"]!=expected:
@@ -281,8 +342,9 @@ class PresentationPipeline:
         receipt=data.get("render_receipt")
         if not isinstance(receipt,dict) or \
            receipt.get("format")!="nvp.blender.presentation.render_receipt.v1" or \
-           receipt.get("engine")!=ENGINE or \
+           receipt.get("engine")!=data["engine"] or \
            receipt.get("style")!=data["style"] or \
+           receipt.get("samples")!=data.get("samples") or \
            receipt.get("blender_version")!=data.get("engine_version") or \
            receipt.get("take_sequence_sha")!=frozen["timed_take"]["sequence_sha"] or \
            receipt.get("take_dependency_sha")!=frozen["timed_take"]["dependency_sha"] or \
