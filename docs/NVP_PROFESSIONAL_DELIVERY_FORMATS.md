@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-03  
 **Decision:** Professional editing, VFX and theatrical deliverables are **first-class outputs** of NVP, alongside ordinary playable MP4s. There is no one universal "film industry standard video file."  
-**Implementation status:** **ProRes 422 HQ MOV export implemented and verified on Linux native Blender/FFmpeg**, alongside H.264 MP4. Both formats were independently decoded, SHA-verified and re-opened from the same frozen take and PBR frames. Linux 445 tests (438 passed/7 skipped) and native presentation step passed on run 41700029191. Windows acceptance is tracked separately. DNx, EXR and DCP remain implementation targets, not working claims.  
+**Implementation status:** **ProRes 422 HQ MOV export implemented and verified on Linux native Blender/FFmpeg**, alongside H.264 MP4. Both formats were independently decoded, SHA-verified and re-opened from the same frozen take and PBR frames. Linux 445 tests (438 passed/7 skipped) and native presentation step passed on run 41700029191. **All five jobs passed** in run 41700029191, including Windows Python/React and Windows Blender geometry acceptance (Linux performed the actual ProRes video render). DNx, EXR and DCP remain implementation targets, not working claims.  
 **Upstream:** [Data-First Filmmaking ADR](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md), [full-motion implementation](NVP_PIPE01B_FULL_MOTION_PBR.md).
 
 ## Delivery hierarchy and intended use
@@ -75,6 +75,6 @@ DCP is a **digital-cinema package** with separate picture/audio essence and play
 - **PRO-05**: Never infer genuine high-bit-depth render/color mastering from the encoded ProRes wrapper. Capability report and docs must distinguish source quality from output format.
 - **PRO-06**: Later DNx, EXR, ProRes 4444 and DCP require their own explicit valid output and external compatibility/conformance gates.
 
-**CI:** https://github.com/vjmichael/nvp_offline_film/actions/runs/41700029191 — Linux native H.264 + ProRes 422 HQ actual movie generation/decode passed, 445 regression tests (438 pass, seven skipped), Vite build passed, Windows results tracked independently.
+**CI:** https://github.com/vjmichael/nvp_offline_film/actions/runs/41700029191 — Linux native H.264 + ProRes 422 HQ actual movie generation/decode passed, 445 regression tests (438 pass, seven skipped), Vite build passed, Windows Python/React and Blender geometry success; **all five jobs green**.
 
 **Next quality milestone:** high-detail actor/set representations and true source color pipeline. ProRes interchange will then preserve those renders to a much more useful professional standard.
