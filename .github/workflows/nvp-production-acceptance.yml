@@ -5,6 +5,7 @@ on:
     branches:
       - nvp/prod01-acceptance-through-prod04-20261102
       - nvp/prod05-timed-shots-20261102
+      - nvp/prod06-rigged-motion-20261102
   workflow_dispatch:
 
 permissions:
@@ -134,6 +135,11 @@ jobs:
           set -euo pipefail
           xvfb-run -a python -m unittest discover -s tests -p test_prod05_blender.py -v
           xvfb-run -a python -m tools.nvp_prod05_fixture --out acceptance_artifacts/prod05
+      - name: Native PROD06 skeletal rig and pose animation acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p test_rig_motion.py -v
       - name: Preserve audit, blend files and preview even when job fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -226,6 +232,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD05 Windows animation audit failed' }
           python -m tools.nvp_prod05_fixture --out prod05_windows_acceptance --audit-only
           if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD05 Windows fixture audit failed' }
+      - name: Native PROD06 Windows armature and bone-keyframe audit
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m unittest discover -s tests -p test_rig_motion.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06 Windows rig audit failed' }
       - name: Preserve Windows PROD05 native audit evidence
         if: always()
         uses: actions/upload-artifact@v4

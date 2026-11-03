@@ -738,7 +738,6 @@ def production_solve_camera(project_id: str, scene_id: str, payload: CameraShotI
         project_id,scene_id,payload.subjects,lens_mm=payload.lens_mm,
         shot_size=payload.shot_size,desired_positions=payload.desired_positions))
 
-
 # NVP-PROD-05: author-controlled, frame-accurate shot sequences.
 from backend.nvp_shot_sequence import ShotSequence
 
@@ -831,3 +830,87 @@ def prod05_package(project_id: str, scene_id: str):
 def prod05_blender_script(project_id: str, scene_id: str):
     return {'script':run(lambda: ShotSequence(studio).blender_script(project_id,scene_id)),
             'language':'python','runtime':'Blender 5.2+ bpy'}
+
+# NVP-PROD-06A: reusable offline BVH/author-keyed motion, approval-gated.
+from backend.nvp_rig_motion import RigMotion
+
+
+class RegisterBVHMotion(BaseModel):
+    name: str = Field(min_length=1,max_length=120)
+    license: str = Field(min_length=1,max_length=100)
+    bvh: str = Field(min_length=1,max_length=1000000)
+    mapping: dict[str,str] = Field(min_length=1,max_length=7)
+
+
+class RegisterAuthoredMotion(BaseModel):
+    name: str = Field(min_length=1,max_length=120)
+    license: str = Field(min_length=1,max_length=100)
+    fps: int = Field(default=24,ge=10,le=120)
+    frames: list[dict] = Field(min_length=2,max_length=2400)
+
+
+class AttachMotion(BaseModel):
+    actor_instance_id: str
+    clip_id: str
+    start_frame: int = Field(ge=1,le=14400)
+    expected_revision: int = Field(ge=0)
+
+
+class ActorMotionRevision(BaseModel):
+    actor_instance_id: str
+    expected_revision: int = Field(ge=0)
+
+
+@app.get('/api/projects/{project_id}/production/motion-clips')
+def prod06_clips(project_id:str):
+    return run(lambda:RigMotion(studio).clips(project_id))
+
+
+@app.post('/api/projects/{project_id}/production/motion-clips/bvh', status_code=201)
+def prod06_register_bvh(project_id:str,payload:RegisterBVHMotion):
+    return run(lambda:RigMotion(studio).register(project_id,payload.name,payload.license,
+                      bvh=payload.bvh,mapping=payload.mapping))
+
+
+@app.post('/api/projects/{project_id}/production/motion-clips/authored', status_code=201)
+def prod06_register_authored(project_id:str,payload:RegisterAuthoredMotion):
+    return run(lambda:RigMotion(studio).register(project_id,payload.name,payload.license,
+                      frames=payload.frames,fps=payload.fps))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion',status_code=201)
+def prod06_create(project_id:str,scene_id:str):
+    return run(lambda:RigMotion(studio).create(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion')
+def prod06_read(project_id:str,scene_id:str):
+    return run(lambda:RigMotion(studio).read(project_id,scene_id))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/attach')
+def prod06_attach(project_id:str,scene_id:str,payload:AttachMotion):
+    return run(lambda:RigMotion(studio).attach(project_id,scene_id,
+        payload.actor_instance_id,payload.clip_id,payload.start_frame,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/clear')
+def prod06_clear(project_id:str,scene_id:str,payload:ActorMotionRevision):
+    return run(lambda:RigMotion(studio).clear(project_id,scene_id,
+        payload.actor_instance_id,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/approve')
+def prod06_approve(project_id:str,scene_id:str,payload:TakeRevisionInput):
+    return run(lambda:RigMotion(studio).approve(project_id,scene_id,payload.expected_revision))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/history')
+def prod06_history(project_id:str,scene_id:str):
+    return run(lambda:RigMotion(studio).history(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/blender-script')
+def prod06_blender(project_id:str,scene_id:str):
+    return {'script':run(lambda:RigMotion(studio).blender_script(project_id,scene_id)),
+            'language':'python','runtime':'Blender 5.2+ bpy','rig':'humanoid_preview_v1'}
