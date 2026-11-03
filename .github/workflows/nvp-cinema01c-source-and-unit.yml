@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - nvp/cinema01c-duration-lineage-replay-20261103
+  pull_request:
+    branches:
+      - nvp/cinema01b-jpeg2000-mxf-evidence-20261103
   workflow_dispatch:
 
 permissions:
