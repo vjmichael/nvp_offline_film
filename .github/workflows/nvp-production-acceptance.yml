@@ -1,0 +1,137 @@
+name: NVP Python, React, and native Blender acceptance
+
+on:
+  push:
+    branches:
+      - nvp/prod01-acceptance-through-prod04-20261102
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-production-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-regressions:
+    name: NVP Python regression suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+      - name: Compile Python modules
+        run: python -m compileall -q backend tests tools
+      - name: Run complete Python suite (native Blender test skips here)
+        run: PYTHONPATH=. python -m unittest discover -s tests -v
+
+  react-production:
+    name: Vite / React production build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install JS dependencies (no lockfile in this branch)
+        run: npm install --no-audit --no-fund
+      - name: Compile production frontend
+        run: npm run build
+
+  blender-native:
+    name: Real Blender 5.2.3 save / reopen / audit / render
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test and headless render dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download and authenticate official Blender release
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 --connect-timeout 30 --max-time 1200 "${BLENDER_BASE}/${name}" -o "${name}"
+          curl --fail --location --retry 4 --retry-delay 5 "${BLENDER_BASE}/blender-${BLENDER_VERSION}.sha256" -o blender.sha256
+          grep "  ${name}$" blender.sha256 | sha256sum --check --status
+          mkdir -p /tmp/nvp-blender
+          tar -xJf "${name}" -C /tmp/nvp-blender --strip-components=1
+          echo "/tmp/nvp-blender" >> "$GITHUB_PATH"
+          /tmp/nvp-blender/blender -b --version | head -n 2
+      - name: Run native Blender regression (must not skip)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p 'test_blender_acceptance.py' -v
+      - name: Produce durable proxy and GLB native acceptance artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p acceptance_artifacts
+          xvfb-run -a python - <<'PY'
+          from pathlib import Path
+          import json
+          import trimesh
+          from backend.nvp_studio import Studio
+          from backend.nvp_production_scene import ProductionScene
+          from backend.nvp_mesh_assets import MeshAssets
+          from backend.nvp_blender_acceptance import run_acceptance, run_meshpack_acceptance
+
+          root = Path('acceptance_artifacts')
+          studio = Studio(root / 'ci_scene.sqlite3')
+          project = studio.create_project('CI native Blender proof', 'repeatable deterministic setup')
+          project_id = project['id']
+          scene = studio.save_screenplay(project_id, 'INT. SET - DAY\n\nA chair rests by a table.\n', 0)
+          scene_id = scene['scenes'][0]['id']
+          production = ProductionScene(studio)
+          chair = production.create_asset(project_id, {
+              'name':'Chair', 'category':'furniture', 'dimensions':[.5,.5,.9],
+              'anchors':{'seat':[0,0,.5]}
+          })
+          plan = production.stage_scene(project_id, scene_id, [8,6,3])
+          plan = production.add_instance(project_id, scene_id, chair['asset_id'],
+                                          'chair_1', plan['plan_revision'])
+          plan = production.solve_scene(project_id, scene_id, plan['plan_revision'])
+          production.approve_scene(project_id, scene_id, plan['plan_revision'])
+          proxy = run_acceptance(production, project_id, scene_id, root / 'proxy')
+          (root / 'proxy_result.json').write_text(json.dumps(proxy,indent=2))
+          assert proxy['status']=='passed_blender', proxy
+          mesh = trimesh.Scene()
+          mesh.add_geometry(trimesh.creation.box(extents=(.5,.5,.9)))
+          MeshAssets(studio).register(project_id, chair['asset_id'],
+                                      mesh.export(file_type='glb'), 'creator_owned')
+          actual = run_meshpack_acceptance(MeshAssets(studio),project_id,scene_id,root/'meshpack')
+          (root / 'meshpack_result.json').write_text(json.dumps(actual,indent=2))
+          assert actual['status']=='passed_blender', actual
+          print('REAL BLENDER ACCEPTANCE PASS:',proxy['checks'],'proxy checks')
+          print('REAL BLENDER GLB ACCEPTANCE PASS:',actual)
+          PY
+      - name: Preserve audit, blend files and preview even when job fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-real-blender-acceptance
+          path: acceptance_artifacts/
+          if-no-files-found: warn
+          retention-days: 7
