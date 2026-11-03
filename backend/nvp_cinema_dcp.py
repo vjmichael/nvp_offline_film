@@ -39,7 +39,7 @@ DCP_PROFILES = {
         "standard": "SMPTE", "format": "2K Scope",
     },
 }
-DCP_PACKAGE_FORMAT = "nvp.presentation.dcp.technical.v1"
+DCP_PACKAGE_FORMAT = "nvp.presentation.dcp.technical.v2"
 REQUIRED_XML_TAGS = frozenset(("CompositionPlaylist","PackingList","AssetMap"))
 SAFE_TITLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}\Z")
 MAX_FILES = 300
@@ -237,7 +237,7 @@ class CinemaDCP:
             (project_id+"|"+dcp_id).encode("utf-8")).hexdigest()[:24])
         workspace.mkdir(exist_ok=False)
         project_dir=workspace/"project"
-        media=self.motion.reopen(project_id,motion_id)
+        media=self.motion.reopen(project_id,motion_id,check_decode=True)
         if media["record"]["document_sha256"]!=plan["source_motion_sha256"]:
             raise RuntimeError("Cinema source changed after preflight")
         # DCP-o-matic's CLI owns all SMPTE conforming JPEG2000 and MXF logic.
@@ -277,7 +277,7 @@ class CinemaDCP:
         if re.search(r"(?i)(?:\b[1-9]\d*\s+errors?\b|\berror\s*:|\bfatal\s*:|\bverification failed\b)",output):
             raise RuntimeError("Independent DCP verifier reported errors")
         # Rehash source *again* before committing a linked package receipt.
-        current=self.motion.reopen(project_id,motion_id)
+        current=self.motion.reopen(project_id,motion_id,check_decode=True)
         if (current["record"]["document_sha256"]!=plan["source_motion_sha256"] or
             current["media"]["sha256"]!=plan["source_video_sha256"]):
             raise RuntimeError("Cinema source changed during packaging")
@@ -297,8 +297,15 @@ class CinemaDCP:
               "creator_warnings":plan["warnings"],
               "validator":"dcpomatic2_verify_cli",
               "limitation":"Independent theater/projector ingest and color/sound quality not certified"}
+        if (not isinstance(data["source_take_id"],str) or
+            not isinstance(data["source_take_sha256"],str) or
+            len(data["source_take_sha256"])!=64):
+            raise RuntimeError("Cinema source missing frozen source-take lineage")
         receipt=self.index.register_revision(project_id,dcp_id,"presentation",data,
-            dependencies=[{"object_id":motion_id,"revision":1,"role":"presentation"}])
+            dependencies=[
+                {"object_id":motion_id,"revision":1,"role":"presentation"},
+                {"object_id":data["source_take_id"],"revision":1,"role":"source_take"},
+            ])
         return {"record":receipt,"source":plan,"structure":structure,
                 "picture_evidence":picture,
                 "package_dir":str(dcp_dir),"status":data["status"]}
@@ -308,8 +315,12 @@ class CinemaDCP:
         data=record["data"]
         if record["kind"]!="presentation" or data.get("format")!=DCP_PACKAGE_FORMAT:
             raise RuntimeError("Not an indexed technical cinema package")
-        expected=[{"object_id":data["source_motion_id"],
-                   "revision":1,"role":"presentation"}]
+        expected=sorted([
+            {"object_id":data["source_motion_id"],
+             "revision":1,"role":"presentation"},
+            {"object_id":data["source_take_id"],
+             "revision":1,"role":"source_take"},
+        ],key=lambda x:(x["object_id"],x["revision"],x["role"]))
         if record["dependencies"]!=expected:
             raise RuntimeError("DCP lineage is not bound to its exact video presentation")
         source=self.motion.reopen(project_id,data["source_motion_id"])
