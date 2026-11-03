@@ -30,6 +30,37 @@ FORMAT = "nvp.presentation.motion.v1"
 MAX_VIDEO_FRAMES = 240  # 10 seconds at 24fps, until chunked media jobs land
 AUDIO_SAMPLE_RATE = 48000
 
+# Selectable, versioned delivery codecs. 10-bit ProRes encoding does not
+# imply our current 8-bit PNG source is genuinely 10-bit captured content.
+EXPORT_PROFILES = {
+    "h264_mp4": {
+        "container": "mp4", "extension": ".mp4", "mime": "video/mp4",
+        "codec": "h264", "pix_fmt": "yuv420p", "bits_per_component": 8,
+        "codec_tag": None,
+        "ffmpeg_args": ["-c:v", "libx264", "-preset", "ultrafast",
+                        "-crf", "18", "-pix_fmt", "yuv420p",
+                        "-movflags", "+faststart"],
+    },
+    "prores_422_hq_mov": {
+        "container": "mov", "extension": ".mov", "mime": "video/quicktime",
+        "codec": "prores", "pix_fmt": "yuv422p10le", "bits_per_component": 10,
+        "codec_tag": "apch",
+        "ffmpeg_args": ["-c:v", "prores_ks", "-profile:v", "3",
+                        "-pix_fmt", "yuv422p10le"],
+    },
+}
+
+
+def _codec_receipt(profile, expected):
+    spec=EXPORT_PROFILES[profile]
+    result={"codec":spec["codec"],"pix_fmt":spec["pix_fmt"],
+            "width":expected["width"],"height":expected["height"],
+            "fps_num":expected["fps"],"fps_den":1,
+            "decoded_frame_count":expected["frames"]}
+    if spec["codec_tag"] is not None:
+        result["codec_tag"]=spec["codec_tag"]
+    return result
+
 
 def _run(command, *, timeout, action):
     """No shell expansion or user-generated Python; refuse unsuccessful jobs."""
@@ -59,7 +90,7 @@ def _tool(name, override=None):
 def _probe_video(video,probe,expected,*,timeout=120):
     output=_run([probe,"-v","error","-select_streams","v:0",
                  "-count_frames","-show_entries",
-                 "stream=codec_name,width,height,nb_read_frames,r_frame_rate,pix_fmt",
+                 "stream=codec_name,codec_tag_string,width,height,nb_read_frames,r_frame_rate,pix_fmt",
                  "-of","json",str(video)],timeout=timeout,action="Independent FFprobe")
     try:
         streams=json.loads(output.stdout)["streams"]
@@ -70,15 +101,20 @@ def _probe_video(video,probe,expected,*,timeout=120):
         width=int(stream["width"])
         height=int(stream["height"])
     except (ValueError,KeyError,IndexError,TypeError) as exc:
-        raise RuntimeError("Independently probed MP4 has incomplete video metadata") from exc
-    if (stream.get("codec_name")!="h264" or
-        stream.get("pix_fmt")!="yuv420p" or
+        raise RuntimeError("Independently probed media has incomplete video metadata") from exc
+    profile=expected.get("output_profile","h264_mp4")
+    if profile not in EXPORT_PROFILES:
+        raise ValueError("Unknown requested professional output profile")
+    spec=EXPORT_PROFILES[profile]
+    if (stream.get("codec_name")!=spec["codec"] or
+        stream.get("pix_fmt")!=spec["pix_fmt"] or
+        (spec["codec_tag"] is not None and
+         stream.get("codec_tag_string")!=spec["codec_tag"]) or
         stream.get("r_frame_rate")!=f"{expected['fps']}/1" or
         (width,height)!=(expected["width"],expected["height"]) or
         frames!=expected["frames"]):
-        raise RuntimeError("Encoded presentation frames, FPS, format or resolution mismatch")
-    return {"codec":"h264","pix_fmt":"yuv420p","width":width,"height":height,
-            "fps_num":expected["fps"],"fps_den":1,"decoded_frame_count":frames}
+        raise RuntimeError("Encoded presentation frames, FPS, codec/profile or resolution mismatch")
+    return _codec_receipt(profile,expected)
 
 
 def _dialogue_timeline(frozen):
@@ -113,6 +149,11 @@ class FullMotionPipeline:
     @staticmethod
     def capabilities():
         return {"output":"video/mp4","codec":"h264","pix_fmt":"yuv420p",
+                "export_profiles":{key:{
+                    "container":spec["container"],"codec":spec["codec"],
+                    "pix_fmt":spec["pix_fmt"],
+                    "bits_per_component":spec["bits_per_component"]
+                } for key,spec in EXPORT_PROFILES.items()},
                 "motion":"full_24fps_captured_sequence",
                 "renderers":[ENGINE,PBR_ENGINE],
                 "styles":{ENGINE:sorted(STYLES),PBR_ENGINE:sorted(PBR_STYLES)},
@@ -129,16 +170,19 @@ class FullMotionPipeline:
     def render_video(self,project_id,take_id,motion_id,output_dir, *,
                      engine=ENGINE,style="studio",width=320,height=180,
                      samples=8,executable="blender",ffmpeg=None,ffprobe=None,
-                     timeout=600):
+                     timeout=600,output_profile="h264_mp4"):
         _id(take_id,"source take")
         _id(motion_id,"motion presentation ID")
+        if output_profile not in EXPORT_PROFILES:
+            raise ValueError("Unsupported professional/export video profile")
+        profile=EXPORT_PROFILES[output_profile]
         if len(motion_id)>72:
             raise ValueError("Motion ID must leave room for its distinct frame-source identity")
         if type(timeout) is not int or not 10<=timeout<=7200:
             raise ValueError("Invalid presentation execution timeout")
         if type(width) is not int or type(height) is not int or \
            width%2 or height%2 or not (64<=width<=1920 and 64<=height<=1080):
-            raise ValueError("H.264 4:2:0 requires bounded even frame dimensions")
+            raise ValueError("4:2:0/4:2:2 video export requires bounded even dimensions")
         if engine not in (ENGINE,PBR_ENGINE):
             raise ValueError("Selected video renderer is not supported")
         if (engine==ENGINE and style not in STYLES) or \
@@ -180,25 +224,24 @@ class FullMotionPipeline:
             if framepath.exists():
                 raise RuntimeError("Frame encoder staging path unexpectedly exists")
             framepath.write_bytes(raw)
-        movie=clip_dir/"full_motion.mp4"
+        movie=clip_dir/("full_motion"+profile["extension"])
         source_fps=frozen["timed_take"]["fps"]
         _run([encoder,"-hide_banner","-nostdin","-loglevel","error",
               "-framerate",str(source_fps),"-start_number","1",
               "-i",str(clip_dir/"frame_%06d.png"),
               "-frames:v",str(len(frame_list)),
-              "-c:v","libx264","-preset","ultrafast","-crf","18",
-              "-pix_fmt","yuv420p","-movflags","+faststart","-an",
-              "-f","mp4",str(movie)],
-             timeout=timeout,action="FFmpeg H.264 encode")
+              *profile["ffmpeg_args"],"-an",
+              "-f",profile["container"],str(movie)],
+             timeout=timeout,action="FFmpeg "+output_profile+" encode")
         if not movie.is_file() or movie.stat().st_size==0:
-            raise RuntimeError("FFmpeg generated no MP4 bytes")
+            raise RuntimeError("FFmpeg generated no encoded video bytes")
         expected={"fps":source_fps,"width":width,"height":height,
-                  "frames":len(frame_list)}
+                  "frames":len(frame_list),"output_profile":output_profile}
         decoded=_probe_video(movie,probe,expected,timeout=timeout)
         _run([encoder,"-hide_banner","-nostdin","-v","error",
               "-i",str(movie),"-f","null","-"],
-             timeout=timeout,action="Independent full MP4 decode")
-        indexed=self.index.put_media_file(project_id,movie,"video/mp4")
+             timeout=timeout,action="Independent full video decode")
+        indexed=self.index.put_media_file(project_id,movie,profile["mime"])
         cue_manifest=_dialogue_timeline(frozen)
         audio_duration_samples=len(frame_list)*(AUDIO_SAMPLE_RATE//source_fps)
         record_data={
@@ -209,7 +252,11 @@ class FullMotionPipeline:
             "source_frames_sha256":frames["record"]["document_sha256"],
             "video_sha256":indexed["sha256"],
             "video_bytes":indexed["size_bytes"],
-            "video_mime":"video/mp4",
+            "video_mime":profile["mime"],
+            "output_profile":output_profile,
+            "video_container":profile["container"],
+            "video_extension":profile["extension"],
+            "encoded_bit_depth":profile["bits_per_component"],
             "engine":engine,"style":style,"samples":samples,
             "width":width,"height":height,"source_fps":source_fps,
             "frame_count":len(frame_list),
@@ -273,15 +320,22 @@ class FullMotionPipeline:
             data["dialogue_timeline"]!=_dialogue_timeline(frozen) or
             data["audio_status"]!="timed_dialogue_only_no_waveform"):
             raise RuntimeError("Full-motion timebase, frames or audio cues inconsistent")
-        media=self.index.verify_media_file(project_id,data["video_sha256"],"video/mp4")
+        output_profile=data.get("output_profile","h264_mp4")
+        if output_profile not in EXPORT_PROFILES:
+            raise RuntimeError("Unsupported stored film export profile")
+        profile=EXPORT_PROFILES[output_profile]
+        if (data.get("video_mime")!=profile["mime"] or
+            data.get("video_container",profile["container"])!=profile["container"] or
+            data.get("video_extension",profile["extension"])!=profile["extension"] or
+            data.get("encoded_bit_depth",profile["bits_per_component"])!=profile["bits_per_component"]):
+            raise RuntimeError("Film export profile metadata does not match original codec")
+        media=self.index.verify_media_file(project_id,data["video_sha256"],profile["mime"])
         if media["size_bytes"]!=data["video_bytes"]:
             raise RuntimeError("Film clip metadata size was corrupted")
         expected={"fps":data["source_fps"],"width":data["width"],"height":data["height"],
-                  "frames":total}
+                  "frames":total,"output_profile":output_profile}
         receipt=data["codec_receipt"]
-        if receipt!={"codec":"h264","pix_fmt":"yuv420p","width":data["width"],
-                     "height":data["height"],"fps_num":data["source_fps"],
-                     "fps_den":1,"decoded_frame_count":total}:
+        if receipt!=_codec_receipt(output_profile,expected):
             raise RuntimeError("Film clip codec receipt does not match frozen source")
         if check_decode:
             encoder=_tool("ffmpeg",ffmpeg)
@@ -295,7 +349,8 @@ class FullMotionPipeline:
         return {"record":record,"media":media,"audit":{
             "status":"verified_full_motion_unreviewed",
             "frames":total,"fps":data["source_fps"],
-            "codec":"h264","video_sha256":data["video_sha256"],
+            "codec":profile["codec"],"container":profile["container"],
+            "profile":output_profile,"video_sha256":data["video_sha256"],
             "source_take_sha256":data["source_take_sha256"],
             "all_source_frames_verified":source["audit"]["all_images_verified"],
             "media_sha_verified":True,
