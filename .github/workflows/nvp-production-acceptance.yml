@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nvp/prod01-acceptance-through-prod04-20261102
+      - nvp/prod05-timed-shots-20261102
   workflow_dispatch:
 
 permissions:
@@ -127,6 +128,12 @@ jobs:
           print('REAL BLENDER ACCEPTANCE PASS:',proxy['checks'],'proxy checks')
           print('REAL BLENDER GLB ACCEPTANCE PASS:',actual)
           PY
+      - name: Native PROD05 two-camera animated take acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p test_prod05_blender.py -v
+          xvfb-run -a python -m tools.nvp_prod05_fixture --out acceptance_artifacts/prod05
       - name: Preserve audit, blend files and preview even when job fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -211,3 +218,19 @@ jobs:
           $env:PYTHONPATH = '.'
           python -m unittest discover -s tests -p test_blender_acceptance.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Windows native Blender acceptance failed' }
+      - name: Native Windows PROD05 camera-cut and actor-track audit
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m unittest discover -s tests -p test_prod05_blender.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD05 Windows animation audit failed' }
+          python -m tools.nvp_prod05_fixture --out prod05_windows_acceptance --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD05 Windows fixture audit failed' }
+      - name: Preserve Windows PROD05 native audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod05-windows-native-geometry
+          path: prod05_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
