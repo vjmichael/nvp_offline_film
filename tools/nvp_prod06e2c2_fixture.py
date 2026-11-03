@@ -18,7 +18,7 @@ from backend.nvp_studio import Studio
 from tools.nvp_prod06e2b_fixture import run_fixture
 
 
-def run_fixture_plantar(out, source, *, blender="blender", audit_only=False):
+def run_fixture_plantar(out, source, *, blender="blender", audit_only=False, fixture_active_roles=None):
     out=Path(out).resolve();out.mkdir(parents=True,exist_ok=True)
     upstream=run_fixture(out/"real_ankle_ik",source,blender=blender,audit_only=audit_only)
     if upstream.get("status")!="passed_native_ankle_lock_only":
@@ -70,6 +70,14 @@ def run_fixture_plantar(out, source, *, blender="blender", audit_only=False):
             "max_gap_m":.02,
             "max_slide_m":.012
         }
+    if fixture_active_roles is not None:
+        if (type(fixture_active_roles) is not dict or set(fixture_active_roles)!={"left","right"} or
+            any(type(roles) is not list or not roles or any(r not in ("heel","ball","toe") for r in roles)
+                for roles in fixture_active_roles.values())):
+            raise ValueError("Fixture active markers must explicitly identify left and right")
+        for record in config["actors"].values():
+            for side in ("left","right"):
+                record[side]["contact_roles"]=fixture_active_roles[side]
     draft=service.create(pid,sid)
     draft=service.configure(pid,sid,config,draft["revision"])
     receipt=service.approve(pid,sid,draft["revision"])
