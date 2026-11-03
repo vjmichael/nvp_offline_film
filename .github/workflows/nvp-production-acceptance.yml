@@ -147,6 +147,11 @@ jobs:
           set -euo pipefail
           xvfb-run -a python -m unittest discover -s tests -p test_prod05_blender.py -v
           xvfb-run -a python -m tools.nvp_prod05_fixture --out acceptance_artifacts/prod05
+      - name: CAPTURE-01 independent frozen take native Blender replay (original visible actor after source edit)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_capture01_fixture --out acceptance_artifacts/capture01
       - name: Native PROD06 skeletal rig and pose animation acceptance
         shell: bash
         run: |
@@ -299,6 +304,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD05 Windows animation audit failed' }
           python -m tools.nvp_prod05_fixture --out prod05_windows_acceptance --audit-only
           if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD05 Windows fixture audit failed' }
+      - name: CAPTURE-01 independent frozen take native Windows Blender audit (no WGL render)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_capture01_fixture --out capture01_windows_acceptance --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-CAPTURE01 Windows frozen take audit failed' }
       - name: Native PROD06 Windows armature and bone-keyframe audit
         shell: pwsh
         run: |
@@ -451,6 +462,14 @@ jobs:
         with:
           name: nvp-prod06b-windows-skin-audit
           path: prod06b_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve CAPTURE-01 Windows frozen take evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-capture01-windows-native-geometry
+          path: capture01_windows_acceptance/
           if-no-files-found: warn
           retention-days: 7
       - name: Preserve Windows PROD05 native audit evidence
