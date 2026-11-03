@@ -11,6 +11,7 @@ on:
       - nvp/prod06d-real-character-calibration-20261102
       - nvp/prod06e1-footplant-preflight-20261102
       - nvp/prod06e2-leg-identity-20261103
+      - nvp/prod06e2b-foot-lock-20261103
   workflow_dispatch:
 
 permissions:
@@ -175,6 +176,11 @@ jobs:
         run: |
           set -euo pipefail
           xvfb-run -a python -m tools.nvp_prod06e2_fixture --out acceptance_artifacts/prod06e2 --external-glb "$PWD/cesiumman_external.glb"
+      - name: Native PROD06E2B real character ankle-lock animation and independently reopened audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_prod06e2b_fixture --out acceptance_artifacts/prod06e2b --external-glb "$PWD/cesiumman_external.glb"
       - name: Preserve audit, blend files and preview even when job fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -314,6 +320,21 @@ jobs:
           $env:PYTHONPATH = '.'
           python -m tools.nvp_prod06e2_fixture --out prod06e2_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
           if ($LASTEXITCODE -ne 0) { throw 'Windows Blender anatomical mapping audit failed' }
+      - name: Native PROD06E2B Windows actual ankle-lock and independent geometry verification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_prod06e2b_fixture --out prod06e2b_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows real-character ankle-lock audit failed' }
+      - name: Preserve Windows PROD06E2B native ankle-lock evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06e2b-windows-footlock
+          path: prod06e2b_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Preserve Windows PROD06E2A leg identity evidence
         if: always()
         uses: actions/upload-artifact@v4
