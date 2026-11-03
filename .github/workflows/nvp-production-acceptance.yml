@@ -18,6 +18,7 @@ on:
       - nvp/prod06e2c3b-anatomical-landmarks-bvh-20261103
       - nvp/data01-film-lineage-index-20261103
       - nvp/capture01-immutable-timed-takes-20261103
+      - nvp/pipe01-blender-presentations-20261103
   workflow_dispatch:
 
 permissions:
@@ -152,6 +153,11 @@ jobs:
         run: |
           set -euo pipefail
           xvfb-run -a python -m tools.nvp_capture01_fixture --out acceptance_artifacts/capture01
+      - name: PIPE-01A native Blender two-style rendered presentations from same frozen take
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_pipe01_fixture --out acceptance_artifacts/pipe01
       - name: Native PROD06 skeletal rig and pose animation acceptance
         shell: bash
         run: |
