@@ -195,7 +195,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Blender checksum download failed' }
           $entry = Get-Content blender.sha256 | Where-Object { $_.Trim().EndsWith($archive) } | Select-Object -First 1
           if (-not $entry) { throw 'Official SHA256 list lacks requested Windows archive' }
-          $expected = ($entry.Trim() -split '\\s+')[0].ToLowerInvariant()
+          $expected = ($entry.Trim() -split '\s+')[0].ToLowerInvariant()
           $actual = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw "Blender SHA256 mismatch" }
           Expand-Archive -Path $archive -DestinationPath blender-runtime
