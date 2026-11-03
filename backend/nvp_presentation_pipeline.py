@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 from pathlib import Path
 import struct
 import subprocess
@@ -20,6 +21,7 @@ from backend.nvp_digital_capture import DigitalCapture, run_frozen_take_acceptan
 from backend.nvp_film_index import FilmIndex, _id
 from backend.nvp_production_scene import compact
 from backend.nvp_studio import Studio
+from backend.nvp_color_exr import PIXEL_PNG, PIXEL_EXR, PIXEL_CONTRACTS, check_frame
 
 ENGINE = "blender_workbench"
 PBR_ENGINE = "blender_cycles"
@@ -42,6 +44,11 @@ plan=json.loads(Path(args[3]).read_text("utf-8"))
 root=Path(args[5]).resolve()
 root.mkdir(parents=True,exist_ok=True)
 scene=bpy.context.scene
+contract=plan.get("pixel_contract","png_srgb8")
+if contract not in ("png_srgb8","openexr_half_rgba_scene_linear"):
+    raise RuntimeError("Unsupported pixel contract")
+if contract=="openexr_half_rgba_scene_linear" and plan["engine"]!="blender_cycles":
+    raise RuntimeError("Scene-linear OpenEXR requires Cycles")
 if take["format"]!="nvp.production.timed_proxy.v1" or \
    scene.get("nvp_take_sha")!=take["sequence_sha"] or \
    scene.get("nvp_take_dependencies")!=take["dependency_sha"]:
@@ -94,7 +101,14 @@ elif plan["engine"]=="blender_cycles" and plan["style"] in ("pbr_studio","pbr_no
         ld.size=3.0
 else:
     raise RuntimeError("Unsupported Blender presentation backend")
-scene.render.image_settings.file_format="PNG"
+if contract=="openexr_half_rgba_scene_linear":
+    scene.render.image_settings.file_format="OPEN_EXR"
+    scene.render.image_settings.color_mode="RGBA"
+    scene.render.image_settings.color_depth="16"
+    scene.render.image_settings.exr_codec="ZIP"
+    scene.view_settings.view_transform="Raw"
+else:
+    scene.render.image_settings.file_format="PNG"
 scene.render.resolution_x=plan["width"]
 scene.render.resolution_y=plan["height"]
 scene.render.resolution_percentage=100
@@ -113,7 +127,7 @@ for job in plan["frames"]:
     scene.camera=cam
     scene.frame_set(frame)
     basename=job["filename"]
-    if Path(basename).name!=basename or not basename.endswith(".png"):
+    if Path(basename).name!=basename or not basename.endswith(".exr" if contract=="openexr_half_rgba_scene_linear" else ".png"):
         raise RuntimeError("Presentation filename was not a safe basename")
     file_path=root/basename
     scene.render.filepath=str(file_path)
@@ -125,7 +139,12 @@ for job in plan["frames"]:
                      "source_sha":scene["nvp_take_sha"]})
 Path(args[3]+".receipt.json").write_text(json.dumps({
     "format":"nvp.blender.presentation.render_receipt.v1",
-    "engine":plan["engine"],"style":plan["style"],"samples":plan["samples"],"frames":observed,
+    "engine":plan["engine"],"style":plan["style"],"samples":plan["samples"],
+    "pixel_contract":contract,
+    "pixel_storage":({"file_format":"OPEN_EXR","color_depth":"16","color_mode":"RGBA",
+                      "view_transform":scene.view_settings.view_transform}
+                     if contract=="openexr_half_rgba_scene_linear" else {"file_format":"PNG"}),
+    "frames":observed,
     "take_sequence_sha":take["sequence_sha"],
     "take_dependency_sha":take["dependency_sha"],
     "blender_version":bpy.app.version_string
@@ -133,7 +152,7 @@ Path(args[3]+".receipt.json").write_text(json.dumps({
 '''
 
 
-def selected_frames(timed_take: dict, mode="keyframes"):
+def selected_frames(timed_take: dict, mode="keyframes", extension="png"):
     """Frame-accurate shot selection, with full-range mode for actual sequences.
 
     A keyframe preview contains only selected stills. It MUST NOT be labeled
@@ -157,7 +176,7 @@ def selected_frames(timed_take: dict, mode="keyframes"):
         sample=([lo, lo+(hi-lo-1)//2] if mode=="keyframes" else range(lo,hi))
         for frame in sorted(set(sample)):
             frames.append({"shot_id":shot["id"],"frame":frame,
-                           "filename":f"frame_{frame:06d}.png"})
+                           "filename":f"frame_{frame:06d}."+extension})
         next_frame=hi
     if mode=="full" and len(frames)>MAX_FULL_FRAMES:
         raise ValueError("Full sequence exceeds current 2400-frame job budget")
@@ -195,6 +214,7 @@ class PresentationPipeline:
             "frame_modes":sorted(FRAME_MODES),
             "inputs":common,
             "outputs":["image/png"],
+            "pixel_contracts":[PIXEL_PNG],
             "limitations":["Fast proxy rendering; not photorealistic",
                            "No generated video/voice/audio or lip synchronization",
                            "Keyframes mode yields sampled stills, not full motion"],
@@ -203,7 +223,8 @@ class PresentationPipeline:
             "styles":sorted(PBR_STYLES),
             "frame_modes":sorted(FRAME_MODES),
             "inputs":common,
-            "outputs":["image/png"],
+            "outputs":["image/png","image/x-exr"],
+            "pixel_contracts":[PIXEL_PNG,PIXEL_EXR],
             "limitations":["Physically based Cycles CPU lighting and materials only",
                            "Characters and set remain proxy meshes until licensed detailed assets are integrated",
                            "Slower than Workbench and not photorealistic by itself",
@@ -213,7 +234,7 @@ class PresentationPipeline:
     def render(self,project_id,take_id,presentation_id,output_dir, *,
                engine=ENGINE,style="studio",frame_mode="keyframes",
                width=320,height=180,executable="blender",timeout=180,
-               samples=8):
+               samples=8,pixel_contract=PIXEL_PNG,ffmpeg=None):
         _id(take_id,"digital take ID")
         _id(presentation_id,"presentation ID")
         if engine not in (ENGINE,PBR_ENGINE):
@@ -221,6 +242,13 @@ class PresentationPipeline:
         if (engine==ENGINE and style not in STYLES) or \
            (engine==PBR_ENGINE and style not in PBR_STYLES) or frame_mode not in FRAME_MODES:
             raise ValueError("Unsupported presentation style or frame mode")
+        if pixel_contract not in PIXEL_CONTRACTS:
+            raise ValueError("Unsupported pixel contract")
+        if pixel_contract==PIXEL_EXR and engine!=PBR_ENGINE:
+            raise ValueError("Scene-linear EXR requires Blender Cycles")
+        decoder=shutil.which(ffmpeg or "ffmpeg") if pixel_contract==PIXEL_EXR else None
+        if pixel_contract==PIXEL_EXR and not decoder:
+            raise RuntimeError("Independent FFmpeg EXR decoder required before film registration")
         if type(samples) is not int or not 1<=samples<=128:
             raise ValueError("Samples must be between 1 and 128")
         if type(width) is not int or type(height) is not int or \
@@ -235,7 +263,7 @@ class PresentationPipeline:
         else:
             raise RuntimeError("Presentation already exists; use a new ID for a revision")
         frozen=self.capture.reopen(project_id,take_id)
-        frames=selected_frames(frozen["timed_take"],frame_mode)
+        frames=selected_frames(frozen["timed_take"],frame_mode,"exr" if pixel_contract==PIXEL_EXR else "png")
         state=blender_available(executable)
         if not state["available"]:
             raise RuntimeError("Blender unavailable; no presentation was published: "+state["reason"])
@@ -256,7 +284,8 @@ class PresentationPipeline:
         take.write_text(compact(frozen["timed_take"]),"utf-8")
         plan=working/"plan.json"
         plan.write_text(compact({"engine":engine,"style":style,"frames":frames,
-                                "width":width,"height":height,"samples":samples}),"utf-8")
+                                "width":width,"height":height,"samples":samples,
+                                "pixel_contract":pixel_contract}),"utf-8")
         render_py=working/"render.py"
         render_py.write_text(RENDER_SCRIPT,"utf-8")
         rendered=working/"frames"
@@ -278,6 +307,10 @@ class PresentationPipeline:
         receipt=json.loads(receipt_file.read_text("utf-8"))
         if (receipt.get("format")!="nvp.blender.presentation.render_receipt.v1" or
             receipt.get("engine")!=engine or receipt.get("style")!=style or
+            receipt.get("pixel_contract")!=pixel_contract or
+            (pixel_contract==PIXEL_EXR and receipt.get("pixel_storage")!={
+                "file_format":"OPEN_EXR","color_depth":"16","color_mode":"RGBA",
+                "view_transform":"Raw"}) or
             receipt.get("take_sequence_sha")!=frozen["timed_take"]["sequence_sha"] or
             receipt.get("take_dependency_sha")!=frozen["timed_take"]["dependency_sha"] or
             [(f["shot_id"],f["frame"],f["filename"]) for f in receipt.get("frames",[])]!=
@@ -286,18 +319,32 @@ class PresentationPipeline:
         stored=[]
         for frame in frames:
             raw=(rendered/frame["filename"]).read_bytes()
-            w,h=_png_info(raw)
-            if (w,h)!=(width,height):
+            info=check_frame(raw,pixel_contract,_png_info)
+            if pixel_contract==PIXEL_EXR:
+                try:
+                    result=subprocess.run([
+                        decoder,"-nostdin","-v","error","-xerror",
+                        "-i",str(rendered/frame["filename"]),"-frames:v","1",
+                        "-f","null","-"],capture_output=True,text=True,
+                        timeout=timeout,check=False)
+                except (OSError,subprocess.TimeoutExpired) as exc:
+                    raise RuntimeError("Independent EXR decode unavailable; no frame published") from exc
+                if result.returncode:
+                    raise RuntimeError("Independent EXR decode failed; no frame published: "+
+                                       result.stderr[-500:])
+            if (info["width"],info["height"])!=(width,height):
                 raise RuntimeError("Rendered output dimensions differ from requested presentation")
-            sha=self.index.put_blob(project_id,raw,"image/png")
+            sha=self.index.put_blob(project_id,raw,info["media_type"])
             stored.append({"shot_id":frame["shot_id"],"frame":frame["frame"],
                            "image_sha256":sha,"size_bytes":len(raw),
-                           "width":w,"height":h})
+                           "width":info["width"],"height":info["height"],
+                           "pixel_info":info})
         take_sha=frozen["record"]["document_sha256"]
         data={"format":"nvp.presentation.blender.v1",
               "status":"rendered_unreviewed",
               "engine":engine,"engine_version":receipt.get("blender_version"),
-              "style":style,"samples":samples,"frame_mode":frame_mode,"frame_rate":frozen["timed_take"]["fps"],
+              "style":style,"samples":samples,"pixel_contract":pixel_contract,
+              "frame_mode":frame_mode,"frame_rate":frozen["timed_take"]["fps"],
               "width":width,"height":height,"rendered_frames":stored,
               "source_take_id":take_id,"source_take_revision":1,
               "source_take_sha256":take_sha,
@@ -337,7 +384,11 @@ class PresentationPipeline:
            type(data.get("native_geometry_checks")) is not int or \
            data["native_geometry_checks"]<=0:
             raise RuntimeError("Presentation source timing or geometry audit missing")
-        expected_frames=selected_frames(frozen["timed_take"],data["frame_mode"])
+        pixel_contract=data.get("pixel_contract",PIXEL_PNG)
+        if pixel_contract not in PIXEL_CONTRACTS or (pixel_contract==PIXEL_EXR and data["engine"]!=PBR_ENGINE):
+            raise RuntimeError("Unsupported stored frame pixel contract")
+        expected_frames=selected_frames(frozen["timed_take"],data["frame_mode"],
+                                        "exr" if pixel_contract==PIXEL_EXR else "png")
         rows=data["rendered_frames"]
         receipt=data.get("render_receipt")
         if not isinstance(receipt,dict) or \
@@ -345,6 +396,9 @@ class PresentationPipeline:
            receipt.get("engine")!=data["engine"] or \
            receipt.get("style")!=data["style"] or \
            receipt.get("samples")!=data.get("samples") or \
+           receipt.get("pixel_contract",PIXEL_PNG)!=pixel_contract or \
+           (pixel_contract==PIXEL_EXR and receipt.get("pixel_storage")!={"file_format":"OPEN_EXR",
+               "color_depth":"16","color_mode":"RGBA","view_transform":"Raw"}) or \
            receipt.get("blender_version")!=data.get("engine_version") or \
            receipt.get("take_sequence_sha")!=frozen["timed_take"]["sequence_sha"] or \
            receipt.get("take_dependency_sha")!=frozen["timed_take"]["dependency_sha"] or \
@@ -370,12 +424,15 @@ class PresentationPipeline:
                row["frame"]!=expected_frame["frame"]:
                 raise RuntimeError("Presentation frame/camera order mismatch")
             raw=self.index.get_blob(project_id,row["image_sha256"])
-            if len(raw)!=row["size_bytes"] or _png_info(raw)!=(row["width"],row["height"]) or \
-               (row["width"],row["height"])!=(data["width"],data["height"]):
-                raise RuntimeError("Presentation image bytes or dimensions differ from receipt")
+            info=check_frame(raw,pixel_contract,_png_info)
+            if len(raw)!=row["size_bytes"] or \
+               (info["width"],info["height"])!=(row["width"],row["height"]) or \
+               (row["width"],row["height"])!=(data["width"],data["height"]) or \
+               row.get("pixel_info",info)!=info:
+                raise RuntimeError("Presentation image bytes or pixel contract differ from receipt")
         return {"record":record,"audit":{
             "status":"verified_rendered_unreviewed",
-            "frame_mode":data["frame_mode"],
+            "frame_mode":data["frame_mode"],"pixel_contract":pixel_contract,
             "frame_count":len(rows),"shot_count":len(frozen["timed_take"]["shots"]),
             "source_take_sha256":data["source_take_sha256"],
             "stored_image_hashes":[r["image_sha256"] for r in rows],
