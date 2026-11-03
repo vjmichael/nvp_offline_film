@@ -124,7 +124,7 @@ class FootLockPlan:
     def configure(self,pid,sid,actor_id,config,expected_revision):
         pkg,sha=self._source(pid,sid)
         max_frame=max(int(shot['stop_frame'])-1 for shot in pkg['take']['shots'])
-        max_frame=min(max_frame,MAX_FRAMES)
+        if max_frame>MAX_FRAMES:raise ValueError('Approved shot range exceeds the bounded animation frame budget')
         checked=validate_actor(config,max_frame)
         with self.studio._connection() as db:
             db.execute('BEGIN IMMEDIATE')
