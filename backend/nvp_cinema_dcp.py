@@ -22,6 +22,9 @@ import xml.etree.ElementTree as ET
 from backend.nvp_film_index import FilmIndex, _id
 from backend.nvp_full_motion import FullMotionPipeline
 from backend.nvp_cinema_essence import audit_dcp_picture_essence
+from backend.nvp_cinema_duration import (
+    DURATION_EXACT, plan_cinema_duration, validate_duration_contract
+)
 from backend.nvp_studio import Studio
 
 # Film Festival 2K: selected SMPTE test settings. Content is fitted to one
@@ -132,7 +135,8 @@ class CinemaDCP:
         self.motion=FullMotionPipeline(studio,self.index)
 
     def preflight(self,project_id,motion_id,*,profile="smpte_2k_flat_24",
-                  audio_policy="require_approved_sound"):
+                  audio_policy="require_approved_sound",
+                  duration_policy=DURATION_EXACT):
         """Grounded, read-only validation that cannot certify exhibition."""
         _id(motion_id,"cinema source presentation ID")
         if profile not in DCP_PROFILES:
@@ -146,6 +150,18 @@ class CinemaDCP:
         warnings=[]
         if motion["source_fps"]!=spec["fps"]:
             blockers.append("Selected DCP profile requires exact 24fps")
+        try:
+            duration = plan_cinema_duration(
+                motion["frame_count"], motion["source_fps"], duration_policy)
+        except RuntimeError as exc:
+            duration = None
+            blockers.append(str(exc))
+        if duration and duration["black_tail_frames"]:
+            warnings.append(
+                "An explicit one-second technical-only duration exception will append "
+                + str(duration["black_tail_frames"]) +
+                " independently verified black frames, without changing the frozen take")
+
         if audio_policy=="require_approved_sound":
             blockers.append("NVP has no approved 48kHz/24-bit cinema dialogue/music/sound mix yet")
         else:
@@ -168,6 +184,8 @@ class CinemaDCP:
                 "source_frames":motion["frame_count"],
                 "profile":profile,"spec":dict(spec),
                 "audio_policy":audio_policy,
+                "duration_policy":duration_policy,
+                "duration_contract":duration,
                 "blockers":blockers,"warnings":warnings}
 
     def package_technical_test(self,project_id,motion_id,dcp_id,output_root, *,
@@ -175,6 +193,8 @@ class CinemaDCP:
                                profile="smpte_2k_flat_24",
                                audio_policy="require_approved_sound",
                                director_silent_test_approval=False,
+                               duration_policy=DURATION_EXACT,
+                               director_padding_approval=False,
                                create_bin=None,encode_bin=None,verify_bin=None,
                                timeout=600):
         """Opt-in technical DCP, not projector-certified and not final film.
@@ -189,11 +209,15 @@ class CinemaDCP:
         if type(timeout) is not int or not 20<=timeout<=7200:
             raise ValueError("Invalid DCP worker budget")
         plan=self.preflight(project_id,motion_id,profile=profile,
-                            audio_policy=audio_policy)
+                            audio_policy=audio_policy,
+                            duration_policy=duration_policy)
         if plan["blockers"]:
             raise RuntimeError("Cinema preflight blocked: "+"; ".join(plan["blockers"]))
         if audio_policy!="explicit_silent_test" or not director_silent_test_approval:
             raise RuntimeError("Explicit creator acceptance is required for a silent DCP technical test")
+        if plan["duration_contract"]["black_tail_frames"] and not director_padding_approval:
+            raise RuntimeError("Explicit director approval required for technical black-tail padding")
+
         try:
             self.index.read_revision(project_id,dcp_id)
         except KeyError:
@@ -244,7 +268,8 @@ class CinemaDCP:
         picture=audit_dcp_picture_essence(
             dcp_dir, expected_raster=plan["spec"]["raster"],
             expected_fps=plan["spec"]["fps"],
-            expected_frames=plan["source_frames"], timeout=timeout)
+            expected_frames=plan["source_frames"],
+            duration_contract=plan["duration_contract"], timeout=timeout)
         # An independent DCP conformance check is obligatory. The exact
         # executable/CLI contract is tool-version dependent; a successful
         # subprocess result is not theater ingest certification.
@@ -259,6 +284,12 @@ class CinemaDCP:
         data={"format":DCP_PACKAGE_FORMAT,"status":"verified_technical_dcp_not_screening_ready",
               "source_motion_id":motion_id,
               "source_motion_sha256":plan["source_motion_sha256"],
+              "source_video_sha256":plan["source_video_sha256"],
+              "source_take_id":current["record"]["data"].get("source_take_id"),
+              "source_take_sha256":current["record"]["data"].get("source_take_sha256"),
+              "duration_contract":plan["duration_contract"],
+              "director_padding_approval":bool(director_padding_approval and
+                  plan["duration_contract"]["black_tail_frames"]),
               "profile":profile,"audio_policy":audio_policy,
               "director_silent_test_approval":True,
               "dcp_path":str(dcp_dir),"structure":structure,
@@ -272,7 +303,7 @@ class CinemaDCP:
                 "picture_evidence":picture,
                 "package_dir":str(dcp_dir),"status":data["status"]}
 
-    def reopen(self,project_id,dcp_id):
+    def reopen(self,project_id,dcp_id,*,check_decode=False):
         record=self.index.read_revision(project_id,dcp_id)
         data=record["data"]
         if record["kind"]!="presentation" or data.get("format")!=DCP_PACKAGE_FORMAT:
@@ -282,14 +313,42 @@ class CinemaDCP:
         if record["dependencies"]!=expected:
             raise RuntimeError("DCP lineage is not bound to its exact video presentation")
         source=self.motion.reopen(project_id,data["source_motion_id"])
-        if source["record"]["document_sha256"]!=data["source_motion_sha256"]:
-            raise RuntimeError("DCP was not bound to the original motion source")
+        if (source["record"]["document_sha256"]!=data["source_motion_sha256"] or
+            source["media"]["sha256"]!=data.get("source_video_sha256")):
+            raise RuntimeError("DCP was not bound to the original movie bytes and motion source")
+        motion_data=source["record"]["data"]
+        if (motion_data.get("source_take_id")!=data.get("source_take_id") or
+            motion_data.get("source_take_sha256")!=data.get("source_take_sha256")):
+            raise RuntimeError("DCP no longer has the approved source take identity")
+        expected_duration=validate_duration_contract(
+            data.get("duration_contract"), motion_data["frame_count"],
+            motion_data["source_fps"])
+        if (expected_duration["black_tail_frames"] and
+            data.get("director_padding_approval") is not True):
+            raise RuntimeError("Stored DCP black-tail exception lacks creator approval")
+        if (data.get("picture_evidence",{}).get("duration_contract")!=expected_duration or
+            data["picture_evidence"].get("source_frames")!=expected_duration["source_frames"]):
+            raise RuntimeError("DCP picture proof is not bound to its duration contract")
+
         if data.get("picture_evidence",{}).get("status")!=\
                 "independent_mxf_jpeg2000_decode_technical_only":
             raise RuntimeError("Missing independently decoded DCP picture evidence")
         check=inspect_dcp_folder(data["dcp_path"])
         if check!=data["structure"]:
             raise RuntimeError("DCP package bytes or manifests changed since indexing")
+        if check_decode:
+            source_verified=self.motion.reopen(
+                project_id,data["source_motion_id"],check_decode=True)
+            if source_verified["media"]["sha256"]!=data["source_video_sha256"]:
+                raise RuntimeError("Source movie changed during cinema reopen audit")
+            measured=audit_dcp_picture_essence(
+                data["dcp_path"],
+                expected_raster=DCP_PROFILES[data["profile"]]["raster"],
+                expected_fps=expected_duration["fps"],
+                expected_frames=expected_duration["source_frames"],
+                duration_contract=expected_duration)
+            if measured!=data["picture_evidence"]:
+                raise RuntimeError("Independent DCP picture/decode evidence disagrees on reopen")
         return {"record":record,"structure":check,
                 "status":"stored_technical_dcp_integrity_only",
                 "screening_ready":False}
