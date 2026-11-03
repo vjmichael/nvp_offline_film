@@ -240,7 +240,7 @@ class FullMotionPipeline:
                                engine=engine,style=style,frame_mode="full",
                                width=width,height=height,samples=samples,
                                executable=executable,timeout=timeout,
-                               pixel_contract=source_pixel_contract)
+                               pixel_contract=source_pixel_contract,ffmpeg=ffmpeg)
         frames=self.frames.reopen(project_id,frame_id)
         source_data=frames["record"]["data"]
         if (frames["audit"]["frame_count"]!=len(frame_list) or
