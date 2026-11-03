@@ -71,26 +71,32 @@ def fixture(out):
         engine="blender_workbench",style="flat",width=128,height=72,
         samples=2,timeout=1200)
     b=movies.render_video(pid,"take_full_motion","motion_pbr",root/"renders",
-        engine="blender_cycles",style="pbr_studio",width=128,height=72,
+        engine="blender_cycles",style="pbr_studio",width=256,height=144,
         samples=4,timeout=1200)
     pro=movies.render_video(pid,"take_full_motion","motion_prores_hq",root/"renders",
-        engine="blender_cycles",style="pbr_studio",width=128,height=72,
+        engine="blender_cycles",style="pbr_studio",width=256,height=144,
         samples=4,timeout=1200,output_profile="prores_422_hq_mov",
+        source_frames_id="motion_pbr_frames")
+    dnx=movies.render_video(pid,"take_full_motion","motion_dnxhr_hqx",root/"renders",
+        engine="blender_cycles",style="pbr_studio",width=256,height=144,
+        samples=4,timeout=1200,output_profile="dnxhr_hqx_mov",
         source_frames_id="motion_pbr_frames")
     fresh=FullMotionPipeline(Studio(db))
     check_a=fresh.reopen(pid,"motion_preview",check_decode=True)
     check_b=fresh.reopen(pid,"motion_pbr",check_decode=True)
     check_pro=fresh.reopen(pid,"motion_prores_hq",check_decode=True)
+    check_dnx=fresh.reopen(pid,"motion_dnxhr_hqx",check_decode=True)
     take_again=fresh.capture.reopen(pid,"take_full_motion")
     if take_again["record"]["document_sha256"]!=original_sha:
         raise RuntimeError("Professional and review video jobs mutated original source take")
     if check_a["media"]["sha256"]==check_b["media"]["sha256"]:
         raise RuntimeError("Physically lit PBR and flat video clips are identical")
     if not (check_a["audit"]["frames"]==16 and check_b["audit"]["frames"]==16 and
-            check_pro["audit"]["frames"]==16 and
+            check_pro["audit"]["frames"]==16 and check_dnx["audit"]["frames"]==16 and
             check_a["audit"]["all_source_frames_verified"] and
             check_b["audit"]["all_source_frames_verified"] and
-            check_pro["audit"]["all_source_frames_verified"]):
+            check_pro["audit"]["all_source_frames_verified"] and
+            check_dnx["audit"]["all_source_frames_verified"]):
         raise RuntimeError("Full-frame verification did not confirm all source frames")
     if check_a["record"]["data"]["dialogue_timeline"]!=check_b["record"]["data"]["dialogue_timeline"]:
         raise RuntimeError("Backend render changed intended audio timing")
@@ -105,14 +111,21 @@ def fixture(out):
         check_pro["record"]["data"]["dialogue_timeline"] !=
         check_b["record"]["data"]["dialogue_timeline"]):
         raise RuntimeError("Professional output should reuse the same frame and audio-time sources")
+    if (check_dnx["audit"]["codec"]!="dnxhd" or
+        check_dnx["record"]["data"]["output_profile"]!="dnxhr_hqx_mov" or
+        check_dnx["record"]["data"]["codec_receipt"].get("codec_profile")!="DNXHR HQX" or
+        check_dnx["record"]["data"]["codec_receipt"]["pix_fmt"]!="yuv422p10le" or
+        check_dnx["record"]["data"]["source_frames_sha256"] !=
+        check_pro["record"]["data"]["source_frames_sha256"]):
+        raise RuntimeError("DNxHR HQX encode/decode/source reuse not independently verified")
     deps=fresh.index.direct_dependents(pid,"take_full_motion",1)
     expected={"motion_preview","motion_pbr","motion_preview_frames",
-              "motion_pbr_frames","motion_prores_hq"}
+              "motion_pbr_frames","motion_prores_hq","motion_dnxhr_hqx"}
     if {r["object_id"] for r in deps}!=expected:
         raise RuntimeError("Source-to-presentation lineage differs between engines")
     report={
         "format":"nvp.pipe01b.native.acceptance.v1",
-        "status":"passed_h264_and_prores_422_hq_24fps",
+        "status":"passed_h264_prores_and_dnxhr_24fps",
         "take_sha256":original_sha,
         "world_modified_after_capture":True,
         "source_actor_had_motion":bool(saved["timed_take"]["actors"][0]["marks"]),
@@ -129,7 +142,7 @@ def fixture(out):
            "audio_status":check["audit"]["audio_status"],
            "export_profile":check["record"]["data"]["output_profile"],
            "codec_receipt":check["record"]["data"]["codec_receipt"]
-        } for check in (check_a,check_b,check_pro)],
+        } for check in (check_a,check_b,check_pro,check_dnx)],
         "professional_reencode_reused_exact_pbr_frame_sha":True,
         "limit":"ProRes HQ is 10-bit 4:2:2 *encoding* from existing 8-bit proxy PNGs; not genuine 10-bit/photoreal source or a theatrical DCP; no audio waveforms"
     }
