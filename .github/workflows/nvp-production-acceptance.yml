@@ -23,6 +23,7 @@ on:
       - nvp/pipe01b-professional-mezzanine-prores-20261103
       - nvp/pro02-cinema-dcp-and-dnxhr-20261103
       - nvp/cinema01b-jpeg2000-mxf-evidence-20261103
+      - nvp/cinema01c-duration-lineage-replay-20261103
   workflow_dispatch:
 
 permissions:
