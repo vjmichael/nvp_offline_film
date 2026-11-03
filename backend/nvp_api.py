@@ -1037,3 +1037,54 @@ def prod06c_bundle(project_id:str,scene_id:str):
     return Response(payload,media_type='application/zip',headers={
         'Content-Disposition':f'attachment; filename="nvp_{scene_id}_rigged_characters.zip"',
         'Cache-Control':'no-store'})
+
+# NVP-PROD-06D — immutable scene-scoped retarget calibration and native handoff.
+from backend.nvp_retarget import RetargetCalibration, DEFAULT_LIMITS
+
+class RetargetConfigurationInput(BaseModel):
+    actor_instance_id: str = Field(min_length=1,max_length=80)
+    expected_revision: int = Field(ge=0)
+    joint_limits_deg: dict[str,float]
+    contact_frames: list[int] = Field(min_length=1,max_length=32)
+    contact_tolerance_m: float = Field(ge=0,le=0.5)
+    max_ground_penetration_m: float = Field(ge=0,le=0.25)
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/retarget',status_code=201)
+def prod06d_create(project_id:str,scene_id:str):
+    return run(lambda:RetargetCalibration(studio).create(project_id,scene_id))
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/retarget')
+def prod06d_read(project_id:str,scene_id:str):
+    return run(lambda:RetargetCalibration(studio).read(project_id,scene_id))
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/retarget/configure')
+def prod06d_configure(project_id:str,scene_id:str,payload:RetargetConfigurationInput):
+    return run(lambda:RetargetCalibration(studio).configure(
+        project_id,scene_id,payload.actor_instance_id,payload.expected_revision,
+        joint_limits_deg=payload.joint_limits_deg,contact_frames=payload.contact_frames,
+        contact_tolerance_m=payload.contact_tolerance_m,
+        max_ground_penetration_m=payload.max_ground_penetration_m))
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/retarget/approve')
+def prod06d_approve(project_id:str,scene_id:str,payload:TakeRevisionInput):
+    return run(lambda:RetargetCalibration(studio).approve(project_id,scene_id,payload.expected_revision))
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/retarget/history')
+def prod06d_history(project_id:str,scene_id:str):
+    return run(lambda:RetargetCalibration(studio).history(project_id,scene_id))
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/retarget/bundle')
+def prod06d_bundle(project_id:str,scene_id:str):
+    def build():
+        with TemporaryDirectory(prefix='nvp_retarget_bundle_') as directory:
+            root=Path(directory)
+            RetargetCalibration(studio).export_bundle(project_id,scene_id,root)
+            buffer=BytesIO()
+            with ZipFile(buffer,'w',ZIP_DEFLATED) as z:
+                for file in sorted(root.rglob('*')):
+                    if file.is_file():z.write(file,file.relative_to(root))
+            return buffer.getvalue()
+    return Response(run(build),media_type='application/zip',headers={
+        'Content-Disposition':f'attachment; filename="nvp_{scene_id}_retarget_calibration.zip"',
+        'Cache-Control':'no-store'})
