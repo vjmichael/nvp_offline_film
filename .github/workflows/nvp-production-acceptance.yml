@@ -14,6 +14,7 @@ on:
       - nvp/prod06e2b-foot-lock-20261103
       - nvp/prod06e2c-sole-region-audit-20261103
       - nvp/prod06e2c2-plantar-markers-floor-20261103
+      - nvp/prod06e2c3-bounded-mesh-contact-20261103
   workflow_dispatch:
 
 permissions:
@@ -193,6 +194,11 @@ jobs:
         run: |
           set -euo pipefail
           xvfb-run -a python -m tools.nvp_prod06e2c2_fixture --out acceptance_artifacts/prod06e2c2 --external-glb "$PWD/cesiumman_external.glb"
+      - name: Native PROD06E2C3 bounded mesh-to-floor correction and full-take independent audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_prod06e2c3_fixture --out acceptance_artifacts/prod06e2c3 --external-glb "$PWD/cesiumman_external.glb"
       - name: Preserve audit, blend files and preview even when job fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -353,6 +359,21 @@ jobs:
           $env:PYTHONPATH = '.'
           python -m tools.nvp_prod06e2c2_fixture --out prod06e2c2_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
           if ($LASTEXITCODE -ne 0) { throw 'Windows plantar floor marker audit failed' }
+      - name: Native PROD06E2C3 Windows real toe-vertex floor correction and full-take audit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_prod06e2c3_fixture --out prod06e2c3_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native bounded contact IK/audit failed' }
+      - name: Preserve Windows PROD06E2C3 correction evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06e2c3-windows-contact
+          path: prod06e2c3_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Preserve Windows PROD06E2C2 marker and floor evidence
         if: always()
         uses: actions/upload-artifact@v4
