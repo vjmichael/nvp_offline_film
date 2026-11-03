@@ -361,6 +361,7 @@ def analyze_plantar_observation(obs, package):
     if type(observed) is not dict or set(observed)!=set(approved) or set(observed)!=set(authored) or set(observed)!=set(sources):
         raise ValueError("Observed actor roster does not match approved film")
     summary={}
+    all_actors_ok=True
     for rid,record in observed.items():
         if type(record) is not dict or record.get("asset_sha256")!=sources[rid]["asset_sha256"]:
             raise ValueError("Plantar source mesh identity mismatch")
@@ -402,10 +403,11 @@ def analyze_plantar_observation(obs, package):
                               "inside_floor":within_floor,"contact_meets_tolerances":ok if active else None}
             side_results[side]=result
         summary[rid]=side_results
+        all_actors_ok = all_actors_ok and overall
     return {"format":"nvp.plantar.floor_contact_audit.v1","observation_sha":digest(obs),
             "actors":summary,"floor_z_m":z,
             "approved_plantar_sha":plantar["approval_sha"],
-            "contact_meets_configured_tolerances":overall,
+            "contact_meets_configured_tolerances":all_actors_ok,
             "anatomical_sole_certified":False,
             "limitations":"Mesh-vertex markers are authored surface points, not certified plantar pads; no dynamics/normal forces or balance"}
 
