@@ -1,9 +1,9 @@
 name: NVP PRO-02 Cinema DCP Technical Acceptance
 
+# DCP vendor download returns HTTP 403 in GitHub Actions. Keep this as an
+# explicit acceptance gate until a version-and-SHA verified CLI distribution
+# becomes available to CI; do not report a fake green cinema test.
 on:
-  push:
-    branches:
-      - nvp/pro02-cinema-dcp-and-dnxhr-20261103
   workflow_dispatch:
 
 permissions:
