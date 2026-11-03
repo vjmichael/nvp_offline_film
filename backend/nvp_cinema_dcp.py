@@ -243,7 +243,7 @@ class CinemaDCP:
         # DCP-o-matic's CLI owns all SMPTE conforming JPEG2000 and MXF logic.
         # Source is a 24-fps project-linked, content-hash-verified media file.
         source=media["media"]["path"]
-        _process([create,"-n",name,"--no-encrypt","-c","FTR","-f","24",
+        _process([create,"-n",name,"--no-encrypt","-c","TST","-f","24",
                   "--twok","--twod","--standard","SMPTE",
                   "--container-ratio",plan["spec"]["ratio"],
                   "-a","6","--colourspace","rec709",
