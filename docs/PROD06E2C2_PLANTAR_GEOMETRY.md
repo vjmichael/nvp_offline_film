@@ -60,3 +60,20 @@ Run licensed native acceptance: `PYTHONPATH=. python -m tools.nvp_prod06e2c2_fix
 5. Distinguish visual anatomy, biomechanics and movement quality rather than conflating one metric with finished realistic acting.
 
 **Stage status:** real native acceptance must pass before asserting a verified read-only geometry adapter. Only a separately accepted geometry correction/biomechanics gate can claim production-quality sole contact.
+
+## Measured native acceptance — 2026-11-03
+
+[GitHub Actions run 41665538274](https://github.com/vjmichael/nvp_offline_film/actions/runs/41665538274) completed the individual new PROD-06E2C2 native Blender 5.2.3 stages on **Linux and Windows** successfully, using the pinned third-party Cesium Man, the independently audited real ankle-locked .blend, original character skin weights, and the actual NVP_FLOOR object. A separate regression revealed an incorrect exception type for approval of an empty draft; corrected in the following revision. Do not treat the initial workflow as globally green.
+
+The selected synthetic fixture-proposed marker positions (unverified anatomical labels) were measured relative to the **actual floor top Z = 0.0 m**:
+
+| Marker | Linux left | Linux right | Interpretation |
+| --- | ---: | ---: | --- |
+| Proposed heel | +0.11314 m | +0.11324 m | Far above contact, wrong for a planted heel |
+| Proposed ball | +0.07396 m | +0.07405 m | Above contact, wrong for a planted metatarsal pad |
+| Proposed toe | -0.006823 m | -0.006729 m | About 6.8 mm below floor |
+| Maximum marker XY shift during contacts | 0.0 m | 0.0 m | Static fixture stance only, not walking evidence |
+
+The Windows native run independently returned the same overall measured status: **passed_native_plantar_floor_measurement_only**, **contact_meets_configured_tolerances=false**, and **anatomical_sole_certified=false**. This is a *successful failure detection*, not an accepted physical foot placement. The heel/ball labels are particularly unreliable because the fixture uses only skin weights and approximate toe-axis sorting. Creator-approved plantar marker placement, a validated anatomical mesh, or genuine ground-truth marker labels are necessary before changing the solver to follow these contacts.
+
+For the future *accurate architectural structures* track, current external references include [IfcOpenShell/Bonsai](https://github.com/IfcOpenShell/IfcOpenShell) for typed IFC building geometry and [Poly Haven](https://polyhaven.com/license) for CC0 scanned textures, HDRIs and 3D props. These are candidate set-production inputs with their own license and version verification—not packages silently installed or integrated into NVP.

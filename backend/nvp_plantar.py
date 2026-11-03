@@ -149,7 +149,10 @@ class PlantarContactPlan:
             if (row["status"]!="draft" or row["upstream_sha"]!=upstream or
                 type(expected_revision) is not int or row["revision"]!=expected_revision):
                 raise RuntimeError("Plantar approval requires current unmodified draft")
-            plan=validate_plantar_config(json.loads(row["plan_json"]),pkg["foot_lock"]["actors"])
+            current_plan=json.loads(row["plan_json"])
+            if not current_plan:
+                raise RuntimeError("An unconfigured plantar marker draft cannot be approved")
+            plan=validate_plantar_config(current_plan,pkg["foot_lock"]["actors"])
             approval=digest([upstream,plan])
             revision=row["revision"]+1
             db.execute("UPDATE prod_plantar_plans SET revision=?,status=?,approval_sha=? WHERE project_id=? AND scene_id=?",
