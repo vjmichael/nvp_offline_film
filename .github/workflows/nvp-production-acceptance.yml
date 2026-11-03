@@ -9,6 +9,7 @@ on:
       - nvp/prod06b-weighted-skin-20261102
       - nvp/prod06c-external-rigged-glb-20261102
       - nvp/prod06d-real-character-calibration-20261102
+      - nvp/prod06e1-footplant-preflight-20261102
   workflow_dispatch:
 
 permissions:
