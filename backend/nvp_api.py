@@ -959,3 +959,81 @@ def prod06b_skin_blender(project_id:str,scene_id:str):
     return {'script':run(lambda:SkinnedPerformance(studio).blender_script(project_id,scene_id)),
             'language':'python','runtime':'Blender 5.2+ bpy',
             'skin':'segmented_weighted_preview_v1'}
+
+# NVP-PROD-06C — project-scoped, local-only rigged GLB import and approved retarget.
+# This is a development harness; no Lu runtime or cloud services are invoked.
+from backend.nvp_character_assets import CharacterAssets, MAX_GLB_BYTES
+from fastapi.responses import Response
+from tempfile import TemporaryDirectory
+from zipfile import ZipFile, ZIP_DEFLATED
+from io import BytesIO
+from pathlib import Path
+
+
+class CharacterBindingInput(BaseModel):
+    actor_instance_id: str = Field(min_length=1,max_length=80)
+    character_asset_id: str = Field(min_length=1,max_length=80)
+    role_map: dict[str,str]
+    expected_revision: int = Field(ge=0)
+    uniform_scale: float = Field(default=1.0,gt=0,le=10)
+
+
+@app.get('/api/projects/{project_id}/production/rigged-characters')
+def prod06c_characters(project_id:str):
+    return run(lambda: CharacterAssets(studio).list(project_id))
+
+
+@app.post('/api/projects/{project_id}/production/rigged-characters',status_code=201)
+async def prod06c_import_character(project_id:str,request:Request,
+                                    license_code:str,attribution:str='',source:str=''):
+    data=bytearray()
+    async for part in request.stream():
+        if len(data)+len(part)>MAX_GLB_BYTES:
+            raise HTTPException(status_code=413,detail='Rigged character GLB exceeds 32 MiB')
+        data.extend(part)
+    return run(lambda:CharacterAssets(studio).register(
+        project_id,bytes(data),license_code,attribution,source))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rigged-characters',status_code=201)
+def prod06c_create(project_id:str,scene_id:str):
+    return run(lambda:CharacterAssets(studio).create(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/rigged-characters')
+def prod06c_read(project_id:str,scene_id:str):
+    return run(lambda:CharacterAssets(studio).read(project_id,scene_id))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rigged-characters/bind')
+def prod06c_bind(project_id:str,scene_id:str,payload:CharacterBindingInput):
+    return run(lambda:CharacterAssets(studio).bind(project_id,scene_id,
+           payload.actor_instance_id,payload.character_asset_id,payload.role_map,
+           payload.expected_revision,payload.uniform_scale))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rigged-characters/approve')
+def prod06c_approve(project_id:str,scene_id:str,payload:TakeRevisionInput):
+    return run(lambda:CharacterAssets(studio).approve(project_id,scene_id,payload.expected_revision))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/rigged-characters/history')
+def prod06c_history(project_id:str,scene_id:str):
+    return run(lambda:CharacterAssets(studio).history(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/rigged-characters/bundle')
+def prod06c_bundle(project_id:str,scene_id:str):
+    def build():
+        with TemporaryDirectory(prefix='nvp_char_bundle_') as directory:
+            folder=Path(directory)
+            CharacterAssets(studio).export_bundle(project_id,scene_id,folder)
+            stream=BytesIO()
+            with ZipFile(stream,'w',ZIP_DEFLATED) as archive:
+                for path in sorted(folder.rglob('*')):
+                    if path.is_file():archive.write(path,path.relative_to(folder))
+            return stream.getvalue()
+    payload=run(build)
+    return Response(payload,media_type='application/zip',headers={
+        'Content-Disposition':f'attachment; filename="nvp_{scene_id}_rigged_characters.zip"',
+        'Cache-Control':'no-store'})

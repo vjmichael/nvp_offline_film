@@ -7,6 +7,7 @@ import ProductionAuthoringPanel from './ProductionAuthoringPanel.jsx';
 import TakeSequencePanel from './TakeSequencePanel.jsx';
 import MotionRigPanel from './MotionRigPanel.jsx';
 import SkinningPanel from './SkinningPanel.jsx';
+import CharacterRigPanel from './CharacterRigPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -408,7 +409,8 @@ export default function App() {
           <button className={tab === 'take' ? 'active' : ''} onClick={() => setTab('take')}>10 · Film the sequence</button>
           <button className={tab === 'rig' ? 'active' : ''} onClick={() => setTab('rig')}>11 · Rigged motion</button>
           <button className={tab === 'skin' ? 'active' : ''} onClick={() => setTab('skin')}>12 · Skin the character</button>
-          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>13 · Make the film</button>
+          <button className={tab === 'character' ? 'active' : ''} onClick={() => setTab('character')}>13 · Real characters</button>
+          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>14 · Make the film</button>
         </nav>
         {tab === 'develop' && <div className="columns">
           <section className="card">
@@ -675,6 +677,7 @@ export default function App() {
         {tab === 'take' && <TakeSequencePanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'rig' && <MotionRigPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'skin' && <SkinningPanel project={project} api={api} action={action} busy={busy} />}
+        {tab === 'character' && <CharacterRigPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'make' && <section className="card make"><div className="kicker">FUTURE MILESTONE</div>
           <h2>Bring your movie to life</h2><p>NVP will eventually build 3D sets, animate characters, film camera shots, edit scenes, mix audio and export the movie. This is not implemented in this foundation build.</p>
           <div className="future"><span>Build a location — planned</span><span>Animate characters — planned</span><span>Film a scene — planned</span><span>Edit and export — planned</span></div>
