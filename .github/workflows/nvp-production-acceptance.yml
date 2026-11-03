@@ -7,6 +7,7 @@ on:
       - nvp/prod05-timed-shots-20261102
       - nvp/prod06-rigged-motion-20261102
       - nvp/prod06b-weighted-skin-20261102
+      - nvp/prod06c-external-rigged-glb-20261102
   workflow_dispatch:
 
 permissions:
@@ -147,6 +148,12 @@ jobs:
           set -euo pipefail
           xvfb-run -a python -m unittest discover -s tests -p test_skinning.py -v
           xvfb-run -a python -m tools.nvp_prod06b_fixture --out acceptance_artifacts/prod06b
+      - name: Native PROD06C rigged GLB export, import, and bone deformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p test_character_native.py -v
+          xvfb-run -a python -m tools.nvp_prod06c_fixture --out acceptance_artifacts/prod06c
       - name: Preserve audit, blend files and preview even when job fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -254,6 +261,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06B Windows weighted skin audit failed' }
           python -m tools.nvp_prod06b_fixture --out prod06b_windows_acceptance --audit-only
           if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06B Windows fixture audit failed' }
+      - name: Native PROD06C Windows GLB reimport and deformation audit
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          $env:NVP_BLENDER_AUDIT_ONLY = '1'
+          python -m unittest discover -s tests -p test_character_native.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06C Windows GLB audit failed' }
+          python -m tools.nvp_prod06c_fixture --out prod06c_windows_acceptance --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06C Windows fixture audit failed' }
+      - name: Preserve Windows PROD06C native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06c-windows-import-audit
+          path: prod06c_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Preserve Windows PROD06B native evidence
         if: always()
         uses: actions/upload-artifact@v4
