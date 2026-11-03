@@ -4,7 +4,7 @@
 **Revision:** 1.0 — 2026-11-03  
 **State:** Established architecture and product-requirements baseline; individual open decisions remain explicitly open  
 **Product:** Neural Virtual Production (NVP), the future Film Workspace DLC for Lu  
-**Development baseline:** nvp/prod06e2b-foot-lock-20261103  
+**Development baseline:** nvp/prod06e2c-sole-region-audit-20261103  
 **Scope of this revision:** Design consolidation only. No solver, host, model, or renderer implementation change.
 
 > **Governing idea:** NVP makes a film, not a chain of unrelated AI-generated clips. The creator authors and approves the narrative and production decisions. A persistent, editable 3D world, versioned character identities, physical geometry, virtual cameras, animation, audio, and editing supply the film's continuity. AI proposes creative choices and structured production instructions; conventional tools calculate and verify physical results. Rendered media is an output of the project, not its source of truth.
@@ -247,11 +247,12 @@ This table describes code and observed tests on the active *development branch*,
 | PROD-06E1 | Pure-Python two-bone foot-plant mathematical preflight, tests and bounds | Implemented; CI run 41584304356 completed successfully; **not native IK** |
 | PROD-06E2A | Explicit eight-bone left/right anatomical leg identity and Blender rest-hierarchy observation | **Verified** real Cesium Man source rig on Linux and Windows Blender 5.2.3, workflow run 41655290749; measured source-rest upper/lower/foot lengths; **no IK applied** |
 | PROD-06E2B | Explicit bilateral contact windows/poles, stage-scale-aware armature-space IK, actual thigh/shin keys, independent pristine-vs-reopened full-take validation | **Verified scoped native ankle-lock** on Linux and Windows Blender 5.2.3, workflow run 41659667221; 120 frames each, maximum ankle residual 6.3361e-7 m, local segment-length residual 6.9276e-7 m; **not sole contact or gait** |
-| PROD-06E2C and later | Semantic sole-contact markers, authored floor/platform interaction, moving-root gait, knee biomechanics, skinned mesh-ground/collision audits | **Not complete** |
+| PROD-06E2C1 | Read-only native candidate foot mesh survey using imported ankle/toe deform groups during approved IK stance windows | **Verified scoped native survey**, Linux/Windows Blender 5.2.3, run 41662467122; candidate lowest vertices ~6.8 mm below assumed Z=0; **not physical sole contact** |
+| PROD-06E2C2 and later | Artist-approved plantar/heel/toe markers, named floor/platform collision, moving-root gait, knee biomechanics and real skinned mesh-surface audits | **Not complete** |
 | Lu Workspace package | Signed, registered, contained NVP DLC running inside Lu | **Deferred and not verified** |
 | Physical target machine | Windows NVP film workflow with AMD R9700 GPU, finished output, integrated input | **Not yet verified** |
 
-**Evidence references:** see docs/PROD01_TO_PROD04_ENGINEERING_ACCEPTANCE.md, docs/PROD05_TIMED_SHOT_SEQUENCE.md, docs/PROD06_RIGGED_MOTION.md, docs/PROD06B_WEIGHTED_SKIN_RETARGET.md, docs/PROD06C_RIGGED_CHARACTER_IMPORT.md, docs/PROD06D_EXTERNAL_CHARACTER_CALIBRATION.md, docs/PROD06E1_FOOT_PLANT_PREFLIGHT.md, docs/PROD06E2A_LEG_IDENTITY.md, and docs/PROD06E2B_ANKLE_LOCK.md. Independent scoped evidence: https://github.com/vjmichael/nvp_offline_film/actions/runs/41579956711 (06D), https://github.com/vjmichael/nvp_offline_film/actions/runs/41584304356 (06E1),  https://github.com/vjmichael/nvp_offline_film/actions/runs/41655290749 (06E2A native identity), and https://github.com/vjmichael/nvp_offline_film/actions/runs/41659667221 (06E2B Linux/Windows native ankle IK).
+**Evidence references:** see docs/PROD01_TO_PROD04_ENGINEERING_ACCEPTANCE.md, docs/PROD05_TIMED_SHOT_SEQUENCE.md, docs/PROD06_RIGGED_MOTION.md, docs/PROD06B_WEIGHTED_SKIN_RETARGET.md, docs/PROD06C_RIGGED_CHARACTER_IMPORT.md, docs/PROD06D_EXTERNAL_CHARACTER_CALIBRATION.md, docs/PROD06E1_FOOT_PLANT_PREFLIGHT.md, docs/PROD06E2A_LEG_IDENTITY.md, docs/PROD06E2B_ANKLE_LOCK.md, and docs/PROD06E2C_SOLE_REGION_AUDIT.md. Independent scoped evidence: https://github.com/vjmichael/nvp_offline_film/actions/runs/41579956711 (06D), https://github.com/vjmichael/nvp_offline_film/actions/runs/41584304356 (06E1),  https://github.com/vjmichael/nvp_offline_film/actions/runs/41655290749 (06E2A native identity), and https://github.com/vjmichael/nvp_offline_film/actions/runs/41659667221 (06E2B Linux/Windows native ankle IK).
 
 ## 11. Ordered engineering roadmap, with exit conditions
 
@@ -259,7 +260,7 @@ This table describes code and observed tests on the active *development branch*,
 | --- | --- | --- |
 | NVP-DESIGN-00 | This cross-subsystem master baseline and source traceability | Master exists in active repo, linked for discoverability; open options labeled |
 | NVP-PERF-01 / PROD-06E2B | Completed *scoped ankle IK* on explicitly mapped imported rigs | Independently reopened ankle-lock, preserved roots/cameras and original non-contact motion on Linux/Windows: **verified** |
-| NVP-PERF-01C / PROD-06E2C | Real shoe-sole contact on moving characters and supported floors/platforms | Audited contact patch/sole geometry, joint limits, mesh-floor penetration, moving-root gait and transition continuity on external rigs |
+| NVP-PERF-01C / PROD-06E2C2 | Author and audit true shoe-sole contact on moving characters and physical floor/platform surfaces | Approved plantar contact region, per-frame independent mesh-floor tests, joint limits, moving-root gait and transition continuity on external rigs |
 | NVP-CHAR-01 | Anatomically credible character structure: proportions, skeletal joints, physical constraints, mesh topology and weighted skin deformation | More than one licensed character/shape, measured geometry, pose/collision tests, stable skin volume and independently reviewed rendered performances |
 | NVP-PERF-02 | Performance cards, contact-driven movement, gaze, prop handling | Scene actions and listeners perform visibly correctly across cuts; repeatable native checks |
 | NVP-CAMERA-02 | Moving virtual camera, coverage patterns, depth/occlusion validation | Measured actual-frame camera paths, edits and deliberate cinematic overrides |
