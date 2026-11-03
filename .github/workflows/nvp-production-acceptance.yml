@@ -168,12 +168,13 @@ jobs:
           npm run build
 
   windows-blender-native:
-    name: Real Blender 5.2.3 Windows save / reopen / audit / render
+    name: Windows Blender 5.2.3 save / reopen / geometry audit (GPU render separate)
     runs-on: windows-2025
     timeout-minutes: 45
     env:
       BLENDER_VERSION: '5.2.3'
       BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+      NVP_BLENDER_AUDIT_ONLY: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -204,7 +205,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $binary.Directory.FullName
           & $binary.FullName -b --version
           if ($LASTEXITCODE -ne 0) { throw 'Blender version probe failed' }
-      - name: Execute genuine Windows native Blender acceptance
+      - name: Windows native Blender save/reopen and geometry audit (no WGL render)
         shell: pwsh
         run: |
           $env:PYTHONPATH = '.'

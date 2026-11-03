@@ -1,5 +1,6 @@
 """PROD-01 acceptance harness distinguishes offline checks from real Blender runs."""
 import ast
+import os
 import json
 from pathlib import Path
 import tempfile
@@ -79,10 +80,17 @@ class BlenderAcceptanceTests(unittest.TestCase):
         mesh.add_geometry(trimesh.creation.box(extents=(.5,.5,.9)))
         ident=self.prod.list_assets(self.pid)[0]['asset_id']
         assets.register(self.pid,ident,mesh.export(file_type='glb'),'creator_owned')
-        result=run_meshpack_acceptance(assets,self.pid,self.sid,self.root/'native_meshpack')
-        self.assertEqual(result['status'],'passed_blender',result)
+        render = os.environ.get('NVP_BLENDER_AUDIT_ONLY') != '1'
+        result=run_meshpack_acceptance(assets,self.pid,self.sid,self.root/'native_meshpack',
+                                       render_preview=render)
+        self.assertEqual(result['status'],
+                         'passed_blender' if render else 'passed_blender_audit_only',result)
         self.assertTrue(Path(result['blend']).stat().st_size>0)
-        self.assertTrue(Path(result['preview']).stat().st_size>0)
+        self.assertEqual(result['rendered'],render)
+        if render:
+            self.assertTrue(Path(result['preview']).stat().st_size>0)
+        else:
+            self.assertIsNone(result['preview'])
         report=json.loads(Path(result['audit']).read_text())
         self.assertTrue(report['passed'])
         self.assertTrue(any(x['check'].startswith('grounding:') and x['passed']
@@ -93,9 +101,17 @@ class BlenderAcceptanceTests(unittest.TestCase):
         check=blender_available()
         if not check['available']:
             self.skipTest('Real Blender executable unavailable')
-        result=run_acceptance(self.prod,self.pid,self.sid,self.root/'native')
-        self.assertEqual(result['status'],'passed_blender',result)
+        render = os.environ.get('NVP_BLENDER_AUDIT_ONLY') != '1'
+        result=run_acceptance(self.prod,self.pid,self.sid,self.root/'native',
+                              render_preview=render)
+        self.assertEqual(result['status'],
+                         'passed_blender' if render else 'passed_blender_audit_only',result)
         self.assertTrue(Path(result['blend']).stat().st_size>0)
-        self.assertTrue(Path(result['preview']).stat().st_size>0)
+        self.assertTrue(Path(result['audit']).stat().st_size>0)
+        self.assertEqual(result['rendered'],render)
+        if render:
+            self.assertTrue(Path(result['preview']).stat().st_size>0)
+        else:
+            self.assertIsNone(result['preview'])
 
 if __name__=='__main__':unittest.main()

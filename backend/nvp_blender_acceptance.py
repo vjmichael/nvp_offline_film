@@ -45,10 +45,11 @@ report['passed'] = all(x['passed'] for x in report['checks'])
 Path(opts['--audit']).write_text(json.dumps(report,indent=2,sort_keys=True),'utf-8')
 if not report['passed']:
     raise RuntimeError('NVP Blender audit failed; see audit.json')
-sc=bpy.context.scene
-sc.render.engine='BLENDER_WORKBENCH'
-sc.render.filepath=opts['--render']; sc.render.image_settings.file_format='PNG'
-bpy.ops.render.render(write_still=True)
+if opts.get('--skip-render') != '1':
+    sc=bpy.context.scene
+    sc.render.engine='BLENDER_WORKBENCH'
+    sc.render.filepath=opts['--render']; sc.render.image_settings.file_format='PNG'
+    bpy.ops.render.render(write_still=True)
 '''
 
 
@@ -66,7 +67,7 @@ def blender_available(executable='blender') -> dict:
 
 
 def run_acceptance(production: ProductionScene, project_id: str, scene_id: str,
-                   directory: str | Path, executable='blender', timeout=240) -> dict:
+                   directory: str | Path, executable='blender', timeout=240, render_preview=True) -> dict:
     """Build, reopen, audit and preview a director-approved scene in real Blender.
 
     An unavailable Blender is a BLOCKED acceptance, *not* a successful render.
@@ -87,6 +88,8 @@ def run_acceptance(production: ProductionScene, project_id: str, scene_id: str,
         [state['path'],'-b','--factory-startup','-t','2','--python',str(script),'--','--output',str(blend)],
         [state['path'],'-b',str(blend),'-t','2','--python',str(checker),'--',
          '--manifest',str(man),'--audit',str(audit),'--render',str(render)]]
+    if not render_preview:
+        commands[1].extend(['--skip-render','1'])
     runs=[]
     for command in commands:
         try:
@@ -99,13 +102,17 @@ def run_acceptance(production: ProductionScene, project_id: str, scene_id: str,
         if p.returncode:
             return {'status':'failed','reason':'Real Blender reported an error',
                     'step':len(runs),'version':state['version'],'runs':runs}
-    if not blend.is_file() or blend.stat().st_size == 0 or not audit.exists() or not render.is_file() or render.stat().st_size == 0:
+    if (not blend.is_file() or blend.stat().st_size == 0 or not audit.exists()
+            or (render_preview and (not render.is_file() or render.stat().st_size == 0))):
         return {'status':'failed','reason':'Expected Blender outputs absent','runs':runs}
     evidence=json.loads(audit.read_text('utf-8'))
     if not evidence.get('passed'):
         return {'status':'failed','reason':'Geometry audit failed','evidence':evidence}
-    return {'status':'passed_blender','version':state['version'],'blend':str(blend),
-            'preview':str(render),'audit':str(audit),'checks':len(evidence['checks'])}
+    return {'status':'passed_blender' if render_preview else 'passed_blender_audit_only',
+            'version':state['version'],'blend':str(blend),
+            'preview':str(render) if render_preview else None,
+            'audit':str(audit),'checks':len(evidence['checks']),
+            'rendered':bool(render_preview)}
 
 MESH_AUDIT_SCRIPT = r'''import bpy, json, math, sys
 from pathlib import Path
@@ -155,16 +162,17 @@ check('camera',bpy.context.scene.camera is not None,'preview camera')
 report['passed']=all(x['passed'] for x in report['checks'])
 Path(opts['--audit']).write_text(json.dumps(report,indent=2,sort_keys=True),'utf-8')
 if not report['passed']:raise RuntimeError('Meshpack audit failed')
-sc=bpy.context.scene
-sc.render.engine='BLENDER_WORKBENCH';sc.render.filepath=opts['--render']
-sc.render.image_settings.file_format='PNG'
-sc.render.resolution_x=960;sc.render.resolution_y=540;sc.render.resolution_percentage=100
-bpy.ops.render.render(write_still=True)
+if opts.get('--skip-render') != '1':
+    sc=bpy.context.scene
+    sc.render.engine='BLENDER_WORKBENCH';sc.render.filepath=opts['--render']
+    sc.render.image_settings.file_format='PNG'
+    sc.render.resolution_x=960;sc.render.resolution_y=540;sc.render.resolution_percentage=100
+    bpy.ops.render.render(write_still=True)
 '''
 
 
 def run_meshpack_acceptance(mesh_assets, project_id: str, scene_id: str,
-                             directory: str | Path, executable='blender', timeout=240) -> dict:
+                             directory: str | Path, executable='blender', timeout=240, render_preview=True) -> dict:
     """Only 'passed_blender' if both Blender construction and reopen audit run."""
     out=Path(directory).resolve()
     result=mesh_assets.export_bundle(project_id,scene_id,out)
@@ -179,6 +187,8 @@ def run_meshpack_acceptance(mesh_assets, project_id: str, scene_id: str,
         [state['path'],'-b','--factory-startup','-t','2','--python',str(out/'build_scene.py'),'--','--output',str(blend)],
         [state['path'],'-b',str(blend),'-t','2','--python',str(audit_script),'--',
          '--manifest',str(out/'manifest.json'),'--audit',str(audit),'--render',str(preview)]]
+    if not render_preview:
+        commands[1].extend(['--skip-render','1'])
     runs=[]
     for i,command in enumerate(commands,1):
         try:
@@ -188,10 +198,12 @@ def run_meshpack_acceptance(mesh_assets, project_id: str, scene_id: str,
         runs.append({'step':i,'exit_code':p.returncode,'stderr_tail':p.stderr[-2500:],'stdout_tail':p.stdout[-1500:]})
         if p.returncode:
             return {'status':'failed','reason':'Blender meshpack build/audit failed','runs':runs}
-    if not audit.exists() or not blend.is_file() or not preview.is_file():
+    if not audit.exists() or not blend.is_file() or (render_preview and not preview.is_file()):
         return {'status':'failed','reason':'Native Blender outputs missing','runs':runs}
     evidence=json.loads(audit.read_text('utf-8'))
     if not evidence.get('passed'):
         return {'status':'failed','reason':'Mesh geometry did not pass Blender audit','evidence':evidence}
-    return {'status':'passed_blender','blend':str(blend),'preview':str(preview),
-            'audit':str(audit),'checks':len(evidence['checks']),'version':state['version']}
+    return {'status':'passed_blender' if render_preview else 'passed_blender_audit_only',
+            'blend':str(blend),'preview':str(preview) if render_preview else None,
+            'audit':str(audit),'checks':len(evidence['checks']),
+            'version':state['version'],'rendered':bool(render_preview)}
