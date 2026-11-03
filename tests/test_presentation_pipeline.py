@@ -55,10 +55,12 @@ class PresentationPipelineTests(unittest.TestCase):
 
     def test_engine_capabilities_are_truthful(self):
         modes=self.pipeline.available_engines()
-        self.assertEqual(len(modes),1)
+        self.assertEqual(len(modes),2)
         self.assertEqual(modes[0]["engine"],ENGINE)
         self.assertEqual(modes[0]["styles"],["flat","studio"])
-        self.assertIn("No generative video, audio",modes[0]["limitations"][1])
+        self.assertIn("No generated video/voice/audio",modes[0]["limitations"][1])
+        self.assertEqual(modes[1]["engine"],"blender_cycles")
+        self.assertEqual(modes[1]["styles"],["pbr_noir","pbr_studio"])
         self.assertNotIn("wan",str(modes).lower())
 
     def test_native_capture_shot_policy_is_exact_and_bounded(self):
