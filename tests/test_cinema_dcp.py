@@ -150,5 +150,33 @@ class CinemaDCPTests(unittest.TestCase):
         self.assertEqual(self.film.list_objects(self.project,kind="presentation"),[])
 
 
+    def test_structurally_plausible_dcp_without_real_decode_is_never_indexed(self):
+        # A fake successful packager and valid-looking XML files are not
+        # evidence that JPEG2000/MXF picture essence really decodes.
+        def fake_process(args, timeout, purpose):
+            if purpose == "DCP-o-matic film encode":
+                d = Path(args[-1]) / "mock_dcp"
+                d.mkdir()
+                (d / "ASSETMAP.xml").write_text("<AssetMap/>")
+                (d / "CPL.xml").write_text("<CompositionPlaylist/>")
+                (d / "PKL.xml").write_text("<PackingList/>")
+                (d / "picture.mxf").write_bytes(b"not-jpeg2000")
+            return "success"
+
+        with patch("backend.nvp_cinema_dcp.shutil.which",
+                   side_effect=lambda tool: tool), patch(
+                       "backend.nvp_cinema_dcp._process",
+                       side_effect=fake_process), patch(
+                       "backend.nvp_cinema_dcp.audit_dcp_picture_essence",
+                       side_effect=RuntimeError("independent picture decode rejected")):
+            with self.assertRaisesRegex(RuntimeError, "decode rejected"):
+                self.cinema.package_technical_test(
+                    self.project, "motion_001", "dcp_fake_picture",
+                    self.root / "out", audio_policy="explicit_silent_test",
+                    director_silent_test_approval=True)
+        self.assertEqual(self.film.list_objects(
+            self.project, kind="presentation"), [])
+
+
 if __name__=="__main__":
     unittest.main()
