@@ -156,7 +156,7 @@ class CinemaDCPTests(unittest.TestCase):
         def fake_process(args, timeout, purpose):
             if purpose == "DCP-o-matic film encode":
                 d = Path(args[-1]) / "mock_dcp"
-                d.mkdir()
+                d.mkdir(parents=True)
                 (d / "ASSETMAP.xml").write_text("<AssetMap/>")
                 (d / "CPL.xml").write_text("<CompositionPlaylist/>")
                 (d / "PKL.xml").write_text("<PackingList/>")
