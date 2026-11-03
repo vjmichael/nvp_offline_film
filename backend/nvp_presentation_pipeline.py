@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 from pathlib import Path
 import struct
 import subprocess
@@ -233,7 +234,7 @@ class PresentationPipeline:
     def render(self,project_id,take_id,presentation_id,output_dir, *,
                engine=ENGINE,style="studio",frame_mode="keyframes",
                width=320,height=180,executable="blender",timeout=180,
-               samples=8,pixel_contract=PIXEL_PNG):
+               samples=8,pixel_contract=PIXEL_PNG,ffmpeg=None):
         _id(take_id,"digital take ID")
         _id(presentation_id,"presentation ID")
         if engine not in (ENGINE,PBR_ENGINE):
@@ -245,6 +246,9 @@ class PresentationPipeline:
             raise ValueError("Unsupported pixel contract")
         if pixel_contract==PIXEL_EXR and engine!=PBR_ENGINE:
             raise ValueError("Scene-linear EXR requires Blender Cycles")
+        decoder=shutil.which(ffmpeg or "ffmpeg") if pixel_contract==PIXEL_EXR else None
+        if pixel_contract==PIXEL_EXR and not decoder:
+            raise RuntimeError("Independent FFmpeg EXR decoder required before film registration")
         if type(samples) is not int or not 1<=samples<=128:
             raise ValueError("Samples must be between 1 and 128")
         if type(width) is not int or type(height) is not int or \
@@ -316,6 +320,18 @@ class PresentationPipeline:
         for frame in frames:
             raw=(rendered/frame["filename"]).read_bytes()
             info=check_frame(raw,pixel_contract,_png_info)
+            if pixel_contract==PIXEL_EXR:
+                try:
+                    result=subprocess.run([
+                        decoder,"-nostdin","-v","error","-xerror",
+                        "-i",str(rendered/frame["filename"]),"-frames:v","1",
+                        "-f","null","-"],capture_output=True,text=True,
+                        timeout=timeout,check=False)
+                except (OSError,subprocess.TimeoutExpired) as exc:
+                    raise RuntimeError("Independent EXR decode unavailable; no frame published") from exc
+                if result.returncode:
+                    raise RuntimeError("Independent EXR decode failed; no frame published: "+
+                                       result.stderr[-500:])
             if (info["width"],info["height"])!=(width,height):
                 raise RuntimeError("Rendered output dimensions differ from requested presentation")
             sha=self.index.put_blob(project_id,raw,info["media_type"])
