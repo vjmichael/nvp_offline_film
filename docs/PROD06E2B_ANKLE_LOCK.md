@@ -1,7 +1,7 @@
 # NVP-PROD-06E2B — Director-approved native ankle-lock IK
 
 **Date:** 2026-11-03  
-**Status:** Implementation under native acceptance; do not claim completion until both real Blender platforms pass  
+**Status:** **Verified for native ankle-marker IK** on real imported Cesium Man, Linux and Windows Blender 5.2.3. Physical sole contact and gait remain unverified.  
 **Authority:** [NVP_MASTER_DESIGN.md](NVP_MASTER_DESIGN.md), [PROD06E2A_LEG_IDENTITY.md](PROD06E2A_LEG_IDENTITY.md)
 
 ## Scope
@@ -56,4 +56,12 @@ PYTHONPATH=. python -m tools.nvp_prod06e2b_fixture \
   --external-glb /path/to/CesiumMan.glb
 ```
 
-Add `--audit-only` for Windows lacking Workbench rendering. The expected end result is `passed_native_ankle_lock_only`, not "full realistic gait". Check native audit files and measured sliding residuals before updating this document from "under acceptance" to "verified".
+Add `--audit-only` for Windows lacking Workbench rendering. The expected end result is `passed_native_ankle_lock_only`, not "full realistic gait". Real Blender evidence and measured residuals are recorded below. This does not certify film-grade foot biomechanics.
+
+## Completed native acceptance and numbers — 2026-11-03
+
+[GitHub workflow run 41659667221](https://github.com/vjmichael/nvp_offline_film/actions/runs/41659667221): both real Blender 5.2.3 **Linux** and **Windows** PROD-06E2B native steps completed successfully. Each fully rebuilt the external licensed sample, replayed the independently approved 06E2A anatomical identity, author-approved the fixture contact intent, baked actual imported thigh/shin pose keys, then used separate native Blender processes to reopen and compare the pristine and modified .blend files. The Windows test is real **geometry-only**, not a claim of GPU-rendered motion.
+
+Both platforms independently reported **120 compared frames**, max ankle-marker distance from each target **6.336060650786549e-7 m**, max armature-local upper/lower segment-length residual **6.927575093018667e-7 m**, and observed actual quaternion component change **0.5295589566230774**. All tested actor-root transforms, camera matrices/lenses, cut markers, noncontact upper/lower-leg pose values, and approval receipts passed the independent comparison. The fixture authors a deliberate **0.02 m ankle target adjustment** for a real nontrivial IK pose change; it does *not* exercise walking actor roots or physical sole contact.
+
+These are **fixture-specific measurements**, not universal quality guarantees or production SLA. Additional 06E2C testing must address real sole geometry, foot-floor penetration, moving actor trajectories, target changes during stance, joint ceilings, rig deformation quality, temporal subframe blending and physics. Windows physical AMD GPU / Lu DLC tests remain separate.
