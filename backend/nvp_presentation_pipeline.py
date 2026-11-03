@@ -182,7 +182,11 @@ class PresentationPipeline:
             raise RuntimeError("Blender unavailable; no presentation was published: "+state["reason"])
         root=Path(output_dir).resolve()
         # Do not clobber approved or staged presentations on retries.
-        working=root/presentation_id
+        # Film IDs may legally contain ':' or other characters unsuitable for
+        # Windows paths. The workspace path is a SHA-derived safe basename,
+        # never a user-supplied filesystem path segment.
+        folder_key=hashlib.sha256((project_id+"\\0"+presentation_id).encode("utf-8")).hexdigest()[:32]
+        working=root/("presentation_"+folder_key)
         working.mkdir(parents=True,exist_ok=False)
         native=run_frozen_take_acceptance(
             self.capture,project_id,take_id,working/"source_blend",
