@@ -19,6 +19,7 @@ on:
       - nvp/data01-film-lineage-index-20261103
       - nvp/capture01-immutable-timed-takes-20261103
       - nvp/pipe01-blender-presentations-20261103
+      - nvp/pipe01b-full-motion-pbr-video-20261103
   workflow_dispatch:
 
 permissions:
@@ -81,7 +82,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-foundation.txt httpx trimesh numpy
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0 ffmpeg
+          ffmpeg -hide_banner -version | head -n 1
+          ffprobe -hide_banner -version | head -n 1
       - name: Download and authenticate official Blender release
         shell: bash
         run: |
@@ -158,6 +161,11 @@ jobs:
         run: |
           set -euo pipefail
           xvfb-run -a python -m tools.nvp_pipe01_fixture --out acceptance_artifacts/pipe01
+      - name: PIPE-01B full-motion H264 MP4 and physically lit Cycles PBR from frozen take
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_pipe01b_fixture --out acceptance_artifacts/pipe01b
       - name: Native PROD06 skeletal rig and pose animation acceptance
         shell: bash
         run: |
