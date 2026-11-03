@@ -15,6 +15,7 @@ from backend.nvp_cinema_dcp import (
     CinemaDCP,DCP_PROFILES,inspect_dcp_folder
 )
 from backend.nvp_film_index import FilmIndex
+from backend.nvp_cinema_duration import DURATION_EXACT, DURATION_PAD
 
 
 class CinemaDCPTests(unittest.TestCase):
@@ -39,7 +40,7 @@ class CinemaDCPTests(unittest.TestCase):
             "frame_count":16,
             "dialogue_timeline":[{"line_id":"line_1","start_sample":0}]
         }
-        self.cinema.motion.reopen=lambda pid,motion_id: self.src
+        self.cinema.motion.reopen=lambda pid,motion_id,**opts: self.src
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -62,14 +63,16 @@ class CinemaDCPTests(unittest.TestCase):
     def test_silent_test_requires_explicit_director_intent_and_warns_on_dialogue(self):
         plan=self.cinema.preflight(self.project,"motion_001",
                                   profile="smpte_2k_scope_24",
-                                  audio_policy="explicit_silent_test")
+                                  audio_policy="explicit_silent_test",
+                                  duration_policy=DURATION_PAD)
         self.assertEqual(plan["status"],"technical_test_only")
         self.assertEqual(plan["spec"]["raster"],[2048,858])
         self.assertTrue(any("dialogue" in x.lower() for x in plan["warnings"]))
         self.assertTrue(any("upscaled" in x for x in plan["warnings"]))
         with self.assertRaisesRegex(RuntimeError,"Explicit creator acceptance"):
             self.cinema.package_technical_test(self.project,"motion_001","dcp_test",
-                self.root/"dcp",audio_policy="explicit_silent_test")
+                self.root/"dcp",audio_policy="explicit_silent_test",
+                duration_policy=DURATION_PAD)
         self.assertFalse((self.root/"dcp").exists())
 
     def test_refuse_unknown_dcp_formats_or_audio_policies(self):
@@ -82,7 +85,38 @@ class CinemaDCPTests(unittest.TestCase):
             self.cinema.package_technical_test(self.project,"motion_001",
                 "dcp_test",self.root/"dcp",name="../bad",
                 audio_policy="explicit_silent_test",
-                director_silent_test_approval=True)
+                director_silent_test_approval=True,
+                    duration_policy=DURATION_PAD,
+                    director_padding_approval=True)
+
+    def test_exact_subsecond_refused_before_binary_discovery(self):
+        pre=self.cinema.preflight(self.project,"motion_001",
+                                  audio_policy="explicit_silent_test",
+                                  duration_policy=DURATION_EXACT)
+        self.assertEqual(pre["status"],"blocked")
+        self.assertTrue(any("under one second" in b for b in pre["blockers"]))
+        with patch("backend.nvp_cinema_dcp.shutil.which") as binary:
+            with self.assertRaisesRegex(RuntimeError, "under one second"):
+                self.cinema.package_technical_test(
+                    self.project,"motion_001","dcp_short",self.root/"out",
+                    audio_policy="explicit_silent_test",
+                    director_silent_test_approval=True)
+            binary.assert_not_called()
+
+    def test_creator_must_separately_accept_black_padding(self):
+        pre=self.cinema.preflight(self.project,"motion_001",
+                                  audio_policy="explicit_silent_test",
+                                  duration_policy=DURATION_PAD)
+        self.assertEqual(pre["duration_contract"]["black_tail_frames"],8)
+        self.assertEqual(pre["duration_contract"]["dcp_frames"],24)
+        with patch("backend.nvp_cinema_dcp.shutil.which") as binary:
+            with self.assertRaisesRegex(RuntimeError,"director approval"):
+                self.cinema.package_technical_test(
+                    self.project,"motion_001","dcp_no_pad_approval",self.root/"out",
+                    audio_policy="explicit_silent_test",
+                    director_silent_test_approval=True,
+                    duration_policy=DURATION_PAD)
+            binary.assert_not_called()
 
     def _make_folder(self):
         d=self.root/"test_dcp"
@@ -134,7 +168,9 @@ class CinemaDCPTests(unittest.TestCase):
                 self.cinema.package_technical_test(
                     self.project,"motion_001","dcp_missing",self.root/"out",
                     audio_policy="explicit_silent_test",
-                    director_silent_test_approval=True)
+                    director_silent_test_approval=True,
+                    duration_policy=DURATION_PAD,
+                    director_padding_approval=True)
         self.assertEqual(self.film.list_objects(self.project,kind="presentation"),[])
 
     def test_cannot_publish_incomplete_dcp_when_encoder_is_mocked(self):
@@ -146,9 +182,59 @@ class CinemaDCPTests(unittest.TestCase):
                 self.cinema.package_technical_test(
                     self.project,"motion_001","dcp_empty",self.root/"out",
                     audio_policy="explicit_silent_test",
-                    director_silent_test_approval=True)
+                    director_silent_test_approval=True,
+                    duration_policy=DURATION_PAD,
+                    director_padding_approval=True)
         self.assertEqual(self.film.list_objects(self.project,kind="presentation"),[])
 
+
+    def test_cinema_technical_project_is_tst_not_feature(self):
+        captured = []
+        def fake_process(args, timeout, purpose):
+            captured.append(list(args))
+            return "mock-only"
+        with patch("backend.nvp_cinema_dcp.shutil.which",
+                   side_effect=lambda x:x),patch(
+                       "backend.nvp_cinema_dcp._process",
+                       side_effect=fake_process):
+            with self.assertRaisesRegex(RuntimeError,"exactly one cinema package"):
+                self.cinema.package_technical_test(
+                    self.project,"motion_001","dcp_technical_type",
+                    self.root/"out",audio_policy="explicit_silent_test",
+                    director_silent_test_approval=True,
+                    duration_policy=DURATION_PAD,director_padding_approval=True)
+        self.assertGreater(len(captured),0)
+        first = captured[0]
+        self.assertEqual(first[first.index("-c")+1],"TST")
+        self.assertNotIn("FTR",first)
+        self.assertEqual(self.film.list_objects(
+            self.project,kind="presentation"),[])
+
+    def test_bv21_errors_refused_even_if_verifier_reports_ok(self):
+        def fake_process(args,timeout,purpose):
+            if purpose=="DCP-o-matic film encode":
+                d=Path(args[-1])/"fake_dcp"
+                d.mkdir(parents=True)
+                (d/"ASSETMAP.xml").write_text("<AssetMap/>")
+                (d/"CPL.xml").write_text("<CompositionPlaylist/>")
+                (d/"PKL.xml").write_text("<PackingList/>")
+                (d/"picture.mxf").write_bytes(b"fake picture")
+            if purpose=="Independent DCP package verifier":
+                return "Bv2.1 error: missing credit marker\\nDCP verified OK (with errors)"
+            return "ok"
+        with patch("backend.nvp_cinema_dcp.shutil.which",
+                   side_effect=lambda x:x),patch(
+                       "backend.nvp_cinema_dcp._process",
+                       side_effect=fake_process),patch(
+                       "backend.nvp_cinema_dcp.audit_dcp_picture_essence",
+                       return_value={"status":"independent_mxf_jpeg2000_decode_technical_only"}):
+            with self.assertRaisesRegex(RuntimeError,"verifier reported errors"):
+                self.cinema.package_technical_test(
+                    self.project,"motion_001","dcp_false_ok",
+                    self.root/"out",audio_policy="explicit_silent_test",
+                    director_silent_test_approval=True,
+                    duration_policy=DURATION_PAD,director_padding_approval=True)
+        self.assertEqual(self.film.list_objects(self.project,kind="presentation"),[])
 
     def test_structurally_plausible_dcp_without_real_decode_is_never_indexed(self):
         # A fake successful packager and valid-looking XML files are not
@@ -173,7 +259,9 @@ class CinemaDCPTests(unittest.TestCase):
                 self.cinema.package_technical_test(
                     self.project, "motion_001", "dcp_fake_picture",
                     self.root / "out", audio_policy="explicit_silent_test",
-                    director_silent_test_approval=True)
+                    director_silent_test_approval=True,
+                    duration_policy=DURATION_PAD,
+                    director_padding_approval=True)
         self.assertEqual(self.film.list_objects(
             self.project, kind="presentation"), [])
 

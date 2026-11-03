@@ -10,11 +10,13 @@ No shell commands, model-generated executable scripts or network processing.
 from __future__ import annotations
 
 from fractions import Fraction
+import hashlib
 import json
 from pathlib import Path
 import shutil
 import subprocess
 
+from backend.nvp_cinema_duration import validate_duration_contract
 
 MAX_PICTURE_MXFS = 16
 
@@ -39,6 +41,48 @@ def _run(args, timeout, label):
         raise RuntimeError(label + " failed: " + result.stderr[-500:])
     return result.stdout
 
+def _prove_black_tail(media, source_frames, padded_frames, raster, decode, timeout):
+    """Decode *every* additional full-resolution frame to raw RGB24.
+
+    A valid proof contains exactly the expected number of bytes and no
+    nonzero RGB channels. This is a bounded (at most 23-frame) technical
+    exception; full-picture decoding must already have passed.
+    """
+    if not (1 <= padded_frames < 24 and 1 <= source_frames < 24):
+        raise RuntimeError("Refusing unbounded or nonsensical DCP black-tail audit")
+    expected_bytes = padded_frames * raster[0] * raster[1] * 3
+    if expected_bytes > 150 * 1024 * 1024:
+        raise RuntimeError("DCP black-tail audit exceeds bounded memory budget")
+    try:
+        result = subprocess.run(
+            [
+                decode, "-nostdin", "-v", "error", "-xerror", "-i", str(media),
+                "-map", "0:v:0", "-vf", "select=gte(n\\," + str(source_frames) + ")",
+                "-vsync", "0", "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
+            ],
+            capture_output=True, check=False, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Independent black-tail decode timed out") from exc
+    except OSError as exc:
+        raise RuntimeError("Independent black-tail decoder could not start") from exc
+    if result.returncode:
+        raise RuntimeError("Independent black-tail decode failed: " +
+                           result.stderr[-500:].decode("utf-8", "replace"))
+    if len(result.stdout) != expected_bytes:
+        raise RuntimeError("Black-tail decoded frame count or raw byte count mismatch")
+    if result.stdout.count(0) != expected_bytes:
+        raise RuntimeError("DCP padding is not completely black at full RGB resolution")
+    return {
+        "format": "nvp.dcp.zero.tail.proof.v1",
+        "method": "full_resolution_rgb24_ffmpeg_decode_all_padded_frames",
+        "source_frames": source_frames,
+        "padded_frames": padded_frames,
+        "decoded_black_bytes": expected_bytes,
+        "rgb_sha256": hashlib.sha256(result.stdout).hexdigest(),
+        "status": "independent_exact_zero_tail",
+    }
+
 
 def audit_dcp_picture_essence(
     dcp_root,
@@ -48,6 +92,7 @@ def audit_dcp_picture_essence(
     expected_frames,
     ffprobe_bin=None,
     ffmpeg_bin=None,
+    duration_contract=None,
     timeout=300,
 ):
     """Independently inspect and decode each picture MXF on disk.
@@ -68,6 +113,10 @@ def audit_dcp_picture_essence(
         or not 20 <= timeout <= 7200
     ):
         raise ValueError("Invalid independent picture-audit specification")
+    contract = (validate_duration_contract(duration_contract, expected_frames,
+                                           expected_fps)
+                if duration_contract is not None else None)
+    output_frames = contract["dcp_frames"] if contract else expected_frames
     folder = Path(dcp_root)
     if folder.is_symlink() or not folder.is_dir():
         raise RuntimeError("Missing or symlinked DCP folder")
@@ -126,8 +175,8 @@ def audit_dcp_picture_essence(
             "Independent complete JPEG 2000 decode",
         )
         total_frames += count
-        if total_frames > expected_frames:
-            raise RuntimeError("DCP contains frames beyond the frozen source")
+        if total_frames > output_frames:
+            raise RuntimeError("DCP contains unapproved picture frames beyond duration contract")
         pictures.append({
             "path": media.relative_to(folder).as_posix(),
             "codec": "jpeg2000",
@@ -137,13 +186,24 @@ def audit_dcp_picture_essence(
         })
     if not pictures:
         raise RuntimeError("DCP MXF folder lacks independently decoded picture essence")
-    if total_frames != expected_frames:
-        raise RuntimeError("DCP picture frame count differs from frozen source")
+    if total_frames != output_frames:
+        raise RuntimeError("DCP picture frame count differs from approved duration contract")
+    black_tail_evidence = None
+    if contract and contract["black_tail_frames"]:
+        if len(pictures) != 1:
+            raise RuntimeError("Black-tail policy requires one independently decoded picture reel")
+        media = folder / pictures[0]["path"]
+        black_tail_evidence = _prove_black_tail(
+            media, expected_frames, contract["black_tail_frames"],
+            list(expected_raster), decode, timeout)
     return {
         "format": "nvp.dcp.picture.essence.audit.v1",
         "status": "independent_mxf_jpeg2000_decode_technical_only",
         "picture_reels": pictures,
         "total_decoded_frames": total_frames,
+        "source_frames": expected_frames,
+        "duration_contract": contract,
+        "black_tail_evidence": black_tail_evidence,
         "raster": list(expected_raster),
         "fps": expected_fps,
         "limits": [
