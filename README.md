@@ -1,3 +1,5 @@
+> **NVP MASTER DESIGN (2026-11-03):** [NVP Master Design — World-Aware Personal Film Studio](docs/NVP_MASTER_DESIGN.md) is the cross-subsystem product/architecture and gated-roadmap baseline on this development branch. It separates creator requirements, current implementation, future options, and acceptance evidence. Film-production code must conform to it; subordinate specifications do not silently supersede it. The historical proprietary license below remains unchanged.
+
 > **NVP-PROD-01 → PROD-04 development (November 2, 2026):** The film-only
 > production path now includes an actual Blender acceptance **runner**,
 > durable layered WorldState edits with creator locks and undo, immutable
