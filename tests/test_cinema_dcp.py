@@ -40,7 +40,7 @@ class CinemaDCPTests(unittest.TestCase):
             "frame_count":16,
             "dialogue_timeline":[{"line_id":"line_1","start_sample":0}]
         }
-        self.cinema.motion.reopen=lambda pid,motion_id: self.src
+        self.cinema.motion.reopen=lambda pid,motion_id,**opts: self.src
 
     def tearDown(self):
         self.tmp.cleanup()
