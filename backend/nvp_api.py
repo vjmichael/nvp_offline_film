@@ -737,3 +737,97 @@ def production_solve_camera(project_id: str, scene_id: str, payload: CameraShotI
     return run(lambda: BlockingCamera(studio).solve_shot(
         project_id,scene_id,payload.subjects,lens_mm=payload.lens_mm,
         shot_size=payload.shot_size,desired_positions=payload.desired_positions))
+
+
+# NVP-PROD-05: author-controlled, frame-accurate shot sequences.
+from backend.nvp_shot_sequence import ShotSequence
+
+
+class TakeShotInput(BaseModel):
+    camera_id: str
+    frames: int = Field(ge=1, le=14400)
+    pattern: str = 'single'
+    expected_revision: int = Field(ge=0)
+
+
+class TakeCueInput(BaseModel):
+    start_frame: int = Field(ge=1, le=14400)
+    expected_revision: int = Field(ge=0)
+
+
+class TakeRevisionInput(BaseModel):
+    expected_revision: int = Field(ge=0)
+
+
+class TakeWarningsInput(TakeRevisionInput):
+    codes: list[str] = Field(max_length=128)
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence', status_code=201)
+def prod05_create(project_id: str, scene_id: str):
+    return run(lambda: ShotSequence(studio).create(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/sequence')
+def prod05_read(project_id: str, scene_id: str):
+    return run(lambda: ShotSequence(studio).read(project_id,scene_id))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/shots')
+def prod05_append(project_id: str, scene_id: str, payload: TakeShotInput):
+    return run(lambda: ShotSequence(studio).add_shot(project_id,scene_id,
+        payload.camera_id,payload.frames,payload.pattern,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/shots/pop')
+def prod05_remove_last_shot(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    return run(lambda: ShotSequence(studio).remove_last_shot(project_id,scene_id,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/cues/{line_id}')
+def prod05_place_cue(project_id: str, scene_id: str, line_id: str, payload: TakeCueInput):
+    return run(lambda: ShotSequence(studio).place_cue(project_id,scene_id,
+        line_id,payload.start_frame,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/cues/{line_id}/clear')
+def prod05_clear_cue(project_id: str, scene_id: str, line_id: str, payload: TakeRevisionInput):
+    return run(lambda: ShotSequence(studio).clear_cue(project_id,scene_id,
+        line_id,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/warnings/acknowledge')
+def prod05_acknowledge(project_id: str, scene_id: str, payload: TakeWarningsInput):
+    return run(lambda: ShotSequence(studio).acknowledge(project_id,scene_id,
+        payload.codes,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/approve')
+def prod05_approve(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    return run(lambda: ShotSequence(studio).approve(project_id,scene_id,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/revision')
+def prod05_revision(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    return run(lambda: ShotSequence(studio).new_revision(project_id,scene_id,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/reset')
+def prod05_reset(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    return run(lambda: ShotSequence(studio).reset_draft(project_id,scene_id,payload.expected_revision))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/history')
+def prod05_history(project_id: str, scene_id: str):
+    return run(lambda: ShotSequence(studio).history(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/package')
+def prod05_package(project_id: str, scene_id: str):
+    return run(lambda: ShotSequence(studio).export(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/blender-script')
+def prod05_blender_script(project_id: str, scene_id: str):
+    return {'script':run(lambda: ShotSequence(studio).blender_script(project_id,scene_id)),
+            'language':'python','runtime':'Blender 5.2+ bpy'}

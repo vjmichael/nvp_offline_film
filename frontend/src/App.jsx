@@ -4,6 +4,7 @@ import SceneMindPanel from './SceneMindPanel.jsx';
 import ScreenplayReviewPanel from './ScreenplayReviewPanel.jsx';
 import SceneStagePanel from './SceneStagePanel.jsx';
 import ProductionAuthoringPanel from './ProductionAuthoringPanel.jsx';
+import TakeSequencePanel from './TakeSequencePanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -402,7 +403,8 @@ export default function App() {
           <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>7 · Plan scenes</button>
           <button className={tab === 'stage' ? 'active' : ''} onClick={() => setTab('stage')}>8 · Stage 3D scene</button>
           <button className={tab === 'direct' ? 'active' : ''} onClick={() => setTab('direct')}>9 · Direct the scene</button>
-          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>10 · Make the film</button>
+          <button className={tab === 'take' ? 'active' : ''} onClick={() => setTab('take')}>10 · Film the sequence</button>
+          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>11 · Make the film</button>
         </nav>
         {tab === 'develop' && <div className="columns">
           <section className="card">
@@ -666,6 +668,7 @@ export default function App() {
         </div>}
         {tab === 'stage' && <SceneStagePanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'direct' && <ProductionAuthoringPanel project={project} api={api} action={action} busy={busy} />}
+        {tab === 'take' && <TakeSequencePanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'make' && <section className="card make"><div className="kicker">FUTURE MILESTONE</div>
           <h2>Bring your movie to life</h2><p>NVP will eventually build 3D sets, animate characters, film camera shots, edit scenes, mix audio and export the movie. This is not implemented in this foundation build.</p>
           <div className="future"><span>Build a location — planned</span><span>Animate characters — planned</span><span>Film a scene — planned</span><span>Edit and export — planned</span></div>
