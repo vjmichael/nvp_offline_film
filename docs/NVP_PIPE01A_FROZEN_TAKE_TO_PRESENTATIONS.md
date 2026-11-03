@@ -3,7 +3,7 @@
 **Date:** November 3, 2026  
 **Decision:** [Data-First NVP ADR](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md)  
 **Predecessors:** [DATA-01 source index](NVP_DATA01_FILM_LINEAGE_INDEX.md), [CAPTURE-01 frozen take](NVP_CAPTURE01_FROZEN_DIGITAL_TAKES.md)  
-**Status:** First conventional visual adapter implemented; native video output and model-agnostic AI provider registry are *subsequent work*. CI: [41690933312](https://github.com/vjmichael/nvp_offline_film/actions/runs/41690933312). Confirm individual jobs before claiming whole-workflow success.
+**Status:** First conventional visual adapter implemented; native video output and model-agnostic AI provider registry are *subsequent work*. CI: [41691770710](https://github.com/vjmichael/nvp_offline_film/actions/runs/41691770710). Confirm individual jobs before claiming whole-workflow success.
 
 ## Why this matters
 
@@ -62,7 +62,7 @@ Native acceptance intentionally renders just four real images for a **two-shot f
 - Existing Windows full Python/React and native Blender rig/capture tests remain mandatory. Windows no-GPU Blender tests do **not** claim full Workbench presentation raster rendering until separately proven.
 - Native worker emits renderer version, actual filenames/cameras, source proof and frame receipts; results are stored under CI artifacts. No model tokens or network calls needed.
 
-**CI run:** https://github.com/vjmichael/nvp_offline_film/actions/runs/41690933312
+**CI run:** https://github.com/vjmichael/nvp_offline_film/actions/runs/41691770710. The Linux Python suite ran **436 tests (429 passed, 7 skipped)** including an adversarial forged Blender receipt check. The actual native Linux Blender step **rendered two styles from the same frozen take and passed independent indexed image/lineage verification**. Windows Python and Windows Blender are separate acceptance jobs and must each be checked before claiming whole-workflow completion.
 
 ## Limitations / next gates
 
