@@ -382,6 +382,8 @@ payload=json.loads(Path(opts['--motion']).read_text('utf8'))
 sc=bpy.context.scene
 checks=[]
 def check(name,ok,detail):checks.append({'check':name,'passed':bool(ok),'evidence':detail})
+check('fps24',sc.render.fps==24,sc.render.fps)
+check('camera_cut_markers',len([m for m in sc.timeline_markers if m.name.startswith('CUT_')])>0,'camera timeline')
 check('approval_digest',sc.get('nvp_motion_approval_sha')==payload['approval_sha'],'approval')
 for binding in payload['plan']['actors']:
     if not binding['segments']:continue
