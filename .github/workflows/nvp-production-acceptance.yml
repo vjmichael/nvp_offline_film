@@ -135,3 +135,78 @@ jobs:
           path: acceptance_artifacts/
           if-no-files-found: warn
           retention-days: 7
+
+
+  windows-python-react:
+    name: Windows Python and React acceptance
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Python test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+      - name: Run full Windows Python regressions (Blender acceptance separately)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m compileall -q backend tests tools
+          python -m unittest discover -s tests -v
+      - name: Build NVP React UI on Windows
+        shell: pwsh
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+  windows-blender-native:
+    name: Real Blender 5.2.3 Windows save / reopen / audit / render
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install fixture and acceptance dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+      - name: Download and verify official Windows Blender 5.2.3
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = "blender-$env:BLENDER_VERSION-windows-x64.zip"
+          curl.exe --fail --location --retry 4 --retry-delay 5 "$env:BLENDER_BASE/$archive" -o $archive
+          if ($LASTEXITCODE -ne 0) { throw 'Blender download failed' }
+          curl.exe --fail --location --retry 4 --retry-delay 5 "$env:BLENDER_BASE/blender-$env:BLENDER_VERSION.sha256" -o blender.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'Blender checksum download failed' }
+          $entry = Get-Content blender.sha256 | Where-Object { $_.Trim().EndsWith($archive) } | Select-Object -First 1
+          if (-not $entry) { throw 'Official SHA256 list lacks requested Windows archive' }
+          $expected = ($entry.Trim() -split '\\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Blender SHA256 mismatch" }
+          Expand-Archive -Path $archive -DestinationPath blender-runtime
+          $binary = Get-ChildItem blender-runtime -Recurse -Filter blender.exe -File | Select-Object -First 1
+          if (-not $binary) { throw 'Blender executable not found after extraction' }
+          Add-Content -Path $env:GITHUB_PATH -Value $binary.Directory.FullName
+          & $binary.FullName -b --version
+          if ($LASTEXITCODE -ne 0) { throw 'Blender version probe failed' }
+      - name: Execute genuine Windows native Blender acceptance
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m unittest discover -s tests -p test_blender_acceptance.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native Blender acceptance failed' }
