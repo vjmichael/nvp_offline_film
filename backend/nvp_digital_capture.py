@@ -283,3 +283,34 @@ class DigitalCapture:
                  "source snapshot identity mismatch")
         return {"record":record,"world":world,"timed_take":timed,
                 "source_plan":plan,"approval_proof":proof,"review":review,"audit":audit}
+
+
+def run_frozen_take_acceptance(capture: DigitalCapture, project_id: str,
+                               take_id: str, directory, *, executable="blender",
+                               render_preview=True, timeout=180):
+    """Actually save/reopen/audit *stored* frozen capture in native Blender.
+
+    Uses existing independently accepted PROD-05 native scene+camera+actor
+    audit, but its source is FilmIndex frozen objects, NEVER the live stage.
+    The regular Blender acceptance outputs are reportable, not automatically
+    director-approved presentation packages.
+    """
+    from backend.nvp_shot_sequence import run_shot_acceptance
+
+    frozen = capture.reopen(project_id, take_id)
+    scene_id = frozen["record"]["data"]["scene_id"]
+
+    class FrozenSource:
+        def export(self, selected_project, selected_scene):
+            if selected_project != project_id or selected_scene != scene_id:
+                raise RuntimeError("Frozen take cannot be replayed as another project or scene")
+            return {"manifest": frozen["world"], "take": frozen["timed_take"],
+                    "review": frozen["review"]}
+
+    result = run_shot_acceptance(
+        FrozenSource(), project_id, scene_id, directory,
+        executable=executable, render_preview=render_preview, timeout=timeout)
+    return {"capture_id":take_id,
+            "source_world_sha256":frozen["audit"]["world_sha256"],
+            "capture_document_sha256":frozen["record"]["document_sha256"],
+            **result}
