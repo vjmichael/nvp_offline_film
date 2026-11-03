@@ -20,6 +20,7 @@ on:
       - nvp/capture01-immutable-timed-takes-20261103
       - nvp/pipe01-blender-presentations-20261103
       - nvp/pipe01b-full-motion-pbr-video-20261103
+      - nvp/pipe01b-professional-mezzanine-prores-20261103
   workflow_dispatch:
 
 permissions:
