@@ -66,3 +66,21 @@ Native Blender (licensed external Cesium Man required):
 Headless Windows adds `--audit-only`.
 
 **Acceptance classification:** if native BVH and original real-character toe-contact tests pass, mark *triangle surface geometry verification* passed. Do **not** mark independent, real plantar anatomy certification complete. Full future production scope needs a genuinely reviewed and licensed four-region anatomical attachment for a real rig, moving-root/foot-roll gait, named inclined/moving colliders, whole skinned-mesh penetration and realistic biomechanics.
+
+## Native Blender acceptance, November 3, 2026
+
+[Workflow 41674405456](https://github.com/vjmichael/nvp_offline_film/actions/runs/41674405456) completed and passed its **real Blender 5.2.3 Linux and Windows** surface acceptance stages on the pinned licensed Cesium Man. The native stage was reopened after real imported-leg ankle IK and its previously accepted C3A corrective animation. All new BVH flat/slope/outside/steep tests passed on both operating systems.
+
+| Measured criterion | Linux | Windows |
+| --- | ---: | ---: |
+| Actual corrected plantar *candidate* marker samples | 25 | 25 |
+| Maximum signed gravity gap above real NVP_FLOOR | 0.000272578 m | 0.000272582 m |
+| Maximum penetration below actual floor | 0 m | 0 m |
+| Flat-floor test | +12 mm / -9 mm | Pass |
+| Separately generated 12° slope test | +14 mm / -11 mm | Pass |
+| Off-support and 70° steep grade | Refused as unsupported | Refused as unsupported |
+| Expert-annotated Cesium Man heel/MT1/MT5/hallux mesh | **Not available** | **Not available** |
+
+**Scope decision:** `passed_real_character_bvh_geometry_only` verifies the new surface engine and the original corrected toe-candidate contact. It is **not** evidence of clinical/gait validity, an integrated human on a sloped floor, whole-mesh floor collision, or any approved foot data license. A true four-region anatomy attachment requires a supplied reviewed source reference file matching its exact SHA, reviewed source vertex indices, and independent actual native geometry inspection.
+
+The Linux Python regression suite ran **409 tests: 402 passed, 7 skipped**. React production build passed. Windows Python acceptance status is tracked independently in the workflow; no implied pass is claimed before its actual completion.
