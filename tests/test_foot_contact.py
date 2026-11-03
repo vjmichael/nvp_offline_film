@@ -48,7 +48,7 @@ class ContactIntentTests(unittest.TestCase):
             pid=studio.create_project('Example','Narrative')['id']
             sid='SC_FAKE_FOR_ISOLATED_LEDGER_TEST'
             package={'take':{'shots':[{'start_frame':1,'stop_frame':4}]},
-                     'leg_identity':{'approval_sha':'a'*64}}
+                     'leg_identity':{'approval_sha':'a'*64,'actors':[{'instance_id':'actorA'}]}}
             class FrozenFixture(FootContactPlan):
                 def _context(self,p,s):
                     if p!=pid or s!=sid:raise KeyError('Other project/scene')
@@ -58,15 +58,19 @@ class ContactIntentTests(unittest.TestCase):
             self.assertEqual(row['revision'],0)
             with self.assertRaises(RuntimeError):
                 service.approve(pid,sid,0)
-            row=service.configure(pid,sid,'actorA',SIDES,0) if row['plan']['actors'] else None
-            # A genuine actor roster is required in production; the isolated
-            # empty fixture must not allow empty project approval.
-            if row is None:
-                with self.assertRaises(RuntimeError):
-                    service.approve(pid,sid,0)
+            row=service.configure(pid,sid,'actorA',SIDES,0)
+            self.assertEqual(row['revision'],1)
+            with self.assertRaises(RuntimeError):
+                service.configure(pid,sid,'actorA',SIDES,0)
+            row=service.approve(pid,sid,1)
+            self.assertEqual(row['status'],'approved')
+            self.assertFalse(service.export(pid,sid)['foot_contacts']['ik_authorized'])
+            with self.assertRaises(RuntimeError):
+                service.configure(pid,sid,'actorA',SIDES,2)
+            package['leg_identity']['approval_sha']='e'*64
             with self.assertRaises(RuntimeError):
                 service.export(pid,sid)
-            self.assertEqual(FrozenFixture(Studio(studio.db_path)).read(pid,sid)['status'],'draft')
+            self.assertTrue(FrozenFixture(Studio(studio.db_path)).read(pid,sid)['stale'])
 
 def staged_package():
     return {
