@@ -58,7 +58,7 @@ class CinemaDurationTests(unittest.TestCase):
             changed[field] = forged
             with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "inconsistent"):
                 validate_duration_contract(changed, 16, 24)
-        with self.assertRaisesRegex(RuntimeError, "invalid"):
+        with self.assertRaisesRegex(RuntimeError, "inconsistent"):
             validate_duration_contract(c, 15, 24)
 
 
