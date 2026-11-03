@@ -16,6 +16,7 @@ on:
       - nvp/prod06e2c2-plantar-markers-floor-20261103
       - nvp/prod06e2c3-bounded-mesh-contact-20261103
       - nvp/prod06e2c3b-anatomical-landmarks-bvh-20261103
+      - nvp/data01-film-lineage-index-20261103
   workflow_dispatch:
 
 permissions:
