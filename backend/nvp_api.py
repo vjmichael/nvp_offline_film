@@ -554,3 +554,186 @@ def prod_blender(project_id: str, scene_id: str):
 @app.get("/api/projects/{project_id}/production/scenes/{scene_id}/history")
 def prod_history(project_id: str, scene_id: str):
     return run(lambda: ProductionScene(studio).history(project_id, scene_id))
+
+# NVP-PROD-02/03/04 — narrow, project-scoped production operations.
+# No route accepts model-generated Python or an arbitrary server filesystem path.
+from typing import Any
+from fastapi import Request
+from backend.nvp_world_state import WorldState
+from backend.nvp_mesh_assets import MeshAssets, MAX_GLB
+from backend.nvp_blocking_camera import BlockingCamera
+from backend.nvp_blender_acceptance import blender_available
+
+
+class WorldEditInput(BaseModel):
+    instance_id: str = Field(min_length=1, max_length=64)
+    field: str = Field(min_length=1, max_length=64)
+    value: Any
+    expected_revision: int = Field(ge=0)
+    locked: bool = True
+
+
+class WorldLockInput(BaseModel):
+    instance_id: str
+    field: str
+    locked: bool
+    expected_revision: int = Field(ge=0)
+
+
+class WorldProposalInput(WorldEditInput):
+    rationale: str = Field(default='', max_length=1000)
+
+
+class WorldRevisionInput(BaseModel):
+    expected_revision: int = Field(ge=0)
+
+
+class WorldDecisionInput(WorldRevisionInput):
+    decision: str
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/world')
+def production_world(project_id: str, scene_id: str):
+    return run(lambda: WorldState(studio).read(project_id, scene_id))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/world/human')
+def production_world_edit(project_id: str, scene_id: str, payload: WorldEditInput):
+    return run(lambda: WorldState(studio).set_human(
+        project_id, scene_id, payload.instance_id, payload.field,
+        payload.value, payload.expected_revision, lock=payload.locked))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/world/lock')
+def production_world_lock(project_id: str, scene_id: str, payload: WorldLockInput):
+    return run(lambda: WorldState(studio).set_lock(
+        project_id, scene_id, payload.instance_id, payload.field,
+        payload.locked, payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/world/proposals', status_code=201)
+def production_world_proposal(project_id: str, scene_id: str, payload: WorldProposalInput):
+    return run(lambda: WorldState(studio).propose_ai(
+        project_id,scene_id,payload.instance_id,payload.field,payload.value,
+        payload.expected_revision,payload.rationale))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/world/proposals/{proposal_id}/decision')
+def production_world_decide(project_id: str, scene_id: str, proposal_id: str, payload: WorldDecisionInput):
+    return run(lambda: WorldState(studio).decide(
+        project_id,scene_id,proposal_id,payload.decision,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/world/undo')
+def production_world_undo(project_id: str, scene_id: str, payload: WorldRevisionInput):
+    return run(lambda: WorldState(studio).undo(project_id,scene_id,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/world/rebase')
+def production_world_rebase(project_id: str, scene_id: str, payload: WorldRevisionInput):
+    return run(lambda: WorldState(studio).rebase(project_id,scene_id,payload.expected_revision))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/world/history')
+def production_world_history(project_id: str, scene_id: str):
+    return run(lambda: WorldState(studio).journal(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/world/blender-script')
+def production_world_blender(project_id: str, scene_id: str):
+    return {'script':run(lambda: WorldState(studio).export_blender_script(project_id,scene_id)),
+            'execution':'not_started','note':'Requires a real local Blender installation'}
+
+
+@app.get('/api/production/blender-availability')
+def production_blender_availability():
+    return blender_available()
+
+
+@app.get('/api/projects/{project_id}/production/meshes')
+def production_list_meshes(project_id: str):
+    return run(lambda: MeshAssets(studio).list(project_id))
+
+
+@app.post('/api/projects/{project_id}/production/assets/{asset_id}/mesh', status_code=201)
+async def production_attach_glb(project_id: str, asset_id: str, request: Request,
+                                license_code: str, attribution: str = '', source: str = ''):
+    # Streaming byte budget applies even without a Content-Length header.
+    payload=bytearray()
+    async for part in request.stream():
+        payload.extend(part)
+        if len(payload)>MAX_GLB:
+            raise HTTPException(status_code=413,detail='GLB exceeds the 32 MiB import limit')
+    return run(lambda: MeshAssets(studio).register(
+        project_id,asset_id,bytes(payload),license_code,attribution,source))
+
+
+class DialogueDurationInput(BaseModel):
+    duration_s: float = Field(gt=0,le=300)
+    origin: str = 'director_measured'
+    audio_sha256: str | None = None
+
+
+class DialogueListenersInput(BaseModel):
+    listeners: list[str] = Field(max_length=12)
+
+
+class BlockingMarkInput(BaseModel):
+    actor_instance_id: str
+    target_xy_m: list[float]
+    target_instance_id: str | None = None
+    anchor_name: str | None = None
+    max_gap_m: float = Field(default=1.5,gt=0,le=3)
+    start_s: float = Field(default=0,ge=0)
+    end_s: float = Field(default=5,ge=0)
+    action: str = 'walk'
+    facing_instance_id: str | None = None
+
+
+class CameraShotInput(BaseModel):
+    subjects: list[str] = Field(min_length=1,max_length=3)
+    lens_mm: float = Field(default=50,ge=18,le=135)
+    shot_size: str = 'medium'
+    desired_positions: list[list[float]] | None = None
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/dialogue')
+def production_dialogue(project_id: str, scene_id: str):
+    return run(lambda: BlockingCamera(studio).dialogue(project_id,scene_id))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/dialogue/{line_id}/duration')
+def production_dialogue_duration(project_id: str, scene_id: str, line_id: str, payload: DialogueDurationInput):
+    return run(lambda: BlockingCamera(studio).set_dialogue_duration(
+        project_id,scene_id,line_id,payload.duration_s,payload.origin,payload.audio_sha256))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/dialogue/{line_id}/listeners')
+def production_dialogue_listeners(project_id: str, scene_id: str, line_id: str, payload: DialogueListenersInput):
+    return run(lambda: BlockingCamera(studio).set_listeners(project_id,scene_id,line_id,payload.listeners))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/blocking')
+def production_blocking(project_id: str, scene_id: str):
+    return run(lambda: BlockingCamera(studio).marks(project_id,scene_id))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/blocking', status_code=201)
+def production_add_blocking(project_id: str, scene_id: str, payload: BlockingMarkInput):
+    return run(lambda: BlockingCamera(studio).add_mark(
+        project_id,scene_id,payload.actor_instance_id,payload.target_xy_m,
+        target_instance_id=payload.target_instance_id,anchor_name=payload.anchor_name,
+        max_gap=payload.max_gap_m,start_s=payload.start_s,end_s=payload.end_s,
+        action=payload.action,facing_instance_id=payload.facing_instance_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/cameras')
+def production_cameras(project_id: str, scene_id: str):
+    return run(lambda: BlockingCamera(studio).cameras(project_id,scene_id))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/cameras', status_code=201)
+def production_solve_camera(project_id: str, scene_id: str, payload: CameraShotInput):
+    return run(lambda: BlockingCamera(studio).solve_shot(
+        project_id,scene_id,payload.subjects,lens_mm=payload.lens_mm,
+        shot_size=payload.shot_size,desired_positions=payload.desired_positions))

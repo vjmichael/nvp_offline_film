@@ -1,3 +1,16 @@
+> **NVP-PROD-01 → PROD-04 development (November 2, 2026):** The film-only
+> production path now includes an actual Blender acceptance **runner**,
+> durable layered WorldState edits with creator locks and undo, immutable
+> licensed local GLB mesh import and packaging, and static actor blocking
+> plus measured virtual camera placement. The full local Python suite ran
+> **264 tests: 263 passed, 1 skipped** (native Blender).
+> **Blender is not installed in the execution host; no .blend or Blender
+> render has been verified.** The React directing panel passed JSX syntax
+> parsing, not a full Vite production build. See
+> [production engineering and gate status](docs/PROD01_TO_PROD04_ENGINEERING_ACCEPTANCE.md)
+> and [machine-readable acceptance report](docs/PROD01_TO_PROD04_ACCEPTANCE_RESULT.json).
+> This is still a development harness; Lu work remains deferred until v1.0.
+>
 # NVP — A personal film-making pipeline
 
 > **NVP-WRITE-05 (November 2, 2026):** A project-scoped Story Timeline now

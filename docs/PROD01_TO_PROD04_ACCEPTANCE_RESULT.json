@@ -1,0 +1,190 @@
+{
+  "date_utc": "2026-11-03T00:06:38.275115+00:00",
+  "milestones": {
+    "PROD-01_offline_manifest_and_layout": "passed_local",
+    "PROD-01_real_Blender_5.2_.blend_and_preview": "blocked_no_blender",
+    "PROD-02_durable_editable_world_state": "passed_local",
+    "PROD-03_local_GLb_import_license_and_portable_bundle": "passed_local_not_Blender_rendered",
+    "PROD-04_static_actor_paths_and_camera_geometry": "passed_local_not_animated_or_raster_verified"
+  },
+  "tests": {
+    "ran": 264,
+    "passed": 263,
+    "skipped": 1,
+    "failed": 0,
+    "tool": "unittest"
+  },
+  "native_blender_probe": {
+    "available": false,
+    "reason": "No real Blender executable is installed or visible on PATH"
+  },
+  "jsx_parser": "TypeScript 5.8.3 JSX syntax parse passed; Vite build not verified",
+  "camera_benchmark": {
+    "cases": 15,
+    "target_normalized_xy": [
+      0.38,
+      0.52
+    ],
+    "max_measured_residual": 0.0,
+    "samples": [
+      {
+        "actor_xy_m": [
+          3,
+          3
+        ],
+        "lens_mm": 24,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 97,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          3,
+          3
+        ],
+        "lens_mm": 35,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 73,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          3,
+          3
+        ],
+        "lens_mm": 50,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 42,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          6,
+          5
+        ],
+        "lens_mm": 24,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 120,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          6,
+          5
+        ],
+        "lens_mm": 35,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 102,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          6,
+          5
+        ],
+        "lens_mm": 50,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 62,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          9,
+          7
+        ],
+        "lens_mm": 24,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 97,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          9,
+          7
+        ],
+        "lens_mm": 35,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 73,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          9,
+          7
+        ],
+        "lens_mm": 50,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 42,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          3,
+          7
+        ],
+        "lens_mm": 24,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 97,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          3,
+          7
+        ],
+        "lens_mm": 35,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 73,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          3,
+          7
+        ],
+        "lens_mm": 50,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 42,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          9,
+          3
+        ],
+        "lens_mm": 24,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 97,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          9,
+          3
+        ],
+        "lens_mm": 35,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 73,
+        "in_frame": true
+      },
+      {
+        "actor_xy_m": [
+          9,
+          3
+        ],
+        "lens_mm": 50,
+        "max_normalized_frame_residual": 0.0,
+        "candidates_evaluated": 42,
+        "in_frame": true
+      }
+    ],
+    "limitation": "Pinhole point reprojection only; does not establish actual Blender subject raster framing"
+  },
+  "unverified": [
+    "Blender 5.2.3 native scene construction, reopen audit and render",
+    "Blender imported GLB pixel/geometry fidelity",
+    "React production bundle and physical UI",
+    "animated character rigs and 3D path motion",
+    "camera multi-shot film export"
+  ]
+}
