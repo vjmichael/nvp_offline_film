@@ -67,6 +67,27 @@ class BlenderAcceptanceTests(unittest.TestCase):
         self.assertTrue((self.root/'mesh_accept'/'build_scene.py').is_file())
         self.assertFalse((self.root/'mesh_accept'/'meshpack.blend').exists())
 
+    def test_native_meshpack_when_present(self):
+        """Verify the actual GLB import, world-space bounds and preview under Blender."""
+        check=blender_available()
+        if not check['available']:
+            self.skipTest('Real Blender executable unavailable')
+        from backend.nvp_mesh_assets import MeshAssets
+        import trimesh
+        assets=MeshAssets(self.studio)
+        mesh=trimesh.Scene()
+        mesh.add_geometry(trimesh.creation.box(extents=(.5,.5,.9)))
+        ident=self.prod.list_assets(self.pid)[0]['asset_id']
+        assets.register(self.pid,ident,mesh.export(file_type='glb'),'creator_owned')
+        result=run_meshpack_acceptance(assets,self.pid,self.sid,self.root/'native_meshpack')
+        self.assertEqual(result['status'],'passed_blender',result)
+        self.assertTrue(Path(result['blend']).stat().st_size>0)
+        self.assertTrue(Path(result['preview']).stat().st_size>0)
+        report=json.loads(Path(result['audit']).read_text())
+        self.assertTrue(report['passed'])
+        self.assertTrue(any(x['check'].startswith('grounding:') and x['passed']
+                            for x in report['checks']))
+
     def test_native_blender_when_present(self):
         """This test is intentionally skipped, rather than manufacturing render proof."""
         check=blender_available()

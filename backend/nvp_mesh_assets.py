@@ -226,6 +226,10 @@ for item in manifest['instances']:
         root.empty_display_type='CUBE';root.empty_display_size=.3
         offset=bpy.data.objects.new(label+'_MESH_OFFSET',None);bpy.context.collection.objects.link(offset)
         offset.parent=root
+        # NVP's validated asset bounds use Z-up metres. Blender's glTF importer
+        # applies the glTF Y-up -> Blender Z-up basis rotation; cancel it for
+        # the explicitly Z-up local asset contract before positioning anchors.
+        offset.rotation_euler.x=-math.pi/2
         low=mesh_info['bounds_min_m'];dim=item['dimensions']
         offset.location=(-low[0]-dim[0]/2,-low[1]-dim[1]/2,-low[2])
         for obj in imported:

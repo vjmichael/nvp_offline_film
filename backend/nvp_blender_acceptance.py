@@ -142,6 +142,7 @@ for item in manifest['instances']:
             mins=[min(float(v[i]) for v in vertices) for i in range(3)]
             maxs=[max(float(v[i]) for v in vertices) for i in range(3)]
             found=[a-b for a,b in zip(maxs,mins)]
+            check('grounding:'+label,abs(mins[2])<.025,{'bottom_z':mins[2]})
             dims=item['dimensions']
             expected=([dims[1],dims[0],dims[2]] if pose['rotation']%180 else dims)
             check('mesh_bounds:'+label,all(abs(a-b)<=max(.025,.03*b) for a,b in zip(found,expected)),
