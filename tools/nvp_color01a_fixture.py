@@ -123,14 +123,16 @@ def fixture(out, *, blender="blender", ffmpeg="ffmpeg"):
     if (probe_info["width"],probe_info["height"])!=(64,64):
         raise RuntimeError("HDR probe header mismatch")
     decoded=run([ffmpeg,"-nostdin","-v","error","-xerror","-i",str(probe),
-                 "-frames:v","1","-pix_fmt","gbrpf32le","-f","rawvideo","-"],
-                "Independent raw float32 EXR decoder",binary=True)
+                 "-frames:v","1","-pix_fmt","gbrapf32le","-f","rawvideo","-"],
+                "Independent native RGBA float32 EXR decoder",binary=True)
     samples=array("f")
     samples.frombytes(decoded.stdout)
     if sys.byteorder!="little":samples.byteswap()
     n=64*64
-    if len(samples)!=n*3:
-        raise RuntimeError("Independent HDR sample size mismatch")
+    # Keep alpha. FFmpeg swscale GBRAPf32 -> GBRf32 clips >1 radiance,
+    # so converting to RGB before measuring would invent a false failure.
+    if len(samples)!=n*4:
+        raise RuntimeError("Independent native RGBA float32 sample size mismatch")
     center=32*64+32
     green,blue,red=samples[center],samples[n+center],samples[2*n+center]
     if (not 1.9<red<2.6 or not .32<green<.42 or not .045<blue<.075 or
