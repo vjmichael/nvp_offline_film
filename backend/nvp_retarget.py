@@ -382,8 +382,8 @@ def run_retarget_acceptance(service,pid,sid,directory,*,executable='blender',ren
     if not probe['available']:
         return {'status':'blocked_no_blender','reason':probe['reason'],'path':str(out)}
     cmds=[
-        [probe['path'],'-b','--factory-startup','-t','2','--python',str(out/'build_retargeted.py'),'--','--output',str(blend)],
-        [probe['path'],'-b',str(blend),'-t','2','--python',str(out/'audit_retarget.py'),
+        [probe['path'],'-b','--factory-startup','-t','2','--python-exit-code','30','--python',str(out/'build_retargeted.py'),'--','--output',str(blend)],
+        [probe['path'],'-b',str(blend),'-t','2','--python-exit-code','30','--python',str(out/'audit_retarget.py'),
          '--','--package',str(out/'retarget.json'),'--audit',str(audit),'--render',str(preview)]
     ]
     if not render_preview:cmds[1].extend(['--skip-render','1'])
@@ -392,9 +392,18 @@ def run_retarget_acceptance(service,pid,sid,directory,*,executable='blender',ren
         try:p=subprocess.run(command,capture_output=True,text=True,cwd=out,timeout=timeout)
         except subprocess.TimeoutExpired:return {'status':'failed','step':i,'reason':'Blender timed out'}
         attempts.append({'step':i,'exit_code':p.returncode,'stdout':p.stdout[-1800:],'stderr':p.stderr[-2200:]})
-        if p.returncode:return {'status':'failed','step':i,'reason':'Native Blender retarget failed','attempts':attempts}
+        if p.returncode:
+            failure={'status':'failed','step':i,'reason':'Native Blender retarget failed','attempts':attempts}
+            if audit.is_file():
+                try:failure['audit']=json.loads(audit.read_text('utf8'))
+                except (OSError,ValueError):pass
+            return failure
     if not blend.is_file() or not audit.is_file() or (render_preview and not preview.is_file()):
-        return {'status':'failed','reason':'Required Blender output missing','attempts':attempts}
+        failure={'status':'failed','reason':'Required Blender output missing','attempts':attempts}
+        if audit.is_file():
+            try:failure['audit']=json.loads(audit.read_text('utf8'))
+            except (OSError,ValueError):pass
+        return failure
     report=json.loads(audit.read_text('utf8'))
     if not report['passed']:return {'status':'failed','reason':'Calibration checks failed','audit':report}
     return {'status':'passed_blender' if render_preview else 'passed_blender_audit_only',
