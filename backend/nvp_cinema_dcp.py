@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 
 from backend.nvp_film_index import FilmIndex, _id
 from backend.nvp_full_motion import FullMotionPipeline
+from backend.nvp_cinema_essence import audit_dcp_picture_essence
 from backend.nvp_studio import Studio
 
 # Film Festival 2K: selected SMPTE test settings. Content is fitted to one
@@ -238,11 +239,17 @@ class CinemaDCP:
             raise RuntimeError("Expected exactly one cinema package from the installed packager")
         dcp_dir=candidates[0]
         structure=inspect_dcp_folder(dcp_dir)
+        # Decode the real unencrypted JPEG 2000 picture essence independently.
+        # Do not equate picture verification with color or theater approval.
+        picture=audit_dcp_picture_essence(
+            dcp_dir, expected_raster=plan["spec"]["raster"],
+            expected_fps=plan["spec"]["fps"],
+            expected_frames=plan["source_frames"], timeout=timeout)
         # An independent DCP conformance check is obligatory. The exact
         # executable/CLI contract is tool-version dependent; a successful
         # subprocess result is not theater ingest certification.
         output=_process([verify,str(dcp_dir)],timeout,"Independent DCP package verifier")
-        if re.search(r"(?im)^\s*(?:[1-9]\d*\s+errors?\b|error\s*:)",output):
+        if re.search(r"(?i)(?:\b[1-9]\d*\s+errors?\b|\berror\s*:|\bfatal\s*:|\bverification failed\b)",output):
             raise RuntimeError("Independent DCP verifier reported errors")
         # Rehash source *again* before committing a linked package receipt.
         current=self.motion.reopen(project_id,motion_id)
@@ -255,12 +262,14 @@ class CinemaDCP:
               "profile":profile,"audio_policy":audio_policy,
               "director_silent_test_approval":True,
               "dcp_path":str(dcp_dir),"structure":structure,
+              "picture_evidence":picture,
               "creator_warnings":plan["warnings"],
               "validator":"dcpomatic2_verify_cli",
               "limitation":"Independent theater/projector ingest and color/sound quality not certified"}
         receipt=self.index.register_revision(project_id,dcp_id,"presentation",data,
             dependencies=[{"object_id":motion_id,"revision":1,"role":"presentation"}])
         return {"record":receipt,"source":plan,"structure":structure,
+                "picture_evidence":picture,
                 "package_dir":str(dcp_dir),"status":data["status"]}
 
     def reopen(self,project_id,dcp_id):
@@ -275,6 +284,9 @@ class CinemaDCP:
         source=self.motion.reopen(project_id,data["source_motion_id"])
         if source["record"]["document_sha256"]!=data["source_motion_sha256"]:
             raise RuntimeError("DCP was not bound to the original motion source")
+        if data.get("picture_evidence",{}).get("status")!=\
+                "independent_mxf_jpeg2000_decode_technical_only":
+            raise RuntimeError("Missing independently decoded DCP picture evidence")
         check=inspect_dcp_folder(data["dcp_path"])
         if check!=data["structure"]:
             raise RuntimeError("DCP package bytes or manifests changed since indexing")
