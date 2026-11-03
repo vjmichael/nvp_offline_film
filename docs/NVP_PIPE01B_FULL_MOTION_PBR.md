@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-03  
 **Implementation scope:** Complete frame-accurate, bounded, playable MP4 video from a frozen Digital Take, two conventional Blender engines, CPU Cycles PBR lighting/materials, independently reverified video/media provenance.  
-**Status:** Implementation and adversarial tests committed; consult the actual run result for any final acceptance claims.  
+**Status:** **PIPE-01B1 conventional full-motion acceptance passed on Linux**: 443 Python regressions (436 passed/7 skipped), native Blender 5.2.3 + FFmpeg generated and independently decoded both MP4 variants, React production build passed; Windows Blender 5.2.3 geometry audits passed. The Windows Python/React combined job is a separately tracked acceptance result in the linked run.  
 **Design authority:** [Data-First ADR](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md) · [NVP Master Design](NVP_MASTER_DESIGN.md) · [PIPE-01A](NVP_PIPE01A_FROZEN_TAKE_TO_PRESENTATIONS.md).
 
 ## Product requirement
@@ -73,7 +73,7 @@ Dialogue-line start frames and measured frame durations already belong to the fr
 | Choice | User can explicitly request either conventional engine and its supported style; unsupported video/voice models refused rather than silently substituted |
 | Cross-platform | Linux real Blender/FFmpeg, Windows Python and native Blender legacy acceptance; Windows native GPU/movie support only if independently tested |
 
-**CI run:** [NVP-PIPE-01B native/regression](https://github.com/vjmichael/nvp_offline_film/actions/runs/41697002642). Use the job-specific conclusions, not merely a queued workflow, when reporting acceptance.
+**CI run:** [NVP-PIPE-01B native/regression](https://github.com/vjmichael/nvp_offline_film/actions/runs/41697002642): Linux Python success (443 tests, 436 pass, 7 skip); Linux native Blender/FFmpeg success (two 16-frame 24-fps H.264 movies from one frozen take and separate `pbr_studio` vs `flat` presentation, both independently decoded); Linux React build success; Windows Blender geometry success. Windows Python/React acceptance was still running at this documentation update. Do not claim whole-workflow completion until it finishes.
 
 ## Subsequent work (keep priority)
 
