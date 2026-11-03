@@ -170,7 +170,8 @@ class FullMotionPipeline:
     def render_video(self,project_id,take_id,motion_id,output_dir, *,
                      engine=ENGINE,style="studio",width=320,height=180,
                      samples=8,executable="blender",ffmpeg=None,ffprobe=None,
-                     timeout=600,output_profile="h264_mp4"):
+                     timeout=600,output_profile="h264_mp4",
+                     source_frames_id=None):
         _id(take_id,"source take")
         _id(motion_id,"motion presentation ID")
         if output_profile not in EXPORT_PROFILES:
@@ -195,8 +196,13 @@ class FullMotionPipeline:
         # Validate all expensive prerequisites before creating expensive jobs.
         encoder=_tool("ffmpeg",ffmpeg)
         probe=_tool("ffprobe",ffprobe)
-        frame_id=motion_id+"_frames"
-        for oid in (motion_id,frame_id):
+        if source_frames_id is not None:
+            _id(source_frames_id,"existing full-frame source presentation")
+        frame_id=source_frames_id if source_frames_id is not None else motion_id+"_frames"
+        # The existing verified intermediate may be reused without touching
+        # Blender or the actor take, allowing different deliverable codecs
+        # from the exact same frame hashes.
+        for oid in ((motion_id,frame_id) if source_frames_id is None else (motion_id,)):
             try:
                 self.index.read_revision(project_id,oid)
             except KeyError:
@@ -207,17 +213,26 @@ class FullMotionPipeline:
         if root.is_symlink():
             raise RuntimeError("Cannot render under a symlinked output directory")
         root.mkdir(parents=True,exist_ok=True)
-        result=self.frames.render(project_id,take_id,frame_id,root,
-                                  engine=engine,style=style,frame_mode="full",
-                                  width=width,height=height,samples=samples,
-                                  executable=executable,timeout=timeout)
+        if source_frames_id is None:
+            self.frames.render(project_id,take_id,frame_id,root,
+                               engine=engine,style=style,frame_mode="full",
+                               width=width,height=height,samples=samples,
+                               executable=executable,timeout=timeout)
         frames=self.frames.reopen(project_id,frame_id)
-        if frames["audit"]["frame_count"]!=len(frame_list):
-            raise RuntimeError("Full-frame renderer produced incomplete shot coverage")
-        # The clip is encoded from the *indexed SHA-verified bytes*, not a
-        # possibly-mutated Blender temporary file directory.
-        clip_dir=Path(result["folder"])/"movie"
-        clip_dir.mkdir()
+        source_data=frames["record"]["data"]
+        if (frames["audit"]["frame_count"]!=len(frame_list) or
+            source_data["source_take_id"]!=take_id or
+            source_data["source_take_sha256"]!=frozen["record"]["document_sha256"] or
+            source_data["engine"]!=engine or source_data["style"]!=style or
+            source_data["samples"]!=samples or
+            source_data["width"]!=width or source_data["height"]!=height or
+            source_data["frame_mode"]!="full"):
+            raise RuntimeError("Selected full-frame source cannot be reused for this render contract")
+        # Encode only the indexed SHA-verified frames; reuse this record when
+        # requesting a separate professional format with no visual rerender.
+        token=hashlib.sha256((project_id+"|"+motion_id).encode("utf-8")).hexdigest()[:24]
+        clip_dir=root/("encoded_"+token)
+        clip_dir.mkdir(exist_ok=False)
         for frame in frames["record"]["data"]["rendered_frames"]:
             raw=self.index.get_blob(project_id,frame["image_sha256"])
             framepath=clip_dir/f"frame_{frame['frame']:06d}.png"
