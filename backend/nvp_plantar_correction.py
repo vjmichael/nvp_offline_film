@@ -53,7 +53,7 @@ def validate_correction_config(config, plantar_package):
     checked = {}
     for rid, item in actors.items():
         if type(item) is not dict or set(item) != {
-            "max_ankle_delta_m", "max_iterations", "target_clearance_m"}:
+            "max_ankle_delta_m", "max_iterations", "target_clearance_m", "max_joint_delta_deg"}:
             raise ValueError("Require correction ceiling, iteration count and desired clearance")
         bound = _num(item["max_ankle_delta_m"], "ankle correction", 0.0001, MAX_ADJUST_M)
         n = item["max_iterations"]
@@ -61,8 +61,10 @@ def validate_correction_config(config, plantar_package):
             raise ValueError("Contact iteration budget must be an explicit integer 1..8")
         gap = _num(item["target_clearance_m"], "desired floor clearance",
                    0, min(approved[rid]["max_gap_m"], .02))
+        angle = _num(item["max_joint_delta_deg"],"maximum pose joint angle change",1,60)
         checked[rid] = {"max_ankle_delta_m": bound,
-                        "max_iterations": n, "target_clearance_m": gap}
+                        "max_iterations": n, "target_clearance_m": gap,
+                        "max_joint_delta_deg": angle}
     return {"actors": checked}
 
 
