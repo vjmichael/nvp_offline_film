@@ -106,7 +106,7 @@ class DigitalCaptureTests(unittest.TestCase):
         before=self.capture.reopen(self.pid,"take_before")
         approved=self.seq.read(self.pid,self.sid)
         self.seq.new_revision(self.pid,self.sid,approved["revision"])
-        with self.assertRaisesRegex(RuntimeError,"not current and approved"):
+        with self.assertRaisesRegex(RuntimeError,"Only a current director-approved sequence"):
             self.capture.capture(self.pid,self.sid,"take_draft")
         self.assertEqual(DigitalCapture(Studio(self.path)).reopen(
             self.pid,"take_before")["audit"],before["audit"])
