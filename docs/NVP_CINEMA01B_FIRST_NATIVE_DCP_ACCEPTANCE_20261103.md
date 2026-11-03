@@ -24,7 +24,7 @@ Observed tool versions: `dcpomatic2_create` and `dcpomatic2_cli` **2.18.51 920fb
 - DCP-o-matic generated `ASSETMAP.xml`, `VOLINDEX.xml`, `cpl_*.xml`, `pkl_*.xml`, actual `j2c_*.mxf` and `pcm_*.mxf` files.
 - Independent FFprobe measured picture `jpeg2000`, **1998×1080**, `xyz12le`, 24/1 fps, **24 decoded frames**.
 - Independent FFmpeg full-decode of the complete JPEG2000 picture MXF returned **exit 0**.
-- Independently decoded the DCP picture to small RGB frames: source content spans the first **16** frames; the remaining **8 frames** are fully black. This is one second of packaged picture, compared to the original two-thirds-of-a-second source.
+- Independently decoded the DCP picture to RGB; source content spans the first **16** frames. For the remaining **8 frames**, a separate full-resolution FFmpeg decode selected frames 17–24 and produced exactly **51,788,160 RGB24 bytes** (8 × 1998 × 1080 × 3), with **zero nonzero channels** and exit 0. Thus the entire trailing section—not just a downsampled thumbnail—is verified black. This is one second of packaged picture, compared to the original two-thirds-of-a-second source.
 - Independent FFprobe measured an audio MXF with `pcm_s24le`, **48 kHz**, **6 channels**, generated as **technical silence only**; it is *not* an approved dialogue/music/soundtrack master.
 - Running `dcpomatic2_verify_cli` against the actual resulting DCP validated CPL, picture hash/details, sound hash/metadata, PKL and ASSETMAP, finally reporting **`DCP verified OK.`**
 - Repacked technical DCP and full SHA-256 package inventory for local download as `NVP_CINEMA01B_First_Real_DCP_Technical_20261103.zip`. This artifact exists in the working session but is **not** committed to the source repository.
