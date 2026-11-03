@@ -267,8 +267,36 @@ class PresentationPipeline:
         frozen=self.capture.reopen(project_id,data["source_take_id"])
         if data["source_take_sha256"]!=frozen["record"]["document_sha256"]:
             raise RuntimeError("Presentation source take digest mismatch")
+        if data.get("source_take_revision")!=1 or \
+           data.get("frame_rate")!=frozen["timed_take"]["fps"] or \
+           type(data.get("native_geometry_checks")) is not int or \
+           data["native_geometry_checks"]<=0:
+            raise RuntimeError("Presentation source timing or geometry audit missing")
         expected_frames=selected_frames(frozen["timed_take"],data["frame_mode"])
         rows=data["rendered_frames"]
+        receipt=data.get("render_receipt")
+        if not isinstance(receipt,dict) or \
+           receipt.get("format")!="nvp.blender.presentation.render_receipt.v1" or \
+           receipt.get("engine")!=ENGINE or \
+           receipt.get("style")!=data["style"] or \
+           receipt.get("blender_version")!=data.get("engine_version") or \
+           receipt.get("take_sequence_sha")!=frozen["timed_take"]["sequence_sha"] or \
+           receipt.get("take_dependency_sha")!=frozen["timed_take"]["dependency_sha"] or \
+           not isinstance(receipt.get("frames"),list) or \
+           len(receipt["frames"])!=len(expected_frames):
+            raise RuntimeError("Presentation native render receipt does not match frozen source")
+        shots={s["id"]:s for s in frozen["timed_take"]["shots"]}
+        for planned,rendered in zip(expected_frames,receipt["frames"]):
+            original=shots[planned["shot_id"]]
+            if (rendered.get("shot_id"),rendered.get("frame"),
+                rendered.get("filename")) != (
+                    planned["shot_id"],planned["frame"],planned["filename"]) or \
+               rendered.get("camera_name")!="NVP_CAMERA_"+original["id"] or \
+               rendered.get("source_sha")!=frozen["timed_take"]["sequence_sha"] or \
+               type(rendered.get("camera_lens_mm")) not in (int,float) or \
+               not math.isfinite(rendered["camera_lens_mm"]) or \
+               abs(rendered["camera_lens_mm"]-original["solution"]["lens_mm"])>0.01:
+                raise RuntimeError("Presentation receipt camera, frame or source proof mismatch")
         if len(rows)!=len(expected_frames) or not rows:
             raise RuntimeError("Presentation frame coverage mismatch")
         for expected_frame,row in zip(expected_frames,rows):
