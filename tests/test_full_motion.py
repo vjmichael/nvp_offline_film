@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
-from backend.nvp_full_motion import FullMotionPipeline, _dialogue_timeline, _probe_video
+from backend.nvp_full_motion import FullMotionPipeline, EXPORT_PROFILES, _dialogue_timeline, _probe_video
 from backend.nvp_presentation_pipeline import PresentationPipeline, PBR_ENGINE
 
 
@@ -31,6 +31,11 @@ class FullMotionContractTests(unittest.TestCase):
         cap=self.pipeline.capabilities()
         self.assertEqual(cap["output"],"video/mp4")
         self.assertEqual(cap["codec"],"h264")
+        self.assertEqual(sorted(cap["export_profiles"]),["h264_mp4","prores_422_hq_mov"])
+        self.assertEqual(cap["export_profiles"]["prores_422_hq_mov"],
+                         {"container":"mov","codec":"prores","pix_fmt":"yuv422p10le",
+                          "bits_per_component":10})
+        self.assertEqual(EXPORT_PROFILES["prores_422_hq_mov"]["codec_tag"],"apch")
         self.assertIn("blender_cycles",cap["renderers"])
         self.assertEqual(cap["audio"],"timecoded_dialogue_manifest_only_no_waveform")
         engine=PresentationPipeline.available_engines()
@@ -58,7 +63,9 @@ class FullMotionContractTests(unittest.TestCase):
     def test_rejects_unknown_video_backend_and_invalid_dimensions_pre_render(self):
         for conf in ({"engine":"ai_video"}, {"engine":"blender_cycles","style":"studio"},
                      {"engine":"blender_workbench","style":"pbr_studio"},
-                     {"width":127},{"height":71},{"width":48},{"timeout":0}):
+                     {"width":127},{"height":71},{"width":48},{"timeout":0},
+                     {"output_profile":"cinema_dcp_not_a_video_file"},
+                     {"output_profile":"dnxhr_hqx_not_yet_available"}):
             with self.subTest(conf=conf),self.assertRaises(ValueError):
                 self.pipeline.render_video(self.pid,"missing_take","video_1",self.root/"movie",**conf)
         self.assertEqual(self.index.list_objects(self.pid,kind="presentation"),[])
@@ -85,6 +92,44 @@ class FullMotionContractTests(unittest.TestCase):
             store.verify_media_file(self.pid,receipt["sha256"],"video/mp4")
         with self.assertRaisesRegex(RuntimeError,"integrity"):
             store.put_media_file(self.pid,src,"video/mp4")
+
+    def test_professional_mov_sha_registration_reopens_and_isolation(self):
+        raw=b"demo-encoded-mov-not-decoded-here"*40
+        mov=self.root/"source_mezzanine.mov"
+        mov.write_bytes(raw)
+        record=self.index.put_media_file(self.pid,mov,"video/quicktime")
+        self.assertEqual(record["media_type"],"video/quicktime")
+        after=FilmIndex(Studio(self.db))
+        self.assertEqual(after.verify_media_file(self.pid,record["sha256"],
+                                                "video/quicktime")["size_bytes"],len(raw))
+        with self.assertRaises(KeyError):
+            after.verify_media_file(self.other,record["sha256"],"video/quicktime")
+        with self.assertRaisesRegex(RuntimeError,"type mismatch"):
+            after.verify_media_file(self.pid,record["sha256"],"video/mp4")
+
+    def test_prores_probe_rejects_wrong_profile_bitdepth_and_codec_tag(self):
+        base={"codec_name":"prores","codec_tag_string":"apch",
+              "width":128,"height":72,"nb_read_frames":"16",
+              "r_frame_rate":"24/1","pix_fmt":"yuv422p10le"}
+        request={"fps":24,"width":128,"height":72,"frames":16,
+                 "output_profile":"prores_422_hq_mov"}
+        import json
+        with patch("backend.nvp_full_motion._run",return_value=
+            type("Result",(),{"stdout":json.dumps({"streams":[base]})})()):
+            good=_probe_video(self.root/"professional.mov","ffprobe",request)
+            self.assertEqual(good["codec"],"prores")
+            self.assertEqual(good["codec_tag"],"apch")
+        for change in ({"codec_tag_string":"apcn"},
+                       {"pix_fmt":"yuv422p"},
+                       {"r_frame_rate":"25/1"},
+                       {"nb_read_frames":"15"},
+                       {"codec_name":"h264"}):
+            corrupted={**base,**change}
+            with self.subTest(change=change),patch(
+                "backend.nvp_full_motion._run",return_value=
+                type("Result",(),{"stdout":json.dumps({"streams":[corrupted]})})()):
+                with self.assertRaisesRegex(RuntimeError,"mismatch"):
+                    _probe_video(self.root/"professional.mov","ffprobe",request)
 
     def test_media_path_symlink_or_empty_rejected(self):
         blank=self.root/"empty.mp4"
