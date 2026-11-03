@@ -32,8 +32,7 @@ if planned['leg_identity_approval_sha']!=identity['approval_sha']:
     raise RuntimeError('Changed anatomical approval dependency')
 if sc.get('nvp_retarget_approval_sha')!=pkg['retarget']['approval_sha']:
     raise RuntimeError('Changed approved base retarget scene')
-maxframe=max(end for actor in planned['actors'] for side in ('left','right')
-             for _,end in actor['config'][side]['contact_windows'])
+maxframe=max(int(shot['stop_frame'])-1 for shot in pkg['take']['shots'])
 if maxframe>2400:raise RuntimeError('Foot-lock frame count exceeded 2400')
 def world(rig,p):return rig.matrix_world @ p
 def vec(v):return Vector(v)
@@ -203,8 +202,7 @@ if after:
     check('anatomy_approval_on_scene',sc.get('nvp_leg_identity_approval_sha')==identity['approval_sha'])
 else:
     check('approved_retarget_original',sc.get('nvp_retarget_approval_sha')==pkg['retarget']['approval_sha'])
-maxframe=max(end for x in planned['actors'] for side in ('left','right')
-             for _,end in x['config'][side]['contact_windows'])
+maxframe=max(int(shot['stop_frame'])-1 for shot in pkg['take']['shots'])
 result={'format':'nvp.footlock.native_audit.v1','mode':'output' if after else 'baseline',
         'blender':bpy.app.version_string,'checks':checks,
         'cut_markers':[(x.frame,x.camera.name if x.camera else None)
@@ -306,7 +304,7 @@ def independently_compare(baseline,after,bake,package):
                     peak_slide=max(peak_slide,error)
                     if error>config['max_ankle_slide_m']+1e-5:
                         raise ValueError('Independently measured foot sliding exceeds approval')
-                    first=ref['frames'] if False else baseline['frames'][str(active['start'])]['legs'][actor][side]
+                    first=baseline['frames'][str(active['start'])]['legs'][actor][side]
                     source=first['ankle'];hip=first['hip']
                     v=[h-a for h,a in zip(hip,source)]
                     norm=math.sqrt(sum(x*x for x in v))
