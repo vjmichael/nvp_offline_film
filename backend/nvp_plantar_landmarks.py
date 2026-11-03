@@ -206,7 +206,7 @@ class FootAnatomyAttachment:
             db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT 1 FROM prod_foot_anatomy WHERE project_id=? AND scene_id=?",(pid,sid)).fetchone():
                 raise RuntimeError("Cannot discard an existing anatomical annotation revision")
-            db.execute("INSERT INTO prod_foot_anatomy VALUES(?,?,?,?,?,?,?,?,?)",
+            db.execute("INSERT INTO prod_foot_anatomy VALUES(?,?,?,?,?,?,?,?)",
                        (pid,sid,0,"draft",source,"{}","{}",None))
             db.execute("INSERT INTO prod_foot_anatomy_history VALUES(?,?,?,?,?)",
                        (pid,sid,0,"create","{}"))
