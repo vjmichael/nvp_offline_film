@@ -914,3 +914,48 @@ def prod06_history(project_id:str,scene_id:str):
 def prod06_blender(project_id:str,scene_id:str):
     return {'script':run(lambda:RigMotion(studio).blender_script(project_id,scene_id)),
             'language':'python','runtime':'Blender 5.2+ bpy','rig':'humanoid_preview_v1'}
+
+# NVP-PROD-06B: director-approved weighted preview skin and explicit neutral-pose offsets.
+from backend.nvp_skinning import SkinnedPerformance
+
+
+class SkinCalibration(BaseModel):
+    actor_instance_id: str = Field(min_length=1,max_length=80)
+    role: str = Field(min_length=1,max_length=20)
+    source_neutral_deg: list[float] = Field(min_length=3,max_length=3)
+    target_neutral_deg: list[float] = Field(min_length=3,max_length=3)
+    expected_revision: int = Field(ge=0)
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/skinning',status_code=201)
+def prod06b_skin_create(project_id:str,scene_id:str):
+    return run(lambda:SkinnedPerformance(studio).create(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/skinning')
+def prod06b_skin_read(project_id:str,scene_id:str):
+    return run(lambda:SkinnedPerformance(studio).read(project_id,scene_id))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/skinning/calibrate')
+def prod06b_skin_calibrate(project_id:str,scene_id:str,payload:SkinCalibration):
+    return run(lambda:SkinnedPerformance(studio).calibrate(project_id,scene_id,
+           payload.actor_instance_id,payload.role,payload.source_neutral_deg,
+           payload.target_neutral_deg,payload.expected_revision))
+
+
+@app.post('/api/projects/{project_id}/production/scenes/{scene_id}/skinning/approve')
+def prod06b_skin_approve(project_id:str,scene_id:str,payload:TakeRevisionInput):
+    return run(lambda:SkinnedPerformance(studio).approve(project_id,scene_id,payload.expected_revision))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/skinning/history')
+def prod06b_skin_history(project_id:str,scene_id:str):
+    return run(lambda:SkinnedPerformance(studio).history(project_id,scene_id))
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/skinning/blender-script')
+def prod06b_skin_blender(project_id:str,scene_id:str):
+    return {'script':run(lambda:SkinnedPerformance(studio).blender_script(project_id,scene_id)),
+            'language':'python','runtime':'Blender 5.2+ bpy',
+            'skin':'segmented_weighted_preview_v1'}

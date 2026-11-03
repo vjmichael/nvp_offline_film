@@ -6,6 +6,7 @@ on:
       - nvp/prod01-acceptance-through-prod04-20261102
       - nvp/prod05-timed-shots-20261102
       - nvp/prod06-rigged-motion-20261102
+      - nvp/prod06b-weighted-skin-20261102
   workflow_dispatch:
 
 permissions:
@@ -140,6 +141,12 @@ jobs:
         run: |
           set -euo pipefail
           xvfb-run -a python -m unittest discover -s tests -p test_rig_motion.py -v
+      - name: Native PROD06B weighted skin and neutral-pose calibration
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p test_skinning.py -v
+          xvfb-run -a python -m tools.nvp_prod06b_fixture --out acceptance_artifacts/prod06b
       - name: Preserve audit, blend files and preview even when job fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -238,6 +245,23 @@ jobs:
           $env:PYTHONPATH = '.'
           python -m unittest discover -s tests -p test_rig_motion.py -v
           if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06 Windows rig audit failed' }
+      - name: Native PROD06B Windows weighted skin and rest-pose audit
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          $env:NVP_BLENDER_AUDIT_ONLY = '1'
+          python -m unittest discover -s tests -p test_skinning.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06B Windows weighted skin audit failed' }
+          python -m tools.nvp_prod06b_fixture --out prod06b_windows_acceptance --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06B Windows fixture audit failed' }
+      - name: Preserve Windows PROD06B native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06b-windows-skin-audit
+          path: prod06b_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Preserve Windows PROD05 native audit evidence
         if: always()
         uses: actions/upload-artifact@v4
