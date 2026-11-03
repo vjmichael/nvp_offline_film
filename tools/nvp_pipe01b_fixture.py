@@ -1,9 +1,9 @@
-"""PIPE-01B independent native full-motion: frozen 3D scene -> PBR MP4.
+"""PIPE-01B independent native cinema workflow: frozen source -> MP4 and ProRes.
 
-A new live world is edited AFTER take approval. Actual Blender renders 16
-consecutive frames in two distinct visual engines, FFmpeg produces 2 playable
-H.264 clips and FFprobe + full decode verifies all frames, FPS and dimensions.
-Every committed byte is checked via a new Studio after restart.
+Live scene changes AFTER capture. Actual Blender renders 16-frame 24fps
+Workbench and Cycles sources. FFmpeg creates two H.264 review clips and a
+professional ProRes 422 HQ QuickTime MOV from *exactly the existing PBR
+source frames* without rerendering. FFprobe, full decode and SHA audit follow.
 """
 from __future__ import annotations
 
@@ -73,27 +73,46 @@ def fixture(out):
     b=movies.render_video(pid,"take_full_motion","motion_pbr",root/"renders",
         engine="blender_cycles",style="pbr_studio",width=128,height=72,
         samples=4,timeout=1200)
+    pro=movies.render_video(pid,"take_full_motion","motion_prores_hq",root/"renders",
+        engine="blender_cycles",style="pbr_studio",width=128,height=72,
+        samples=4,timeout=1200,output_profile="prores_422_hq_mov",
+        source_frames_id="motion_pbr_frames")
     fresh=FullMotionPipeline(Studio(db))
     check_a=fresh.reopen(pid,"motion_preview",check_decode=True)
     check_b=fresh.reopen(pid,"motion_pbr",check_decode=True)
+    check_pro=fresh.reopen(pid,"motion_prores_hq",check_decode=True)
     take_again=fresh.capture.reopen(pid,"take_full_motion")
     if take_again["record"]["document_sha256"]!=original_sha:
-        raise RuntimeError("Two video presentation jobs mutated original source take")
+        raise RuntimeError("Professional and review video jobs mutated original source take")
     if check_a["media"]["sha256"]==check_b["media"]["sha256"]:
         raise RuntimeError("Physically lit PBR and flat video clips are identical")
     if not (check_a["audit"]["frames"]==16 and check_b["audit"]["frames"]==16 and
+            check_pro["audit"]["frames"]==16 and
             check_a["audit"]["all_source_frames_verified"] and
-            check_b["audit"]["all_source_frames_verified"]):
+            check_b["audit"]["all_source_frames_verified"] and
+            check_pro["audit"]["all_source_frames_verified"]):
         raise RuntimeError("Full-frame verification did not confirm all source frames")
     if check_a["record"]["data"]["dialogue_timeline"]!=check_b["record"]["data"]["dialogue_timeline"]:
         raise RuntimeError("Backend render changed intended audio timing")
+    if (check_pro["audit"]["codec"]!="prores" or
+        check_pro["audit"]["container"]!="mov" or
+        check_pro["record"]["data"]["output_profile"]!="prores_422_hq_mov" or
+        check_pro["record"]["data"]["codec_receipt"].get("codec_tag")!="apch" or
+        check_pro["record"]["data"]["codec_receipt"]["pix_fmt"]!="yuv422p10le"):
+        raise RuntimeError("Professional ProRes 422 HQ codec/profile/depth not independently confirmed")
+    if (check_pro["record"]["data"]["source_frames_sha256"] !=
+        check_b["record"]["data"]["source_frames_sha256"] or
+        check_pro["record"]["data"]["dialogue_timeline"] !=
+        check_b["record"]["data"]["dialogue_timeline"]):
+        raise RuntimeError("Professional output should reuse the same frame and audio-time sources")
     deps=fresh.index.direct_dependents(pid,"take_full_motion",1)
-    expected={"motion_preview","motion_pbr","motion_preview_frames","motion_pbr_frames"}
+    expected={"motion_preview","motion_pbr","motion_preview_frames",
+              "motion_pbr_frames","motion_prores_hq"}
     if {r["object_id"] for r in deps}!=expected:
         raise RuntimeError("Source-to-presentation lineage differs between engines")
     report={
         "format":"nvp.pipe01b.native.acceptance.v1",
-        "status":"passed_two_full_motion_24fps_h264",
+        "status":"passed_h264_and_prores_422_hq_24fps",
         "take_sha256":original_sha,
         "world_modified_after_capture":True,
         "source_actor_had_motion":bool(saved["timed_take"]["actors"][0]["marks"]),
@@ -108,8 +127,11 @@ def fixture(out):
            "independent_decoder":check["audit"]["video_independently_decoded"],
            "source_frames_verified":check["audit"]["all_source_frames_verified"],
            "audio_status":check["audit"]["audio_status"]
-        } for check in (check_a,check_b)],
-        "limit":"Physically lit PBR proxy geometry, not hi-fi human meshes; no audio waveforms"
+           "export_profile":check["record"]["data"]["output_profile"],
+           "codec_receipt":check["record"]["data"]["codec_receipt"]
+        } for check in (check_a,check_b,check_pro)],
+        "professional_reencode_reused_exact_pbr_frame_sha":True,
+        "limit":"ProRes HQ is 10-bit 4:2:2 *encoding* from existing 8-bit proxy PNGs; not genuine 10-bit/photoreal source or a theatrical DCP; no audio waveforms"
     }
     (root/"pipe01b_summary.json").write_text(json.dumps(report,indent=2,sort_keys=True),"utf-8")
     return report
