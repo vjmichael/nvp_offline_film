@@ -268,9 +268,18 @@ for rb in retarget['actors']:
     if not .1<=scale<=10:raise RuntimeError('Character height adaptation exceeds allowable ratio')
     dest.scale=[float(v)*scale for v in dest.scale]
     bpy.context.view_layer.update()
+    # Position is relative to NVP's actor root, which is commonly non-uniformly
+    # scaled. Convert world-space clearance into the parent's local-Z units.
+    for _ in range(4):
+        low,_=mesh_bounds()
+        if abs(low)<.001:break
+        parent_z=abs(dest.parent.matrix_world.to_scale().z)
+        if parent_z<.00001:raise RuntimeError('Invalid actor parent scale')
+        dest.location.z-=low/parent_z
+        bpy.context.view_layer.update()
     low,_=mesh_bounds()
-    dest.location.z-=low
-    bpy.context.view_layer.update()
+    if abs(low)>.03:
+        raise RuntimeError('Retargeted character could not be grounded in parent coordinates')
     dest['nvp_retarget_target_height_m']=target_height
     dest['nvp_retarget_scale_factor']=scale
     dest['nvp_retarget_approval_sha']=retarget['approval_sha']
@@ -335,7 +344,7 @@ for rb in payload['retarget']['actors']:
             coords=[obj.matrix_world@v.co for v in data.vertices]
             if coords:
                 minimum=min(p.z for p in coords)
-                poses.append((frame,minimum,[obj.matrix_world@v.co for v in data.vertices]))
+                poses.append((frame,minimum,[obj.matrix_world@v.co for v in data.vertices],src.parent.matrix_world.translation.copy()))
         finally:obj.to_mesh_clear()
     check('mesh_present:'+rid,len(poses)>=2,len(poses))
     if poses:
@@ -353,14 +362,12 @@ for rb in payload['retarget']['actors']:
             if abs(nearest[0]-frame)<.51:
                 error=abs(nearest[1])
                 check('contact:'+rid+':'+str(frame),error<=rb['contact_tolerance_m']+.005,error)
-        if len(poses)>=2 and len(poses[0][2])==len(poses[-1][2]):
-            # Remove actor-root translation to measure actual skin deformation.
-            x=poses[0][2];y=poses[-1][2]
-            a=src.parent
-            sc.frame_set(int(poses[0][0]));root_a=a.matrix_world.translation.copy()
-            sc.frame_set(int(poses[-1][0]));root_b=a.matrix_world.translation.copy()
-            delta=root_b-root_a
-            deformation=max(((v-u)-delta).length for u,v in zip(x,y))
+        if len(poses)>=2 and all(len(poses[0][2])==len(p[2]) for p in poses[1:]):
+            # A cycle can start and end at the SAME pose. Compare all samples,
+            # especially intermediate movements, minus any approved root travel.
+            reference=poses[0]
+            deformation=max((((v-u)-(p[3]-reference[3])).length)
+                 for p in poses[1:] for u,v in zip(reference[2],p[2]))
             check('skin_deformation:'+rid,deformation>.005,deformation)
 report={'format':'nvp.retarget.audit.v1','blender':bpy.app.version_string,
         'passed':all(x['passed'] for x in checks),'checks':checks}
