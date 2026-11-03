@@ -1,8 +1,10 @@
 # NVP-PIPE-01B — Full-Motion, Physically Based Presentations
 
+**2026-11-03 professional delivery amendment (PIPE-01B-PRO01):** The original implementation below established **H.264 MP4 full-motion rendering**. The current pipeline additionally exports **ProRes 422 HQ QuickTime MOV** (encoded 10-bit 4:2:2, `apch`), with independent codec/decode verification and reuse of exact stored full-frame presentation PNGs **without a new Blender render**. Read [Professional Delivery Formats](NVP_PROFESSIONAL_DELIVERY_FORMATS.md) for the authoritative export profile table, acceptance, source-bit-depth limits and DNx/EXR/DCP boundaries. The historic two-MP4 fixture below was extended to also encode an actual ProRes MOV in run [41700029191](https://github.com/vjmichael/nvp_offline_film/actions/runs/41700029191). The codec and container do not imply finished color management or theatrical DCP compliance.
+
 **Date:** 2026-11-03  
 **Implementation scope:** Complete frame-accurate, bounded, playable MP4 video from a frozen Digital Take, two conventional Blender engines, CPU Cycles PBR lighting/materials, independently reverified video/media provenance.  
-**Status:** **PIPE-01B1 conventional full-motion acceptance passed on Linux**: 443 Python regressions (436 passed/7 skipped), native Blender 5.2.3 + FFmpeg generated and independently decoded both MP4 variants, React production build passed; Windows Blender 5.2.3 geometry audits passed. The Windows Python/React combined job is a separately tracked acceptance result in the linked run.  
+**Status:** **PIPE-01B1 conventional full-motion foundation fully passed on all five jobs** in [run 41697002642](https://github.com/vjmichael/nvp_offline_film/actions/runs/41697002642). **Professional MOV extension independently passed** its Linux Blender/FFmpeg and Python acceptance in run 41700029191 (445 tests, 438 passed, 7 skipped); Windows conclusions are tracked separately. This remains **proxy geometry, no waveform audio and no DCP**.  
 **Design authority:** [Data-First ADR](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md) · [NVP Master Design](NVP_MASTER_DESIGN.md) · [PIPE-01A](NVP_PIPE01A_FROZEN_TAKE_TO_PRESENTATIONS.md).
 
 ## Product requirement
