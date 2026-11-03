@@ -112,6 +112,22 @@ class PresentationPipelineTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.pipeline.reopen(other,"fake_presentation")
 
+    def test_unverified_render_receipt_cannot_be_reopened(self):
+        real_take=self.take.reopen(self.pid,"take_001")
+        self.index.register_revision(
+            self.pid,"forged_blender","presentation",{
+                "format":"nvp.presentation.blender.v1",
+                "status":"rendered_unreviewed",
+                "engine":"blender_workbench","style":"studio",
+                "source_take_id":"take_001","source_take_revision":1,
+                "source_take_sha256":real_take["record"]["document_sha256"],
+                "frame_rate":24,"frame_mode":"keyframes",
+                "native_geometry_checks":12,"rendered_frames":[],
+                "render_receipt":{}
+            },dependencies=[{"object_id":"take_001","revision":1,"role":"source_take"}])
+        with self.assertRaisesRegex(RuntimeError,"native render receipt"):
+            self.pipeline.reopen(self.pid,"forged_blender")
+
     def test_invalid_png_headers_and_sizes_fail_closed(self):
         for payload in (b"",b"\x89PNG\r\n\x1a\n"+"x".encode()*60,
                         b"not a real picture"*10):
