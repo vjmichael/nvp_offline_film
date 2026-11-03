@@ -44,16 +44,22 @@ def fixture(db_path, output):
         raise RuntimeError("DCP package work altered the original director-approved take")
     if verify["screening_ready"]:
         raise RuntimeError("Technical test cannot silently become a verified cinema master")
+    picture=result["picture_evidence"]
+    if picture["status"]!="independent_mxf_jpeg2000_decode_technical_only":
+        raise RuntimeError("DCP lacks independently decoded JPEG 2000 MXF picture evidence")
+    if picture["total_decoded_frames"]!=before["record"]["data"]["frame_count"]:
+        raise RuntimeError("DCP is not frame-exact to frozen digital take presentation")
     if verify["structure"]!=result["structure"]:
         raise RuntimeError("Package differs from the independently reopened indexed DCP")
     report={
         "format":"nvp.pro02.dcp.test.v1",
-        "status":"passed_structurally_verified_dcp_technical_only",
+        "status":"passed_independent_picture_decode_dcp_technical_only",
         "source_take_sha256":take_after["record"]["document_sha256"],
         "source_motion_sha256":before["record"]["document_sha256"],
         "source_video_sha256":before["media"]["sha256"],
         "package_dir":result["package_dir"],
         "structure":result["structure"],
+        "picture_evidence":picture,
         "preflight":pre,
         "externally_verified_by":"dcpomatic2_verify_cli",
         "screening_ready":False,
