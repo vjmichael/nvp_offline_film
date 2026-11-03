@@ -23,6 +23,7 @@ from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_film_index import FilmIndex, _id
 from backend.nvp_presentation_pipeline import (
     ENGINE, PBR_ENGINE, STYLES, PBR_STYLES, PresentationPipeline, selected_frames,
+    PIXEL_PNG, PIXEL_EXR,
 )
 from backend.nvp_studio import Studio
 
@@ -183,12 +184,19 @@ class FullMotionPipeline:
                      engine=ENGINE,style="studio",width=320,height=180,
                      samples=8,executable="blender",ffmpeg=None,ffprobe=None,
                      timeout=600,output_profile="h264_mp4",
-                     source_frames_id=None):
+                     source_frames_id=None,source_pixel_contract=PIXEL_PNG,
+                     allow_uncalibrated_exr_preview=False):
         _id(take_id,"source take")
         _id(motion_id,"motion presentation ID")
         if output_profile not in EXPORT_PROFILES:
             raise ValueError("Unsupported professional/export video profile")
         profile=EXPORT_PROFILES[output_profile]
+        if source_pixel_contract not in (PIXEL_PNG,PIXEL_EXR):
+            raise ValueError("Unknown motion frame-source pixel contract")
+        if source_pixel_contract==PIXEL_EXR and output_profile!="h264_mp4":
+            raise RuntimeError("EXR to ProRes/DNxHR requires measured OCIO output transform; cannot claim calibrated master")
+        if source_pixel_contract==PIXEL_EXR and not allow_uncalibrated_exr_preview:
+            raise RuntimeError("Scene-linear EXR-to-SDR review must be explicitly labeled uncalibrated")
         if len(motion_id)>72:
             raise ValueError("Motion ID must leave room for its distinct frame-source identity")
         if type(timeout) is not int or not 10<=timeout<=7200:
@@ -231,7 +239,8 @@ class FullMotionPipeline:
             self.frames.render(project_id,take_id,frame_id,root,
                                engine=engine,style=style,frame_mode="full",
                                width=width,height=height,samples=samples,
-                               executable=executable,timeout=timeout)
+                               executable=executable,timeout=timeout,
+                               pixel_contract=source_pixel_contract)
         frames=self.frames.reopen(project_id,frame_id)
         source_data=frames["record"]["data"]
         if (frames["audit"]["frame_count"]!=len(frame_list) or
@@ -242,14 +251,18 @@ class FullMotionPipeline:
             source_data["width"]!=width or source_data["height"]!=height or
             source_data["frame_mode"]!="full"):
             raise RuntimeError("Selected full-frame source cannot be reused for this render contract")
+        actual_contract=source_data.get("pixel_contract",PIXEL_PNG)
+        if actual_contract!=source_pixel_contract:
+            raise RuntimeError("Source frame pixel contract changed on reuse")
         # Encode only the indexed SHA-verified frames; reuse this record when
         # requesting a separate professional format with no visual rerender.
         token=hashlib.sha256((project_id+"|"+motion_id).encode("utf-8")).hexdigest()[:24]
         clip_dir=root/("encoded_"+token)
         clip_dir.mkdir(exist_ok=False)
+        source_ext=".exr" if source_pixel_contract==PIXEL_EXR else ".png"
         for frame in frames["record"]["data"]["rendered_frames"]:
             raw=self.index.get_blob(project_id,frame["image_sha256"])
-            framepath=clip_dir/f"frame_{frame['frame']:06d}.png"
+            framepath=clip_dir/f"frame_{frame['frame']:06d}{source_ext}"
             if framepath.exists():
                 raise RuntimeError("Frame encoder staging path unexpectedly exists")
             framepath.write_bytes(raw)
@@ -257,7 +270,7 @@ class FullMotionPipeline:
         source_fps=frozen["timed_take"]["fps"]
         _run([encoder,"-hide_banner","-nostdin","-loglevel","error",
               "-framerate",str(source_fps),"-start_number","1",
-              "-i",str(clip_dir/"frame_%06d.png"),
+              "-i",str(clip_dir/("frame_%06d"+source_ext)),
               "-frames:v",str(len(frame_list)),
               *profile["ffmpeg_args"],"-an",
               "-f",profile["container"],str(movie)],
@@ -287,6 +300,7 @@ class FullMotionPipeline:
             "video_extension":profile["extension"],
             "encoded_bit_depth":profile["bits_per_component"],
             "engine":engine,"style":style,"samples":samples,
+            "source_pixel_contract":source_pixel_contract,
             "width":width,"height":height,"source_fps":source_fps,
             "frame_count":len(frame_list),
             "duration_seconds":len(frame_list)/source_fps,
@@ -296,7 +310,9 @@ class FullMotionPipeline:
             "audio_duration_samples":audio_duration_samples,
             "dialogue_timeline":cue_manifest,
             "audio_status":"timed_dialogue_only_no_waveform",
-            "quality_contract":"source_camera_and_actor_proxy_with_conventional_shading",
+            "quality_contract":("scene_linear_exr_to_uncalibrated_h264_review"
+                                if source_pixel_contract==PIXEL_EXR else
+                                "source_camera_and_actor_proxy_with_conventional_shading"),
             "limitations":["Not a photoreal character model",
                            "No audio track, TTS, music or final mastered sound",
                            "No AI video model was used"],
@@ -335,7 +351,8 @@ class FullMotionPipeline:
             source["record"]["data"]["source_take_id"]!=data["source_take_id"] or
             source["record"]["data"]["engine"]!=data["engine"] or
             source["record"]["data"]["style"]!=data["style"] or
-            source["record"]["data"]["samples"]!=data["samples"]):
+            source["record"]["data"]["samples"]!=data["samples"] or
+            source["record"]["data"].get("pixel_contract",PIXEL_PNG)!=data.get("source_pixel_contract",PIXEL_PNG)):
             raise RuntimeError("Presentation video not bound to its exact render source")
         total=len(selected_frames(frozen["timed_take"],"full"))
         if (data["frame_count"]!=total or
@@ -353,6 +370,10 @@ class FullMotionPipeline:
         if output_profile not in EXPORT_PROFILES:
             raise RuntimeError("Unsupported stored film export profile")
         profile=EXPORT_PROFILES[output_profile]
+        if data.get("source_pixel_contract")==PIXEL_EXR and (
+            output_profile!="h264_mp4" or
+            data.get("quality_contract")!="scene_linear_exr_to_uncalibrated_h264_review"):
+            raise RuntimeError("Stored EXR-derived movie falsely claims a calibrated master")
         if (data.get("video_mime")!=profile["mime"] or
             data.get("video_container",profile["container"])!=profile["container"] or
             data.get("video_extension",profile["extension"])!=profile["extension"] or
@@ -382,6 +403,7 @@ class FullMotionPipeline:
             "profile":output_profile,"video_sha256":data["video_sha256"],
             "source_take_sha256":data["source_take_sha256"],
             "all_source_frames_verified":source["audit"]["all_images_verified"],
+            "source_pixel_contract":data.get("source_pixel_contract",PIXEL_PNG),
             "media_sha_verified":True,
             "video_independently_decoded":bool(check_decode),
             "audio_status":data["audio_status"]}}
