@@ -31,11 +31,15 @@ class FullMotionContractTests(unittest.TestCase):
         cap=self.pipeline.capabilities()
         self.assertEqual(cap["output"],"video/mp4")
         self.assertEqual(cap["codec"],"h264")
-        self.assertEqual(sorted(cap["export_profiles"]),["h264_mp4","prores_422_hq_mov"])
+        self.assertEqual(sorted(cap["export_profiles"]),["dnxhr_hqx_mov","h264_mp4","prores_422_hq_mov"])
         self.assertEqual(cap["export_profiles"]["prores_422_hq_mov"],
                          {"container":"mov","codec":"prores","pix_fmt":"yuv422p10le",
                           "bits_per_component":10})
         self.assertEqual(EXPORT_PROFILES["prores_422_hq_mov"]["codec_tag"],"apch")
+        self.assertEqual(cap["export_profiles"]["dnxhr_hqx_mov"],{
+            "container":"mov","codec":"dnxhd","pix_fmt":"yuv422p10le",
+            "bits_per_component":10})
+        self.assertEqual(EXPORT_PROFILES["dnxhr_hqx_mov"]["codec_tag"],"AVdh")
         self.assertIn("blender_cycles",cap["renderers"])
         self.assertEqual(cap["audio"],"timecoded_dialogue_manifest_only_no_waveform")
         engine=PresentationPipeline.available_engines()
@@ -65,7 +69,7 @@ class FullMotionContractTests(unittest.TestCase):
                      {"engine":"blender_workbench","style":"pbr_studio"},
                      {"width":127},{"height":71},{"width":48},{"timeout":0},
                      {"output_profile":"cinema_dcp_not_a_video_file"},
-                     {"output_profile":"dnxhr_hqx_not_yet_available"}):
+                     {"output_profile":"dnxhr_unknown_variant"}):
             with self.subTest(conf=conf),self.assertRaises(ValueError):
                 self.pipeline.render_video(self.pid,"missing_take","video_1",self.root/"movie",**conf)
         self.assertEqual(self.index.list_objects(self.pid,kind="presentation"),[])
@@ -130,6 +134,28 @@ class FullMotionContractTests(unittest.TestCase):
                 type("Result",(),{"stdout":json.dumps({"streams":[corrupted]})})()):
                 with self.assertRaisesRegex(RuntimeError,"mismatch"):
                     _probe_video(self.root/"professional.mov","ffprobe",request)
+
+    def test_dnxhr_hqx_codec_profile_and_raster_refusal(self):
+        import json
+        frame={"codec_name":"dnxhd","profile":"DNXHR HQX",
+               "codec_tag_string":"AVdh","width":256,"height":144,
+               "nb_read_frames":"16","r_frame_rate":"24/1",
+               "pix_fmt":"yuv422p10le"}
+        request={"output_profile":"dnxhr_hqx_mov",
+                 "fps":24,"width":256,"height":144,"frames":16}
+        with patch("backend.nvp_full_motion._run",
+                   return_value=type("Result",(),{"stdout":json.dumps({"streams":[frame]})})()):
+            receipt=_probe_video(self.root/"dnxhr.mov","ffprobe",request)
+            self.assertEqual(receipt["codec_profile"],"DNXHR HQX")
+            self.assertEqual(receipt["codec_tag"],"AVdh")
+        for corruption in ({"profile":"DNXHR HQ"},{"codec_tag_string":"AVdn"},
+                           {"pix_fmt":"yuv422p"},{"nb_read_frames":"15"},
+                           {"width":128},{"codec_name":"prores"}):
+            with self.subTest(corruption=corruption),patch(
+                "backend.nvp_full_motion._run",
+                return_value=type("Result",(),{"stdout":json.dumps({"streams":[{**frame,**corruption}]})})()):
+                with self.assertRaisesRegex(RuntimeError,"mismatch"):
+                    _probe_video(self.root/"dnxhr.mov","ffprobe",request)
 
     def test_media_path_symlink_or_empty_rejected(self):
         blank=self.root/"empty.mp4"
