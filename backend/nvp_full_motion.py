@@ -48,6 +48,14 @@ EXPORT_PROFILES = {
         "ffmpeg_args": ["-c:v", "prores_ks", "-profile:v", "3",
                         "-pix_fmt", "yuv422p10le"],
     },
+    "dnxhr_hqx_mov": {
+        "container": "mov", "extension": ".mov", "mime": "video/quicktime",
+        "codec": "dnxhd", "pix_fmt": "yuv422p10le", "bits_per_component": 10,
+        "codec_tag": "AVdh", "profile_name": "DNXHR HQX",
+        "min_width": 256, "min_height": 120,
+        "ffmpeg_args": ["-c:v", "dnxhd", "-profile:v", "dnxhr_hqx",
+                        "-pix_fmt", "yuv422p10le"],
+    },
 }
 
 
@@ -59,6 +67,8 @@ def _codec_receipt(profile, expected):
             "decoded_frame_count":expected["frames"]}
     if spec["codec_tag"] is not None:
         result["codec_tag"]=spec["codec_tag"]
+    if "profile_name" in spec:
+        result["codec_profile"]=spec["profile_name"]
     return result
 
 
@@ -90,7 +100,7 @@ def _tool(name, override=None):
 def _probe_video(video,probe,expected,*,timeout=120):
     output=_run([probe,"-v","error","-select_streams","v:0",
                  "-count_frames","-show_entries",
-                 "stream=codec_name,codec_tag_string,width,height,nb_read_frames,r_frame_rate,pix_fmt",
+                 "stream=codec_name,profile,codec_tag_string,width,height,nb_read_frames,r_frame_rate,pix_fmt",
                  "-of","json",str(video)],timeout=timeout,action="Independent FFprobe")
     try:
         streams=json.loads(output.stdout)["streams"]
@@ -110,6 +120,8 @@ def _probe_video(video,probe,expected,*,timeout=120):
         stream.get("pix_fmt")!=spec["pix_fmt"] or
         (spec["codec_tag"] is not None and
          stream.get("codec_tag_string")!=spec["codec_tag"]) or
+        (spec.get("profile_name") is not None and
+         stream.get("profile")!=spec["profile_name"]) or
         stream.get("r_frame_rate")!=f"{expected['fps']}/1" or
         (width,height)!=(expected["width"],expected["height"]) or
         frames!=expected["frames"]):
@@ -184,6 +196,8 @@ class FullMotionPipeline:
         if type(width) is not int or type(height) is not int or \
            width%2 or height%2 or not (64<=width<=1920 and 64<=height<=1080):
             raise ValueError("4:2:0/4:2:2 video export requires bounded even dimensions")
+        if width < profile.get("min_width",64) or height < profile.get("min_height",64):
+            raise ValueError("DNxHR HQX encoder requires at least 256x120 input raster")
         if engine not in (ENGINE,PBR_ENGINE):
             raise ValueError("Selected video renderer is not supported")
         if (engine==ENGINE and style not in STYLES) or \
