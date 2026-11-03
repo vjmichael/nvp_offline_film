@@ -66,3 +66,15 @@ slopes, turning, dynamic actor roots, motion blends and independent skinned
 mesh-floor penetrations. A successful IK ankle lock does not supersede these
 requirements. A realistic skeleton alone also does not establish muscle,
 tendon, weight shift or visually convincing acting.
+
+## Native acceptance and measured limitation — November 3, 2026
+
+[GitHub workflow run 41662467122](https://github.com/vjmichael/nvp_offline_film/actions/runs/41662467122) has successfully completed the new real Blender **Linux** and **Windows** PROD-06E2C stages on the pinned licensed Cesium Man. These are read-only evaluations of an actual previously IK-baked, skinned external humanoid. The final full-suite result is recorded separately from these individual stage results.
+
+Both native runs returned status **passed_candidate_region_survey_only** and explicit **physical_sole_contact_verified=false**.
+
+- Linux: left stance 12 frames, minimum candidate-region Z **-0.0068229414 m**; right stance 13 frames, minimum **-0.0067292908 m**. Maximum left/right clearance was also negative. Measured XY motion of the *lowest candidate point* was 0 in this controlled fixture.
+- Windows: left minimum candidate-region Z **-0.0068229893 m**, right minimum **-0.0067293001 m**; minimum-point XY motion likewise 0.
+- The assumed reference plane for these numbers is **world Z=0**. Negative clearance of about 6.8 mm is a **candidate-region below-plane observation**, not yet a certified collision with an authored floor collider. No shoe sole, collision patch, dynamic balance, or gait realism was established. If the floor geometry is offset, the comparison must be adapted.
+
+**Interpretation:** These measurements show exactly why locking the ankle is not enough. The next milestone should author true plantar markers/weighted foot regions and a named collision floor, then independently evaluate the skinned mesh against that surface and its normal at every foot plant. Do not translate this report into an unearned 'feet are physically planted' claim.
