@@ -237,7 +237,10 @@ for item in manifest['instances']:
     root['nvp_mesh_sha']=mesh_info['sha256'] if mesh_info else 'procedural_proxy'
     root.location=(pose['x'],pose['y'],height/2 if not mesh_info else 0.0)
     root.rotation_euler.z=math.radians(pose['rotation'])
-    if item.get('visible') is False: root.hide_render=True
+    if item.get('visible') is False:
+        root.hide_render=True
+        if mesh_info:
+            for obj in imported:obj.hide_render=True
     for anchor_name,xyz in item['anchors'].items():
         marker=bpy.data.objects.new('ANCHOR_'+item['instance_id']+'_'+anchor_name,None)
         bpy.context.collection.objects.link(marker)

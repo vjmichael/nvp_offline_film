@@ -53,6 +53,18 @@ class MeshTests(unittest.TestCase):
         self.assertEqual(again['status'],'already_registered')
         self.assertEqual(len(self.mesh.list(self.pid)),1)
 
+    def test_asset_rights_record_cannot_silently_change(self):
+        self.mesh.register(self.pid,self.asset['asset_id'],self.blob,'creator_owned')
+        with self.assertRaisesRegex(RuntimeError,'provenance is immutable'):
+            self.mesh.register(self.pid,self.asset['asset_id'],self.blob,'CC0-1.0')
+
+    def test_evaluation_only_asset_is_marked_not_commercially_cleared(self):
+        self.stage()
+        self.mesh.register(self.pid,self.asset['asset_id'],self.blob,
+                           'evaluation_only','Research test','local-test')
+        info=self.mesh.export_bundle(self.pid,self.sid,self.root/'preview')
+        self.assertEqual(info['manifest']['rights_status'],'evaluation_or_unverified_rights')
+
     def test_asset_geometry_mismatch_must_get_new_identity(self):
         with self.assertRaisesRegex(ValueError,'geometry differs'):
             self.mesh.register(self.pid,self.asset['asset_id'],self.make_glb((1,1,1)),'CC0-1.0')

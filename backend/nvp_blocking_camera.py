@@ -22,6 +22,8 @@ MAX_PATH_NODES=15000
 SENSOR_WIDTH=36.0
 SENSOR_HEIGHT=20.25
 SHOT_FILL={'wide':.27,'full':.48,'medium':.66,'close_up':.90}
+SHOT_HEIGHT_FRACTION={'wide':1.0,'full':1.0,'medium':.70,'close_up':.35}
+MAX_WALK_MPS=2.5
 LIMIT_CAMERA_NODES=384
 
 
@@ -163,10 +165,9 @@ def sightline_clear(camera,target,obstacles):
     return not any(segment_crosses_box(camera,target,item['pose'],item) for item in obstacles)
 
 
-def camera_candidates(room,read_points,lens,fill):
+def camera_candidates(room,read_points,lens,fill,subject_height_m):
     center=[sum(p[i] for p in read_points)/len(read_points) for i in range(3)]
-    mean_height=max(.15, 1.2*len(read_points)/max(len(read_points),1))
-    base=max(.7,min(12.0,(lens*mean_height)/(fill*SENSOR_HEIGHT)))
+    base=max(.7,min(16.0,(lens*subject_height_m)/(fill*SENSOR_HEIGHT)))
     for scale in (0.8,1.0,1.3,1.6,2.1):
         distance=base*scale
         for i in range(24):
@@ -199,9 +200,10 @@ def solve_camera(manifest, subject_ids, *, lens_mm=50, shot_size='medium',
         for t in desired_positions)):
         raise ValueError('Screen-space targets must be normalized XY points')
     room=manifest['room_m']
+    subject_height_m=sum(scene[i]['dimensions'][2] for i in subject_ids)/len(subject_ids) * SHOT_HEIGHT_FRACTION[shot_size]
     obstacles=[item for item in manifest['instances'] if item['instance_id'] not in subject_ids]
     best=None;measured=0;blocked=0
-    for position in camera_candidates(room,points,lens,SHOT_FILL[shot_size]):
+    for position in camera_candidates(room,points,lens,SHOT_FILL[shot_size],subject_height_m):
         if any(bounds_contains(item['pose'],item,position,.20) for item in manifest['instances']):
             blocked+=1;continue
         if any(not sightline_clear(position,p,obstacles) for p in points):
@@ -212,7 +214,7 @@ def solve_camera(manifest, subject_ids, *, lens_mm=50, shot_size='medium',
         residuals=[math.dist(p,q) for p,q in zip(projected,desired_positions)]
         mean=sum(residuals)/len(residuals);worst=max(residuals)
         # Encourage the requested shot size as well as camera composition.
-        fill_error=abs((lens*1.2/(max(.1,math.dist(position,points[0]))*SENSOR_HEIGHT))-SHOT_FILL[shot_size])
+        fill_error=abs((lens*subject_height_m/(max(.1,math.dist(position,points[0]))*SENSOR_HEIGHT))-SHOT_FILL[shot_size])
         penalty=.035*fill_error
         score=(1-worst_weight)*mean+worst_weight*worst+penalty
         measured+=1
@@ -387,6 +389,10 @@ class BlockingCamera:
         else:
             origin=(actor['pose']['x'],actor['pose']['y'])
         route=route_actor(origin,xy,actor,obstacles,manifest['room_m'])
+        if action in {'stand','turn'} and route['distance_m']>.11:
+            raise ValueError('A stationary mark cannot teleport the actor')
+        if action in {'walk','enter','exit'} and route['distance_m']>MAX_WALK_MPS*(end_s-start_s)+1e-6:
+            raise ValueError('Blocking mark is unreachable within the assigned time')
         mark={'actor_instance_id':actor_instance_id,'target_xy_m':xy,
               'target_instance_id':target_instance_id,'anchor_name':anchor_name,
               'max_anchor_gap_m':max_gap,'start_s':start_s,'end_s':end_s,

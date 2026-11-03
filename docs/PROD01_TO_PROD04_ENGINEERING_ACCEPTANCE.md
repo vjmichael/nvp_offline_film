@@ -79,8 +79,8 @@ New `backend/nvp_blocking_camera.py`:
 
 - Stable dialogue IDs anchored in current screenplay lines; canonical cue-to-registered-actor matching with explicit unresolved speakers. **No invented listeners or speech timings.**
 - Creator-assigned listener IDs, measured dialogue durations (with origin `director_measured` or `tts_measured`) and optional audio SHA-256. Estimates are not mislabeled as recordings.
-- Actor blocking marks with scene-local XY targets, optional set-anchor relation, facing target, timestamps, action label and a **deterministic 0.25 m grid A*** path. Every node checks the actor's footprint against all staged static obstacles; temporal mark overlap is rejected. Subsequent paths begin at the previous mark rather than the original pose.
-- Virtual camera proposals use metric XYZ positions, 18–135 mm focal length, sensor width/height, shot-size targets, a pinhole projection model and screen-target refinement. Candidate viewpoints are bounded by room geometry; footprint occlusion and camera collision are rejected. One- and multi-subject solutions report **actual per-subject residuals**, maximum residual and if all targets fit in frame. An impossible exact composition is *not* silently reported as perfect.
+- Actor blocking marks with scene-local XY targets, optional set-anchor relation, facing target, timestamps, action label and a **deterministic 0.25 m grid A*** path. Every node checks the actor's footprint against all staged static obstacles; temporal mark overlap is rejected. Subsequent paths begin at the previous mark rather than the original pose. Movement must satisfy the declared time interval under a conservative **2.5 m/s maximum**; `stand`/`turn` cannot teleport.
+- Virtual camera proposals use metric XYZ positions, 18–135 mm focal length, sensor width/height, shot-size targets calculated from registered actor height, a pinhole projection model and screen-target refinement. Candidate viewpoints are bounded by room geometry; footprint occlusion and camera collision are rejected. One- and multi-subject solutions report **actual per-subject residuals**, maximum residual and if all targets fit in frame. An impossible exact composition is *not* silently reported as perfect.
 - A 180° axis validator flags sign flips across cuts (including ambiguous cameras on the line).
 - Marks and camera solutions are persistent and tied to a world-state SHA; changed staging makes them stale, never automatically authoritative.
 
@@ -90,7 +90,7 @@ New `backend/nvp_blocking_camera.py`:
 
 Added project-scoped HTTP endpoints for world edits, locks, proposals, undo, rebase, mesh upload, dialogue timing and listeners, blocking and cameras. Binary mesh upload is streamed and enforces the byte limit even if the client omits Content-Length.
 
-`frontend/src/ProductionAuthoringPanel.jsx` provides creator controls with a top-down preview and candid status labels. This React component must still be integrated and tested in the full Vite production build.
+`frontend/src/ProductionAuthoringPanel.jsx` provides creator controls with a top-down preview and candid status labels. It is imported into the NVP development app's **Direct the scene** tab. Its JSX passed a TypeScript JSX parser check; the complete Vite production bundle and physical interaction tests have **not** yet run.
 
 ## Verification procedure
 
@@ -101,7 +101,7 @@ PYTHONPATH=. python -m compileall -q backend tests
 PYTHONPATH=. python -m unittest discover -s tests -q
 ```
 
-The complete suite includes all 200 prior PROD-01/WR tests plus targeted new tests for native harness refusal, world edits, mesh import, asset provenance, actor routes, camera residuals, API behavior, and cross-module restart/continuity scenarios. One native Blender test is **skipped** automatically if no Blender binary is installed. A skipped gate is not a pass.
+The complete suite includes all 200 prior PROD-01/WR tests plus targeted new tests for native harness refusal, world edits, mesh import, asset provenance, actor routes, camera residuals, API behavior, and cross-module restart/continuity scenarios. **Local result: 264 Python tests, all successful except one intentionally skipped native-Blender test**; 263 executed tests passed. A skipped gate is not a pass. A frozen 15-case single-subject metric-space conformance set has ≤ 0.015 normalized-frame-point error, and three harder two-subject cases report their actual errors rather than silently claiming exact framing. Neither benchmark is equivalent to Blender pixel-level validation.
 
 **Acceptance sequence required for production release:**
 

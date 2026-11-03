@@ -99,6 +99,23 @@ class BlockingCameraTests(unittest.TestCase):
             self.bc.add_mark(self.pid,self.sid,self.actors['MARA'],[start['x']+.5,start['y']],
                              start_s=5,end_s=8)
 
+    def test_move_cannot_teleport_in_impossible_time(self):
+        actor=next(i for i in self.stage['instances'] if i['name']=='MARA')
+        with self.assertRaisesRegex(ValueError,'unreachable within'):
+            self.bc.add_mark(self.pid,self.sid,self.actors['MARA'],
+                [actor['pose']['x']+.5,actor['pose']['y']],start_s=0,end_s=.01)
+
+    def test_stand_cannot_move_actor(self):
+        actor=next(i for i in self.stage['instances'] if i['name']=='MARA')
+        with self.assertRaisesRegex(ValueError,'stationary mark'):
+            self.bc.add_mark(self.pid,self.sid,self.actors['MARA'],
+                [actor['pose']['x']+.5,actor['pose']['y']],action='stand')
+
+    def test_camera_solution_deterministic_for_same_staging(self):
+        a=self.bc.solve_shot(self.pid,self.sid,[self.actors['MARA']])['solution']
+        b=self.bc.solve_shot(self.pid,self.sid,[self.actors['MARA']])['solution']
+        self.assertEqual(a,b)
+
     def test_nearby_anchor_relation(self):
         # Add named anchor on actor's *own* asset then reference another character's anchor.
         actor=next(i for i in self.stage['instances'] if i['name']=='MARA')
