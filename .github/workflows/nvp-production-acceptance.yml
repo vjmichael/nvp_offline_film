@@ -10,6 +10,7 @@ on:
       - nvp/prod06c-external-rigged-glb-20261102
       - nvp/prod06d-real-character-calibration-20261102
       - nvp/prod06e1-footplant-preflight-20261102
+      - nvp/prod06e2-leg-identity-20261103
   workflow_dispatch:
 
 permissions:
@@ -169,6 +170,11 @@ jobs:
           export NVP_PROD06D_CESIUMMAN="$PWD/cesiumman_external.glb"
           xvfb-run -a python -m unittest discover -s tests -p test_external_retarget.py -v
           xvfb-run -a python -m tools.nvp_prod06d_fixture --out acceptance_artifacts/prod06d --external-glb "$NVP_PROD06D_CESIUMMAN"
+      - name: Native PROD06E2A bilateral anatomical identities and rest-hierarchy verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_prod06e2_fixture --out acceptance_artifacts/prod06e2 --external-glb "$PWD/cesiumman_external.glb"
       - name: Preserve audit, blend files and preview even when job fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -301,6 +307,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'External human rig test failed' }
           python -m tools.nvp_prod06d_fixture --out prod06d_windows_acceptance --external-glb $env:NVP_PROD06D_CESIUMMAN --audit-only
           if ($LASTEXITCODE -ne 0) { throw 'Windows Blender retarget audit failed' }
+      - name: Native PROD06E2A Windows bilateral anatomical identity audit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_prod06e2_fixture --out prod06e2_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Blender anatomical mapping audit failed' }
+      - name: Preserve Windows PROD06E2A leg identity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06e2-windows-anatomy
+          path: prod06e2_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Preserve Windows PROD06D external humanoid evidence
         if: always()
         uses: actions/upload-artifact@v4
