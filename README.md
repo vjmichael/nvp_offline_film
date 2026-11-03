@@ -1,3 +1,5 @@
+> **PROD-06E2A LEG IDENTITY (2026-11-03):** The eight explicit left/right Cesium Man anatomical joints were independently inspected in native Blender 5.2.3 on Linux and Windows. This proves imported rest-chain identity, **not** active foot IK. See [PROD-06E2A evidence and limitations](docs/PROD06E2A_LEG_IDENTITY.md) and the [NVP master design](docs/NVP_MASTER_DESIGN.md).
+
 > **NVP MASTER DESIGN (2026-11-03):** [NVP Master Design — World-Aware Personal Film Studio](docs/NVP_MASTER_DESIGN.md) is the cross-subsystem product/architecture and gated-roadmap baseline on this development branch. It separates creator requirements, current implementation, future options, and acceptance evidence. Film-production code must conform to it; subordinate specifications do not silently supersede it. The historical proprietary license below remains unchanged.
 
 > **NVP-PROD-01 → PROD-04 development (November 2, 2026):** The film-only

@@ -4,7 +4,7 @@
 **Revision:** 1.0 — 2026-11-03  
 **State:** Established architecture and product-requirements baseline; individual open decisions remain explicitly open  
 **Product:** Neural Virtual Production (NVP), the future Film Workspace DLC for Lu  
-**Development baseline:** nvp/prod06e1-footplant-preflight-20261102  
+**Development baseline:** nvp/prod06e2-leg-identity-20261103  
 **Scope of this revision:** Design consolidation only. No solver, host, model, or renderer implementation change.
 
 > **Governing idea:** NVP makes a film, not a chain of unrelated AI-generated clips. The creator authors and approves the narrative and production decisions. A persistent, editable 3D world, versioned character identities, physical geometry, virtual cameras, animation, audio, and editing supply the film's continuity. AI proposes creative choices and structured production instructions; conventional tools calculate and verify physical results. Rendered media is an output of the project, not its source of truth.
@@ -245,18 +245,19 @@ This table describes code and observed tests on the active *development branch*,
 | PROD-06A/B/C | Seven-role authored/BVH motion, weighted skinning, registered rigged GLBs and explicit bone mapping | Implemented with scoped native regression |
 | PROD-06D | Licensed pinned Cesium Man external humanoid rest-frame calibration and saved-file geometry audit | **Verified Linux and Windows workflow** in GitHub run 41579956711 at commit fc1877e; Windows geometry-only does not assert GPU preview |
 | PROD-06E1 | Pure-Python two-bone foot-plant mathematical preflight, tests and bounds | Implemented; CI run 41584304356 completed successfully; **not native IK** |
-| PROD-06E2 and later | Actual Blender foot IK, nuanced acting, facial/voice/lighting/editing/master | **Not complete** |
+| PROD-06E2A | Explicit eight-bone left/right anatomical leg identity and Blender rest-hierarchy observation | **Verified** real Cesium Man source rig on Linux and Windows Blender 5.2.3, workflow run 41655290749; measured source-rest upper/lower/foot lengths; **no IK applied** |
+| PROD-06E2B and later | Actor-scale transforms, authored knee poles/stance contact, actual Blender IK and independent moving-foot audits | **Not complete** |
 | Lu Workspace package | Signed, registered, contained NVP DLC running inside Lu | **Deferred and not verified** |
 | Physical target machine | Windows NVP film workflow with AMD R9700 GPU, finished output, integrated input | **Not yet verified** |
 
-**Evidence references:** see docs/PROD01_TO_PROD04_ENGINEERING_ACCEPTANCE.md, docs/PROD05_TIMED_SHOT_SEQUENCE.md, docs/PROD06_RIGGED_MOTION.md, docs/PROD06B_WEIGHTED_SKIN_RETARGET.md, docs/PROD06C_RIGGED_CHARACTER_IMPORT.md, docs/PROD06D_EXTERNAL_CHARACTER_CALIBRATION.md, and docs/PROD06E1_FOOT_PLANT_PREFLIGHT.md. The two GitHub URLs for scoped runs are https://github.com/vjmichael/nvp_offline_film/actions/runs/41579956711 and https://github.com/vjmichael/nvp_offline_film/actions/runs/41584304356 .
+**Evidence references:** see docs/PROD01_TO_PROD04_ENGINEERING_ACCEPTANCE.md, docs/PROD05_TIMED_SHOT_SEQUENCE.md, docs/PROD06_RIGGED_MOTION.md, docs/PROD06B_WEIGHTED_SKIN_RETARGET.md, docs/PROD06C_RIGGED_CHARACTER_IMPORT.md, docs/PROD06D_EXTERNAL_CHARACTER_CALIBRATION.md, docs/PROD06E1_FOOT_PLANT_PREFLIGHT.md, and docs/PROD06E2A_LEG_IDENTITY.md. Independent scoped evidence: https://github.com/vjmichael/nvp_offline_film/actions/runs/41579956711 (06D), https://github.com/vjmichael/nvp_offline_film/actions/runs/41584304356 (06E1), and https://github.com/vjmichael/nvp_offline_film/actions/runs/41655290749 (06E2A native identity).
 
 ## 11. Ordered engineering roadmap, with exit conditions
 
 | Gate | Deliverable | Cannot be declared finished until |
 | --- | --- | --- |
 | NVP-DESIGN-00 | This cross-subsystem master baseline and source traceability | Master exists in active repo, linked for discoverability; open options labeled |
-| NVP-PERF-01 / PROD-06E2 | Director-approved anatomical chains and actual Blender foot IK | Real dual-foot external-human audits and unchanged root/camera/approval receipts |
+| NVP-PERF-01 / PROD-06E2B | Build on 06E2A native anatomical identity to deliver actual Blender foot IK | Approved pose/contact/pole mapping, real dual-foot moving-character audits, unchanged root/camera/approval receipts |
 | NVP-PERF-02 | Performance cards, contact-driven movement, gaze, prop handling | Scene actions and listeners perform visibly correctly across cuts; repeatable native checks |
 | NVP-CAMERA-02 | Moving virtual camera, coverage patterns, depth/occlusion validation | Measured actual-frame camera paths, edits and deliberate cinematic overrides |
 | NVP-LIGHT-01 | Motivated lighting, exposure and style management | Scene/camera-consistent rendered passes with color/provenance checks |

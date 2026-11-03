@@ -50,3 +50,11 @@ Headless Windows: add --audit-only; this does not remove actual native bone hier
 Successful stage result: passed_native_leg_identity_only, with native Blender version, asset SHA, approval receipt, and actual rest segment measurements. Missing sample/Blender is blocked, not a pass.
 
 **Next:** add director-approved knee poles and contact schedules, convert world/rest matrices into a constrained Blender IK application, independently reopen saved rigs, and measure foot-specific sliding and penetration over frames. PROD-06E2 as a whole is not complete until those later gates pass.
+
+## Actual native acceptance evidence — 2026-11-03
+
+[GitHub workflow run 41655290749](https://github.com/vjmichael/nvp_offline_film/actions/runs/41655290749) completed the PROD-06E2A dedicated **Linux and Windows Blender 5.2.3** anatomical identity steps successfully. The Linux run additionally passed its existing 06D render/retarget prerequisite; the Windows geometry-only run did not claim a Workbench preview. All eight mapped names and direct hierarchy edges survived import; the independent validator returned no anatomical warnings.
+
+Observed segment lengths on the **separately imported, normalized source rig** (not the actor-height-calibrated production rig): left upper 0.266112830 m, lower 0.275824351 m, ankle-to-terminal-joint 0.071835975 m; right upper 0.266111587 m, lower 0.275824840 m, ankle-to-terminal-joint 0.071835916 m. Windows independently measured nearly identical values. Source asset SHA-256: b6592f42de71d5e6f0d69d6b22b96cd2b8630f2addc4adeb634ce0bdf8f04c0c. This is **not** a production limb-length measurement after actor parenting/nonuniform scaling; 06E2B must transform or remeasure the real staged rig before any IK application.
+
+Native pass result: passed_native_leg_identity_only; ik_applied=false. This does **not** establish gait, foot contact, control rig behavior, actor motion or completed PROD-06E2.
