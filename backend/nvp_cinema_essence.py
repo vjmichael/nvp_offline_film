@@ -57,7 +57,7 @@ def _prove_black_tail(media, source_frames, padded_frames, raster, decode, timeo
         result = subprocess.run(
             [
                 decode, "-nostdin", "-v", "error", "-xerror", "-i", str(media),
-                "-map", "0:v:0", "-vf", "select=gte(n\\\\," + str(source_frames) + ")",
+                "-map", "0:v:0", "-vf", "select=gte(n\\," + str(source_frames) + ")",
                 "-vsync", "0", "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
             ],
             capture_output=True, check=False, timeout=timeout,
