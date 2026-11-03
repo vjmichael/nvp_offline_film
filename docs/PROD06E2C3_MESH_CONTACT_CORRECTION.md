@@ -50,3 +50,21 @@ Headless Windows runs `--audit-only`. Passing Python tests alone is never native
 Passing toe-contact geometry **does not** establish the user's requested full “validated foot-surface anatomy.” That remaining work requires an *independent ground-truth anatomical annotation of actual heel, first/fifth metatarsal, arch and toe/sole surface* mapped to the licensed character mesh, preferably with named author and source/rights. Use authenticated or reviewable annotation and mesh-local coordinates; do not infer anatomy from imported joint names or the lowest skinned vertex. Once certified, extend to a general named collision mesh/BVH, slopes/moving floors, heel-to-toe transition, friction, whole-mesh penetration and biomechanical joint/weight-shift limits. A future proper foot mesh may need redesign or a different character rig to fulfill those constraints.
 
 **Intended evidence state:** actual native Blender acceptance still required; do not mark whole-body realistic gait or full sole certified on the strength of a fixture.
+
+## Actual independent native result — 2026-11-03
+
+[GitHub workflow run 41670220453](https://github.com/vjmichael/nvp_offline_film/actions/runs/41670220453), pinned licensed Cesium Man with **Blender 5.2.3**, completed the new real-native Linux and Windows marker-contact correction steps. The input toe-candidate marker failed ground penetration tolerance; the saved/reopened corrected scene independently passed that configured marker contact tolerance on **both** platforms. It changed the **actual imported leg bone poses**, not the source asset, overall actor root, or cameras.
+
+| Measured evidence | Linux | Windows |
+| --- | ---: | ---: |
+| Full source/output frame audit | 120 | 120 |
+| Actually changed contact leg-frames | 25 | 25 |
+| Noncontact leg-frames held unchanged | 215 | 215 |
+| Maximum upper/lower segment discrepancy | 3.6157133e-7 m | 3.7776945e-7 m |
+| Corrected selected marker meets floor limits | Yes | Yes |
+| Anatomical heel/ball/sole identity certified | **No** | **No** |
+| Moving-root gait or full-mesh collision verified | **No** | **No** |
+
+The solver refuses mathematically incompatible heel/ball/toe offsets: the previous fixture measured “heel” +0.113 m, “ball” +0.074 m and “toe” -0.0068 m relative to the floor, not three points forming a real planar sole. Those are **invalid test-derived anatomical labels**; this correction operates only on the test-approved toe-region contact, and never declares an anatomical foot biomechanically verified. Full human anatomy remains a separate blocked gate requiring real annotation evidence and reviewed asset rights.
+
+**Regression scope:** Linux full Python suite and React build passed at this revision; Windows native Blender passed; Windows Python suite was pending at documentation time. If its outcome changes, update this document with exact independent evidence.
