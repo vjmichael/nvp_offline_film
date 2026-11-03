@@ -188,6 +188,54 @@ class CinemaDCPTests(unittest.TestCase):
         self.assertEqual(self.film.list_objects(self.project,kind="presentation"),[])
 
 
+    def test_cinema_technical_project_is_tst_not_feature(self):
+        captured = []
+        def fake_process(args, timeout, purpose):
+            captured.append(list(args))
+            return "mock-only"
+        with patch("backend.nvp_cinema_dcp.shutil.which",
+                   side_effect=lambda x:x),patch(
+                       "backend.nvp_cinema_dcp._process",
+                       side_effect=fake_process):
+            with self.assertRaisesRegex(RuntimeError,"exactly one cinema package"):
+                self.cinema.package_technical_test(
+                    self.project,"motion_001","dcp_technical_type",
+                    self.root/"out",audio_policy="explicit_silent_test",
+                    director_silent_test_approval=True,
+                    duration_policy=DURATION_PAD,director_padding_approval=True)
+        self.assertGreater(len(captured),0)
+        first = captured[0]
+        self.assertEqual(first[first.index("-c")+1],"TST")
+        self.assertNotIn("FTR",first)
+        self.assertEqual(self.film.list_objects(
+            self.project,kind="presentation"),[])
+
+    def test_bv21_errors_refused_even_if_verifier_reports_ok(self):
+        def fake_process(args,timeout,purpose):
+            if purpose=="DCP-o-matic film encode":
+                d=Path(args[-1])/"fake_dcp"
+                d.mkdir(parents=True)
+                (d/"ASSETMAP.xml").write_text("<AssetMap/>")
+                (d/"CPL.xml").write_text("<CompositionPlaylist/>")
+                (d/"PKL.xml").write_text("<PackingList/>")
+                (d/"picture.mxf").write_bytes(b"fake picture")
+            if purpose=="Independent DCP package verifier":
+                return "Bv2.1 error: missing credit marker\\nDCP verified OK (with errors)"
+            return "ok"
+        with patch("backend.nvp_cinema_dcp.shutil.which",
+                   side_effect=lambda x:x),patch(
+                       "backend.nvp_cinema_dcp._process",
+                       side_effect=fake_process),patch(
+                       "backend.nvp_cinema_dcp.audit_dcp_picture_essence",
+                       return_value={"status":"independent_mxf_jpeg2000_decode_technical_only"}):
+            with self.assertRaisesRegex(RuntimeError,"verifier reported errors"):
+                self.cinema.package_technical_test(
+                    self.project,"motion_001","dcp_false_ok",
+                    self.root/"out",audio_policy="explicit_silent_test",
+                    director_silent_test_approval=True,
+                    duration_policy=DURATION_PAD,director_padding_approval=True)
+        self.assertEqual(self.film.list_objects(self.project,kind="presentation"),[])
+
     def test_structurally_plausible_dcp_without_real_decode_is_never_indexed(self):
         # A fake successful packager and valid-looking XML files are not
         # evidence that JPEG2000/MXF picture essence really decodes.
