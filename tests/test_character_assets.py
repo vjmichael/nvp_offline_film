@@ -164,6 +164,7 @@ class CharacterTests(unittest.TestCase):
         source=(self.root/'out'/'build_characters.py').read_text()
         ast.parse(source);ast.parse(CHARACTER_SCRIPT);ast.parse(CHARACTER_AUDIT_SCRIPT)
         self.assertIn('bpy.ops.import_scene.gltf',source)
+        self.assertIn('from pathlib import Path',CHARACTER_SCRIPT)
         self.assertIn('NVP_CHARACTER_RIG_',source)
         self.assertNotIn('subprocess',source)
 

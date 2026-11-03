@@ -316,6 +316,7 @@ class CharacterAssets:
 # trusted template; source GLB bytes are verified and parsed with Blender's importer.
 CHARACTER_SCRIPT = r'''# NVP-PROD-06C: explicit external humanoid, no external dependencies.
 import hashlib
+from pathlib import Path
 from mathutils import Euler
 character=json.loads(CHARACTER_PAYLOAD)
 for binding in character['bindings']:
@@ -460,6 +461,10 @@ def run_character_acceptance(service:CharacterAssets,pid,sid,directory,*,executa
         except subprocess.TimeoutExpired:return {'status':'failed','reason':'Native Blender timed out','step':i}
         attempts.append({'step':i,'code':p.returncode,'stdout':p.stdout[-1800:],'stderr':p.stderr[-2400:]})
         if p.returncode:return {'status':'failed','reason':'Native Blender import or audit failed','attempts':attempts}
+        expected=blend if i==1 else report
+        if not expected.is_file():
+            return {'status':'failed','reason':'Blender returned success without creating required output',
+                    'step':i,'expected':str(expected),'attempts':attempts}
     if not blend.is_file() or not report.is_file() or (render_preview and not preview.is_file()):
         return {'status':'failed','reason':'Native files missing','attempts':attempts}
     checks=json.loads(report.read_text('utf8'))
