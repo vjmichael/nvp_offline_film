@@ -43,8 +43,10 @@ m.use_nodes=True
 n=m.node_tree.nodes
 n.clear()
 emission=n.new("ShaderNodeEmission")
-emission.inputs["Color"].default_value=(2.25,0.123456,0.01953125,1)
-emission.inputs["Strength"].default_value=1.0
+# Blender color sockets clamp RGBA values to [0,1]; create HDR by
+# increasing physical emission strength rather than supplying illegal colors.
+emission.inputs["Color"].default_value=(0.75,0.123456,0.01953125,1)
+emission.inputs["Strength"].default_value=3.0
 surface=n.new("ShaderNodeOutputMaterial")
 m.node_tree.links.new(emission.outputs[0],surface.inputs["Surface"])
 plane.data.materials.append(m)
@@ -131,7 +133,7 @@ def fixture(out, *, blender="blender", ffmpeg="ffmpeg"):
         raise RuntimeError("Independent HDR sample size mismatch")
     center=32*64+32
     green,blue,red=samples[center],samples[n+center],samples[2*n+center]
-    if (not 1.9<red<2.6 or not .11<green<.14 or not .015<blue<.025 or
+    if (not 1.9<red<2.6 or not .32<green<.42 or not .045<blue<.075 or
         abs(green-round(green*255)/255)<.0002):
         raise RuntimeError("EXR HDR was clipped, quantized or transformed: "+
                            repr((red,green,blue)))
