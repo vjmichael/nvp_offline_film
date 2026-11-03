@@ -232,7 +232,7 @@ class FilmIndex:
              (project_id, object_id, revision)).fetchone()
 
     def register_revision(self, project_id, object_id, kind, data, *,
-                          expected_revision=0, dependencies=None):
+                          expected_revision=0, dependencies=None, precommit_guard=None):
         """Publish an immutable source/derived revision; old revisions survive.
 
         A frozen take ID accepts exactly one commit; a changed performance or
@@ -246,6 +246,8 @@ class FilmIndex:
             raise ValueError("Expected revision must be a nonnegative integer")
         if type(data) is not dict or not data:
             raise ValueError("Film object data must be a nonempty structured object")
+        if precommit_guard is not None and not callable(precommit_guard):
+            raise ValueError("Precommit validation must be trusted in-process code")
         edges = _deps(dependencies if dependencies is not None else [], object_id)
         manifest = {"format": "nvp.film.revision.v1", "object_id": object_id,
                     "kind": kind, "data": data, "dependencies": edges}
@@ -265,6 +267,12 @@ class FilmIndex:
             for dep in edges:
                 if self._read_revision(db, project_id, dep["object_id"], dep["revision"]) is None:
                     raise KeyError("Dependency revision not present in this film")
+            # A capture guard validates its *live approved source* inside this
+            # same BEGIN IMMEDIATE write transaction. Reopening source through
+            # other WAL readers is safe; their writes cannot change data here.
+            # The guard is a trusted internal callable, never model output.
+            if precommit_guard is not None:
+                precommit_guard(db)
             revision = head + 1
             if existing is None:
                 db.execute("""INSERT INTO film_objects(project_id,object_id,kind,head_revision)
