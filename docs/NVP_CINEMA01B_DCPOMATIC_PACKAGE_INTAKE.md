@@ -1,3 +1,5 @@
+> **Later execution update (November 3, 2026):** The follow-on creator-uploaded `NVP_CINEMA01B_UBUNTU2610_AMD64_20261103_153902.zip` independently passed SHA-256 verification for all 238 .deb files. DCP-o-matic was launched using extracted Ubuntu glibc 2.44, a private chroot/user/mount/network namespace and three specifically named host fallbacks. Actual SMPTE 2K unencrypted technical test DCP creation, FFmpeg full picture decode, and DCP-o-matic verification **all passed**. This supersedes the *not executed* status below, which records the earlier intake milestone. The FilmIndex source-exact registration remains gated by observed 16-to-24-frame black padding and is not a finished cinema master. [Measured first-run acceptance](NVP_CINEMA01B_FIRST_NATIVE_DCP_ACCEPTANCE_20261103.md).
+
 # CINEMA-01B: Library DCP-o-matic package intake and runtime compatibility
 
 **Date:** 2026-11-03  
