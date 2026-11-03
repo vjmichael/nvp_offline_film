@@ -126,7 +126,7 @@ def fixture(out):
            "video_path":check["media"]["path"],
            "independent_decoder":check["audit"]["video_independently_decoded"],
            "source_frames_verified":check["audit"]["all_source_frames_verified"],
-           "audio_status":check["audit"]["audio_status"]
+           "audio_status":check["audit"]["audio_status"],
            "export_profile":check["record"]["data"]["output_profile"],
            "codec_receipt":check["record"]["data"]["codec_receipt"]
         } for check in (check_a,check_b,check_pro)],
