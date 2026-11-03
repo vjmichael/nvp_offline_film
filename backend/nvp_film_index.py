@@ -216,6 +216,104 @@ class FilmIndex:
             raise RuntimeError("Film blob integrity check failed")
         return data
 
+    def put_media_file(self, project_id, source_path, media_type="video/mp4",
+                       *, max_bytes=2 * 1024 * 1024 * 1024):
+        """Stream and atomically register a larger media file, without RAM loading.
+
+        This is an immutable source/video artifact, not a mutable render temp.
+        Never exposes an arbitrary uploaded path as an asset until bytes have
+        been copied, hashed, and bound to a project-scoped DB registration.
+        """
+        if media_type not in ("video/mp4", "audio/wav", "application/octet-stream"):
+            raise ValueError("Unsupported indexed media type")
+        if type(max_bytes) is not int or max_bytes < 1 or max_bytes > 2*1024**3:
+            raise ValueError("Invalid media budget")
+        path = Path(source_path)
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError("Media source missing or symlinked")
+        _require_pid(project_id)
+        with self.studio._connection() as db:
+            self._project(db, project_id)
+        # Stage under a project-controlled directory before publishing by SHA.
+        stage_dir = (self.blob_root / project_id / ".staging").resolve()
+        if not stage_dir.is_relative_to(self.blob_root / project_id):
+            raise RuntimeError("Media staging path escaped the film root")
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        if stage_dir.is_symlink():
+            raise RuntimeError("Media staging directory is symlinked")
+        fd, tmp = tempfile.mkstemp(prefix=".media-", dir=stage_dir)
+        size = 0
+        h = hashlib.sha256()
+        try:
+            with os.fdopen(fd,"wb") as out, path.open("rb") as inp:
+                while chunk := inp.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise ValueError("Media exceeds maximum indexed file budget")
+                    h.update(chunk)
+                    out.write(chunk)
+                if not size:
+                    raise ValueError("Empty media file cannot be indexed")
+                out.flush()
+                os.fsync(out.fileno())
+            sha = h.hexdigest()
+            target = self._blob_path(project_id, sha)
+            if target.is_symlink():
+                raise RuntimeError("Refusing symlinked indexed media")
+            try:
+                os.link(tmp, target)
+            except FileExistsError:
+                if target.is_symlink() or not target.is_file():
+                    raise RuntimeError("Existing indexed media path is unsafe")
+                self._verify_file_bytes(target, sha, size)
+            with self.studio._connection() as db:
+                db.execute("BEGIN IMMEDIATE")
+                self._project(db, project_id)
+                row = db.execute("""SELECT size_bytes,media_type FROM film_blob_refs
+                    WHERE project_id=? AND sha256=?""",(project_id,sha)).fetchone()
+                if row is None:
+                    db.execute("""INSERT INTO film_blob_refs
+                        (project_id,sha256,size_bytes,media_type,created_at)
+                        VALUES(?,?,?,?,?)""",(project_id,sha,size,media_type,now()))
+                elif row["size_bytes"]!=size or row["media_type"]!=media_type:
+                    raise RuntimeError("Conflicting media registration metadata")
+            return {"sha256":sha,"size_bytes":size,"media_type":media_type}
+        finally:
+            Path(tmp).unlink(missing_ok=True)
+
+    @staticmethod
+    def _verify_file_bytes(path, sha, expected_size):
+        h=hashlib.sha256()
+        size=0
+        with Path(path).open("rb") as src:
+            while chunk := src.read(1024*1024):
+                size += len(chunk)
+                if size > expected_size:
+                    raise RuntimeError("Indexed media grew after storage")
+                h.update(chunk)
+        if size!=expected_size or h.hexdigest()!=sha:
+            raise RuntimeError("Indexed media SHA-256 integrity failure")
+        return size
+
+    def verify_media_file(self, project_id, sha, media_type=None):
+        """Independently rehash stored bytes after restart without reading RAM."""
+        _require_pid(project_id)
+        _sha(sha)
+        with self.studio._connection() as db:
+            self._project(db,project_id)
+            row=db.execute("""SELECT size_bytes,media_type FROM film_blob_refs
+                WHERE project_id=? AND sha256=?""",(project_id,sha)).fetchone()
+        if row is None:
+            raise KeyError("Media not registered to the specified film")
+        if media_type is not None and row["media_type"]!=media_type:
+            raise RuntimeError("Indexed media type mismatch")
+        path=self._blob_path(project_id,sha)
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError("Indexed media file missing or symlinked")
+        self._verify_file_bytes(path,sha,row["size_bytes"])
+        return {"sha256":sha,"size_bytes":row["size_bytes"],
+                "media_type":row["media_type"],"path":str(path)}
+
     def put_json(self, project_id, document):
         if type(document) not in (dict, list):
             raise ValueError("Film manifest must be structured JSON")
