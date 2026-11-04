@@ -351,6 +351,10 @@ class NativeAudio01FHost:
         from backend.nvp_audio01g_mux_recovery import finalize_verified_worker
         return finalize_verified_worker(self,job,self._attest_reaped)
 
+    def reconcile_committed_after_restart(self,job):
+        from backend.nvp_audio01g_mux_recovery import reconcile_post_commit_gap
+        return reconcile_post_commit_gap(self,job)
+
     def verify_completed(self,job):
         row=self._grant(job)
         if self.ledger.get_task(job)["state"]!="SUCCEEDED" or not row["result_sha"]:
