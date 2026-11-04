@@ -376,8 +376,8 @@ class NativeAudio01K3Host:
             row["data"].get("dcp_delivered") is not False):
             raise RuntimeError("DCP candidate FilmIndex/native custody disagrees")
         source,proof,qc=self._verify_candidate(job,plan)
-        if source!=Path(plan["destination"]) or
-           row["data"]["asset_proof"]!=proof:
+        if (source != Path(plan["destination"]) or
+            row["data"]["asset_proof"] != proof):
             raise RuntimeError("Published DCP assets changed")
         return {"status":"VERIFIED_SMPTE_DCP_CANDIDATE",
                 "asset_count":proof["asset_count"],
