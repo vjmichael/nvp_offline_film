@@ -72,6 +72,12 @@ class NativeAudio01FHost:
                 plan_sha TEXT NOT NULL, python_sha TEXT NOT NULL,
                 worker_sha TEXT NOT NULL, expires_at REAL NOT NULL,
                 revoked INTEGER NOT NULL DEFAULT 0, result_sha TEXT)""")
+        with ledger._db() as db:
+            db.execute("""CREATE TABLE IF NOT EXISTS native_audio01g_os_stops(
+                job_id TEXT PRIMARY KEY, verified_reaped INTEGER NOT NULL
+                CHECK(verified_reaped=1), stopped_at REAL NOT NULL,
+                source TEXT NOT NULL
+            )""")
         self.bindings=ApprovedTaskBindings(ledger,approval_check=self._check)
         self._creator_events={}  # ephemeral native-only approvals; restart fails closed
 
@@ -232,6 +238,22 @@ class NativeAudio01FHost:
         self._creator_events.pop(job,None)
         return {"job_id":job,"revoked":True}
 
+    def _record_reaped(self,job):
+        # Only native host, after waiting and closing its OWN process handle,
+        # may durably attest that the worker has been stopped.
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("""INSERT OR IGNORE INTO native_audio01g_os_stops(
+                job_id,verified_reaped,stopped_at,source)
+                VALUES(?,1,?,'owned_native_handle_reaped')""",(job,time.time()))
+            db.commit()
+
+    def _attest_reaped(self,job):
+        with self.ledger._db() as db:
+            row=db.execute("""SELECT verified_reaped,source
+                FROM native_audio01g_os_stops WHERE job_id=?""",(job,)).fetchone()
+        return row==(1,"owned_native_handle_reaped")
+
     def run_next(self,*,timeout_seconds=900):
         admit=self.bindings.claim_next(owner_key=self.owner)
         if admit is None or not admit["admitted"]:
@@ -259,6 +281,7 @@ class NativeAudio01FHost:
                 proc.close()
                 reaped=True
                 proc=None
+                self._record_reaped(job)
             self.ledger.update(job,"verifying_output","Independent FilmIndex/decoded sync verification")
             plan=json.loads((folder/"native_plan.json").read_text("ascii"))
             verified=verify_picture_sound_preview(self.capture,plan["project_id"],
@@ -293,6 +316,8 @@ class NativeAudio01FHost:
                     if proc.poll() is None:proc.terminate_tree()
                     reaped=proc.poll() is not None
                     proc.close()
+                    if reaped:
+                        self._record_reaped(job)
                 except BaseException:
                     reaped=False
             if not attempted:
@@ -318,13 +343,13 @@ class NativeAudio01FHost:
         if row is None:raise RuntimeError("Native mux reservation absent")
         return row[0]
 
-    def inspect_interrupted(self,job,*,attest_stopped):
+    def inspect_interrupted(self,job):
         from backend.nvp_audio01g_mux_recovery import inspect_stopped_worker
-        return inspect_stopped_worker(self,job,attest_stopped)
+        return inspect_stopped_worker(self,job,self._attest_reaped)
 
-    def finalize_interrupted(self,job,*,attest_stopped):
+    def finalize_interrupted(self,job):
         from backend.nvp_audio01g_mux_recovery import finalize_verified_worker
-        return finalize_verified_worker(self,job,attest_stopped)
+        return finalize_verified_worker(self,job,self._attest_reaped)
 
     def verify_completed(self,job):
         row=self._grant(job)
