@@ -90,6 +90,23 @@ class ResourceGuardTests(unittest.TestCase):
             self.assertIsNone(row["completed_fraction"])
             l.finish("ext_request","SUCCEEDED","Draft only")
 
+    def test_stale_running_task_is_displayed_unverified_without_releasing_reservation(self):
+        import sqlite3,time
+        with TemporaryDirectory() as tmp:
+            l=TaskLedger(tmp,sampler=lambda:sample())
+            l.admit(AdmissionRequest("lost_worker","blender","Blender",4096))
+            l.heartbeat("lost_worker")
+            with sqlite3.connect(l.db_path) as db:
+                db.execute("UPDATE tasks SET updated_at=? WHERE id=?",
+                           (time.time()-60,"lost_worker"))
+            shown=l.snapshot()
+            self.assertEqual(shown["tasks"][0]["state"],"STALE_UNVERIFIED")
+            self.assertIsNone(shown["tasks"][0]["completed_fraction"])
+            self.assertEqual(shown["reservations"]["ram_mb"],4096)
+            self.assertEqual(l.get_task("lost_worker")["state"],"ACTIVE")
+            l.finish("lost_worker","INTERRUPTED","Verified OS cleanup")
+            self.assertEqual(l.snapshot()["reservations"]["ram_mb"],0)
+
     def test_actual_host_sensor_does_not_fabricate_values(self):
         value=collect_resources()
         self.assertIsInstance(value.public()["gpus"],list)
