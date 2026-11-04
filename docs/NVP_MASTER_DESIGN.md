@@ -38,6 +38,14 @@ Immediately audit current homegrown grading curves and image routines against **
 
 This is binding implementation guidance; consult [NVP-ADR-STACK-001](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md) for criteria and ordered tests. Earlier detailed feature-roadmap entries remain desired *capabilities* but no longer imply bespoke implementation.
 
+### 0.4 Multi-instance exclusive production-worker custody and native Windows Blender [ENGINEERING] — STACK-02C
+
+**Accepted technical gate:** Windows and Linux NVP worker journals now use a **kernel-backed cross-process owner lease** around each Blender execution and cold-start recovery. Competing hosts cannot claim the same workspace while its current owner is rendering; hard host exit releases the lock, and later recovery still marks incomplete jobs INTERRUPTED instead of inventing success. The lease is local single-machine filesystem authority, **not** a distributed network lock or a licence for independent unrelated hosts to mutate the Film World.
+
+**Genuine Windows engine proof:** Official SHA-verified portable Blender 5.2.3 was independently launched under the existing Windows Job Object, generated a real .blend and PNG, then re-opened the creator-approved original ProductionScene through a separate native Blender process with **9 identity/geometry assertions passed**. GPU-less Windows CI uses **Blender Cycles CPU** because the Workbench renderer crashed during WGL/OpenGL initialization; no custom renderer was added. Linux real Blender remained independently accepted. [All four jobs passed in GitHub run 41767354797](https://github.com/vjmichael/nvp_offline_film/actions/runs/41767354797).
+
+The authoritative World, frozen Digital Takes, approved-scene and original FilmIndex provenance contracts are unchanged. Further engineering gates remain mandatory for **Linux whole detached-process-tree cgroup cleanup**, VRAM/system-RAM load guards, complete Blender/Cycles animation-path migration, packaging and GPL compliance. [Detailed STACK-02C evidence and task list](NVP_STACK02C_HOST_LEASE_AND_WINDOWS_BLENDER_ACCEPTANCE.md). This is not a release-ready installer.
+
 ### 0.3 OS-contained native Blender production work [ENGINEERING] — STACK-02B
 
 Following the accepted external Blender worker and durable SQLite ledger, NVP now uses **Windows Job Objects (suspended-first execution, kill-on-close and bounded job committed-memory)** and **Linux kernel parent-death signaling with a bounded address-space cap**. In both cases Blender is still an independent executable; this is host integration, not a new rendering engine or a GPL library linked into NVP. The source/take/film custody and creative approval rules do not change.
