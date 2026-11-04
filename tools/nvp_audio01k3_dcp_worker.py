@@ -64,7 +64,7 @@ def main():
     dcp,preflight=encode_candidate(
         movie,work,plan["title"],create_bin=plan["dcp_create"],
         cli_bin=plan["dcp_cli"],expected_mov_sha=plan["movie_sha256"])
-    qc=validate_strict_smpte(dcp,plan["dcpdoctor"])
+    qc=validate_strict_smpte(dcp,plan["dcpdoctor"],report_dir=path.parent)
     stage=Path(plan["stage"])
     if (stage.exists() or stage.is_symlink() or
         stage.parent.is_symlink() or not stage.parent.is_dir()):
