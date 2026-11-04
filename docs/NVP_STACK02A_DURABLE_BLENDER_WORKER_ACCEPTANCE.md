@@ -1,6 +1,6 @@
 # NVP-STACK-02A — Verified external Blender worker and durable production tasks
 
-**Engineering status:** Prototype supervisor implemented; commercial packaging, OS post-crash containment and legal redistribution NOT yet accepted. 2026-11-03.
+**Engineering status:** **TECHNICALLY ACCEPTED** as a pinned external worker, on [successful GitHub CI run 41763801958](https://github.com/vjmichael/nvp_offline_film/actions/runs/41763801958): **3/3 jobs green**, Linux **6/6** contracts, Windows **6/6** contracts, and actual native Blender 5.2.3 scene/render/cancel/restart acceptance. Commercial packaging, OS post-crash containment and legal redistribution remain **NOT ACCEPTED**. 2026-11-03.
 
 **Architectural basis:** [STACK-001](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md), [STACK-002](NVP_ADR_STACK02_BLENDER_WORKER_USD_DEFERRED.md). The standard Blender process performs the actual 3D work. NVP only supplies typed source files, supervises the process, independently audits its results, and stores durable provenance.
 
@@ -37,7 +37,10 @@
 ## Native acceptance expectations
 
 - Linux, Windows, and actual native Blender gates **must be measured**. A source commit or unit test alone does not imply a Blender render occurred.
-- The native fixture verifies an **actual** Blender scene and PNG, exact launch/version hash, restart readback, deliberate output tamper, failing child refusal, active-process cancellation, and interrupt recovery.
+- **Verified:** the native fixture produced a real 128×72 Blender PNG and compressed Zstandard `.blend` scene; recognized Blender's legitimate Zstd container signature (not only the legacy raw `BLENDER` magic). A second actual Blender process reopened the original approved NVP stage and completed **9 independent geometry/identity checks**. Exact launch/version hashes, independent restart rehash, deliberate output tamper, failing Python child, active-process cancellation and interrupted-host recovery all passed.
+- **Verified SHA-256s in the native artifact:** Blender executable `b8b07a190fb25db76aae6de08dbc6c2b3d64e22e82bed6ba90de9545859f3431`; real PNG `4a99067d5742d44979b1c34cda2c973c153be2fc7bedb8fad98a0d6531c8fd8f`; real compressed Blender scene `efa5864d0de2f317089b04fc1ea51fb1f57e776750eb8af186c75bb2d5a8baaa`. All independently rehashed after downloading the [native acceptance artifact](https://github.com/vjmichael/nvp_offline_film/actions/runs/41763801958).
+- **Real Windows bug found/fixed:** Python's standard SQLite connection context manager does not close handles; explicit close is now enforced so clean deletion/uninstall does not fail with WinError 32.
+- **Run 41763801958:** 3/3 jobs passed on the exact code implementing `--python-exit-code`; Blender 5.2.3 LTS version string included build hash and date. The audit report confirms `commercial_redistribution_license_cleared=false` and `orphan_cleanup_after_real_host_crash_proven=false` rather than making false release claims.
 - The existing `ProductionScene.export_manifest` + `export_blender_script` and existing `AUDIT_SCRIPT` must complete the approved NVP scene build and independent geometry recheck in separate supervised Blender subprocesses.
 - Source NVP movie data must be unchanged throughout; no tool result grants final creative approval.
 
