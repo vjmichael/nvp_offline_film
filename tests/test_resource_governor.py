@@ -2,6 +2,7 @@
 from __future__ import annotations
 from tempfile import TemporaryDirectory
 import unittest
+import multiprocessing as mp
 from unittest.mock import patch
 from backend.nvp_resource_guard import (
     GPUResource,ResourceSnapshot,AdmissionRequest,decide_admission,
@@ -13,6 +14,16 @@ from backend.nvp_resource_ledger import TaskLedger
 def sample(ram=32768,available=20000,used=8000,gpu=True,pressure=0):
     devices=(GPUResource("gpu:0","Test GPU","test_sensor",32768,used,True),) if gpu else ()
     return ResourceSnapshot(1,ram,available,pressure,devices)
+
+
+def competing_admission(root,ident,barrier,output):
+    try:
+        ledger=TaskLedger(root,sampler=lambda:sample(available=17000))
+        barrier.wait(timeout=12)
+        result=ledger.admit(AdmissionRequest(ident,"blender","Worker "+ident,7000))
+        output.put(result["admitted"])
+    except BaseException as exc:
+        output.put("ERROR: "+str(exc))
 
 
 class ResourceGuardTests(unittest.TestCase):
@@ -89,6 +100,28 @@ class ResourceGuardTests(unittest.TestCase):
             self.assertEqual(row["ram_mb"],0)
             self.assertIsNone(row["completed_fraction"])
             l.finish("ext_request","SUCCEEDED","Draft only")
+
+    def test_real_competing_processes_cannot_both_spend_memory_budget(self):
+        with TemporaryDirectory() as tmp:
+            ctx=mp.get_context("spawn")
+            barrier=ctx.Barrier(2)
+            queue=ctx.Queue()
+            one=ctx.Process(target=competing_admission,args=(tmp,"worker_a",barrier,queue))
+            two=ctx.Process(target=competing_admission,args=(tmp,"worker_b",barrier,queue))
+            one.start();two.start()
+            try:
+                result=[queue.get(timeout=18) for _ in range(2)]
+                one.join(timeout=12);two.join(timeout=12)
+                self.assertEqual(one.exitcode,0)
+                self.assertEqual(two.exitcode,0)
+                self.assertEqual(sorted(result),[False,True],str(result))
+                ledger=TaskLedger(tmp,sampler=lambda:sample(available=17000))
+                self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],7000)
+            finally:
+                for process in (one,two):
+                    if process.is_alive():
+                        process.kill();process.join(timeout=5)
+                queue.close();queue.join_thread()
 
     def test_stale_running_task_is_displayed_unverified_without_releasing_reservation(self):
         import sqlite3,time
