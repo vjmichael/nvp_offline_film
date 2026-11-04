@@ -41,6 +41,7 @@ class NativeWindowsJobObjectDescendants(unittest.TestCase):
                 "time.sleep(120)"
             )
             handle=None
+            closed=False
             with (root/"stdout.txt").open("wb") as out, (root/"stderr.txt").open("wb") as err:
                 proc=launch_contained([sys.executable,"-c",worker_code,str(pid_file)],
                     cwd=str(root),stdout=out,stderr=err,memory_mb=1024)
@@ -99,12 +100,14 @@ class NativeWindowsJobObjectDescendants(unittest.TestCase):
                     # Close the last host-owned Job handle. Windows must terminate
                     # both worker and grandchild via JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
                     proc.close()
+                    closed=True
                     self.assertEqual(win32event.WaitForSingleObject(handle,15000),
                                      win32event.WAIT_OBJECT_0)
                 finally:
-                    if proc.poll() is None:
-                        proc.terminate_tree()
-                    proc.close()
+                    if not closed:
+                        if proc.poll() is None:
+                            proc.terminate_tree()
+                        proc.close()
                     if handle is not None:
                         handle.Close()
 
