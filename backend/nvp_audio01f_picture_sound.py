@@ -234,10 +234,10 @@ def build_picture_sound_preview(capture,project_id,candidate_id,audio_id,
                                     frames=picdata["frame_count"],
                                     ffmpeg=ffmpeg,ffprobe=ffprobe)
     crash_after("mov_bytes_written")
+    crash_after("mov_independently_verified")
     indexed=capture.index.put_media_file(project_id,mux,"video/quicktime")
     if indexed["sha256"]!=timing["mov_sha256"]:
         raise RuntimeError("FilmIndex ingest changed review movie")
-    crash_after("mov_independently_verified")
     crash_after("filmindex_media_ingested")
     document={
         "format":FORMAT,"status":"unapproved_synchronized_picture_sound_review",
