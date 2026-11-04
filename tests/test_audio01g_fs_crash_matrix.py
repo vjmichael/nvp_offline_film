@@ -98,11 +98,32 @@ class NativeFilesystemCrashMatrix(unittest.TestCase):
                     env["PYTHONPATH"]=str(repo)
                     env["NVP_AUDIO01G_FAULT_TEST"]="enabled"
                     env["NVP_AUDIO01G_CRASH_AFTER"]=point
-                    proc=subprocess.run([sys.executable,str(Path(__file__).resolve()),
-                         "--child",str(root),point],env=env,cwd=repo,
-                         capture_output=True,timeout=120)
-                    self.assertEqual(proc.returncode,EXIT_CODE,
-                        proc.stderr.decode("utf8","replace")[-1600:])
+                    command=[sys.executable,str(Path(__file__).resolve()),
+                             "--child",str(root),point]
+                    if os.name=="nt":
+                        # Actual Job Object contains the Python worker *and*
+                        # FFmpeg descendants, even when the worker uses
+                        # os._exit instead of running cleanup handlers.
+                        from backend.nvp_worker_containment import launch_contained
+                        with (root/(point+".out.log")).open("wb") as out, (
+                             root/(point+".err.log")).open("wb") as err, (
+                             patch.dict(os.environ,env,clear=False)):
+                            process=launch_contained(command,cwd=str(repo),
+                                stdout=out,stderr=err,memory_mb=1024)
+                            try:
+                                code=process.wait(timeout=120)
+                            finally:
+                                if process.poll() is None:
+                                    process.terminate_tree()
+                                process.close()
+                        error=(root/(point+".err.log")).read_text(
+                            "utf8",errors="replace")
+                    else:
+                        proc=subprocess.run(command,env=env,cwd=repo,
+                                            capture_output=True,timeout=120)
+                        code=proc.returncode
+                        error=proc.stderr.decode("utf8","replace")
+                    self.assertEqual(code,EXIT_CODE,error[-1600:])
                     output=root/("review_"+point)
                     stage=output.with_name(".nvp-audio01g-"+output.name+".stage")
                     registered=point=="filmindex_presentation_registered"
