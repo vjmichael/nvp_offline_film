@@ -43,3 +43,12 @@ The user accepted 0.1.0-alpha.2 as a **functional development baseline** followi
 - Accepted Lu functional alpha design: Lu-AI-GUI docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md.
 - AF_UNIX prototype design/limits: jan_alt docs/lu/ipc/native-af-unix-implementation-2026-10-31.md and docs/lu/ipc/ipc-lcx-acceptance-ledger-2026-10-31.md.
 - Lu isolated native source-contract workflow: lu/nvp-independent-inference-contract-20261103.
+
+
+## B4 independent CI and SQLite initialization hardening
+
+NVP B4 contract acceptance [GitHub run 41781810609](https://github.com/vjmichael/nvp_offline_film/actions/runs/41781810609): 2/2 native Windows/Linux jobs passed, each executing 8 Lu source/passive-status tests, 2 new resource-ledger first-open contention tests, 10 existing resource-governor tests, and 17 B3 estimate/recovery tests (37 per OS). The new concurrency fixture started SIX independent processes against one fresh profile database and verified journal mode WAL, schema completeness, and that reopening cannot silently release an ACTIVE model reservation.
+
+A preceding Linux run independently exposed an actual intermittent database is locked error during competing resource-ledger construction. The ledger now checks its existing journal mode before modifying WAL, then executes all CREATE TABLE/INDEX statements under one serialized BEGIN IMMEDIATE writer transaction, with a bounded retry exclusively for SQLITE_BUSY. It no longer uses executescript, which would implicitly commit and release the initialization writer lease. This is a real resource-guardian reliability fix, separate from Lu IPC authorization.
+
+Lu independent inference CI [run 41781449832](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/41781449832) passed 8/8 real Rust Core tests on Linux (1 lifecycle, 4 Protobuf, 3 host resource authority). Native Windows source hash checks passed but Lu's checked-in Core did NOT compile: persistent_llama_backend.rs calls Job::assign_and_resume_suspended, while the checked-in lu-win-worker-job crate defines only Job::assign. This is a SOURCE SYNC / containment API blocker in the Lu repo, not a failed installed 0.1.0-alpha.2 physical test. NVP must NOT repair it by unsuspended process launch. The Lu repo has an isolated draft PR documenting the blocker and leaving the stable baseline unchanged.
