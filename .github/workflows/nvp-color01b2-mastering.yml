@@ -13,6 +13,26 @@ permissions:
   contents: read
 
 jobs:
+
+  ocio-wheel-diagnostic:
+    name: Preserve pinned OCIO Linux Python 3.13 binary for independent numeric diagnosis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Download exact binary wheel for local independent EXR processing
+        run: |
+          mkdir -p ocio_runtime
+          python -m pip download --no-deps --only-binary=:all: --dest ocio_runtime 'opencolorio==2.5.2'
+          sha256sum ocio_runtime/*.whl | tee ocio_runtime/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvp-color01b2-ocio-py313-linux-runtime
+          path: ocio_runtime/
+          retention-days: 7
+
   ubuntu-color-codecs:
     name: Linux grade recipes + real codec/legal-range/reference tests
     runs-on: ubuntu-24.04
