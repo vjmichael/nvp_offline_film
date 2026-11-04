@@ -18,6 +18,7 @@ from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_frozen_take_stage import stage_frozen_take,verify_frozen_stage
 from backend.nvp_frozen_take_render import NativeFrozenTakeRender
 from backend.nvp_frozen_take_audit import NativeFrozenTakeAuditor
+from backend.nvp_frozen_take_presentation import publish_verified_preview,verify_presentation
 from backend.nvp_production_scene import ProductionScene
 from backend.nvp_resource_guard import ResourceSnapshot
 from backend.nvp_resource_ledger import TaskLedger
@@ -129,6 +130,19 @@ def fixture(out,blender):
         raise RuntimeError("Frozen native Blender workers retained memory reservations")
     if checked["independently_checked_timeline_features"]<18:
         raise RuntimeError("Insufficient independent camera/actor frame checks")
+    published=publish_verified_preview(NativeFrozenTakeAuditor(host),grant["approval_id"])
+    # New Studio/FilmIndex process must re-open indexed native artifacts and
+    # exactly the original source take. The current editable world has since
+    # changed and must NOT be used to verify this derived presentation.
+    reopened_index=DigitalCapture(Studio(studio.db_path))
+    indexed_check=verify_presentation(reopened_index,pid,published["presentation_id"])
+    if (indexed_check["status"]!="VERIFIED_INDEXED_PREVIEW" or
+        indexed_check["source_capture_sha256"]!=staged["capture_sha256"] or
+        indexed_check["blend_sha256"]!=checked["build_blend_sha256"] or
+        indexed_check["png_sha256"]!=checked["preview_png_sha256"]):
+        raise RuntimeError("Derived FilmIndex presentation lacks original frozen source/artifact identity")
+    if len(reopened_index.index.list_objects(pid,kind="presentation"))!=1:
+        raise RuntimeError("Indexed technical presentation identity missing or duplicated")
 
     output={
         "format":"nvp.stack02c3b8.real_frozen_timed_blender.v1",
@@ -150,6 +164,11 @@ def fixture(out,blender):
         "blender_take_sha256":checked["build_blend_sha256"],
         "independent_timeline_audit_sha256":checked["audit_json_sha256"],
         "blender_preview_png_sha256":checked["preview_png_sha256"],
+        "filmindex_derived_presentation_id":published["presentation_id"],
+        "filmindex_presentation_document_sha256":published["presentation_document_sha256"],
+        "filmindex_presentation_restart_verification":True,
+        "filmindex_presentation_source_take_revision":1,
+        "frozen_take_was_not_modified_by_render":True,
         "refused_build_on_low_memory":True,
         "remaining_resource_reservation_mb":0,
         "creator_approval":"simulated_native_host_event_in_ci_only",
