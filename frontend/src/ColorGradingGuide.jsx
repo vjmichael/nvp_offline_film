@@ -70,7 +70,18 @@ const SECTIONS = [
     ]
   },
   {
-    title: '7. Future professional controls',
+    title: '7. Tone curves and reference-shot advice',
+    summary: 'Understand HDR exposure curves and why NVP never applies shot matching behind your back.',
+    body: [
+      'Under the Shot grading panel, NVP has a real scene-linear tone curve. Deep black and bright white are fixed; shadows, middle gray, and highlights can be raised or lowered in exposure stops.',
+      'The original Cycles HALF OpenEXR values remain untouched. Curve offsets are applied before the pinned ACES output view, preserving legitimate HDR source radiance rather than operating on 8-bit movie previews.',
+      'Choose a reference frame from another shot and request Compare reference. NVP measures real decoded pixel luminance and reports a bounded exposure proposal. This is a heuristic, not a calibrated or automatic color match.',
+      'The separate Apply suggestion button adjusts the current shot only after you choose it. Undo/redo/reset are available, and saved curve looks become immutable unapproved FilmIndex draft versions.',
+      'LUT import is a following stage because a LUT must specify its expected source and destination color spaces and be independently validated.'
+    ]
+  },
+  {
+    title: '8. Future professional controls',
     summary: 'A roadmap, not a list of controls already delivered.',
     body: [
       'Available in Essentials: exposure and RGB controls, before/after wipe, undo/redo, global look presets and versioned draft saves. A per-shot gallery remains future work.',
@@ -88,7 +99,7 @@ export default function ColorGradingGuide() {
       <div className="kicker">NVP LEARNING CENTER</div>
       <h2 id="nvp-color-guide-title">Color grading — start with the story</h2>
       <p>Color correction makes images technically consistent. Color grading shapes the visual feeling of your film. You can learn both without sacrificing the original Digital Take.</p>
-      <p><strong>Current status:</strong> Essentials includes real EXR previews and global draft looks. The advanced section now adds per-shot lift/gamma/gain adjustments and real post-ACES waveform, RGB histogram and vectorscope readings. Calibrated monitors, curves, masks and final grading approval remain future work.</p>
+      <p><strong>Current status:</strong> Essentials includes real EXR previews and global draft looks. The advanced section includes per-shot lift/gamma/gain and measured histogram, waveform and vectorscope. A further section now provides HDR EV tone curves and source-derived reference-shot exposure advice. Calibrated monitors, curves, masks and final grading approval remain future work.</p>
       <div aria-label="Color grading topics">
         {SECTIONS.map((section, index) => (
           <section key={section.title} style={{ margin: '0.75rem 0', borderTop: '1px solid var(--border, #444)', paddingTop: '0.75rem' }}>
