@@ -470,6 +470,7 @@ class BlenderWorkerSupervisor:
                         return self.inspect(op.job_id)
                     if self.activity is not None and time.monotonic()-last_pressure_check>=1.5:
                         last_pressure_check=time.monotonic()
+                        self.activity.heartbeat(self._activity_id(op.job_id))
                         critical=self.activity.critical_pressure(self._activity_id(op.job_id))
                         pressure_count=pressure_count+1 if critical else 0
                         if pressure_count>=2:
