@@ -164,6 +164,31 @@ def fixture(out, blender):
     if thread.is_alive() or response.get("worker",{}).get("state")!="CANCELLED":
         raise RuntimeError("Actual Blender process was not cancelled and reaped")
 
+    # Reuse the existing NVP ProductionScene builder and existing independent
+    # Blender geometry audit through the SAME pinned external worker manager.
+    from backend.nvp_studio import Studio
+    from backend.nvp_production_scene import ProductionScene
+    from backend.nvp_supervised_production import run_supervised_scene
+    studio=Studio(root/"approved_source_film.sqlite3")
+    proj=studio.create_project("STACK02A supervised source","frozen approved stage")
+    project_id=proj["id"]
+    scene=studio.save_screenplay(project_id,
+        "INT. SET - DAY\\n\\nA chair rests by the window.\\n",0)
+    scene_id=scene["scenes"][0]["id"]
+    production=ProductionScene(studio)
+    chair=production.create_asset(project_id,{
+        "name":"Chair","category":"furniture","dimensions":[.5,.5,.9],
+        "anchors":{"seat":[0,0,.5]},
+    })
+    plan=production.stage_scene(project_id,scene_id,[8,6,3])
+    plan=production.add_instance(project_id,scene_id,chair["asset_id"],
+        "chair_1",plan["plan_revision"])
+    plan=production.solve_scene(project_id,scene_id,plan["plan_revision"])
+    production.approve_scene(project_id,scene_id,plan["plan_revision"])
+    staged=run_supervised_scene(production,project_id,scene_id,worker)
+    if staged["status"]!="passed_blender_supervised" or staged["audit_checks"]<4:
+        raise RuntimeError("Approved original production stage did not survive supervised external Blender/audit: "+str(staged))
+
     # Simulate the durable state present immediately before a host crash:
     # recovery must mark it INTERRUPTED, NEVER synthesize acceptance.
     worker._transition(bad.job_id,"RUNNING",worker_pid=999999)
@@ -180,6 +205,7 @@ def fixture(out, blender):
         "rendered_png_sha256":result["outputs"]["real_frame.png"]["sha256"],
         "independently_reopened_after_restart":True,
         "actual_blender_scene_and_128x72_png":True,
+        "approved_nvp_scene_build_and_independent_supervised_audit":staged,
         "output_corruption_refused":True,
         "nonzero_blender_failure_refused":True,
         "running_process_cancelled_and_reaped":True,
