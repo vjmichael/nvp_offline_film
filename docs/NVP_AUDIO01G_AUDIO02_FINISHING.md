@@ -42,3 +42,13 @@ Current implementation covers **gain automation** (including keyframe ramps); pa
 **Not complete:** Exact-head Windows CI pass, true injected SIGKILL/TerminateJobObject at every filesystem/SQLite publication boundary, persistent Windows host-crash guardian attestations, durable multi-bus mastering engine, feature-length picture, professional delivery-specific QC profiles and director acceptance UI.
 
 **Deferred intentionally:** Linux strict delegated cgroup-v2 tree-termination acceptance remains OPEN; no tests are counted as passing it on read-only or undelegated hosts.
+
+## Additional recovery and finishing hardening
+
+- The native AUDIO-01F host now persists `native_audio01g_os_stops` only after it actually closes an owned, reaped process handle. `inspect_interrupted` and `finalize_interrupted` consult that durable witness themselves instead of letting arbitrary callers pass a permissive lambda. A full host crash before the witness commit is **not automatically recoverable**; that remains blocked rather than relying on PID guesses.
+- `reconcile_post_commit_gap` closes a restart gap when FilmIndex and TaskLedger show an immutable verified successful mux but the AUDIO-01G journal stopped at `verified`. It rechecks original source media, worker receipt, result SHA, and the persistent OS-stop witness, then advances the journal without rerendering.
+- AUDIO-02A now also offers `sum_automated_stems`: bounded, aligned PCM16 stereo 48kHz WAV summing from up to eight individually automated stems. Integer saturation is **not** a true-peak limiter. Derived mixes require subsequent AUDIO-02B measurement and explicit AUDIO-02C approval.
+- AUDIO-02B validates target ranges and measures the creator-selected loudness/true-peak policy using actual FFmpeg.
+- AUDIO-02C remeasures the exact WAV at approval time and rejects forged or stale QC dictionaries before accepting a native creator event.
+
+Tests are committed, but **the corresponding Windows/Linux CI results are not yet verified**. Automated CI tests of source checks and transitions do not replace an end-to-end fault-injected Windows Job Object recovery test.
