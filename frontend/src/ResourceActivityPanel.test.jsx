@@ -27,7 +27,7 @@ describe('NVP real computer/task activity UX',()=>{
     fireEvent.click(screen.getByRole('button',{name:/computer & production activity/i}));
     await waitFor(()=>expect(screen.getByText('Render scene 1')).toBeTruthy());
     expect(screen.getByText(/DXGI budget for NVP process—not global free VRAM/)).toBeTruthy();
-    expect(screen.getByRole('progressbar',{name:/Load AI model measured progress/i}).value).toBe('50');
+    expect(screen.getByRole('progressbar',{name:/Load AI model measured progress/i}).value).toBe(50);
     expect(screen.getByRole('progressbar',{name:/Render scene 1 working; percent unknown/i}).hasAttribute('value')).toBe(false);
     expect(screen.getByText(/Not started. NVP is preserving computer memory headroom/i)).toBeTruthy();
     expect(screen.getByText('Waiting for GPU memory headroom')).toBeTruthy();
