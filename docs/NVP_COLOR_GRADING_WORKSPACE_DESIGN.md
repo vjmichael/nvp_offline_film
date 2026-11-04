@@ -41,7 +41,7 @@ A novice should be able to improve a shot using exposure, contrast, color balanc
 | COLOR-01A | Half-float native EXR from frozen Digital Take | Native Linux accepted |
 | COLOR-01B | Pinned ACES 2 source-to-16-bit SDR review PNG | Linux+Windows contract accepted |
 | COLOR-01B2 | Full contiguous EXR → Rec.1886/Rec.709 view → tagged, legal 10-bit ProRes/DNxHR; source-bound recipe and independent film decode | Engineering in progress |
-| COLOR-GRADE-UI-01 | Beginner exposure/contrast/saturation/RGB controls, presets, real OCIO before/after, undo/redo, versioned draft grade saves | Implemented on development branch; native/CI acceptance in progress |
+| COLOR-GRADE-UI-01 | Beginner exposure/contrast/saturation/RGB controls, presets, real OCIO before/after, undo/redo, versioned draft grade saves | **Accepted**: 4/4 CI jobs, real native EXR-to-preview and FilmIndex tamper/restart proof ([run 41753886773](https://github.com/vjmichael/nvp_offline_film/actions/runs/41753886773)); still uncalibrated/draft only |
 | COLOR-GRADE-UI-02 | Curves, wheels, LUTs, reference compare, scopes and shot matching | Not implemented |
 | COLOR-GRADE-UI-03 | Masks, tracking, per-frame keyframes, node stacks and HDR controls | Not implemented |
 | COLOR-MASTER-01 | Measured color targets, monitor profile, true video/master QC, audio+editorial lock | Not implemented |
