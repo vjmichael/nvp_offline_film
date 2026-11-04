@@ -33,7 +33,7 @@ class ColorOCIOTests(unittest.TestCase):
         pixels=np.array([[
             [0.18,0.18,0.18,1.0],
             [2.25,0.37,0.059,1.0],
-            [0.02,0.08,0.14,0.5],
+            [0.02,0.08,0.14,1.0],
             [0.9,0.8,0.7,1.0],
         ]],dtype=np.float32)
         quant,stats=apply_view(pixels,cpu)
@@ -80,6 +80,10 @@ class ColorOCIOTests(unittest.TestCase):
             apply_view(pixels,OutOfRange())
         pixels[0,0,0]=float("nan")
         with self.assertRaisesRegex(RuntimeError,"NaN/Infinity"):
+            apply_view(pixels,OutOfRange())
+        pixels[0,0,0]=0.18
+        pixels[0,0,3]=0.5
+        with self.assertRaisesRegex(RuntimeError,"transparent"):
             apply_view(pixels,OutOfRange())
 
     def test_unapproved_source_space_and_forged_review_fail_closed(self):
