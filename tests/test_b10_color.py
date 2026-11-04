@@ -50,6 +50,12 @@ class RenderProfileContracts(unittest.TestCase):
                     validate_full_render(*options,
                         worker_root=self.root,archive_root=self.root)
 
+    def test_4k_is_explicitly_blocked_without_measured_gpu_vram_admission(self):
+        # A zero-GPU-budget Workbench task cannot claim safe 4K VRAM use.
+        with self.assertRaisesRegex(RuntimeError,"GPU VRAM admission"):
+            validate_full_render(3840,2160,1,8192,120,
+                                 worker_root=self.root,archive_root=self.root)
+
     def test_disk_capacity_must_cover_full_sequence_not_just_first_frame(self):
         result=validate_full_render(1920,1080,1,4096,120,
                                     worker_root=self.root,archive_root=self.root)
