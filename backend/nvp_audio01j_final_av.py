@@ -21,9 +21,15 @@ from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_film_index import _id
 
 FORMAT="nvp.audio01j.final_av_master.v1"
+CANDIDATE_FORMAT="nvp.audio01j.final_av_candidate.v1"
 FPS=24
 RATE=48000
 MAX_FRAMES=480
+
+
+def candidate_id_for(project_id,export_id):
+    _id(export_id,"final audiovisual export ID")
+    return "avcandidate"+hashlib.sha256((project_id+":"+export_id).encode("ascii")).hexdigest()[:24]
 
 
 def _run(command,timeout=600):
@@ -107,10 +113,11 @@ def approved_inputs(capture,project_id,lock_id,audio_delivery_id,movie_dir,audio
 def export_final_av(capture,project_id,lock_id,audio_delivery_id,
                     movie_dir,audio_dir,output_dir,export_id,*,ffmpeg,ffprobe):
     """Atomic directory publication; never reuse interrupted stage or ID."""
-    _id(export_id,"final audiovisual export ID")
-    try:capture.index.read_revision(project_id,export_id)
-    except KeyError:pass
-    else:raise RuntimeError("Final AV identity already exists")
+    candidate_id=candidate_id_for(project_id,export_id)
+    for identity in (export_id,candidate_id):
+        try:capture.index.read_revision(project_id,identity)
+        except KeyError:pass
+        else:raise RuntimeError("Final AV or candidate identity already exists")
     lock,picture,audio,video,wav,frames=approved_inputs(
         capture,project_id,lock_id,audio_delivery_id,movie_dir,audio_dir)
     dest=Path(output_dir)
@@ -134,7 +141,8 @@ def export_final_av(capture,project_id,lock_id,audio_delivery_id,
     if indexed["sha256"]!=proof["mov_sha256"]:
         raise RuntimeError("Indexed AV output changed on publication")
     crash_after("av_media_indexed")
-    doc={"format":FORMAT,"status":"approved_final_audiovisual_master",
+    doc={"format":CANDIDATE_FORMAT,"status":"unapproved_synchronized_av_candidate",
+         "planned_export_id":export_id,
          "project_id":project_id,"picture_lock_id":lock_id,
          "picture_lock_sha256":lock["document_sha256"],
          "picture_source_sha256":picture["document_sha256"],
@@ -146,7 +154,7 @@ def export_final_av(capture,project_id,lock_id,audio_delivery_id,
          "rendered_mov_bytes":indexed["size_bytes"],
          "movie_filename":"final_picture_sound.mov",
          **proof,"picture_locked":True,"final_mix":True,
-         "director_approved":True,"final_master":True,
+         "director_approved":False,"final_master":False,
          "dcp_delivered":False}
     manifest=stage/"final_av_manifest.json"
     with manifest.open("xb") as f:
@@ -161,42 +169,81 @@ def export_final_av(capture,project_id,lock_id,audio_delivery_id,
         finally:os.close(fd)
     crash_after("av_directory_promoted")
     record=capture.index.register_revision(
-        project_id,export_id,"master",doc,expected_revision=0,
+        project_id,candidate_id,"presentation",doc,expected_revision=0,
         dependencies=[
             {"object_id":lock_id,"revision":1,"role":"presentation"},
             {"object_id":audio_delivery_id,"revision":1,"role":"audio"}])
     crash_after("av_filmindex_registered")
-    return {"status":"FINAL_AV_MASTER_PUBLISHED","export_id":export_id,
+    return {"status":"UNAPPROVED_AV_CANDIDATE_VERIFIED",
+            "export_id":export_id,"candidate_id":candidate_id,
             "document_sha256":record["document_sha256"],
             "mov_sha256":indexed["sha256"],"frames":frames,
-            "final_master":True,"dcp_delivered":False}
+            "final_master":False,"dcp_delivered":False}
 
 
-def verify_final_av(capture,project_id,export_id,output_dir,movie_dir,audio_dir,*,
-                    ffmpeg,ffprobe):
-    row=capture.index.read_revision(project_id,export_id,1)
+def verify_av_candidate(capture,project_id,export_id,output_dir,movie_dir,
+                        audio_dir,*,ffmpeg,ffprobe):
+    candidate_id=candidate_id_for(project_id,export_id)
+    row=capture.index.read_revision(project_id,candidate_id,1)
     doc=row["data"];root=Path(output_dir)
-    if row["kind"]!="master" or doc.get("format")!=FORMAT:
-        raise RuntimeError("Not an indexed final audiovisual master")
+    if (row["kind"]!="presentation" or doc.get("format")!=CANDIDATE_FORMAT
+        or doc.get("status")!="unapproved_synchronized_av_candidate"
+        or doc.get("planned_export_id")!=export_id or
+        doc.get("final_master") is not False or
+        doc.get("director_approved") is not False):
+        raise RuntimeError("Not an immutable unapproved AV candidate")
     if root.is_symlink() or not root.is_dir():
-        raise RuntimeError("Missing final AV publication")
+        raise RuntimeError("Missing AV candidate publication")
     manifest=root/"final_av_manifest.json";mov=root/"final_picture_sound.mov"
     if (manifest.is_symlink() or mov.is_symlink()
         or manifest.read_bytes()!=canonical_bytes(doc)
         or sha_file(mov)!=doc["rendered_mov_sha256"]
         or mov.stat().st_size!=doc["rendered_mov_bytes"]):
-        raise RuntimeError("Final AV manifest or native movie bytes changed")
+        raise RuntimeError("AV candidate manifest or movie changed")
     lock,picture,audio,video,wav,frames=approved_inputs(
         capture,project_id,doc["picture_lock_id"],
         doc["audio_delivery_id"],movie_dir,audio_dir)
     if (lock["document_sha256"]!=doc["picture_lock_sha256"]
         or audio["document_sha256"]!=doc["audio_delivery_sha256"]
         or picture["document_sha256"]!=doc["picture_source_sha256"]):
-        raise RuntimeError("Immutable source approvals changed")
+        raise RuntimeError("AV candidate source approvals changed")
     capture.index.verify_media_file(
         project_id,doc["rendered_mov_sha256"],"video/quicktime")
     proof=verify_mux(mov,video,wav,frames,ffmpeg=ffmpeg,ffprobe=ffprobe)
     if any(proof[k]!=doc[k] for k in proof):
-        raise RuntimeError("Published movie no longer decodes to approved AV")
-    return {"status":"VERIFIED_FINAL_AV_MASTER","frames":frames,
+        raise RuntimeError("AV candidate no longer decodes to approved AV")
+    return {"status":"VERIFIED_UNAPPROVED_AV_CANDIDATE","candidate_id":candidate_id,
+            "candidate_document_sha256":row["document_sha256"],
+            "frames":frames,"mov_sha256":doc["rendered_mov_sha256"],
+            "final_master":False}
+
+
+def final_master_document(candidate):
+    data=candidate["data"]
+    if (candidate["kind"]!="presentation" or data.get("format")!=CANDIDATE_FORMAT
+        or data.get("final_master") is not False):
+        raise RuntimeError("Only unapproved native AV candidate may be mastered")
+    return {**data,"format":FORMAT,
+            "status":"approved_final_audiovisual_master",
+            "candidate_id":candidate["object_id"],
+            "candidate_document_sha256":candidate["document_sha256"],
+            "director_approved":True,"final_master":True}
+
+
+def verify_final_av(capture,project_id,export_id,output_dir,movie_dir,audio_dir,*,
+                    ffmpeg,ffprobe):
+    row=capture.index.read_revision(project_id,export_id,1)
+    doc=row["data"]
+    candidate_id=candidate_id_for(project_id,export_id)
+    candidate=capture.index.read_revision(project_id,candidate_id,1)
+    if (row["kind"]!="master" or doc.get("format")!=FORMAT
+        or doc.get("status")!="approved_final_audiovisual_master"
+        or doc.get("director_approved") is not True
+        or doc.get("final_master") is not True
+        or doc.get("dcp_delivered") is not False
+        or doc!=final_master_document(candidate)):
+        raise RuntimeError("Host-approved final master does not match verified candidate")
+    verified=verify_av_candidate(capture,project_id,export_id,output_dir,
+        movie_dir,audio_dir,ffmpeg=ffmpeg,ffprobe=ffprobe)
+    return {"status":"VERIFIED_FINAL_AV_MASTER","frames":verified["frames"],
             "final_master":True,"dcp_delivered":False}
