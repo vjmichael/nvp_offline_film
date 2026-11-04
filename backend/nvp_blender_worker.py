@@ -71,6 +71,7 @@ class BlenderOperation:
     scene: str | None = None
     timeout_seconds: int = 90
     memory_limit_mb: int = 8192
+    require_linux_cgroup_v2: bool = False
 
     def canonical(self) -> str:
         return json.dumps(asdict(self),sort_keys=True,separators=(",",":"),allow_nan=False)
@@ -171,9 +172,9 @@ class BlenderWorkerSupervisor:
             row=db.execute("SELECT spec_json FROM worker_jobs WHERE job_id=?",(job_id,)).fetchone()
         if not row:
             raise KeyError("Worker job was not journaled")
-        spec=BlenderOperation(**json.loads(row[0]))
-        if hashlib.sha256(spec.canonical().encode()).hexdigest()!=status["spec_sha256"]:
+        if hashlib.sha256(row[0].encode()).hexdigest()!=status["spec_sha256"]:
             raise RuntimeError("Worker job specification changed")
+        spec=BlenderOperation(**json.loads(row[0]))
         jobdir=(self.root/job_id).resolve()
         self._check_inputs(spec,jobdir)
         fresh=self._audit_outputs(spec,jobdir)
@@ -207,6 +208,8 @@ class BlenderWorkerSupervisor:
             raise ValueError("Worker timeout must be 1 to 600 seconds")
         if type(op.memory_limit_mb) is not int or not 256<=op.memory_limit_mb<=65536:
             raise ValueError("Worker memory limit must be 256 to 65536 MiB")
+        if type(op.require_linux_cgroup_v2) is not bool:
+            raise ValueError("Strict Linux cgroup requirement must be boolean")
         if (not SHA.fullmatch(op.script_sha256) or type(op.inputs) is not dict or
             type(op.outputs) is not dict or type(op.arguments) is not dict or
             not 1<=len(op.outputs)<=12 or len(op.inputs)>32):
@@ -365,7 +368,8 @@ class BlenderWorkerSupervisor:
         try:
             with log.open("wb") as stdout, err.open("wb") as stderr:
                 proc=launch_contained(command,cwd=str(jobdir),stdout=stdout,stderr=stderr,
-                                      memory_mb=op.memory_limit_mb)
+                                      memory_mb=op.memory_limit_mb,
+                                      linux_cgroup_tree_required=op.require_linux_cgroup_v2)
                 self._transition(op.job_id,"RUNNING",worker_pid=proc.pid)
                 started=time.monotonic()
                 while proc.poll() is None:
