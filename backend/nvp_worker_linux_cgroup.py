@@ -36,16 +36,30 @@ def current_cgroup_relative(pid="self"):
 
 
 def current_delegated_parent():
+    """Use systemd's own delegation marker, NEVER a guessed systemd path.
+
+    DelegateSubgroup= may place the host inside a child of the delegated
+    scope. We may create NVP leaves under that *scope* (the marked ancestor),
+    not under the host's process-filled subgroup.
+    """
     mount=CGROUP_MOUNT.resolve()
     if not (mount/"cgroup.controllers").is_file():
         raise RuntimeError("No unified cgroup v2 kernel mount")
-    relative=current_cgroup_relative()
-    parent=(mount/relative.lstrip("/")).resolve()
-    if not parent.is_relative_to(mount):
+    current=(mount/current_cgroup_relative().lstrip("/")).resolve()
+    if not current.is_relative_to(mount):
         raise RuntimeError("Kernel cgroup path escapes mounted hierarchy")
-    if not os.access(parent,os.W_OK|os.X_OK):
-        raise RuntimeError("NVP host lacks delegated cgroup v2 subtree; configure systemd Delegate=yes")
-    return parent
+    for candidate in (current,*current.parents):
+        if not candidate.is_relative_to(mount):
+            break
+        try:
+            delegated=os.getxattr(candidate,"user.delegate")==b"1"
+        except (OSError,AttributeError):
+            delegated=False
+        if delegated:
+            if not os.access(candidate,os.W_OK|os.X_OK):
+                raise RuntimeError("Systemd cgroup delegation is not writable by NVP")
+            return candidate
+    raise RuntimeError("No systemd Delegate=yes cgroup v2 scope found for NVP worker")
 
 
 def provision_worker_cgroup(memory_mb, pids_max=128):
@@ -55,6 +69,25 @@ def provision_worker_cgroup(memory_mb, pids_max=128):
     if type(pids_max) is not int or not 16<=pids_max<=2048:
         raise ValueError("Strict cgroup process cap must be 16..2048")
     parent=current_delegated_parent()
+    required={"memory","pids"}
+    available=set((parent/"cgroup.controllers").read_text("ascii").split())
+    if not required.issubset(available):
+        raise RuntimeError("Delegated scope does not expose memory and pids controllers")
+    enabled=set((parent/"cgroup.subtree_control").read_text("ascii").split())
+    missing=required-enabled
+    if missing:
+        # Changing subtree_control inside the scope delegated to NVP is
+        # permitted by systemd's single-writer contract. If systemd did
+        # not place host tasks in DelegateSubgroup, the kernel will refuse
+        # enabling domain controllers; NVP fails closed.
+        try:
+            (parent/"cgroup.subtree_control").write_text(
+                " ".join("+"+item for item in sorted(missing)),encoding="ascii")
+        except OSError as exc:
+            raise RuntimeError("Cannot enable delegated cgroup memory/pids; configure DelegateSubgroup= for the host") from exc
+        enabled=set((parent/"cgroup.subtree_control").read_text("ascii").split())
+        if not required.issubset(enabled):
+            raise RuntimeError("Kernel did not enable delegated memory/pids controllers")
     name=PREFIX+uuid.uuid4().hex
     path=parent/name
     try:
