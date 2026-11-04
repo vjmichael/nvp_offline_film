@@ -108,6 +108,14 @@ class NativeAudio01JEndToEnd(unittest.TestCase):
             self.assertFalse(candidate["data"]["director_approved"])
             self.assertEqual(candidate["kind"],"presentation")
             self.assertFalse(indexed["data"]["dcp_delivered"])
+            # A published MOV is not automatically trustworthy after byte
+            # mutation: the native host must fail independent re-verification.
+            with (root/"final_av"/"final_picture_sound.mov").open("ab") as stream:
+                stream.write(b"tampered")
+            with self.assertRaises(RuntimeError):
+                reopened.verify_published(pid,"finalfilm",
+                    root/"final_av",root,root/"audiofinal",
+                    ffmpeg="ffmpeg",ffprobe="ffprobe")
 
     def test_revoked_approved_mix_cannot_be_used_for_final_av(self):
         from backend.nvp_audio01h_native_host import NativeAudio01HHost
