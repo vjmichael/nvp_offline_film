@@ -30,6 +30,7 @@ class AdmissionGapTests(unittest.TestCase):
                 db.execute("""INSERT INTO audio_native_staging_leases
                     (directory,job_id,predecessor) VALUES(?,?,NULL)""",
                     (str(root/"work"),job))
+                db.commit()
             # Minimal authentic journal record; do not invent output.
             with host.journal._db() as db:
                 db.execute("BEGIN IMMEDIATE")
