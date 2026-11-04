@@ -46,7 +46,7 @@ class OpenTimelineIOContracts(unittest.TestCase):
         self.assertEqual(proof["clips"],2)
         self.assertEqual(proof["duration_seconds"],5)
         again=otio.adapters.read_from_string(text,adapter_name="otio_json")
-        self.assertEqual(len(list(again.each_clip())),2)
+        self.assertEqual(len(list(again.tracks[0])),2)
         self.assertEqual(again.duration().value,120)
         self.assertEqual(again.tracks[0][1].media_reference.start_frame,49)
 
