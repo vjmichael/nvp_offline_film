@@ -58,7 +58,7 @@ def prepare_crew_task(studio: Studio, project_id: str, role: str,
                 continue
             facts.append({
                 "entity_id": entity["id"], "entity_kind": entity["kind"],
-                "entity_name": entity["name"], "entity_revision": entity["revision"],
+                "entity_name": entity["name"],
                 "key": fact["fact_key"], "value": fact["fact_value"],
                 "scope": fact["story_scope"], "fact_id": fact["id"],
             })
