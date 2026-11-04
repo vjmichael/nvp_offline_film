@@ -95,7 +95,8 @@ def conform_pcm_audio(capture, project_id, edit_id, revision,
     output_dir.mkdir(mode=0o700)
     target = output_dir / "edited_picture_follow_pcm48.wav"
     discontinuities = []
-    with wave.open(str(input_wav), "rb") as inp, target.open("xb") as exclusive:\n        with wave.open(exclusive, "wb") as out:
+    with wave.open(str(input_wav), "rb") as inp, target.open("xb") as exclusive:
+        with wave.open(exclusive, "wb") as out:
             out.setnchannels(CHANNELS)
             out.setsampwidth(SAMPLE_WIDTH)
             out.setframerate(RATE)
