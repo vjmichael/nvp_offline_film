@@ -12,6 +12,7 @@ from pathlib import Path
 
 from backend.nvp_b14_picture_conform import verify_conformed_sdr16
 from backend.nvp_b14_native_conform import NativeB14ConformHost
+from backend.nvp_b14_edited_movie import build_edited_technical_mov, verify_edited_technical_mov
 from backend.nvp_resource_guard import ResourceSnapshot
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_b13_editorial_roundtrip import FORMAT as EDIT_FORMAT
@@ -113,6 +114,21 @@ def fixture(out, blender):
                                          edit_revision=result["revision"])
         if checked["frames"] != result["frames"]:
             raise RuntimeError("B14 conformed presentation changed after FilmIndex restart")
+    # The picture conform is SDR review; the technical ProRes path must
+    # separately grade original FLOAT32 EXR frames in the actual edited order.
+    movie_root = root / "b14_edited_movie_from_scene_linear"
+    candidate = build_edited_technical_mov(
+        reopened, project_id, done[0]["presentation_id"], package,
+        root / "b14_conformed_edit_revision_1", movie_root,
+        "b14_edited_prores_candidate", profile="prores_422_hq_mov")
+    movie_reopened = DigitalCapture(Studio(db))
+    movie_audit = verify_edited_technical_mov(
+        movie_reopened, project_id, "b14_edited_prores_candidate", package,
+        root / "b14_conformed_edit_revision_1", movie_root)
+    if (movie_audit["status"] != "VERIFIED_EDITED_TECHNICAL_MOV_CANDIDATE" or
+        movie_audit["movie_sha256"] != candidate["movie_sha256"] or
+        movie_audit["frames"] != done[0]["frames"]):
+        raise RuntimeError("Actual edited Rec1886/BT709 ProRes decode failed")
     if (reopened.index.read_revision(project_id, edit_id, 1)["document_sha256"] !=
             first["document_sha256"] or
         reopened.index.read_revision(project_id, edit_id, 2)["document_sha256"] !=
@@ -129,7 +145,11 @@ def fixture(out, blender):
         "native_B14_worker_authorization_tested": len(granted) == 2,
         "native_B14_contained_workers": 2,
         "native_B14_resource_reservations_released": ledger.snapshot()["reservations"]["ram_mb"] == 0,
-        "edited_technical_MOV_rendered": False,
+        "edited_technical_MOV_rendered": True,
+        "edited_technical_MOV_profile": movie_audit["profile"],
+        "edited_technical_MOV_SHA256": movie_audit["movie_sha256"],
+        "edited_technical_MOV_frames": movie_audit["frames"],
+        "edited_technical_MOV_independent_decode_after_restart": True,
         "audio_present": False, "final_master": False,
     }
     (root / "nvp_b14_real_edited_picture_acceptance.json").write_text(
