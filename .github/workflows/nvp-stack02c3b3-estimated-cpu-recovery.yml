@@ -25,7 +25,7 @@ jobs:
       - name: Install pinned official Python SDK
         run: python -m pip install -r requirements-model-ownership-optional.txt
       - name: Compile B3 estimate and recovery modules
-        run: python -m compileall -q backend tests/test_model_estimate_recovery.py
+        run: python -m compileall -q backend tests/test_model_estimate_recovery.py tools/nvp_stack02c3b3_local_model_acceptance.py
       - name: Run new strict estimate and provider observation contracts
         run: python -m unittest discover -s tests -p test_model_estimate_recovery.py -v
       - name: Preserve B2/B1 regression contracts
@@ -46,7 +46,7 @@ jobs:
       - name: Install pinned official Python SDK
         run: python -m pip install -r requirements-model-ownership-optional.txt
       - name: Compile B3 estimate and recovery modules
-        run: python -m compileall -q backend tests/test_model_estimate_recovery.py
+        run: python -m compileall -q backend tests/test_model_estimate_recovery.py tools/nvp_stack02c3b3_local_model_acceptance.py
       - name: Run new strict estimate and provider observation contracts
         run: python -m unittest discover -s tests -p test_model_estimate_recovery.py -v
       - name: Preserve B2/B1 regression contracts
