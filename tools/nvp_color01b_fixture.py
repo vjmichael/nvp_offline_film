@@ -5,6 +5,7 @@ approved grade, calibrated mastering monitor, sound master, or theatrical DCP.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -72,6 +73,24 @@ def fixture(output):
         project_id,"color01b_aces2_sdr_review",check_decode=True)
     if not again["decoded"]:
         raise RuntimeError("Recovery after corruption did not independently decode")
+    # A forged but structurally valid FilmIndex color receipt must not pass
+    # simply because it points to legitimate PNGs and approved EXR frames.
+    forged=copy.deepcopy(readback["record"]["data"])
+    forged["color_policy"]["view"]="Raw"
+    forged_id="color01b_forged_raw_view"
+    idx2=FilmIndex(Studio(db))
+    idx2.register_revision(project_id,forged_id,"presentation",forged,
+        dependencies=[
+            {"object_id":"color01a_scene_linear_exr","revision":1,"role":"presentation"},
+            {"object_id":"take_real_captured","revision":1,"role":"source_take"},
+        ])
+    try:
+        ColorReviewPipeline(Studio(db)).reopen(project_id,forged_id)
+    except RuntimeError as err:
+        if "processor identity" not in str(err):
+            raise
+    else:
+        raise RuntimeError("Forged Raw OCIO view passed color-managed reopen")
     # Deliberately mix approved and disapproved source-project identities.
     other=studio.create_project("COLOR-01B other project","source isolation")["id"]
     try:
@@ -107,6 +126,7 @@ def fixture(output):
         "source_take_unchanged":True,
         "exr_source_unchanged":True,
         "tampered_png_rejected":True,
+        "forged_ocio_view_refused":True,
         "cross_project_read_rejected":True,
         "restart_and_recovery":True,
         "grading_and_color_calibration_approved":False,
