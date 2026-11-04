@@ -41,38 +41,59 @@ class TaskLedger:
         self.root.mkdir(parents=True,exist_ok=True)
         self.db_path=self.root/"task_activity.sqlite3"
         self.sampler=sampler
-        with self._db() as db:
-            # Switch journal mode only during schema initialization. Reissuing
-            # PRAGMA journal_mode=WAL on every per-task connection can contend
-            # with a second NVP host in the admission BEGIN IMMEDIATE window.
-            # Busy timeout is established before this initialization.
-            db.execute("PRAGMA journal_mode=WAL")
-            db.executescript("""
-                CREATE TABLE IF NOT EXISTS tasks (
-                    id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL,
-                    state TEXT NOT NULL, phase TEXT NOT NULL, detail TEXT NOT NULL,
-                    completed_fraction REAL, ram_mb INTEGER NOT NULL DEFAULT 0,
-                    gpu_mb INTEGER NOT NULL DEFAULT 0, device_id TEXT,
-                    reserved INTEGER NOT NULL DEFAULT 0,
-                    created_at REAL NOT NULL, updated_at REAL NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS task_events (
-                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id TEXT NOT NULL, at REAL NOT NULL, state TEXT NOT NULL,
-                    phase TEXT NOT NULL, detail TEXT NOT NULL,
-                    completed_fraction REAL
-                );
-            """)
-            db.executescript("""
-                CREATE TABLE IF NOT EXISTS task_schedule (
-                    task_id TEXT PRIMARY KEY,
-                    owner_key TEXT NOT NULL,
-                    lane TEXT NOT NULL CHECK(lane IN ('interactive','standard','background')),
-                    queued_at REAL NOT NULL, claimed_at REAL
-                );
-                CREATE INDEX IF NOT EXISTS task_schedule_owner_order
-                    ON task_schedule(owner_key,lane,queued_at);
-            """)
+        # Multiple NVP hosts can open the same user profile concurrently.
+        # Reconfiguring PRAGMA journal_mode=WAL or running executescript
+        # independently in each process can fail immediately with SQLITE_BUSY.
+        # Initialize under one writer lease; executescript is avoided because
+        # it implicitly commits and would drop BEGIN IMMEDIATE.
+        schema=(
+            """CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL,
+                state TEXT NOT NULL, phase TEXT NOT NULL, detail TEXT NOT NULL,
+                completed_fraction REAL, ram_mb INTEGER NOT NULL DEFAULT 0,
+                gpu_mb INTEGER NOT NULL DEFAULT 0, device_id TEXT,
+                reserved INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL, updated_at REAL NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS task_events (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL, at REAL NOT NULL, state TEXT NOT NULL,
+                phase TEXT NOT NULL, detail TEXT NOT NULL,
+                completed_fraction REAL
+            )""",
+            """CREATE TABLE IF NOT EXISTS task_schedule (
+                task_id TEXT PRIMARY KEY,
+                owner_key TEXT NOT NULL,
+                lane TEXT NOT NULL CHECK(lane IN ('interactive','standard','background')),
+                queued_at REAL NOT NULL, claimed_at REAL
+            )""",
+            """CREATE INDEX IF NOT EXISTS task_schedule_owner_order
+                ON task_schedule(owner_key,lane,queued_at)""",
+        )
+        for attempt in range(12):
+            try:
+                with self._db() as db:
+                    mode=db.execute("PRAGMA journal_mode").fetchone()[0]
+                    # Reissue WAL mode only on the very first configuration.
+                    # Avoid a journal-mode change while another host is
+                    # already working under WAL.
+                    if str(mode).lower()!="wal":
+                        db.execute("PRAGMA journal_mode=WAL")
+                    db.execute("BEGIN IMMEDIATE")
+                    try:
+                        for statement in schema:
+                            db.execute(statement)
+                        db.commit()
+                    except BaseException:
+                        db.rollback()
+                        raise
+                break
+            except sqlite3.OperationalError as error:
+                if "locked" not in str(error).lower() or attempt==11:
+                    raise
+                # Bounded retry for SQLite's WAL/create contention only;
+                # never silently skip required tables or permissions.
+                time.sleep(min(.02*(attempt+1),.25))
 
     @contextmanager
     def _db(self):
