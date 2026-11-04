@@ -86,3 +86,12 @@ Security refinements:
 - The test suite additionally attempts to approve a manually produced, uncontained FilmIndex audio object and requires rejection.
 
 **Remaining:** CI results are not yet available. AUDIO-01H native acceptance MUST fail if any Windows/Linux test fails, skips required native media, or cannot prove stopped-worker custody. Fault injection tests simulate process crashes, not power loss; Linux delegated cgroup-v2 remains deferred. Creator-event identity is delegated to the trusted host policy callback, not a complete UI-origin attestation implementation. FilmIndex publication's file/SQLite boundaries still need full storage-fault injection for physical power-failure guarantees.
+
+
+### AUDIO-01H.4 native fault acceptance candidate
+
+Code and tests now cover 14 explicit post-effect abrupt-exit gates across plan, grants, TaskLedger admission, worker FilmIndex publication, receipt, OS-stop witness, verified completion, and creator-event decisions. Tests assert all 14 production gates are unique and actually covered. Mandatory media tests cannot skip absent native FFmpeg.
+
+The trusted host now requires a successful OS-reaped, immutable, digest-matched, resource-released native producer before accepting a final composite. A manually produced FilmIndex-only composite is explicitly denied. Approval event preflight is checked before replay-nonce reservation, and exact-scope creator authority is rechecked before publication. The native measurement worker verifies pinned FFmpeg executable bytes.
+
+**This is not a passing acceptance claim.** Source and CI matrix are committed, but no exact-head successful Windows/Linux native logs have been observed. Remaining risks: OS grandchild termination and containment interruption tests; genuine UI event attestation; ancestor-path replacement races; upstream full AUDIO-01D-to-01E replay; power-loss durability. Delegated Linux cgroup-v2 remains deferred.
