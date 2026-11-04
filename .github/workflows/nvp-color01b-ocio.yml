@@ -92,3 +92,35 @@ jobs:
           path: acceptance_artifacts/color01b/
           retention-days: 7
           if-no-files-found: warn
+
+  windows-ocio-contract:
+    name: Windows OCIO 2.5.2 ACES 2 pinned SDR source/view contract
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned Windows color runtime and project test prerequisites
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          python -m pip install 'opencolorio==2.5.2' 'numpy==2.3.4'
+          python -c "import PyOpenColorIO as o; print(o.GetVersion())"
+      - name: Windows ACES config, OCIO processor, source integrity and legacy regressions
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m compileall -q backend tools tests
+          if ($LASTEXITCODE -ne 0) { throw 'Python compilation failed' }
+          python -m tools.nvp_color01b_probe
+          if ($LASTEXITCODE -ne 0) { throw 'ACES 2 config failed' }
+          python -m unittest discover -s tests -p 'test_color_ocio.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows OCIO regression failed' }
+          python -m unittest discover -s tests -p 'test_color_exr.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows EXR source regression failed' }
+          python -m unittest discover -s tests -p 'test_presentation_pipeline.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PNG/EXR source tests failed' }
+          python -m unittest discover -s tests -p 'test_full_motion.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows motion source tests failed' }
