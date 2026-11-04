@@ -140,3 +140,24 @@ NVP's scopes are calculated from the actual **post-ACES 16-bit RGB preview pixel
 5. Enter an advanced look ID, confirm the source-primaries declaration only when correct, then **Save advanced draft look**. The FilmIndex creates an immutable version. **Load saved advanced look** can retrieve it. Neither operation approves a final creative grade or encodes a new movie.
 
 **Before filming a final master:** verify source primaries, calibrate the intended monitor, review all source frames, and explicitly approve the creative grade. Do not assume a pleasant-looking uncalibrated browser preview is a cinema or broadcast color standard.
+
+
+## 10. Tone curves and comparing two shots (GRADE-UI-02B1)
+
+The new **HDR tone curves & reference-shot advice** panel lives underneath the per-shot grading controls. Think of a *tone curve* as an instruction for how dark, middle, and bright parts of the image should change.
+
+NVP's first editable curve is deliberately simple: it offers three adjustable points—**Shadows, Middle gray, Highlights**—with fixed deep-black and bright-white endpoints. Each point changes exposure in stops, rather than editing 8-bit brightness. A +1-stop mid-gray setting doubles the original scene-linear value at that pivot, before ACES makes a viewable SDR preview. Values beyond 1.0 remain available to the film pipeline; the curve itself does not chop them off.
+
+### Try it
+
+1. Select **Shot 1** in the original shot strip. In the curve panel, move **Middle gray** from 0 to +0.25 stops. Watch the real preview.
+2. Increase **Shadows** by +0.1 stops, then inspect how the waveform shifts. Try **Undo curve**, **Redo curve**, and **Reset shot curve**.
+3. Select **Shot 2** and observe that it has its own neutral tone curve. Editing Shot 1 does not automatically edit Shot 2.
+4. To compare the shots, return to Shot 1 and set **Reference frame** to one inside Shot 2. Click **Compare reference without changing any image**. NVP measures the decoded image data and suggests an exposure starting point. The proposal is deliberately separate from the **Apply suggestion** button.
+5. Save an unapproved curve draft under an ID only after accurately confirming the EXR's declared source primaries. **Load curve draft** reopens the saved version; the original Digital Take and image files remain unchanged.
+
+**Important limitations:** Reference exposure advice is based on average *display-referred* brightness, so it is only a rough creative starting point, not calibrated color matching. A browser cannot replace a calibrated reference monitor. NVP will refuse malformed, nonfinite or out-of-range curves rather than silently corrupt the film.
+
+### Coming next: LUTs
+
+A **LUT (look-up table)** stores a predefined mapping between colors. Professional LUT handling requires knowing exactly what color space the LUT expects and what it produces. NVP will use the established OpenColorIO processing system and record the LUT's content hash and color-space contract. Until those safety checks are accepted, do not assume a random downloaded LUT is safe to apply to scene-linear imagery.

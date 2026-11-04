@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './ColorAdvancedPanel.css';
+import ColorCurvePanel from './ColorCurvePanel.jsx';
 
 const WHEEL_FORMAT = 'nvp.color.wheels.linear_lift_gamma_gain.v1';
 const FORMAT = 'nvp.color.grade.shot_wheels.v1';
@@ -240,6 +241,8 @@ export default function ColorAdvancedPanel({ project, sourceId, frame, onFrameCh
           onClick={save}>{revision?'Save new advanced draft revision':'Save advanced draft look'}</button>
         <button className="secondary" type="button" disabled={saving||!lookId} onClick={load}>Load saved advanced look</button>
       </div>
+      <ColorCurvePanel project={project} sourceId={sourceId} frame={frame}
+        timeline={timeline} basePlan={plan}/>
     </>}
   </section>;
 }
