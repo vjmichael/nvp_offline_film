@@ -11,6 +11,7 @@ from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_studio import Studio
 from backend.nvp_audio01h_stem_revision import automate_stem
+from backend.nvp_audio01h_fault_matrix import crash_after
 
 
 def main():
@@ -40,6 +41,7 @@ def main():
         out.write(canonical_bytes(receipt))
         out.flush()
         os.fsync(out.fileno())
+    crash_after("worker_receipt_fsynced")
 
 
 if __name__ == "__main__":
