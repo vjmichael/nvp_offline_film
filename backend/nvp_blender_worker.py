@@ -250,7 +250,7 @@ class BlenderWorkerSupervisor:
                 # magic is only a preflight; independent Blender reopen/audit
                 # establishes actual scene validity before NVP acceptance.
                 (kind=="blend" and not (head.startswith(b"BLENDER") or
-                    head.startswith(b"\\x28\\xb5\\x2f\\xfd"))) or
+                    head.startswith(bytes.fromhex("28b52ffd")))) or
                 (kind=="exr" and head[:4]!=b"\x76\x2f\x31\x01")):
                 raise RuntimeError("Blender output failed media magic verification")
             if kind=="json_audit":
