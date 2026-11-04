@@ -15,7 +15,7 @@ import time
 from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_blender_worker import BlenderOperation,sha_file
 from backend.nvp_frozen_take_render import NativeFrozenTakeRender,_digest
-from backend.nvp_frozen_take_stage import _source,WORLD,TIMED,BLEND
+from backend.nvp_frozen_take_stage import _source,WORLD,TIMED,SCRIPT,BLEND
 from backend.nvp_native_proxy_audit import _copy_exclusive_verified
 from backend.nvp_render_source_stage import _write_exclusive
 from backend.nvp_shot_sequence import SHOTS_AUDIT_SCRIPT
@@ -66,19 +66,29 @@ class NativeFrozenTakeAuditor:
             meta.get("scene_id")!=sid):
             raise RuntimeError("Durable frozen-take metadata does not match approved operation")
         op=BlenderOperation(**document["operation"])
-        if not self.host._check(approval_id,doc_sha,document):
-            raise PermissionError("Native frozen-take stage/source no longer verified")
+        # This is a POST-COMPLETION audit. The prelaunch grant verifier
+        # deliberately refuses any job directory with an existing output;
+        # calling it here would reject every real successful .blend. Instead,
+        # validate sealed consent + exact pinned source and the native worker
+        # journal/outputs (below), without re-enabling launch.
+        source=_source(self.host.capture,pid,tid)
+        if (source["capture_sha256"]!=capture_sha or
+            any(source[name]!=meta.get(name) for name in
+                ("capture_sha256","world_sha256","timed_source_sha256",
+                 "timed_render_sha256","script_sha256","frame_count")) or
+            op.script!=SCRIPT or op.script_sha256!=source["script_sha256"] or
+            op.inputs!={WORLD:sha256(source["bytes"][WORLD]).hexdigest(),
+                        TIMED:source["timed_render_sha256"]} or
+            op.outputs!={BLEND:"blend"} or
+            op.arguments!={"--output":BLEND} or op.scene is not None or
+            self.worker._activity_id(op.job_id)!=task):
+            raise RuntimeError("Completed native frozen take deviates from approved source")
         state=self.ledger.get_task(task)
         if not state or state["state"]!="SUCCEEDED":
             raise RuntimeError("Frozen Digital Take source Blender build is not verified successful")
         accepted=self.worker.verify_completed(op.job_id)
         if accepted["state"]!="SUCCEEDED" or BLEND not in accepted["outputs"]:
             raise RuntimeError("Native timed .blend output not independently accepted")
-        source=_source(self.host.capture,pid,tid)
-        for name in ("capture_sha256","world_sha256","timed_source_sha256",
-                     "timed_render_sha256","script_sha256","frame_count"):
-            if source[name]!=meta[name]:
-                raise RuntimeError("Frozen take content changed after native build")
         return meta,op,accepted,source
 
     def _make_audit(self,approval_id,meta,op,build,source,ram_mb):
