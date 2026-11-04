@@ -45,16 +45,20 @@ class GradeContractTests(unittest.TestCase):
 
     def test_alpha_change_and_excessive_clip_refused(self):
         class Identity:
-            def applyRGBA(self,a):pass
-        class BreakAlpha:
-            def applyRGBA(self,a):a[...,3]=.5
+            def applyRGB(self,a):pass
+        class BreakRGB:
+            def applyRGB(self,a):a[:]=float("nan")
         pixel=np.array([[[.5,.3,.2,1.]]],dtype=np.float32)
         with patch("backend.nvp_color_mastering._deps",return_value=(None,np)):
             raw,stats=view_to_rgb48(pixel,Identity())
             self.assertEqual(len(raw),6)
             self.assertEqual(stats["clipped_channels"],0)
-            with self.assertRaisesRegex(RuntimeError,"alpha"):
-                view_to_rgb48(pixel,BreakAlpha())
+            transparent=pixel.copy();transparent[...,3]=.5
+            with self.assertRaisesRegex(RuntimeError,"opaque"):
+                view_to_rgb48(transparent,Identity())
+            with self.assertRaisesRegex(RuntimeError,"nonfinite"):
+                view_to_rgb48(pixel,BreakRGB())
+            np.testing.assert_allclose(pixel,np.array([[[.5,.3,.2,1.]]],dtype=np.float32))
             clip=pixel.copy();clip[...,0]=10.
             with self.assertRaisesRegex(RuntimeError,"clip too many"):
                 view_to_rgb48(clip,Identity())
