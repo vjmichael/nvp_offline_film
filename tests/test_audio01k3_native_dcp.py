@@ -68,9 +68,10 @@ def setup(root):
     return cap,pid,source
 
 
-@unittest.skipUnless(native_tools_available(),"Requires real DCP-o-matic and DcpDoctor")
 class NativeDCPAcceptance(unittest.TestCase):
     def test_real_smpte_2k_assets_and_restart(self):
+        missing=[tool for tool in TOOLS if shutil.which(tool) is None]
+        self.assertFalse(missing,"Real cinema tool dependencies missing: "+", ".join(missing))
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             cap,pid,mezzanine=setup(root)
