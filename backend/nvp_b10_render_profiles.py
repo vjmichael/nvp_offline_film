@@ -47,6 +47,14 @@ def profile_for(width:int,height:int)->ResolutionProfile:
 def validate_full_render(width:int,height:int,chunk_size:int,ram_mb:int,
                          frames:int,*,worker_root:Path,archive_root:Path):
     preset=profile_for(width,height)
+    # The B9 Workbench backend requests gpu_memory_mb=0. On a real
+    # Windows/AMD workstation that does NOT prove a UHD GPU render uses no
+    # VRAM. Keep 4K as an explicit capacity profile but forbid execution
+    # until native measured device admission is wired into its worker spec.
+    if preset.name=="UHD_4K":
+        raise RuntimeError(
+            "UHD/4K render is planning-only until native GPU VRAM "
+            "admission and a device-scoped resource ticket are implemented")
     if (type(chunk_size) is not int or
         not 1<=chunk_size<=preset.max_chunk_frames):
         raise ValueError("Frame batch size exceeds approved profile memory bounds")
