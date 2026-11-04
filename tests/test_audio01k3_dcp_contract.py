@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 
 from backend.nvp_audio01k3_dcp import (
     PROFILE, FORMAT, plan_commands, inspect_dcp_directory,
-    validate_strict_smpte, encode_candidate)
+    validate_strict_smpte, encode_candidate, inspect_cpl_timing)
 
 
 class DCPContract(unittest.TestCase):
@@ -94,6 +94,30 @@ class DCPContract(unittest.TestCase):
                 bad.chmod(0o700)
                 with self.assertRaises(RuntimeError):
                     validate_strict_smpte(dcp,bad)
+
+    def test_smpte_reel_picture_and_sound_duration_must_match_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            cpl=root/"CPL.xml"
+            def xml(picture,sound):
+                return ("<CompositionPlaylist><ReelList><Reel><AssetList>"
+                    "<MainPicture><EditRate>24 1</EditRate><Duration>"
+                    +str(picture)+"</Duration></MainPicture>"
+                    "<MainSound><EditRate>24 1</EditRate><Duration>"
+                    +str(sound)+"</Duration></MainSound>"
+                    "</AssetList></Reel></ReelList></CompositionPlaylist>")
+            cpl.write_text(xml(24,24))
+            timing=inspect_cpl_timing(root,24)
+            self.assertEqual(timing["frames"],24)
+            self.assertEqual(timing["samples_per_channel"],48000)
+            with self.assertRaises(RuntimeError):
+                inspect_cpl_timing(root,25)
+            cpl.write_text(xml(24,23))
+            with self.assertRaises(RuntimeError):
+                inspect_cpl_timing(root,24)
+            cpl.write_text(xml(24,24).replace("24 1","25 1"))
+            with self.assertRaises(RuntimeError):
+                inspect_cpl_timing(root,24)
 
     def test_doctype_entities_and_unknown_files_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
