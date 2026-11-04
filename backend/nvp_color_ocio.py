@@ -48,8 +48,7 @@ def _deps():
 def _config():
     ocio, _ = _deps()
     cfg = ocio.Config.CreateFromBuiltinConfig(CONFIG_NAME)
-    spaces = [cfg.getColorSpaceNameByIndex(i)
-              for i in range(cfg.getNumColorSpaces())]
+    spaces = [space.getName() for space in cfg.getColorSpaces()]
     if SOURCE_COLOR_SPACE not in spaces:
         raise RuntimeError("Pinned ACES 2 config lacks expected linear Rec.709 source space")
     if OUTPUT_DISPLAY not in list(cfg.getDisplays()):
