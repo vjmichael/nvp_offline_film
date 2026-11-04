@@ -38,7 +38,7 @@ def profile_for(width:int,height:int)->ResolutionProfile:
     if area<=1280*720:
         return ResolutionProfile("HD",width,height,2,2048,raw)
     if area<=1920*1080:
-        return ResolutionProfile("full_HD",width,height,1,4096,raw)
+        return ResolutionProfile("full_HD",width,height,1,3072,raw)
     if area<=3840*2160:
         return ResolutionProfile("UHD_4K",width,height,1,8192,raw)
     raise ValueError("Unsupported rendering dimensions")
