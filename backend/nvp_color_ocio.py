@@ -134,6 +134,8 @@ def apply_view(pixels, cpu, *, clip_threshold=0.02):
         raise RuntimeError("Untrusted scene-linear pixels contain NaN/Infinity")
     graded = np.array(pixels, dtype=np.float32, copy=True, order="C")
     alpha_before = graded[...,3].copy()
+    if not np.allclose(alpha_before, 1.0, atol=1e-6, rtol=0):
+        raise RuntimeError("Opaque RGB mastering refuses transparent EXR without approved compositing")
     cpu.applyRGBA(graded)
     if not np.isfinite(graded).all():
         raise RuntimeError("OCIO output has nonfinite pixels")
