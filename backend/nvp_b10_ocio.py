@@ -15,6 +15,12 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import sys
+
+# The OS-contained executable runs this *pinned installed source file*
+# directly from a private job directory, not an arbitrary import location.
+if __name__=="__main__" and not __package__:
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 from backend.nvp_exr_fidelity import inspect_exr_header
 
