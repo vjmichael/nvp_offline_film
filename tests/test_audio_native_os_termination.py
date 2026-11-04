@@ -37,7 +37,8 @@ class ActualAudioContainment(unittest.TestCase):
         self.host=NativeAudioHost(self.ledger,self.root/"native",
                                   verify_creator_action=lambda event,scope:
                                   event=="creator_confirmed" and
-                                  scope["final_master"] is False)
+                                  scope["final_master"] is False,
+                                  strict_linux_tree=False)
         self.src=self.root/"dialogue.wav"
         self.n=RATE*3
         with wave.open(str(self.src),"wb") as wav:
@@ -101,7 +102,8 @@ class ActualAudioContainment(unittest.TestCase):
         # rather than relying on a stale in-memory worker handle.
         restarted=NativeAudioHost(self.ledger,self.root/"native",
                 verify_creator_action=lambda event,scope: event=="creator_confirmed"
-                and scope["final_master"] is False)
+                and scope["final_master"] is False,
+                strict_linux_tree=False)
         recovered=restarted.recover_stopped(job)
         self.assertEqual(recovered["state"],"reconciled")
         self.assertGreaterEqual(recovered["next_sample"],RATE)
@@ -120,7 +122,8 @@ class ActualAudioContainment(unittest.TestCase):
         self.assertEqual(self.ledger.get_task(job)["state"],"INTERRUPTED")
         restarted=NativeAudioHost(self.ledger,self.root/"native",
             verify_creator_action=lambda event,scope:
-            event=="creator_confirmed" and scope["final_master"] is False)
+            event=="creator_confirmed" and scope["final_master"] is False,
+            strict_linux_tree=False)
         proof=restarted.recover_stopped(job)
         self.assertEqual(proof["state"],"reconciled")
         first=(self.root/"rendered"/"mix_chunk_0000000.pcm").read_bytes()
