@@ -97,3 +97,32 @@ jobs:
         run: npx vitest run src/ResourceActivityPanel.test.jsx
       - name: Build integrated NVP desktop web UI
         run: npm run build
+
+  linux-real-guarded-blender:
+    name: Real Blender 4.x CPU queue, memory admission, task phases and source hash audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP test runtime and actual distribution Blender
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+      - name: Execute real governed Blender without a GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_stack02c3_guarded_blender_fixture \
+            --out acceptance_artifacts/stack02c3_guarded_blender
+      - name: Preserve actual native Blender resource-guard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-stack02c3-real-resource-guarded-blender
+          path: acceptance_artifacts/stack02c3_guarded_blender/
+          retention-days: 7
+          if-no-files-found: warn
