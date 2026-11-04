@@ -40,6 +40,11 @@ class TaskLedger:
         self.db_path=self.root/"task_activity.sqlite3"
         self.sampler=sampler
         with self._db() as db:
+            # Switch journal mode only during schema initialization. Reissuing
+            # PRAGMA journal_mode=WAL on every per-task connection can contend
+            # with a second NVP host in the admission BEGIN IMMEDIATE window.
+            # Busy timeout is established before this initialization.
+            db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS tasks (
                     id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL,
@@ -61,9 +66,10 @@ class TaskLedger:
     def _db(self):
         db=sqlite3.connect(self.db_path,timeout=20,isolation_level=None)
         try:
-            db.execute("PRAGMA journal_mode=WAL")
-            db.execute("PRAGMA synchronous=FULL")
+            # First operation must install busy handler. Never reconfigure WAL
+            # while another process is holding admission's write transaction.
             db.execute("PRAGMA busy_timeout=20000")
+            db.execute("PRAGMA synchronous=FULL")
             yield db
         finally:db.close()
 
