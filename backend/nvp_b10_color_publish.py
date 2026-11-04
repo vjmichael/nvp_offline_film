@@ -52,11 +52,10 @@ def publish_acescg_frame(host:NativeOCIOColorWorker,job_id:str):
         "acescg_exr_sha256":converted["sha256"],
         "acescg_exr_size_bytes":converted["size_bytes"],
         "color_transform_receipt_sha256":receipt_sha,
-        "ocio_config_uri":proof["config_serialized_sha256"] and
-                            "ocio://cg-config-v4.0.0_aces-v2.0_ocio-v2.5",
+        "ocio_config_uri":json.loads(report_bytes)["config"]["config_uri"],
         "ocio_config_serialized_sha256":proof["config_serialized_sha256"],
         "target_color_space":"ACEScg",
-        "source_color_space":"Linear Rec.709 (sRGB)",
+        "source_color_space":json.loads(report_bytes)["source_space"],
         "channel_type":"IEEE_FLOAT32",
         "alpha_unchanged":True,
         "working_aces2_cg_conversion_verified":True,
@@ -91,6 +90,7 @@ def verify_indexed_acescg_frame(capture,project_id,presentation_id):
         data.get("format")!=FORMAT or data.get("project_id")!=project_id or
         data.get("target_color_space")!="ACEScg" or
         data.get("channel_type")!="IEEE_FLOAT32" or
+        data.get("ocio_config_uri")!="ocio://cg-config-v4.0.0_aces-v2.0_ocio-v2.5" or
         data.get("working_aces2_cg_conversion_verified") is not True or
         data.get("original_digital_take_modified") is not False or
         data.get("display_output_transform_verified") is not False):
@@ -118,6 +118,8 @@ def verify_indexed_acescg_frame(capture,project_id,presentation_id):
         raise RuntimeError("Stored ACEScg image size changed")
     receipt=json.loads(index.get_blob(
         project_id,data["color_transform_receipt_sha256"]))
+    if receipt.get("source_space")!=data["source_color_space"]:
+        raise RuntimeError("Indexed conversion input color space changed")
     width,height=base["data"]["resolution"]
     proof=verify_acescg_frame(
         Path(original["path"]),Path(converted["path"]),receipt,
