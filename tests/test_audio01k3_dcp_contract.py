@@ -65,6 +65,36 @@ class DCPContract(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 inspect_dcp_directory(dcp)
 
+    def test_independent_validator_rejects_nonzero_and_skipped_checks(self):
+        import os
+        import sys
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            dcp=root/"dcp"
+            dcp.mkdir()
+            (dcp/"ASSETMAP.xml").write_text(
+                "<AssetMap><Path>CPL.xml</Path><Path>PKL.xml</Path>"
+                "<Path>picture.mxf</Path><Path>sound.mxf</Path></AssetMap>")
+            (dcp/"VOLINDEX.xml").write_text("<VolumeIndex/>")
+            (dcp/"CPL.xml").write_text(
+                "<CompositionPlaylist><Id>id</Id></CompositionPlaylist>")
+            (dcp/"PKL.xml").write_text(
+                "<PackingList><Id>id</Id></PackingList>")
+            (dcp/"picture.mxf").write_bytes(b"P"*2048)
+            (dcp/"sound.mxf").write_bytes(b"S"*2048)
+            # These intentionally fake validators only prove REJECTION
+            # pathways; they NEVER count as a positive native DCP result.
+            if os.name!="nt":
+                bad=root/"dcpdoctor"
+                bad.write_text("#!/bin/sh\\necho strict validation rejected >&2\\nexit 1\\n")
+                bad.chmod(0o700)
+                with self.assertRaises(RuntimeError):
+                    validate_strict_smpte(dcp,bad)
+                bad.write_text("#!/bin/sh\\necho check_skipped\\nexit 0\\n")
+                bad.chmod(0o700)
+                with self.assertRaises(RuntimeError):
+                    validate_strict_smpte(dcp,bad)
+
     def test_doctype_entities_and_unknown_files_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             dcp=Path(temp)
