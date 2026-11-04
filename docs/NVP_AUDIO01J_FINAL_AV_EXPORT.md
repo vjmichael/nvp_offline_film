@@ -50,9 +50,13 @@ sample tick. The result is a new staged directory containing:
 - `final_picture_sound.mov`
 - `final_av_manifest.json`
 
-After fsync and atomic same-filesystem directory promotion, FilmIndex records
-a new `master` revision with dependency edges to the original picture lock
-and final audio delivery. `dcp_delivered` remains **false**. No DCP, surround
+After fsync and atomic same-filesystem directory promotion, the **worker**
+registers only an unapproved `presentation` candidate revision. The trusted
+host must first reap the worker, durably record its stop, independently decode
+the candidate, inspect the worker's receipt and verify current creator audio
+approval. Only then does the host register the terminal `master` revision,
+with immutable FilmIndex dependency edges to the candidate, picture lock and
+final audio delivery. `dcp_delivered` remains **false**. No DCP, surround
 mix or distribution package is implied.
 
 ## Native completion and recovery
@@ -80,7 +84,7 @@ complete unmocked B14 scene-linear filmmaking.
 
 `tests/test_audio01j_final_av_crash_matrix.py` and
 `tests/test_audio01j_picture_lock_crash_matrix.py` inject real abrupt
-`os._exit(97)` at 19 named persistence boundaries; coverage tests require
+`os._exit(97)` at 20 named persistence boundaries; coverage tests require
 each checkpoint to appear once and have a subprocess test. The opt-in fault
 switches are inert in production.
 
@@ -92,12 +96,14 @@ Job Object bindings.
 
 - **Exact-head native CI jobs** must genuinely execute and pass; no passing
   AUDIO-01J Windows/Linux native run is asserted in this document.
-- The final FilmIndex `master` record is registered by the contained worker
-  after its own full decoded verification, but **before** the host's durable
-  stop/receipt reconciliation. Consumers MUST use the trusted
-  `NativeAudio01JHost.verify_published` API rather than trusting the bare
-  worker-published `final_master=True` field. Moving terminal master
-  publication entirely into the trusted host is recommended before release.
+- The release-critical premature master publication gap has been closed:
+  workers only create `unapproved_synchronized_av_candidate` with
+  `final_master=False` and `director_approved=False`. The trusted host
+  alone publishes a `master` record after durable OS-stop evidence and
+  independent decoded proof. The host-only master registration itself has
+  a separate crash-injection checkpoint. Consumers still MUST use
+  `NativeAudio01JHost.verify_published`, which confirms completed creator
+  event, native grant and FilmIndex media custody.
 - Actual Win32 non-cooperative worker-tree termination and crash/power-loss
   recovery require dedicated machine acceptance, including Windows parent
   directory durability and race-proof source-path custody.
