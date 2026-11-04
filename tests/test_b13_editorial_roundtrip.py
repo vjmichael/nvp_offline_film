@@ -173,7 +173,7 @@ class StrictOTIORoundTrip(unittest.TestCase):
                     parse_edited_otio(wire,invented_delivery())
         timeline=build_otio(CUTS,project_id="a"*32,
               source_take_id="take_unit",review_id="review_unit",frame_count=120)
-        timeline.metadata.clear()
+        timeline.metadata["nvp"]={}
         with self.assertRaisesRegex(RuntimeError,"origin"):
             parse_edited_otio(otio.adapters.write_to_string(
                 timeline,adapter_name="otio_json").encode("utf8"),invented_delivery())
