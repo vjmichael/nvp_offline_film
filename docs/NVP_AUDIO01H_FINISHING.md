@@ -45,3 +45,22 @@ The pure authoring API does not itself provide native process containment or dur
 The 01H.2 staging currently uses absent-only destination creation and immutable FilmIndex media indexing; an interruption may leave an unregistered WAV. It does NOT yet have a dedicated durable journal, OS-stop witness or recovery reconciler. Never characterize it as transactional crash-complete publication.
 
 AUDIO-01H.3 creator review is an immutable decision record, not yet a complete UI-facing approval workflow. Native event authentication, anti-replay, source-pinned final delivery and media standard target policy remain open.
+
+
+## AUDIO-01H native integration and E2E candidate (current head)
+
+- `backend/nvp_audio01h_native_host.py` provides a trusted, per-operation host entrypoint using existing `ApprovedTaskBindings`, `AdmissionRequest`, `TaskLedger`, `launch_contained` and `wait_guarded`.
+- `tools/nvp_audio01h_native_worker.py` executes only a canonical sealed automation plan. A worker cannot manufacture creator consent; its result must match independent FilmIndex verification before ledger completion.
+- A durable stopped-worker flag is written only after the native process is reaped. `recover_completed` requires that witness, unchanged source digest, expected automation points, unchanged output bytes, worker receipt and FilmIndex. It never rerenders and cannot clear an uncertain ACTIVE reservation.
+- `tools/nvp_audio01h_measure_worker.py` runs actual FFmpeg EBU R128 under the same native OS containment. The host independently checks the received evidence and rechecks exact creator permission before publishing a mix decision.
+- Creator action IDs are reserved in SQLite **before** publication, preventing reuse after a crash; a lost event is fail-closed, not silently replayed.
+- `tests/test_audio01h_native_e2e.py` creates a real indexed stereo/48kHz two-stem fixture (dialogue + music) and exact composite, runs approved contained sample automation, compares unchanged source hashes, checks FilmIndex, performs actual FFmpeg loudness inspection, rejects unauthorized decisions, records ACCEPT then REVOKE, and tests restart/no-rerender plus missing stop-witness denial.
+- `.github/workflows/nvp-audio01h-automation.yml` now runs the above on Windows 2025/Ubuntu 24.04, Python 3.11/3.13 and installs Win32 Job Object bindings.
+
+### Claims deliberately excluded
+
+This E2E test starts from **real fixture WAV samples arranged into indexed AUDIO-01E-compatible stem records**. It does not independently execute the upstream AUDIO-01D chunk engine or authenticate an actual human UI event source. It covers the integrated AUDIO-01H native path, not all NVP production stages from a raw timeline.
+
+The implementation is committed; **Windows/Linux CI execution remains unverified until exact-head successful jobs are observed.** A file creation or queued workflow is not a passed test. The strict Linux delegated-cgroup-v2 gate remains explicitly deferred. The native stop flag does not prove full host-power-loss durability or transferable ownership across two live supervisors. No mastered deliverable or DCP approval is emitted.
+
+Final production closeout still requires real human-event-origin attestation, host interruption/crash injection of this new 01H worker and measurement worker, and proof against output replacement after read-before-publish races.
