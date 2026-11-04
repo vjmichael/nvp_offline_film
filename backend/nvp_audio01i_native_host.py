@@ -521,6 +521,12 @@ class NativeAudio01IHost:
         doc=rec["data"];path=Path(folder)
         if rec["kind"]!="audio" or doc.get("format")!=DELIVERY:
             raise RuntimeError("Not a final audio delivery")
+        with self.ledger._db() as db:
+            source=db.execute("""SELECT COUNT(*) FROM native_audio01i_delivery_events
+                WHERE project_id=? AND delivery_id=? AND revision=?""",
+                (project_id,delivery_id,rec["revision"])).fetchone()
+        if not source or source[0]!=1:
+            raise PermissionError("Final master lacks a completed native creator approval event")
         if (path.is_symlink() or not path.is_dir() or
             (path/"manifest.json").is_symlink() or
             (path/"master.wav").is_symlink() or
