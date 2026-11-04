@@ -9,6 +9,10 @@ on:
       - nvp/stack02c3b9-native-exr-sequence-20261104
   workflow_dispatch:
 
+concurrency:
+  group: nvp-b10-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -54,8 +58,9 @@ jobs:
       - name: Check source authority, official OCIO processor, genuine Float32 EXR pixels and high-resolution headroom
         run: |
           python -m unittest discover -s tests -p test_b10_color.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B10 official OCIO and high-res tests failed' }
           python -m unittest discover -s tests -p test_b10_native_color_worker.py -v
-          if ($LASTEXITCODE -ne 0) { throw 'B10 OCIO or high-res tests failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'B10 native color authorization tests failed' }
           python -m unittest discover -s tests -p test_exr_fidelity.py -v
           if ($LASTEXITCODE -ne 0) { throw 'OpenEXR safety baseline failed' }
           python -m unittest discover -s tests -p test_exr_sequence_contract.py -v
