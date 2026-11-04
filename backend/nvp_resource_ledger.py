@@ -24,6 +24,8 @@ PHASES=frozenset({
     "external_model_wait","failed","cancelled",
 })
 TERMINAL=frozenset({"SUCCEEDED","FAILED","CANCELLED","INTERRUPTED"})
+SCHEDULER_LANES=frozenset({"interactive","standard","background"})
+SCHEDULER_OWNER=re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,79}")
 
 
 def default_runtime_dir():
@@ -60,6 +62,16 @@ class TaskLedger:
                     phase TEXT NOT NULL, detail TEXT NOT NULL,
                     completed_fraction REAL
                 );
+            """)
+            db.executescript("""
+                CREATE TABLE IF NOT EXISTS task_schedule (
+                    task_id TEXT PRIMARY KEY,
+                    owner_key TEXT NOT NULL,
+                    lane TEXT NOT NULL CHECK(lane IN ('interactive','standard','background')),
+                    queued_at REAL NOT NULL, claimed_at REAL
+                );
+                CREATE INDEX IF NOT EXISTS task_schedule_owner_order
+                    ON task_schedule(owner_key,lane,queued_at);
             """)
 
     @contextmanager
@@ -122,6 +134,104 @@ class TaskLedger:
             self._event(db,task_id,state,phase,reason,None)
             db.commit()
         return {"admitted":allowed,"state":state,"reason":reason,"margins":margins}
+
+
+    @staticmethod
+    def _schedule_args(owner_key,lane=None):
+        if not isinstance(owner_key,str) or not SCHEDULER_OWNER.fullmatch(owner_key):
+            raise ValueError("Trusted scheduler owner key invalid")
+        if lane is not None and lane not in SCHEDULER_LANES:
+            raise ValueError("Unknown priority lane")
+
+    def enqueue(self,request:AdmissionRequest,*,owner_key:str,lane:str="standard"):
+        """Queue only: never reserve memory or launch a process at enqueue."""
+        self._schedule_args(owner_key,lane)
+        if not isinstance(request,AdmissionRequest):
+            raise TypeError("Trusted typed admission request required")
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM tasks WHERE id=?",(request.task_id,)).fetchone():
+                db.rollback()
+                raise RuntimeError("Task ID already used; scheduling cannot overwrite work")
+            now=time.time()
+            detail="Awaiting trusted "+lane+" priority scheduler; no process started"
+            db.execute("""INSERT INTO tasks(id,kind,title,state,phase,detail,completed_fraction,
+                ram_mb,gpu_mb,device_id,reserved,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (request.task_id,request.kind,request.title,"QUEUED","waiting_for_resources",
+                 detail,None,request.ram_mb,request.gpu_mb,request.device_id,0,now,now))
+            db.execute("""INSERT INTO task_schedule(task_id,owner_key,lane,queued_at)
+                VALUES(?,?,?,?)""",(request.task_id,owner_key,lane,now))
+            self._event(db,request.task_id,"QUEUED","waiting_for_resources",detail,None)
+            db.commit()
+        return {"task_id":request.task_id,"state":"QUEUED","admitted":False,
+                "lane":lane,"reason":detail}
+
+    def claim_next(self,*,owner_key:str):
+        """Reserve the highest priority queued task for a trusted producer.
+
+        Atomic admission checks and reservation hold the same SQLite write
+        transaction. No process launch occurs here; a crash holds the budget.
+        Denied head-of-line work cannot be bypassed by a lower priority task.
+        """
+        self._schedule_args(owner_key)
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row=db.execute("""SELECT t.id,t.kind,t.title,t.ram_mb,t.gpu_mb,t.device_id,s.lane
+                FROM tasks t JOIN task_schedule s ON s.task_id=t.id
+                WHERE t.state='QUEUED' AND s.owner_key=?
+                ORDER BY CASE s.lane WHEN 'interactive' THEN 2
+                         WHEN 'standard' THEN 1 ELSE 0 END DESC,
+                         s.queued_at ASC,t.id ASC LIMIT 1""",(owner_key,)).fetchone()
+            if row is None:
+                db.commit()
+                return None
+            task_id,kind,title,ram_mb,gpu_mb,device_id,lane=row
+            request=AdmissionRequest(task_id,kind,title,ram_mb,gpu_mb,device_id)
+            reserved=db.execute("""SELECT COALESCE(SUM(ram_mb),0),
+                COALESCE(SUM(CASE WHEN device_id=? THEN gpu_mb ELSE 0 END),0)
+                FROM tasks WHERE reserved=1""",(device_id,)).fetchone()
+            allowed,reason,margins=decide_admission(
+                self.sampler(),request,int(reserved[0]),int(reserved[1]))
+            now=time.time()
+            if allowed:
+                db.execute("""UPDATE tasks SET state='ACTIVE',phase='starting',
+                    detail=?,reserved=1,updated_at=? WHERE id=? AND state='QUEUED'""",
+                    (reason,now,task_id))
+                db.execute("UPDATE task_schedule SET claimed_at=? WHERE task_id=?",(now,task_id))
+                self._event(db,task_id,"ACTIVE","starting",reason,None)
+            else:
+                old=db.execute("SELECT detail FROM tasks WHERE id=?",(task_id,)).fetchone()[0]
+                if old!=reason:
+                    # Polling must not invent a worker heartbeat.
+                    db.execute("UPDATE tasks SET detail=? WHERE id=?",(reason,task_id))
+                    self._event(db,task_id,"QUEUED","waiting_for_resources",reason,None)
+            db.commit()
+        return {"task_id":task_id,"lane":lane,"state":"ACTIVE" if allowed else "QUEUED",
+                "admitted":allowed,"reason":reason,"margins":margins}
+
+    def cancel_queued(self,task_id:str,*,owner_key:str):
+        """Never cancel an ACTIVE task or release memory before OS cleanup."""
+        self._schedule_args(owner_key)
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row=db.execute("""SELECT t.state FROM tasks t JOIN task_schedule s
+                ON s.task_id=t.id WHERE t.id=? AND s.owner_key=?""",
+                (task_id,owner_key)).fetchone()
+            if row is None:
+                db.rollback()
+                raise PermissionError("No queued task owned by this producer")
+            if row[0]!="QUEUED":
+                db.rollback()
+                raise RuntimeError("Only never-started queued work can be cancelled")
+            now=time.time()
+            detail="Cancelled before resource admission; no worker started"
+            db.execute("""UPDATE tasks SET state='CANCELLED',phase='cancelled',detail=?,
+                completed_fraction=NULL,reserved=0,updated_at=? WHERE id=?""",
+                (detail,now,task_id))
+            self._event(db,task_id,"CANCELLED","cancelled",detail,None)
+            db.commit()
+        return {"task_id":task_id,"state":"CANCELLED","worker_started":False}
 
     def observe_external(self,task_id,title,phase="external_model_wait",
                          detail="Awaiting separately managed local AI server"):
@@ -201,10 +311,12 @@ class TaskLedger:
         sample=self.sampler()
         with self._db() as db:
             db.row_factory=sqlite3.Row
-            rows=[dict(x) for x in db.execute("""SELECT id,kind,title,state,phase,detail,
-                completed_fraction,ram_mb,gpu_mb,device_id,created_at,updated_at
-                FROM tasks ORDER BY CASE WHEN state IN ('ACTIVE','QUEUED','OBSERVING')
-                THEN 0 ELSE 1 END,updated_at DESC LIMIT ?""",(limit,))]
+            rows=[dict(x) for x in db.execute("""SELECT t.id,t.kind,t.title,t.state,t.phase,t.detail,
+                t.completed_fraction,t.ram_mb,t.gpu_mb,t.device_id,t.created_at,t.updated_at,
+                s.lane AS queue_lane
+                FROM tasks t LEFT JOIN task_schedule s ON s.task_id=t.id
+                ORDER BY CASE WHEN t.state IN ('ACTIVE','QUEUED','OBSERVING')
+                THEN 0 ELSE 1 END,t.updated_at DESC LIMIT ?""",(limit,))]
             reserved=db.execute("""SELECT COALESCE(SUM(ram_mb),0),
                 COALESCE(SUM(gpu_mb),0) FROM tasks WHERE reserved=1""").fetchone()
         # Never show an abandoned ACTIVE row as definitely still rendering.

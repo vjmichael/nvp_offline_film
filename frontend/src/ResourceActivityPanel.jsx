@@ -45,7 +45,7 @@ function Task({ item }) {
     {active && (measured
       ? <progress aria-label={item.title+' measured progress'} max="100" value={Math.round(item.completed_fraction*100)}/>
       : <progress aria-label={item.title+' working; percent unknown'}/>)}
-    {item.state==='QUEUED' && <p className="ra-wait">Not started. NVP is preserving computer memory headroom.</p>}
+    {item.state==='QUEUED' && <p className="ra-wait">Not started. NVP is preserving computer memory headroom.{item.queue_lane ? ' Priority: '+item.queue_lane+'.' : ''}</p>}
     {item.state==='STALE_UNVERIFIED' && <p className="ra-wait">No recent worker heartbeat. NVP is holding the reservation until safe recovery is verified.</p>}
     {item.detail && <p>{item.detail}</p>}
   </div>;
