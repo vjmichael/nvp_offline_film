@@ -36,10 +36,8 @@ scene.render.image_settings.color_mode="RGBA"
 scene.render.image_settings.color_depth="32"
 scene.render.image_settings.exr_codec="ZIP"
 scene.view_settings.view_transform="Raw"
-scene.view_settings.look="Medium High Contrast" if False else "Medium High Contrast"
-# Raw view intentionally bypasses display look. Reset any earlier look,
-# exposure and gamma so no display-space transform can enter the EXR path.
-scene.view_settings.look="Medium High Contrast" if False else "Medium High Contrast"
+# Raw is a scene-linear, display-untransformed write path. Avoid a
+# display look (the available looks depend on the current OCIO config).
 scene.view_settings.exposure=0
 scene.view_settings.gamma=1
 scene.render.film_transparent=False
