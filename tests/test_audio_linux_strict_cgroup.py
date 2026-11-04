@@ -33,6 +33,8 @@ class StrictLinuxAudioWorker(unittest.TestCase):
         try:
             current_delegated_parent()
         except (OSError,RuntimeError) as exc:
+            if os.environ.get("NVP_REQUIRE_DELEGATED_CGROUP")=="1":
+                self.fail("Required strict guardian acceptance environment unavailable: "+str(exc))
             self.skipTest("No actual delegated cgroup available: "+str(exc))
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
