@@ -27,7 +27,8 @@ jobs:
       - name: Compile read-only production preflight
         run: python -m compileall -q backend/nvp_render_preflight.py backend/nvp_render_source_stage.py backend/nvp_api.py tests/test_render_preflight.py tests/test_render_source_stage.py
       - name: Test real director-approved project state and safe preflight API
-        run: python -m unittest discover -s tests -p test_render_preflight.py -v
+        run: |
+          python -m unittest discover -s tests -p test_render_preflight.py -v
           python -m unittest discover -s tests -p test_render_source_stage.py -v
       - name: Preserve production-scene and native approval contracts
         run: |
@@ -49,7 +50,8 @@ jobs:
       - name: Compile read-only production preflight
         run: python -m compileall -q backend/nvp_render_preflight.py backend/nvp_render_source_stage.py backend/nvp_api.py tests/test_render_preflight.py tests/test_render_source_stage.py
       - name: Test real director-approved project state and safe preflight API
-        run: python -m unittest discover -s tests -p test_render_preflight.py -v
+        run: |
+          python -m unittest discover -s tests -p test_render_preflight.py -v
           python -m unittest discover -s tests -p test_render_source_stage.py -v
       - name: Preserve production-scene and native approval contracts
         run: |
