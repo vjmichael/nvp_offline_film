@@ -116,8 +116,12 @@ def view_to_rgb48(graded_linear,cpu,*,max_clip_fraction=.02):
     out=np.array(graded_linear,dtype=np.float32,order="C",copy=True)
     alpha=out[...,3].copy()
     cpu.applyRGBA(out)
-    if not np.isfinite(out).all() or not np.allclose(out[...,3],alpha,atol=1e-6,rtol=0):
-        raise RuntimeError("OCIO changed alpha or generated nonfinite display values")
+    nonfinite=int(np.count_nonzero(~np.isfinite(out)))
+    alpha_error=float(np.max(np.abs(out[...,3]-alpha)))
+    if nonfinite or alpha_error>1e-6:
+        raise RuntimeError(f"OCIO output alpha/nonfinite failure: nonfinite={nonfinite}, alpha_delta={alpha_error:.9g}, "
+                           f"source_rgb_max={float(np.max(graded_linear[...,:3])):.9g}, "
+                           f"view_rgb_min={float(np.nanmin(out[...,:3])):.9g}, view_rgb_max={float(np.nanmax(out[...,:3])):.9g}")
     vals=out[...,:3]
     outside=(vals<0)|(vals>1)
     n=int(np.count_nonzero(outside));fraction=n/vals.size
