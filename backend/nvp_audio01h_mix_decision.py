@@ -47,6 +47,8 @@ def record_mix_decision(capture, project_id, automated_id, decision_id,
         data.get("final_mix") is not False or
         data.get("director_approved") is not False):
         raise RuntimeError("Must review a frozen unapproved automated stem")
+    if data.get("source_stem_id") is not None:
+        raise RuntimeError("Individual stem review cannot be approved as final composite mix")
     wav_sha = data["automated_wav_sha256"]
     stored = capture.index.verify_media_file(project_id, wav_sha, "audio/wav")
     _check_evidence(evidence, wav_sha)
