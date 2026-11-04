@@ -15,7 +15,7 @@ const data={
     {id:'load_1',kind:'ai_loading',title:'Load AI model',state:'ACTIVE',phase:'loading_model',
       detail:'Provider measured load',completed_fraction:.5},
     {id:'queued_1',kind:'blender',title:'Scene 2',state:'QUEUED',phase:'waiting_for_resources',
-      detail:'Waiting for GPU memory headroom',completed_fraction:null}
+      detail:'Waiting for GPU memory headroom',completed_fraction:null,queue_lane:'interactive'}
   ]
 };
 
@@ -31,6 +31,7 @@ describe('NVP real computer/task activity UX',()=>{
     expect(screen.getByRole('progressbar',{name:/Render scene 1 working; percent unknown/i}).hasAttribute('value')).toBe(false);
     expect(screen.getByText(/Not started. NVP is preserving computer memory headroom/i)).toBeTruthy();
     expect(screen.getByText('Waiting for GPU memory headroom')).toBeTruthy();
+    expect(screen.getByText(/Priority: interactive/)).toBeTruthy();
   });
   it('never invents unknown VRAM or provider load progress',async()=>{
     globalThis.fetch.mockResolvedValue({ok:true,json:async()=>({

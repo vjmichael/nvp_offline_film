@@ -95,3 +95,7 @@ No product release until each selected redistributable third-party package has a
 ## Accepted decision — Blender-first, standalone OpenUSD deferred
 
 The creator explicitly approved an independent external production-worker architecture and Blender as sufficient for NVP's present 3D pipeline. This is recorded in [ADR STACK-002](NVP_ADR_STACK02_BLENDER_WORKER_USD_DEFERRED.md). **Selection of Blender as the primary external tool does not constitute permission to redistribute a particular GPL binary without audit**. The native `bpy` scripts and all Blender-dependent adapters require licensing review. Keep USD support through Blender when the supported interchange suffices; do not bundle a separate OpenUSD SDK to satisfy hypothetical future requirements.
+
+## STACK-02C3B1 priority queue adoption (2026-11-03)
+
+A native-producer-only scheduler slice is now CI accepted on [run 41775842472](https://github.com/vjmichael/nvp_offline_film/actions/runs/41775842472): 3/3 green. Rather than reinvent a queue service, the same SQLite FULL-sync task ledger serializes priority-ordered per-owner admission, FIFO within lane, safe queued-only cancellation, and durable reservations. Both Windows and Linux passed 9 new scheduler plus 10 existing governor tests; React passed 2 tests and built successfully. It is not a universal cross-engine dispatcher, managed AI model owner, preemption mechanism, GPU stress proof, or license/installer gate. [Scope and outstanding work](NVP_STACK02C3B1_PRIORITY_ADMISSION.md).

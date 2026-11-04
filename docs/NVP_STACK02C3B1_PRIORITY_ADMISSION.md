@@ -1,6 +1,6 @@
 # NVP-STACK-02C3B1 — Trusted-host priority admission
 
-**Development gate:** 2026-11-03. Based on the accepted STACK-02C3 resource governor. This is NOT an automatic film production dispatcher and does NOT claim managed AI model loading.
+**Acceptance:** CI run 41775842472 passed 3/3 jobs on code revision ca79b39b1cd19a8f6ecb4c999f6af046a84a8e4d (Linux 9 scheduler + 10 governor; Windows 9 + 10; React 2 and successful Vite build). This is a bounded scheduler primitive, not full production integration. Based on the accepted STACK-02C3 resource governor. This is NOT an automatic film production dispatcher and does NOT claim managed AI model loading.
 
 ## Design contract
 
