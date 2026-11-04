@@ -395,6 +395,11 @@ class BlenderWorkerSupervisor:
                     raise RuntimeError("Blender worker returned nonzero exit code "+str(rc))
                 self._check_inputs(op,jobdir)
                 audited=self._audit_outputs(op,jobdir)
+                # Strict Linux workers must prove their entire cgroup leaf
+                # cleaned up BEFORE storing an authoritative success record.
+                # A completed Blender parent may have left live descendants.
+                if op.require_linux_cgroup_v2 and sys.platform=="linux":
+                    proc.close()
                 self._transition(op.job_id,"SUCCEEDED",exit_code=0,outputs=audited,
                                  progress=log.stat().st_size)
                 return self.inspect(op.job_id)
