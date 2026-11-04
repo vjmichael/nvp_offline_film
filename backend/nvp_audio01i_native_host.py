@@ -60,6 +60,73 @@ class NativeAudio01IHost:
                delivery_id TEXT NOT NULL, revision INTEGER NOT NULL)""")
         self.bindings=ApprovedTaskBindings(ledger,approval_check=self._check)
 
+    def _inspect_contained(self,wav,ffmpeg,ffprobe,samples):
+        """Run real PCM24 readback in a resource-admitted contained process."""
+        wav=Path(wav)
+        if wav.is_symlink() or not wav.is_file():
+            raise RuntimeError("Unsafe source for native master inspection")
+        # Do not execute arbitrary commands supplied as a 'codec tool'.
+        if (Path(str(ffmpeg)).name.lower() not in ("ffmpeg","ffmpeg.exe") or
+            Path(str(ffprobe)).name.lower() not in ("ffprobe","ffprobe.exe")):
+            raise PermissionError("Only pinned native FFmpeg and FFprobe supported")
+        tools={}
+        for name,requested in (("ffmpeg",ffmpeg),("ffprobe",ffprobe)):
+            executable=shutil.which(str(requested))
+            if executable is None:raise RuntimeError("Missing real native "+name)
+            tools[name]=str(Path(executable).resolve(strict=True))
+        job="inspectjob"+secrets.token_hex(16)
+        folder=self.root/job
+        folder.mkdir(mode=0o700)
+        plan={"format":"nvp.audio01i.inspect_plan.v1",
+              "wav":str(wav.resolve(strict=True)),"wav_sha":sha_file(wav),
+              "samples":samples,
+              "ffmpeg":tools["ffmpeg"],"ffmpeg_sha":sha_file(tools["ffmpeg"]),
+              "ffprobe":tools["ffprobe"],"ffprobe_sha":sha_file(tools["ffprobe"])}
+        plan_file=folder/"plan.json"
+        with plan_file.open("xb") as out:
+            out.write(canonical_bytes(plan));out.flush();os.fsync(out.fileno())
+        admitted=self.ledger.admit(AdmissionRequest(
+            job,"compositing","Contained independent PCM24 inspection",1024))
+        if not admitted["admitted"]:
+            raise RuntimeError("No native budget available for independent inspection")
+        proc=None;reaped=False
+        try:
+            self.ledger.update(job,"verifying_output","Real independent PCM24 decode and loudness")
+            script=ROOT/"tools/nvp_audio01i_inspect_worker.py"
+            with (folder/"stdout.log").open("wb") as out,(folder/"stderr.log").open("wb") as err:
+                proc=launch_contained(
+                    [str(self.python),str(script),"--plan",str(plan_file)],
+                    cwd=str(folder),stdout=out,stderr=err,memory_mb=1024,
+                    linux_cgroup_tree_required=self.strict_linux_tree)
+                code=wait_guarded(proc,self.ledger,job,timeout_seconds=180)
+                if code:raise RuntimeError("Contained inspection failed: "+str(code))
+                proc.close();proc=None;reaped=True
+            receipt=folder/"inspection.json"
+            if receipt.is_symlink() or not receipt.is_file():
+                raise RuntimeError("No independently measured PCM24 receipt")
+            if (sha_file(wav)!=plan["wav_sha"] or
+                sha_file(tools["ffmpeg"])!=plan["ffmpeg_sha"] or
+                sha_file(tools["ffprobe"])!=plan["ffprobe_sha"]):
+                raise RuntimeError("Native measurement source changed after inspection")
+            measured=json.loads(receipt.read_bytes())
+            if (measured.get("samples_per_channel")!=samples or
+                measured.get("bit_depth")!=24 or
+                measured.get("sample_rate")!=48000 or
+                measured.get("measurement")!="ffmpeg_loudnorm_ebu_r128"):
+                raise RuntimeError("Invalid contained PCM24 measurement receipt")
+            self.ledger.finish(job,"SUCCEEDED","Independent native master verified")
+            return measured
+        except BaseException:
+            if proc is not None:
+                try:
+                    if proc.poll() is None:proc.terminate_tree()
+                    reaped=proc.poll() is not None
+                    proc.close()
+                except BaseException:reaped=False
+            if reaped and self.ledger.get_task(job)["state"]=="ACTIVE":
+                self.ledger.finish(job,"FAILED","Native master inspection rejected")
+            raise
+
     def _grant(self,job):
         with self.ledger._db() as db:
             db.row_factory=sqlite3.Row
@@ -223,8 +290,8 @@ class NativeAudio01IHost:
                 or sha_file(plan["destination"])!=doc["candidate_wav_sha256"]):
                 raise RuntimeError("Native mastering receipt and indexed candidate disagree")
             self.capture.index.verify_media_file(plan["project_id"],doc["candidate_wav_sha256"],"audio/wav")
-            measured=inspect_native(plan["destination"],plan["ffmpeg"],
-                                    plan["ffprobe"],doc["samples_per_channel"])
+            measured=self._inspect_contained(plan["destination"],plan["ffmpeg"],
+                                             plan["ffprobe"],doc["samples_per_channel"])
             if measured!=doc["analysis"]:raise RuntimeError("Independent master measurement mismatch")
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
@@ -283,8 +350,8 @@ class NativeAudio01IHost:
             raise RuntimeError("Master recovery has conflicting immutable evidence")
         self.capture.index.verify_media_file(
             plan["project_id"],doc["candidate_wav_sha256"],"audio/wav")
-        measured=inspect_native(target,plan["ffmpeg"],plan["ffprobe"],
-                                doc["samples_per_channel"])
+        measured=self._inspect_contained(target,plan["ffmpeg"],plan["ffprobe"],
+                                          doc["samples_per_channel"])
         if measured!=doc["analysis"]:
             raise RuntimeError("Recovered master decoded proof differs")
         if grant["result_sha"] not in (None,rec["document_sha256"]):
@@ -344,7 +411,7 @@ class NativeAudio01IHost:
         stored=self.capture.index.verify_media_file(
             project_id,doc["candidate_wav_sha256"],"audio/wav")
         src=Path(stored["path"])
-        independently=inspect_native(src,ffmpeg,ffprobe,doc["samples_per_channel"])
+        independently=self._inspect_contained(src,ffmpeg,ffprobe,doc["samples_per_channel"])
         if independently!=doc["analysis"]:
             raise RuntimeError("Delivery master loudness no longer matches proof")
         scope={"operation":"nvp.audio01i.approve_final_audio_delivery",
@@ -423,7 +490,8 @@ class NativeAudio01IHost:
         if (current["revision"]!=candidate["data"]["decision_revision"] or
             current["data"]["decision"]!="ACCEPT"):
             raise PermissionError("Previous director mix approval no longer current")
-        measured=inspect_native(path/"master.wav",ffmpeg,ffprobe,doc["analysis"]["samples_per_channel"])
+        measured=self._inspect_contained(path/"master.wav",ffmpeg,ffprobe,
+                                         doc["analysis"]["samples_per_channel"])
         if measured!=doc["analysis"]:
             raise RuntimeError("Delivered PCM24 differs from approved analysis")
         return {"status":"VERIFIED_FINAL_AUDIO","final_master":True,
