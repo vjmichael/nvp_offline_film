@@ -1,0 +1,44 @@
+name: NVP STACK-02C3B2 immutable work and owned CPU model contracts
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b2-owned-native-lifecycle-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c3b1-priority-admission-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-native-ownership:
+    name: Linux creator-authorized native task and model identity contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m compileall -q backend tests/test_owned_native_operations.py
+      - run: python -m unittest discover -s tests -p test_owned_native_operations.py -v
+      - run: python -m unittest discover -s tests -p test_resource_scheduler.py -v
+      - run: python -m unittest discover -s tests -p test_resource_governor.py -v
+      - run: python -m unittest discover -s tests -p test_blender_resource_admission.py -v
+
+  windows-native-ownership:
+    name: Windows creator-authorized native task and model identity contracts
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m compileall -q backend tests/test_owned_native_operations.py
+      - run: python -m unittest discover -s tests -p test_owned_native_operations.py -v
+      - run: python -m unittest discover -s tests -p test_resource_scheduler.py -v
+      - run: python -m unittest discover -s tests -p test_resource_governor.py -v
+      - run: python -m unittest discover -s tests -p test_blender_resource_admission.py -v
