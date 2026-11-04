@@ -217,6 +217,7 @@ class NativeAudioHost:
         job=admitted["task_id"]
         proc=None
         clean=False
+        worker_reaped=False
         staging_lock=None
         try:
             self.binding.verified_spec(job,owner_key=self.owner)
@@ -238,7 +239,9 @@ class NativeAudioHost:
                 code=wait_guarded(proc,self.ledger,job,timeout_seconds=timeout_seconds)
                 if code!=0:raise RuntimeError("Contained audio worker exited "+str(code))
                 proc.close();clean=True
+                worker_reaped=True
                 self._running.pop(job,None)
+                proc=None  # Windows PROCESS handle is invalid after close()
             self.ledger.update(job,"verifying_output","Replaying audio chunks independently")
             spec=self.journal.read(job)["spec"]
             proof=verify_chunked_preview(spec["plan"],spec["sources"],
@@ -258,15 +261,17 @@ class NativeAudioHost:
             if proc is not None:
                 try:
                     if proc.poll() is None:proc.terminate_tree()
+                    reaped=proc.poll() is not None
                     proc.close()
-                    clean=proc.poll() is not None
+                    clean=reaped
+                    worker_reaped=reaped
                 except BaseException:clean=False
                 self._running.pop(job,None)
             else:clean=True
             if clean:
                 # A pre-launch failure has no process to reap: do not invent
                 # an OS-stop witness. Only a real owned handle can supply it.
-                if proc is not None:
+                if worker_reaped:
                     with self.ledger._db() as db:
                         db.execute("BEGIN IMMEDIATE")
                         db.execute("""INSERT INTO audio_native_os_stop_receipts(
