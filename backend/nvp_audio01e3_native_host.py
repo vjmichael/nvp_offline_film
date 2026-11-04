@@ -324,7 +324,8 @@ class NativeAudioHost:
                 raise RuntimeError("Cannot reconcile a living contained worker")
             proc.close()
             self._running.pop(job)
-        if self.ledger.get_task(job)["state"]!="INTERRUPTED":
+        task=self.ledger.get_task(job)
+        if task is None or task["state"]!="INTERRUPTED":
             raise RuntimeError("Recovery requires OS-cleaned interrupted admission")
         with self.ledger._db() as db:
             witness=db.execute("""SELECT worker_reaped FROM audio_native_os_stop_receipts
