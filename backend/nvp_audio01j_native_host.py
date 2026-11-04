@@ -18,7 +18,9 @@ import time
 from backend.nvp_approved_tasks import ApprovedTaskBindings,canonical_bytes
 from backend.nvp_audio01j_picture_lock import approve_picture,validate_picture_lock
 from backend.nvp_audio01j_fault_matrix import crash_after
-from backend.nvp_audio01j_final_av import approved_inputs,verify_final_av
+from backend.nvp_audio01j_final_av import (
+    approved_inputs,verify_final_av,verify_av_candidate,
+    candidate_id_for,final_master_document)
 from backend.nvp_audio01i_mastering import sha_file
 from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
@@ -231,6 +233,61 @@ class NativeAudio01JHost:
         return {"job_id":job,"state":"QUEUED","export_id":export_id,
                 "creator_event_sha":nonce}
 
+    def _publish_verified_master(self,job,plan):
+        """Only trusted host may turn a stopped worker's candidate into a master."""
+        if self._grant(job)["stopped"]!=1:
+            raise PermissionError("No durable native OS-stop evidence for AV publication")
+        with self.ledger._db() as db:
+            event=db.execute("""SELECT COUNT(*) FROM native_audio01j_creator_events
+                WHERE project_id=? AND operation='final_av' AND object_id=?
+                AND revision IN (-1,1)""",
+                (plan["project_id"],plan["export_id"])).fetchone()
+        if not event or event[0]!=1:
+            raise PermissionError("Missing durably reserved exact creator export action")
+        self.audio_host.verify_delivery(
+            plan["project_id"],plan["audio_delivery_id"],plan["audio_dir"],
+            ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
+        verified=verify_av_candidate(
+            self.capture,plan["project_id"],plan["export_id"],
+            plan["destination"],plan["movie_dir"],plan["audio_dir"],
+            ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
+        candidate=self.capture.index.read_revision(
+            plan["project_id"],verified["candidate_id"],1)
+        receipt_file=self.root/job/"worker_receipt.json"
+        if receipt_file.is_symlink() or not receipt_file.is_file():
+            raise RuntimeError("Missing final AV worker candidate receipt")
+        receipt=json.loads(receipt_file.read_bytes())
+        if (receipt.get("format")!="nvp.audio01j.worker_receipt.v1"
+            or receipt.get("export_id")!=plan["export_id"]
+            or receipt.get("candidate_id")!=verified["candidate_id"]
+            or receipt.get("document_sha256")!=candidate["document_sha256"]
+            or receipt.get("mov_sha256")!=candidate["data"]["rendered_mov_sha256"]
+            or receipt.get("final_master") is not False
+            or receipt.get("dcp_delivered") is not False):
+            raise RuntimeError("Worker receipt cannot authorize a final master")
+        document=final_master_document(candidate)
+        deps=[{"object_id":verified["candidate_id"],"revision":1,"role":"presentation"},
+              {"object_id":plan["picture_lock_id"],"revision":1,"role":"presentation"},
+              {"object_id":plan["audio_delivery_id"],"revision":1,"role":"audio"}]
+        try:
+            previous=self.capture.index.read_revision(
+                plan["project_id"],plan["export_id"],1)
+        except KeyError:
+            recorded=self.capture.index.register_revision(
+                plan["project_id"],plan["export_id"],"master",document,
+                expected_revision=0,dependencies=deps)
+            master=self.capture.index.read_revision(
+                plan["project_id"],plan["export_id"],1)
+            if recorded["document_sha256"]!=master["document_sha256"]:
+                raise RuntimeError("Host master publication digest changed")
+        else:
+            master=previous
+            if (master["kind"]!="master" or master["data"]!=document
+                or master["dependencies"]!=sorted(
+                    deps,key=lambda d:(d["object_id"],d["revision"],d["role"]))):
+                raise RuntimeError("Conflicting host-only master publication")
+        return master,verified
+
     def run_next(self,*,timeout_seconds=900):
         admitted=self.bindings.claim_next(owner_key=self.owner)
         if admitted is None or not admitted["admitted"]:return admitted
@@ -262,23 +319,12 @@ class NativeAudio01JHost:
                 ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
             crash_after("av_stop_witness_committed")
             self.ledger.update(job,"verifying_output","Independent FilmIndex and decoded media proof")
+            rec,candidate_proof=self._publish_verified_master(job,plan)
+            crash_after("av_master_registered")
             verified=verify_final_av(
                 self.capture,plan["project_id"],plan["export_id"],
                 plan["destination"],plan["movie_dir"],plan["audio_dir"],
                 ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
-            rec=self.capture.index.read_revision(
-                plan["project_id"],plan["export_id"],1)
-            receipt_file=folder/"worker_receipt.json"
-            if receipt_file.is_symlink() or not receipt_file.is_file():
-                raise RuntimeError("Missing native AV receipt")
-            receipt=json.loads(receipt_file.read_bytes())
-            if (receipt.get("format")!="nvp.audio01j.worker_receipt.v1"
-                or receipt.get("export_id")!=plan["export_id"]
-                or receipt.get("document_sha256")!=rec["document_sha256"]
-                or receipt.get("mov_sha256")!=rec["data"]["rendered_mov_sha256"]
-                or receipt.get("final_master") is not True
-                or receipt.get("dcp_delivered") is not False):
-                raise RuntimeError("Native AV worker result and independent verification disagree")
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("UPDATE native_audio01j_grants SET result_sha=? WHERE job_id=?",
@@ -348,20 +394,7 @@ class NativeAudio01JHost:
         if sealed.is_symlink() or sha_file(sealed)!=grant["plan_sha"]:
             raise RuntimeError("Native AV plan was changed after admission")
         plan=json.loads(sealed.read_bytes())
-        file=self.root/job/"worker_receipt.json"
-        if file.is_symlink() or not file.is_file():
-            raise RuntimeError("No durable AV worker receipt")
-        receipt=json.loads(file.read_bytes())
-        row=self.capture.index.read_revision(plan["project_id"],plan["export_id"],1)
-        if (receipt.get("format")!="nvp.audio01j.worker_receipt.v1"
-            or receipt.get("document_sha256")!=row["document_sha256"]
-            or receipt.get("mov_sha256")!=row["data"]["rendered_mov_sha256"]
-            or receipt.get("final_master") is not True
-            or receipt.get("dcp_delivered") is not False):
-            raise RuntimeError("AV restart receipt differs from FilmIndex")
-        self.audio_host.verify_delivery(
-            plan["project_id"],plan["audio_delivery_id"],plan["audio_dir"],
-            ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
+        row,_=self._publish_verified_master(job,plan)
         verify_final_av(self.capture,plan["project_id"],plan["export_id"],
             plan["destination"],plan["movie_dir"],plan["audio_dir"],
             ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
