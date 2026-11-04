@@ -83,6 +83,38 @@ class AudioFinishing(unittest.TestCase):
         self.assertTrue(result["measured_not_normalized"])
         self.assertEqual(self.source.read_bytes(),before)
 
+    def test_real_ffmpeg_qc_then_creator_approval_after_restart(self):
+        import math
+        import shutil
+        if not shutil.which("ffmpeg"):
+            self.skipTest("Real FFmpeg required")
+        tone=self.root/"real_mix.wav"
+        with wave.open(str(tone),"wb") as w:
+            w.setnchannels(2);w.setsampwidth(2);w.setframerate(48000)
+            payload=bytearray()
+            for i in range(48000*3):
+                value=int(6500*math.sin(2*math.pi*440*i/48000))
+                payload.extend(struct.pack("<hh",value,value))
+            w.writeframes(bytes(payload))
+        qc=measure_mix(tone,target_lufs=-16.0,ceiling_dbtp=-1.0)
+        self.assertTrue(qc["qc_passed"],
+            "Reference stereo sine must satisfy measured technical QC")
+        capture=DigitalCapture(Studio(self.root/"actual_qc.sqlite3"))
+        project=capture.studio.create_project("Genuine mix","QC then approve")["id"]
+        capture.index.register_revision(project,"originalmix","audio",
+            {"format":"nvp.test.unapproved_mix","final_master":False},
+            expected_revision=0,dependencies=[])
+        event=object()
+        result=approve_final_mix(capture,project,"originalmix",tone,qc,
+            "genuineapprovedmix",event,
+            verify_creator_action=lambda e,scope: e is event and
+                scope["operation"]=="nvp.native.audio.final_mix_creator_approval")
+        self.assertTrue(result["final_mix"])
+        reopened=DigitalCapture(Studio(self.root/"actual_qc.sqlite3"))
+        self.assertEqual(
+            verify_final_mix_approval(reopened,project,"genuineapprovedmix",tone)
+            ["status"],"VERIFIED_CREATOR_APPROVED_FINAL_MIX")
+
     def test_approval_requires_real_qc_and_explicit_creator(self):
         capture=DigitalCapture(Studio(self.root/"studio.sqlite3"))
         pid=capture.studio.create_project("Mix approval","Source")["id"]
