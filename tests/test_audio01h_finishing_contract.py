@@ -21,7 +21,7 @@ class FakeIndex:
             "kind": "audio", "document_sha256": "a" * 64,
             "data": {"format": WAV_FORMAT, "final_mix": False,
                      "total_samples_per_channel": 4,
-                     "wav_outputs": [{"stem_id": "dialogue", "filename": "stem_dialogue.wav",
+                     "wav_outputs": [{"stem_id": None, "filename": "stem_dialogue.wav",
                                       "sha256": ""}]}
         }
 
@@ -74,14 +74,14 @@ class AudioFinishingTests(unittest.TestCase):
         self.dest = self.root / "processed.wav"
 
     def make_stem(self):
-        return automate_stem(self.capture, "project", "original", "dialogue",
+        return automate_stem(self.capture, "project", "original", None,
                              [[0, 0], [3, 0]], self.root, self.dest,
                              "automated", authorize=lambda _: True)
 
     def test_stem_requires_authorization_and_never_mutates_input(self):
         before = self.wav.read_bytes()
         with self.assertRaises(PermissionError):
-            automate_stem(self.capture, "project", "original", "dialogue",
+            automate_stem(self.capture, "project", "original", None,
                           [[0, 0], [3, 0]], self.root, self.dest, "automated",
                           authorize=lambda _: False)
         self.assertFalse(self.dest.exists())
