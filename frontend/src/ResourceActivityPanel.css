@@ -28,3 +28,5 @@
 .ra-task progress:indeterminate{background:linear-gradient(90deg,#343743 0%,#568777 45%,#343743 100%);background-size:200% 100%;animation:ra-activity 1.8s linear infinite}
 @keyframes ra-activity{0%{background-position:0 0}100%{background-position:200% 0}}
 @media(prefers-reduced-motion:reduce){.ra-task progress:indeterminate{animation:none;background:#568777}}
+
+.ra-task.ra-stale_unverified{border-color:#ba8860;background:#3a3032}
