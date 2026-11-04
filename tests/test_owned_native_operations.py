@@ -10,7 +10,7 @@ from unittest.mock import patch
 from backend.nvp_approved_tasks import ApprovedTaskBindings
 from backend.nvp_approved_blender_dispatch import ApprovedBlenderDispatcher
 from backend.nvp_blender_worker import BlenderOperation,BlenderWorkerSupervisor
-from backend.nvp_owned_models import OwnedCpuModelManager,OwnedCpuModelOperation
+from backend.nvp_owned_models import OwnedCpuModelManager,OwnedCpuModelOperation,create_local_owned_cpu_manager
 from backend.nvp_resource_guard import AdmissionRequest,ResourceSnapshot
 from backend.nvp_resource_ledger import TaskLedger
 
@@ -188,6 +188,24 @@ class OwnedModelTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 restarted.release(loaded["task_id"])
             self.assertEqual(restarted.durable_attempts()[0]["state"],"LOADED")
+
+
+    def test_official_sdk_factory_is_numeric_loopback_only(self):
+        import sys
+        from types import SimpleNamespace
+        with TemporaryDirectory() as root:
+            ledger=TaskLedger(root,sampler=measured)
+            with self.assertRaises(ValueError):
+                create_local_owned_cpu_manager(ledger,approval_check=lambda *_:True,port=443)
+            seen=[]
+            def make_client(host):
+                seen.append(host)
+                return FakeClient()
+            with patch.dict(sys.modules,{"lmstudio":SimpleNamespace(Client=make_client)}):
+                instance=create_local_owned_cpu_manager(
+                    ledger,approval_check=lambda *_:True,port=1234)
+                self.assertIsInstance(instance,OwnedCpuModelManager)
+            self.assertEqual(seen,["127.0.0.1:1234"])
 
     def test_memory_refusal_never_invokes_sdk(self):
         with TemporaryDirectory() as root:
