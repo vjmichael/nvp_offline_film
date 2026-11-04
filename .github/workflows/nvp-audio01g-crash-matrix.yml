@@ -41,7 +41,6 @@ jobs:
           python -m unittest discover -s tests -p test_audio01g_sqlite_crash_matrix.py -v
           if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows SQLite crash matrix failed' }
           python -m unittest discover -s tests -p test_audio01g_recovery_commit_matrix.py -v
-          python -m unittest discover -s tests -p test_audio01g_native_late_crash_matrix.py -v
           if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows recovery invariants failed' }
           python -m unittest discover -s tests -p test_audio01g_native_late_crash_matrix.py -v
           if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G real native worker late-stage crash failed' }
@@ -66,3 +65,4 @@ jobs:
           python -m unittest discover -s tests -p test_audio01g_fs_crash_matrix.py -v
           python -m unittest discover -s tests -p test_audio01g_sqlite_crash_matrix.py -v
           python -m unittest discover -s tests -p test_audio01g_recovery_commit_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01g_native_late_crash_matrix.py -v
