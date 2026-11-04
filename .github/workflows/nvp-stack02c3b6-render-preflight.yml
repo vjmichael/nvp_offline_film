@@ -1,0 +1,76 @@
+name: NVP B6 project-bound Blender render preflight
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b6-project-render-preflight-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c3b5-authenticated-lu-status-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-project-source:
+    name: Linux approved proxy world/Blender source preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP planning and API test prerequisites
+        run: python -m pip install -r requirements-foundation.txt httpx
+      - name: Compile read-only production preflight
+        run: python -m compileall -q backend/nvp_render_preflight.py backend/nvp_render_source_stage.py backend/nvp_api.py tests/test_render_preflight.py tests/test_render_source_stage.py
+      - name: Test real director-approved project state and safe preflight API
+        run: |
+          python -m unittest discover -s tests -p test_render_preflight.py -v
+          python -m unittest discover -s tests -p test_render_source_stage.py -v
+      - name: Preserve production-scene and native approval contracts
+        run: |
+          python -m unittest discover -s tests -p test_production_scene.py -v
+          python -m unittest discover -s tests -p test_resource_init_contention.py -v
+          python -m unittest discover -s tests -p test_resource_governor.py -v
+
+  windows-project-source:
+    name: Windows approved proxy world/Blender source preflight
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP planning and API test prerequisites
+        run: python -m pip install -r requirements-foundation.txt httpx
+      - name: Compile read-only production preflight
+        run: python -m compileall -q backend/nvp_render_preflight.py backend/nvp_render_source_stage.py backend/nvp_api.py tests/test_render_preflight.py tests/test_render_source_stage.py
+      - name: Test real director-approved project state and safe preflight API
+        run: |
+          python -m unittest discover -s tests -p test_render_preflight.py -v
+          python -m unittest discover -s tests -p test_render_source_stage.py -v
+      - name: Preserve production-scene and native approval contracts
+        run: |
+          python -m unittest discover -s tests -p test_production_scene.py -v
+          python -m unittest discover -s tests -p test_resource_init_contention.py -v
+          python -m unittest discover -s tests -p test_resource_governor.py -v
+
+  react-film-authoring:
+    name: React director-facing preflight and native job disclaimer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build the NVP Film authoring panel and run browser tests
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui
