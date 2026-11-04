@@ -1,0 +1,106 @@
+"""Real B14 integration: Blender -> FLOAT32 EXR -> ACES2 SDR16 -> B12 OTIO
+-> two real B13 edited revisions -> B14 output frames -> FilmIndex restart.
+The B14 call here exercises the worker-side engine; it is NOT creator UI
+approval or a production-contained B14 worker acceptance.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+
+from backend.nvp_b14_picture_conform import conform_sdr16_picture, verify_conformed_sdr16
+from backend.nvp_b13_editorial_roundtrip import FORMAT as EDIT_FORMAT
+from backend.nvp_digital_capture import DigitalCapture
+from backend.nvp_studio import Studio
+from tools.nvp_stack02c3b13_real_roundtrip import fixture as b13_fixture
+
+
+def _sha(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def fixture(out, blender):
+    root = Path(out).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    existing = b13_fixture(root / "b13_full_source", blender)
+    if (existing["original_source_32bit_FLOAT_EXR_frames"] != 120 or
+        existing["persistent_edit_revisions"] != 2 or
+        existing["original_FilmIndex_B12_package_reopened_after_restart"] is not True):
+        raise RuntimeError("B13 real immutable film/OTIO roundtrip is not accepted")
+    db = (root / "b13_full_source" / "b12_frozen_delivery" / "b11_original" /
+          "b9_frozen_source" / "frozen_take_source" / "film.sqlite3")
+    capture = DigitalCapture(Studio(db))
+    with capture.studio._connection() as conn:
+        projects = [row[0] for row in conn.execute("SELECT id FROM projects")]
+    if len(projects) != 1:
+        raise RuntimeError("NVP B14 expected exactly one B13 source film")
+    project_id = projects[0]
+    edit_id = existing["new_FilmIndex_edit_id"]
+    first = capture.index.read_revision(project_id, edit_id, 1)
+    second = capture.index.read_revision(project_id, edit_id, 2)
+    if first["data"]["format"] != EDIT_FORMAT or second["data"]["format"] != EDIT_FORMAT:
+        raise RuntimeError("B14 source was not genuine externally reimported OTIO")
+    package = Path(existing.get("disk_handoff_directory") or
+                   (root / "b13_full_source" / "b12_frozen_delivery"))
+    # The actual portable B12 directory comes from the accepted B12
+    # FilmIndex source; locate its exact manifest rather than guessing a path.
+    matches = [p.parent for p in (root / "b13_full_source").rglob("package_manifest.json")
+               if p.parent.joinpath("timeline.otio").is_file()]
+    if len(matches) != 1:
+        raise RuntimeError("Exactly one authentic B12 editorial package required")
+    package = matches[0]
+    done = []
+    for rev, source in ((1, first), (2, second)):
+        destination = root / ("b14_conformed_edit_revision_" + str(rev))
+        pid = "b14_presentation_r" + str(rev)
+        result = conform_sdr16_picture(capture, project_id, edit_id, rev,
+                                       package, destination, pid)
+        expected = source["data"]["editorial_map"]["frame_map"]
+        if result["frames"] != len(expected) or result["status"] != "VERIFIED_SDR16_PICTURE_CONFORM":
+            raise RuntimeError("B14 actual ordered video frames were not conformed")
+        for mapping in expected:
+            n = mapping["edit_frame"]
+            dest = destination / "media" / f"edit_{n:06d}.png"
+            if _sha(dest.read_bytes()) != mapping["original_png16_sha256"]:
+                raise RuntimeError("B14 conformed image differs from frozen original")
+        done.append({"revision": rev, "presentation_id": pid,
+                     "frames": len(expected), "document_sha256": result["document_sha256"]})
+    reopened = DigitalCapture(Studio(db))
+    for result in done:
+        checked = verify_conformed_sdr16(reopened, project_id, result["presentation_id"],
+                                         package,
+                                         root / ("b14_conformed_edit_revision_" +
+                                                 str(result["revision"])),
+                                         edit_revision=result["revision"])
+        if checked["frames"] != result["frames"]:
+            raise RuntimeError("B14 conformed presentation changed after FilmIndex restart")
+    if (reopened.index.read_revision(project_id, edit_id, 1)["document_sha256"] !=
+            first["document_sha256"] or
+        reopened.index.read_revision(project_id, edit_id, 2)["document_sha256"] !=
+            second["document_sha256"]):
+        raise RuntimeError("Original B13 editor revisions changed during conform")
+    report = {
+        "format": "nvp.b14.real_sdr16_edited_picture_conform.v1",
+        "original_frozen_FLOAT32_EXR_frames": 120,
+        "immutable_editorial_revision_count": 2,
+        "actual_edited_16bit_SDR_PNG_sequences": done,
+        "all_output_frames_rehashed_from_original_FilmIndex": True,
+        "conforms_after_FilmIndex_restart": True,
+        "B13_edits_unchanged": True,
+        "native_B14_worker_authorization_tested": False,
+        "edited_technical_MOV_rendered": False,
+        "audio_present": False, "final_master": False,
+    }
+    (root / "nvp_b14_real_edited_picture_acceptance.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2), encoding="utf8")
+    return report
+
+
+if __name__ == "__main__":
+    args = argparse.ArgumentParser()
+    args.add_argument("--out", required=True)
+    args.add_argument("--blender", default="blender")
+    config = args.parse_args()
+    print(json.dumps(fixture(config.out, config.blender), indent=2, sort_keys=True))
