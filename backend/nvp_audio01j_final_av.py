@@ -192,6 +192,12 @@ def verify_av_candidate(capture,project_id,export_id,output_dir,movie_dir,
         doc.get("final_master") is not False or
         doc.get("director_approved") is not False):
         raise RuntimeError("Not an immutable unapproved AV candidate")
+    expected_candidate_deps=sorted([
+        {"object_id":doc["picture_lock_id"],"revision":1,"role":"presentation"},
+        {"object_id":doc["audio_delivery_id"],"revision":1,"role":"audio"}
+    ],key=lambda d:(d["object_id"],d["revision"],d["role"]))
+    if row["dependencies"]!=expected_candidate_deps:
+        raise RuntimeError("Candidate FilmIndex source revision edges changed")
     if root.is_symlink() or not root.is_dir():
         raise RuntimeError("Missing AV candidate publication")
     manifest=root/"final_av_manifest.json";mov=root/"final_picture_sound.mov"
@@ -243,6 +249,13 @@ def verify_final_av(capture,project_id,export_id,output_dir,movie_dir,audio_dir,
         or doc.get("dcp_delivered") is not False
         or doc!=final_master_document(candidate)):
         raise RuntimeError("Host-approved final master does not match verified candidate")
+    expected_master_deps=sorted([
+        {"object_id":candidate_id,"revision":1,"role":"presentation"},
+        {"object_id":doc["picture_lock_id"],"revision":1,"role":"presentation"},
+        {"object_id":doc["audio_delivery_id"],"revision":1,"role":"audio"}
+    ],key=lambda d:(d["object_id"],d["revision"],d["role"]))
+    if row["dependencies"]!=expected_master_deps:
+        raise RuntimeError("Approved master FilmIndex dependency edges changed")
     verified=verify_av_candidate(capture,project_id,export_id,output_dir,
         movie_dir,audio_dir,ffmpeg=ffmpeg,ffprobe=ffprobe)
     return {"status":"VERIFIED_FINAL_AV_MASTER","frames":verified["frames"],
