@@ -55,6 +55,9 @@ class NativeAudio01IHost:
                ffmpeg_sha TEXT NOT NULL, ffprobe_sha TEXT NOT NULL,
                expires_at REAL NOT NULL, revoked INTEGER NOT NULL DEFAULT 0,
                stopped INTEGER NOT NULL DEFAULT 0, result_sha TEXT)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS native_audio01i_master_events(
+               event_sha TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+               candidate_id TEXT NOT NULL, job_id TEXT NOT NULL)""")
             db.execute("""CREATE TABLE IF NOT EXISTS native_audio01i_delivery_events(
                event_sha TEXT PRIMARY KEY, project_id TEXT NOT NULL,
                delivery_id TEXT NOT NULL, revision INTEGER NOT NULL)""")
@@ -217,6 +220,19 @@ class NativeAudio01IHost:
                "destination":str(target),"final_master":False}
         if self.creator(creator_event,dict(scope)) is not True:
             raise PermissionError("Creator did not authorize exact mastering action")
+        if type(creator_event) is not str or not creator_event:
+            raise PermissionError("Exact creator event identifier required")
+        event_sha=hashlib.sha256(creator_event.encode("utf8")).hexdigest()
+        # Reserve the per-turn mastering event before granting a job.
+        # Duplicate submission cannot spend the same creator action twice.
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM native_audio01i_master_events WHERE event_sha=?",
+                          (event_sha,)).fetchone():
+                raise PermissionError("Mastering creator event already consumed")
+            db.execute("INSERT INTO native_audio01i_master_events VALUES(?,?,?,?)",
+                       (event_sha,project_id,candidate_id,job))
+            db.commit()
         plan={"format":FORMAT,"studio_db_path":str(self.capture.studio.db_path),
               "project_id":project_id,"decision_id":decision_id,
               "decision_revision":decision_revision,"candidate_id":candidate_id,
