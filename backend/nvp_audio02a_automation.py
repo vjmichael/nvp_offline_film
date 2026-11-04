@@ -17,7 +17,7 @@ FORMAT="nvp.audio.automation_pcm16.v1"
 
 
 def automate_stem(source,destination,points):
-    """Apply bounded piecewise linear gain keyframes in millidecibels.
+    """Apply bounded piecewise linear gain keyframes in thousandths of unity.
 
     Values are gain in thousandths, not dB: 1000 = unity, 0 = silence.
     Fixed-point interpolation makes output deterministic across Windows/Linux.
