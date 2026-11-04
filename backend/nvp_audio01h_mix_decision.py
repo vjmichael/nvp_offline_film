@@ -9,6 +9,7 @@ import math
 from backend.nvp_audio01h_stem_revision import FORMAT as AUTOMATED_FORMAT
 from backend.nvp_film_index import _id
 from backend.nvp_audio01h_loudness import analyze_wav
+from backend.nvp_approved_tasks import canonical_bytes
 
 FORMAT = "nvp.audio01h.creator_mix_decision.v1"
 
@@ -56,9 +57,8 @@ def record_mix_decision(capture, project_id, automated_id, decision_id,
     # agree with the exact content-addressed FilmIndex WAV being approved.
     measured = (analyze_wav if measure is None else measure)(stored["path"], ffmpeg=ffmpeg,
                            expected_samples=data["samples_per_channel"])
-    for metric in ("integrated_lufs", "true_peak_dbtp", "loudness_range_lu"):
-        if abs(measured[metric] - evidence[metric]) > 0.01:
-            raise RuntimeError("Loudness evidence disagrees with indexed WAV")
+    if canonical_bytes(measured) != canonical_bytes(evidence):
+        raise RuntimeError("Full loudness evidence differs from indexed WAV remeasurement")
     try:
         previous = capture.index.read_revision(project_id, decision_id)
     except KeyError:
