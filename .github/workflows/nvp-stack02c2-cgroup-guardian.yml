@@ -101,7 +101,8 @@ jobs:
           mount | grep 'cgroup2' || :
           echo "Trying standard systemd --user --scope Delegate=yes, not unauthorized sysfs modification."
           timeout 100s systemd-run --user --scope --property=Delegate=yes \
-            --collect --quiet env PYTHONPATH="$PYTHONPATH" NVP_REQUIRE_REAL_CGROUP=1 \
+            --property=DelegateSubgroup=nvp.host --collect --quiet \
+            env PYTHONPATH="$PYTHONPATH" NVP_REQUIRE_REAL_CGROUP=1 \
             python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v
       - name: Explain unavailable delegated controls without fabricating acceptance
         if: failure()
