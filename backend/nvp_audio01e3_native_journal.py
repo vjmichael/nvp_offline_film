@@ -6,6 +6,7 @@ supply a trusted creator approval callback and a stopped-worker attestation.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import sqlite3
@@ -66,10 +67,19 @@ class AudioJobJournal:
                 FOREIGN KEY(job_id) REFERENCES audio_native_jobs(job_id)
             )""")
 
+    @contextmanager
     def _db(self):
-        db = sqlite3.connect(str(self.path), timeout=10)
-        db.execute("PRAGMA foreign_keys=ON")
-        return db
+        db = sqlite3.connect(str(self.path), timeout=20)
+        try:
+            db.execute("PRAGMA foreign_keys=ON")
+            db.execute("PRAGMA busy_timeout=20000")
+            yield db
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     def register(self, job_id, plan, sources, total_samples, directory, *,
                  verify_creator_action, creator_event):
