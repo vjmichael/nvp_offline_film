@@ -263,6 +263,15 @@ class NativeAudio01K3Host:
             qc.get("asset_sha256_proof")!=proof["assets"] or
             qc.get("validator_sha256")!=plan["dcpdoctor_sha"]):
             raise RuntimeError("Independent cinema QC missing or mismatched")
+        for name,digest in (
+            ("dcpdoctor_stdout.txt",qc["stdout_sha256"]),
+            ("dcpdoctor_stderr.txt",qc["stderr_sha256"])
+        ):
+            evidence=folder/name
+            if (evidence.is_symlink() or not evidence.is_file()
+                or evidence.stat().st_size>2*1024*1024
+                or sha_file(evidence)!=digest):
+                raise RuntimeError("Independent validator audit evidence changed")
         self._source(plan)
         return source,proof,qc
 
