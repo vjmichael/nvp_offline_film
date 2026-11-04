@@ -6,7 +6,7 @@ on:
       - nvp/stack02c3b6-project-render-preflight-20261103
   pull_request:
     branches:
-      - nvp/first-party-dlc-interface-rfc-20261103
+      - nvp/stack02c3b5-authenticated-lu-status-20261103
   workflow_dispatch:
 
 permissions:
