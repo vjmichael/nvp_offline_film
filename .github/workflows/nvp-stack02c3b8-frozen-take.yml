@@ -25,7 +25,7 @@ jobs:
       - name: Install offline NVP film/API test dependencies
         run: python -m pip install -r requirements-foundation.txt httpx
       - name: Compile B8 sources
-        run: python -m compileall -q backend/nvp_frozen_take_stage.py backend/nvp_frozen_take_render.py backend/nvp_frozen_take_audit.py tools/nvp_stack02c3b8_real_frozen_take.py tests/test_frozen_take_native.py
+        run: python -m compileall -q backend/nvp_frozen_take_stage.py backend/nvp_frozen_take_render.py backend/nvp_frozen_take_audit.py backend/nvp_frozen_take_presentation.py tools/nvp_stack02c3b8_real_frozen_take.py tests/test_frozen_take_native.py
       - name: Frozen indexed take invariants and native executable safety
         run: |
           python -m unittest discover -s tests -p test_frozen_take_native.py -v
@@ -46,7 +46,7 @@ jobs:
       - name: Install offline NVP film/API test dependencies
         run: python -m pip install -r requirements-foundation.txt httpx
       - name: Compile B8 sources
-        run: python -m compileall -q backend/nvp_frozen_take_stage.py backend/nvp_frozen_take_render.py backend/nvp_frozen_take_audit.py tools/nvp_stack02c3b8_real_frozen_take.py tests/test_frozen_take_native.py
+        run: python -m compileall -q backend/nvp_frozen_take_stage.py backend/nvp_frozen_take_render.py backend/nvp_frozen_take_audit.py backend/nvp_frozen_take_presentation.py tools/nvp_stack02c3b8_real_frozen_take.py tests/test_frozen_take_native.py
       - name: Frozen indexed take invariants and native executable safety
         run: |
           python -m unittest discover -s tests -p test_frozen_take_native.py -v
