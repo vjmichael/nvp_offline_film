@@ -64,6 +64,9 @@ class NativeAudio01JHost:
                 event_sha TEXT PRIMARY KEY,project_id TEXT NOT NULL,
                 operation TEXT NOT NULL,object_id TEXT NOT NULL,
                 revision INTEGER NOT NULL DEFAULT -1)""")
+        with ledger._db() as db:
+            db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS native_audio01j_one_action_per_output
+                ON native_audio01j_creator_events(project_id,operation,object_id)""")
         self.bindings=ApprovedTaskBindings(ledger,approval_check=self._check)
 
     def _grant(self,job):
@@ -172,7 +175,8 @@ class NativeAudio01JHost:
         target=Path(destination).absolute()
         if (target.exists() or target.is_symlink() or target.parent.is_symlink()
             or not target.parent.is_dir() or
-            target.with_name("."+target.name+".audio01j.stage").exists()):
+            target.with_name("."+target.name+".audio01j.stage").exists()
+            or target.with_name("."+target.name+".audio01j.stage").is_symlink()):
             raise RuntimeError("Final AV output/staging must be absent")
         try:self.capture.index.read_revision(project_id,export_id)
         except KeyError:pass
