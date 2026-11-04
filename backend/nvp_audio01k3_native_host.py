@@ -16,7 +16,7 @@ import time
 
 from backend.nvp_approved_tasks import ApprovedTaskBindings,canonical_bytes
 from backend.nvp_audio01k3_dcp import (
-    FORMAT, PROFILE, _safe_name, inspect_dcp_directory,sha_file)
+    FORMAT, PROFILE, _safe_name, inspect_dcp_directory,inspect_cpl_timing,sha_file)
 from backend.nvp_film_index import _id
 from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
@@ -196,6 +196,7 @@ class NativeAudio01K3Host:
               "audio_dir":str(Path(audio_dir).resolve(strict=True)),
               "movie":str(movie.resolve(strict=True)),
               "movie_sha256":distribution["data"]["delivered_movie_sha256"],
+              "frames":distribution["data"]["frames"],
               "candidate_id":candidate_id,"destination":str(dest),
               "stage":str(staged),"title":title,
               **{key:paths[key] for key in paths},
@@ -256,6 +257,9 @@ class NativeAudio01K3Host:
             or receipt.get("dcp_delivered") is not False
             or receipt.get("structural_proof")!=proof):
             raise RuntimeError("Contained DCP receipt differs from actual assets")
+        reel_clock=inspect_cpl_timing(source,plan["frames"])
+        if receipt.get("cpl_timing")!=reel_clock:
+            raise RuntimeError("DCP reel timing differs from approved source duration")
         qc=receipt.get("independent_qc")
         if (not isinstance(qc,dict) or
             qc.get("format")!="nvp.audio01k3.independent_smpte_qc.v1" or
@@ -335,6 +339,7 @@ class NativeAudio01K3Host:
              "distribution_sha256":plan["distribution_sha"],
              "original_mov_sha256":plan["movie_sha256"],
              "asset_proof":proof,"independent_qc":qc,
+             "cpl_timing":inspect_cpl_timing(dest,plan["frames"]),
              "dcp_candidate":True,"dcp_delivered":False,
              "creator_approved_theatrical_delivery":False}
         try:
