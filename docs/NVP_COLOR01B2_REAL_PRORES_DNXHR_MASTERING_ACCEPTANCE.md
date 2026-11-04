@@ -2,7 +2,7 @@
 
 **November 3, 2026 · engineering acceptance.**
 
-**Evidence state:** Linux local replay of an **actual frozen 16-frame Cycles OpenEXR source** passed both 10-bit video codecs, full decode, reference YUV comparison and FilmIndex persistence. GitHub's native self-contained fixture re-test was started separately; only count that lane passed after its exact workflow run reports success. This is a **technical mastering candidate**, not a director-approved, color-calibrated, broadcast-certified or theatrical master.
+**Evidence state:** **FULL NATIVE TECHNICAL ACCEPTANCE PASSED** in [GitHub Actions 41751400245](https://github.com/vjmichael/nvp_offline_film/actions/runs/41751400245): all **5/5 jobs green** (Linux codecs/grade tests, Windows contracts, React grading-guide build, official Blender/Cycles-to-two-master native acceptance, and pinned OCIO wheel diagnostics). An independent Linux local replay of the original 16 Cycles EXRs also passed both 10-bit codecs and FilmIndex source regrade. This is a **technical mastering candidate**, not a director-approved, color-calibrated, broadcast-certified or theatrical master.
 
 ## Full source-to-output graph
 
@@ -47,6 +47,21 @@ Input: unchanged NVP FilmIndex `film.sqlite3` and original 16 full-frame 256×14
 The FilmIndex database was copied to a separate local working directory before the replay; the original failed-CI artifact was not overwritten. Each movie was registered as an immutable, versioned derivative with direct dependencies on its source EXR presentation and original Digital Take. The full decoder and grading reference were independently regenerated on reopen.
 
 **Limitations:** This is a 16-frame, 256×144 technical result. Encoding itself is **lossy**. No independent display colorimeter, calibrated color chips, broadcaster signal validation, director approval, continuous longer film conform, sound mastering, DCI XYZ pipeline or physical theater ingest has been established.
+
+## Independent first-party GitHub acceptance (fully rechecked) — PASSED
+
+GitHub Actions [run 41751400245](https://github.com/vjmichael/nvp_offline_film/actions/runs/41751400245) executed the **real native fixture from scratch**: 16-frame original approved Digital Take, real Cycles HALF OpenEXR rendering, two separate ACES 2 Rec.1886 color grades, real ProRes and DNxHR QuickTime encoding, independent complete FFmpeg YUV10 sample decode, reference comparison and brand-new FilmIndex source/grade replay. This was **not** a merely mocked or synthetic-gradient end-to-end workflow.
+
+- Native artifact: `nvp-color01b2-real-prores-dnxhr-evidence` (ID `13285153967`), a ZIP whose **91 members** passed ZIP integrity testing. The two actual MOV bytes were independently SHA-256 rehashed and matched the in-database acceptance report.
+- Original approved 16-frame take SHA-256: `d52f6c351c7cebc4579daa57359093dc1f469cf20b645b2a65e8dc212b5b0831`.
+- Original 16 HALF EXR FilmIndex revision SHA-256: `bac195ae68b435f35cc6839ee214a5a64e36282dbea92acaba157d6e21fd4b2f`.
+- **ProRes 422 HQ**: 16 frames, 256×144, 24fps, 10bit 4:2:2, `apch`; SHA-256 `5883c02774dbbd7ebade035e455ce1113a0f411a503c03ea2819181f254acae0`; metadata `color_primaries=bt709, color_transfer=bt709, color_space=bt709`; legal sample failures **0**; mean reference error **0.693616 10-bit codes**, p99 **10**, maximum **35**.
+- **DNxHR HQX**: same length, rate and raster, `AVdh` and `color_range=tv`; SHA-256 `b94e6ae0641ec4d776037193b89c4d16432ad230f9a050dd5a46b27800b8c490`; metadata BT.709 primaries/transfer/matrix verified; legal sample failures **0**; mean reference error **0.380380 10-bit codes**, p99 **4**, max **15**.
+- Both videos independently decoded **1,179,648 10-bit samples**, covering all 16 complete YUV422 frames, then matched a separately regenerated pre-encoding graded RGB→YCbCr reference within the measured lossy-codec tolerances.
+- The native fixture reopened both master candidates in a fresh `Studio`/FilmIndex, regenerated the grade from the original EXRs, rejected corrupted indexed MOV bytes, restored the original bytes and reopened again. An unrelated project's attempted read was rejected. The original take revision stayed unchanged.
+- Linux, Windows, native Blender, React grading-guide and wheel diagnostics CI jobs all **passed**. This does **not** certify theatrical XYZ or calibrated creative approval.
+
+**Important nuance:** ProRes's FFprobe output omitted `color_range` despite its correct BT.709 tags. The decoder's **complete YUV code range** was independently scanned and passed; the metadata omission is explicitly recorded, not invented as a positive tag.
 
 ## Tests and user education
 
