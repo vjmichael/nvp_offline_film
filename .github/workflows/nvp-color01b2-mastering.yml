@@ -62,6 +62,21 @@ jobs:
           python -m unittest discover -s tests -p 'test_color_ocio.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'OCIO tests failed' }
 
+  frontend-guide:
+    name: Offline color grading guide React production build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compile NVP frontend with offline color grading help
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
   native-two-codec-exr:
     name: Native frozen Digital Take to real 16-frame graded ProRes and DNxHR
     runs-on: ubuntu-24.04
