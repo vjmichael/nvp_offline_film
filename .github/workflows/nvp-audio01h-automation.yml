@@ -20,7 +20,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Verify automation without optional media dependencies
+      - name: Verify native FFmpeg is available
+        run: ffmpeg -version
+      - name: Verify automation and finishing contracts
         run: |
-          python -m compileall -q backend/nvp_audio01h_automation.py tests/test_audio01h_automation.py
+          python -m compileall -q backend/nvp_audio01h_automation.py backend/nvp_audio01h_loudness.py backend/nvp_audio01h_stem_revision.py backend/nvp_audio01h_mix_decision.py tests/test_audio01h_automation.py tests/test_audio01h_loudness.py tests/test_audio01h_finishing_contract.py
           python -m unittest discover -s tests -p test_audio01h_automation.py -v
+          python -m unittest discover -s tests -p test_audio01h_loudness.py -v
+          python -m unittest discover -s tests -p test_audio01h_finishing_contract.py -v
