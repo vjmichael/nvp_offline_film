@@ -1,0 +1,64 @@
+# NVP-STACK-01 — Existing component evaluation ledger
+
+**Status:** Candidate identification only; no new external engine is considered integrated or redistributable by creating this ledger.  
+**Owner:** NVP production engineering  
+**Policy:** [ADR STACK-001](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md)
+
+Use this sheet as a **decision gate** for every planned substantial custom implementation. Do not write a new DSP, pixel math, editor, effects engine, physics system, asset importer, or animation solver while an approved candidate can perform the operation.
+
+| Priority | Required NVP capability | Proven software worth testing | NVP state | Reuse adoption test / outcome |
+| --- | --- | --- | --- | --- |
+| P0 | Scene-linear grading curves, primaries, ASC CDL, standard LUTs | OpenColorIO | Pinned ACES color management used; **custom grading math remains** | **STACK-01A:** Test OCIO built-in grading and LUT transforms on same original two-shot NVP EXR; freeze new custom math |
+| P0 | Efficient OpenEXR/HDR image reads, tiles/cache | OpenImageIO, OpenEXR | Current code includes custom EXR metadata parsing and FFmpeg decode | **STACK-01A:** Test OIIO file caching, HDR channel handling and independent readback; replace bespoke I/O as applicable |
+| P0 | Editorial interchange, timecodes and clip metadata | OpenTimelineIO | NVP has original FilmIndex timeline contracts | **STACK-01B:** Export/import exact source identities and test EDL/OTIO round-trip without losing source/take link |
+| P0 | Real editing/rendering/playback/effects | MLT, compare libopenshot | Current adapters and FFmpeg can export technical clips | **STACK-01B:** Test 2+ clips, multi-track preview, transitions, time range and independent decode |
+| P1 | Masks, roto, tracking, node effects | Natron, OpenFX; mature OpenFX plugins | NVP has early global/shot grading controls | **STACK-01C:** Independently test a mask/tracked composite; inventory licenses of whole app and plugins |
+| P1 | Camera rig, constraints, 3D scene, character animation, renderer | **Blender standalone worker selected**; USD import/export optional | Creator-approved Blender-first architecture; current native Cycles test accepted | **STACK-02/01E:** Harden external CLI/job adapter, GPL script notices and binary packaging; **defer standalone OpenUSD** until real multi-app reference/variant/layer requirement |
+| P1 | Room layout and collisions | OR-Tools CP-SAT, trimesh, Blender BVH | Custom bounded solver has production fixtures | **STACK-01D:** Same frozen fixtures, solve quality, timeouts, complexity and stability; remove duplicate solver only after parity |
+| P1 | Sound design, spatial acoustics, loudness | Ardour, pyroomacoustics, pedalboard, FFmpeg loudnorm | DCP technical silence only; real soundtrack unapproved | **STACK-01D:** Real dialogue/music/FX stem and 5.1 mix proof, consent/licensing |
+| P2 | Characters, mocap, faces, TTS/lip sync | Blender rigs/NLA, CMU/etc licensed mocap, Rhubarb, proven speech/aligners | Early actor proxy and motion retarget tests | **STACK-01D:** Evaluate authentic licensed character/motion performance and fidelity |
+| P2 | Finish/deliver movie/DCP | FFmpeg, DCP-o-matic | Technical DCP and ProRes/DNxHR native proofs passed | Preserve independent bit-depth/sample/raster and manifest validation; audit actual codec licensing |
+
+## Decision record for every adopted component
+
+Copy the template to `docs/stack-decisions/STACK-DECISION-<ID>.md`:
+
+```markdown
+# STACK-DECISION-<ID>: <specific operation>
+Status: PROPOSED | ACCEPTED | BLOCKED | REJECTED | CUSTOM-GAP-APPROVED
+NVP source fixture and sha256:
+Required input/output, objective numerical quality:
+Candidates (at least two, if available):
+Candidate versions / tagged commits / download source / SHA-256:
+Supported API/CLI/protocol, side effects and limitations:
+Test commands and independent acceptance evidence:
+Latency / CPU / RAM / VRAM / disk footprint / startup:
+Windows x64 and Linux x64 packaging support:
+Licenses of exact binary, linked libs, plugins and media assets:
+Corresponding source, notices, build configuration, attribution:
+Security model, worker permissions, cancellation and recovery:
+Offline support, update/patch path:
+NVP source/take/provenance integration:
+Decision and creator approval:
+For custom exception: exact unserved function and re-evaluation deadline:
+```
+
+## NVP single-installer release ledger
+
+No product release until each selected redistributable third-party package has a machine-readable record:
+
+- `name`, `vendor`, `version`, `build_hash`, `origin_url`, `artifact_sha256`, `signature_status`, `license_expression`, `source_offer_or_location`, `copyright_notice_path`, `dependency_chain`, `platform`, `architecture`, `codecs_and_compile_flags`, `redistribution_review`, `runtime_worker_policy`, `security_update_owner`.
+- Every native worker must be part of a reproducible, offline test: install → launch → process frozen NVP take → verify outputs/permissions → restart/recover → uninstall, including **source and snapshot preservation**.
+- LGPL/GPL-sensitive dependencies need **actual component-by-component review**; linking dynamically or running out of process is neither blanket permission nor blanket prohibition.
+- No silent download/installation at first launch. One NVP installer can optionally select built-in feature packs, with no required manual external installation.
+- Pin and sign the exact dependency bill of materials. Track codecs and plugin assets individually; do not infer licensing from the umbrella product name.
+
+## First change-management decision
+
+**Custom GRADE-UI-02B2 LUT implementation is held pending STACK-01A.** Use OCIO's supported `FileTransform`/grading APIs, standard `.cube` etc. **through OCIO itself**, with strict input/output-space contract, checksum, file sandbox and creator consent. Retain legacy custom NVP curve math as comparison fixtures until a correct adoption decision is accepted. Any custom parser/math must identify a genuinely unserved, reproducibly demonstrated function.
+
+**No new engine has been selected by this file alone.** STACK-01A and subsequent native benchmarks will produce measured decisions, not assumptions.
+
+## Accepted decision — Blender-first, standalone OpenUSD deferred
+
+The creator explicitly approved an independent external production-worker architecture and Blender as sufficient for NVP's present 3D pipeline. This is recorded in [ADR STACK-002](NVP_ADR_STACK02_BLENDER_WORKER_USD_DEFERRED.md). **Selection of Blender as the primary external tool does not constitute permission to redistribute a particular GPL binary without audit**. The native `bpy` scripts and all Blender-dependent adapters require licensing review. Keep USD support through Blender when the supported interchange suffices; do not bundle a separate OpenUSD SDK to satisfy hypothetical future requirements.
