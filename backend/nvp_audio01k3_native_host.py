@@ -405,8 +405,13 @@ class NativeAudio01K3Host:
             raise RuntimeError("DCP candidate FilmIndex/native custody disagrees")
         source,proof,qc=self._verify_candidate(job,plan)
         if (source != Path(plan["destination"]) or
-            row["data"]["asset_proof"] != proof):
-            raise RuntimeError("Published DCP assets changed")
+            row["data"]["asset_proof"] != proof or
+            row["data"]["independent_qc"] != qc or
+            row["data"]["cpl_timing"] != inspect_cpl_timing(source,plan["frames"]) or
+            row["data"]["distribution_sha256"] != plan["distribution_sha"] or
+            row["data"]["original_mov_sha256"] != plan["movie_sha256"] or
+            row["data"]["creator_approved_theatrical_delivery"] is not False):
+            raise RuntimeError("Published DCP candidate, QC or source custody changed")
         return {"status":"VERIFIED_SMPTE_DCP_CANDIDATE",
                 "asset_count":proof["asset_count"],
                 "independent_validator_passed":True,
