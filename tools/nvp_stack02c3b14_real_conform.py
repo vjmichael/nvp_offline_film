@@ -17,7 +17,8 @@ from backend.nvp_b14_native_conform import NativeB14ConformHost
 from backend.nvp_b14_edited_movie import build_edited_technical_mov, verify_edited_technical_mov
 from backend.nvp_audio01d_chunked_recovery import run_chunked_preview
 from backend.nvp_audio01e_wav_publication import publish_chunked_wavs
-from backend.nvp_audio01f_picture_sound import build_picture_sound_preview, verify_picture_sound_preview
+from backend.nvp_audio01f_picture_sound import verify_picture_sound_preview
+from backend.nvp_audio01f_native_host import NativeAudio01FHost
 from backend.nvp_resource_guard import ResourceSnapshot
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_b13_editorial_roundtrip import FORMAT as EDIT_FORMAT
@@ -163,12 +164,32 @@ def fixture(out, blender):
     if published["wav_count"]!=3:
         raise RuntimeError("AUDIO-01F source did not preserve both independent stems")
     sound_dir=root/"audio01f_synchronized_review"
-    synchronized=build_picture_sound_preview(movie_reopened,project_id,
+    mux_event=object()
+    def mux_creator_policy(event,scope):
+        return (event is mux_event and
+                scope["operation"]=="nvp.native.audio01f.picture_sound_review" and
+                scope["project_id"]==project_id and
+                scope["final_master"] is False and
+                scope["picture_locked"] is False)
+    mux_host=NativeAudio01FHost(movie_reopened,ledger,
+        root/"native_audio01f_mux",verify_creator_action=mux_creator_policy,
+        # Hosted Linux integration tests lack delegated cgroup-v2. This is
+        # explicitly reduced-assurance test mode, not strict Linux acceptance.
+        strict_linux_tree=False)
+    mux_queued=mux_host.stage_and_approve(project_id,
         "b14_edited_prores_candidate","audio01f_multistem_preview",
         package,root/"b14_conformed_edit_revision_1",movie_root,wav_dir,
-        audio_plan,audio_sources,pcm_dir,sound_dir,
-        "audio01f_picture_sound_r1")
+        audio_plan,audio_sources,pcm_dir,sound_dir,mux_event,
+        presentation_id="audio01f_picture_sound_r1",ram_mb=1024)
+    synchronized=mux_host.run_next(timeout_seconds=900)
+    if (synchronized is None or synchronized["state"]!="SUCCEEDED" or
+        synchronized["job_id"]!=mux_queued["job_id"]):
+        raise RuntimeError("AUDIO-01F native approved mux did not complete")
     sound_reopened=DigitalCapture(Studio(db))
+    native_reopened=NativeAudio01FHost(sound_reopened,ledger,
+        root/"native_audio01f_mux",verify_creator_action=lambda *_:False,
+        strict_linux_tree=False)
+    native_reopened.verify_completed(mux_queued["job_id"])
     synchronized_replay=verify_picture_sound_preview(
         sound_reopened,project_id,"audio01f_picture_sound_r1",
         "b14_edited_prores_candidate","audio01f_multistem_preview",
@@ -200,6 +221,7 @@ def fixture(out, blender):
         "edited_technical_MOV_independent_decode_after_restart": True,
         "audio_present": True,
         "audio01f_real_edited_picture_and_multistem_sound": True,
+        "audio01f_native_authorization_and_contained_worker": True,
         "audio01f_mixed_stem_count": 2,
         "audio01f_samples_per_channel": exact_samples,
         "audio01f_verified_after_restart": True,
