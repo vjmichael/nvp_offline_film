@@ -77,7 +77,7 @@ describe('NVP GRADE-UI-02A',()=>{
     await screen.findByRole('button',{name:/Shot 1/});
     const save=screen.getByRole('button',{name:'Save advanced draft look'});
     expect(save.disabled).toBe(true);
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
     fireEvent.click(save);
     await waitFor(()=>expect(calls.some(([url,opts])=>url.endsWith('/advanced/grades')&&opts?.method==='POST')).toBe(true));
     const saved=calls.find(([url,opts])=>url.endsWith('/advanced/grades')&&opts?.method==='POST');
