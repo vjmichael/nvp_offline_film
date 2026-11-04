@@ -24,7 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for bin in ffmpeg ffprobe dcpomatic2_create dcpomatic2_cli dcpdoctor; do
+          for bin in ffmpeg ffprobe dcpomatic2_create dcpomatic2_cli dcpdoctor xmllint; do
             command -v "$bin" || { echo "::error::Missing actual cinema binary $bin: install vetted cross-platform package"; exit 1; }
           done
           dcpomatic2_create --version
