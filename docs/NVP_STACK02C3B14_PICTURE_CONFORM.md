@@ -23,3 +23,11 @@ Tests and real acceptance still needed:
 5. Audio alignment, picture-lock approval, final master and DCP are separate gates.
 
 **Status: B14 incremental source code and tests committed; no real B14 pipeline/installed app certification claimed.**
+
+## Subsequent B14 native implementation (Nov 4, 2026)
+
+Added `tools/nvp_b14_conform_worker.py` and `backend/nvp_b14_native_conform.py`. B14 now has an explicit creator-policy-checked staging host, an immutable bound spec and exact edit SHA/revision/output destination, queued native resource admission, a contained worker launched from pinned executable and worker script, live RAM/VRAM critical-pressure watchdog, independent output verification, durable receipt and restart verification. The real Blender B13→B14 acceptance runner now submits both imported edit revisions to this native host, injects memory-based queue refusal, then allows actual OS-contained worker execution and audits the two resulting SDR16 sequences.
+
+**Known limits:** A fixture-supplied native creator policy is not the installed creator UI; OS resource admission uses a controlled test sampler for reproducible refusal/admission, and native worker process memory is OS-limited. There is no completed edited scene-linear technical MOV, disk-capacity reservation, full crash-recovery reconcile, interactive cancellation, audio or film master. B14 new-head CI is required before native acceptance may be marked passed.
+
+**Verified previous checkpoint:** Workflow run `41869316782` was green on Windows/Linux and actual Blender integration before these native-host changes. That prior green run does not certify this newer revision.
