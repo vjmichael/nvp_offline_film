@@ -41,6 +41,17 @@ The external Blender worker adopts **standard Windows Job Objects through mainta
 
 **Do not mark commercial/production ready:** `STACK-02C2B` **COMPLETED** real Blender-spawned descendant + abrupt host kill proof; `STACK-02C3` cross-platform RAM/VRAM preflight/limits (Linux `memory.max` and Windows job memory **do not cap GPU VRAM**); `STACK-02D` migrate remaining film-render/retarget/animation paths to the same supervisor; `STACK-01E` one offline single installer including systemd user-worker delegation on Linux (when built), Blender GPL license/source notices, NSIS on Windows and install/uninstall acceptance. The cgroup feature is deliberately opt-in until delegated desktop service architecture is accepted.
 
+## STACK-02C3 PC resource governor, progress UX and full integration plan
+
+**Implemented and measured as an opt-in development foundation:** standard Windows GlobalMemoryStatusEx / DXGI, Linux MemAvailable/PSI/amdgpu DRM and optional driver NVML; conservative per-task RAM/VRAM admission; SQLite FULL-sync cross-process memory reservations and honest phase/percent task journal; native Blender supervisor integrates with a guarded reservation and critical-pressure cancellation path; NVP's sidebar has live, accessible RAM/VRAM meters, current reservations and phase progress. An external AI server is **observed only**, with no uncontrolled model unload. Initial CI [41773491907](https://github.com/vjmichael/nvp_offline_film/actions/runs/41773491907) **4/4 successful** (Linux, Windows, React, actual distro Blender queue-admit-render). [Detailed evidence](NVP_STACK02C3_RESOURCE_GOVERNOR_PROGRESS_AND_PC_SAFETY.md).
+
+**Outstanding engineering tasks and proposed order:**
+1. **02C3B — managed AI provider and priority queue:** use documented LM Studio native v1 model load/unload and progress events, explicit creator ownership, provider memory estimates and context/KV-cache budgets. Implement actual priority scheduling so short interactive AI edits don't silently start alongside a high-VRAM GPU render; queue all under the shared resource governor. Do not unload a model owned by another application.
+2. **02C3C — device-specific protective admission:** real AMD Radeon AI Pro R9700 physical Windows GPU telemetry, DXGI adapter identity, multi-GPU correctness, measured GPU driver budget changes and RAM/VRAM exhausting-workload stress; effective Linux cgroup memory.max in admission and safe CPU fallback profiles. Maintain non-negotiable reserve floors.
+3. **02C3D — UX controls and verified end-to-end progress:** user safe-cancel/pause/quality profile without forbidden unsafe toggle; frame/samples progress from Blender and provider model events, accurate source-linked percentages and actual measured ETA when statistically justified; persistent activity center and recovery UX.
+4. **02D — full engine-path migration and crash reconciliation:** default-on governor for all render/animation/retarget/composite/encode paths, OS-verified reservation release and native process cleanup after crash, bounded background work. Current guarded Blender supervisor is opt-in; API's existing local AI writer is not a model manager.
+5. **01E — commercial install/redistribution:** one-click Windows installer, packaged Blender workers, license/SBOM notice/source offers, signed binaries, and install→render→restart→uninstall acceptance. This technical result is not retail readiness.
+
 ## Decision record for every adopted component
 
 Copy the template to `docs/stack-decisions/STACK-DECISION-<ID>.md`:
