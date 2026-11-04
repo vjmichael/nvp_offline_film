@@ -56,7 +56,7 @@ describe('GRADE-UI-02B1',()=>{
     expect(screen.getByRole('slider',{name:'Deep black offset in stops'}).disabled).toBe(true);
     await waitFor(()=>expect(calls.some(([path])=>path.endsWith('/curves/preview'))).toBe(true),
       {timeout:3500});
-    expect(screen.getByText(/not approved color output/)).toBeTruthy();
+    expect(screen.getByText(/not approved color output/i)).toBeTruthy();
   });
 
   it('adjusts a tone point, undoes and redoes without changing source',async()=>{
