@@ -7,6 +7,7 @@
 **Development baseline:** nvp/prod06e2c3b-anatomical-landmarks-bvh-20261103  
 **Scope of this revision:** Design consolidation plus creator-approved **data-first capture/presentation/editing architecture amendment**. No new capture pipeline, model adapter, renderer or editor implementation is claimed as complete.
 **Governing amendment:** [NVP-ADR-DATA-FIRST-001](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md), with [technical package/index specification](NVP_DIGITAL_FILM_PACKAGES_AND_REGENERATION.md).
+**Later creator-approved engineering policy:** [NVP-ADR-STACK-001 — Reuse-first component adoption and one installer](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md). It governs implementation method and supersedes any previous implied preference for custom processing algorithms.
 
 > **Governing idea:** NVP creates **the structured, creator-approved data from which a film is captured and produced**, not merely unrelated AI-generated video clips. An editable Digital Film World supplies immutable Digital Take Packages; selectable conventional or AI engines produce versioned Presentation Packages; an indexed editor assembles those outputs into a final 2D film. Lo-fi preview is the director's inexpensive visualization, not the full production data or final visual quality. AI proposes or renders; verified domain data and the director remain authoritative. **The flat movie is a deliverable, not the only editable source.**
 
@@ -26,6 +27,16 @@ This is the single *top-level* NVP design baseline. It consolidates decisions, r
 When documents conflict, apply this order: **explicit later creator decisions**; this master design for cross-subsystem product/architecture; subsystem design and approved typed contracts for local details; actual source and test artifacts for implementation facts; and legacy descriptions/research suggestions as historical inputs. A lower-level document cannot silently override an approved higher-level requirement. Any conflict must be recorded in a design decision with affected downstream artifacts and creator approval where the product contract changes.
 
 The original proprietary ownership and licensing statements in README.md are **unchanged** by this architecture document. This file does not grant rights to the code, media assets, or third-party references.
+
+### 0.1 Reuse-first production engineering [C] — mandatory, 2026-11-03
+
+The creator directs that NVP **reuse, repurpose and bundle existing, mature filmmaking software rather than reimplement standard operations**. A custom algorithm may be developed only for a **specific demonstrated operation** that existing licensed software, supported plug-ins or a composition of existing engines cannot perform adequately. The decision requires documented alternatives, a reproducible benchmark, license/deployment assessment and narrow creator-reviewed scope.
+
+NVP is the **authoritative Digital Film World / Digital Take / orchestration and verification product**, not another independent video editor, color-science library, 3D renderer, compositor or audio DSP suite. Third-party programs and libraries may be embedded in a **single offline-first NVP desktop installer** subject to exact license, dependency, provenance and safety checks. Minimal adapters, typed records, worker management, identity-preserving interchange and permission/approval validation are NVP's custom integration work.
+
+Immediately audit current homegrown grading curves and image routines against **OpenColorIO/OpenImageIO**, editorial against **OpenTimelineIO/MLT**, compositing against **Natron/OpenFX**, staging and animation against **Blender/OpenUSD and proven solver/motion tools**, and sound against established audio engines. Preserve original source/take immutability and independent output verification. **Do not silently migrate existing data, remove working code, or claim a package is legally redistributable without actual evidence.**
+
+This is binding implementation guidance; consult [NVP-ADR-STACK-001](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md) for criteria and ordered tests. Earlier detailed feature-roadmap entries remain desired *capabilities* but no longer imply bespoke implementation.
 
 ## 1. Purpose, users, and nonnegotiable product requirements
 
