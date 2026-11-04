@@ -159,14 +159,22 @@ def encode_candidate(input_mov, workspace, title, *, create_bin, cli_bin,
     if not film_dir.is_dir() or film_dir.is_symlink():
         raise RuntimeError("DCP-o-matic did not create a real film project")
     output = _run(encode_cmd, cwd=root, timeout=21600)
-    candidates = [Path(line.strip()) for line in output.splitlines()
-                  if line.strip()]
-    candidates = [p if p.is_absolute() else root / p for p in candidates]
-    if len(candidates) != 1 or not candidates[0].is_dir():
-        raise RuntimeError("No single completed DCP path from native encoder")
-    dcp = candidates[0].resolve(strict=True)
-    if not dcp.is_relative_to(film_dir.resolve(strict=True)):
-        raise RuntimeError("DCP encoder escaped its contained film workspace")
+    candidates=[]
+    film_root=film_dir.resolve(strict=True)
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        named=Path(line.strip())
+        options=[named] if named.is_absolute() else [root/named,film_dir/named]
+        for option in options:
+            if option.is_dir() and not option.is_symlink():
+                resolved=option.resolve(strict=True)
+                if resolved.is_relative_to(film_root):
+                    candidates.append(resolved)
+    candidates=list(dict.fromkeys(candidates))
+    if len(candidates)!=1:
+        raise RuntimeError("No single authorized completed DCP directory from native encoder")
+    dcp=candidates[0]
     report = inspect_dcp_directory(dcp)
     if sha_file(mov) != expected_mov_sha:
         raise RuntimeError("DCP encoding altered original approved MOV")
