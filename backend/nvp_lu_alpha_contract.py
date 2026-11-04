@@ -58,7 +58,9 @@ def inspect_lu_alpha_source(root:str|Path):
             raise RuntimeError("Lu source file missing or unsafe: "+relative)
         if file.stat().st_size>512*1024:
             raise RuntimeError("Lu source marker unexpectedly large: "+relative)
-        actual=git_blob_sha1(file.read_bytes())
+        # Git checkout on Windows may materialize CRLF; compare canonical
+        # Git content, not the platform's checkout newline representation.
+        actual=git_blob_sha1(file.read_bytes().replace(b"\r\n",b"\n"))
         if actual!=expected:
             raise RuntimeError("Lu source does not match alpha contract: "+relative)
         validated[relative]=actual
