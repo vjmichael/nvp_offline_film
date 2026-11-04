@@ -69,3 +69,11 @@ The 21-point suite verifies observable crash boundaries and safe DB/filesystem s
 For final AUDIO-01G production closeout, the outstanding real native job test must kill the *actual* contained worker at each relevant stage, persist/restart under a trusted OS stop guardian, and either safely reconcile fully verifiable already-published film or preserve unverified output for operator review. **No directory with a missing FilmIndex revision is promoted into an authorized final production artifact.**
 
 The separate Linux delegated-cgroup guardian remains intentionally deferred per the user's direction. No strict Linux guardian acceptance is claimed.
+
+## Window-specific hardening and coverage assertion
+
+The nine real-ProRes filesystem crash cases now launch their subprocess through NVP's actual `launch_contained` Windows Job Object adapter. The OS-owned process tree includes the Python crash worker and FFmpeg descendants, and the test closes the native process handle after the abrupt exit. This adds real Windows process-containment exercise at each filesystem point (it does not simulate host-level power loss).
+
+`test_all_declared_crash_points_have_subprocess_cases` proves the 9+5+7 test classification is a one-to-one match with the 21 declared gates. `test_every_fault_point_is_in_actual_production_code` additionally scans the live worker/host/mux source to ensure **every declared gate is actually instrumented exactly once**, preventing a false-green test that names a checkpoint never executed.
+
+The completion-side seven cases use synthetic worker completion to isolate SQLite durability; a true 21-way OS-worker-termination matrix is NOT claimed. It remains a separate native-host E2E acceptance task, alongside a power-loss durability test on appropriate hardware.
