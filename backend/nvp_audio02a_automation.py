@@ -45,7 +45,7 @@ def automate_stem(source,destination,points):
                 not 0<=p["gain_milli"]<=4000 for p in points)):
             raise ValueError("Keyframes must be ordered over entire stem")
         sha=hashlib.sha256()
-        with wave.open(str(out),"xb") as dest:
+        with out.open("xb") as output_file, wave.open(output_file,"wb") as dest:
             dest.setnchannels(2);dest.setsampwidth(2);dest.setframerate(RATE)
             at=0;segment=0
             while at<n:
