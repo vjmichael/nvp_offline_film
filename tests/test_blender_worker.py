@@ -160,6 +160,23 @@ class BlenderWorkerTests(unittest.TestCase):
         self.assertIn("passed=true",status["error"])
         self.assertIsNone(status["outputs"])
 
+    def test_containment_cleanup_failure_never_commits_success(self):
+        op=self.job("failed_guardian_cleanup")
+        class FailedClose(MockProc):
+            def close(self):
+                raise RuntimeError("independent kernel guardian did not verify cleanup")
+        def worker(cmd,**kwargs):
+            self.simulated_worker(cmd,**kwargs)
+            return FailedClose()
+        with patch.object(self.sup,"probe",return_value={}),patch(
+                "backend.nvp_blender_worker.launch_contained",side_effect=worker):
+            result=self.sup.run(op)
+        self.assertEqual(result["state"],"FAILED")
+        self.assertIsNone(result["outputs"])
+        self.assertIn("guardian did not verify cleanup",result["error"])
+        with self.assertRaisesRegex(RuntimeError,"No successfully verified"):
+            self.sup.verify_completed(op.job_id)
+
     def test_cancellation_reliably_stops_owned_process(self):
         op=self.job("cancelled_job")
         class Hung:
