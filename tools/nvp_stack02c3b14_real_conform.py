@@ -71,6 +71,8 @@ def fixture(out, blender):
     ledger.sampler = lambda: ResourceSnapshot(1, 16384, 1000, 0, ())
     done = []
     for rev, source in ((1, first), (2, second)):
+        # Repeat admission-pressure injection for EVERY separate native job.
+        ledger.sampler = lambda: ResourceSnapshot(1, 16384, 1000, 0, ())
         destination = root / ("b14_conformed_edit_revision_" + str(rev))
         pid = "b14_presentation_r" + str(rev)
         queued = host.stage_and_approve(project_id, edit_id, rev,
