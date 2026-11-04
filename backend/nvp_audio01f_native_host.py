@@ -16,6 +16,8 @@ import time
 
 from backend.nvp_approved_tasks import ApprovedTaskBindings,canonical_bytes
 from backend.nvp_audio01f_picture_sound import verify_picture_sound_preview
+from backend.nvp_b14_edited_movie import verify_edited_technical_mov
+from backend.nvp_audio01e_wav_publication import verify_published_wavs
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_film_index import _id
 from backend.nvp_resource_guard import AdmissionRequest
@@ -122,6 +124,18 @@ class NativeAudio01FHost:
         audio=self.capture.index.read_revision(project_id,audio_id,1)
         if picture["kind"]!="presentation" or audio["kind"]!="audio":
             raise RuntimeError("Immutable picture and audio FilmIndex records required")
+        # No creator approval prompt for unverified/altered picture or sound.
+        # This also pins actual source chunks and WAVs, not only object IDs.
+        checked_picture=verify_edited_technical_mov(
+            self.capture,project_id,candidate_id,package,conform_dir,movie_dir,
+            ffmpeg=ffmpeg,ffprobe=ffprobe)
+        samples=checked_picture["frames"]*2000
+        checked_audio=verify_published_wavs(
+            self.capture,project_id,audio_id,audio_plan,audio_sources,
+            samples,audio_chunks,audio_dir)
+        if (checked_picture["status"]!="VERIFIED_EDITED_TECHNICAL_MOV_CANDIDATE" or
+            checked_audio["status"]!="VERIFIED_UNAPPROVED_INDEXED_WAV_PREVIEW"):
+            raise RuntimeError("Native mux inputs not source-verified")
         output=Path(destination)
         if (output.exists() or output.is_symlink() or not output.parent.is_dir() or
             output.parent.is_symlink()):
@@ -182,6 +196,17 @@ class NativeAudio01FHost:
                               approval_id=approval,document=spec)
         return {"job_id":job,"state":"QUEUED","presentation_id":presentation_id,
                 "native_worker_started":False}
+
+    def revoke(self,job):
+        """Creator-only host revocation; queued tasks then fail policy recheck."""
+        self._grant(job)
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("UPDATE native_audio01f_grants SET revoked=1 WHERE job_id=?",
+                       (job,))
+            db.commit()
+        self._creator_events.pop(job,None)
+        return {"job_id":job,"revoked":True}
 
     def run_next(self,*,timeout_seconds=900):
         admit=self.bindings.claim_next(owner_key=self.owner)
