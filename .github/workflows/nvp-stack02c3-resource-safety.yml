@@ -91,8 +91,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install pinned frontend dependencies
-        run: npm ci
+      - name: Install existing frontend dependencies (repository has no lockfile yet)
+        run: npm install --no-audit --no-fund
       - name: Test live resource task panel
         run: npx vitest run src/ResourceActivityPanel.test.jsx
       - name: Build integrated NVP desktop web UI
