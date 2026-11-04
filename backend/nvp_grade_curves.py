@@ -141,6 +141,65 @@ class CurveGradeWorkspace(AdvancedGradeWorkspace):
         finally:
             _PREVIEW_SLOTS.release()
 
+    def save_curve(self,project_id,source_id,grade_id,plan,expected_revision):
+        """Immutable FilmIndex edit; source and timeline cannot change silently."""
+        _id(source_id,"source EXR ID")
+        _id(grade_id,"curve edit ID")
+        if type(expected_revision) is not int or expected_revision<0:
+            raise ValueError("Expected curve revision must be nonnegative")
+        timeline=self.timeline(project_id,source_id)
+        checked=validate_curve_plan(plan,[s["shot_id"] for s in timeline["shots"]])
+        if expected_revision:
+            previous=self.reopen_curve(project_id,grade_id)
+            data=previous["record"]["data"]
+            if (previous["record"]["revision"]!=expected_revision or
+                data["source_id"]!=source_id or
+                data["source_sha256"]!=timeline["source_sha256"]):
+                raise RuntimeError("Curve grade stale revision or changed source")
+        payload={
+            "format":PLAN_FORMAT,"status":"unapproved_curve_grading_draft",
+            "source_id":source_id,"source_sha256":timeline["source_sha256"],
+            "take_id":timeline["take_id"],"take_sha256":timeline["take_sha256"],
+            "timeline_sha256":timeline["timeline_sha256"],
+            "plan":checked,"approval":"not_approved",
+        }
+        row=self.index.register_revision(project_id,grade_id,"edit",payload,
+            expected_revision=expected_revision,dependencies=[
+                {"object_id":source_id,"revision":1,"role":"presentation"},
+                {"object_id":timeline["take_id"],"revision":1,"role":"source_take"},
+            ])
+        reopened=self.reopen_curve(project_id,grade_id)
+        if reopened["record"]["document_sha256"]!=row["document_sha256"]:
+            raise RuntimeError("Curve grade commit failed independent reopen")
+        return {"id":grade_id,"revision":row["revision"],
+                "sha256":row["document_sha256"],"plan":checked,
+                "status":"unapproved_curve_grading_draft"}
+
+    def reopen_curve(self,project_id,grade_id,revision=None):
+        row=self.index.read_revision(project_id,grade_id,revision)
+        data=row["data"]
+        if (row["kind"]!="edit" or data.get("format")!=PLAN_FORMAT or
+            data.get("status")!="unapproved_curve_grading_draft" or
+            data.get("approval")!="not_approved"):
+            raise RuntimeError("Not a source-bound unapproved curve grade")
+        timeline=self.timeline(project_id,data["source_id"])
+        for a,b in (
+            ("source_sha256","source_sha256"),
+            ("take_id","take_id"),
+            ("take_sha256","take_sha256"),
+            ("timeline_sha256","timeline_sha256"),
+        ):
+            if data[a]!=timeline[b]:
+                raise RuntimeError("Curve edit lost frozen source/take identity")
+        checked=validate_curve_plan(data["plan"],[s["shot_id"] for s in timeline["shots"]])
+        required=sorted([
+            {"object_id":data["source_id"],"revision":1,"role":"presentation"},
+            {"object_id":data["take_id"],"revision":1,"role":"source_take"},
+        ],key=lambda x:(x["object_id"],x["revision"],x["role"]))
+        if row["dependencies"]!=required:
+            raise RuntimeError("Curve edit has changed FilmIndex source dependencies")
+        return {"record":row,"plan":checked,"timeline":timeline}
+
     def compare_reference(self,project_id,source_id,target_frame,reference_frame,base_plan):
         """Inspectable heuristic only; never change a grade or saved record."""
         timeline=self.timeline(project_id,source_id)
