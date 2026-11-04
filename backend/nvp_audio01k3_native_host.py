@@ -144,6 +144,20 @@ class NativeAudio01K3Host:
         try:self.capture.index.read_revision(project_id,candidate_id)
         except KeyError:pass
         else:raise RuntimeError("Cinema DCP candidate ID is already in FilmIndex")
+        # Never execute a model-specified arbitrary shell program as a
+        # stand-in for a cinema encoder or independent validator.
+        allowed={
+            "dcp_create": {"dcpomatic2_create","dcpomatic2_create.exe"},
+            "dcp_cli": {"dcpomatic2_cli","dcpomatic2_cli.exe"},
+            "dcpdoctor": {"dcpdoctor","dcpdoctor.exe"},
+            "ffmpeg": {"ffmpeg","ffmpeg.exe"},
+            "ffprobe": {"ffprobe","ffprobe.exe"},
+        }
+        provided={"dcp_create":create_bin,"dcp_cli":cli_bin,
+                  "dcpdoctor":doctor_bin,"ffmpeg":ffmpeg,"ffprobe":ffprobe}
+        for key,value in provided.items():
+            if Path(str(value)).name.lower() not in allowed[key]:
+                raise PermissionError("Unsupported native cinema executable: "+key)
         paths={}
         for key,value in (("dcp_create",create_bin),("dcp_cli",cli_bin),
                           ("dcpdoctor",doctor_bin),("ffmpeg",ffmpeg),
