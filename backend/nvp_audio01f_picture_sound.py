@@ -9,6 +9,7 @@ from __future__ import annotations
 from fractions import Fraction
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
