@@ -42,7 +42,7 @@ jobs:
         run: ffmpeg -version
       - name: Verify automation and finishing contracts
         run: |
-          python -m compileall -q backend/nvp_audio01h_automation.py backend/nvp_audio01h_loudness.py backend/nvp_audio01h_stem_revision.py backend/nvp_audio01h_mix_decision.py backend/nvp_audio01h_native_host.py tools/nvp_audio01h_native_worker.py tools/nvp_audio01h_measure_worker.py tests/test_audio01h_native_e2e.py tests/test_audio01h_native_crash_matrix.py tests/test_audio01h_creator_crash_matrix.py tests/test_audio01h_worker_crash_matrix.py backend/nvp_audio01h_fault_matrix.py tests/test_audio01h_automation.py tests/test_audio01h_loudness.py tests/test_audio01h_finishing_contract.py
+          python -m compileall -q backend/nvp_audio01h_automation.py backend/nvp_audio01h_loudness.py backend/nvp_audio01h_stem_revision.py backend/nvp_audio01h_mix_decision.py backend/nvp_audio01h_native_host.py tools/nvp_audio01h_native_worker.py tools/nvp_audio01h_measure_worker.py tests/test_audio01h_native_e2e.py tests/test_audio01h_native_crash_matrix.py tests/test_audio01h_creator_crash_matrix.py tests/test_audio01h_worker_crash_matrix.py tests/test_audio01h_fault_coverage.py backend/nvp_audio01h_fault_matrix.py tests/test_audio01h_automation.py tests/test_audio01h_loudness.py tests/test_audio01h_finishing_contract.py
           python -m unittest discover -s tests -p test_audio01h_automation.py -v
           python -m unittest discover -s tests -p test_audio01h_loudness.py -v
           python -m unittest discover -s tests -p test_audio01h_finishing_contract.py -v
@@ -50,3 +50,4 @@ jobs:
           python -m unittest discover -s tests -p test_audio01h_native_crash_matrix.py -v
           python -m unittest discover -s tests -p test_audio01h_creator_crash_matrix.py -v
           python -m unittest discover -s tests -p test_audio01h_worker_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01h_fault_coverage.py -v
