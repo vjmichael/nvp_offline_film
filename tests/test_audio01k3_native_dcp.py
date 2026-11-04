@@ -100,6 +100,18 @@ class NativeDCPAcceptance(unittest.TestCase):
             self.assertTrue(proof["independent_validator_passed"])
             self.assertFalse(proof["dcp_delivered"])
             self.assertFalse(reopen.recover_completed(queued["job_id"])["rerendered"])
+            artifact_root=os.environ.get("NVP_AUDIO01K3_ARTIFACT_DIR")
+            if artifact_root:
+                artifact=Path(artifact_root)
+                if artifact.exists() or artifact.is_symlink():
+                    raise RuntimeError("Real DCP artifact destination must be absent")
+                artifact.mkdir(parents=True,mode=0o700)
+                shutil.copytree(output,artifact/"SMPTE_DCP")
+                for name in ("dcpdoctor_stdout.txt","dcpdoctor_stderr.txt",
+                             "worker_receipt.json","plan.json"):
+                    src=root/"dcphost"/queued["job_id"]/name
+                    if src.is_file():
+                        shutil.copy2(src,artifact/name)
             doc=reopen.capture.index.read_revision(pid,"cinema_candidate",1)
             self.assertEqual(doc["kind"],"presentation")
             self.assertEqual(doc["data"]["status"],
