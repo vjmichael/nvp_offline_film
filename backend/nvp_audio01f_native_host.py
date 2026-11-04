@@ -17,6 +17,7 @@ import time
 
 from backend.nvp_approved_tasks import ApprovedTaskBindings,canonical_bytes
 from backend.nvp_audio01f_picture_sound import verify_picture_sound_preview
+from backend.nvp_audio01g_mux_intent import prepare as prepare_mux, transition as advance_mux
 from backend.nvp_b14_edited_movie import verify_edited_technical_mov
 from backend.nvp_audio01e_wav_publication import verify_published_wavs
 from backend.nvp_digital_capture import DigitalCapture
@@ -212,6 +213,7 @@ class NativeAudio01FHost:
                  _hash_file(folder/"native_plan.json"),_hash_file(self.python),
                  _hash_file(self.worker),time.time()+duration_s))
             db.commit()
+        prepare_mux(self.ledger,job,_hash_file(folder/"native_plan.json"))
         self.bindings.enqueue(AdmissionRequest(job,"compositing",
                               "Exact indexed picture/sound technical mux",ram_mb),
                               owner_key=self.owner,lane="standard",
@@ -242,6 +244,7 @@ class NativeAudio01FHost:
             self.bindings.verified_spec(job,owner_key=self.owner)
             row=self._grant(job)
             folder=self.root/job
+            advance_mux(self.ledger,job,"prepared","running")
             self.ledger.update(job,"rendering","Native contained picture/audio mux")
             with (folder/"stdout.log").open("wb") as out,(folder/"stderr.log").open("wb") as err:
                 attempted=True
@@ -280,7 +283,9 @@ class NativeAudio01FHost:
                 if changed!=1:
                     raise RuntimeError("Conflicting native mux completion receipt")
                 db.commit()
+            advance_mux(self.ledger,job,"running","verified",rec["document_sha256"])
             self.ledger.finish(job,"SUCCEEDED","Source-verified unapproved picture/audio technical mux")
+            advance_mux(self.ledger,job,"verified","committed",rec["document_sha256"])
             return {**verified,"job_id":job,"state":"SUCCEEDED"}
         except BaseException as exc:
             if proc is not None:
@@ -294,6 +299,10 @@ class NativeAudio01FHost:
                 reaped=True
             # On uncertain worker cleanup do not free an ACTIVE reservation.
             if reaped and self.ledger.get_task(job)["state"]=="ACTIVE":
+                from backend.nvp_audio01g_mux_intent import read as read_mux
+                state=read_mux(self.ledger,job)["state"]
+                if state=="running":
+                    advance_mux(self.ledger,job,"running","quarantined")
                 self.ledger.finish(job,"FAILED",
                     ("AUDIO-01F native mux failed: "+type(exc).__name__)[:240])
             raise
@@ -303,6 +312,14 @@ class NativeAudio01FHost:
             row=db.execute("SELECT ram_mb FROM tasks WHERE id=?",(job,)).fetchone()
         if row is None:raise RuntimeError("Native mux reservation absent")
         return row[0]
+
+    def inspect_interrupted(self,job,*,attest_stopped):
+        from backend.nvp_audio01g_mux_recovery import inspect_stopped_worker
+        return inspect_stopped_worker(self,job,attest_stopped)
+
+    def finalize_interrupted(self,job,*,attest_stopped):
+        from backend.nvp_audio01g_mux_recovery import finalize_verified_worker
+        return finalize_verified_worker(self,job,attest_stopped)
 
     def verify_completed(self,job):
         row=self._grant(job)
