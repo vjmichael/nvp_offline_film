@@ -112,3 +112,19 @@ Job Object bindings.
 - Strict delegated Linux cgroup-v2 remains explicitly **deferred**.
 - No conforming DCP, IMF, ADM/BWF, surround/Atmos or final distribution
   packaging has been implemented here.
+
+
+## Local native FFmpeg command-level smoke (Debian FFmpeg 7.1.5)
+
+An independently generated 24-frame 128×72 ProRes MOV and one-second
+48-kHz stereo PCM24 WAV were muxed using the same `-c:v copy` and
+`-c:a pcm_s24le` operations. FFprobe measured **24 video frames at
+24/1 fps**, and **one PCM24 audio stream at 48,000 Hz, two channels**,
+with both durations exactly one second. Separate decoded PCM24 streams
+had identical SHA-256 digests (288,000 bytes = 48,000 × 2 × 3); separate
+decoded YUV422P10 video planes compared bit-for-bit (884,736 bytes).
+Both local command-level checks passed.
+
+This verifies command-level FFmpeg behavior in the local Linux runtime
+only. It **does not** establish execution of the complete GitHub
+FilmIndex/creator/contained-worker integration test or Windows acceptance.
