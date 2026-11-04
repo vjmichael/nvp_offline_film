@@ -61,7 +61,8 @@ def automate_stem(source,destination,points):
                     gain=(lo["gain_milli"]*(hi["sample"]-at)+
                           hi["gain_milli"]*(at-lo["sample"])+span//2)//span
                     for sample in (left,right):
-                        value=(sample*gain+ (500 if sample>=0 else -500))//1000
+                        magnitude=(abs(sample)*gain+500)//1000
+                        value=magnitude if sample>=0 else -magnitude
                         payload.extend(struct.pack("<h",max(-32768,min(32767,value))))
                     at+=1
                 dest.writeframesraw(payload)
