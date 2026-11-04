@@ -11,7 +11,8 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import unittest
 
-from backend.nvp_b11_editorial import frozen_review_source,render_aces2_sdr_review
+from backend.nvp_b11_editorial import (frozen_review_source,render_aces2_sdr_review,
+    normalize_near_opaque_preview_alpha,NEAR_OPAQUE_ALPHA_POLICY)
 from backend.nvp_b11_native_review import NativeB11ReviewHost,PLAN
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_resource_guard import ResourceSnapshot
@@ -25,6 +26,31 @@ def measured():
 
 def insufficient():
     return ResourceSnapshot(1,16384,1000,0,())
+
+
+class NearOpaqueAASourceContracts(unittest.TestCase):
+    def test_real_blender_workbench_near_opaque_alpha_normalized_only_in_review(self):
+        import numpy as np
+        rgba=np.array([[[.16,.17,.18,.99853515625],
+                        [.05,.05,.05,.99853515625]]],dtype=np.float32)
+        original=rgba.copy()
+        derived,proof=normalize_near_opaque_preview_alpha(rgba)
+        self.assertEqual(proof["format"],NEAR_OPAQUE_ALPHA_POLICY)
+        self.assertEqual(proof["source_alpha_min"],.99853515625)
+        self.assertEqual(proof["normalized_preview_pixels"],2)
+        self.assertFalse(proof["actual_transparency_composited"])
+        self.assertFalse(proof["source_float32_exr_alpha_modified"])
+        np.testing.assert_array_equal(rgba,original)
+        np.testing.assert_array_equal(derived[...,:3],original[...,:3])
+        self.assertTrue((derived[...,3]==1.0).all())
+
+    def test_real_transparency_wrong_alpha_or_nonfinite_pixels_still_refused(self):
+        import numpy as np
+        for a in (0.0,.25,.96,1.01,float("nan")):
+            with self.subTest(alpha=a):
+                frame=np.array([[[.2,.3,.4,a]]],dtype=np.float32)
+                with self.assertRaises(RuntimeError):
+                    normalize_near_opaque_preview_alpha(frame)
 
 
 class NativeB11SDREditorialContracts(unittest.TestCase):
@@ -96,6 +122,8 @@ class NativeB11SDREditorialContracts(unittest.TestCase):
         self.assertEqual(self.scopes[-1]["source_presentation_sha256"],self.exr_sha)
         self.assertEqual(self.scopes[-1]["output"],
             "color_managed_ACES2_sRGB_16bit_RGB_PNG_sequence")
+        self.assertEqual(self.scopes[-1]["alpha_policy"],NEAR_OPAQUE_ALPHA_POLICY)
+        self.assertFalse(self.scopes[-1]["transparency_compositing_approved"])
 
     def test_low_ram_keeps_queued_review_and_does_not_launch_worker(self):
         self.approve()
