@@ -122,9 +122,13 @@ class NativeAudio01HHost:
         selected = [x for x in data["wav_outputs"] if x["stem_id"] == stem_id]
         if len(selected) != 1:
             raise RuntimeError("Ambiguous original stem")
-        source_dir = Path(source_dir).resolve(strict=True)
+        requested_dir = Path(source_dir)
+        if requested_dir.is_symlink() or not requested_dir.is_dir():
+            raise RuntimeError("Unsafe source directory")
+        source_dir = requested_dir.resolve(strict=True)
         source = source_dir / selected[0]["filename"]
-        if source_dir.is_symlink() or source.is_symlink() or _sha(source) != selected[0]["sha256"]:
+        if (source.is_symlink() or not source.is_file() or
+            _sha(source) != selected[0]["sha256"]):
             raise RuntimeError("Source WAV changed or unsafe")
         self.capture.index.verify_media_file(project_id, selected[0]["sha256"], "audio/wav")
         envelope = [list(x) for x in validate_automation(points, data["total_samples_per_channel"])]
