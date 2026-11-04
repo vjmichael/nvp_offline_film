@@ -16,7 +16,7 @@ import sys
 import time
 
 from backend.nvp_approved_tasks import ApprovedTaskBindings, canonical_bytes
-from backend.nvp_audio01d_chunked_recovery import _read_state, verify_chunked_preview
+from backend.nvp_audio01d_chunked_recovery import _read_state, _audit_chunks, _validate, _check_inputs, verify_chunked_preview
 from backend.nvp_audio01e3_native_journal import AudioJobJournal
 from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
@@ -56,6 +56,10 @@ class NativeAudioHost:
                 worker_reaped INTEGER NOT NULL CHECK(worker_reaped=1),
                 stop_reason TEXT NOT NULL
             )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS audio_native_staging_leases(
+                directory TEXT PRIMARY KEY, job_id TEXT UNIQUE NOT NULL,
+                predecessor TEXT
+            )""")
         self.binding=ApprovedTaskBindings(self.ledger,approval_check=self._check)
         self._running={}  # host-owned live process handles only
 
@@ -86,6 +90,11 @@ class NativeAudioHost:
                 self.creator(grant["creator_event"],json.loads(grant["scope_json"])) is not True):
                 return False
             journal=self.journal.read(job)
+            with self.ledger._db() as db:
+                lease=db.execute("""SELECT job_id,predecessor FROM audio_native_staging_leases
+                    WHERE directory=?""",(doc["directory"],)).fetchone()
+            if lease!=(job,doc.get("resume_from")):
+                return False
             if (journal["spec"]["total_samples"]!=doc["total_samples"] or
                 journal["spec"]["directory"]!=doc["directory"] or
                 journal["state"]!="approved"):
@@ -95,7 +104,7 @@ class NativeAudioHost:
             return False
 
     def stage_and_approve(self, plan, sources, total_samples, directory,
-                          creator_event, *, ram_mb=1024, duration_s=3600):
+                          creator_event, *, ram_mb=1024, duration_s=3600, resume_from=None):
         if type(creator_event) is not str or not 1<=len(creator_event)<=128:
             raise ValueError("Creator approval reference required")
         if (type(ram_mb) is not int or not 1024<=ram_mb<=8192 or
@@ -104,9 +113,39 @@ class NativeAudioHost:
         job="audiojob"+secrets.token_hex(12)
         folder=self.root/job
         target=Path(directory)
-        if target.exists() or target.is_symlink() or target.parent.is_symlink() or not target.parent.is_dir():
-            raise RuntimeError("Audio output must be absent under a safe parent")
+        if target.is_symlink() or target.parent.is_symlink() or not target.parent.is_dir():
+            raise RuntimeError("Audio output path or parent unsafe")
         sources={k:str(Path(v).resolve(strict=True)) for k,v in sources.items()}
+        if resume_from is None:
+            if target.exists():
+                raise RuntimeError("Fresh native audio job requires absent output")
+        else:
+            _id(resume_from,"preceding audio job")
+            prior=self.journal.read(resume_from)
+            oldspec=prior["spec"]
+            if (prior["state"]!="reconciled" or
+                self.ledger.get_task(resume_from)["state"]!="INTERRUPTED" or
+                oldspec["directory"]!=str(target.absolute()) or
+                oldspec["plan"]!=plan or
+                oldspec["sources"]!=sources or
+                oldspec["total_samples"]!=total_samples):
+                raise RuntimeError("Recovery continuation must bind a reconciled predecessor")
+            with self.ledger._db() as db:
+                witness=db.execute("""SELECT worker_reaped FROM audio_native_os_stop_receipts
+                    WHERE job_id=?""",(resume_from,)).fetchone()
+            if witness!=(1,):
+                raise RuntimeError("Continuation has no verified worker stop")
+            if not target.is_dir():
+                raise RuntimeError("Reconciled PCM checkpoint unavailable")
+            state=_read_state(target)
+            stems=_validate(plan,sources,total_samples)
+            _check_inputs(stems,sources,state["sources"])
+            samples=_audit_chunks(target,state)
+            if state["status"]!="in_progress" or samples<prior["last_next_sample"]:
+                raise RuntimeError("Continuation checkpoint has regressed or completed")
+            for sid,sha in oldspec["source_sha256"].items():
+                if _sha_file(sources[sid])!=sha:
+                    raise RuntimeError("Recovered audio source changed")
         # Journal validates source WAV, plan bounds and creator-policy scope.
         registered=self.journal.register(job,plan,sources,total_samples,target,
                             verify_creator_action=self.creator,
@@ -126,11 +165,22 @@ class NativeAudioHost:
         spec={"task_id":job,"kind":"compositing",
               "directory":scope["directory"],"total_samples":total_samples,
               "ram_mb":ram_mb,"plan_sha":_sha_file(folder/"worker_plan.json"),
-              "worker_sha":_sha_file(self.worker)}
+              "worker_sha":_sha_file(self.worker),
+              "resume_from":resume_from}
         seal=hashlib.sha256(canonical_bytes(spec)).hexdigest()
         approval="audioapproval_"+secrets.token_hex(12)
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
+            dest=str(target.absolute())
+            if resume_from is None:
+                db.execute("""INSERT INTO audio_native_staging_leases
+                    (directory,job_id,predecessor) VALUES(?,?,NULL)""",(dest,job))
+            else:
+                changed=db.execute("""UPDATE audio_native_staging_leases
+                    SET job_id=?,predecessor=? WHERE directory=? AND job_id=?""",
+                    (job,resume_from,dest,resume_from)).rowcount
+                if changed!=1:
+                    raise RuntimeError("Staging lease changed or already resumed")
             db.execute("""INSERT INTO audio_native_grants(
                 job_id,approval_id,creator_event,scope_json,spec_sha,plan_sha,
                 python_sha,worker_sha,expires_at) VALUES(?,?,?,?,?,?,?,?,?)""",
@@ -141,7 +191,7 @@ class NativeAudioHost:
                              owner_key=self.owner,lane="standard",approval_id=approval,
                              document=spec)
         return {"job_id":job,"state":"QUEUED","contained_worker_started":False,
-                "spec_sha256":seal}
+                "resume_from":resume_from,"spec_sha256":seal}
 
     def run_next(self, *, timeout_seconds=1200, test_hold=False):
         if test_hold and os.environ.get("NVP_NATIVE_TERMINATION_TEST") != "1":
