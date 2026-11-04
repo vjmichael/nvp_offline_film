@@ -182,6 +182,17 @@ class NativeApprovedProxyRender:
                 db.rollback()
                 raise RuntimeError("Already revoked")
             db.commit()
-        # Active OS worker cleanup remains supervisor-owned. Never free its
-        # memory reservation merely because a grant was revoked.
-        return {"approval_id":approval_id,"revoked":True}
+        # Cancel a still-queued task using its scheduler ownership. This
+        # never releases ACTIVE reservations or claims an OS worker stopped.
+        cancelled=False
+        task=self.ledger.get_task(row[2])
+        if task is not None and task["state"]=="QUEUED":
+            try:
+                self.ledger.cancel_queued(row[2],owner_key=self.dispatcher.owner_key)
+                cancelled=True
+            except (RuntimeError,PermissionError):
+                # A concurrent worker may have admitted it. Its resources
+                # and cancellation remain supervisor-owned, never guessed.
+                pass
+        return {"approval_id":approval_id,"revoked":True,
+                "queued_work_cancelled":cancelled}
