@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import secrets
 import time
@@ -26,6 +27,28 @@ AUDIT_FORMAT="nvp.production.native_reopened_proxy_audit.v1"
 AUDIT_SCRIPT_NAME="trusted_blender_reopen_audit.py"
 AUDIT_OUTPUT="independent_geometry_audit.json"
 PREVIEW_OUTPUT="independent_preview.png"
+
+
+def _copy_exclusive_verified(source:Path,target:Path,expected_sha:str):
+    """Stream native .blend through bounded, exclusive file; no 512MiB bytes allocation."""
+    fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    try:
+        with os.fdopen(fd,"wb") as output,source.open("rb") as original:
+            fd=-1
+            total=0
+            while True:
+                part=original.read(1024*1024)
+                if not part:break
+                total+=len(part)
+                if total>512*1024*1024:
+                    raise RuntimeError("Blender saved scene larger than audited worker bound")
+                output.write(part)
+            output.flush()
+            os.fsync(output.fileno())
+    finally:
+        if fd!=-1:os.close(fd)
+    if target.is_symlink() or sha_file(target)!=expected_sha:
+        raise RuntimeError("Copied Blender scene changed during independent audit staging")
 
 
 class NativeProxySceneAuditor:
@@ -92,9 +115,22 @@ class NativeProxySceneAuditor:
                   (approval_id,)).fetchone()
         if row is not None:
             audit_op=BlenderOperation(**json.loads(row[1]))
-            if audit_op.job_id!=row[0]:
-                raise RuntimeError("Durable audit job identity changed")
-            self.worker._validate(audit_op)
+            if (audit_op.job_id!=row[0] or
+                audit_op.script!=AUDIT_SCRIPT_NAME or
+                audit_op.script_sha256!=sha256(AUDIT_SCRIPT.encode("utf8")).hexdigest() or
+                audit_op.scene!=OUTPUT_FILE or
+                audit_op.inputs!={WORLD_FILE:proof["world_sha256"],
+                                  OUTPUT_FILE:build["outputs"][OUTPUT_FILE]["sha256"]} or
+                audit_op.outputs!={AUDIT_OUTPUT:"json_audit",PREVIEW_OUTPUT:"png"} or
+                audit_op.arguments!={"--manifest":WORLD_FILE,
+                                     "--audit":AUDIT_OUTPUT,"--render":PREVIEW_OUTPUT} or
+                audit_op.memory_limit_mb!=ram_mb):
+                raise RuntimeError("Durable independent audit operation changed")
+            active=self.ledger.get_task(self.worker._activity_id(audit_op.job_id))
+            if active and active["state"]=="SUCCEEDED":
+                self.worker.verify_completed(audit_op.job_id)
+            else:
+                self.worker._validate(audit_op)
             return audit_op
 
         # A creator-approved native build includes a scoped second-worker
@@ -108,7 +144,7 @@ class NativeProxySceneAuditor:
             blend_sha=build["outputs"][OUTPUT_FILE]["sha256"]
             if sha_file(build_blend)!=blend_sha:
                 raise RuntimeError("Saved Blender output changed before review")
-            _write_exclusive(audit_dir,OUTPUT_FILE,build_blend.read_bytes())
+            _copy_exclusive_verified(build_blend,audit_dir/OUTPUT_FILE,blend_sha)
             approved_manifest=(build_dir/WORLD_FILE).read_bytes()
             _write_exclusive(audit_dir,WORLD_FILE,approved_manifest)
             source=AUDIT_SCRIPT.encode("utf8")
