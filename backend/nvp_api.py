@@ -6,9 +6,19 @@ from backend.nvp_screenplay_review import ScreenplayContinuityReview
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
 from backend.nvp_model_service import discover_models, writer_for
+from backend.nvp_resource_ledger import TaskLedger
+import uuid
 
 app = FastAPI(title="NVP — Your movie, your way", version="0.3.0-creative-foundation")
 studio = Studio()
+resource_activity = TaskLedger()
+
+
+@app.get('/api/system/activity')
+def resource_activity_snapshot():
+    # Read-only, host-derived telemetry; no web-exposed arbitrary job launcher.
+    return resource_activity.snapshot()
+
 
 
 class NewProject(BaseModel):
@@ -149,11 +159,26 @@ def add_creative_draft(project_id: str, payload: NewCreativeDraft):
 
 @app.post("/api/projects/{project_id}/creative-drafts/generate", status_code=201)
 def generate_creative_draft(project_id: str, payload: GenerateCreativeDraft):
+    # The local server may be LM Studio or another OpenAI-compatible provider.
+    # NVP observes its request duration, not model ownership/load %, RAM or VRAM.
+    activity_id="ai_"+uuid.uuid4().hex
+    resource_activity.observe_external(activity_id,
+        "AI writing: "+str(payload.stage)[:65])
     try:
-        return run(lambda: IdeaPipeline(studio, llm=(writer_for(payload.model_id, payload.model_port) if payload.model_id else None)).generate(
-            project_id, payload.stage, payload.instructions, payload.scene_id))
+        resource_activity.update(activity_id,"processing_prompt",
+            "Sending approved writing request to the separately managed AI server")
+        result=run(lambda: IdeaPipeline(studio,
+            llm=(writer_for(payload.model_id, payload.model_port) if payload.model_id else None)).generate(
+                project_id, payload.stage, payload.instructions, payload.scene_id))
+        resource_activity.finish(activity_id,"SUCCEEDED",
+            "AI draft received; creator approval still required")
+        return result
     except LocalModelUnavailable as error:
+        resource_activity.finish(activity_id,"FAILED","Local AI server is unavailable")
         raise HTTPException(status_code=503, detail=str(error)) from error
+    except Exception:
+        resource_activity.finish(activity_id,"FAILED","Writing task did not complete")
+        raise
 
 
 @app.put("/api/projects/{project_id}/creative-drafts/{draft_id}")
