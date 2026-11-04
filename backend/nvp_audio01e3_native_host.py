@@ -101,7 +101,7 @@ class NativeAudioHost:
         if (type(ram_mb) is not int or not 1024<=ram_mb<=8192 or
             type(duration_s) is not int or not 30<=duration_s<=86400):
             raise ValueError("Bounded audio resource request required")
-        job="audiojob_"+secrets.token_hex(12)
+        job="audiojob"+secrets.token_hex(12)
         folder=self.root/job
         target=Path(directory)
         if target.exists() or target.is_symlink() or target.parent.is_symlink() or not target.parent.is_dir():
