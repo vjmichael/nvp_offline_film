@@ -65,6 +65,13 @@ def validate_picture_lock(capture,project_id,lock_id):
         or data.get("director_approved") is not True
         or data.get("final_master") is not False):
         raise PermissionError("No immutable creator-approved picture lock")
+    if (row["revision"]!=1 or data.get("status")!="creator_locked_picture"
+        or data.get("audio_included") is not False
+        or data.get("fps")!=24
+        or row["dependencies"]!=[
+            {"object_id":data["source_picture_id"],"revision":1,
+             "role":"presentation"}]):
+        raise RuntimeError("Picture lock revision or dependencies changed")
     original=capture.index.read_revision(
         project_id,data["source_picture_id"],data["source_revision"])
     if (original["document_sha256"]!=data["source_document_sha256"]
