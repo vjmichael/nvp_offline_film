@@ -35,3 +35,7 @@ Official references:
 - https://lmstudio.ai/docs/python/manage-models/loading
 - https://lmstudio.ai/docs/python/model-info/get-model-info
 - https://lmstudio.ai/docs/developer/rest/list
+
+## Manual real-runtime acceptance
+
+The repository includes tools/nvp_stack02c3b3_local_model_acceptance.py. It defaults to estimate-only without starting a model, requires a pinned native LM Studio CLI executable, and is intentionally developer-only. To load a new CPU instance and immediately unload only that same verified handle, the operator must supply both --execute and the literal --creator-consent I_APPROVE_NEW_CPU_MODEL_AND_OWNED_UNLOAD. The runtime records evidence in a dedicated state directory; when admission is unsafe it queues without launching. This script has not been run against a real installed LM Studio server or model on the creator's machine. Native CLI script/batch launchers are not supported by this safe no-shell fixture.
