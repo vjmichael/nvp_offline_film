@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install NVP foundation Python requirements
+        run: python -m pip install -r requirements-foundation.txt
       - name: Install native FFmpeg/FFprobe on Linux
         if: runner.os == 'Linux'
         run: |
