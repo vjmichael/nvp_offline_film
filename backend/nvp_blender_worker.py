@@ -27,6 +27,7 @@ import time
 from typing import Mapping
 
 from backend.nvp_worker_containment import launch_contained
+from backend.nvp_worker_host_lease import exclusive_worker_host
 
 JOB_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,79}$")
 SHA = re.compile(r"^[a-f0-9]{64}$")
@@ -295,12 +296,13 @@ class BlenderWorkerSupervisor:
         token.set()
         return True
 
+    @exclusive_worker_host
     def recover_interrupted(self):
         """After restart never accept or replay an in-flight job automatically.
 
         This records that OS-level orphan cleanup remains UNPROVEN, not success.
-        Call only during a genuine cold host startup with exclusive ownership of
-        this journal; concurrently running multiple host instances is unsupported.
+        Cross-process exclusive ownership is enforced by the OS lease; a
+        second active NVP instance cannot steal live worker journal ownership.
         """
         with self._lock:
             if self._running:
@@ -312,6 +314,7 @@ class BlenderWorkerSupervisor:
                     error="Host restarted while worker running; output is untrusted; orphan cleanup not proven")
         return [r[0] for r in records]
 
+    @exclusive_worker_host
     def run(self, op: BlenderOperation):
         if not isinstance(op, BlenderOperation) or not JOB_ID.fullmatch(op.job_id):
             raise ValueError("Invalid typed Blender job")
