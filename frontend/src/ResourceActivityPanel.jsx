@@ -33,19 +33,20 @@ function Meter({ label, total, available, hint }) {
 }
 
 function Task({ item }) {
-  const active=!terminal.has(item.state) && item.state!=='QUEUED';
+  const active=!terminal.has(item.state) && item.state!=='QUEUED' && item.state!=='STALE_UNVERIFIED';
   const measured=typeof item.completed_fraction==='number' &&
     Number.isFinite(item.completed_fraction) && item.completed_fraction>=0 &&
     item.completed_fraction<=1;
   return <div className={'ra-task ra-'+item.state.toLowerCase()} data-testid={'task-'+item.id}>
     <div className="ra-between"><strong>{item.title}</strong>
-      <span>{item.state==='QUEUED'?'Queued':measured?String(Math.round(item.completed_fraction*100))+'%':active?'Working':item.state}</span></div>
+      <span>{item.state==='QUEUED'?'Queued':item.state==='STALE_UNVERIFIED'?'Recovery needed':measured?String(Math.round(item.completed_fraction*100))+'%':active?'Working':item.state}</span></div>
     <small>{item.kind==='external_ai'?'Externally managed AI server':item.kind.replaceAll('_',' ')}</small>
     <p className="ra-phase">{names[item.phase]||item.phase.replaceAll('_',' ')}</p>
     {active && (measured
       ? <progress aria-label={item.title+' measured progress'} max="100" value={Math.round(item.completed_fraction*100)}/>
       : <progress aria-label={item.title+' working; percent unknown'}/>)}
     {item.state==='QUEUED' && <p className="ra-wait">Not started. NVP is preserving computer memory headroom.</p>}
+    {item.state==='STALE_UNVERIFIED' && <p className="ra-wait">No recent worker heartbeat. NVP is holding the reservation until safe recovery is verified.</p>}
     {item.detail && <p>{item.detail}</p>}
   </div>;
 }
