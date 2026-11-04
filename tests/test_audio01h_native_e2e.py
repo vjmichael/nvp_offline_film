@@ -64,7 +64,6 @@ def make_source(root):
     return cap,pid
 
 
-@unittest.skipUnless(shutil.which("ffmpeg"), "Native FFmpeg is required")
 class NativeAudio01HEndToEnd(unittest.TestCase):
     def test_multistem_composite_through_contained_worker_to_creator_final_mix(self):
         with tempfile.TemporaryDirectory() as temporary:
