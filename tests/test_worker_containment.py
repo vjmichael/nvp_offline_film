@@ -29,7 +29,7 @@ def running(pid):
     if os.name == "nt":
         import pywintypes, win32api, win32con, win32event
         try:
-            handle=win32api.OpenProcess(win32con.PROCESS_QUERY_LIMITED_INFORMATION,False,pid)
+            handle=win32api.OpenProcess(win32con.PROCESS_QUERY_LIMITED_INFORMATION | win32con.SYNCHRONIZE,False,pid)
         except pywintypes.error:
             return False
         try:
