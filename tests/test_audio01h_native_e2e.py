@@ -118,6 +118,21 @@ class NativeAudio01HEndToEnd(unittest.TestCase):
             self.assertEqual(cap.index.history(pid,"mixdecision")[0]["revision"],1)
             self.assertEqual(cap.index.history(pid,"mixdecision")[1]["revision"],2)
 
+    def test_missing_worker_stop_witness_refuses_recovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            cap,pid=make_source(root)
+            ledger=TaskLedger(root/"ledger",sampler=lambda:ResourceSnapshot(
+                0,16000,12000,0,tuple()))
+            host=NativeAudio01HHost(cap,ledger,root/"native",
+                verify_creator_action=lambda *_:True,strict_linux_tree=False)
+            queued=host.stage(pid,"originalaudio",root,root/"pending.wav",
+                              "pendingmix",[[0,0],[47999,0]],"approve_stage")
+            with self.assertRaises(PermissionError):
+                host.recover_completed(queued["job_id"])
+            self.assertEqual(ledger.get_task(queued["job_id"])["state"],"QUEUED")
+            self.assertFalse((root/"pending.wav").exists())
+
     def test_denied_automation_cannot_enqueue_or_publish(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
