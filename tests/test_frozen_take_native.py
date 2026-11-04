@@ -12,6 +12,7 @@ from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
 from backend.nvp_frozen_take_stage import stage_frozen_take,verify_frozen_stage,_source,TIMED,SCRIPT
 from backend.nvp_frozen_take_render import NativeFrozenTakeRender
 from backend.nvp_frozen_take_audit import NativeFrozenTakeAuditor
+from backend.nvp_frozen_take_presentation import publish_verified_preview,verify_presentation
 from backend.nvp_resource_guard import ResourceSnapshot
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_world_state import WorldState
@@ -200,6 +201,18 @@ class FrozenNativeTakeTests(unittest.TestCase):
         self.host.revoke_from_trusted_native_action(grant["approval_id"],self.event)
         with self.assertRaises(PermissionError):
             NativeFrozenTakeAuditor(self.host).reopen_and_verify(grant["approval_id"])
+
+    def test_unrendered_take_cannot_create_indexed_presentation(self):
+        grant=self.approve()
+        with self.assertRaisesRegex(RuntimeError,"not been executed"):
+            publish_verified_preview(NativeFrozenTakeAuditor(self.host),grant["approval_id"])
+        self.assertEqual(self.capture.index.list_objects(self.pid,kind="presentation"),[])
+
+    def test_unknown_cross_project_presentation_reference_rejected(self):
+        other=self.studio.create_project("Another feature","")["id"]
+        with self.assertRaises(KeyError):
+            verify_presentation(self.capture,other,"preview_nonexistent")
+        self.assertEqual(self.capture.index.list_objects(self.pid,kind="presentation"),[])
 
     def test_native_review_budget_checked_before_any_blender_execution(self):
         grant=self.approve()
