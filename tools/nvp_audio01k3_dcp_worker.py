@@ -19,7 +19,8 @@ if __name__ == "__main__" and not __package__:
 
 from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_audio01k3_dcp import (
-    encode_candidate, inspect_dcp_directory, validate_strict_smpte, sha_file)
+    encode_candidate, inspect_dcp_directory, inspect_cpl_timing,
+    validate_strict_smpte, sha_file)
 
 
 def main():
@@ -78,6 +79,7 @@ def main():
             shutil.copyfileobj(inp,out,1024*1024)
             out.flush();os.fsync(out.fileno())
     receipt_stage=inspect_dcp_directory(stage)
+    timing=inspect_cpl_timing(stage,plan["frames"])
     if receipt_stage["assets"]!=preflight["assets"] or receipt_stage["assets"]!=qc["asset_sha256_proof"]:
         raise RuntimeError("Staged DCP differs from independently validated package")
     receipt={
@@ -85,6 +87,7 @@ def main():
         "source_movie_sha256":plan["movie_sha256"],
         "distribution_document_sha256":plan["distribution_sha"],
         "structural_proof":receipt_stage,
+        "cpl_timing":timing,
         "independent_qc":qc,
         "dcp_delivered":False,
         "theatrical_exhibition_certified":False,
