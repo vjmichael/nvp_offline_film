@@ -88,10 +88,12 @@ class ApprovedBindingTests(unittest.TestCase):
             decision["allowed"]=False
             with self.assertRaises(PermissionError):
                 binder.claim_next(owner_key="blender_host")
-            # After a claim, a revoked creator grant must NOT start Blender;
-            # conservatively retain reservation until host reconciliation.
-            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],2048)
+            # A revocation caught before admission must not strand memory.
+            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],0)
+            self.assertEqual(ledger.get_task("job")["state"],"QUEUED")
             decision["allowed"]=True
+            self.assertTrue(binder.claim_next(owner_key="blender_host")["admitted"])
+            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],2048)
             with ledger._db() as db:
                 db.execute("UPDATE authorized_task_specs SET spec_json=? WHERE task_id=?",
                            ('{"kind":"blender","task_id":"job","source":"tampered"}',"job"))
