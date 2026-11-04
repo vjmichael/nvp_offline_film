@@ -173,7 +173,7 @@ def encode_candidate(input_mov, workspace, title, *, create_bin, cli_bin,
     return dcp, report
 
 
-def validate_strict_smpte(dcp, doctor_bin, *, timeout=21600):
+def validate_strict_smpte(dcp, doctor_bin, *, timeout=21600, report_dir=None):
     """Mandatory independent DcpDoctor SMPTE and deep-essence validation.
 
     Requires exit 0, fails on skipped validator checks; never supplies
@@ -191,8 +191,20 @@ def validate_strict_smpte(dcp, doctor_bin, *, timeout=21600):
         cwd=str(package.parent), stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
         check=False)
-    stdout = result.stdout.decode("utf8", "replace")[:65536]
-    stderr = result.stderr.decode("utf8", "replace")[:65536]
+    if len(result.stdout) > 2 * 1024 * 1024 or len(result.stderr) > 2 * 1024 * 1024:
+        raise RuntimeError("Independent DCP validation report exceeded 2 MiB bound")
+    if report_dir is not None:
+        path=Path(report_dir)
+        if path.is_symlink() or not path.is_dir():
+            raise RuntimeError("Unsafe cinema validator report directory")
+        for name,raw in (("dcpdoctor_stdout.txt",result.stdout),
+                         ("dcpdoctor_stderr.txt",result.stderr)):
+            with (path/name).open("xb") as report:
+                report.write(raw)
+                report.flush()
+                os.fsync(report.fileno())
+    stdout = result.stdout.decode("utf8", "replace")
+    stderr = result.stderr.decode("utf8", "replace")
     if result.returncode != 0:
         raise RuntimeError("Independent strict SMPTE validator rejected DCP: " +
                            (stdout + stderr)[-1500:])
