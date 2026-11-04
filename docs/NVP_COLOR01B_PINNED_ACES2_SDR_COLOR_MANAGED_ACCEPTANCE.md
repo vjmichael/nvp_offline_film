@@ -1,6 +1,6 @@
 # NVP-COLOR-01B — Pinned ACES 2 Color-managed SDR Mastering Intermediate
 
-**Status as of 2026-11-03:** Native technical **16-bit SDR review sequence** conversion demonstrated on actual NVP Digital Take; **NOT** a calibrated, director-approved, video-format or theatrical master. The code's latest anti-tamper additions require current CI verification before advancing this stage.
+**Status as of 2026-11-03:** Native technical **16-bit SDR review sequence** conversion **PASSED both GitHub Linux CI jobs** after transparent-input/forged-view hardening; independently verified against a real frozen Digital Take. **NOT** a calibrated, director-approved, video-format or theatrical master. Windows color-runtime CI is in progress separately.
 
 ## Intent, authority and identity
 
@@ -42,16 +42,16 @@ This stage is limited to a maximum of **120** review frames, within a bounded 19
 
 ## Native creator-file evidence
 
-GitHub Actions [run 41747374043](https://github.com/vjmichael/nvp_offline_film/actions/runs/41747374043) first passed the **real Blender native lane**: it rendered actual Cycles/EXR source from a frozen Digital Take, created **four 128×72 color-managed 16-bit PNGs**, and proved exact 16-bit independent FFmpeg readback, restart recovery, restored corruption refusal, FilmIndex source integrity and cross-project isolation. The Python lane of that early run failed **one test wording assertion** (it expected the phrase 'nonfinite' rather than the actual explicit 'NaN/Infinity' refusal), not an uncorrected color transform. A later regression will verify the wording correction.
+GitHub Actions [run 41747736864](https://github.com/vjmichael/nvp_offline_film/actions/runs/41747736864) passed **both Linux CI lanes** after hardening, including the **real Blender native lane**: it rendered actual Cycles/EXR source from a frozen Digital Take, created **four 128×72 color-managed 16-bit PNGs**, and proved exact 16-bit independent FFmpeg readback, restart recovery, restored corruption refusal, FilmIndex source integrity and cross-project isolation. The Python lane of that early run failed **one test wording assertion** (it expected the phrase 'nonfinite' rather than the actual explicit 'NaN/Infinity' refusal), not an uncorrected color transform. A follow-on Linux run has since **passed** the corrected wording check and all targeted legacy regressions.
 
 ### Observed image and HDR reference metrics
 
 - Source EXR presentation revision SHA-256: `16b67b3e9ce34291b4384696e914560a318989bcfbd9b6ff045614b2ae7a3363`.
-- Graded SDR review FilmIndex SHA-256: `6a593f4b378f9f4a7a7b5bf1701986740454748b477872220e9bf7e72683d490`.
+- Graded SDR review FilmIndex SHA-256 (final native hardening run): `78c68396d3f1fa0682f3177f4d6060b2ab8718e32364e8d840f412085195dc22`.
 - Native input HDR diagnostic sample RGB: `(2.25, 0.370361328125, 0.05859375)`.
 - OCIO-transformed display float RGB: approximately `(0.983328879, 0.52537, 0.319996983)`; quantized RGB16: `(64442, 34430, 20971)`.
 - Measured clipping for **all four actual rendered 128×72 frames**: **0 channels**; source and RGB16 output SHA-256s retained individually in `color01b_report.json`.
-- Original Digital Take SHA-256 unchanged; fresh `Studio` reopens and re-decodes each graded PNG successfully. Corrupted PNG detected; restored original accepted.
+- Original Digital Take SHA-256 unchanged; fresh `Studio` reopens and re-decodes each graded PNG successfully. Corrupted PNG detected; restored original accepted. A separately published forged FilmIndex review claiming the `Raw` view instead of the declared ACES 2 view was also **refused** despite valid underlying image hashes.
 
 The test fixture sets the source-primaries confirmation flag for a **technical test**, not a real director's creative or calibration signoff. Actual movie mastering remains gated.
 
