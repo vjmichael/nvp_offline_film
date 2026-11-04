@@ -138,7 +138,7 @@ def conform_sdr16_picture(capture, project_id: str, edit_id: str, revision: int,
     }
     _new_file(destination / "conform_manifest.json", _canonical(manifest))
     deps = [
-        {"object_id": edit_id, "revision": revision, "role": "edit"},
+        {"object_id": edit_id, "revision": revision, "role": "timeline"},
         {"object_id": delivery_id, "revision": 1, "role": "presentation"},
         {"object_id": edit["source_take_id"], "revision": 1, "role": "source_take"},
     ]
@@ -175,7 +175,7 @@ def verify_conformed_sdr16(capture, project_id: str, presentation_id: str,
     if source["document_sha256"] != data["source_delivery_sha256"]:
         raise RuntimeError("B14 source delivery SHA changed")
     expected_deps = sorted([
-        {"object_id": data["edit_id"], "revision": edit_revision, "role": "edit"},
+        {"object_id": data["edit_id"], "revision": edit_revision, "role": "timeline"},
         {"object_id": data["source_delivery_id"], "revision": 1, "role": "presentation"},
         {"object_id": data["source_take_id"], "revision": 1, "role": "source_take"},
     ], key=lambda x: (x["object_id"], x["revision"], x["role"]))
