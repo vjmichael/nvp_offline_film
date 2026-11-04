@@ -43,6 +43,8 @@ jobs:
           python -m unittest discover -s tests -p test_audio_admission_outbox.py -v
           python -m unittest discover -s tests -p test_audio_journal_only_recovery.py -v
           python -m unittest discover -s tests -p test_audio01f_picture_sound.py -v
+          python -m unittest discover -s tests -p test_audio01g_mux_recovery.py -v
+          python -m unittest discover -s tests -p test_audio02_finishing.py -v
           python -m unittest discover -s tests -p test_audio_native_os_termination.py -v
           python -m unittest discover -s tests -p test_audio_windows_job_object_descendants.py -v
           if ($LASTEXITCODE -ne 0) { throw 'B14 Windows contract failed' }
@@ -76,6 +78,8 @@ jobs:
           python -m unittest discover -s tests -p test_audio_admission_outbox.py -v
           python -m unittest discover -s tests -p test_audio_journal_only_recovery.py -v
           python -m unittest discover -s tests -p test_audio01f_picture_sound.py -v
+          python -m unittest discover -s tests -p test_audio01g_mux_recovery.py -v
+          python -m unittest discover -s tests -p test_audio02_finishing.py -v
           python -m unittest discover -s tests -p test_audio_native_os_termination.py -v
           python -m unittest discover -s tests -p test_audio_linux_strict_cgroup.py -v
 
