@@ -30,7 +30,7 @@ def _check_evidence(evidence, wav_sha):
 
 
 def record_mix_decision(capture, project_id, automated_id, decision_id,
-                        evidence, *, decision, creator_event, authorize, ffmpeg="ffmpeg"):
+                        evidence, *, decision, creator_event, authorize, ffmpeg="ffmpeg", measure=None):
     """Append an exact creator ACCEPT/REJECT/REVOKE decision to FilmIndex.
 
     Approval requires a current real creator action. Native host must bind
@@ -54,7 +54,7 @@ def record_mix_decision(capture, project_id, automated_id, decision_id,
     _check_evidence(evidence, wav_sha)
     # Refuse self-reported loudness. Independent native FFmpeg evidence must
     # agree with the exact content-addressed FilmIndex WAV being approved.
-    measured = analyze_wav(stored["path"], ffmpeg=ffmpeg,
+    measured = (analyze_wav if measure is None else measure)(stored["path"], ffmpeg=ffmpeg,
                            expected_samples=data["samples_per_channel"])
     for metric in ("integrated_lufs", "true_peak_dbtp", "loudness_range_lu"):
         if abs(measured[metric] - evidence[metric]) > 0.01:
