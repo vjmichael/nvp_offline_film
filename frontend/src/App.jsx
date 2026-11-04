@@ -9,6 +9,7 @@ import MotionRigPanel from './MotionRigPanel.jsx';
 import SkinningPanel from './SkinningPanel.jsx';
 import CharacterRigPanel from './CharacterRigPanel.jsx';
 import RetargetPanel from './RetargetPanel.jsx';
+import ColorGradingGuide from './ColorGradingGuide.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -413,6 +414,7 @@ export default function App() {
           <button className={tab === 'character' ? 'active' : ''} onClick={() => setTab('character')}>13 · Real characters</button>
           <button className={tab === 'retarget' ? 'active' : ''} onClick={() => setTab('retarget')}>14 · Calibrate actors</button>
           <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>15 · Make the film</button>
+          <button className={tab === 'color-guide' ? 'active' : ''} onClick={() => setTab('color-guide')}>Help · Color grading</button>
         </nav>
         {tab === 'develop' && <div className="columns">
           <section className="card">
@@ -681,6 +683,7 @@ export default function App() {
         {tab === 'skin' && <SkinningPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'character' && <CharacterRigPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'retarget' && <RetargetPanel project={project} api={api} action={action} busy={busy} />}
+        {tab === 'color-guide' && <ColorGradingGuide />}
         {tab === 'make' && <section className="card make"><div className="kicker">FUTURE MILESTONE</div>
           <h2>Bring your movie to life</h2><p>NVP will eventually build 3D sets, animate characters, film camera shots, edit scenes, mix audio and export the movie. This is not implemented in this foundation build.</p>
           <div className="future"><span>Build a location — planned</span><span>Animate characters — planned</span><span>Film a scene — planned</span><span>Edit and export — planned</span></div>
