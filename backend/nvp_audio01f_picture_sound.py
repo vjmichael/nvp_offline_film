@@ -220,8 +220,13 @@ def build_picture_sound_preview(capture,project_id,candidate_id,audio_id,
     output=Path(destination)
     if output.exists() or output.is_symlink() or not output.parent.is_dir() or output.parent.is_symlink():
         raise RuntimeError("Picture-sound output must be absent")
-    output.mkdir(mode=0o700)
-    mux=output/"picture_sound_review.mov"
+    # Keep partial FFmpeg output invisible at the final presentation path.
+    # The staging directory and destination must share a filesystem.
+    staging=output.with_name(".nvp-audio01g-"+output.name+".stage")
+    if staging.exists() or staging.is_symlink():
+        raise RuntimeError("Previous interrupted mux staging requires native audit")
+    staging.mkdir(mode=0o700)
+    mux=staging/"picture_sound_review.mov"
     timing=mux_picture_sound_review(source,wav,mux,
                                     frames=picdata["frame_count"],
                                     ffmpeg=ffmpeg,ffprobe=ffprobe)
@@ -243,9 +248,20 @@ def build_picture_sound_preview(capture,project_id,candidate_id,audio_id,
         "final_mix":False,"final_master":False,"dcp_delivered":False,
     }
     raw=_canonical(document)
-    with (output/"picture_sound_manifest.json").open("xb") as handle:
+    with (staging/"picture_sound_manifest.json").open("xb") as handle:
         handle.write(raw)
         handle.flush()
+        os.fsync(handle.fileno())
+    # A completed, independently decoded MOV and canonical manifest are
+    # atomically promoted together. FilmIndex presentation follows promotion,
+    # never preceding a partial file. Crash windows retain inspectable orphans.
+    with mux.open("rb") as handle:
+        os.fsync(handle.fileno())
+    os.replace(staging,output)
+    if os.name=="posix":
+        fd=os.open(str(output.parent),os.O_RDONLY | getattr(os,"O_DIRECTORY",0))
+        try:os.fsync(fd)
+        finally:os.close(fd)
     deps=[
         {"object_id":candidate_id,"revision":1,"role":"presentation"},
         {"object_id":audio_id,"revision":1,"role":"audio"},
