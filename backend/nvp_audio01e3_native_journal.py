@@ -16,6 +16,7 @@ from backend.nvp_audio01d_chunked_recovery import (
     _read_state, _audit_chunks, _validate, _check_inputs,
 )
 from backend.nvp_audio01e2_orphan_recovery import reconcile_next_chunk
+from backend.nvp_audio_checkpoint_stage_recovery import reconcile_checkpoint_stage
 from backend.nvp_film_index import _id
 
 FORMAT = "nvp.audio.native_job_journal.v1"
@@ -177,8 +178,16 @@ class AudioJobJournal:
         for sid,expected in spec["source_sha256"].items():
             if _sha_source(sources[sid])!=expected:
                 raise RuntimeError("Original authorized audio source changed")
-        result=reconcile_next_chunk(spec["plan"],sources,spec["total_samples"],
-                                    spec["directory"])
+        staged=reconcile_checkpoint_stage(spec["plan"],sources,spec["total_samples"],
+                                           spec["directory"])
+        # If a crash occurred after writing the final completion marker, the
+        # source-verified chunk chain already covers the full intended range.
+        current=_read_state(Path(spec["directory"]))
+        if current["status"]=="complete":
+            result={"status":"COMPLETED_CHECKPOINT_AFTER_RECOVERY","stage":staged}
+        else:
+            result=reconcile_next_chunk(spec["plan"],sources,spec["total_samples"],
+                                        spec["directory"])
         stage=_read_state(Path(spec["directory"]))
         progress=_audit_chunks(Path(spec["directory"]),stage)
         if progress<row["last_next_sample"]:
