@@ -6,7 +6,7 @@ import unittest
 import wave
 from unittest.mock import patch
 
-from backend.nvp_audio02a_automation import automate_stem
+from backend.nvp_audio02a_automation import automate_stem,sum_automated_stems
 from backend.nvp_audio02b_loudness_qc import measure_mix,FORMAT as QC_FORMAT
 from backend.nvp_audio02c_mix_approval import (
     approve_final_mix,verify_final_mix_approval,
@@ -44,6 +44,25 @@ class AudioFinishing(unittest.TestCase):
         self.assertEqual(first,(0,0))
         self.assertEqual(last,(1000,-1000))
         self.assertFalse(evidence["final_master"])
+
+    def test_automated_multistem_composite_and_source_preservation(self):
+        original=self.source.read_bytes()
+        stem_a=self.root/"stem_a.wav"
+        stem_b=self.root/"stem_b.wav"
+        unity=[{"sample":0,"gain_milli":1000},
+               {"sample":self.samples-1,"gain_milli":1000}]
+        automate_stem(self.source,stem_a,unity)
+        automate_stem(self.source,stem_b,unity)
+        mixed=self.root/"mix.wav"
+        report=sum_automated_stems([stem_a,stem_b],mixed)
+        self.assertEqual(report["stems"],2)
+        self.assertFalse(report["final_master"])
+        with wave.open(str(mixed),"rb") as wav:
+            self.assertEqual(wav.getnframes(),self.samples)
+            self.assertEqual(struct.unpack("<hh",wav.readframes(1)),(2000,-2000))
+        self.assertEqual(self.source.read_bytes(),original)
+        with self.assertRaises(RuntimeError):
+            sum_automated_stems([stem_a,stem_a],self.root/"duplicate.wav")
 
     def test_invalid_automation_no_source_change(self):
         with self.assertRaises(ValueError):
