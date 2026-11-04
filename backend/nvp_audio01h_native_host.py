@@ -390,6 +390,28 @@ class NativeAudio01HHost:
         """Creator-only host entrypoint, with durable replay prevention."""
         if type(creator_event) is not str or not creator_event:
             raise PermissionError("Authenticated creator event identifier required")
+        # A FilmIndex audio object is insufficient: only a fully completed,
+        # OS-reaped native producer may supply a candidate for final approval.
+        source = self.capture.index.read_revision(project_id,automated_id,1)
+        with self.ledger._db() as db:
+            rows=db.execute("""SELECT g.job_id FROM native_audio01h_grants g
+                JOIN tasks t ON t.id=g.job_id
+                WHERE g.result_sha=? AND g.stopped=1 AND g.revoked=0
+                AND t.state='SUCCEEDED' AND t.reserved=0""",
+                (source["document_sha256"],)).fetchall()
+        matches=[]
+        for (candidate_job,) in rows:
+            sealed=self.root/candidate_job/"plan.json"
+            grant=self._grant(candidate_job)
+            if sealed.is_symlink() or not sealed.is_file() or _sha(sealed)!=grant["plan_sha"]:
+                continue
+            pinned=json.loads(sealed.read_bytes())
+            if (pinned.get("project_id")==project_id and
+                pinned.get("output_id")==automated_id and
+                pinned.get("stem_id") is None):
+                matches.append(candidate_job)
+        if len(matches)!=1:
+            raise PermissionError("Final-mix candidate lacks one completed contained native producer")
         # Require trusted human-event admission BEFORE reserving its nonce.
         # This preflight is not sufficient for publication; full exact scope
         # is independently rechecked by record_mix_decision below.
