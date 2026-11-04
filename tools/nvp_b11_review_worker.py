@@ -17,7 +17,8 @@ if __name__=="__main__" and not __package__:
 
 from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_b11_editorial import (
-    render_aces2_sdr_review,frozen_review_source,SOURCE_COLOR_SPACE)
+    render_aces2_sdr_review,frozen_review_source,SOURCE_COLOR_SPACE,
+    NEAR_OPAQUE_ALPHA_POLICY,MAX_ALPHA_SHORTFALL)
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_studio import Studio
 
@@ -29,10 +30,13 @@ def execute(plan_path:Path):
                      "source_presentation_sha256","source_take_id",
                      "source_take_sha256","review_id","studio_db_path",
                      "output_dir","source_primaries","frames","fps",
-                     "resolution","policy_sha256"}):
+                     "resolution","policy_sha256","alpha_policy",
+                     "max_alpha_shortfall"}):
         raise PermissionError("Malformed or unapproved native editorial plan")
-    if source["source_primaries"]!=SOURCE_COLOR_SPACE or source["fps"]!=24:
-        raise PermissionError("Unverified original film source color/timing")
+    if (source["source_primaries"]!=SOURCE_COLOR_SPACE or source["fps"]!=24 or
+        source.get("alpha_policy")!=NEAR_OPAQUE_ALPHA_POLICY or
+        source.get("max_alpha_shortfall")!=MAX_ALPHA_SHORTFALL):
+        raise PermissionError("Unverified original film source color, alpha or timing")
     if Path(source["output_dir"]).resolve()!=plan_path.parent/"display_frames":
         raise PermissionError("Native editor output was redirected")
     import hashlib
