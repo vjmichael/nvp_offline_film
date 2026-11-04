@@ -67,6 +67,12 @@ class NativeAudioHost:
                 directory TEXT PRIMARY KEY, job_id TEXT UNIQUE NOT NULL,
                 predecessor TEXT
             )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS audio_native_admission_outbox(
+                job_id TEXT PRIMARY KEY, approved_document TEXT NOT NULL,
+                document_sha TEXT NOT NULL, approval_id TEXT NOT NULL,
+                owner_key TEXT NOT NULL, ram_mb INTEGER NOT NULL,
+                state TEXT NOT NULL CHECK(state IN ('pending','enqueued'))
+            )""")
         self.binding=ApprovedTaskBindings(self.ledger,approval_check=self._check)
         self._running={}  # host-owned live process handles only
 
@@ -194,9 +200,11 @@ class NativeAudioHost:
                 (job,approval,creator_event,canonical_bytes(scope).decode("ascii"),
                  seal,_sha_file(folder/"worker_plan.json"),_sha_file(self.python),
                  _sha_file(self.worker),time.time()+duration_s))
-        self.binding.enqueue(AdmissionRequest(job,"compositing","NVP native audio preview",ram_mb),
-                             owner_key=self.owner,lane="standard",approval_id=approval,
-                             document=spec)
+            db.execute("""INSERT INTO audio_native_admission_outbox(
+                job_id,approved_document,document_sha,approval_id,owner_key,ram_mb,state
+            ) VALUES(?,?,?,?,?,?,'pending')""",
+                (job,canonical_bytes(spec).decode("ascii"),seal,approval,self.owner,ram_mb))
+        self.reconcile_admission_outbox(job)
         return {"job_id":job,"state":"QUEUED","contained_worker_started":False,
                 "resume_from":resume_from,"spec_sha256":seal}
 
@@ -275,6 +283,52 @@ class NativeAudioHost:
         finally:
             if staging_lock is not None:
                 staging_lock.release()
+
+    def reconcile_admission_outbox(self,job):
+        """Idempotent native replay of split-commit grant to TaskLedger queue.
+
+        Must be called by trusted host after authorization, before executing.
+        ApprovedTaskBindings.enqueue is itself atomic with queued task/receipt.
+        No ACTIVE job is ever recreated or resource reservation released.
+        """
+        with self.ledger._db() as db:
+            row=db.execute("""SELECT approved_document,document_sha,approval_id,
+                owner_key,ram_mb,state FROM audio_native_admission_outbox
+                WHERE job_id=?""",(job,)).fetchone()
+        if row is None:
+            raise RuntimeError("Unrecognized legacy admission; quarantine only")
+        serialized,seal,approval,owner,ram_mb,state=row
+        document=json.loads(serialized)
+        if (canonical_bytes(document).decode("ascii")!=serialized or
+            hashlib.sha256(serialized.encode("ascii")).hexdigest()!=seal or
+            document.get("task_id")!=job or document.get("kind")!="compositing" or
+            owner!=self.owner or document.get("ram_mb")!=ram_mb):
+            raise RuntimeError("Persisted admission outbox is corrupt")
+        # Recheck the current creator policy, code/source hashes, lease and
+        # job journal on every replay, never trust an old approval indefinitely.
+        if not self._check(approval,seal,document):
+            raise PermissionError("Audio creator approval or bound source no longer valid")
+        with self.ledger._db() as db:
+            task=db.execute("SELECT state FROM tasks WHERE id=?",(job,)).fetchone()
+        if task is None:
+            self.binding.enqueue(AdmissionRequest(job,"compositing",
+                "NVP native audio preview",ram_mb),owner_key=owner,
+                lane="standard",approval_id=approval,document=document)
+        elif task[0]=="QUEUED":
+            verified=self.binding.verified_spec(job,owner_key=owner,
+                                                  require_active=False)
+            if verified!=document:
+                raise RuntimeError("Existing queued task differs from sealed outbox")
+        else:
+            raise RuntimeError("Outbox recovery cannot touch admitted or terminal task")
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            updated=db.execute("""UPDATE audio_native_admission_outbox
+                SET state='enqueued' WHERE job_id=? AND document_sha=?
+                AND state IN ('pending','enqueued')""",(job,seal)).rowcount
+            if updated!=1:
+                raise RuntimeError("Admission outbox was replaced")
+        return {"job_id":job,"status":"VERIFIED_QUEUED","spec_sha256":seal}
 
     def audit_incomplete_admissions(self):
         """Read-only crash audit; never release a resource or forge approval.
