@@ -89,7 +89,7 @@ class AudioFrameMappingTests(unittest.TestCase):
     def test_invalid_source_sample_count_cannot_publish(self):
         with wave.open(str(self.source),"wb") as w:
             w.setnchannels(2);w.setsampwidth(2);w.setframerate(RATE)
-            w.writeframes(b"\\0"*8000)
+            w.writeframes(bytes(8000))
         with self.assertRaisesRegex(RuntimeError,"not aligned"):
             conform_pcm_audio(self.capture,self.pid,self.edit_id,1,
                               self.source,self.root/"invalid","bad_audio")
