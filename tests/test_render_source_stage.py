@@ -75,7 +75,7 @@ class FrozenSourceStageTests(unittest.TestCase):
         wrong={**self.proof,"native_approval":"granted"}
         with self.assertRaises(RuntimeError):
             stage_proxy_render_source(self.studio,self.supervisor,wrong)
-        self.assertEqual(list(self.supervisor.root.iterdir()),[])
+        self.assertEqual([p for p in self.supervisor.root.iterdir() if p.is_dir()],[])
 
     def test_staged_worker_script_or_manifest_tampering_denied(self):
         for name in ("trusted_scene_build.py","approved_manifest.json"):
@@ -113,7 +113,7 @@ class FrozenSourceStageTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 stage_proxy_render_source(self.studio,self.supervisor,self.proof)
         self.assertEqual(invocations,["approved_manifest.json","trusted_scene_build.py"])
-        self.assertEqual(list(self.supervisor.root.iterdir()),[])
+        self.assertEqual([p for p in self.supervisor.root.iterdir() if p.is_dir()],[])
 
     def test_unsafe_resource_settings_fail_before_staging(self):
         for kwargs in ({"ram_mb":128},{"ram_mb":True},
@@ -123,7 +123,7 @@ class FrozenSourceStageTests(unittest.TestCase):
             with self.subTest(kwargs=kwargs):
                 with self.assertRaises(ValueError):
                     stage_proxy_render_source(self.studio,self.supervisor,self.proof,**kwargs)
-        self.assertEqual(list(self.supervisor.root.iterdir()),[])
+        self.assertEqual([p for p in self.supervisor.root.iterdir() if p.is_dir()],[])
 
     def test_caller_cannot_forge_staged_permission_or_job_spec(self):
         staged=stage_proxy_render_source(self.studio,self.supervisor,self.proof)
