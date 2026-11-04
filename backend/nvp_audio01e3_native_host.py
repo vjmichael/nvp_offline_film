@@ -245,14 +245,14 @@ class NativeAudioHost:
                 self._running.pop(job,None)
             else:clean=True
             if clean:
-                # Durable witness is written only after owned process-tree
-                # termination was observed and handles were reaped/closed.
-                # Never manufacture a witness after an unverified host crash.
-                with self.ledger._db() as db:
-                    db.execute("BEGIN IMMEDIATE")
-                    db.execute("""INSERT INTO audio_native_os_stop_receipts(
-                        job_id,stopped_at,worker_reaped,stop_reason)
-                        VALUES(?,?,1,?)""",(job,time.time(),"owned_worker_closed"))
+                # A pre-launch failure has no process to reap: do not invent
+                # an OS-stop witness. Only a real owned handle can supply it.
+                if proc is not None:
+                    with self.ledger._db() as db:
+                        db.execute("BEGIN IMMEDIATE")
+                        db.execute("""INSERT INTO audio_native_os_stop_receipts(
+                            job_id,stopped_at,worker_reaped,stop_reason)
+                            VALUES(?,?,1,?)""",(job,time.time(),"owned_worker_closed"))
                 row=self.journal.read(job)
                 if row["state"] in ("approved","running"):
                     self.journal.transition(job,row["generation"],"recovery_required",
