@@ -14,7 +14,7 @@ jobs:
         os: [ubuntu-24.04, windows-2025]
         python-version: ['3.11', '3.13']
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,5 +43,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_audio01i_mastering.py backend/nvp_audio01i_native_host.py tools/nvp_audio01i_native_worker.py tests/test_audio01i_native_master_delivery.py
+          python -m compileall -q backend/nvp_audio01i_mastering.py backend/nvp_audio01i_native_host.py tools/nvp_audio01i_native_worker.py tools/nvp_audio01i_inspect_worker.py backend/nvp_audio01i_fault_matrix.py tests/test_audio01i_native_master_delivery.py tests/test_audio01i_master_host_crash_matrix.py tests/test_audio01i_master_worker_crash_matrix.py tests/test_audio01i_delivery_crash_matrix.py tests/test_audio01i_fault_coverage.py
           python -m unittest discover -s tests -p test_audio01i_native_master_delivery.py -v
+          python -m unittest discover -s tests -p test_audio01i_master_host_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01i_master_worker_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01i_delivery_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01i_fault_coverage.py -v
