@@ -95,22 +95,22 @@ def conform_pcm_audio(capture, project_id, edit_id, revision,
     output_dir.mkdir(mode=0o700)
     target = output_dir / "edited_picture_follow_pcm48.wav"
     discontinuities = []
-    with wave.open(str(input_wav), "rb") as inp, wave.open(str(target), "xb") as out:
-        out.setnchannels(CHANNELS)
-        out.setsampwidth(SAMPLE_WIDTH)
-        out.setframerate(RATE)
-        last = None
-        for n, source in mapping:
-            if last is not None and source != last + 1:
-                discontinuities.append({"edit_frame": n, "previous_source_frame": last,
-                                        "next_source_frame": source,
-                                        "needs_audio_transition_review": True})
-            inp.setpos((source - 1) * SAMPLES_PER_FRAME)
-            segment = inp.readframes(SAMPLES_PER_FRAME)
-            if len(segment) != SAMPLES_PER_FRAME * CHANNELS * SAMPLE_WIDTH:
-                raise RuntimeError("Source PCM ended mid-frame")
-            out.writeframesraw(segment)
-            last = source
+    with wave.open(str(input_wav), "rb") as inp, target.open("xb") as exclusive:\n        with wave.open(exclusive, "wb") as out:
+            out.setnchannels(CHANNELS)
+            out.setsampwidth(SAMPLE_WIDTH)
+            out.setframerate(RATE)
+            last = None
+            for n, source in mapping:
+                if last is not None and source != last + 1:
+                    discontinuities.append({"edit_frame": n, "previous_source_frame": last,
+                                            "next_source_frame": source,
+                                            "needs_audio_transition_review": True})
+                inp.setpos((source - 1) * SAMPLES_PER_FRAME)
+                segment = inp.readframes(SAMPLES_PER_FRAME)
+                if len(segment) != SAMPLES_PER_FRAME * CHANNELS * SAMPLE_WIDTH:
+                    raise RuntimeError("Source PCM ended mid-frame")
+                out.writeframesraw(segment)
+                last = source
     if _wav(target) != len(mapping) * SAMPLES_PER_FRAME:
         raise RuntimeError("Edited PCM sample count does not match edit")
     output_sha = _sha_file(target)
