@@ -240,6 +240,7 @@ class NativeOCIOColorWorker:
             return ticket
         job_id=ticket["task_id"]
         proc=None
+        launch_attempted=False
         closed=False
         try:
             doc=self.bindings.verified_spec(job_id,owner_key=self.owner_key)
@@ -267,6 +268,7 @@ class NativeOCIOColorWorker:
                   "--config-sha",row["expected_config_sha256"]]
             self.ledger.update(job_id,"rendering","Real pinned OpenColorIO ACES 2.0 CPU transform")
             with (folder/"stdout.log").open("wb") as out, (folder/"stderr.log").open("wb") as err:
+                launch_attempted=True
                 proc=launch_contained(args,cwd=str(folder),stdout=out,stderr=err,
                                       memory_mb=row["ram_mb"])
                 code=proc.wait(timeout=timeout_seconds)
@@ -291,7 +293,10 @@ class NativeOCIOColorWorker:
         except BaseException as exc:
             safe=False
             if proc is None:
-                safe=True
+                # An OS launcher may fail after creating a suspended child
+                # but before handing its containment handle to NVP. Never
+                # release reserved memory when kernel cleanup is uncertain.
+                safe=not launch_attempted
             else:
                 try:
                     if proc.poll() is None:
