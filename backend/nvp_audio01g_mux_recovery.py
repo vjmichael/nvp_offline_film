@@ -78,3 +78,27 @@ def finalize_verified_worker(host,job,attest_stopped):
     host.ledger.finish(job,"SUCCEEDED","Verified recovered technical mux")
     transition(host.ledger,job,"verified","committed",sha)
     return {"state":"SUCCEEDED","result_sha":sha,"recovered":True}
+
+
+def reconcile_post_commit_gap(host,job):
+    """Finish journal after successful TaskLedger commit interrupted host.
+
+    This never recreates a finished worker, reuses FilmIndex IDs, or changes
+    the original media. Exact result SHA must match all prior durable proofs.
+    """
+    intent=read(host.ledger,job)
+    task=host.ledger.get_task(job)
+    grant=host._grant(job)
+    if (task is None or task["state"]!="SUCCEEDED" or
+        intent["state"] not in ("verified","committed") or
+        grant["result_sha"] is None):
+        raise RuntimeError("Cannot close unverified or active mux publication")
+    if not host._attest_reaped(job):
+        raise RuntimeError("Completed mux has no native reaped-worker witness")
+    actual=verify_finished_media(host,job)
+    if (actual!=grant["result_sha"] or intent["result_sha"]!=actual):
+        raise RuntimeError("Finalized mux media or journal SHA disagrees")
+    if intent["state"]=="verified":
+        transition(host.ledger,job,"verified","committed",actual)
+    return {"job_id":job,"state":"COMMITTED_VERIFIED",
+            "document_sha256":actual,"rerendered":False}
