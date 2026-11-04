@@ -89,7 +89,11 @@ def fixture(out,blender):
     if (len(raw["data"]["review_frames"])!=120 or
         [x["frame"] for x in raw["data"]["review_frames"]]!=list(range(1,121)) or
         raw["data"]["calibrated_display_or_final_grade"] is not False or
-        raw["data"]["fully_rendered_video_file"] is not False):
+        raw["data"]["fully_rendered_video_file"] is not False or
+        raw["data"]["display_review_alpha_policy"]!="nvp.display_review.near_opaque_aa_alpha_v1" or
+        any(x["alpha_audit"]["source_alpha_min"]<.997 or
+            x["alpha_audit"]["actual_transparency_composited"] is not False
+            for x in raw["data"]["review_frames"])):
         raise RuntimeError("Review cannot pretend to be a finished film")
     if ledger.snapshot()["reservations"]["ram_mb"]!=0:
         raise RuntimeError("Native 120-frame SDR view retained RAM reservation")
@@ -102,6 +106,10 @@ def fixture(out,blender):
         "official_ocio_sdr_display_view":checked["color_policy"]["view"],
         "ocio_config_serialized_sha256":checked["color_policy"]["config_sha256"],
         "genuine_16bit_rgb_png_frames":120,
+        "near_opaque_workbench_aa_alpha_policy":
+            raw["data"]["display_review_alpha_policy"],
+        "true_transparency_composition_performed":False,
+        "authoritative_original_exr_alpha_untouched":True,
         "full_independent_png16_readback":True,
         "original_fps":checked["fps"],
         "exact_immutable_camera_cuts":checked["cutlist"],
