@@ -26,7 +26,7 @@ jobs:
         run: python -m compileall -q backend/nvp_lu_alpha_contract.py tools/nvp_lu_alpha_source_probe.py tests/test_lu_alpha_contract.py
       - name: Lu alpha boundaries and passive status contracts
         run: python -m unittest discover -s tests -p test_lu_alpha_contract.py -v
-      - name: Regression: resource governor and owned model estimates
+      - name: "Regression: resource governor and owned model estimates"
         run: |
           python -m unittest discover -s tests -p test_resource_governor.py -v
           python -m unittest discover -s tests -p test_model_estimate_recovery.py -v
@@ -44,7 +44,7 @@ jobs:
         run: python -m compileall -q backend/nvp_lu_alpha_contract.py tools/nvp_lu_alpha_source_probe.py tests/test_lu_alpha_contract.py
       - name: Lu alpha boundaries and passive status contracts
         run: python -m unittest discover -s tests -p test_lu_alpha_contract.py -v
-      - name: Regression: resource governor and owned model estimates
+      - name: "Regression: resource governor and owned model estimates"
         run: |
           python -m unittest discover -s tests -p test_resource_governor.py -v
           python -m unittest discover -s tests -p test_model_estimate_recovery.py -v
