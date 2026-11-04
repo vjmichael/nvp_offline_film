@@ -34,14 +34,17 @@ jobs:
       - name: Run 21 abrupt process-exit boundaries and recovery checks
         shell: pwsh
         run: |
-          python -m compileall -q backend/nvp_audio01g_fault_matrix.py backend/nvp_audio01f_picture_sound.py backend/nvp_audio01f_native_host.py tests/test_audio01g_fs_crash_matrix.py tests/test_audio01g_sqlite_crash_matrix.py tests/test_audio01g_recovery_commit_matrix.py
+          python -m compileall -q backend/nvp_audio01g_fault_matrix.py backend/nvp_audio01f_picture_sound.py backend/nvp_audio01f_native_host.py tests/test_audio01g_fs_crash_matrix.py tests/test_audio01g_sqlite_crash_matrix.py tests/test_audio01g_recovery_commit_matrix.py tests/test_audio01g_native_late_crash_matrix.py tests/fixtures/nvp_audio01g_native_real_mux_worker.py
           if ($LASTEXITCODE -ne 0) { throw 'Crash matrix compile failed' }
           python -m unittest discover -s tests -p test_audio01g_fs_crash_matrix.py -v
           if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows filesystem crash matrix failed' }
           python -m unittest discover -s tests -p test_audio01g_sqlite_crash_matrix.py -v
           if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows SQLite crash matrix failed' }
           python -m unittest discover -s tests -p test_audio01g_recovery_commit_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01g_native_late_crash_matrix.py -v
           if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows recovery invariants failed' }
+          python -m unittest discover -s tests -p test_audio01g_native_late_crash_matrix.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G real native worker late-stage crash failed' }
   linux-native-crash-matrix:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -59,7 +62,7 @@ jobs:
         run: |
           set -e
           ffmpeg -version
-          python -m compileall -q backend/nvp_audio01g_fault_matrix.py backend/nvp_audio01f_picture_sound.py backend/nvp_audio01f_native_host.py tests/test_audio01g_fs_crash_matrix.py tests/test_audio01g_sqlite_crash_matrix.py tests/test_audio01g_recovery_commit_matrix.py
+          python -m compileall -q backend/nvp_audio01g_fault_matrix.py backend/nvp_audio01f_picture_sound.py backend/nvp_audio01f_native_host.py tests/test_audio01g_fs_crash_matrix.py tests/test_audio01g_sqlite_crash_matrix.py tests/test_audio01g_recovery_commit_matrix.py tests/test_audio01g_native_late_crash_matrix.py tests/fixtures/nvp_audio01g_native_real_mux_worker.py
           python -m unittest discover -s tests -p test_audio01g_fs_crash_matrix.py -v
           python -m unittest discover -s tests -p test_audio01g_sqlite_crash_matrix.py -v
           python -m unittest discover -s tests -p test_audio01g_recovery_commit_matrix.py -v
