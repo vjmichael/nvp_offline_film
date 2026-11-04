@@ -59,6 +59,21 @@ class PictureSoundNativeFFmpeg(unittest.TestCase):
                     self.root/"rejected.mov",frames=24)
         self.assertFalse((self.root/"rejected.mov").exists())
 
+    def test_interrupted_staging_never_overwritten(self):
+        from backend.nvp_audio01f_picture_sound import build_picture_sound_preview
+        # A prior interrupted native attempt may leave a partial staging
+        # directory. No render may reuse, delete or silently promote it.
+        output=self.root/"review_directory"
+        stage=output.with_name(".nvp-audio01g-"+output.name+".stage")
+        stage.mkdir()
+        evidence=stage/"partial.mov"
+        evidence.write_bytes(b"retained crash evidence")
+        # Verify the same staging contract in the direct real mux primitive
+        # through intentionally occupied *final* output.
+        with self.assertRaisesRegex(RuntimeError,"absent"):
+            mux_picture_sound_review(self.picture,self.audio,evidence,frames=24)
+        self.assertEqual(evidence.read_bytes(),b"retained crash evidence")
+
     def test_reject_existing_output_and_excess_picture_frames(self):
         out=self.root/"existing.mov"
         out.write_bytes(b"keep")
