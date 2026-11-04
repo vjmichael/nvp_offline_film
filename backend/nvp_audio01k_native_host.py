@@ -10,6 +10,7 @@ import secrets
 import sqlite3
 
 from backend.nvp_audio01k_distribution import publish_mezzanine,verify_mezzanine,PROFILE
+from backend.nvp_audio01k_fault_matrix import crash_after
 from backend.nvp_film_index import _id
 from backend.nvp_resource_ledger import TaskLedger
 
@@ -70,6 +71,7 @@ class NativeAudio01KHost:
             db.execute("INSERT INTO native_audio01k_events VALUES(?,?,?,?,?,NULL)",
                        (event_sha,project_id,export_id,distribution_id,"RESERVED"))
             db.commit()
+        crash_after("creator_event_reserved")
         result=publish_mezzanine(
             self.capture,project_id,export_id,distribution_id,
             final_av_dir,destination,verify_native_master=check)
@@ -79,6 +81,7 @@ class NativeAudio01KHost:
                 document_sha=? WHERE event_sha=? AND status='RESERVED'""",
                 (result["document_sha256"],event_sha))
             db.commit()
+        crash_after("creator_event_published")
         return result
 
     def verify(self,project_id,distribution_id,destination,final_av_dir,
