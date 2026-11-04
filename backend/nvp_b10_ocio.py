@@ -123,9 +123,9 @@ def convert_linear_rec709_to_acescg(
     header["chromaticities"]=Imath.Chromaticities(
         Imath.V2f(.713,.293),Imath.V2f(.165,.830),
         Imath.V2f(.128,.044),Imath.V2f(.32168,.33767))
-    header["nvp_ocio_config_id"]=CONFIG_URI
-    header["nvp_ocio_config_sha256"]=identity["config_serialized_sha256"]
-    header["nvp_scene_linear_color_space"]="ACEScg"
+    # OpenEXR's legacy Python writer drops arbitrary unregistered strings.
+    # Standard chromaticities remain in the EXR; the complete versioned
+    # OCIO identity is kept in the content-addressed FilmIndex receipt.
     out=OpenEXR.OutputFile(str(target),header)
     try:
         out.writePixels({
@@ -152,6 +152,8 @@ def convert_linear_rec709_to_acescg(
         "alpha_untransformed":True,
         "aces2_working_space_converted":True,
         "display_view_transform_applied":False,
+        "ocio_provenance_embedded_in_exr":False,
+        "ocio_provenance_in_durable_receipt":True,
         "full_pipeline_input_primaries_proved_by_blender":False,
     }
 
