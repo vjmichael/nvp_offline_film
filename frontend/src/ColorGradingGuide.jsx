@@ -23,7 +23,7 @@ const SECTIONS = [
       'Contrast: expands or compresses the distance between dark and bright tones. Do not crush shadows for a “cinematic” look by default.',
       'Saturation: controls color intensity; 0 removes color, 1 is neutral, and values above 1 make colors more vivid.',
       'Red, green and blue gains: shift the linear balance to create a warmer or cooler tone. These are creative RGB gains, not a calibrated Kelvin white-balance instrument.',
-      'These parameters currently exist in a versioned backend grading recipe. Interactive color wheels, shot-local adjustments and a full grading monitor are NOT available in this UI yet.'
+      'The Essentials grading workspace now offers sliders and numeric controls, presets, undo/redo, a real OCIO preview and versioned draft saves. Calibrated monitors, professional wheels and shot-local adjustments remain future work.'
     ]
   },
   {
@@ -62,7 +62,7 @@ const SECTIONS = [
     title: '6. Future professional controls',
     summary: 'A roadmap, not a list of controls already delivered.',
     body: [
-      'Grading UI: exposure and color sliders, before/after wipe, undo/redo, grade presets and a shot gallery.',
+      'Available in Essentials: exposure and RGB controls, before/after wipe, undo/redo, global look presets and versioned draft saves. A per-shot gallery remains future work.',
       'Advanced: lift/gamma/gain wheels, luma and hue curves, RGB parade, waveform, histogram, vectorscope, references and LUTs with declared color spaces.',
       'Professional: masks, qualifiers, motion tracking, per-shot grades, grading keyframes, HDR scopes, color-managed monitoring and independent color calibration.',
       'AI can propose a look or assist with shot matching, but the filmmaker approves and can always revert its edits.'
@@ -77,7 +77,7 @@ export default function ColorGradingGuide() {
       <div className="kicker">NVP LEARNING CENTER</div>
       <h2 id="nvp-color-guide-title">Color grading — start with the story</h2>
       <p>Color correction makes images technically consistent. Color grading shapes the visual feeling of your film. You can learn both without sacrificing the original Digital Take.</p>
-      <p><strong>Current status:</strong> The NVP backend has versioned grading recipes and technical mastering candidates. The full graphical grading workspace, video scopes and calibrated delivery approval are future engineering milestones.</p>
+      <p><strong>Current status:</strong> The Essentials grading interface now supports real source EXR previews and versioned global looks. Advanced wheels, scopes, masks, monitor calibration and creative-delivery approval remain future milestones.</p>
       <div aria-label="Color grading topics">
         {SECTIONS.map((section, index) => (
           <section key={section.title} style={{ margin: '0.75rem 0', borderTop: '1px solid var(--border, #444)', paddingTop: '0.75rem' }}>

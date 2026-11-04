@@ -1088,3 +1088,71 @@ def prod06d_bundle(project_id:str,scene_id:str):
     return Response(run(build),media_type='application/zip',headers={
         'Content-Disposition':f'attachment; filename="nvp_{scene_id}_retarget_calibration.zip"',
         'Cache-Control':'no-store'})
+
+
+# NVP-GRADE-UI-01 — project-scoped, non-destructive grade version history.
+# These endpoints do NOT approve a creative grade or export a final master.
+from typing import Any as _GradeAny
+from fastapi import Query as _GradeQuery
+from backend.nvp_grade_workspace import GradeWorkspace
+from backend.nvp_color_mastering import grade_recipe, validate_grade
+
+class GradeWorkspaceSaveInput(BaseModel):
+    source_exr_id: str = Field(min_length=1,max_length=80)
+    grade_id: str = Field(min_length=1,max_length=80)
+    expected_revision: int = Field(ge=0)
+    source_primaries_declared: bool = False
+    recipe: dict[str,_GradeAny]
+
+@app.get('/api/projects/{project_id}/color-grading/sources')
+def color_grade_sources(project_id:str):
+    return run(lambda:GradeWorkspace(studio).sources(project_id))
+
+@app.get('/api/projects/{project_id}/color-grading/grades')
+def color_grade_list(project_id:str,source_id:str|None=None):
+    return run(lambda:GradeWorkspace(studio).list_grades(project_id,source_id))
+
+@app.post('/api/projects/{project_id}/color-grading/grades',status_code=201)
+def color_grade_save(project_id:str,payload:GradeWorkspaceSaveInput):
+    if payload.source_primaries_declared is not True:
+        raise HTTPException(status_code=422,detail='Confirm the source EXR color primaries declaration before saving a grade')
+    return run(lambda:GradeWorkspace(studio).save(
+        project_id,payload.source_exr_id,payload.grade_id,
+        validate_grade(payload.recipe),payload.expected_revision))
+
+@app.get('/api/projects/{project_id}/color-grading/grades/{grade_id}')
+def color_grade_read(project_id:str,grade_id:str,revision:int|None=None):
+    record=run(lambda:GradeWorkspace(studio).reopen(project_id,grade_id,revision))
+    return {'id':grade_id,'revision':record['record']['revision'],
+            'source_exr_id':record['record']['data']['source_exr_id'],
+            'recipe':record['recipe'],
+            'sha256':record['record']['document_sha256'],
+            'approval':'not_approved'}
+
+@app.get('/api/projects/{project_id}/color-grading/grades/{grade_id}/history')
+def color_grade_history(project_id:str,grade_id:str):
+    return run(lambda:GradeWorkspace(studio).history(project_id,grade_id))
+
+@app.get('/api/projects/{project_id}/color-grading/sources/{source_id}/preview')
+def color_grade_preview(
+    project_id:str,source_id:str,
+    frame:int=_GradeQuery(ge=1,le=48),
+    mode:str=_GradeQuery(pattern='^(before|after)$'),
+    exposure_stops:float=_GradeQuery(default=0.0,ge=-4,le=4),
+    contrast:float=_GradeQuery(default=1.0,ge=0.5,le=2),
+    saturation:float=_GradeQuery(default=1.0,ge=0,le=2),
+    red_gain:float=_GradeQuery(default=1.0,ge=0.7,le=1.3),
+    green_gain:float=_GradeQuery(default=1.0,ge=0.7,le=1.3),
+    blue_gain:float=_GradeQuery(default=1.0,ge=0.7,le=1.3),
+):
+    recipe=run(lambda:grade_recipe(
+        **({} if mode=='before' else {
+            'exposure_stops':exposure_stops,'contrast':contrast,'saturation':saturation,
+            'red_gain':red_gain,'green_gain':green_gain,'blue_gain':blue_gain,
+        })))
+    result=run(lambda:GradeWorkspace(studio).preview(project_id,source_id,frame,recipe))
+    return Response(result['bytes'],media_type='image/png',headers={
+        'Cache-Control':'no-store, private',
+        'X-NVP-Preview-Quality':'uncalibrated-display-preview-not-master',
+        'X-NVP-Source-Frame':str(result['source_frame']),
+    })

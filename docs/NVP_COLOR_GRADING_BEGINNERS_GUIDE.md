@@ -1,7 +1,7 @@
 # Color grading in NVP — A beginner's guide
 
 **Audience:** Filmmakers who have never graded a film.  
-**Current implementation:** NVP-COLOR-01B2 provides a code-level global grade recipe and verified technical ProRes/DNxHR mastering candidates. A complete in-app grading panel, local scopes, per-shot grades, keys, masks and final deliverable approvals remain future work; this guide distinguishes the two.
+**Current implementation:** NVP-GRADE-UI-01 adds an **Essentials grading tab** with global exposure/contrast/saturation/RGB balance, look presets, undo/redo, a real source-derived before/after preview, and immutable draft-look saving. It requires a complete, 24fps Cycles HALF OpenEXR presentation. Calibrated reference monitors, advanced scopes, per-shot curves, tracked masks, and final creative or mastering approval remain future work.
 
 ## 1. What does color grading do?
 
@@ -97,3 +97,15 @@ AI assistance can propose a look or match a reference, but the **director/editor
 - [ ] Sound, calibrated monitor, creative approval, picture lock and deliverable-specific certification are handled separately.
 
 This guide will be expanded with screenshots, interactive examples and contextual help as the grading UI is implemented.
+
+
+## 8. Using the NVP Essentials grading tab
+
+1. Open your NVP film and select **15 · Grade color**.
+2. Choose an existing **full-frame, frozen Cycles OpenEXR** source. If the source list is empty, render/verify a complete EXR take first; you cannot grade an 8-bit proxy as a true scene-linear source.
+3. Move the **Before / After** slider. The two images come from the *same* pinned ACES output transform; only the grading recipe changes. Your browser display is not a calibrated reference monitor.
+4. Adjust exposure in small increments (e.g. +0.2), then test contrast, saturation and RGB balance. Every slider also has a numerical field; try presets and **Undo/Redo**. To return to the source look, choose **Neutral**.
+5. To save your current look, enter a stable Look ID (e.g. `look_mara_day`), tick the **source primaries declaration** only if it is accurate for your source, and choose **Save draft look**. Subsequent saves to the same ID create numbered, immutable revisions. The original Digital Take and OpenEXR frames do not change.
+6. Load saved looks by clicking them. Older revisions can be inspected without rewriting newer ones; save an older variant under a new Look ID if you want to branch. Draft looks are **not** director approvals and are not automatically exported as final ProRes or DCP masters.
+
+**Troubleshooting:** A busy-message means the preview worker guard is limiting expensive EXR decodes. Invalid clipping values are refused rather than hidden. If the browser preview looks different from your editing suite, do not compensate by guessing at color: use a calibrated monitoring workflow for final approval.
