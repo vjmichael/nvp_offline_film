@@ -60,6 +60,7 @@ class JournalOnlyCrashTests(unittest.TestCase):
             db.execute("""INSERT INTO audio_native_staging_leases
                 (directory,job_id,predecessor) VALUES(?,?,NULL)""",
                 (str(self.target.absolute()),self.job))
+            db.commit()
         with self.assertRaisesRegex(RuntimeError,"unverified downstream"):
             self.host.reconcile_journal_only(self.job)
 
