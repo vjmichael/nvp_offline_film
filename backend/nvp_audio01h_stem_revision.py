@@ -11,6 +11,7 @@ from pathlib import Path
 import wave
 
 from backend.nvp_audio01h_automation import apply_pcm16_stereo, validate_automation
+from backend.nvp_audio01h_fault_matrix import crash_after
 from backend.nvp_audio01e_wav_publication import FORMAT as STEM_FORMAT
 from backend.nvp_film_index import _id
 
@@ -105,6 +106,7 @@ def automate_stem(capture, project_id, source_audio_id, stem_id, points,
     revision = capture.index.register_revision(
         project_id, output_id, "audio", doc, expected_revision=0,
         dependencies=[{"object_id": source_audio_id, "revision": 1, "role": "audio"}])
+    crash_after("worker_output_registered")
     return {"status": "UNAPPROVED_AUTOMATED_STEM", "output_id": output_id,
             "document_sha256": revision["document_sha256"],
             "wav_sha256": stored["sha256"], "samples_per_channel": samples}
