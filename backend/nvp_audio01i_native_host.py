@@ -287,12 +287,12 @@ class NativeAudio01IHost:
                 code=wait_guarded(proc,self.ledger,job,timeout_seconds=timeout_seconds)
                 if code:raise RuntimeError("Mastering worker failed: "+str(code))
                 proc.close();proc=None;reaped=True
-        crash_after("master_worker_reaped")
+            crash_after("master_worker_reaped")
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("UPDATE native_audio01i_grants SET stopped=1 WHERE job_id=?",(job,))
                 db.commit()
-        crash_after("master_stop_witness_committed")
+            crash_after("master_stop_witness_committed")
             self.ledger.update(job,"verifying_output","Independent mastered PCM24 verification")
             rec=self.capture.index.read_revision(plan["project_id"],plan["candidate_id"],1)
             doc=rec["data"]
@@ -321,9 +321,9 @@ class NativeAudio01IHost:
                 db.execute("UPDATE native_audio01i_grants SET result_sha=? WHERE job_id=?",
                            (rec["document_sha256"],job))
                 db.commit()
-        crash_after("master_result_committed")
+            crash_after("master_result_committed")
             self.ledger.finish(job,"SUCCEEDED","Verified immutable unapproved PCM24 candidate")
-        crash_after("master_ledger_finished")
+            crash_after("master_ledger_finished")
             return {"job_id":job,"state":"SUCCEEDED","candidate_id":plan["candidate_id"],
                     "document_sha256":rec["document_sha256"],"final_master":False}
         except BaseException:
