@@ -16,6 +16,7 @@ import time
 
 from backend.nvp_approved_tasks import ApprovedTaskBindings, canonical_bytes
 from backend.nvp_audio01h_automation import validate_automation
+from backend.nvp_audio01h_fault_matrix import crash_after
 from backend.nvp_audio01h_stem_revision import FORMAT as AUTOMATED_FORMAT
 from backend.nvp_audio01h_loudness import analyze_wav
 from backend.nvp_audio01h_mix_decision import record_mix_decision
@@ -161,6 +162,7 @@ class NativeAudio01HHost:
             stream.write(canonical_bytes(plan))
             stream.flush()
             os.fsync(stream.fileno())
+        crash_after("plan_fsynced")
         approval = "audioapproval" + secrets.token_hex(16)
         seal = hashlib.sha256(canonical_bytes(spec)).hexdigest()
         self.events[job] = creator_event
@@ -172,9 +174,11 @@ class NativeAudio01HHost:
                 (job, approval, seal, _sha(folder / "plan.json"), _sha(self.python),
                  _sha(self.worker), time.time() + duration_s))
             db.commit()
+        crash_after("grant_committed")
         self.bindings.enqueue(AdmissionRequest(job,"compositing","Immutable audio finishing automation",ram_mb),
                               owner_key=self.owner,lane="standard",
                               approval_id=approval,document=spec)
+        crash_after("queued_committed")
         return {"job_id": job, "state": "QUEUED", "output_id": output_id}
 
     def run_next(self, *, timeout_seconds=300):
@@ -182,6 +186,7 @@ class NativeAudio01HHost:
         if admission is None or not admission["admitted"]:
             return admission
         job = admission["task_id"]
+        crash_after("claimed_active")
         proc = None
         reaped = False
         try:
@@ -201,10 +206,12 @@ class NativeAudio01HHost:
                 proc.close()
                 proc = None
                 reaped = True
+            crash_after("worker_handle_reaped")
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("UPDATE native_audio01h_grants SET stopped=1 WHERE job_id=?", (job,))
                 db.commit()
+            crash_after("stopped_witness_committed")
             self.ledger.update(job,"verifying_output","Independent immutable FilmIndex proof")
             rec = self.capture.index.read_revision(plan["project_id"],plan["output_id"],1)
             data = rec["data"]
@@ -221,12 +228,15 @@ class NativeAudio01HHost:
                 _sha(plan["destination"]) != data["automated_wav_sha256"]):
                 raise RuntimeError("Native audio output failed independent verification")
             self.capture.index.verify_media_file(plan["project_id"], data["automated_wav_sha256"],"audio/wav")
+            crash_after("output_independently_verified")
             self.ledger.finish(job, "SUCCEEDED", "Verified immutable unapproved automated audio")
+            crash_after("ledger_succeeded")
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("UPDATE native_audio01h_grants SET result_sha=? WHERE job_id=?",
                            (rec["document_sha256"],job))
                 db.commit()
+            crash_after("grant_result_committed")
             return {"job_id":job,"state":"SUCCEEDED","output_id":plan["output_id"],
                     "document_sha256":rec["document_sha256"]}
         except BaseException:
@@ -391,6 +401,7 @@ class NativeAudio01HHost:
             db.execute("INSERT INTO native_audio01h_creator_events VALUES(?,?,?,-1)",
                        (event_digest,project_id,decision_id))
             db.commit()
+        crash_after("creator_event_reserved")
         def trusted(event,scope):
             return event == creator_event and self.creator(event,scope) is True
         # Only an authenticated human action may cause a native measurement
@@ -407,9 +418,11 @@ class NativeAudio01HHost:
             self.capture,project_id,automated_id,decision_id,evidence,
             decision=decision,creator_event=creator_event,authorize=trusted,
             ffmpeg=ffmpeg,measure=measured)
+        crash_after("creator_decision_registered")
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE native_audio01h_creator_events SET revision=? WHERE event_digest=? AND revision=-1",
                        (result["revision"],event_digest))
             db.commit()
+        crash_after("creator_event_completed")
         return result
