@@ -79,3 +79,58 @@ sample clock changes or the true-peak ceiling is exceeded.
   real Windows non-cooperative child termination, and power-loss recovery
   remain distinct acceptance work. Linux delegated cgroup-v2 remains OPEN
   and explicitly deferred.
+
+
+## AUDIO-01I durability/CI extension
+
+AUDIO-01I now implements 17 real post-effect fault-injection checkpoints in
+`backend/nvp_audio01i_fault_matrix.py`, activated only by simultaneous
+`NVP_AUDIO01I_FAULT_TEST=enabled` and `NVP_AUDIO01I_CRASH_AFTER=<point>`.
+They cover:
+
+- Master event, grant, queue, ACTIVE admission, OS worker reaping, durable
+  stopped evidence, result SHA and TaskLedger success (8 host points)
+- Worker FilmIndex registration and receipt fsync (2 worker points)
+- Delivery event reservation, staged directory, WAV/manifest fsync, atomic
+  directory promotion, FilmIndex publication and event completion (7 points)
+
+Dedicated subprocess tests:
+`tests/test_audio01i_master_host_crash_matrix.py`,
+`tests/test_audio01i_master_worker_crash_matrix.py`,
+`tests/test_audio01i_delivery_crash_matrix.py` and
+`tests/test_audio01i_fault_coverage.py`.
+The 4-platform CI workflow requires these plus the actual PCM24 end-to-end
+test. No mandatory media test silently skips absent FFmpeg/FFprobe.
+
+The native master creator-event ID is durably consumed before work admission.
+The second, separate final-delivery creator-event ID is durably consumed
+before filesystem publication. A final delivery verifier additionally
+requires the *completed* creator-event publication record; FilmIndex alone
+cannot claim final native approval.
+
+The native host runs **independent** PCM24 decode/FFprobe/loudness verification
+inside a second resource-admitted, contained worker
+(`tools/nvp_audio01i_inspect_worker.py`), rather than launching FFmpeg directly
+from an uncontained trusted host. It checks exact original executable and WAV
+hashes. A stopped-but-uncommitted master may be independently reconciled
+through `recover_candidate` without a rerender; missing OS stop evidence
+must retain ACTIVE custody.
+
+### Local media-command check
+
+The PCM24 FFmpeg commands were exercised locally against a generated
+one-second 48-kHz two-tone stereo PCM16 input using FFmpeg 7.1.5. Both archive
+and streaming modes returned `pcm_s24le`, exactly 288,000 bytes of decoded
+PCM24 (48,000 samples per channel × 2 channels × 3 bytes), and parseable
+loudnorm evidence. This validates the media commands, **not** the whole
+NVP FilmIndex/native host code path or the exact GitHub CI commit.
+
+### Additional open acceptance
+
+- Complete Windows Job Object runner logs and required Linux runner logs.
+- Actual native worker/measurement-worker grandchild kill verification.
+- Genuine trusted UI event origin binding beyond host-supplied callbacks.
+- Power-failure storage integrity and Windows directory fsync equivalents.
+- Full upstream AUDIO-01D native multitrack through B14 picture+audio final
+  delivery; AUDIO-01I currently publishes **audio only**.
+- The deliberate Linux delegated-cgroup-v2 gate remains OPEN/DEFERRED.
