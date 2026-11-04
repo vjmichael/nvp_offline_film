@@ -18,6 +18,7 @@ import time
 from backend.nvp_approved_tasks import ApprovedTaskBindings, canonical_bytes
 from backend.nvp_audio01d_chunked_recovery import _read_state, _audit_chunks, _validate, _check_inputs, verify_chunked_preview
 from backend.nvp_audio01e3_native_journal import AudioJobJournal
+from backend.nvp_audio_native_staging_lock import AudioStagingLock
 from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_resource_supervisor import wait_guarded
@@ -201,8 +202,10 @@ class NativeAudioHost:
         job=admitted["task_id"]
         proc=None
         clean=False
+        staging_lock=None
         try:
             self.binding.verified_spec(job,owner_key=self.owner)
+            staging_lock=AudioStagingLock(self.journal.read(job)["spec"]["directory"]).acquire()
             row=self.journal.read(job)
             self.journal.transition(job,row["generation"],"running","native_os_worker_admitted")
             folder=self.root/job
@@ -262,6 +265,9 @@ class NativeAudioHost:
                     self.ledger.finish(job,"INTERRUPTED","OS-cleaned audio worker needs verification")
             # On unverified cleanup, reservation stays ACTIVE.
             raise
+        finally:
+            if staging_lock is not None:
+                staging_lock.release()
 
     def _grant_ram(self,job):
         with self.ledger._db() as db:
@@ -286,4 +292,5 @@ class NativeAudioHost:
                 WHERE job_id=?""",(job,)).fetchone()
         if witness is None or witness[0] != 1:
             raise RuntimeError("No durable verified worker-stop witness; recovery blocked")
-        return self.journal.recover(job,attest_stopped=lambda j,s: j not in self._running)
+        with AudioStagingLock(self.journal.read(job)["spec"]["directory"]):
+            return self.journal.recover(job,attest_stopped=lambda j,s: j not in self._running)
