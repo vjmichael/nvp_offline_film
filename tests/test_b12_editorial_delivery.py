@@ -74,7 +74,8 @@ class OpenTimelineIOContracts(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"OTIO"):
             verify_otio_document(data.encode(),CUTS,120)
         standard.tracks[0][0].media_reference.target_url_base="media/"
-        standard.tracks[0][1].source_range.duration.value=71
+        standard.tracks[0][1].source_range=otio.opentime.TimeRange(
+            otio.opentime.RationalTime(0,24),otio.opentime.RationalTime(71,24))
         data=otio.adapters.write_to_string(standard,adapter_name="otio_json")
         with self.assertRaisesRegex(RuntimeError,"OTIO"):
             verify_otio_document(data.encode(),CUTS,120)
@@ -180,6 +181,9 @@ class NativeB12ApprovalContracts(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 self.host.run_next()
             launch.assert_not_called()
+        # Remove the revoked/expired head-of-line task before testing a
+        # *different* admitted job and an unknown OS launcher outcome.
+        self.ledger.cancel_queued(ticket["job_id"],owner_key=self.host.owner_key)
         second=self.approve()
         with patch("backend.nvp_b12_native_delivery.launch_contained",
                    side_effect=RuntimeError("kernel launch handle lost")):
