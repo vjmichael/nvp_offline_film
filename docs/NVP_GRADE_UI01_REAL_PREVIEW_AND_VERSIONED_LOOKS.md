@@ -37,7 +37,19 @@ The API is local-only in the current NVP server, and this gate does not grant mo
 
 ## Acceptance and launch states
 
-**Initial CI:** [run 41753193134](https://github.com/vjmichael/nvp_offline_film/actions/runs/41753193134) reported passing Linux (20 targeted tests), Windows (10 targeted tests), and React production build; the separate actual Blender/Cycles/native FilmIndex gate was still running at first documentation. The subsequent concurrency guard, guidance, and test updates are committed on this branch and need verification on the latest SHA. Do not mistake an earlier green run for newer commit acceptance. A fully verified native result must be added before closing.
+**Final cross-platform gate:** [GitHub run 41753886773](https://github.com/vjmichael/nvp_offline_film/actions/runs/41753886773) passed **4/4 jobs** for the combined branch changes: Linux **21** Python tests; Windows **11** Python tests; production React build plus **3** real jsdom/Vitest interaction tests; actual native Blender/Cycles → half-float EXR → OCIO before/after preview → FilmIndex graded draft history/corruption/restart acceptance. The earlier native fixture incorrectly selected the creator project by presentation title; the corrected fixture locates the unique frozen EXR object by FilmIndex identity. The [earlier failed native run 41753193134](https://github.com/vjmichael/nvp_offline_film/actions/runs/41753193134) is retained as evidence of the detected fixture issue, not disguised as success.
+
+### Measured native evidence
+
+- Actual full-frame EXR source ID: `exr_source_16f`, 16 frames, 24fps, 256×144 (Cycles HALF OpenEXR).
+- Indexed EXR presentation revision SHA-256: `7d89cc75fcd20ad2e124fa58ad6d279191b13df26391403fd7e7c711f1b06bb5`.
+- Frozen source Digital Take revision SHA-256: `406e203efb4cb4951f8e61d99bf46d934559d28376e3b85d4651527aecbd3aee`.
+- Same frame 1, pinned OCIO, neutral preview: PNG SHA-256 `02ab657599bdc1e24f05dc2660fa1ffca30e825ae15254f0f248d37fc3ec2447`.
+- Same frame 1, saved warming grade (exposure +0.15, red 1.03, blue 0.97): PNG SHA-256 `2ec9e6458de319c4765946500d7c1e66cdf61ab2875f19d1a9d18d9e4f556f20`. The output images differ because the underlying OCIO-processed pixels differ.
+- First FilmIndex grade edit SHA-256: `f08ad02b8584ad9ec3603fbe25ab865122ba4422fa830c83a775f120096a2b23`. Revision 2: `388bdaf8ac474aca2d03ffa4e9990f781c1c8b91f8c01bae41869e47524a1c7e`.
+- A brand-new `Studio` reopened *both immutable grade versions* and their original take/source dependencies. Stale client write → refused; deliberately corrupted stored grade → refused; another project ID → refused; restoring the original bytes → successful reopen.
+- Actual native acceptance artifact is stored as `nvp-grade-ui01-real-blender-preview-evidence` in [GitHub run 41753886773](https://github.com/vjmichael/nvp_offline_film/actions/runs/41753886773). Browser snapshots remain **uncalibrated reference previews**, and both grade revisions remain **draft, not director-approved**.
+
 
 **Security and product limits:** Opaque source required. Invalid or changed EXR/MOV/grade bytes refused. Source primaries remain creator-declared, not measured. No calibrated viewer, auto-grade claim, director approval, color wheels, LUTs, scopes, masks, tracking or final DCP export in this gate.
 
