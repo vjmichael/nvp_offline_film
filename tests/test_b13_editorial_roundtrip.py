@@ -73,6 +73,7 @@ def editable_otio():
                                  metadata={"nvp":{"project_id":"a"*32,
                                                   "source_take_id":"take_unit",
                                                   "review_id":"review_unit",
+                                                  "fps":24,"frames":120,
                                                   "soundtrack_present":False}})
     return otio.adapters.write_to_string(timeline,adapter_name="otio_json").encode("utf8")
 
@@ -153,6 +154,29 @@ class StrictOTIORoundTrip(unittest.TestCase):
                     timeline,adapter_name="otio_json").encode("utf8")
                 with self.assertRaises(RuntimeError):
                     parse_edited_otio(raw,invented_delivery())
+
+    def test_native_otio_anydictionary_origin_is_required_and_complete(self):
+        otio=_otio()
+        for changed in ("project_id","source_take_id","review_id",
+                        "fps","frames","soundtrack_present"):
+            with self.subTest(changed=changed):
+                timeline=build_otio(CUTS,project_id="a"*32,
+                       source_take_id="take_unit",review_id="review_unit",
+                       frame_count=120)
+                edits={"project_id":"b"*32,"source_take_id":"other_take",
+                       "review_id":"foreign_review","fps":25,"frames":121,
+                       "soundtrack_present":True}
+                timeline.metadata["nvp"][changed]=edits[changed]
+                wire=otio.adapters.write_to_string(
+                    timeline,adapter_name="otio_json").encode("utf8")
+                with self.assertRaisesRegex(RuntimeError,"origin"):
+                    parse_edited_otio(wire,invented_delivery())
+        timeline=build_otio(CUTS,project_id="a"*32,
+              source_take_id="take_unit",review_id="review_unit",frame_count=120)
+        timeline.metadata.clear()
+        with self.assertRaisesRegex(RuntimeError,"origin"):
+            parse_edited_otio(otio.adapters.write_to_string(
+                timeline,adapter_name="otio_json").encode("utf8"),invented_delivery())
 
     def test_rejects_oversize_non_timelines_and_invalid_origin(self):
         with self.assertRaises(ValueError):
