@@ -176,10 +176,15 @@ class BlenderWorkerTests(unittest.TestCase):
             thread=threading.Thread(target=lambda: outcome.update(result=self.sup.run(op)))
             thread.start()
             try:
-                for _ in range(50):
-                    if self.sup.inspect(op.job_id)["state"]=="RUNNING":
-                        break
+                ready=False
+                for _ in range(200):
+                    try:
+                        ready=self.sup.inspect(op.job_id)["state"]=="RUNNING"
+                    except KeyError:
+                        ready=False
+                    if ready: break
                     time.sleep(.02)
+                self.assertTrue(ready,"Worker never entered RUNNING")
                 self.assertTrue(self.sup.cancel(op.job_id))
             finally:
                 thread.join(timeout=8)
