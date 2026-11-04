@@ -28,6 +28,7 @@ from typing import Mapping
 
 from backend.nvp_worker_containment import launch_contained
 from backend.nvp_worker_host_lease import exclusive_worker_host
+from backend.nvp_resource_guard import AdmissionRequest
 
 JOB_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,79}$")
 SHA = re.compile(r"^[a-f0-9]{64}$")
@@ -72,6 +73,8 @@ class BlenderOperation:
     timeout_seconds: int = 90
     memory_limit_mb: int = 8192
     require_linux_cgroup_v2: bool = False
+    gpu_memory_mb: int = 0
+    gpu_device_id: str | None = None
 
     def canonical(self) -> str:
         return json.dumps(asdict(self),sort_keys=True,separators=(",",":"),allow_nan=False)
@@ -85,7 +88,7 @@ class BlenderWorkerSupervisor:
     """
 
     def __init__(self, workspace: str | Path, *, blender_executable: str | Path,
-                 blender_sha256: str, blender_version: str):
+                 blender_sha256: str, blender_version: str, activity_ledger=None):
         self.root=Path(workspace).resolve()
         self.root.mkdir(parents=True,exist_ok=True)
         if self.root.is_symlink():
@@ -101,6 +104,7 @@ class BlenderWorkerSupervisor:
         self.binary=binary
         self.binary_sha256=blender_sha256
         self.blender_version=blender_version
+        self.activity=activity_ledger
         self._lock=threading.RLock()
         self._running={}
         with self._connect() as db:
@@ -241,6 +245,12 @@ class BlenderWorkerSupervisor:
             raise ValueError("Worker memory limit must be 256 to 65536 MiB")
         if type(op.require_linux_cgroup_v2) is not bool:
             raise ValueError("Strict Linux cgroup requirement must be boolean")
+        if (type(op.gpu_memory_mb) is not int or not 0<=op.gpu_memory_mb<=65536 or
+            op.gpu_memory_mb and not op.gpu_device_id):
+            raise ValueError("GPU workload requires a measured GPU device and memory budget")
+        if op.gpu_device_id is not None and (not isinstance(op.gpu_device_id,str) or
+            not re.fullmatch(r"[A-Za-z0-9:_.-]{1,64}",op.gpu_device_id)):
+            raise ValueError("Invalid GPU device ID")
         if (not SHA.fullmatch(op.script_sha256) or type(op.inputs) is not dict or
             type(op.outputs) is not dict or type(op.arguments) is not dict or
             not 1<=len(op.outputs)<=12 or len(op.inputs)>32):
@@ -348,8 +358,44 @@ class BlenderWorkerSupervisor:
                     error="Host restarted while worker running; output is untrusted; orphan cleanup not proven")
         return [r[0] for r in records]
 
-    @exclusive_worker_host
+    def _activity_id(self,job_id):
+        # Shared system journal IDs include workspace provenance; two NVP
+        # projects may both legitimately create "approved_build_001".
+        return "blend_"+hashlib.sha256(str(self.root).encode()).hexdigest()[:12]+"_"+job_id[:46]
+
     def run(self, op: BlenderOperation):
+        if self.activity is None:
+            return self._run_worker(op)
+        task_id=self._activity_id(op.job_id)
+        request=AdmissionRequest(task_id,"blender","Blender: "+op.job_id[:90],
+             op.memory_limit_mb,op.gpu_memory_mb,op.gpu_device_id)
+        old=self.activity.get_task(task_id)
+        if old and old["state"]=="QUEUED":
+            approved=self.activity.retry(task_id)
+        elif old:
+            raise RuntimeError("Previously registered Blender resource task cannot be replayed")
+        else:
+            approved=self.activity.admit(request)
+        if not approved["admitted"]:
+            return {"id":op.job_id,"state":"QUEUED","error":approved["reason"],
+                    "resource_activity_id":task_id}
+        self.activity.update(task_id,"checking_memory",
+            "Memory reservation accepted; verifying Blender and original inputs")
+        try:
+            result=self._run_worker(op)
+        except Exception as error:
+            self.activity.finish(task_id,"FAILED",
+                "Blender could not start or pass authorization checks")
+            raise
+        else:
+            terminal=result["state"] if result["state"] in ("SUCCEEDED","FAILED","CANCELLED","INTERRUPTED") else "FAILED"
+            detail=(result.get("error") or "Verified Blender output completed")[:240]
+            self.activity.finish(task_id,terminal,detail)
+            result["resource_activity_id"]=task_id
+            return result
+
+    @exclusive_worker_host
+    def _run_worker(self, op: BlenderOperation):
         if not isinstance(op, BlenderOperation) or not JOB_ID.fullmatch(op.job_id):
             raise ValueError("Invalid typed Blender job")
         digest=hashlib.sha256(op.canonical().encode()).hexdigest()
@@ -403,7 +449,13 @@ class BlenderWorkerSupervisor:
                                       memory_mb=op.memory_limit_mb,
                                       linux_cgroup_tree_required=op.require_linux_cgroup_v2)
                 self._transition(op.job_id,"RUNNING",worker_pid=proc.pid)
+                if self.activity is not None:
+                    self.activity.update(self._activity_id(op.job_id),
+                        "rendering" if op.scene else "building_scene",
+                        "Blender worker running; engine percent not reported")
                 started=time.monotonic()
+                pressure_count=0
+                last_pressure_check=started
                 while proc.poll() is None:
                     if token.is_set():
                         self._transition(op.job_id,"CANCEL_REQUESTED")
@@ -416,6 +468,16 @@ class BlenderWorkerSupervisor:
                         self._transition(op.job_id,"TIMED_OUT",exit_code=proc.returncode,
                                          error="Pinned Blender operation exceeded time budget")
                         return self.inspect(op.job_id)
+                    if self.activity is not None and time.monotonic()-last_pressure_check>=1.5:
+                        last_pressure_check=time.monotonic()
+                        critical=self.activity.critical_pressure(self._activity_id(op.job_id))
+                        pressure_count=pressure_count+1 if critical else 0
+                        if pressure_count>=2:
+                            self._terminate_tree(proc)
+                            self._transition(op.job_id,"CANCELLED",
+                                exit_code=proc.returncode,
+                                error=critical+"; NVP released its managed worker")
+                            return self.inspect(op.job_id)
                     time.sleep(.1)
                     self._transition(op.job_id,"RUNNING",progress=log.stat().st_size)
                 rc=proc.wait(timeout=10)
@@ -425,6 +487,9 @@ class BlenderWorkerSupervisor:
                     return self.inspect(op.job_id)
                 if rc:
                     raise RuntimeError("Blender worker returned nonzero exit code "+str(rc))
+                if self.activity is not None:
+                    self.activity.update(self._activity_id(op.job_id),"verifying_output",
+                        "Rechecking source hashes, output media and native worker cleanup")
                 self._check_inputs(op,jobdir)
                 audited=self._audit_outputs(op,jobdir)
                 # Before writing a durable success record, require *all*
