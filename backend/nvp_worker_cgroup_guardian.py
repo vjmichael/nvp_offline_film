@@ -29,7 +29,13 @@ def own_cgroup():
 def validate_owned_leaf(candidate):
     target=Path(candidate).resolve(strict=True)
     parent=own_cgroup()
-    if (target.parent!=parent or not target.name.startswith(PREFIX) or
+    delegated=target.parent
+    try:
+        marker=os.getxattr(delegated,"user.delegate")==b"1"
+    except (OSError,AttributeError):
+        marker=False
+    if (not parent.is_relative_to(delegated) or not marker or
+        not target.name.startswith(PREFIX) or
         len(target.name)!=len(PREFIX)+32 or
         any(ch not in "0123456789abcdef" for ch in target.name[len(PREFIX):]) or
         not (target/"cgroup.kill").is_file() or
