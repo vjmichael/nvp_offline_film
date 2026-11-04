@@ -173,10 +173,10 @@ class FullNativeEXRSequenceContracts(unittest.TestCase):
 
     def test_crash_before_enqueue_recovers_exact_staged_original_source(self):
         receipt=self.approve()
-        with patch.object(self.host.dispatcher,"enqueue",
-                          side_effect=RuntimeError("interrupted enqueue")), \\
-             patch.object(self.ledger,"get_task",
-                          side_effect=RuntimeError("simulated crash inside cleanup")):
+        with (patch.object(self.host.dispatcher,"enqueue",
+                           side_effect=RuntimeError("interrupted enqueue")),
+              patch.object(self.ledger,"get_task",
+                           side_effect=RuntimeError("simulated crash inside cleanup"))):
             with self.assertRaisesRegex(RuntimeError,"simulated crash"):
                 self.host.queue_next_chunk(receipt["sequence_id"])
         staged=self.host._chunk(receipt["sequence_id"],1)
