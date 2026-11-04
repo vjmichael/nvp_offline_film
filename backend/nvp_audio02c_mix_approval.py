@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from backend.nvp_audio02b_loudness_qc import FORMAT as QC_FORMAT
+from backend.nvp_audio02b_loudness_qc import FORMAT as QC_FORMAT, measure_mix
 from backend.nvp_film_index import _id
 
 FORMAT="nvp.audio.final_mix_creator_decision.v1"
@@ -36,6 +36,10 @@ def approve_final_mix(capture,project_id,source_audio_id,mix_file,qc,
         actual=hashlib.file_digest(handle,"sha256").hexdigest()
     if actual!=qc["source_sha256"]:
         raise RuntimeError("Final-mix source changed after QC")
+    fresh=measure_mix(path,target_lufs=qc.get("target_lufs",-16.0),
+                      ceiling_dbtp=qc.get("true_peak_ceiling_dbtp",-1.0))
+    if fresh!=qc:
+        raise RuntimeError("Submitted loudness QC does not match fresh measurement")
     try:
         capture.index.read_revision(project_id,approval_id)
     except KeyError:
