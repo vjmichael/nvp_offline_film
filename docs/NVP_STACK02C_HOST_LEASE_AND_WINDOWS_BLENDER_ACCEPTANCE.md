@@ -1,7 +1,7 @@
 # NVP-STACK-02C — Exclusive worker ownership and genuine Windows Blender acceptance
 
 **Date:** 2026-11-03  
-**Status:** Development work / CI acceptance; the complete Linux cgroup and VRAM gates remain open  
+**Status:** **Cross-instance lease and genuine Windows/Linux native Blender technical acceptance PASSED** in [GitHub CI 41767354797](https://github.com/vjmichael/nvp_offline_film/actions/runs/41767354797), four jobs green. Full Linux cgroups, VRAM safety, full-route migration and commercial installer remain open  
 **Architecture:** [STACK-001 reuse-first](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md) · [STACK-002 Blender worker](NVP_ADR_STACK02_BLENDER_WORKER_USD_DEFERRED.md) · [STACK-02B OS containment](NVP_STACK02B_OS_WORKER_CONTAINMENT.md)
 
 ## Purpose
@@ -50,6 +50,18 @@ The fixture and existing independent scene audit now select **Blender's native C
 | Linux native Blender | Existing approved NVP scene + independently reopened/audited real Blender worker under the new exclusive lease, original source-preservation tests |
 
 **A green Windows Job Object Python test is not evidence that the native Windows Blender scene passed.** Keep native artifact and job logs distinct.
+
+## Final independently verified engineering evidence
+
+[GitHub Actions run 41767354797](https://github.com/vjmichael/nvp_offline_film/actions/runs/41767354797) passed **all four jobs** on code commit `111556790db80546a060eb91e7a74c7c6cbacbe6`:
+
+- **Windows:** 4 genuine host-lease tests, 4 native kernel-containment tests, and 6 durable-journal worker tests = **14/14 passed**. One real case deliberately executes `os._exit` while holding a journal kernel lock. The lock is refused by an active second instance, then becomes available after the first host dies.
+- **Linux:** 4 host-lease tests, 3 applicable native kernel-containment tests (plus one Windows-only skip), 6 durable-journal worker tests = **13 passed, 1 skipped**.
+- **Real Windows Blender:** official ZIP download matched Blender's signed-publisher release checksum manifest; exact Blender 5.2.3 executable SHA-256 `e546b2a0d81ae19bd5b306b668733102d91d23db2e2be02d68b7ecbe548af0a1`. Genuine Blender scene SHA-256 `6001b952efe34d502fda01f31f64857a63abb6e69761d4efcbfd892e597c126a`, PNG SHA-256 `7623dece900fb051ba4cf36e36d8d667372f8de4226ac630c79024eca50fda5b`, created at 128×72 by native **Cycles CPU**. Separate original NVP approved scene build and independent second-process audit **9/9 geometry/identity checks passed**. Original render input preserved, content-addressed output tamper rejected, failing script refused, running process cancellation/reap and interrupted-journal refusal verified.
+- **Real Linux Blender:** pinned release executable SHA-256 `b8b07a190fb25db76aae6de08dbc6c2b3d64e22e82bed6ba90de9545859f3431`, genuine .blend + PNG, independently audited original NVP scene **9/9 checks passed** under OS containment and host lease. The Linux artifact retains its earlier STACK-02A report format; *no claim of Linux detached grandchild hard-crash cleanup* is implied.
+- **Actual output ZIPs inspected independently:** Windows `nvp-stack02c-real-windows-blender-evidence`, Linux `nvp-stack02c-real-linux-blender-evidence`; both archives passed ZIP CRC checks. The Windows artifact includes original Blender job SQLite journal, failed/cancelled job evidence, real scene and PNG, and independently checked original source/audit results.
+
+**Key corrective finding:** Initial Windows Blender 5.2.3 headless render exited with `EXCEPTION_ACCESS_VIOLATION` after Windows Workbench WGL initialization failed on GitHub's GPU-less runner. Windows fixture/audit now use the **standard Blender Cycles CPU renderer**, not a new custom implementation; the full original NVP source geometry audit still passed. This is a **headless technical render proof**, not a full GPU workstation/final-film fidelity acceptance.
 
 ## Explicit open production gates
 
