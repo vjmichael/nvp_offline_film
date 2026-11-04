@@ -62,7 +62,15 @@ class MasteringHostCrashMatrix(unittest.TestCase):
                 if point in ("master_event_reserved","master_grant_committed"):
                     self.assertFalse((root/"job.txt").exists())
                     continue
-                job=(root/"job.txt").read_text()
+                if point=="master_queued":
+                    # The queue commit succeeds before stage() can return
+                    # its job ID to the caller. Recover identity from SQLite.
+                    with h.ledger._db() as db:
+                        row=db.execute("SELECT id FROM tasks WHERE id LIKE 'masterjob%'").fetchone()
+                    self.assertIsNotNone(row)
+                    job=row[0]
+                else:
+                    job=(root/"job.txt").read_text()
                 task=h.ledger.get_task(job)
                 if point=="master_queued":
                     self.assertEqual(task["state"],"QUEUED")
