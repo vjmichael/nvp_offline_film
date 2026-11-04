@@ -32,9 +32,11 @@ def _sha_file(path):
 
 class NativeAudioHost:
     def __init__(self, ledger:TaskLedger, root, *, verify_creator_action,
-                 strict_linux_tree=False):
+                 strict_linux_tree=None):
         if not isinstance(ledger,TaskLedger) or not callable(verify_creator_action):
             raise TypeError("Native audio host requires a real ledger and creator policy")
+        if strict_linux_tree is None:
+            strict_linux_tree=(sys.platform=="linux")
         if type(strict_linux_tree) is not bool:
             raise TypeError("Strict Linux containment flag must be boolean")
         self.strict_linux_tree=strict_linux_tree
