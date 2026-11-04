@@ -257,6 +257,20 @@ class NativeEXRSequence:
         for start,stop,plan in self._plans(seq,original):
             existing=self._chunk(sequence_id,start)
             if existing:
+                task_id=self.worker._activity_id(existing["job_id"])
+                task=self.ledger.get_task(task_id)
+                if task is None:
+                    # Source was fsynced and job ledgered, but host died
+                    # before atomic scheduler enqueue. Never invent a new
+                    # job ID or overwrite the earlier immutable staged files.
+                    self.worker._validate(existing["op"])
+                    ticket=self.dispatcher.enqueue(
+                        existing["op"],approval_id=seq["approval_id"],lane="standard")
+                    return {"state":"QUEUED","chunk":[start,existing["stop"]],
+                            "job_id":existing["job_id"],"task_id":ticket["task_id"],
+                            "recovered_staged_source":True}
+                # QUEUED/ACTIVE/SUCCEEDED/FAILED are durable and may not
+                # be automatically replayed under a second job identity.
                 continue
             job_id="exrjob_"+secrets.token_hex(16)
             jobdir=self.worker.root/job_id
@@ -299,6 +313,49 @@ class NativeEXRSequence:
                     shutil.rmtree(jobdir)
                 raise
         return None
+
+    def revoke_from_trusted_native_action(self,sequence_id,creator_event):
+        """Revoke only after another authenticated native creator action.
+
+        QUEUED tasks can be cancelled with their scheduler owner key;
+        ACTIVE workers and RAM reservations remain OS-supervisor-owned.
+        """
+        seq=self._row(sequence_id)
+        scope={"operation":"nvp.native.frozen_take.exr_sequence.revoke",
+               "project_id":seq["project_id"],"take_id":seq["take_id"],
+               "preview_id":seq["preview_id"],
+               "source_take_sha256":seq["capture_sha256"],
+               "sequence_id":sequence_id,
+               "resolution":[seq["width"],seq["height"]],
+               "frames":seq["frame_count"]}
+        if self._creator(creator_event,scope) is not True:
+            raise PermissionError("Native creator did not authorize sequence cancellation")
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            updated=db.execute("""UPDATE native_exr_sequences
+                    SET revoked_at=? WHERE sequence_id=? AND revoked_at IS NULL""",
+                    (time.time(),sequence_id))
+            if updated.rowcount!=1:
+                db.rollback()
+                raise RuntimeError("EXR sequence consent already revoked")
+            jobs=db.execute("""SELECT job_id FROM native_exr_chunk_jobs
+                    WHERE sequence_id=?""",(sequence_id,)).fetchall()
+            db.commit()
+        cancelled=[]
+        for (job_id,) in jobs:
+            task_id=self.worker._activity_id(job_id)
+            task=self.ledger.get_task(task_id)
+            if task is not None and task["state"]=="QUEUED":
+                try:
+                    self.ledger.cancel_queued(task_id,owner_key=self.dispatcher.owner_key)
+                    cancelled.append(task_id)
+                except (RuntimeError,PermissionError):
+                    # A concurrent claimant may own a live Blender process;
+                    # never release its RAM or imply the OS worker stopped.
+                    pass
+        return {"sequence_id":sequence_id,"revoked":True,
+                "cancelled_queued_task_ids":cancelled,
+                "active_worker_cleanup_claimed":False}
 
     def run_queued_chunk(self):
         """Existing dispatcher owns physical RAM admission and native process."""
