@@ -59,12 +59,17 @@ def parse_edited_otio(raw:bytes,original:dict):
         raise RuntimeError("Real OpenTimelineIO schema did not parse") from exc
     if not isinstance(timeline,otio.schema.Timeline):
         raise RuntimeError("Import must be a real OTIO Timeline")
+    _reject_effects(timeline)
     if len(list(timeline.tracks))!=1:
         raise RuntimeError("NVP supports only one explicit picture track; audio not imported yet")
     track=timeline.tracks[0]
     if not isinstance(track,otio.schema.Track) or track.kind!=otio.schema.TrackKind.Video:
         raise RuntimeError("Imported edit must contain one video track only")
     _reject_effects(track)
+    if (getattr(track,"enabled",True) is not True or
+        getattr(track,"source_range",None) is not None or
+        getattr(timeline.tracks,"source_range",None) is not None):
+        raise RuntimeError("Disabled or parent-trimmed picture tracks cannot be silently flattened")
     clips=list(track)
     if not 1<=len(clips)<=MAX_CLIPS:
         raise RuntimeError("Edited track must contain bounded picture clips")
@@ -90,6 +95,8 @@ def parse_edited_otio(raw:bytes,original:dict):
         if not isinstance(clip,otio.schema.Clip):
             raise RuntimeError("Unsupported timeline gap, transition or nested compositing")
         _reject_effects(clip)
+        if getattr(clip,"enabled",True) is not True:
+            raise RuntimeError("Disabled editorial clip would silently lose source picture")
         if clip.name not in cuts:
             raise RuntimeError("Editor referenced a shot outside the frozen Digital Take")
         cut=cuts[clip.name]
