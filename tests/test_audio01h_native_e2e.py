@@ -86,6 +86,14 @@ class NativeAudio01HEndToEnd(unittest.TestCase):
             self.assertEqual(result["state"],"SUCCEEDED")
             self.assertEqual(ledger.get_task(queued["job_id"])["reserved"],0)
             self.assertEqual(host._grant(queued["job_id"])["stopped"],1)
+            reopened=NativeAudio01HHost(
+                DigitalCapture(Studio(root/"studio.sqlite3")),
+                TaskLedger(root/"ledger",sampler=lambda:ResourceSnapshot(
+                    0,16000,12000,0,tuple())),root/"native",
+                verify_creator_action=lambda *_:False,strict_linux_tree=False)
+            recovered=reopened.recover_completed(queued["job_id"])
+            self.assertEqual(recovered["state"],"SUCCEEDED")
+            self.assertFalse(recovered["rerendered"])
             for name,sha in pristine.items():
                 self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(),sha)
             out=cap.index.read_revision(pid,"automatedmix",1)
