@@ -130,6 +130,11 @@ class NativeAudio01JHost:
                 or Path(plan["destination"]).exists()
                 or Path(plan["destination"]).is_symlink()):
                 return False
+            # Recheck the current AUDIO-01I approval head at admission,
+            # not just when the operation was originally queued.
+            self.audio_host.verify_delivery(
+                plan["project_id"],plan["audio_delivery_id"],plan["audio_dir"],
+                ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
             lock,_,audio,_,_,_=approved_inputs(
                 self.capture,plan["project_id"],plan["picture_lock_id"],
                 plan["audio_delivery_id"],plan["movie_dir"],plan["audio_dir"])
@@ -241,6 +246,11 @@ class NativeAudio01JHost:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("UPDATE native_audio01j_grants SET stopped=1 WHERE job_id=?",(job,))
                 db.commit()
+            # A mix revoked during render is not a deliverable, even if its
+            # completed MOV still decodes correctly.
+            self.audio_host.verify_delivery(
+                plan["project_id"],plan["audio_delivery_id"],plan["audio_dir"],
+                ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
             self.ledger.update(job,"verifying_output","Independent FilmIndex and decoded media proof")
             verified=verify_final_av(
                 self.capture,plan["project_id"],plan["export_id"],
