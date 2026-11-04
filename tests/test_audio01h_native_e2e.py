@@ -133,6 +133,26 @@ class NativeAudio01HEndToEnd(unittest.TestCase):
             self.assertEqual(ledger.get_task(queued["job_id"])["state"],"QUEUED")
             self.assertFalse((root/"pending.wav").exists())
 
+    def test_direct_uncontained_filmindex_audio_cannot_be_final_approved(self):
+        from backend.nvp_audio01h_stem_revision import automate_stem
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            cap,pid=make_source(root)
+            result=automate_stem(cap,pid,"originalaudio",None,
+                [[0,0],[47999,0]],root,root/"orphan.wav",
+                "uncontainedmix",authorize=lambda _:True)
+            self.assertEqual(result["status"],"UNAPPROVED_AUTOMATED_STEM")
+            ledger=TaskLedger(root/"ledger",sampler=lambda:ResourceSnapshot(
+                0,16000,12000,0,tuple()))
+            host=NativeAudio01HHost(cap,ledger,root/"native",
+                verify_creator_action=lambda *_:True,strict_linux_tree=False)
+            evidence=analyze_wav(root/"orphan.wav",expected_samples=48000)
+            with self.assertRaises(PermissionError):
+                host.creator_decision(pid,"uncontainedmix","decision",
+                    evidence,decision="ACCEPT",creator_event="real_human_event")
+            with self.assertRaises(KeyError):
+                cap.index.read_revision(pid,"decision")
+
     def test_denied_automation_cannot_enqueue_or_publish(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
