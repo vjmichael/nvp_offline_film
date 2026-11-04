@@ -198,7 +198,7 @@ def validate_strict_smpte(dcp, doctor_bin, *, timeout=1800):
                            (stdout + stderr)[-1500:])
     # An explicit skipped essential check cannot be interpreted as PASS.
     if re.search(r"(?:check_skipped|schema_validation_skipped|"
-                 r"\\bSKIPPED\\b)", stdout + stderr, re.I):
+                 r"\bSKIPPED\b)", stdout + stderr, re.I):
         raise RuntimeError("Independent DCP QC skipped required validation")
     after = inspect_dcp_directory(package)
     if before["assets"] != after["assets"]:
