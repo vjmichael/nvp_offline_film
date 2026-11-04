@@ -46,11 +46,16 @@ def main(argv=None):
         if ready_fd<3:
             raise SystemExit("Invalid kernel admission ready descriptor")
         current=_membership()
-        parent=(Path("/sys/fs/cgroup")/current.lstrip("/")).resolve()
-        if (target.parent!=parent or
+        own=(Path("/sys/fs/cgroup")/current.lstrip("/")).resolve()
+        delegated=target.parent
+        try:
+            supported=os.getxattr(delegated,"user.delegate")==b"1"
+        except (OSError,AttributeError):
+            supported=False
+        if (not own.is_relative_to(delegated) or not supported or
             not target.name.startswith("nvp-worker-") or
             len(target.name)!=len("nvp-worker-")+32):
-            raise SystemExit("Worker cgroup does not belong to its parent host")
+            raise SystemExit("Worker cgroup not inside host's delegated systemd scope")
         # Move THIS shim before exec. Forked Blender descendants inherit
         # membership even after setsid() or a new process group.
         (target/"cgroup.procs").write_text(str(os.getpid()),encoding="ascii")
