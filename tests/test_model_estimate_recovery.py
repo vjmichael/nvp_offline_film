@@ -9,6 +9,7 @@ import time
 import unittest
 
 from backend.nvp_guarded_model_lifecycle import StrictEstimatedCpuModelManager
+from backend.nvp_model_consent import NativeModelConsent
 from backend.nvp_model_estimates import (TrustedLmsEstimator,EstimateStore,CpuEstimateReceipt,
                                          operation_from_estimate,parse_cpu_estimate)
 from backend.nvp_model_recovery import LocalModelObserver
@@ -194,6 +195,47 @@ class LifecycleAndRestartContracts(unittest.TestCase):
                 manager.release(loaded["task_id"])
             self.assertEqual(client.llm.handle.unloads,0)
             self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],5504)
+
+    def test_native_consent_is_hash_bound_revocable_and_expires(self):
+        with TemporaryDirectory() as root:
+            ledger=TaskLedger(root,sampler=sample)
+            store=EstimateStore(ledger)
+            receipt=fake_receipt()
+            op=operation_from_estimate("task_one",receipt)
+            consent=NativeModelConsent(ledger)
+            approval=consent.issue_from_trusted_ui(op,duration_s=30)
+            client=Client()
+            manager=StrictEstimatedCpuModelManager(ledger,
+                approval_check=consent.check,client=client,estimates=store)
+            manager.enqueue_estimated("task_one",receipt,approval_id=approval)
+            self.assertTrue(consent.check(approval,
+                hashlib.sha256(json.dumps(op.__dict__,sort_keys=True,
+                  separators=(",",":")).encode()).hexdigest(),op.__dict__))
+            # A change of model, context, estimate, task or hash cannot
+            # borrow another creator-approved model-load permission.
+            foreign=dict(op.__dict__);foreign["model_key"]="foreign/model"
+            self.assertFalse(consent.check(approval,"a"*64,foreign))
+            consent.revoke_from_trusted_ui(approval)
+            with self.assertRaises(PermissionError):
+                manager.load_next()
+            self.assertEqual(client.llm.calls,[])
+            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],0)
+            with self.assertRaises(KeyError):
+                consent.revoke_from_trusted_ui(approval)
+
+    def test_native_consent_is_persistent_across_manager_restarts(self):
+        with TemporaryDirectory() as root:
+            ledger=TaskLedger(root,sampler=sample)
+            receipt=fake_receipt()
+            op=operation_from_estimate("task_one",receipt)
+            creator=NativeModelConsent(ledger)
+            approval=creator.issue_from_trusted_ui(op,duration_s=30)
+            reopened=NativeModelConsent(TaskLedger(root,sampler=sample))
+            digest=hashlib.sha256(json.dumps(op.__dict__,sort_keys=True,
+                    separators=(",",":")).encode()).hexdigest()
+            self.assertTrue(reopened.check(approval,digest,dict(op.__dict__)))
+            reopened.revoke_from_trusted_ui(approval)
+            self.assertFalse(creator.check(approval,digest,dict(op.__dict__)))
 
     def test_wrong_model_key_blocks_acceptance_and_keeps_reservation(self):
         with TemporaryDirectory() as root:
