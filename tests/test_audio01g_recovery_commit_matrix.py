@@ -11,6 +11,9 @@ import unittest
 from unittest.mock import patch
 
 from backend.nvp_audio01g_mux_intent import prepare,read,transition
+from backend.nvp_audio01g_fault_matrix import BOUNDARIES
+from test_audio01g_fs_crash_matrix import FS_POINTS
+from test_audio01g_sqlite_crash_matrix import ADMISSION_POINTS,FINAL_POINTS
 from backend.nvp_audio01g_mux_recovery import (
     inspect_stopped_worker,finalize_verified_worker,reconcile_post_commit_gap,
 )
@@ -52,6 +55,11 @@ class DurableRecoveryAcrossCommit(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_all_declared_crash_points_have_subprocess_cases(self):
+        cases=FS_POINTS+ADMISSION_POINTS+FINAL_POINTS
+        self.assertEqual(len(cases),len(set(cases)))
+        self.assertEqual(set(cases),set(BOUNDARIES))
 
     def test_partial_movie_stays_quarantined_and_reservation_held(self):
         with patch("backend.nvp_audio01g_mux_recovery.verify_finished_media",
