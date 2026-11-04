@@ -1,7 +1,7 @@
 """Real B14 integration: Blender -> FLOAT32 EXR -> ACES2 SDR16 -> B12 OTIO
 -> two real B13 edited revisions -> B14 output frames -> FilmIndex restart.
-The B14 call here exercises the worker-side engine; it is NOT creator UI
-approval or a production-contained B14 worker acceptance.
+B14 executes via trusted native creator fixture, durable resource admission,
+OS-contained worker, live pressure watchdog and post-restart verification.
 """
 from __future__ import annotations
 
@@ -10,7 +10,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from backend.nvp_b14_picture_conform import conform_sdr16_picture, verify_conformed_sdr16
+from backend.nvp_b14_picture_conform import verify_conformed_sdr16
+from backend.nvp_b14_native_conform import NativeB14ConformHost
+from backend.nvp_resource_guard import ResourceSnapshot
+from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_b13_editorial_roundtrip import FORMAT as EDIT_FORMAT
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_studio import Studio
@@ -51,12 +54,40 @@ def fixture(out, blender):
     if len(matches) != 1:
         raise RuntimeError("Exactly one authentic B12 editorial package required")
     package = matches[0]
+    ledger = TaskLedger(root / "b14_native_activity")
+    creator_event = object()
+    granted = []
+    def creator_policy(signal, scope):
+        granted.append(scope)
+        return (signal is creator_event and
+                scope["operation"] == "nvp.native.presentation.sdr16_picture_conform" and
+                scope["project_id"] == project_id and
+                scope["edit_id"] == edit_id and
+                scope["final_master"] is False)
+    host = NativeB14ConformHost(capture, ledger, root / "native_b14_host",
+                               verify_creator_action=creator_policy)
+    # Admission fault injection verifies that no OS worker runs under
+    # simulated pressure; actual children run under OS memory containment.
+    ledger.sampler = lambda: ResourceSnapshot(1, 16384, 1000, 0, ())
     done = []
     for rev, source in ((1, first), (2, second)):
         destination = root / ("b14_conformed_edit_revision_" + str(rev))
         pid = "b14_presentation_r" + str(rev)
-        result = conform_sdr16_picture(capture, project_id, edit_id, rev,
-                                       package, destination, pid)
+        queued = host.stage_and_approve(project_id, edit_id, rev,
+                                        package, destination, creator_event,
+                                        presentation_id=pid,
+                                        ram_mb=1024, duration_s=3600)
+        denied = host.run_next()
+        if denied is None or denied["state"] != "QUEUED":
+            raise RuntimeError("B14 unsafe resource admission did not queue the worker")
+        ledger.sampler = lambda: ResourceSnapshot(1, 32768, 25000, 0, ())
+        result = host.run_next()
+        if result is None or result["state"] != "SUCCEEDED":
+            raise RuntimeError("B14 native creator-approved contained conform failed")
+        if result["job_id"] != queued["job_id"]:
+            raise RuntimeError("B14 scheduler claimed the wrong native job")
+        result["document_sha256"] = capture.index.read_revision(
+            project_id, pid, 1)["document_sha256"]
         expected = source["data"]["editorial_map"]["frame_map"]
         if result["frames"] != len(expected) or result["status"] != "VERIFIED_SDR16_PICTURE_CONFORM":
             raise RuntimeError("B14 actual ordered video frames were not conformed")
@@ -66,9 +97,13 @@ def fixture(out, blender):
             if _sha(dest.read_bytes()) != mapping["original_png16_sha256"]:
                 raise RuntimeError("B14 conformed image differs from frozen original")
         done.append({"revision": rev, "presentation_id": pid,
-                     "frames": len(expected), "document_sha256": result["document_sha256"]})
+                     "frames": len(expected), "document_sha256": result["document_sha256"],
+                     "job_id": queued["job_id"]})
     reopened = DigitalCapture(Studio(db))
+    restored_host = NativeB14ConformHost(
+        reopened, ledger, host.root, verify_creator_action=lambda *_: False)
     for result in done:
+        restored_host.verify_completed(result["job_id"])
         checked = verify_conformed_sdr16(reopened, project_id, result["presentation_id"],
                                          package,
                                          root / ("b14_conformed_edit_revision_" +
@@ -89,7 +124,9 @@ def fixture(out, blender):
         "all_output_frames_rehashed_from_original_FilmIndex": True,
         "conforms_after_FilmIndex_restart": True,
         "B13_edits_unchanged": True,
-        "native_B14_worker_authorization_tested": False,
+        "native_B14_worker_authorization_tested": len(granted) == 2,
+        "native_B14_contained_workers": 2,
+        "native_B14_resource_reservations_released": ledger.snapshot()["reservations"]["ram_mb"] == 0,
         "edited_technical_MOV_rendered": False,
         "audio_present": False, "final_master": False,
     }
