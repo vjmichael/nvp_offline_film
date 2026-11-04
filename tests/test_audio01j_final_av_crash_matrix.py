@@ -22,11 +22,12 @@ from test_audio01j_native_final_av import source_picture
 from test_audio01i_native_master_delivery import setup_approved,ledger
 
 ROOT=Path(__file__).resolve().parents[1]
-HOST_POINTS=("av_queued","av_claimed","av_worker_reaped",
+HOST_POINTS=("av_export_event_reserved","av_grant_committed",
+             "av_queued","av_claimed","av_worker_reaped",
              "av_stop_witness_committed","av_result_committed",
              "av_ledger_succeeded","av_event_completed")
-WORKER_POINTS=("av_stage_created","av_media_indexed",
-               "av_directory_promoted","av_filmindex_registered",
+WORKER_POINTS=("av_stage_created","av_mov_verified","av_media_indexed",
+               "av_manifest_fsynced","av_directory_promoted","av_filmindex_registered",
                "av_worker_receipt_fsynced")
 
 
@@ -94,6 +95,11 @@ class FinalAVCrashMatrix(unittest.TestCase):
                     0 if point in WORKER_POINTS else EXIT_CODE,
                     ran.stderr.decode("utf8","replace")[-1600:])
                 host=hosts(root)
+                if point in ("av_export_event_reserved","av_grant_committed"):
+                    self.assertFalse((root/"job.txt").exists())
+                    with self.assertRaises(KeyError):
+                        host.capture.index.read_revision(pid,"finalfilm")
+                    continue
                 if point=="av_queued":
                     with host.ledger._db() as db:
                         found=db.execute(
@@ -128,7 +134,8 @@ class FinalAVCrashMatrix(unittest.TestCase):
                     indexed=host.capture.index.read_revision(pid,"finalfilm",1)
                     self.assertFalse(indexed["data"]["dcp_delivered"])
                 elif point in ("av_queued","av_claimed","av_stage_created",
-                               "av_media_indexed","av_directory_promoted"):
+                               "av_mov_verified","av_media_indexed",
+                               "av_manifest_fsynced","av_directory_promoted"):
                     with self.assertRaises(KeyError):
                         host.capture.index.read_revision(pid,"finalfilm")
 
