@@ -77,3 +77,22 @@ The nine real-ProRes filesystem crash cases now launch their subprocess through 
 `test_all_declared_crash_points_have_subprocess_cases` proves the 9+5+7 test classification is a one-to-one match with the 21 declared gates. `test_every_fault_point_is_in_actual_production_code` additionally scans the live worker/host/mux source to ensure **every declared gate is actually instrumented exactly once**, preventing a false-green test that names a checkpoint never executed.
 
 The completion-side seven cases use synthetic worker completion to isolate SQLite durability; a true 21-way OS-worker-termination matrix is NOT claimed. It remains a separate native-host E2E acceptance task, alongside a power-loss durability test on appropriate hardware.
+
+## AUDIO-01G next gate: genuine native late-stage worker / OS stop evidence
+
+`tests/test_audio01g_native_late_crash_matrix.py` adds seven **real worker** late-crash executions using `NativeAudio01FHost.run_next`, NVP's actual `launch_contained` process supervisor (Windows Job Object on the Windows runner), FFmpeg-rendered 24-frame ProRes/48-kHz PCM technical media, source-immutable FilmIndex publication, and an actual child process exiting at the receipt boundary. The isolated test fixture worker is `tests/fixtures/nvp_audio01g_native_real_mux_worker.py`.
+
+The test replaces only the expensive **upstream** B14 picture and AUDIO-01E WAV proof callbacks with known test fixture results. The real resulting MOV is independently FFprobed and its decoded audio is hashed against the input WAV. Thus this is evidence of contained real media execution and native recovery-state logic, **not a claim that the upstream B14/01E sources were fully verified inside this specific test**.
+
+It exercises:
+- `worker_receipt_fsynced`: actual child exits 93; host reaps it, persists OS stop, quarantines the reservation rather than publishing completion
+- `native_worker_reaped`: host crashes after close but before durable stop witness; recovery must fail closed
+- `os_stop_witness_sqlite`: source/FilmIndex complete, stop witness persisted, ACTIVE reservation remains
+- `grant_result_sqlite`, `intent_verified_sqlite`: result digest and journal evolve without releasing ACTIVE prematurely
+- `ledger_succeeded_sqlite`, `intent_committed_sqlite`: successful reservation release and exact post-crash journal reconciliation without rerendering
+
+A host subprocess exits abruptly with `os._exit(93)` at each host milestone; the worker-receipt case has a real worker exit 93 and a host-side caught failure that exits 95 for unambiguous forensic attribution. A restart opens the same SQLite files and checks original picture/sound bytes, source decoded samples, worker-stop witness presence, TaskLedger reservation, journal state and independent immutable FilmIndex result. This test also checks that missing OS stop evidence blocks reconciliation.
+
+This closes the gap **in test scope** between synthetic SQLite-only completion fixtures and true native worker execution. It still does not simulate an external host power-off, nor does it prove that a different desktop process can safely take ownership of a crashed Job Object without a surviving guardian. Linux strict delegated cgroup-v2 remains OPEN / DEFERRED.
+
+AUDIO-01G is not production-accepted until exact-head Windows CI logs demonstrate that the native real-worker matrix passes and the full unmocked Blender source tests pass independently.
