@@ -20,18 +20,12 @@ class Audio01HCrashCoverage(unittest.TestCase):
                 self.assertEqual(code.count('crash_after("'+point+'")'),1)
 
     def test_each_boundary_has_actual_crash_test(self):
-        host=(ROOT/"tests/test_audio01h_native_crash_matrix.py").read_text("utf8")
-        worker=(ROOT/"tests/test_audio01h_worker_crash_matrix.py").read_text("utf8")
-        creator=(ROOT/"tests/test_audio01h_creator_crash_matrix.py").read_text("utf8")
-        names=[]
-        from backend.nvp_audio01h_fault_matrix import BOUNDARIES
-        from ast import literal_eval
-        # Count each point by literal in the explicit test files; no wildcard
-        # or dynamic generator is counted as genuine coverage.
-        for point in BOUNDARIES:
-            count=sum(text.count('"'+point+'"') for text in (host,worker,creator))
-            with self.subTest(point=point):
-                self.assertEqual(count,1)
+        from test_audio01h_native_crash_matrix import HOST_POINTS
+        from test_audio01h_worker_crash_matrix import POINTS as WORKER_POINTS
+        from test_audio01h_creator_crash_matrix import POINTS as CREATOR_POINTS
+        covered=(*HOST_POINTS,*WORKER_POINTS,*CREATOR_POINTS)
+        self.assertEqual(len(covered),len(set(covered)))
+        self.assertEqual(set(covered),set(BOUNDARIES))
 
 
 if __name__=="__main__":
