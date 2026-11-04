@@ -26,6 +26,8 @@ import threading
 import time
 from typing import Mapping
 
+from backend.nvp_worker_containment import launch_contained
+
 JOB_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,79}$")
 SHA = re.compile(r"^[a-f0-9]{64}$")
 VALID_KINDS = frozenset({"png","json_audit","blend","exr"})
@@ -67,6 +69,7 @@ class BlenderOperation:
     arguments: Mapping[str,str]
     scene: str | None = None
     timeout_seconds: int = 90
+    memory_limit_mb: int = 8192
 
     def canonical(self) -> str:
         return json.dumps(asdict(self),sort_keys=True,separators=(",",":"),allow_nan=False)
@@ -201,6 +204,8 @@ class BlenderWorkerSupervisor:
             raise ValueError("Invalid typed Blender job")
         if type(op.timeout_seconds) is not int or not 1<=op.timeout_seconds<=600:
             raise ValueError("Worker timeout must be 1 to 600 seconds")
+        if type(op.memory_limit_mb) is not int or not 256<=op.memory_limit_mb<=65536:
+            raise ValueError("Worker memory limit must be 256 to 65536 MiB")
         if (not SHA.fullmatch(op.script_sha256) or type(op.inputs) is not dict or
             type(op.outputs) is not dict or type(op.arguments) is not dict or
             not 1<=len(op.outputs)<=12 or len(op.inputs)>32):
@@ -276,25 +281,11 @@ class BlenderWorkerSupervisor:
                 raise RuntimeError("Approved worker input changed during execution")
 
     def _terminate_tree(self, proc):
-        if proc.poll() is not None:
-            return
-        if os.name=="nt":
-            # Only act on the Popen child that this live supervisor still owns.
-            try:
-                subprocess.run(["taskkill","/PID",str(proc.pid),"/T","/F"],
-                               timeout=12,capture_output=True,check=False)
-            except (OSError,subprocess.TimeoutExpired):
-                proc.kill()
-        else:
-            try:
-                os.killpg(proc.pid,signal.SIGKILL)
-            except (ProcessLookupError,PermissionError):
-                if proc.poll() is None:
-                    proc.kill()
-        try:
-            proc.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("Child process containment cleanup unproven")
+        if not hasattr(proc, "terminate_tree"):
+            raise RuntimeError("Uncontained worker is forbidden")
+        proc.terminate_tree()
+        if proc.poll() is None:
+            raise RuntimeError("Kernel-contained worker termination unproven")
 
     def cancel(self, job_id: str):
         with self._lock:
@@ -370,14 +361,8 @@ class BlenderWorkerSupervisor:
             self._running[op.job_id]=token
         try:
             with log.open("wb") as stdout, err.open("wb") as stderr:
-                kwargs={"cwd":str(jobdir),"stdin":subprocess.DEVNULL,
-                        "stdout":stdout,"stderr":stderr,"shell":False,
-                        "close_fds":True}
-                if os.name=="nt":
-                    kwargs["creationflags"]=subprocess.CREATE_NEW_PROCESS_GROUP
-                else:
-                    kwargs["start_new_session"]=True
-                proc=subprocess.Popen(command,**kwargs)
+                proc=launch_contained(command,cwd=str(jobdir),stdout=stdout,stderr=stderr,
+                                      memory_mb=op.memory_limit_mb)
                 self._transition(op.job_id,"RUNNING",worker_pid=proc.pid)
                 started=time.monotonic()
                 while proc.poll() is None:
@@ -413,5 +398,7 @@ class BlenderWorkerSupervisor:
                              error=(type(exc).__name__+": "+str(exc))[:2000])
             return self.inspect(op.job_id)
         finally:
+            if proc is not None and hasattr(proc,"close"):
+                proc.close()
             with self._lock:
                 self._running.pop(op.job_id,None)
