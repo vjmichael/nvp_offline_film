@@ -29,7 +29,9 @@ def child(root,point):
     (root/"job.txt").write_text(q["job_id"])
     try:
         h.run_next(timeout_seconds=180)
-    except RuntimeError:
+    except RuntimeError as error:
+        if '96' not in str(error):
+            raise
         return
     raise RuntimeError("Worker crash injection did not stop native host")
 
