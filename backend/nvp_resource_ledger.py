@@ -177,6 +177,19 @@ class TaskLedger:
         return emergency_pressure(self.sampler(),
             gpu_device=row["device_id"] if row["gpu_mb"] else None)
 
+    def heartbeat(self,task_id):
+        # Actual Blender supervisor emits this while its contained child
+        # remains alive. A heartbeat is NOT fabricated render percentage.
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row=db.execute("SELECT state FROM tasks WHERE id=?",(task_id,)).fetchone()
+            if not row or row[0]!="ACTIVE":
+                db.rollback()
+                raise RuntimeError("Cannot heartbeat a nonrunning NVP task")
+            db.execute("UPDATE tasks SET updated_at=? WHERE id=?",
+                       (time.time(),task_id))
+            db.commit()
+
     def snapshot(self,limit=12):
         if type(limit) is not int or not 1<=limit<=100:raise ValueError("Invalid task limit")
         sample=self.sampler()
@@ -188,6 +201,16 @@ class TaskLedger:
                 THEN 0 ELSE 1 END,updated_at DESC LIMIT ?""",(limit,))]
             reserved=db.execute("""SELECT COALESCE(SUM(ram_mb),0),
                 COALESCE(SUM(gpu_mb),0) FROM tasks WHERE reserved=1""").fetchone()
+        # Never show an abandoned ACTIVE row as definitely still rendering.
+        # Presentation changes to STALE_UNVERIFIED only; reservations remain
+        # held until verified OS worker cleanup and journal reconciliation.
+        now=time.time()
+        for row in rows:
+            if row["state"]=="ACTIVE" and now-row["updated_at"]>15:
+                row["state"]="STALE_UNVERIFIED"
+                row["phase"]="recovering"
+                row["completed_fraction"]=None
+                row["detail"]="Worker stopped reporting; cleanup and output verification required. Safety reservation retained."
         return {"format":"nvp.system.resource_activity.v1","sample":sample.public(),
             "tasks":rows,"reservations":{"ram_mb":int(reserved[0]),"gpu_mb":int(reserved[1])},
             "safety":{"ram_headroom_fraction":.20,"ram_min_headroom_mb":2048,
