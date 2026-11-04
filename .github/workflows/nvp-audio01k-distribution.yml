@@ -9,7 +9,7 @@ permissions:
 jobs:
   native-distribution:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 50
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +45,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_audio01k_distribution.py backend/nvp_audio01k_native_host.py backend/nvp_audio01k_dcp_preflight.py tests/test_audio01k_distribution.py tests/test_audio01k_native_e2e.py
+          python -m compileall -q backend/nvp_audio01k_distribution.py backend/nvp_audio01k_native_host.py backend/nvp_audio01k_dcp_preflight.py backend/nvp_audio01k_fault_matrix.py tests/test_audio01k_distribution.py tests/test_audio01k_native_e2e.py tests/test_audio01k_distribution_crash_matrix.py tests/test_audio01k_fault_coverage.py
           python -m unittest discover -s tests -p test_audio01k_distribution.py -v
           python -m unittest discover -s tests -p test_audio01k_native_e2e.py -v
+          python -m unittest discover -s tests -p test_audio01k_distribution_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01k_fault_coverage.py -v
