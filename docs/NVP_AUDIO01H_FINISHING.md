@@ -64,3 +64,25 @@ This E2E test starts from **real fixture WAV samples arranged into indexed AUDIO
 The implementation is committed; **Windows/Linux CI execution remains unverified until exact-head successful jobs are observed.** A file creation or queued workflow is not a passed test. The strict Linux delegated-cgroup-v2 gate remains explicitly deferred. The native stop flag does not prove full host-power-loss durability or transferable ownership across two live supervisors. No mastered deliverable or DCP approval is emitted.
 
 Final production closeout still requires real human-event-origin attestation, host interruption/crash injection of this new 01H worker and measurement worker, and proof against output replacement after read-before-publish races.
+
+
+## AUDIO-01H.4 — Abrupt-exit and approval-custody hardening (candidate)
+
+The 01H crash matrix now defines 14 independently named points in `backend/nvp_audio01h_fault_matrix.py` and triggers real `os._exit(94)` only if BOTH opt-in CI environment keys are present. These gates are inert for ordinary production operation and are never accepted from a user/model media plan.
+
+The native host/worker now instrument:
+- sealed plan fsync; grant and queue SQLite commits; admission to ACTIVE
+- worker FilmIndex registration; worker receipt fsync; native handle reap
+- durable stopped witness; independent output verification; TaskLedger SUCCESS; result SHA commit
+- creator-event nonce reservation; FilmIndex creator-decision registration; nonce completion
+
+`tests/test_audio01h_native_crash_matrix.py` executes nine actual host-abort points in subprocesses and reopens SQLite/FilmIndex, checking absent decisions, held ACTIVE reservations, refused recovery without stopped witness, and no-rerender reconciliation after verified stops. `tests/test_audio01h_worker_crash_matrix.py` exercises the two actual child-worker abort points and proves neither partial FilmIndex publication nor a worker receipt becomes a final approval. `tests/test_audio01h_creator_crash_matrix.py` exercises three creator-approval crash windows; once reserved, the same event nonce cannot be reused regardless of the crash point.
+
+Security refinements:
+- Creator authorization is checked before a nonce is reserved, avoiding unauthorized nonce exhaustion; original exact-scope approval remains independently checked before FilmIndex publication.
+- A FilmIndex audio revision alone cannot be considered a final mix: the trusted host must find exactly one completed resource-ledger native producer with a matching result SHA, durable stopped witness, and sealed original composite plan.
+- The full canonical native loudness report must agree with fresh measurement, not just selected LUFS/LRA/TP numbers.
+- Symlink source-directory rejection takes place before resolution.
+- The test suite additionally attempts to approve a manually produced, uncontained FilmIndex audio object and requires rejection.
+
+**Remaining:** CI results are not yet available. AUDIO-01H native acceptance MUST fail if any Windows/Linux test fails, skips required native media, or cannot prove stopped-worker custody. Fault injection tests simulate process crashes, not power loss; Linux delegated cgroup-v2 remains deferred. Creator-event identity is delegated to the trusted host policy callback, not a complete UI-origin attestation implementation. FilmIndex publication's file/SQLite boundaries still need full storage-fault injection for physical power-failure guarantees.
