@@ -34,6 +34,32 @@ This milestone does not demand full feature-film scale, advanced VFX, DCP, or co
 
 This rule is a design requirement for scaling NVP, not a claim that every stage already implements streaming or crash-safe chunk scheduling.
 
+## Hardware-adaptive workload scheduling: home PC to data center
+
+**Design requirement:** one NVP production graph, from local single-machine execution to distributed multi-node rendering. Neither film length nor the number of shots determines how much of the film must reside in memory. Scale *workers and chunk sizes* to observed resources; preserve source assets, deterministic edit order, FilmIndex identity and deliverable semantics.
+
+### Resource discovery and host protection
+
+At admission and periodically during processing, measure usable CPU cores/load, physical RAM available after OS/user reserve, GPU backend(s) and usable VRAM, available scratch disk/capacity/throughput, worker liveness, and thermal/power constraints where exposed. For distributed operation additionally measure link throughput/latency and per-node asset locality. Never equate installed RAM/VRAM with fully available memory. Reserve headroom for the operating system and the user; on desktop, responsiveness outranks render throughput. If GPU constraints prohibit safe execution, choose CPU fallback or refuse with a clear recoverable reason, never exhaust the machine.
+
+### Work unit and controller
+
+The authoritative work unit is a hash-addressed `(production revision, shot/asset dependency set, operation, frame/sample range, transform version, quality policy)` with immutable inputs, expected outputs, resource estimates and durable journal state. The scheduler uses measured peak RAM/VRAM and throughput to refine forecasts per operation and device. It admits only work that fits all relevant limits, with bounded queues and I/O backpressure; dynamically chooses chunk duration and worker concurrency. An operation may use a full shot, one frame, tile, subframe or audio window as its minimal unit.
+
+Support local CPU-only, one-GPU, multiple-GPU and remote workers using the same operation contracts. Data-center executors must fetch exact versioned inputs, attest hashes and return verified output manifests; the authoritative FilmIndex/controller commits accepted outputs. Node failures or stale worker results cannot claim completion. Network and shared-storage overhead may make local execution preferable for small jobs.
+
+### Correctness across boundaries
+
+Chunk partitioning must not alter the creative result: account for simulation history, temporal sampling, denoise/optical-flow halo frames, audio lookahead, color pipelines, codec GOP/state and edit cut boundaries. Record overlap/state, enforce exact time/sample mapping and reunite outputs in deterministic timeline order. If an operation cannot safely chunk, admit its minimal indivisible state requirement or report that the current device cannot run that particular operation; do not promise universal feasibility or identical floating-point bits across heterogeneous devices.
+
+### Checkpoints, retry and graceful degradation
+
+Atomically checkpoint validated results and provenance after each committed unit. A restart verifies inputs/receipts before reuse, reschedules only missing or invalid units, and releases resource reservations only after worker exit/cleanup is proven. Respond to resource pressure by reducing parallelism/chunk size, pausing with a durable checkpoint or using an explicitly supported alternative backend. Never silently change final resolution, color management, frame rate, simulation accuracy or requested render quality to fit a weaker PC; any draft-quality mode is explicit and separately labeled.
+
+### Test matrix and actual acceptance
+
+Test on (1) constrained CPU-only home hardware, (2) consumer single-GPU PC, (3) high-memory multi-GPU workstation and (4) distributed workers with deliberately injected worker/network failures. Compare final frame/time/source lineage, audio sync, output decode and quality-policy adherence across environments. Measure maximum memory, VRAM, storage, throughput, host responsiveness, restart recovery and scaling efficiency. Passing one CI runner does not prove the full hardware range. Data-center support is a future execution mode, not an already implemented capability.
+
 ## Source-of-truth production workflow
 
 1. Author and freeze world, shots, performances and production instructions into indexed Digital Take(s).
