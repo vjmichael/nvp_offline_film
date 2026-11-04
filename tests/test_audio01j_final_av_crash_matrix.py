@@ -24,7 +24,7 @@ from test_audio01i_native_master_delivery import setup_approved,ledger
 ROOT=Path(__file__).resolve().parents[1]
 HOST_POINTS=("av_export_event_reserved","av_grant_committed",
              "av_queued","av_claimed","av_worker_reaped",
-             "av_stop_witness_committed","av_result_committed",
+             "av_stop_witness_committed","av_master_registered","av_result_committed",
              "av_ledger_succeeded","av_event_completed")
 WORKER_POINTS=("av_stage_created","av_mov_verified","av_media_indexed",
                "av_manifest_fsynced","av_directory_promoted","av_filmindex_registered",
@@ -118,7 +118,8 @@ class FinalAVCrashMatrix(unittest.TestCase):
                     self.assertEqual(grant["stopped"],0)
                     with self.assertRaises(PermissionError):
                         host.recover_completed(job)
-                elif point in ("av_stop_witness_committed","av_result_committed"):
+                elif point in ("av_stop_witness_committed","av_master_registered",
+                             "av_result_committed"):
                     self.assertEqual((task["state"],task["reserved"]),("ACTIVE",1))
                     self.assertEqual(grant["stopped"],1)
                     reconciled=host.recover_completed(job)
@@ -127,17 +128,34 @@ class FinalAVCrashMatrix(unittest.TestCase):
                 else:
                     self.assertEqual((task["state"],task["reserved"]),("SUCCEEDED",0))
                     self.assertEqual(host.recover_completed(job)["state"],"SUCCEEDED")
+                # Worker-published AV candidate never becomes a final master
+                # until the trusted host has reaped, independently verified
+                # and issued the terminal FilmIndex master revision.
+                candidate_id=__import__(
+                    "backend.nvp_audio01j_final_av",
+                    fromlist=["candidate_id_for"]).candidate_id_for(pid,"finalfilm")
+                has_candidate=point not in (
+                    "av_queued","av_claimed","av_stage_created",
+                    "av_mov_verified","av_media_indexed",
+                    "av_manifest_fsynced","av_directory_promoted")
+                if has_candidate:
+                    candidate=host.capture.index.read_revision(pid,candidate_id,1)
+                    self.assertFalse(candidate["data"]["final_master"])
+                    self.assertFalse(candidate["data"]["director_approved"])
+                else:
+                    with self.assertRaises(KeyError):
+                        host.capture.index.read_revision(pid,candidate_id)
                 if point in ("av_filmindex_registered","av_worker_receipt_fsynced",
-                             "av_worker_reaped","av_stop_witness_committed",
-                             "av_result_committed","av_ledger_succeeded",
-                             "av_event_completed"):
-                    indexed=host.capture.index.read_revision(pid,"finalfilm",1)
-                    self.assertFalse(indexed["data"]["dcp_delivered"])
-                elif point in ("av_queued","av_claimed","av_stage_created",
-                               "av_mov_verified","av_media_indexed",
-                               "av_manifest_fsynced","av_directory_promoted"):
+                             "av_worker_reaped"):
                     with self.assertRaises(KeyError):
                         host.capture.index.read_revision(pid,"finalfilm")
+                elif point in ("av_master_registered","av_result_committed",
+                               "av_ledger_succeeded","av_event_completed",
+                               "av_stop_witness_committed"):
+                    master=host.capture.index.read_revision(pid,"finalfilm",1)
+                    self.assertTrue(master["data"]["final_master"])
+                    self.assertFalse(master["data"]["dcp_delivered"])
+
 
 
 if __name__=="__main__":
