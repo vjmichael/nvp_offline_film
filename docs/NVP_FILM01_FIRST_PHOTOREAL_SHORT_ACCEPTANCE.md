@@ -56,6 +56,12 @@ Chunk partitioning must not alter the creative result: account for simulation hi
 
 Atomically checkpoint validated results and provenance after each committed unit. A restart verifies inputs/receipts before reuse, reschedules only missing or invalid units, and releases resource reservations only after worker exit/cleanup is proven. Respond to resource pressure by reducing parallelism/chunk size, pausing with a durable checkpoint or using an explicitly supported alternative backend. Never silently change final resolution, color management, frame rate, simulation accuracy or requested render quality to fit a weaker PC; any draft-quality mode is explicit and separately labeled.
 
+### Resource monitor + resource guard implementation status
+
+NVP already includes `nvp_resource_guard.py` (OS RAM telemetry, GPU budgets, emergency pressure rules), `nvp_resource_ledger.py` (SQLite-serialized task admission, durable reservations, queue and activity snapshots), and `nvp_worker_containment.py` (OS-owned worker containment). B14 adds `nvp_resource_supervisor.py` to continuously sample existing ledger pressure for an ACTIVE contained worker. It requires two consecutive critical observations before invoking the contained worker's own terminate-tree operation; isolated spikes reset. It also stops timed-out workers. The host, not the monitor, must independently establish OS cleanup before releasing durable reservations.
+
+B13's native OTIO import has been wired into this watchdog; other long-running producer hosts and B14's future authorized conform host must adopt it separately. CI unit tests cover success, intermittent/continuous pressure, timeout and invalid worker interface. This is **not** a guarantee that external applications are protected against every GPU-driver fault or that every NVP worker already has active monitoring. CI and real pressure-fault acceptance remain necessary.
+
 ### Test matrix and actual acceptance
 
 Test on (1) constrained CPU-only home hardware, (2) consumer single-GPU PC, (3) high-memory multi-GPU workstation and (4) distributed workers with deliberately injected worker/network failures. Compare final frame/time/source lineage, audio sync, output decode and quality-policy adherence across environments. Measure maximum memory, VRAM, storage, throughput, host responsiveness, restart recovery and scaling efficiency. Passing one CI runner does not prove the full hardware range. Data-center support is a future execution mode, not an already implemented capability.
