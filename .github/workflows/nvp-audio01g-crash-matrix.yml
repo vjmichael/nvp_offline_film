@@ -28,8 +28,9 @@ jobs:
         shell: pwsh
         run: |
           ffmpeg -version
+          if ($LASTEXITCODE -ne 0) { throw 'Native FFmpeg executable unavailable' }
           ffprobe -version
-          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg native media tools absent' }
+          if ($LASTEXITCODE -ne 0) { throw 'Native FFprobe executable unavailable' }
       - name: Run 21 abrupt process-exit boundaries and recovery checks
         shell: pwsh
         run: |
