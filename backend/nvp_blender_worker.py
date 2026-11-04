@@ -360,7 +360,10 @@ class BlenderWorkerSupervisor:
             command.append(str(_safe_relative(jobdir,op.scene,must_exist=True)))
         else:
             command.append("--factory-startup")
-        command+=["-t","2","--python",str(script),"--"]+script_args
+        # Blender defaults can treat Python exceptions as a nonfatal CLI
+        # condition. Ensure script exceptions produce nonzero process exit
+        # even if a partial output file was left behind.
+        command+=["-t","2","--python-exit-code","70","--python",str(script),"--"]+script_args
         token=threading.Event()
         proc=None
         with self._lock:
