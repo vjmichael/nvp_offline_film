@@ -31,9 +31,24 @@ def read(ledger, job_id):
     return {"plan_sha":row[0],"state":row[1],"result_sha":row[2]}
 
 
+_TRANSITIONS={
+    "prepared":frozenset({"running"}),
+    "running":frozenset({"quarantined","verified"}),
+    "quarantined":frozenset({"verified"}),
+    "verified":frozenset({"committed"}),
+    "committed":frozenset(),
+}
+
+
 def transition(ledger, job_id, previous, next_state, result_sha=None):
-    if next_state not in ("running","quarantined","verified","committed"):
-        raise ValueError("Invalid mux state")
+    if next_state not in _TRANSITIONS.get(previous,()):
+        raise RuntimeError("Illegal native mux publication transition")
+    if next_state in ("verified","committed"):
+        if (type(result_sha) is not str or len(result_sha)!=64 or
+            any(ch not in "0123456789abcdef" for ch in result_sha)):
+            raise ValueError("Verified mux result SHA-256 is required")
+    elif result_sha is not None:
+        raise ValueError("Unverified mux cannot carry a result digest")
     with ledger._db() as db:
         db.execute("BEGIN IMMEDIATE")
         changed=db.execute("""UPDATE audio01g_mux_intents SET state=?,result_sha=?
