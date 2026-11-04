@@ -10,6 +10,7 @@ from pathlib import Path
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
 import threading
@@ -84,6 +85,9 @@ def fixture(out, blender):
     exe_sha=sha_file(binary)
     worker=BlenderWorkerSupervisor(root/"worker",
         blender_executable=binary,blender_sha256=exe_sha,blender_version=version)
+    # Native CI opts into the strict delegated cgroup profile explicitly.
+    strict_linux_tree=(os.getenv("NVP_REQUIRE_REAL_CGROUP")=="1" and os.name=="posix")
+
     jobdir=worker.root/"real_render_001"
     jobdir.mkdir()
     source={
@@ -101,7 +105,8 @@ def fixture(out, blender):
                  "blender_audit.json":"json_audit"},
         arguments={"--manifest":"source_manifest.json","--output":"real_scene.blend",
                    "--render":"real_frame.png","--audit":"blender_audit.json"},
-        timeout_seconds=180)
+        timeout_seconds=180,
+        require_linux_cgroup_v2=strict_linux_tree)
     result=worker.run(op)
     if result["state"]!="SUCCEEDED":
         raise RuntimeError("Real external Blender rendering worker failed: "+str(result["error"]))
@@ -139,7 +144,8 @@ def fixture(out, blender):
     bad=BlenderOperation(job_id=bad_dir.name,script="bad.py",
         script_sha256=sha_file(bad_dir/"bad.py"),inputs={},
         outputs={"will_not_exist.json":"json_audit"},arguments={},
-        timeout_seconds=40)
+        timeout_seconds=40,
+        require_linux_cgroup_v2=strict_linux_tree)
     bad_result=worker.run(bad)
     if bad_result["state"]!="FAILED" or bad_result["outputs"] is not None:
         raise RuntimeError("Deliberate native Blender failure was not refused")
@@ -151,7 +157,8 @@ def fixture(out, blender):
     slow=BlenderOperation(job_id=slow_dir.name,script="slow.py",
         script_sha256=sha_file(slow_dir/"slow.py"),inputs={},
         outputs={"never.json":"json_audit"},arguments={},
-        timeout_seconds=70)
+        timeout_seconds=70,
+        require_linux_cgroup_v2=strict_linux_tree)
     response={}
     thread=threading.Thread(target=lambda:response.update(worker=worker.run(slow)))
     thread.start()
@@ -193,7 +200,8 @@ def fixture(out, blender):
         "chair_1",plan["plan_revision"])
     plan=production.solve_scene(project_id,scene_id,plan["plan_revision"])
     production.approve_scene(project_id,scene_id,plan["plan_revision"])
-    staged=run_supervised_scene(production,project_id,scene_id,worker)
+    staged=run_supervised_scene(production,project_id,scene_id,worker,
+        require_linux_cgroup_v2=strict_linux_tree)
     if staged["status"]!="passed_blender_supervised" or staged["audit_checks"]<4:
         raise RuntimeError("Approved original production stage did not survive supervised external Blender/audit: "+str(staged))
 
@@ -219,6 +227,7 @@ def fixture(out, blender):
         "running_process_cancelled_and_reaped":True,
         "interrupted_worker_accepted":False,
         "orphan_cleanup_after_real_host_crash_proven":False,
+        "strict_linux_cgroup_tree_mode":strict_linux_tree,
         "standalone_redistributable_blender_installer_proven":False,
         "commercial_redistribution_license_cleared":False,
         "events":{key:worker.events(key) for key in (op.job_id,bad.job_id,slow.job_id)},

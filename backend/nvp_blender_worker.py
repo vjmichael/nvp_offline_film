@@ -71,6 +71,7 @@ class BlenderOperation:
     scene: str | None = None
     timeout_seconds: int = 90
     memory_limit_mb: int = 8192
+    require_linux_cgroup_v2: bool = False
 
     def canonical(self) -> str:
         return json.dumps(asdict(self),sort_keys=True,separators=(",",":"),allow_nan=False)
@@ -171,9 +172,9 @@ class BlenderWorkerSupervisor:
             row=db.execute("SELECT spec_json FROM worker_jobs WHERE job_id=?",(job_id,)).fetchone()
         if not row:
             raise KeyError("Worker job was not journaled")
-        spec=BlenderOperation(**json.loads(row[0]))
-        if hashlib.sha256(spec.canonical().encode()).hexdigest()!=status["spec_sha256"]:
+        if hashlib.sha256(row[0].encode()).hexdigest()!=status["spec_sha256"]:
             raise RuntimeError("Worker job specification changed")
+        spec=BlenderOperation(**json.loads(row[0]))
         jobdir=(self.root/job_id).resolve()
         self._check_inputs(spec,jobdir)
         fresh=self._audit_outputs(spec,jobdir)
@@ -187,18 +188,49 @@ class BlenderWorkerSupervisor:
             records=db.execute("SELECT at_utc,state,detail FROM worker_events WHERE job_id=? ORDER BY id",(job_id,)).fetchall()
         return [{"at":a,"state":b,"detail":c} for a,b,c in records]
 
-    def probe(self):
+    def probe(self, *, strict_linux_cgroup=False, memory_limit_mb=8192):
         if sha_file(self.binary)!=self.binary_sha256:
             raise RuntimeError("Pinned Blender executable SHA-256 changed")
-        try:
-            result=subprocess.run([str(self.binary),"-b","--version"],
-                                  capture_output=True,text=True,timeout=15,check=False)
-        except (subprocess.TimeoutExpired,OSError) as exc:
-            raise RuntimeError("Pinned Blender binary failed version probe") from exc
-        if result.returncode or not result.stdout.splitlines() or result.stdout.splitlines()[0].strip()!=self.blender_version:
+        if strict_linux_cgroup and sys.platform=="linux":
+            # A strict job must never invoke even its Blender --version
+            # probe outside the proven cgroup tree + guardian boundary.
+            import tempfile
+            with tempfile.TemporaryDirectory(prefix="nvp-blender-probe-",dir=self.root) as probe_dir:
+                out_path=Path(probe_dir)/"stdout.log"
+                err_path=Path(probe_dir)/"stderr.log"
+                proc=None
+                try:
+                    with out_path.open("wb") as out,err_path.open("wb") as err:
+                        proc=launch_contained([str(self.binary),"-b","--version"],
+                            cwd=probe_dir,stdout=out,stderr=err,
+                            memory_mb=memory_limit_mb,linux_cgroup_tree_required=True)
+                        code=proc.wait(timeout=15)
+                    proc.close()
+                    stdout=out_path.read_text("utf8",errors="replace")
+                    if code:
+                        raise RuntimeError("Contained Blender version check failed with exit "+str(code))
+                except (OSError,subprocess.TimeoutExpired) as exc:
+                    raise RuntimeError("Contained Blender version check failed") from exc
+                finally:
+                    if proc is not None:
+                        if proc.poll() is None:
+                            proc.terminate_tree()
+                        proc.close()
+            first=stdout.splitlines()[0].strip() if stdout.splitlines() else ""
+        else:
+            try:
+                result=subprocess.run([str(self.binary),"-b","--version"],
+                                      capture_output=True,text=True,timeout=15,check=False)
+            except (subprocess.TimeoutExpired,OSError) as exc:
+                raise RuntimeError("Pinned Blender binary failed version probe") from exc
+            first=result.stdout.splitlines()[0].strip() if result.stdout.splitlines() else ""
+            if result.returncode:
+                raise RuntimeError("Blender version check returned nonzero exit")
+        if first!=self.blender_version:
             raise RuntimeError("Blender version differs from pinned worker policy")
         return {"blender":self.blender_version,"binary_sha256":self.binary_sha256,
-                "binary_path":str(self.binary)}
+                "binary_path":str(self.binary),
+                "strict_linux_cgroup_probe":bool(strict_linux_cgroup and sys.platform=="linux")}
 
     def _validate(self, op: BlenderOperation):
         if not isinstance(op,BlenderOperation) or not JOB_ID.fullmatch(op.job_id):
@@ -207,6 +239,8 @@ class BlenderWorkerSupervisor:
             raise ValueError("Worker timeout must be 1 to 600 seconds")
         if type(op.memory_limit_mb) is not int or not 256<=op.memory_limit_mb<=65536:
             raise ValueError("Worker memory limit must be 256 to 65536 MiB")
+        if type(op.require_linux_cgroup_v2) is not bool:
+            raise ValueError("Strict Linux cgroup requirement must be boolean")
         if (not SHA.fullmatch(op.script_sha256) or type(op.inputs) is not dict or
             type(op.outputs) is not dict or type(op.arguments) is not dict or
             not 1<=len(op.outputs)<=12 or len(op.inputs)>32):
@@ -331,7 +365,8 @@ class BlenderWorkerSupervisor:
                 raise RuntimeError("Idempotency ID reused for different Blender operation")
             raise RuntimeError("Blender job already registered; never rerun or overwrite an existing attempt")
         jobdir,script,script_args=self._validate(op)
-        self.probe()
+        self.probe(strict_linux_cgroup=op.require_linux_cgroup_v2,
+                   memory_limit_mb=op.memory_limit_mb)
         with self._lock,self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             exists=db.execute("SELECT spec_sha256,state FROM worker_jobs WHERE job_id=?",(op.job_id,)).fetchone()
@@ -365,7 +400,8 @@ class BlenderWorkerSupervisor:
         try:
             with log.open("wb") as stdout, err.open("wb") as stderr:
                 proc=launch_contained(command,cwd=str(jobdir),stdout=stdout,stderr=stderr,
-                                      memory_mb=op.memory_limit_mb)
+                                      memory_mb=op.memory_limit_mb,
+                                      linux_cgroup_tree_required=op.require_linux_cgroup_v2)
                 self._transition(op.job_id,"RUNNING",worker_pid=proc.pid)
                 started=time.monotonic()
                 while proc.poll() is None:
@@ -391,17 +427,46 @@ class BlenderWorkerSupervisor:
                     raise RuntimeError("Blender worker returned nonzero exit code "+str(rc))
                 self._check_inputs(op,jobdir)
                 audited=self._audit_outputs(op,jobdir)
+                # Before writing a durable success record, require *all*
+                # backend containment handles to close/verify cleanup.
+                # Linux cgroups kill detached descendants; Windows closing
+                # a kill-on-close Job Object also reaps any grandchildren.
+                if hasattr(proc,"close"):
+                    proc.close()
                 self._transition(op.job_id,"SUCCEEDED",exit_code=0,outputs=audited,
                                  progress=log.stat().st_size)
                 return self.inspect(op.job_id)
         except Exception as exc:
-            if proc is not None and proc.poll() is None:
-                self._terminate_tree(proc)
-            self._transition(op.job_id,"FAILED",exit_code=proc.returncode if proc is not None else None,
-                             error=(type(exc).__name__+": "+str(exc))[:2000])
+            cleanup_error=None
+            if proc is not None:
+                try:
+                    if proc.poll() is None:
+                        self._terminate_tree(proc)
+                except Exception as cleanup_exc:
+                    # A guardian may die while its Blender child is running.
+                    # Retry OS termination without trusting proc.poll().
+                    try:
+                        self._terminate_tree(proc)
+                    except Exception as final_cleanup_exc:
+                        cleanup_error=type(final_cleanup_exc).__name__+": "+str(final_cleanup_exc)
+            failure=type(exc).__name__+": "+str(exc)
+            if cleanup_error:
+                failure+="; OS containment cleanup unproven: "+cleanup_error
+            self._transition(op.job_id,"FAILED",
+                exit_code=proc.returncode if proc is not None else None,
+                error=failure[:2000])
             return self.inspect(op.job_id)
         finally:
             if proc is not None and hasattr(proc,"close"):
-                proc.close()
+                try:
+                    proc.close()
+                except Exception as close_exc:
+                    # Fail closed if handle/guardian cleanup fails *after* a
+                    # result was recorded. Never leave SUCCEEDED authoritative.
+                    current=self.inspect(op.job_id)
+                    if current["state"]=="SUCCEEDED":
+                        self._transition(op.job_id,"FAILED",
+                            error="OS containment final close failed: "+
+                            type(close_exc).__name__+": "+str(close_exc))
             with self._lock:
                 self._running.pop(op.job_id,None)
