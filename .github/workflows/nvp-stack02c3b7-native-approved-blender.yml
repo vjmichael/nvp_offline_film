@@ -1,0 +1,103 @@
+name: NVP B7 authorized native Blender build and independent reopened audit
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b7-native-approved-proxy-render-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c3b6-project-render-preflight-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-native-contract:
+    name: Linux NVP project consent, immutable scene and native worker policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP offline film API prerequisites
+        run: python -m pip install -r requirements-foundation.txt httpx
+      - name: Compile exact B7 paths
+        run: python -m compileall -q backend/nvp_native_proxy_render.py backend/nvp_native_proxy_audit.py backend/nvp_render_source_stage.py tests/test_native_proxy_render.py tests/test_native_proxy_audit.py
+      - name: Native consent, recovery and source safety
+        run: |
+          python -m unittest discover -s tests -p test_native_proxy_render.py -v
+          python -m unittest discover -s tests -p test_native_proxy_audit.py -v
+          python -m unittest discover -s tests -p test_render_preflight.py -v
+          python -m unittest discover -s tests -p test_render_source_stage.py -v
+          python -m unittest discover -s tests -p test_blender_worker.py -v
+
+  windows-native-contract:
+    name: Windows NVP project consent, immutable scene and native worker policy
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP offline film API prerequisites
+        run: python -m pip install -r requirements-foundation.txt httpx
+      - name: Compile exact B7 paths
+        run: python -m compileall -q backend/nvp_native_proxy_render.py backend/nvp_native_proxy_audit.py backend/nvp_render_source_stage.py tests/test_native_proxy_render.py tests/test_native_proxy_audit.py
+      - name: Native consent, recovery and source safety
+        run: |
+          python -m unittest discover -s tests -p test_native_proxy_render.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native creator-bound render tests failed' }
+          python -m unittest discover -s tests -p test_native_proxy_audit.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native independent audit denial tests failed' }
+          python -m unittest discover -s tests -p test_render_preflight.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Source preflight tests failed' }
+          python -m unittest discover -s tests -p test_render_source_stage.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Immutable stage tests failed' }
+          python -m unittest discover -s tests -p test_blender_worker.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy native Blender supervisor tests failed' }
+
+  linux-real-blender-build-reopen:
+    name: Linux real native Blender source build + reopened geometry/PNG evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual native Blender and headless display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+      - name: Execute actual native NVP scene and second independent Blender process
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b7_native_approved_scene_fixture \
+            --out acceptance_artifacts/stack02c3b7_native
+      - name: Retain original approved source, real blend and independent audit PNG
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-stack02c3b7-real-native-build-and-reopen
+          path: acceptance_artifacts/stack02c3b7_native/
+          retention-days: 7
+          if-no-files-found: warn
+
+  react-safety-regression:
+    name: React authoring source/consent truthfulness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build and test existing NVP director interface
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui
