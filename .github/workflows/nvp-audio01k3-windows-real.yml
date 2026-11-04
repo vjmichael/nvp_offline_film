@@ -44,6 +44,11 @@ jobs:
             }
           } finally { $stream.Dispose() }
           Get-FileHash $installer -Algorithm SHA256 | Format-List
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid') {
+            throw "Official cinema executable has no valid Windows Authenticode signature: $($signature.Status)"
+          }
+          Write-Host "Verified official installer signer: $($signature.SignerCertificate.Subject)"
           $process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "DCP-o-matic NSIS installer exited $($process.ExitCode)" }
           $create = Get-ChildItem -Path @('C:\Program Files','C:\Program Files (x86)') -Filter 'dcpomatic2_create.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -66,9 +71,18 @@ jobs:
             if (-not $result) { throw "Missing real Windows cinema prerequisite: $tool" }
             Write-Host "$tool => $($result.Source)"
           }
-          dcpomatic2_create --version
-          dcpomatic2_cli --version
-          dcpdoctor --version
+          $createVersion = (dcpomatic2_create --version | Out-String)
+          $cliVersion = (dcpomatic2_cli --version | Out-String)
+          $doctorVersion = (dcpdoctor --version | Out-String)
+          if ($createVersion -notmatch '2\\.18\\.51' -or $cliVersion -notmatch '2\\.18\\.51') {
+            throw 'Installed Windows DCP-o-matic version differs from verified release'
+          }
+          if ($doctorVersion -notmatch '1\\.3\\.2') {
+            throw 'Installed Windows DcpDoctor differs from verified release'
+          }
+          Write-Host $createVersion
+          Write-Host $cliVersion
+          Write-Host $doctorVersion
       - name: Execute real SMPTE 2K DCP and strict independent QC
         shell: pwsh
         env:
