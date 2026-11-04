@@ -18,6 +18,7 @@ import time
 from backend.nvp_approved_tasks import ApprovedTaskBindings,canonical_bytes
 from backend.nvp_audio01f_picture_sound import verify_picture_sound_preview
 from backend.nvp_audio01g_mux_intent import prepare as prepare_mux, transition as advance_mux
+from backend.nvp_audio01g_fault_matrix import crash_after
 from backend.nvp_b14_edited_movie import verify_edited_technical_mov
 from backend.nvp_audio01e_wav_publication import verify_published_wavs
 from backend.nvp_digital_capture import DigitalCapture
@@ -219,11 +220,14 @@ class NativeAudio01FHost:
                  _hash_file(folder/"native_plan.json"),_hash_file(self.python),
                  _hash_file(self.worker),time.time()+duration_s))
             db.commit()
+        crash_after("approved_grant_sqlite")
         prepare_mux(self.ledger,job,_hash_file(folder/"native_plan.json"))
+        crash_after("intent_prepared_sqlite")
         self.bindings.enqueue(AdmissionRequest(job,"compositing",
                               "Exact indexed picture/sound technical mux",ram_mb),
                               owner_key=self.owner,lane="standard",
                               approval_id=approval,document=spec)
+        crash_after("task_queued_sqlite")
         return {"job_id":job,"state":"QUEUED","presentation_id":presentation_id,
                 "native_worker_started":False}
 
@@ -259,6 +263,7 @@ class NativeAudio01FHost:
         if admit is None or not admit["admitted"]:
             return admit
         job=admit["task_id"]
+        crash_after("task_claimed_sqlite")
         proc=None
         reaped=False
         attempted=False
@@ -267,6 +272,7 @@ class NativeAudio01FHost:
             row=self._grant(job)
             folder=self.root/job
             advance_mux(self.ledger,job,"prepared","running")
+            crash_after("intent_running_sqlite")
             self.ledger.update(job,"rendering","Native contained picture/audio mux")
             with (folder/"stdout.log").open("wb") as out,(folder/"stderr.log").open("wb") as err:
                 attempted=True
@@ -281,7 +287,9 @@ class NativeAudio01FHost:
                 proc.close()
                 reaped=True
                 proc=None
+                crash_after("native_worker_reaped")
                 self._record_reaped(job)
+                crash_after("os_stop_witness_sqlite")
             self.ledger.update(job,"verifying_output","Independent FilmIndex/decoded sync verification")
             plan=json.loads((folder/"native_plan.json").read_text("ascii"))
             verified=verify_picture_sound_preview(self.capture,plan["project_id"],
@@ -306,9 +314,13 @@ class NativeAudio01FHost:
                 if changed!=1:
                     raise RuntimeError("Conflicting native mux completion receipt")
                 db.commit()
+            crash_after("grant_result_sqlite")
             advance_mux(self.ledger,job,"running","verified",rec["document_sha256"])
+            crash_after("intent_verified_sqlite")
             self.ledger.finish(job,"SUCCEEDED","Source-verified unapproved picture/audio technical mux")
+            crash_after("ledger_succeeded_sqlite")
             advance_mux(self.ledger,job,"verified","committed",rec["document_sha256"])
+            crash_after("intent_committed_sqlite")
             return {**verified,"job_id":job,"state":"SUCCEEDED"}
         except BaseException as exc:
             if proc is not None:
