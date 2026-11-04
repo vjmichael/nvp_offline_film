@@ -245,6 +245,68 @@ class NativeAudio01IHost:
                 self.ledger.update(job,"recovering","Master candidate quarantined; audit required")
             raise
 
+    def recover_candidate(self,job):
+        """Reconcile only with a durable native stop and complete immutable proof.
+
+        An un-reaped worker never releases its ACTIVE reservation. A completed
+        worker can be reconciled without rerendering, independent of creator
+        authorization events which deliberately do not survive host restart.
+        """
+        grant=self._grant(job)
+        task=self.ledger.get_task(job)
+        if grant["stopped"]!=1 or task is None:
+            raise PermissionError("Cannot recover master without durable OS-stop witness")
+        file=self.root/job/"plan.json"
+        if file.is_symlink() or not file.is_file() or sha_file(file)!=grant["plan_sha"]:
+            raise RuntimeError("Mastering plan changed after admission")
+        plan=json.loads(file.read_bytes())
+        decision,mix,_=self._native_approved_mix(
+            plan["project_id"],plan["decision_id"],plan["decision_revision"])
+        rec=self.capture.index.read_revision(plan["project_id"],plan["candidate_id"],1)
+        doc=rec["data"]
+        receipt_file=self.root/job/"worker_receipt.json"
+        if receipt_file.is_symlink() or not receipt_file.is_file():
+            raise RuntimeError("No authentic mastering worker receipt")
+        receipt=json.loads(receipt_file.read_bytes())
+        target=Path(plan["destination"])
+        if (rec["kind"]!="audio" or doc.get("format")!=CANDIDATE_FORMAT
+            or doc.get("profile")!=plan["profile"]
+            or doc.get("decision_sha256")!=decision["document_sha256"]
+            or doc.get("mix_sha256")!=mix["document_sha256"]
+            or doc.get("final_master") is not False
+            or receipt.get("format")!="nvp.audio01i.worker_receipt.v1"
+            or receipt.get("document_sha256")!=rec["document_sha256"]
+            or receipt.get("wav_sha256")!=doc["candidate_wav_sha256"]
+            or receipt.get("final_master") is not False
+            or target.is_symlink() or not target.is_file()
+            or sha_file(target)!=doc["candidate_wav_sha256"]):
+            raise RuntimeError("Master recovery has conflicting immutable evidence")
+        self.capture.index.verify_media_file(
+            plan["project_id"],doc["candidate_wav_sha256"],"audio/wav")
+        measured=inspect_native(target,plan["ffmpeg"],plan["ffprobe"],
+                                doc["samples_per_channel"])
+        if measured!=doc["analysis"]:
+            raise RuntimeError("Recovered master decoded proof differs")
+        if grant["result_sha"] not in (None,rec["document_sha256"]):
+            raise RuntimeError("Conflicting master result digests")
+        if task["state"]=="SUCCEEDED":
+            if grant["result_sha"]!=rec["document_sha256"]:
+                with self.ledger._db() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    db.execute("UPDATE native_audio01i_grants SET result_sha=? WHERE job_id=?",
+                               (rec["document_sha256"],job))
+                    db.commit()
+            return {"job_id":job,"state":"SUCCEEDED","rerendered":False}
+        if task["state"]!="ACTIVE":
+            raise RuntimeError("Only ACTIVE stopped master may be reconciled")
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("UPDATE native_audio01i_grants SET result_sha=? WHERE job_id=?",
+                       (rec["document_sha256"],job))
+            db.commit()
+        self.ledger.finish(job,"SUCCEEDED","Reconciled independently verified stopped master")
+        return {"job_id":job,"state":"SUCCEEDED","rerendered":False}
+
     def deliver(self,project_id,candidate_id,delivery_id,folder,creator_event,*,
                 ffmpeg="ffmpeg",ffprobe="ffprobe"):
         """Second explicit creator authorization; atomic directory promotion."""
