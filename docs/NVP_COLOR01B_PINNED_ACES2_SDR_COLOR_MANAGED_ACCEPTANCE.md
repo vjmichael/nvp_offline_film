@@ -1,6 +1,6 @@
 # NVP-COLOR-01B — Pinned ACES 2 Color-managed SDR Mastering Intermediate
 
-**Status as of 2026-11-03:** Native technical **16-bit SDR review sequence** conversion **PASSED both GitHub Linux CI jobs** after transparent-input/forged-view hardening; independently verified against a real frozen Digital Take. **NOT** a calibrated, director-approved, video-format or theatrical master. Windows color-runtime CI is in progress separately.
+**Status as of 2026-11-03:** Native technical **16-bit SDR review sequence** conversion **PASSED both GitHub Linux CI jobs** after transparent-input/forged-view hardening; independently verified against a real frozen Digital Take. **NOT** a calibrated, director-approved, video-format or theatrical master. Cross-platform acceptance also passed: [GitHub run 41748075195](https://github.com/vjmichael/nvp_offline_film/actions/runs/41748075195) reported **3/3 jobs passed** — Linux Python, Windows Python and authentic native Linux Blender/Cycles/EXR/OCIO.
 
 ## Intent, authority and identity
 
@@ -53,7 +53,7 @@ GitHub Actions [run 41747736864](https://github.com/vjmichael/nvp_offline_film/a
 - Measured clipping for **all four actual rendered 128×72 frames**: **0 channels**; source and RGB16 output SHA-256s retained individually in `color01b_report.json`.
 - Original Digital Take SHA-256 unchanged; fresh `Studio` reopens and re-decodes each graded PNG successfully. Corrupted PNG detected; restored original accepted. A separately published forged FilmIndex review claiming the `Raw` view instead of the declared ACES 2 view was also **refused** despite valid underlying image hashes.
 
-The test fixture sets the source-primaries confirmation flag for a **technical test**, not a real director's creative or calibration signoff. Actual movie mastering remains gated.
+The test fixture sets the source-primaries confirmation flag for a **technical test**, not a real director's creative or calibration signoff. Both Linux and Windows pinned OCIO/test lanes passed **27/27 targeted Python regressions** each (5 OCIO, 4 EXR, 8 presentation, 10 full-motion); a separate native Linux job passed true Cycles rendering and 16-bit FilmIndex readback. [Cross-platform CI](https://github.com/vjmichael/nvp_offline_film/actions/runs/41748075195). Actual movie mastering remains gated.
 
 ## Explicit open work
 
