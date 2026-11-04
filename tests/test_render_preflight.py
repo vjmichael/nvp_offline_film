@@ -79,6 +79,12 @@ class RenderPreflightTests(unittest.TestCase):
             verify_scene_preflight(self.studio,before)
         after=preflight_scene(self.studio,self.pid,self.sid)
         self.assertNotEqual(before["blender_script_sha256"],after["blender_script_sha256"])
+        # Generated Blender must actually honor the director's hidden object,
+        # not merely encode a changed metadata hash.
+        updated_script=blender_script(WorldState(self.studio).export_manifest(self.pid,self.sid))
+        self.assertIn('"visible":false',updated_script)
+        self.assertIn('obj.hide_render = hidden',updated_script)
+        self.assertIn('obj.hide_viewport = hidden',updated_script)
         self.assertGreater(after["world_revision"],before["world_revision"])
         self.assertTrue(verify_scene_preflight(self.studio,after))
 
