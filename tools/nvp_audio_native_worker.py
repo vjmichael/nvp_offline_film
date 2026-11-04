@@ -9,7 +9,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 import time
+
+if __name__ == "__main__" and not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from backend.nvp_audio01d_chunked_recovery import run_chunked_preview, verify_chunked_preview
 
 def main(argv=None):
