@@ -30,7 +30,12 @@ def main():
     if source.is_symlink() or not source.is_file() or (
             hashlib.sha256(source.read_bytes()).hexdigest() != plan["wav_sha256"]):
         raise RuntimeError("Native loudness source mismatch")
-    measure = analyze_wav(source, ffmpeg=plan["ffmpeg"],
+    executable=Path(plan["ffmpeg"])
+    if (not executable.is_absolute() or executable.is_symlink() or
+        not executable.is_file() or
+        hashlib.sha256(executable.read_bytes()).hexdigest()!=plan["ffmpeg_sha256"]):
+        raise RuntimeError("Pinned FFmpeg executable changed")
+    measure = analyze_wav(source, ffmpeg=str(executable),
                           expected_samples=plan["samples"])
     with (path.parent / "measurement.json").open("xb") as out:
         out.write(canonical_bytes(measure))
