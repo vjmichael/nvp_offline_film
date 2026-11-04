@@ -123,7 +123,8 @@ class NativeApprovedProxyRender:
                  "job_id":op.job_id,"document_sha256":digest,
                  "expected_ram_mb":op.memory_limit_mb,
                  "expected_gpu_mb":op.gpu_memory_mb,
-                 "device_id":op.gpu_device_id,"output_kind":"blend"}
+                 "device_id":op.gpu_device_id,
+                 "output_contract":"blend_build_and_independent_reopen_audit_preview"}
         # Host-provided callback MUST authenticate actual native UI user event
         # and exact context; a browser/model bool is never a consent signal.
         if self._creator(creator_event,dict(context)) is not True:
