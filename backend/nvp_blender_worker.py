@@ -427,22 +427,46 @@ class BlenderWorkerSupervisor:
                     raise RuntimeError("Blender worker returned nonzero exit code "+str(rc))
                 self._check_inputs(op,jobdir)
                 audited=self._audit_outputs(op,jobdir)
-                # Strict Linux workers must prove their entire cgroup leaf
-                # cleaned up BEFORE storing an authoritative success record.
-                # A completed Blender parent may have left live descendants.
-                if op.require_linux_cgroup_v2 and sys.platform=="linux":
+                # Before writing a durable success record, require *all*
+                # backend containment handles to close/verify cleanup.
+                # Linux cgroups kill detached descendants; Windows closing
+                # a kill-on-close Job Object also reaps any grandchildren.
+                if hasattr(proc,"close"):
                     proc.close()
                 self._transition(op.job_id,"SUCCEEDED",exit_code=0,outputs=audited,
                                  progress=log.stat().st_size)
                 return self.inspect(op.job_id)
         except Exception as exc:
-            if proc is not None and proc.poll() is None:
-                self._terminate_tree(proc)
-            self._transition(op.job_id,"FAILED",exit_code=proc.returncode if proc is not None else None,
-                             error=(type(exc).__name__+": "+str(exc))[:2000])
+            cleanup_error=None
+            if proc is not None:
+                try:
+                    if proc.poll() is None:
+                        self._terminate_tree(proc)
+                except Exception as cleanup_exc:
+                    # A guardian may die while its Blender child is running.
+                    # Retry OS termination without trusting proc.poll().
+                    try:
+                        self._terminate_tree(proc)
+                    except Exception as final_cleanup_exc:
+                        cleanup_error=type(final_cleanup_exc).__name__+": "+str(final_cleanup_exc)
+            failure=type(exc).__name__+": "+str(exc)
+            if cleanup_error:
+                failure+="; OS containment cleanup unproven: "+cleanup_error
+            self._transition(op.job_id,"FAILED",
+                exit_code=proc.returncode if proc is not None else None,
+                error=failure[:2000])
             return self.inspect(op.job_id)
         finally:
             if proc is not None and hasattr(proc,"close"):
-                proc.close()
+                try:
+                    proc.close()
+                except Exception as close_exc:
+                    # Fail closed if handle/guardian cleanup fails *after* a
+                    # result was recorded. Never leave SUCCEEDED authoritative.
+                    current=self.inspect(op.job_id)
+                    if current["state"]=="SUCCEEDED":
+                        self._transition(op.job_id,"FAILED",
+                            error="OS containment final close failed: "+
+                            type(close_exc).__name__+": "+str(close_exc))
             with self._lock:
                 self._running.pop(op.job_id,None)
