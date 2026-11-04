@@ -1156,3 +1156,49 @@ def color_grade_preview(
         'X-NVP-Preview-Quality':'uncalibrated-display-preview-not-master',
         'X-NVP-Source-Frame':str(result['source_frame']),
     })
+
+
+# GRADE-UI-02A — source-shot anchored advanced looks, measured post-ACES
+# scopes and exact per-shot RGB preview, all without creative approval.
+from backend.nvp_grade_advanced import (
+    AdvancedGradeWorkspace, validate_plan, neutral_wheels, make_plan,
+)
+
+class AdvancedGradeSaveInput(BaseModel):
+    source_id: str = Field(min_length=1,max_length=80)
+    grade_id: str = Field(min_length=1,max_length=80)
+    expected_revision: int = Field(ge=0)
+    source_primaries_declared: bool = False
+    plan: dict[str,_GradeAny]
+
+class AdvancedGradePreviewInput(BaseModel):
+    source_id: str = Field(min_length=1,max_length=80)
+    frame: int = Field(ge=1,le=48)
+    plan: dict[str,_GradeAny]
+
+@app.get('/api/projects/{project_id}/color-grading/advanced/shots')
+def grade_advanced_shots(project_id:str, source_id:str):
+    return run(lambda:AdvancedGradeWorkspace(studio).timeline(project_id,source_id))
+
+@app.post('/api/projects/{project_id}/color-grading/advanced/grades',status_code=201)
+def grade_advanced_save(project_id:str, payload:AdvancedGradeSaveInput):
+    if payload.source_primaries_declared is not True:
+        raise HTTPException(status_code=422,detail='Declare the actual scene-linear EXR source primaries before saving a shot look')
+    return run(lambda:AdvancedGradeWorkspace(studio).save_advanced(
+        project_id,payload.source_id,payload.grade_id,payload.plan,payload.expected_revision))
+
+@app.get('/api/projects/{project_id}/color-grading/advanced/grades/{grade_id}')
+def grade_advanced_read(project_id:str,grade_id:str,revision:int|None=None):
+    result=run(lambda:AdvancedGradeWorkspace(studio).reopen_advanced(project_id,grade_id,revision))
+    return {
+        'id':grade_id,'revision':result['record']['revision'],
+        'sha256':result['record']['document_sha256'],
+        'source_id':result['record']['data']['source_id'],
+        'plan':result['plan'],'timeline':result['timeline'],
+        'approval':'not_approved',
+    }
+
+@app.post('/api/projects/{project_id}/color-grading/advanced/preview')
+def grade_advanced_preview(project_id:str,payload:AdvancedGradePreviewInput):
+    return run(lambda:AdvancedGradeWorkspace(studio).render_scope_preview(
+        project_id,payload.source_id,payload.frame,payload.plan))

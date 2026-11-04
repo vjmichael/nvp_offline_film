@@ -1,7 +1,7 @@
 # Color grading in NVP — A beginner's guide
 
 **Audience:** Filmmakers who have never graded a film.  
-**Current implementation:** NVP-GRADE-UI-01 adds an **Essentials grading tab** with global exposure/contrast/saturation/RGB balance, look presets, undo/redo, a real source-derived before/after preview, and immutable draft-look saving. It requires a complete, 24fps Cycles HALF OpenEXR presentation. Calibrated reference monitors, advanced scopes, per-shot curves, tracked masks, and final creative or mastering approval remain future work.
+**Current implementation:** NVP-GRADE-UI-01 adds an **Essentials grading tab** with global exposure/contrast/saturation/RGB balance, look presets, undo/redo, a real source-derived before/after preview, and immutable draft-look saving. It requires a complete, 24fps Cycles HALF OpenEXR presentation. NVP-GRADE-UI-02A adds **real per-shot lift/gamma/gain controls** and a measured RGB/luminance histogram, waveform and vectorscope. Calibrated reference monitors, advanced color curves, tracked masks, and final creative or mastering approval remain future work.
 
 ## 1. What does color grading do?
 
@@ -109,3 +109,34 @@ This guide will be expanded with screenshots, interactive examples and contextua
 6. Load saved looks by clicking them. Older revisions can be inspected without rewriting newer ones; save an older variant under a new Look ID if you want to branch. Draft looks are **not** director approvals and are not automatically exported as final ProRes or DCP masters.
 
 **Troubleshooting:** A busy-message means the preview worker guard is limiting expensive EXR decodes. Invalid clipping values are refused rather than hidden. If the browser preview looks different from your editing suite, do not compensate by guessing at color: use a calibrated monitoring workflow for final approval.
+
+
+## 9. Advanced shot grading: lift, gamma, gain and scopes
+
+The **Shot grading & professional scopes** section appears under the same Grade Color tab, after the Essentials settings. Select one of the numbered shot cards. NVP finds its actual frame range from the frozen Digital Take's EXR presentation. Changing shot 2's color balance does **not** change shot 1's original image or its saved grade.
+
+**Lift, gamma and gain** are three related sets of RGB adjustments:
+
+- **Lift** shifts the dark/near-black tonal values. Try a tiny lift such as +0.006 in blue to cool darker details, then reset. Overuse destroys dark tonal separation.
+- **Gamma** reshapes middle-gray contrast around a fixed scene-linear pivot. A neutral value of 1 changes nothing. This is artistic grading, not the display's transfer-function gamma.
+- **Gain** scales color channels; a small red gain above 1 with a blue gain below 1 produces a warm balance. This is not a calibrated white-balance thermometer.
+
+All three have separately bounded **R/G/B numeric controls**. The present implementation uses precise sliders, not full physical-looking circular trackballs. All operations are non-destructive and occur **before** the pinned ACES display transform. Your **global Essentials** grade still applies to every shot; per-shot controls are layered on top.
+
+### Why the scopes are useful
+
+- **Histogram:** Count of image pixels at each brightness/color level. A spike pinned to the far right may indicate clipped highlights; a pile near zero may indicate crushed shadows.
+- **Waveform:** How brightness is distributed across the picture, horizontally. Bright clouds appear high on the corresponding part of the graph; dark ground appears lower.
+- **Vectorscope:** How saturated and tinted the colors are. Values near the center are less saturated; displaced clusters indicate strong chroma directions.
+
+NVP's scopes are calculated from the actual **post-ACES 16-bit RGB preview pixels** and record their checksums. They are software diagnostics, not a calibrated physical monitor or a broadcast SDI legal-range verifier. They are updated when the preview is recomputed.
+
+### Beginner practice
+
+1. Choose **Shot 1**. Change its red Gain to 1.06 and blue Gain to 0.96. Compare the picture and scopes.
+2. Choose **Shot 2**. It still has its own neutral lift/gamma/gain unless you change that shot separately.
+3. Try a tiny blue Lift increase in Shot 2 (e.g. 0.01) and inspect the waveform and color vectorscope.
+4. Click **Reset selected shot** and experiment again. Use **Undo shot edit** and **Redo shot edit** to compare variants.
+5. Enter an advanced look ID, confirm the source-primaries declaration only when correct, then **Save advanced draft look**. The FilmIndex creates an immutable version. **Load saved advanced look** can retrieve it. Neither operation approves a final creative grade or encodes a new movie.
+
+**Before filming a final master:** verify source primaries, calibrate the intended monitor, review all source frames, and explicitly approve the creative grade. Do not assume a pleasant-looking uncalibrated browser preview is a cinema or broadcast color standard.
