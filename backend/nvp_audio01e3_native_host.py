@@ -138,7 +138,9 @@ class NativeAudioHost:
         return {"job_id":job,"state":"QUEUED","contained_worker_started":False,
                 "spec_sha256":seal}
 
-    def run_next(self, *, timeout_seconds=1200):
+    def run_next(self, *, timeout_seconds=1200, test_hold=False):
+        if test_hold and os.environ.get("NVP_NATIVE_TERMINATION_TEST") != "1":
+            raise PermissionError("Test-only worker hold not authorized")
         admitted=self.binding.claim_next(owner_key=self.owner)
         if admitted is None or not admitted["admitted"]:return admitted
         job=admitted["task_id"]
@@ -151,8 +153,11 @@ class NativeAudioHost:
             folder=self.root/job
             self.ledger.update(job,"saving_output","Contained audio chunk rendering")
             with (folder/"stdout.log").open("wb") as out,(folder/"stderr.log").open("wb") as err:
-                proc=launch_contained([str(self.python),str(self.worker),
-                                      "--plan",str(folder/"worker_plan.json")],
+                command=[str(self.python),str(self.worker),
+                         "--plan",str(folder/"worker_plan.json")]
+                if test_hold:
+                    command.append("--test-hold-after-one-chunk")
+                proc=launch_contained(command,
                                       cwd=str(folder),stdout=out,stderr=err,
                                       memory_mb=self._grant_ram(job))
                 self._running[job]=proc
