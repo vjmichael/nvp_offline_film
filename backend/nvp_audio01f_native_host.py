@@ -303,8 +303,13 @@ class NativeAudio01FHost:
                 state=read_mux(self.ledger,job)["state"]
                 if state=="running":
                     advance_mux(self.ledger,job,"running","quarantined")
-                self.ledger.finish(job,"FAILED",
-                    ("AUDIO-01F native mux failed: "+type(exc).__name__)[:240])
+                # The OS-reaped handle is currently only held in memory.
+                # Leave ACTIVE reservation held until a trusted OS-stop
+                # attestation and independent media examination. Never
+                # release potentially completed FilmIndex publication here.
+                self.ledger.update(job,"recovering",
+                    ("Mux stopped; native recovery requires OS witness: "+
+                     type(exc).__name__)[:240])
             raise
 
     def _ram(self,job):
