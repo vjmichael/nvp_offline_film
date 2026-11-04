@@ -51,6 +51,11 @@ class NativeAudioHost:
                 python_sha TEXT NOT NULL, worker_sha TEXT NOT NULL,
                 expires_at REAL NOT NULL, revoked INTEGER NOT NULL DEFAULT 0
             )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS audio_native_os_stop_receipts(
+                job_id TEXT PRIMARY KEY, stopped_at REAL NOT NULL,
+                worker_reaped INTEGER NOT NULL CHECK(worker_reaped=1),
+                stop_reason TEXT NOT NULL
+            )""")
         self.binding=ApprovedTaskBindings(self.ledger,approval_check=self._check)
         self._running={}  # host-owned live process handles only
 
@@ -190,6 +195,14 @@ class NativeAudioHost:
                 self._running.pop(job,None)
             else:clean=True
             if clean:
+                # Durable witness is written only after owned process-tree
+                # termination was observed and handles were reaped/closed.
+                # Never manufacture a witness after an unverified host crash.
+                with self.ledger._db() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    db.execute("""INSERT INTO audio_native_os_stop_receipts(
+                        job_id,stopped_at,worker_reaped,stop_reason)
+                        VALUES(?,?,1,?)""",(job,time.time(),"owned_worker_closed"))
                 row=self.journal.read(job)
                 if row["state"] in ("approved","running"):
                     self.journal.transition(job,row["generation"],"recovery_required",
@@ -218,4 +231,9 @@ class NativeAudioHost:
             self._running.pop(job)
         if self.ledger.get_task(job)["state"]!="INTERRUPTED":
             raise RuntimeError("Recovery requires OS-cleaned interrupted admission")
+        with self.ledger._db() as db:
+            witness=db.execute("""SELECT worker_reaped FROM audio_native_os_stop_receipts
+                WHERE job_id=?""",(job,)).fetchone()
+        if witness is None or witness[0] != 1:
+            raise RuntimeError("No durable verified worker-stop witness; recovery blocked")
         return self.journal.recover(job,attest_stopped=lambda j,s: j not in self._running)
