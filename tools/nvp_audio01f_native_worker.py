@@ -19,6 +19,7 @@ if __name__=="__main__" and not __package__:
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_studio import Studio
 from backend.nvp_audio01f_picture_sound import build_picture_sound_preview
+from backend.nvp_audio01g_fault_matrix import crash_after
 
 
 def main(argv=None):
@@ -58,6 +59,7 @@ def main(argv=None):
         stream.write(json.dumps(receipt,sort_keys=True,separators=(",",":")).encode("ascii"))
         stream.flush()
         os.fsync(stream.fileno())
+    crash_after("worker_receipt_fsynced")
 
 
 if __name__=="__main__":
