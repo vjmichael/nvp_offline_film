@@ -113,16 +113,17 @@ def view_to_rgb48(graded_linear,cpu,*,max_clip_fraction=.02):
     _,np=_deps()
     if not 0<=max_clip_fraction<=.02:
         raise ValueError("Invalid clipping threshold")
-    out=np.array(graded_linear,dtype=np.float32,order="C",copy=True)
-    alpha=out[...,3].copy()
-    cpu.applyRGBA(out)
-    nonfinite=int(np.count_nonzero(~np.isfinite(out)))
-    alpha_error=float(np.max(np.abs(out[...,3]-alpha)))
-    if nonfinite or alpha_error>1e-6:
-        raise RuntimeError(f"OCIO output alpha/nonfinite failure: nonfinite={nonfinite}, alpha_delta={alpha_error:.9g}, "
-                           f"source_rgb_max={float(np.max(graded_linear[...,:3])):.9g}, "
-                           f"view_rgb_min={float(np.nanmin(out[...,:3])):.9g}, view_rgb_max={float(np.nanmax(out[...,:3])):.9g}")
-    vals=out[...,:3]
+    if not np.isfinite(graded_linear).all():
+        raise RuntimeError("Mastering rejects nonfinite scene-linear RGBA input")
+    if not np.allclose(graded_linear[...,3],1,atol=1e-6,rtol=0):
+        raise RuntimeError("Mastering requires opaque scene-linear RGBA before view")
+    # Apply the OCIO display/view to RGB only: Rec.1886's applyRGBA can
+    # numerically alter alpha (~1e-5) although the original EXR is opaque.
+    # Always copy: tiny arrays could otherwise alias the source input.
+    vals=np.array(graded_linear[...,:3],dtype=np.float32,order="C",copy=True)
+    cpu.applyRGB(vals)
+    if not np.isfinite(vals).all():
+        raise RuntimeError("OCIO produced nonfinite display RGB values")
     outside=(vals<0)|(vals>1)
     n=int(np.count_nonzero(outside));fraction=n/vals.size
     if fraction>max_clip_fraction:
