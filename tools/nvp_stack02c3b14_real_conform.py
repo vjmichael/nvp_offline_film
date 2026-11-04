@@ -8,11 +8,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import struct
+import wave
 from pathlib import Path
 
 from backend.nvp_b14_picture_conform import verify_conformed_sdr16
 from backend.nvp_b14_native_conform import NativeB14ConformHost
 from backend.nvp_b14_edited_movie import build_edited_technical_mov, verify_edited_technical_mov
+from backend.nvp_audio01d_chunked_recovery import run_chunked_preview
+from backend.nvp_audio01e_wav_publication import publish_chunked_wavs
+from backend.nvp_audio01f_picture_sound import build_picture_sound_preview, verify_picture_sound_preview
 from backend.nvp_resource_guard import ResourceSnapshot
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_b13_editorial_roundtrip import FORMAT as EDIT_FORMAT
@@ -129,6 +134,49 @@ def fixture(out, blender):
         movie_audit["movie_sha256"] != candidate["movie_sha256"] or
         movie_audit["frames"] != done[0]["frames"]):
         raise RuntimeError("Actual edited Rec1886/BT709 ProRes decode failed")
+    # AUDIO-01F genuine multitrack soundtrack follows the exact edited B14
+    # picture frame count: 24fps => 2000 samples/channel per frame at 48kHz.
+    exact_samples=movie_audit["frames"]*2000
+    audio_sources={}
+    for sid,value in (("dialogue",700),("ambience",100)):
+        wav=root/(sid+"_original_source.wav")
+        with wave.open(str(wav),"wb") as sink:
+            sink.setnchannels(2)
+            sink.setsampwidth(2)
+            sink.setframerate(48000)
+            sink.writeframes(struct.pack("<hh",value,-value)*exact_samples)
+        audio_sources[sid]=wav
+    audio_plan={"stems":[
+        {"stem_id":"dialogue","kind":"dialogue","clips":[{
+            "out_start":0,"out_end":exact_samples,"source_start":0,
+            "fade_in":0,"fade_out":0,"gain_milli":1000}]},
+        {"stem_id":"ambience","kind":"ambience","clips":[{
+            "out_start":0,"out_end":exact_samples,"source_start":0,
+            "fade_in":0,"fade_out":0,"gain_milli":500}]},
+    ]}
+    pcm_dir=root/"audio01f_durable_chunks"
+    run_chunked_preview(audio_plan,audio_sources,exact_samples,pcm_dir)
+    wav_dir=root/"audio01f_independent_stems"
+    published=publish_chunked_wavs(movie_reopened,project_id,
+        "audio01f_multistem_preview",audio_plan,audio_sources,exact_samples,
+        pcm_dir,wav_dir)
+    if published["wav_count"]!=3:
+        raise RuntimeError("AUDIO-01F source did not preserve both independent stems")
+    sound_dir=root/"audio01f_synchronized_review"
+    synchronized=build_picture_sound_preview(movie_reopened,project_id,
+        "b14_edited_prores_candidate","audio01f_multistem_preview",
+        package,root/"b14_conformed_edit_revision_1",movie_root,wav_dir,
+        audio_plan,audio_sources,pcm_dir,sound_dir,
+        "audio01f_picture_sound_r1")
+    sound_reopened=DigitalCapture(Studio(db))
+    synchronized_replay=verify_picture_sound_preview(
+        sound_reopened,project_id,"audio01f_picture_sound_r1",
+        "b14_edited_prores_candidate","audio01f_multistem_preview",
+        package,root/"b14_conformed_edit_revision_1",movie_root,wav_dir,
+        audio_plan,audio_sources,pcm_dir,sound_dir)
+    if (synchronized["samples_per_channel"]!=exact_samples or
+        synchronized_replay["status"]!="VERIFIED_UNAPPROVED_PICTURE_SOUND_REVIEW"):
+        raise RuntimeError("AUDIO-01F verified picture/sound clock mismatch")
     if (reopened.index.read_revision(project_id, edit_id, 1)["document_sha256"] !=
             first["document_sha256"] or
         reopened.index.read_revision(project_id, edit_id, 2)["document_sha256"] !=
@@ -150,7 +198,14 @@ def fixture(out, blender):
         "edited_technical_MOV_SHA256": movie_audit["movie_sha256"],
         "edited_technical_MOV_frames": movie_audit["frames"],
         "edited_technical_MOV_independent_decode_after_restart": True,
-        "audio_present": False, "final_master": False,
+        "audio_present": True,
+        "audio01f_real_edited_picture_and_multistem_sound": True,
+        "audio01f_mixed_stem_count": 2,
+        "audio01f_samples_per_channel": exact_samples,
+        "audio01f_verified_after_restart": True,
+        "audio01f_mov_sha256": sound_reopened.index.read_revision(
+            project_id,"audio01f_picture_sound_r1",1)["data"]["rendered_mov_sha256"],
+        "final_master": False,
     }
     (root / "nvp_b14_real_edited_picture_acceptance.json").write_text(
         json.dumps(report, sort_keys=True, indent=2), encoding="utf8")
