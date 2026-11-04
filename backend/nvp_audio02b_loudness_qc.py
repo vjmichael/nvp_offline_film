@@ -32,9 +32,13 @@ def measure_mix(wav_path,*,ffmpeg="ffmpeg",target_lufs=-16.0,
             raise RuntimeError("AUDIO-02B needs at least one second of stereo PCM16/48k")
     with path.open("rb") as src:
         original_sha=hashlib.file_digest(src,"sha256").hexdigest()
+    if (type(target_lufs) not in (int,float) or
+        type(ceiling_dbtp) not in (int,float) or
+        not -36<=target_lufs<=-5 or not -9<=ceiling_dbtp<=0):
+        raise ValueError("Invalid bounded loudness review target")
     cmd=[ffmpeg,"-nostdin","-hide_banner","-v","info",
         "-i",str(path),"-map","0:a:0",
-        "-af","loudnorm=I=-16:TP=-1.0:LRA=11:print_format=json",
+        "-af",f"loudnorm=I={target_lufs}:TP={ceiling_dbtp}:LRA=11:print_format=json",
         "-f","null","-"]
     run=subprocess.run(cmd,capture_output=True,timeout=240,check=False)
     if run.returncode:
