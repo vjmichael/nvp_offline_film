@@ -47,7 +47,14 @@ if not report['passed']:
     raise RuntimeError('NVP Blender audit failed; see audit.json')
 if opts.get('--skip-render') != '1':
     sc=bpy.context.scene
-    sc.render.engine='BLENDER_WORKBENCH'
+    # Keep the accepted native Blender renderer; Windows headless CI lacks
+    # a valid Workbench OpenGL/WGL context, so use Blender Cycles CPU.
+    if sys.platform == 'win32':
+        sc.render.engine='CYCLES'
+        sc.cycles.device='CPU'
+        sc.cycles.samples=1
+    else:
+        sc.render.engine='BLENDER_WORKBENCH'
     sc.render.filepath=opts['--render']; sc.render.image_settings.file_format='PNG'
     bpy.ops.render.render(write_still=True)
 '''
