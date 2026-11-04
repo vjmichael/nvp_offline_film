@@ -20,6 +20,7 @@ from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_blender_worker import BlenderOperation,BlenderWorkerSupervisor,sha_file
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_exr_fidelity import inspect_exr_header
+from backend.nvp_b10_render_profiles import profile_for,validate_full_render
 from backend.nvp_exr_scripts import EXR_RENDER_SCRIPT,EXR_AUDIT_SCRIPT
 from backend.nvp_frozen_take_presentation import verify_presentation
 from backend.nvp_frozen_take_stage import _source,TIMED,BLEND
@@ -126,12 +127,12 @@ class NativeEXRSequence:
                                           creator_event,*,width=160,height=90,
                                           chunk_size=8,ram_mb=2048,
                                           duration_s=1800):
-        if (type(width) is not int or not 64<=width<=1920 or
-            type(height) is not int or not 64<=height<=1080 or
-            type(chunk_size) is not int or not 1<=chunk_size<=MAX_FRAMES_PER_WORKER or
-            type(ram_mb) is not int or not 256<=ram_mb<=65536 or
+        preset=profile_for(width,height)
+        if (type(chunk_size) is not int or not 1<=chunk_size<=preset.max_chunk_frames or
+            type(ram_mb) is not int or
+            not preset.minimum_ram_mb<=ram_mb<=65536 or
             type(duration_s) is not int or not 30<=duration_s<=7200):
-            raise ValueError("Invalid NVP EXR resolution, work-chunk, RAM or consent lifetime")
+            raise ValueError("Invalid resolution-scoped EXR batch, RAM budget or native consent lifetime")
         verified=verify_presentation(self.capture,project_id,preview_id)
         preview=self.capture.index.read_revision(project_id,preview_id)
         original=_source(self.capture,project_id,take_id)
@@ -139,6 +140,9 @@ class NativeEXRSequence:
             verified["source_capture_sha256"]!=original["capture_sha256"] or
             verified["timeline_frames"]!=original["frame_count"]):
             raise RuntimeError("EXR source must be the verified native output of this frozen take")
+        disk_policy=validate_full_render(width,height,chunk_size,ram_mb,
+                original["frame_count"],worker_root=self.worker.root,
+                archive_root=self.capture.index.blob_root)
         scope={"operation":"nvp.native.frozen_take.full_float32_exr_sequence",
                "project_id":project_id,"take_id":take_id,"preview_id":preview_id,
                "capture_sha256":original["capture_sha256"],
@@ -147,6 +151,8 @@ class NativeEXRSequence:
                "resolution":[width,height],"channels":"RGBA_FLOAT32",
                "engine":"BLENDER_WORKBENCH","view_transform":"Raw",
                "codec":"ZIP","ram_mb":ram_mb,"chunk_size":chunk_size,
+               "render_profile":disk_policy["profile"],
+               "required_disk_headroom_bytes":disk_policy["required_available_disk_bytes"],
                "post_render_pixel_readback":True}
         if self._creator(creator_event,dict(scope)) is not True:
             raise PermissionError("Actual creator did not authorize full EXR render output")
@@ -235,6 +241,10 @@ class NativeEXRSequence:
             # Verification occurs BEFORE output creation: the native worker
             # deliberately refuses pre-existing output files (no overwrite).
             self.worker._validate(op)
+            preset=profile_for(seq["width"],seq["height"])
+            if (seq["chunk_size"]>preset.max_chunk_frames or
+                seq["ram_mb"]<preset.minimum_ram_mb):
+                return False
             if op.memory_limit_mb!=seq["ram_mb"] or op.gpu_memory_mb!=0:
                 return False
             return True
