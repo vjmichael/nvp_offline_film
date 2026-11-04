@@ -101,6 +101,18 @@ class MuxNativeAuthorization(unittest.TestCase):
         self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],0)
         self.assertFalse((self.root/"review").exists())
 
+    def test_stop_witness_not_invented_by_restart(self):
+        job=self.stage()["job_id"]
+        self.assertFalse(self.host._attest_reaped(job))
+        restarted=NativeAudio01FHost(self.capture,self.ledger,
+            self.root/"host",verify_creator_action=lambda *_:False,
+            strict_linux_tree=False)
+        self.assertFalse(restarted._attest_reaped(job))
+        # This test inspects the durable witness persistence mechanism only.
+        # Genuine OS-handle reaping is separately covered by Windows CI.
+        self.host._record_reaped(job)
+        self.assertTrue(restarted._attest_reaped(job))
+
     def test_restarted_host_cannot_reuse_ephemeral_creator_approval(self):
         job=self.stage()["job_id"]
         restarted=NativeAudio01FHost(self.capture,self.ledger,self.root/"host",
