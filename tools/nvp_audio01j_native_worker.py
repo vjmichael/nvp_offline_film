@@ -17,6 +17,7 @@ if __name__=="__main__" and not __package__:
 
 from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_audio01j_final_av import export_final_av
+from backend.nvp_audio01j_fault_matrix import crash_after
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_studio import Studio
 
@@ -64,6 +65,7 @@ def main():
              "dcp_delivered":False}
     with (filename.parent/"worker_receipt.json").open("xb") as out:
         out.write(canonical_bytes(receipt));out.flush();os.fsync(out.fileno())
+    crash_after("av_worker_receipt_fsynced")
 
 
 if __name__=="__main__":
