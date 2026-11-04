@@ -68,7 +68,7 @@ class DurableRecoveryAcrossCommit(unittest.TestCase):
             "backend/nvp_audio01f_picture_sound.py",
             "backend/nvp_audio01f_native_host.py",
             "tools/nvp_audio01f_native_worker.py"))
-        injected=re.findall(r'crash_after\\("([^"]+)"\\)',source)
+        injected=re.findall(r'crash_after[(]"([^"]+)"[)]',source)
         self.assertEqual(len(injected),len(set(injected)))
         self.assertEqual(set(injected),set(BOUNDARIES))
 
