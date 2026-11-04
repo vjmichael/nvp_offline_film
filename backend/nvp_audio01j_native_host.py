@@ -307,3 +307,79 @@ class NativeAudio01JHost:
                 self.ledger.update(job,"recovering",
                                    "Incomplete final AV verification, native audit required")
             raise
+
+    def verify_published(self,project_id,export_id,output_dir,movie_dir,audio_dir,*,
+                         ffmpeg="ffmpeg",ffprobe="ffprobe"):
+        """Native creator/worker custody is mandatory beyond FilmIndex records."""
+        rec=self.capture.index.read_revision(project_id,export_id,1)
+        with self.ledger._db() as db:
+            rows=db.execute("""SELECT g.job_id FROM native_audio01j_grants g
+                JOIN tasks t ON t.id=g.job_id
+                WHERE g.result_sha=? AND g.stopped=1 AND g.revoked=0
+                  AND t.state='SUCCEEDED' AND t.reserved=0""",
+                (rec["document_sha256"],)).fetchall()
+            decisions=db.execute("""SELECT COUNT(*) FROM native_audio01j_creator_events
+                WHERE project_id=? AND operation='final_av' AND object_id=?
+                AND revision=1""",(project_id,export_id)).fetchone()
+        if len(rows)!=1 or not decisions or decisions[0]!=1:
+            raise PermissionError("No completed native AV worker and creator publication")
+        job=rows[0][0]
+        grant=self._grant(job)
+        file=self.root/job/"plan.json"
+        if file.is_symlink() or not file.is_file() or sha_file(file)!=grant["plan_sha"]:
+            raise RuntimeError("Native final AV plan is not authentic")
+        plan=json.loads(file.read_bytes())
+        if (plan["project_id"]!=project_id or plan["export_id"]!=export_id
+            or Path(plan["destination"])!=Path(output_dir).absolute()):
+            raise RuntimeError("Native published AV identity/location differs")
+        self.audio_host.verify_delivery(
+            project_id,plan["audio_delivery_id"],plan["audio_dir"],
+            ffmpeg=ffmpeg,ffprobe=ffprobe)
+        return verify_final_av(self.capture,project_id,export_id,output_dir,
+                               movie_dir,audio_dir,ffmpeg=ffmpeg,ffprobe=ffprobe)
+
+    def recover_completed(self,job):
+        """Recover a stopped, complete AV mux, never rerender or seize unknown OS work."""
+        grant=self._grant(job)
+        task=self.ledger.get_task(job)
+        if grant["stopped"]!=1 or task is None:
+            raise PermissionError("No durable native AV worker-stop witness")
+        sealed=self.root/job/"plan.json"
+        if sealed.is_symlink() or sha_file(sealed)!=grant["plan_sha"]:
+            raise RuntimeError("Native AV plan was changed after admission")
+        plan=json.loads(sealed.read_bytes())
+        file=self.root/job/"worker_receipt.json"
+        if file.is_symlink() or not file.is_file():
+            raise RuntimeError("No durable AV worker receipt")
+        receipt=json.loads(file.read_bytes())
+        row=self.capture.index.read_revision(plan["project_id"],plan["export_id"],1)
+        if (receipt.get("format")!="nvp.audio01j.worker_receipt.v1"
+            or receipt.get("document_sha256")!=row["document_sha256"]
+            or receipt.get("mov_sha256")!=row["data"]["rendered_mov_sha256"]
+            or receipt.get("final_master") is not True
+            or receipt.get("dcp_delivered") is not False):
+            raise RuntimeError("AV restart receipt differs from FilmIndex")
+        self.audio_host.verify_delivery(
+            plan["project_id"],plan["audio_delivery_id"],plan["audio_dir"],
+            ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
+        verify_final_av(self.capture,plan["project_id"],plan["export_id"],
+            plan["destination"],plan["movie_dir"],plan["audio_dir"],
+            ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
+        if grant["result_sha"] not in (None,row["document_sha256"]):
+            raise RuntimeError("Conflicting final AV completion digest")
+        if task["state"] not in ("ACTIVE","SUCCEEDED"):
+            raise RuntimeError("Cannot recover final AV from unknown state")
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("UPDATE native_audio01j_grants SET result_sha=? WHERE job_id=?",
+                       (row["document_sha256"],job))
+            db.commit()
+        if task["state"]=="ACTIVE":
+            self.ledger.finish(job,"SUCCEEDED","Reconciled exact native stopped AV master")
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("""UPDATE native_audio01j_creator_events SET revision=1
+                WHERE project_id=? AND operation='final_av' AND object_id=?
+                  AND revision=-1""",(plan["project_id"],plan["export_id"]))
+            db.commit()
+        return {"job_id":job,"state":"SUCCEEDED","rerendered":False}
