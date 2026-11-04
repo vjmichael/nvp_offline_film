@@ -33,6 +33,14 @@ The external Blender worker adopts **standard Windows Job Objects through mainta
 
 **Next tasks, do not mark complete:** `STACK-02C2` Linux **whole detached-grandchild process-tree** cleanup through delegated cgroup v2 or equivalent OS-managed guardian with a real hard-host-exit test; `STACK-02C3` conservative RAM/VRAM render-admission guardrails and actual Windows GPU device acceptance; `STACK-02D` migrate all direct Blender/Cycles/animation/retarget paths through the same supervisor; `STACK-01E` one signed, GPL-compliant offline Windows installer with verified install/uninstall lifecycle. Multi-machine network shares need a different distributed locking model.
 
+## STACK-02C2 kernel-containment adoption and next gates
+
+**Technically accepted on Linux (opt-in):** NVP uses the existing **systemd `Delegate=yes`/ `DelegateSubgroup` policy and kernel cgroup v2 `cgroup.kill`** for Blender worker-tree custody. The independent out-of-tree guardian watches host death via a kernel pipe; the worker joins a cgroup *before exec*, and the guardian destroys detached descendants through `cgroup.kill`. Strict tasks without delegation cannot silently revert to a process group. Full provenance and earlier durable worker/creator custody remain intact.
+
+**Measured:** [GitHub CI run 41769769454](https://github.com/vjmichael/nvp_offline_film/actions/runs/41769769454), four jobs passing: 4 real delegated Linux kernel contract tests (no skips, real detached grandchild killed on actual host crash), original Blender 5.2.3 native render + nine independently audited scene-identity checks under the strict delegated cgroup, Windows Job Object regressions, and the legacy Linux worker tests. Full [STACK-02C2 evidence](NVP_STACK02C2_LINUX_CGROUP_WHOLE_TREE.md). The strict worker's short Blender version probe is also kernel-contained.
+
+**Do not mark commercial/production ready:** `STACK-02C2B` combined **real Blender-spawned descendant + abrupt host kill** acceptance; `STACK-02C3` cross-platform RAM/VRAM preflight/limits (Linux `memory.max` and Windows job memory **do not cap GPU VRAM**); `STACK-02D` migrate remaining film-render/retarget/animation paths to the same supervisor; `STACK-01E` one offline single installer including systemd user-worker delegation on Linux (when built), Blender GPL license/source notices, NSIS on Windows and install/uninstall acceptance. The cgroup feature is deliberately opt-in until delegated desktop service architecture is accepted.
+
 ## Decision record for every adopted component
 
 Copy the template to `docs/stack-decisions/STACK-DECISION-<ID>.md`:
