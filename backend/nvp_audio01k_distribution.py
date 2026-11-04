@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 
 from backend.nvp_approved_tasks import canonical_bytes
+from backend.nvp_audio01k_fault_matrix import crash_after
 from backend.nvp_audio01j_final_av import FORMAT as FINAL_AV_FORMAT
 from backend.nvp_audio01i_mastering import sha_file
 from backend.nvp_film_index import _id
@@ -78,8 +79,10 @@ def publish_mezzanine(capture,project_id,export_id,distribution_id,final_av_dir,
         target.parent.is_symlink()):
         raise RuntimeError("Delivery destination/staging already exists")
     staged.mkdir(mode=0o700)
+    crash_after("staging_directory_created")
     dest_movie=staged/"feature_master.mov"
     digest,size=_copy_fsync(movie,dest_movie)
+    crash_after("movie_bytes_fsynced")
     if digest!=expected or sha_file(movie)!=expected:
         raise RuntimeError("Distribution source/copy SHA mismatch")
     # A checked copy is not a DCP; profile is intentionally explicit.
@@ -99,20 +102,24 @@ def publish_mezzanine(capture,project_id,export_id,distribution_id,final_av_dir,
         f.write(canonical_bytes(document))
         f.flush()
         os.fsync(f.fileno())
+    crash_after("manifest_fsynced")
     checksums=staged/"SHA256SUMS"
     with checksums.open("xb") as f:
         f.write((digest+"  feature_master.mov\n").encode("ascii"))
         f.flush()
         os.fsync(f.fileno())
+    crash_after("checksums_fsynced")
     os.replace(staged,target)
     if os.name=="posix":
         fd=os.open(str(target.parent),os.O_RDONLY|getattr(os,"O_DIRECTORY",0))
         try:os.fsync(fd)
         finally:os.close(fd)
+    crash_after("directory_promoted")
     indexed=capture.index.register_revision(
         project_id,distribution_id,"master",document,
         expected_revision=0,
         dependencies=[{"object_id":export_id,"revision":1,"role":"presentation"}])
+    crash_after("filmindex_registered")
     return {"status":"MEZZANINE_DISTRIBUTION_PUBLISHED",
             "distribution_id":distribution_id,
             "document_sha256":indexed["document_sha256"],
