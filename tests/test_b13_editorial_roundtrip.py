@@ -134,6 +134,26 @@ class StrictOTIORoundTrip(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     parse_edited_otio(raw,invented_delivery())
 
+    def test_disabled_clips_and_parent_picture_trim_are_denied(self):
+        otio=_otio()
+        for modification in ("disabled_clip","disabled_track","trimmed_track"):
+            with self.subTest(modification=modification):
+                timeline=build_otio(CUTS,project_id="a"*32,
+                     source_take_id="take_unit",review_id="review_unit",
+                     frame_count=120)
+                if modification=="disabled_clip":
+                    timeline.tracks[0][0].enabled=False
+                elif modification=="disabled_track":
+                    timeline.tracks[0].enabled=False
+                else:
+                    timeline.tracks[0].source_range=otio.opentime.TimeRange(
+                        otio.opentime.RationalTime(0,24),
+                        otio.opentime.RationalTime(50,24))
+                raw=otio.adapters.write_to_string(
+                    timeline,adapter_name="otio_json").encode("utf8")
+                with self.assertRaises(RuntimeError):
+                    parse_edited_otio(raw,invented_delivery())
+
     def test_rejects_oversize_non_timelines_and_invalid_origin(self):
         with self.assertRaises(ValueError):
             parse_edited_otio(b"X"*(4*1024*1024+1),invented_delivery())
