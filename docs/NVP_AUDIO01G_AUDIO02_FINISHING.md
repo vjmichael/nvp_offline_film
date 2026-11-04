@@ -52,3 +52,17 @@ Current implementation covers **gain automation** (including keyframe ramps); pa
 - AUDIO-02C remeasures the exact WAV at approval time and rejects forged or stale QC dictionaries before accepting a native creator event.
 
 Tests are committed, but **the corresponding Windows/Linux CI results are not yet verified**. Automated CI tests of source checks and transitions do not replace an end-to-end fault-injected Windows Job Object recovery test.
+
+## Real native finishing acceptance fixture
+
+`tests/test_audio02_finishing.py::test_real_ffmpeg_qc_then_creator_approval_after_restart` creates a genuine three-second 48kHz stereo PCM16 tone, measures its actual integrated loudness and true peak with FFmpeg, requires the measured technical review gate to pass, then commits a separate creator-authorized final-mix decision to FilmIndex and reopens SQLite to verify its immutable lineage. The test runs actual FFmpeg where installed; mock-based authorization tests are separate.
+
+This is an acoustic measurement fixture for functional correctness, **not a professional mastering reference waveform** or an endorsement of a universal delivery loudness target. Finished audio quality and program-specific loudness standards require independent review.
+
+## Windows task state
+
+The current Windows Job Object workflow includes AUDIO-01G and AUDIO-02 tests, along with the earlier actual contained-worker termination and FFmpeg mux tests. The **latest SHA still has queued GitHub CI jobs**, so no cross-platform pass is asserted.
+
+`NativeAudio01FHost` now stores `native_audio01g_os_stops` only after reaping its owned worker handle and refuses interrupted recovery without that persistent witness. The state-check test verifies persistence, not genuine OS execution; the real Windows Job Object acceptance jobs are required.
+
+No complete automated host-crash takeover is asserted when the OS reaped handle was not observed and persisted before the crash. Such ACTIVE jobs remain held for native intervention. Strict delegated Linux cgroup-v2 acceptance remains OPEN / DEFERRED.
