@@ -62,7 +62,7 @@ class BlenderWorkerTests(unittest.TestCase):
 
     def simulated_worker(self,command,**kwargs):
         cwd=Path(kwargs["cwd"])
-        self.assertEqual(kwargs["shell"],False)
+        self.assertFalse(kwargs.get("shell",False))
         self.assertEqual(command[0],str(self.executable))
         self.assertIn("--python",command)
         self.assertIn("--manifest",command)
@@ -105,7 +105,7 @@ class BlenderWorkerTests(unittest.TestCase):
     def test_exact_success_reopen_tamper_and_idempotency_refusal(self):
         op=self.job()
         with patch.object(self.sup,"probe",return_value={"blender":"Blender 5.2.3"}),patch(
-                "backend.nvp_blender_worker.subprocess.Popen",side_effect=self.simulated_worker):
+                "backend.nvp_blender_worker.launch_contained",side_effect=self.simulated_worker):
             result=self.sup.run(op)
         self.assertEqual(result["state"],"SUCCEEDED")
         self.assertEqual(result["exit_code"],0)
@@ -134,7 +134,7 @@ class BlenderWorkerTests(unittest.TestCase):
     def test_recovery_never_falsely_marks_crashed_job_succeeded(self):
         op=self.job("interrupted_job")
         with patch.object(self.sup,"probe",return_value={}),patch(
-                "backend.nvp_blender_worker.subprocess.Popen",side_effect=self.simulated_worker):
+                "backend.nvp_blender_worker.launch_contained",side_effect=self.simulated_worker):
             good=self.sup.run(op)
         self.assertEqual(good["state"],"SUCCEEDED")
         self.sup._transition(op.job_id,"RUNNING",worker_pid=99999)
@@ -154,7 +154,7 @@ class BlenderWorkerTests(unittest.TestCase):
             (root/"preview.png").write_bytes(b"\x89PNG\r\n\x1a\n")
             return MockProc()
         with patch.object(self.sup,"probe",return_value={}),patch(
-            "backend.nvp_blender_worker.subprocess.Popen",side_effect=corrupted):
+            "backend.nvp_blender_worker.launch_contained",side_effect=corrupted):
             status=self.sup.run(op)
         self.assertEqual(status["state"],"FAILED")
         self.assertIn("passed=true",status["error"])
@@ -171,7 +171,7 @@ class BlenderWorkerTests(unittest.TestCase):
         def terminate(p): p.returncode=-9
         outcome={}
         with patch.object(self.sup,"probe",return_value={}),patch(
-             "backend.nvp_blender_worker.subprocess.Popen",return_value=proc),patch.object(
+             "backend.nvp_blender_worker.launch_contained",return_value=proc),patch.object(
              self.sup,"_terminate_tree",side_effect=terminate):
             thread=threading.Thread(target=lambda: outcome.update(result=self.sup.run(op)))
             thread.start()
