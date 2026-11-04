@@ -109,8 +109,9 @@ def _launch_windows(command, *, cwd, stdout, stderr, memory_mb):
     import msvcrt
     import win32job
     import win32process
+    import uuid
 
-    job = win32job.CreateJobObject(None, None)
+    job = win32job.CreateJobObject(None, "NVP-Worker-"+uuid.uuid4().hex)
     info = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
     basic = info["BasicLimitInformation"]
     basic["LimitFlags"] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
