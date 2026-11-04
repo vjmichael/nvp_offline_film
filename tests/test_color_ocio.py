@@ -79,7 +79,7 @@ class ColorOCIOTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"clip too many"):
             apply_view(pixels,OutOfRange())
         pixels[0,0,0]=float("nan")
-        with self.assertRaisesRegex(RuntimeError,"nonfinite"):
+        with self.assertRaisesRegex(RuntimeError,"NaN/Infinity"):
             apply_view(pixels,OutOfRange())
 
     def test_unapproved_source_space_and_forged_review_fail_closed(self):
