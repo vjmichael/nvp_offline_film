@@ -22,11 +22,18 @@ def fixture(out):
     mastered=full_exr_fixture(root/"frozen")
     db=root/"frozen"/"film.sqlite3"
     studio=Studio(db)
-    project=next((x for x in studio.list_projects()
-                  if x["title"]=="COLOR-01B2 Original Frozen Take"),None)
-    if not project:
-        raise RuntimeError("Real source fixture project absent")
-    pid=project["id"]
+    # FilmIndex source identity is authoritative; fixture display titles
+    # are presentation metadata and can differ between acceptance runs.
+    matching=[]
+    for project in studio.list_projects():
+        try:
+            FilmIndex(studio).read_revision(project["id"],"exr_source_16f")
+        except KeyError:
+            continue
+        matching.append(project)
+    if len(matching)!=1:
+        raise RuntimeError("Expected exactly one project with the frozen 16-frame EXR source")
+    pid=matching[0]["id"]
     workspace=GradeWorkspace(studio)
     candidates=workspace.sources(pid)
     source_id="exr_source_16f"
@@ -40,7 +47,7 @@ def fixture(out):
     warm=grade_recipe(exposure_stops=0.15,red_gain=1.03,blue_gain=0.97)
     modified=workspace.preview(pid,source_id,1,warm)
     if (not neutral["bytes"].startswith(b"\x89PNG\r\n\x1a\n") or
-        neutral["bytes"]==modified["bytes"] or not modified["calibrated"] is False):
+        neutral["bytes"]==modified["bytes"] or modified["calibrated"] is not False):
         raise RuntimeError("Before/after technical OCIO PNGs were not genuinely different")
     (root/"grade_before_neutral.png").write_bytes(neutral["bytes"])
     (root/"grade_after_warm.png").write_bytes(modified["bytes"])
