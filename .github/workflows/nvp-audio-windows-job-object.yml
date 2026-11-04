@@ -33,7 +33,7 @@ jobs:
       - name: Compile native host and OS test fixtures
         shell: pwsh
         run: |
-          python -m compileall -q backend/nvp_audio01e3_native_host.py backend/nvp_worker_containment.py tests/test_audio_windows_job_object_descendants.py tests/test_audio_native_os_termination.py tests/test_audio_admission_outbox.py tests/test_audio_admission_crash_gap.py tests/test_audio01f_windows_contained_mux.py
+          python -m compileall -q backend/nvp_audio01e3_native_host.py backend/nvp_worker_containment.py tests/test_audio_windows_job_object_descendants.py tests/test_audio_native_os_termination.py tests/test_audio_admission_outbox.py tests/test_audio_admission_crash_gap.py tests/test_audio01f_windows_contained_mux.py backend/nvp_audio01f_native_host.py tools/nvp_audio01f_native_worker.py tests/test_audio01f_native_authorization.py
           if ($LASTEXITCODE -ne 0) { throw 'Native test compile failure' }
       - name: Prove actual Job Object descendant kill and kill-on-close
         shell: pwsh
@@ -45,6 +45,11 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_audio_native_os_termination.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Windows native audio termination/recovery failed' }
+      - name: Enforce AUDIO-01F creator approval and native TaskLedger admission
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_audio01f_native_authorization.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01F native creator authorization failed' }
       - name: Run and forcibly terminate actual AUDIO-01F contained FFmpeg mux
         shell: pwsh
         run: |
