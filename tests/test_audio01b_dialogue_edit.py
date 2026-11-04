@@ -72,7 +72,7 @@ class DialogueEdit(unittest.TestCase):
         # Overlap gets a deterministic crossfade, not a forced picture sync.
         return {"clips": [
             clip(0, 2250, 0, fade_out=500),
-            clip(1750, 8000, 500, fade_in=500),
+            clip(1750, 7750, 0, fade_in=500),
         ]}
 
     def test_j_l_crossfade_and_restart_verified(self):
@@ -81,8 +81,8 @@ class DialogueEdit(unittest.TestCase):
         pcm = render_audio_samples(self.wav, plan, 3, 4)
         self.assertEqual(len(pcm), 8000 * 4)
         self.assertEqual(struct.unpack_from("<hh", pcm, 0), (1000, -1000))
-        # Silence is not fabricated: source at 2500 samples starts the second
-        # source clip at sample 1250 (still voice 1).
+        # The second clip starts earlier than the picture cut; at 2500
+        # the source is sample 750 (still voice 1).
         self.assertEqual(struct.unpack_from("<hh", pcm, 2500*4), (1000, -1000))
         out = self.root / "preview"
         result = create_dialogue_preview(self.cap, self.pid, "edit", 1,
