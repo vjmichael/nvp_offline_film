@@ -440,6 +440,17 @@ def verify_editorial_handoff(capture,project_id,delivery_id,bundle, *,
             raise RuntimeError("Portable editorial media differs from approved source")
         if native and _sha_bytes(_rgb48_from_png(file,native,*data["resolution"]))!=row["rgb48_sha256"]:
             raise RuntimeError("Decoded portable editorial RGB48 image changed")
+    if data["video_candidates"]:
+        master_policy,_=mastering_policy()
+        if (data.get("mastering_color_policy")!=master_policy or
+            data.get("mastering_grade_recipe")!=grade_recipe() or
+            data.get("technical_video_color")!="ACES2_Rec1886_BT709_10bit_YUV422" or
+            data.get("technical_mov_not_derived_from_srgb_png_codes") is not True):
+            raise RuntimeError("Technical video Rec.1886 color authority or neutral grade is invalid")
+    elif (data.get("mastering_color_policy") is not None or
+          data.get("mastering_grade_recipe") is not None or
+          data.get("technical_mov_not_derived_from_srgb_png_codes") is not False):
+        raise RuntimeError("Video mastering policy claimed without any actual encoded MOV")
     for item in data["video_candidates"]:
         if item["profile"] not in PROFILES or item["relative_path"]!=item["profile"]+".mov":
             raise RuntimeError("Unrecognized editorial video delivery candidate")
@@ -450,18 +461,37 @@ def verify_editorial_handoff(capture,project_id,delivery_id,bundle, *,
         if (_sha_file(file)!=item["sha256"] or video["size_bytes"]!=item["bytes"]):
             raise RuntimeError("Professional candidate video differs from FilmIndex")
         if (item.get("audio_included") is not False or
-            item.get("approved_picture_lock") is not False):
-            raise RuntimeError("Technical MOV masquerades as sound-mixed final master")
+            item.get("approved_picture_lock") is not False or
+            item.get("mastering_view")!="ACES2_Rec1886_Rec709_100nit" or
+            item.get("source_precision")!="original_RGBA_FLOAT32"):
+            raise RuntimeError("Technical MOV source/Rec.1886 view misrepresented as final master")
         if native:
-            audit=video_audit(file,profile=item["profile"],
-                   width=data["resolution"][0],height=data["resolution"][1],
-                   frames=data["frame_count"],ffmpeg=native,
-                   ffprobe=ffprobe or "ffprobe")
-            if (audit["metadata"]!=item["video_audit"]["metadata"] or
-                audit["decoded"]["decoded_yuv10_sha256"]!=
-                item["video_audit"]["decoded"]["decoded_yuv10_sha256"] or
-                audit["decoded"]["illegal_samples"]!=0):
-                raise RuntimeError("Encoded technical MOV independently decoded differently")
+            import tempfile
+            with tempfile.TemporaryDirectory(prefix="nvp-b12-rec1886-replay-") as tmp:
+                folder=Path(tmp)
+                master_raw=folder/"original_linear_aces2_rec1886_rgb48le.raw"
+                policy,grade=_master_rgb48_from_original_float32(
+                    capture,project_id,data["media_frames"],master_raw,native,
+                    data["resolution"][0],data["resolution"][1],
+                    verify_expected=True)
+                if policy!=data["mastering_color_policy"] or grade!=data["mastering_grade_recipe"]:
+                    raise RuntimeError("Native technical MOV master view changed after publication")
+                ref_yuv=folder/"fresh_bt709_reference.yuv"
+                _yuv_reference(master_raw,ref_yuv,width=data["resolution"][0],
+                               height=data["resolution"][1],frames=data["frame_count"],
+                               ffmpeg=native)
+                audit=video_audit(file,profile=item["profile"],
+                      width=data["resolution"][0],height=data["resolution"][1],
+                      frames=data["frame_count"],ffmpeg=native,
+                      ffprobe=ffprobe or "ffprobe",reference_yuv=ref_yuv)
+                if (audit["metadata"]!=item["video_audit"]["metadata"] or
+                    audit["decoded"]["decoded_yuv10_sha256"]!=
+                    item["video_audit"]["decoded"]["decoded_yuv10_sha256"] or
+                    audit["decoded"]["reference_yuv10_sha256"]!=
+                    item["video_audit"]["decoded"]["reference_yuv10_sha256"] or
+                    audit["decoded"]["reference_comparison"]!="passed_bounded_lossy_10bit_yuv" or
+                    audit["decoded"]["illegal_samples"]!=0):
+                    raise RuntimeError("Video differs from original Float32 Rec.1886 color reference")
     return {"format":FORMAT,"status":"VERIFIED_PORTABLE_EDITORIAL_HANDOFF",
             "project_id":project_id,"delivery_id":delivery_id,
             "source_take_id":data["source_take_id"],
