@@ -1,6 +1,7 @@
 """AUDIO-01E.3: source-bound durable journal and stopped-worker recovery."""
 import json
 import sqlite3
+from contextlib import closing
 import struct
 import tempfile
 import unittest
@@ -89,7 +90,9 @@ class AudioNativeJournalTests(unittest.TestCase):
             self.j.transition("job1",0,"recovery_required","old_writer")
         self.j.transition("job1",1,"recovery_required","terminated",
                           cleanup_required=True)
-        with sqlite3.connect(self.db) as db:
+        # sqlite3.Connection context managers commit but do not close.
+        # Windows refuses TemporaryDirectory deletion with an open DB handle.
+        with closing(sqlite3.connect(self.db)) as db:
             rows=db.execute("SELECT next_state FROM audio_native_events ORDER BY seq").fetchall()
         self.assertEqual([r[0] for r in rows],
                          ["approved","running","recovery_required"])
