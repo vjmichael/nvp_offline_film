@@ -61,6 +61,17 @@ class DurableRecoveryAcrossCommit(unittest.TestCase):
         self.assertEqual(len(cases),len(set(cases)))
         self.assertEqual(set(cases),set(BOUNDARIES))
 
+    def test_every_fault_point_is_in_actual_production_code(self):
+        import re
+        repo=Path(__file__).resolve().parents[1]
+        source="\n".join((repo/name).read_text("utf8") for name in (
+            "backend/nvp_audio01f_picture_sound.py",
+            "backend/nvp_audio01f_native_host.py",
+            "tools/nvp_audio01f_native_worker.py"))
+        injected=re.findall(r'crash_after\\("([^"]+)"\\)',source)
+        self.assertEqual(len(injected),len(set(injected)))
+        self.assertEqual(set(injected),set(BOUNDARIES))
+
     def test_partial_movie_stays_quarantined_and_reservation_held(self):
         with patch("backend.nvp_audio01g_mux_recovery.verify_finished_media",
                    side_effect=RuntimeError("damaged MOV")):
