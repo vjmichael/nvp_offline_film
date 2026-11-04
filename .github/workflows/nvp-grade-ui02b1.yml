@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   linux-shot-scopes:
-    name: Linux per-shot LF/Gamma/Gain and real-scope regression
+    name: Linux HDR EV curves, reference advice and shot regression
     runs-on: ubuntu-24.04
     timeout-minutes: 16
     steps:
@@ -51,7 +51,7 @@ jobs:
           retention-days: 7
 
   windows-shot-contract:
-    name: Windows graded-frame math and shot timeline contracts
+    name: Windows HDR tone-curve source-bound safety and older shot contracts
     runs-on: windows-2025
     timeout-minutes: 18
     steps:
@@ -70,13 +70,15 @@ jobs:
           $env:PYTHONPATH='.'
           python -m compileall -q backend tools tests
           if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
+          python -m unittest discover -s tests -p 'test_grade_curves.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Tone curve contract tests failed' }
           python -m unittest discover -s tests -p 'test_grade_advanced.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'Shot grading/scopes tests failed' }
           python -m unittest discover -s tests -p 'test_grade_workspace.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'Legacy grading contracts failed' }
 
   browser-advanced-ui:
-    name: React color wheels, scopes and shotstrip interaction tests
+    name: React tone-curve/shot interaction and reference suggestion tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -92,7 +94,7 @@ jobs:
           npm run test:ui
 
   native-two-shot-grading:
-    name: Native Blender/Cycles two-shot independent RGB48 scopes and FilmIndex corruption/restart
+    name: Native Blender/Cycles two-shot tone-curve and source-reference audit
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -124,12 +126,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          xvfb-run -a python -m tools.nvp_grade_ui02b1_fixture --out acceptance_artifacts/grade_ui02a
+          xvfb-run -a python -m tools.nvp_grade_ui02b1_fixture --out acceptance_artifacts/grade_ui02b1
       - name: Preserve true neutral/graded shot images and FilmIndex scientific proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nvp-grade-ui02b1-native-two-shot-evidence
-          path: acceptance_artifacts/grade_ui02a/
+          path: acceptance_artifacts/grade_ui02b1/
           retention-days: 7
           if-no-files-found: warn
