@@ -29,3 +29,7 @@
 The current native host does not offer power-loss recovery and transactional cleanup for a partially published AUDIO-01F MOV or FilmIndex result; such a failure remains fail-closed for trusted investigation. It does not expose a safe creator UI event broker by itself: embedding NVP must supply a true creator-authenticated policy callback, not simply return True for arbitrary AI/model requests. Windows OS kill-on-close tests are required but are not considered verified until their exact-head CI results pass.
 
 The present B14 picture conform supports at most 480 frames (20 seconds at 24fps). AUDIO-01F is a **technical review**, not final master, picture lock, automated loudness mastering, or a theatrical delivery. The separate Linux strict cgroup-v2 delegated-guardian acceptance remains OPEN / DEFERRED per user direction.
+
+## Executable pinning hardening
+
+Stage-time preflight resolves the actual `ffmpeg` and `ffprobe` executable paths through the trusted host, computes SHA-256 for each, and saves those absolute paths in the sealed plan and digests in the immutable approved operation. Before admitting native execution, the host recalculates their SHA-256 hashes. Mutating or replacing either tool after the original approval fails closed. FFmpeg is launched without a shell, and the user/model is not authorized to replace the native host's trusted executable selection.
