@@ -18,6 +18,7 @@ import time
 from backend.nvp_approved_tasks import ApprovedTaskBindings, canonical_bytes
 from backend.nvp_audio01d_chunked_recovery import _read_state, _audit_chunks, _validate, _check_inputs, verify_chunked_preview
 from backend.nvp_audio01e3_native_journal import AudioJobJournal
+from backend.nvp_film_index import _id
 from backend.nvp_audio_native_staging_lock import AudioStagingLock
 from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
