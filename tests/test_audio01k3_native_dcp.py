@@ -63,7 +63,7 @@ def setup(root):
     sha=hashlib.sha256(mov.read_bytes()).hexdigest()
     cap.index.register_revision(pid,"mezzanine","master",{
         "format":DIST_FORMAT,"status":"verified_mezzanine_distribution",
-        "delivered_movie_sha256":sha,"dcp_delivered":False
+        "delivered_movie_sha256":sha,"frames":24,"dcp_delivered":False
     },expected_revision=0,dependencies=[])
     return cap,pid,source
 
