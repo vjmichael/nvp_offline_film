@@ -62,9 +62,19 @@ jobs:
           dcpomatic2_cli --version
           dcpdoctor --version
       - name: Run source contract and real native SMPTE DCP encode
+        env:
+          NVP_AUDIO01K3_ARTIFACT_DIR: ${{ runner.temp }}/nvp_dcp_candidate
         shell: bash
         run: |
           set -euo pipefail
           python -m compileall -q backend/nvp_audio01k3_dcp.py backend/nvp_audio01k3_native_host.py tools/nvp_audio01k3_dcp_worker.py tests/test_audio01k3_dcp_contract.py tests/test_audio01k3_native_dcp.py
           python -m unittest discover -s tests -p test_audio01k3_dcp_contract.py -v
           python -m unittest discover -s tests -p test_audio01k3_native_dcp.py -v
+      - name: Preserve actual SMPTE DCP and independent QC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-audio01k3-real-linux-dcp-${{ github.run_id }}
+          path: ${{ runner.temp }}/nvp_dcp_candidate/
+          retention-days: 3
+          if-no-files-found: warn
