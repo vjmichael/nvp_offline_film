@@ -1,5 +1,7 @@
 # NVP STACK-02C3B2 — Native approved work and explicitly owned model instances
 
+**Bounded code acceptance:** [CI 41777307929](https://github.com/vjmichael/nvp_offline_film/actions/runs/41777307929), 3/3 jobs GREEN at source SHA 89c828103912030256e227d1c76a5a1c5060be2d. Windows and Linux each passed 33 backend contracts and an official pinned lmstudio==1.5.0 import; actual Ubuntu Blender passed creator-approved queue, forced RAM denial, native render, independent source/output reopen and zero residual RAM reservations. Does not prove real LM Studio model load/unload, GPU pressure or full authoring UI.
+
 **Development date:** 2026-11-03. **Parent:** STACK-02C3B1. This is an opt-in native integration slice. No browser route or model-exposed tool was added; retail GPU acceptance is NOT implied.
 
 ## Immutable creator-approved operations
@@ -30,3 +32,7 @@ Official SDK documentation:
 - https://lmstudio.ai/docs/python/manage-models/loading
 - https://lmstudio.ai/docs/python/model-info/get-model-info
 - https://lmstudio.ai/docs/cli/local-models/load
+
+## Final native acceptance evidence
+
+The genuine Blender fixture in tools/nvp_stack02c3b2_approved_blender_fixture.py created a SHA-pinned source and a creator-verified immutable operation, refused to launch under injected unsafe RAM, then admitted after measuring actual host headroom. The established contained Blender executable built a real native blend, rendered a real PNG, wrote an original audit, and re-opened all outputs independently; all checks passed. The final resource ledger reported zero outstanding RAM reservations. The test does not imply GPU offload or real SDK model-server acceptance. Official Python SDK 1.5.0 import was independently exercised on both operating systems, while actual SDK runtime lifecycle uses fake provider handles in the 11 B2 contract tests.
