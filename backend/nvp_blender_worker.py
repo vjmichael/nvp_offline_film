@@ -309,9 +309,22 @@ class BlenderWorkerSupervisor:
         return [r[0] for r in records]
 
     def run(self, op: BlenderOperation):
+        if not isinstance(op, BlenderOperation) or not JOB_ID.fullmatch(op.job_id):
+            raise ValueError("Invalid typed Blender job")
+        digest=hashlib.sha256(op.canonical().encode()).hexdigest()
+        # Query the durable ledger before touching the workspace. A replay of
+        # an accepted ID must be rejected as a duplicate, not as an unexpected
+        # preexisting output file; altered IDs are an explicit conflict.
+        with self._lock,self._connect() as prior_db:
+            previous=prior_db.execute(
+                "SELECT spec_sha256 FROM worker_jobs WHERE job_id=?",
+                (op.job_id,)).fetchone()
+        if previous is not None:
+            if previous[0]!=digest:
+                raise RuntimeError("Idempotency ID reused for different Blender operation")
+            raise RuntimeError("Blender job already registered; never rerun or overwrite an existing attempt")
         jobdir,script,script_args=self._validate(op)
         self.probe()
-        digest=hashlib.sha256(op.canonical().encode()).hexdigest()
         with self._lock,self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             exists=db.execute("SELECT spec_sha256,state FROM worker_jobs WHERE job_id=?",(op.job_id,)).fetchone()
