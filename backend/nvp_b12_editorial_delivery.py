@@ -18,10 +18,11 @@ import re
 import shutil
 
 from backend.nvp_approved_tasks import canonical_bytes
-from backend.nvp_b11_editorial import verify_sdr_review
-from backend.nvp_color_ocio import _ffmpeg_bin,_run
+from backend.nvp_b11_editorial import verify_sdr_review,normalize_near_opaque_preview_alpha
+from backend.nvp_color_ocio import _ffmpeg_bin,_run,decode_scene_linear_exr
 from backend.nvp_color_mastering import (
-    PROFILES,MAX_RASTER_PIXELS,_yuv_reference,encode_mov,video_audit)
+    PROFILES,MAX_RASTER_PIXELS,_yuv_reference,encode_mov,video_audit,
+    mastering_policy,grade_recipe,grade_pixels,view_to_rgb48)
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_film_index import _id
 from backend.nvp_presentation_pipeline import _png_info
@@ -190,6 +191,42 @@ def _rgb48_from_png(png:Path,ffmpeg,width,height):
     return raw
 
 
+def _master_rgb48_from_original_float32(capture,project_id,rows,
+                                        dest:Path,ffmpeg,width,height,*,
+                                        verify_expected=False):
+    """Reuse COLOR-01B2 genuine Rec.1886 display processor, not sRGB PNG.
+
+    A ProRes/DNxHR tagged BT.709 MOV must not simply copy already
+    display-encoded sRGB PNG RGB48 values. Use original authoritative B9
+    FLOAT32 pixels plus the established ACES2 Rec.1886/Rec.709 view,
+    preserving B9 alpha and only normalizing tightly bounded B11 AA alpha
+    in a derived CPU buffer before color conversion.
+    """
+    policy,cpu=mastering_policy()
+    neutral=grade_recipe()
+    with dest.open("xb") as out:
+        for row in rows:
+            original=capture.index.verify_media_file(
+                project_id,row["source_exr_sha256"],"image/x-exr")
+            source=decode_scene_linear_exr(
+                Path(original["path"]),ffmpeg,(width,height))
+            opaque,alpha_audit=normalize_near_opaque_preview_alpha(source)
+            graded=grade_pixels(opaque,neutral)
+            rgb48,stats=view_to_rgb48(graded,cpu)
+            hash_rgb=_sha_bytes(rgb48)
+            if verify_expected:
+                if (row.get("master_rgb48_sha256")!=hash_rgb or
+                    row.get("master_clip_audit")!=stats):
+                    raise RuntimeError("Replayed original FLOAT32 Rec.1886 master pixels differ")
+            else:
+                row["master_rgb48_sha256"]=hash_rgb
+                row["master_clip_audit"]=stats
+            out.write(rgb48)
+        out.flush()
+        os.fsync(out.fileno())
+    return policy,neutral
+
+
 def create_editorial_handoff(capture:DigitalCapture,project_id,review_id,
                               delivery_id,output_root,*,profiles=(),
                               ffmpeg=None,ffprobe=None):
@@ -227,34 +264,36 @@ def create_editorial_handoff(capture:DigitalCapture,project_id,review_id,
     if profiles and not shutil.which(ffprobe or "ffprobe"):
         raise RuntimeError("Independent FFprobe required for codec publication")
     frame_meta=[]
-    rgbraw=bundle/"sdr_rgb48le.raw"
-    with (rgbraw.open("xb") if profiles else open(os.devnull,"wb")) as rgb:
-        for row in data["review_frames"]:
-            frame=row["frame"]
-            if frame!=len(frame_meta)+1:
-                raise RuntimeError("Source B11 RGB sequence contains a gap")
-            blob=capture.index.get_blob(project_id,row["png16_sha256"])
-            if (_png_info(blob)!=(width,height) or blob[24]!=16 or blob[25]!=2):
-                raise RuntimeError("B11 source is not a true 16-bit RGB PNG")
-            target=media/_relative_filename(frame)
-            _write_new(target,blob)
-            if _sha_file(target)!=row["png16_sha256"]:
-                raise RuntimeError("Portable media bytes differ from indexed review")
-            decoded=_rgb48_from_png(target,native,width,height)
-            if _sha_bytes(decoded)!=row["decoded_rgb48le_sha256"]:
-                raise RuntimeError("Portable media pixels differ from original official ACES2 SDR output")
-            if profiles:rgb.write(decoded)
-            frame_meta.append({
-                "frame":frame,"shot_id":_shot_for_frame(data["cutlist"],frame),
-                "media_path":"media/"+_relative_filename(frame),
-                "source_exr_sha256":row["source_exr_sha256"],
-                "png16_sha256":row["png16_sha256"],
-                "rgb48_sha256":_sha_bytes(decoded),
-                "bytes":len(blob),
-            })
-        if profiles:
-            rgb.flush()
-            os.fsync(rgb.fileno())
+    rgbraw=bundle/"rec1886_bt709_master_rgb48le.raw"
+    for row in data["review_frames"]:
+        frame=row["frame"]
+        if frame!=len(frame_meta)+1:
+            raise RuntimeError("Source B11 RGB sequence contains a gap")
+        blob=capture.index.get_blob(project_id,row["png16_sha256"])
+        if (_png_info(blob)!=(width,height) or blob[24]!=16 or blob[25]!=2):
+            raise RuntimeError("B11 source is not a true 16-bit RGB PNG")
+        target=media/_relative_filename(frame)
+        _write_new(target,blob)
+        if _sha_file(target)!=row["png16_sha256"]:
+            raise RuntimeError("Portable media bytes differ from indexed review")
+        decoded=_rgb48_from_png(target,native,width,height)
+        if _sha_bytes(decoded)!=row["decoded_rgb48le_sha256"]:
+            raise RuntimeError("Portable media pixels differ from original official ACES2 SDR output")
+        frame_meta.append({
+            "frame":frame,"shot_id":_shot_for_frame(data["cutlist"],frame),
+            "media_path":"media/"+_relative_filename(frame),
+            "source_exr_sha256":row["source_exr_sha256"],
+            "png16_sha256":row["png16_sha256"],
+            "rgb48_sha256":_sha_bytes(decoded),
+            "bytes":len(blob),
+        })
+    # The OTIO PNG review is sRGB, whereas technical video is explicitly
+    # tagged Rec.709. Never pass sRGB-derived PNG RGB codes directly into
+    # an encoder claiming the Rec.1886/709 display mastering recipe.
+    master_policy,master_grade=None,None
+    if profiles:
+        master_policy,master_grade=_master_rgb48_from_original_float32(
+            capture,project_id,frame_meta,rgbraw,native,width,height)
     cutlist=data["cutlist"]
     timeline=build_otio(cutlist,project_id=project_id,
                        source_take_id=data["source_take_id"],
@@ -283,6 +322,8 @@ def create_editorial_handoff(capture:DigitalCapture,project_id,review_id,
         videos.append({"profile":profile,"relative_path":movie.name,
                        "sha256":indexed["sha256"],"bytes":indexed["size_bytes"],
                        "video_audit":audit,"audio_included":False,
+                       "mastering_view":"ACES2_Rec1886_Rec709_100nit",
+                       "source_precision":"original_RGBA_FLOAT32",
                        "approved_picture_lock":False})
     # Intermediate full RGB48 and YUV are reconstructible; never retain
     # large uncompressed working surfaces after a verified encode.
@@ -305,6 +346,10 @@ def create_editorial_handoff(capture:DigitalCapture,project_id,review_id,
         "camera_cutlist":cutlist,"media_frames":frame_meta,
         "video_candidates":videos,
         "media_color":"ACES2_SDR100_sRGB_16bit_RGB",
+        "technical_video_color":"ACES2_Rec1886_BT709_10bit_YUV422" if profiles else None,
+        "mastering_color_policy":master_policy,
+        "mastering_grade_recipe":master_grade,
+        "technical_mov_not_derived_from_srgb_png_codes":bool(profiles),
         "authoritative_source_modified":False,
         "audio_present":False,"approved_picture_lock":False,
         "final_delivery_master":False,"dcp_delivered":False,
