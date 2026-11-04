@@ -1,0 +1,52 @@
+name: NVP B5 Lu status-only native AF_UNIX proof
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b5-authenticated-lu-status-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c3b4-lu-alpha-evidence-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-lu-status:
+    name: Linux native AF_UNIX Lu status and existing governor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile B5 modules and tests
+        run: python -m compileall -q backend/nvp_lu_status_wire.py backend/nvp_lu_status_socket.py tests/test_lu_status_wire.py
+      - name: Test real native socket status, signed scope, expiry, replay, revocation
+        run: python -m unittest discover -s tests -p test_lu_status_wire.py -v
+      - name: B4 baseline read-only Lu source and resource-ledger regressions
+        run: |
+          python -m unittest discover -s tests -p test_lu_alpha_contract.py -v
+          python -m unittest discover -s tests -p test_resource_init_contention.py -v
+          python -m unittest discover -s tests -p test_resource_governor.py -v
+
+  windows-lu-status:
+    name: Windows native AF_UNIX Lu status and existing governor
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile B5 modules and tests
+        run: python -m compileall -q backend/nvp_lu_status_wire.py backend/nvp_lu_status_socket.py tests/test_lu_status_wire.py
+      - name: Test real native socket status, signed scope, expiry, replay, revocation
+        run: python -m unittest discover -s tests -p test_lu_status_wire.py -v
+      - name: B4 baseline read-only Lu source and resource-ledger regressions
+        run: |
+          python -m unittest discover -s tests -p test_lu_alpha_contract.py -v
+          python -m unittest discover -s tests -p test_resource_init_contention.py -v
+          python -m unittest discover -s tests -p test_resource_governor.py -v
