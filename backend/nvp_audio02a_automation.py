@@ -71,3 +71,57 @@ def automate_stem(source,destination,points):
     return {"format":FORMAT,"samples_per_channel":n,
             "audio_pcm_sha256":sha.hexdigest(),"points":points,
             "director_approved":False,"final_master":False}
+
+
+def sum_automated_stems(stem_paths,output):
+    """Mix 1..8 aligned automated WAVs with bounded streaming saturation.
+
+    Stems must be identical sample clocks. This is a derived *preview*
+    composite, not an approved or loudness-compliant final mix.
+    """
+    from contextlib import ExitStack
+    if type(stem_paths) is not list or not 1<=len(stem_paths)<=8:
+        raise ValueError("Expected one to eight automated WAV stems")
+    paths=[Path(p) for p in stem_paths]
+    destination=Path(output)
+    if (destination.exists() or destination.is_symlink() or
+        not destination.parent.is_dir() or destination.parent.is_symlink() or
+        any(p.is_symlink() or not p.is_file() for p in paths) or
+        len(set(str(p.resolve()) for p in paths))!=len(paths)):
+        raise RuntimeError("Unsafe automated mix source or target")
+    with ExitStack() as stack:
+        stems=[stack.enter_context(wave.open(str(p),"rb")) for p in paths]
+        lengths=[w.getnframes() for w in stems]
+        if (len(set(lengths))!=1 or not 1<=lengths[0]<=LIMIT or
+            any(w.getnchannels()!=2 or w.getsampwidth()!=2 or
+                w.getframerate()!=RATE or w.getcomptype()!="NONE"
+                for w in stems)):
+            raise RuntimeError("Incompatible automated stem format or sample clocks")
+        out=stack.enter_context(destination.open("xb"))
+        writer=stack.enter_context(wave.open(out,"wb"))
+        writer.setnchannels(2);writer.setsampwidth(2);writer.setframerate(RATE)
+        sha=hashlib.sha256()
+        done=0
+        while done<lengths[0]:
+            count=min(4096,lengths[0]-done)
+            vectors=[]
+            for w in stems:
+                raw=w.readframes(count)
+                if len(raw)!=count*4:
+                    raise RuntimeError("Automated stem was truncated")
+                vectors.append(list(struct.iter_unpack("<hh",raw)))
+            payload=bytearray()
+            for i in range(count):
+                left=sum(v[i][0] for v in vectors)
+                right=sum(v[i][1] for v in vectors)
+                payload.extend(struct.pack("<hh",
+                    max(-32768,min(32767,left)),
+                    max(-32768,min(32767,right))))
+            writer.writeframesraw(payload)
+            sha.update(payload)
+            done+=count
+    return {"format":"nvp.audio.automated_multistem_mix.v1",
+            "stems":len(paths),"samples_per_channel":done,
+            "audio_pcm_sha256":sha.hexdigest(),
+            "limiter":"integer_saturation_not_true_peak_limiter",
+            "director_approved":False,"final_master":False}
