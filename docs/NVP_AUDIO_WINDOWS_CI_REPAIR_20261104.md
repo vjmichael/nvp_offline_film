@@ -15,3 +15,9 @@ The preceding NVP PR #44 head before these fixes was 6759a2d838c29d82e1782a084cf
 Required closeout: inspect exact-HEAD Windows job logs, confirm zero failed/skipped required native tests, and run the dedicated AUDIO-01G 21-point crash matrix and the seven real contained-worker late boundaries. Only then mark production gates accepted.
 
 Strict Linux delegated cgroup-v2 guardian acceptance remains OPEN / DEFERRED by decision; these Windows fixes do not change it.
+
+## B14 main Windows gate hardened
+
+The main `windows-conform-contract` job now installs/locates real FFmpeg and FFprobe and insists both remain visible in the test step. Previously its AUDIO-01F `unittest.skipUnless` suite could skip, and Windows Job Object pipeline would still appear green. The fast dedicated workflow also persists the FFmpeg PATH between steps and enforces native availability.
+
+All acceptance claims must use the actual exit status of every test command. A full workflow's `success` conclusion does not imply required suites ran unless their own logs show non-skipped executions.
