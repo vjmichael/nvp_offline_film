@@ -27,9 +27,12 @@ jobs:
           if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
             choco install ffmpeg -y --no-progress
             $env:Path = "$env:ChocolateyInstall\\bin;" + $env:Path
+            "$env:ChocolateyInstall\\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
           }
           ffmpeg -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg is required for Windows native acceptance' }
           ffprobe -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFprobe is required for Windows native acceptance' }
       - name: Compile native host and OS test fixtures
         shell: pwsh
         run: |
@@ -53,6 +56,8 @@ jobs:
       - name: Run and forcibly terminate actual AUDIO-01F contained FFmpeg mux
         shell: pwsh
         run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'FFmpeg absent in mux test step' }
+          if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) { throw 'FFprobe absent in mux test step' }
           python -m unittest discover -s tests -p test_audio01f_windows_contained_mux.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Windows AUDIO-01F contained mux failed' }
       - name: AUDIO-01G interrupted mux journal and AUDIO-02 finishing gates
