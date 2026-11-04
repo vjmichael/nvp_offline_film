@@ -21,10 +21,10 @@ from backend.nvp_audio01i_mastering import sha_file
 
 FORMAT = "nvp.audio01k3.dcp_candidate.v1"
 PROFILE = "smpte_2k_24fps_unencrypted_stereo_v1"
-MAX_FILES = 96
+MAX_FILES = 128
 MAX_XML_BYTES = 5 * 1024 * 1024
 REQUIRED_XML = ("ASSETMAP.xml", "VOLINDEX.xml")
-MAX_TOTAL_BYTES = 20 * 1024 * 1024 * 1024
+MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024 * 1024
 NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,79}\Z")
 
 
@@ -158,7 +158,7 @@ def encode_candidate(input_mov, workspace, title, *, create_bin, cli_bin,
     _run(create_cmd, cwd=root, timeout=120)
     if not film_dir.is_dir() or film_dir.is_symlink():
         raise RuntimeError("DCP-o-matic did not create a real film project")
-    output = _run(encode_cmd, cwd=root, timeout=1800)
+    output = _run(encode_cmd, cwd=root, timeout=21600)
     candidates = [Path(line.strip()) for line in output.splitlines()
                   if line.strip()]
     candidates = [p if p.is_absolute() else root / p for p in candidates]
@@ -173,7 +173,7 @@ def encode_candidate(input_mov, workspace, title, *, create_bin, cli_bin,
     return dcp, report
 
 
-def validate_strict_smpte(dcp, doctor_bin, *, timeout=1800):
+def validate_strict_smpte(dcp, doctor_bin, *, timeout=21600):
     """Mandatory independent DcpDoctor SMPTE and deep-essence validation.
 
     Requires exit 0, fails on skipped validator checks; never supplies
