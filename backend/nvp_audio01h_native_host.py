@@ -390,6 +390,14 @@ class NativeAudio01HHost:
         """Creator-only host entrypoint, with durable replay prevention."""
         if type(creator_event) is not str or not creator_event:
             raise PermissionError("Authenticated creator event identifier required")
+        # Require trusted human-event admission BEFORE reserving its nonce.
+        # This preflight is not sufficient for publication; full exact scope
+        # is independently rechecked by record_mix_decision below.
+        if self.creator(creator_event, {
+            "operation":"nvp.audio01h.measure_for_mix_review",
+            "project_id":project_id,"automated_id":automated_id,
+            "decision_id":decision_id,"decision":decision}) is not True:
+            raise PermissionError("Creator denied native audio inspection")
         event_digest = hashlib.sha256(creator_event.encode("utf8")).hexdigest()
         # Consume the event BEFORE FilmIndex publication. A crash may leave a
         # reserved, unusable event, but cannot reuse a real human approval.
@@ -404,13 +412,6 @@ class NativeAudio01HHost:
         crash_after("creator_event_reserved")
         def trusted(event,scope):
             return event == creator_event and self.creator(event,scope) is True
-        # Only an authenticated human action may cause a native measurement
-        # worker to launch. Final exact scope is checked again on publication.
-        if self.creator(creator_event, {
-            "operation":"nvp.audio01h.measure_for_mix_review",
-            "project_id":project_id,"automated_id":automated_id,
-            "decision_id":decision_id,"decision":decision}) is not True:
-            raise PermissionError("Creator denied native audio inspection")
         def measured(path, *, ffmpeg, expected_samples):
             return self._measure_contained(path,ffmpeg=ffmpeg,
                                            expected_samples=expected_samples)
