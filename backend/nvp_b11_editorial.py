@@ -28,6 +28,44 @@ from backend.nvp_production_scene import digest
 
 FORMAT="nvp.presentation.b11.frozen_float32_sdr_png16.v1"
 MAX_FRAMES=120
+NEAR_OPAQUE_ALPHA_POLICY="nvp.display_review.near_opaque_aa_alpha_v1"
+MAX_ALPHA_SHORTFALL=.003
+
+
+def normalize_near_opaque_preview_alpha(pixels):
+    """Normalize only sub-0.3% AA alpha shortfall in derived SDR review.
+
+    B9 Blender Workbench has been observed writing alpha 0.99853515625
+    on every pixel of an otherwise opaque frame. That is not the same as
+    transparently compositing a performer or set. We refuse truly
+    transparent inputs rather than invent an unknown matte/premultiplication
+    convention. Only the derived display-review copy gets alpha=1; the
+    authoritative original Float32 EXR is never changed.
+    """
+    import numpy as np
+    if (not isinstance(pixels,np.ndarray) or pixels.dtype!=np.float32 or
+        pixels.ndim!=3 or pixels.shape[-1]!=4 or
+        not np.isfinite(pixels).all()):
+        raise RuntimeError("Review needs finite Float32 RGBA native pixels")
+    alpha=pixels[...,3]
+    low=float(alpha.min())
+    high=float(alpha.max())
+    if low<1-MAX_ALPHA_SHORTFALL or high>1+1e-6:
+        raise RuntimeError(
+            "Genuine transparency or invalid alpha requires explicit "
+            "creator-approved linear compositing, not near-opaque normalization")
+    changed=np.ascontiguousarray(pixels,dtype=np.float32).copy()
+    changed[...,3]=1.0
+    return changed,{
+        "format":NEAR_OPAQUE_ALPHA_POLICY,
+        "source_alpha_min":low,
+        "source_alpha_max":high,
+        "max_allowed_alpha_shortfall":MAX_ALPHA_SHORTFALL,
+        "normalized_preview_pixels":int(np.count_nonzero(alpha!=1.0)),
+        "source_float32_exr_alpha_modified":False,
+        "premultiplication_assumed":False,
+        "actual_transparency_composited":False,
+    }
 
 
 def frozen_review_source(capture:DigitalCapture,project_id:str,exr_presentation_id:str):
@@ -117,7 +155,13 @@ def render_aces2_sdr_review(capture:DigitalCapture,project_id,source_exr_id,
         # Reuse COLOR-01B's true float32 HDR decoder, ACES2 display-view
         # processor, nearest-even RGB48 quantizer and full FFmpeg readback.
         pixels=decode_scene_linear_exr(path,binary,(w,h))
-        quant,statistics=apply_view(pixels,cpu)
+        # The verified native Workbench EXR can have 0.998535 AA alpha,
+        # despite its opaque scene. The pre-existing generic mastering
+        # function correctly refuses nonopaque RGBA. Normalize only this
+        # narrowly bounded preview copy, with evidence; never silently
+        # composite genuinely transparent source frames.
+        review_pixels,alpha_audit=normalize_near_opaque_preview_alpha(pixels)
+        quant,statistics=apply_view(review_pixels,cpu)
         output=stage/("review_%06d.png"%frame)
         measured=_encode_png16(quant,output,binary)
         sha=capture.index.put_blob(project_id,output.read_bytes(),"image/png")
@@ -129,6 +173,7 @@ def render_aces2_sdr_review(capture:DigitalCapture,project_id,source_exr_id,
             "png16_sha256":sha,"size_bytes":measured["size_bytes"],
             "decoded_rgb48le_sha256":measured["raw_rgb48le_sha256"],
             "clip_audit":statistics,
+            "alpha_audit":alpha_audit,
         })
     if [row["frame"] for row in rows]!=list(range(1,source["frame_count"]+1)):
         raise RuntimeError("Incomplete/discontinuous SDR review not publishable")
@@ -144,6 +189,8 @@ def render_aces2_sdr_review(capture:DigitalCapture,project_id,source_exr_id,
         "source_take_sha256":source["source_take_sha256"],
         "source_primaries_declaration":SOURCE_COLOR_SPACE,
         "creator_source_primaries_approved":True,
+        "display_review_alpha_policy":NEAR_OPAQUE_ALPHA_POLICY,
+        "max_alpha_shortfall":MAX_ALPHA_SHORTFALL,
         "color_policy":policy,"fps":24,
         "width":w,"height":h,"frame_count":source["frame_count"],
         "cutlist":source["cutlist"],"review_frames":rows,
@@ -174,6 +221,8 @@ def verify_sdr_review(capture:DigitalCapture,project_id,review_id,*,
         data.get("status")!="unapproved_display_referred_sdr_review_candidate" or
         data.get("source_primaries_declaration")!=SOURCE_COLOR_SPACE or
         data.get("creator_source_primaries_approved") is not True or
+        data.get("display_review_alpha_policy")!=NEAR_OPAQUE_ALPHA_POLICY or
+        data.get("max_alpha_shortfall")!=MAX_ALPHA_SHORTFALL or
         data.get("16bit_display_referred") is not True or
         data.get("all_original_float32_frames_preserved") is not True or
         data.get("editorial_cut_timing_from_frozen_take") is not True or
@@ -206,6 +255,16 @@ def verify_sdr_review(capture:DigitalCapture,project_id,review_id,*,
         if (out["source_exr_sha256"]!=src["sha256"] or
             out["shot_id"]!=_frame_row(source,src["frame"])):
             raise RuntimeError("SDR review lost original frame or camera cut identity")
+        alpha=out.get("alpha_audit",{})
+        if (alpha.get("format")!=NEAR_OPAQUE_ALPHA_POLICY or
+            alpha.get("max_allowed_alpha_shortfall")!=MAX_ALPHA_SHORTFALL or
+            alpha.get("source_float32_exr_alpha_modified") is not False or
+            alpha.get("actual_transparency_composited") is not False or
+            alpha.get("premultiplication_assumed") is not False or
+            not 1-MAX_ALPHA_SHORTFALL<=alpha.get("source_alpha_min",-1)<=1+1e-6 or
+            not 1-MAX_ALPHA_SHORTFALL<=alpha.get("source_alpha_max",-1)<=1+1e-6 or
+            alpha["source_alpha_min"]>alpha["source_alpha_max"]):
+            raise RuntimeError("SDR review alpha disclosure is inconsistent")
         png=capture.index.get_blob(project_id,out["png16_sha256"])
         if (_png_info(png)!=(data["width"],data["height"]) or
             png[24]!=16 or png[25]!=2 or len(png)!=out["size_bytes"]):
