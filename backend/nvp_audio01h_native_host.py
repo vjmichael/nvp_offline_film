@@ -248,10 +248,16 @@ class NativeAudio01HHost:
         if type(creator_event) is not str or not creator_event:
             raise PermissionError("Authenticated creator event identifier required")
         event_digest = hashlib.sha256(creator_event.encode("utf8")).hexdigest()
+        # Consume the event BEFORE FilmIndex publication. A crash may leave a
+        # reserved, unusable event, but cannot reuse a real human approval.
         with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT 1 FROM native_audio01h_creator_events WHERE event_digest=?",
                           (event_digest,)).fetchone():
                 raise PermissionError("Creator event already consumed")
+            db.execute("INSERT INTO native_audio01h_creator_events VALUES(?,?,?,-1)",
+                       (event_digest,project_id,decision_id))
+            db.commit()
         def trusted(event,scope):
             return event == creator_event and self.creator(event,scope) is True
         result = record_mix_decision(
@@ -259,7 +265,7 @@ class NativeAudio01HHost:
             decision=decision,creator_event=creator_event,authorize=trusted,ffmpeg=ffmpeg)
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
-            db.execute("INSERT INTO native_audio01h_creator_events VALUES(?,?,?,?)",
-                       (event_digest,project_id,decision_id,result["revision"]))
+            db.execute("UPDATE native_audio01h_creator_events SET revision=? WHERE event_digest=? AND revision=-1",
+                       (result["revision"],event_digest))
             db.commit()
         return result
