@@ -24,6 +24,7 @@ from backend.nvp_film_index import _id
 from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_worker_containment import launch_contained
+from backend.nvp_resource_supervisor import wait_guarded
 
 PLAN="native_edit_import_plan.json"
 EDITED="incoming_edit.otio"
@@ -296,7 +297,7 @@ class NativeB13ImportHost:
                 proc=launch_contained(
                     [str(self.python),str(self.script),"--plan",str(folder/PLAN)],
                     cwd=str(folder),stdout=out,stderr=err,memory_mb=row["ram_mb"])
-                code=proc.wait(timeout=timeout_seconds)
+                code=wait_guarded(proc,self.ledger,job,timeout_seconds=timeout_seconds)
                 if code!=0:
                     raise RuntimeError("Contained edited OTIO import failed: "+str(code))
                 proc.close()
