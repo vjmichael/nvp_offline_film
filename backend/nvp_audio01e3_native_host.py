@@ -204,6 +204,7 @@ class NativeAudioHost:
                 job_id,approved_document,document_sha,approval_id,owner_key,ram_mb,state
             ) VALUES(?,?,?,?,?,?,'pending')""",
                 (job,canonical_bytes(spec).decode("ascii"),seal,approval,self.owner,ram_mb))
+            db.commit()
         self.reconcile_admission_outbox(job)
         return {"job_id":job,"state":"QUEUED","contained_worker_started":False,
                 "resume_from":resume_from,"spec_sha256":seal}
@@ -271,6 +272,7 @@ class NativeAudioHost:
                         db.execute("""INSERT INTO audio_native_os_stop_receipts(
                             job_id,stopped_at,worker_reaped,stop_reason)
                             VALUES(?,?,1,?)""",(job,time.time(),"owned_worker_closed"))
+                        db.commit()
                 row=self.journal.read(job)
                 if row["state"] in ("approved","running"):
                     self.journal.transition(job,row["generation"],"recovery_required",
@@ -353,6 +355,7 @@ class NativeAudioHost:
                 AND state IN ('pending','enqueued')""",(job,seal)).rowcount
             if updated!=1:
                 raise RuntimeError("Admission outbox was replaced")
+            db.commit()
         return {"job_id":job,"status":"VERIFIED_QUEUED","spec_sha256":seal}
 
     def audit_incomplete_admissions(self):
