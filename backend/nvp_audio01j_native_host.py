@@ -17,6 +17,7 @@ import time
 
 from backend.nvp_approved_tasks import ApprovedTaskBindings,canonical_bytes
 from backend.nvp_audio01j_picture_lock import approve_picture,validate_picture_lock
+from backend.nvp_audio01j_fault_matrix import crash_after
 from backend.nvp_audio01j_final_av import approved_inputs,verify_final_av
 from backend.nvp_audio01i_mastering import sha_file
 from backend.nvp_resource_guard import AdmissionRequest
@@ -97,13 +98,16 @@ class NativeAudio01JHost:
         if self.creator(creator_event,scope) is not True:
             raise PermissionError("Unapproved creator picture lock request")
         nonce=self._event(creator_event,project_id,"picture_lock",lock_id)
+        crash_after("picture_event_reserved")
         result=approve_picture(self.capture,project_id,candidate_id,lock_id,
             package,conform_dir,movie_dir,creator_event=creator_event,
             verify_creator_action=self.creator,ffmpeg=ffmpeg,ffprobe=ffprobe)
+        crash_after("picture_lock_indexed")
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE native_audio01j_creator_events SET revision=1 WHERE event_sha=?",
                        (nonce,));db.commit()
+        crash_after("picture_event_completed")
         return result
 
     def _check(self,approval,digest,spec):
@@ -186,6 +190,7 @@ class NativeAudio01JHost:
         if self.creator(creator_event,dict(scope)) is not True:
             raise PermissionError("Creator denied exact final audiovisual export")
         nonce=self._event(creator_event,project_id,"final_av",export_id)
+        crash_after("av_export_event_reserved")
         job="avjob"+secrets.token_hex(16)
         spec={"task_id":job,"kind":"compositing","project_id":project_id,
               "export_id":export_id,"destination":str(target),
@@ -218,15 +223,18 @@ class NativeAudio01JHost:
                  sha_file(binaries["ffmpeg"]),sha_file(binaries["ffprobe"]),
                  time.time()+duration_s))
             db.commit()
+        crash_after("av_grant_committed")
         self.bindings.enqueue(AdmissionRequest(job,"compositing",
             "Approved picture + final PCM24 audio MOV export",ram_mb),
             owner_key=self.owner,lane="standard",approval_id=approval,document=spec)
+        crash_after("av_queued")
         return {"job_id":job,"state":"QUEUED","export_id":export_id,
                 "creator_event_sha":nonce}
 
     def run_next(self,*,timeout_seconds=900):
         admitted=self.bindings.claim_next(owner_key=self.owner)
         if admitted is None or not admitted["admitted"]:return admitted
+        crash_after("av_claimed")
         job=admitted["task_id"];proc=None;reaped=False
         try:
             self.bindings.verified_spec(job,owner_key=self.owner)
@@ -242,6 +250,7 @@ class NativeAudio01JHost:
                 code=wait_guarded(proc,self.ledger,job,timeout_seconds=timeout_seconds)
                 if code:raise RuntimeError("Final AV native worker exited "+str(code))
                 proc.close();proc=None;reaped=True
+            crash_after("av_worker_reaped")
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("UPDATE native_audio01j_grants SET stopped=1 WHERE job_id=?",(job,))
@@ -251,6 +260,7 @@ class NativeAudio01JHost:
             self.audio_host.verify_delivery(
                 plan["project_id"],plan["audio_delivery_id"],plan["audio_dir"],
                 ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
+            crash_after("av_stop_witness_committed")
             self.ledger.update(job,"verifying_output","Independent FilmIndex and decoded media proof")
             verified=verify_final_av(
                 self.capture,plan["project_id"],plan["export_id"],
@@ -274,13 +284,16 @@ class NativeAudio01JHost:
                 db.execute("UPDATE native_audio01j_grants SET result_sha=? WHERE job_id=?",
                            (rec["document_sha256"],job))
                 db.commit()
+            crash_after("av_result_committed")
             self.ledger.finish(job,"SUCCEEDED","Verified final synchronized AV master")
+            crash_after("av_ledger_succeeded")
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("""UPDATE native_audio01j_creator_events SET revision=1
                     WHERE project_id=? AND operation='final_av' AND object_id=?
                     AND revision=-1""",(plan["project_id"],plan["export_id"]))
                 db.commit()
+            crash_after("av_event_completed")
             return {"job_id":job,**verified,"state":"SUCCEEDED",
                     "document_sha256":rec["document_sha256"]}
         except BaseException:
