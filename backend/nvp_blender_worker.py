@@ -33,7 +33,7 @@ from backend.nvp_resource_guard import AdmissionRequest
 JOB_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,79}$")
 SHA = re.compile(r"^[a-f0-9]{64}$")
 VALID_KINDS = frozenset({"png","json_audit","blend","exr"})
-ALLOWED_ARGS = frozenset({"--output","--manifest","--audit","--render","--take","--plan","--out"})
+ALLOWED_ARGS = frozenset({"--output","--manifest","--audit","--render","--take","--plan","--out","--preview"})
 TERMINAL = frozenset({"SUCCEEDED","FAILED","CANCELLED","TIMED_OUT","INTERRUPTED"})
 
 
