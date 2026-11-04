@@ -46,7 +46,6 @@ def child(root,point):
     raise RuntimeError("Fault gate was not executed")
 
 
-@unittest.skipUnless(__import__("shutil").which("ffmpeg"),"Native FFmpeg required")
 class NativeAbruptHostCrashMatrix(unittest.TestCase):
     def test_exact_abrupt_host_crashes_never_approve_and_keep_custody(self):
         for point in HOST_POINTS:
