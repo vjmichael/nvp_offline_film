@@ -1,6 +1,6 @@
 # NVP-STACK-02B — OS-enforced external Blender worker containment
 
-**Status:** implemented on development branch; independent Windows/Linux/native tests required before acceptance.  
+**Status:** **OS-containment technical acceptance PASSED** in [GitHub CI 41766014441](https://github.com/vjmichael/nvp_offline_film/actions/runs/41766014441): **3/3 jobs green**; Linux 10 regressions (9 passed, 1 Windows-only skipped), Windows **10/10 passed** including a real hard-host-exit **child+grandchild** check; native Blender 5.2.3 scene and original ProductionScene audit also passed. More extensive production containment and commercial redistribution remain open.  
 **Architecture:** [ADR STACK-002](NVP_ADR_STACK02_BLENDER_WORKER_USD_DEFERRED.md); predecessor [STACK-02A](NVP_STACK02A_DURABLE_BLENDER_WORKER_ACCEPTANCE.md).  
 **Implementation principle:** standard operating-system facilities and maintained pywin32—not custom process-control mathematics or a new renderer.
 
@@ -46,11 +46,19 @@ After supervisor restart, any journal state `RUNNING` or `CANCEL_REQUESTED` is `
 
 A kernel crash test is **not** satisfied by mocking termination or injecting a fake PID into SQLite. Native Blender acceptance still requires the previously accepted source identity/scene audits with a real pinned renderer, and a separate actual post-crash signal test.
 
+### Measured evidence — 2026-11-03
+
+The latest independently measured **code revision** was [GitHub Actions run 41766014441](https://github.com/vjmichael/nvp_offline_film/actions/runs/41766014441), built from commit `934b65ff941f2b31bec8bf3369a0c7d3ffc61b32`. The three lanes passed. Windows tests `test_actual_hard_supervisor_exit_kills_running_worker` and `test_windows_job_closure_kills_child_and_grandchild` both passed by **actual subprocess exit** and subsequent process-status verification, not mocking a process ID. Linux validated kernel PDEATHSIG on its direct child and bounded RLIMIT_AS against an oversized memory allocation. Both platforms also passed all six previous durable-worker/idempotency/tamper tests.
+
+The native Linux job reused [STACK-02A's genuine Blender acceptance](NVP_STACK02A_DURABLE_BLENDER_WORKER_ACCEPTANCE.md) **through the new containment launcher**, producing a real 128×72 PNG, Blender file, approved NVP scene, second-process independent reopen, and **nine scene-identity/geometry checks**. Its native artifact is `nvp-stack02b-real-blender-contained-evidence` in that GitHub run. Independently inspected artifact values: external Blender binary SHA-256 `b8b07a190fb25db76aae6de08dbc6c2b3d64e22e82bed6ba90de9545859f3431`; reviewed source manifest SHA-256 `fcdb905b3d58ccfe2ac027aaa159c831e099e652cd9b8a3f3681b029e8611c82`; technical audit 9 checks. The underlying native report retains the historical STACK-02A format and correctly does **not** purport to prove Linux whole-tree crash cleanup; kernel parent-death evidence is in the OS contract lane.
+
+**Do not extrapolate:** Windows used real suspended Job Object processes and real child/grandchild crash tests, but did **not** run a full Windows Blender/Cycles native scene. GPU/VRAM limits, Linux detached-child containment, NVP multi-instance ownership and LGPL/GPL retail packaging remain separate gates.
+
 ### Proof links and current progress
 
 - [GitHub Actions STACK-02B workflow](../.github/workflows/nvp-stack02b-os-containment.yml) — actual Linux, Windows and native jobs.
 - [PR #26](https://github.com/vjmichael/nvp_offline_film/pull/26) — source and tests.
-- Final verification counts and hashes are recorded **only after the final-source-sha CI succeeds**. Earlier failed tests remain visible as regression evidence rather than being disguised as acceptance.
+- The OS containment tests and native Blender run passed for the code commit above. Final documentation-only commits should be checked on their own latest source SHA before closure; failed iterations remain available as regression evidence.
 
 ## Remaining work, separate from this gate
 
