@@ -24,6 +24,8 @@ PROFILE = "smpte_2k_24fps_unencrypted_stereo_v1"
 MAX_FILES = 128
 MAX_XML_BYTES = 5 * 1024 * 1024
 REQUIRED_XML = ("ASSETMAP.xml", "VOLINDEX.xml")
+INDEX_ALIASES = {"ASSETMAP.xml": ("ASSETMAP.xml", "ASSETMAP"),
+                 "VOLINDEX.xml": ("VOLINDEX.xml", "VOLINDEX")}
 MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024 * 1024
 NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,79}\Z")
 
@@ -92,7 +94,7 @@ def inspect_dcp_directory(dcp, *, require_essence=True):
     for path in files:
         if path.is_symlink() or not path.is_file() or path.name in (".", ".."):
             raise RuntimeError("No nested, symlinked or nonregular DCP assets")
-        if path.suffix.lower() not in (".xml", ".mxf"):
+        if path.suffix.lower() not in (".xml", ".mxf") and path.name not in ("ASSETMAP", "VOLINDEX"):
             raise RuntimeError("Unexpected file in distribution DCP package")
         total += path.stat().st_size
         if total > MAX_TOTAL_BYTES:
@@ -100,9 +102,12 @@ def inspect_dcp_directory(dcp, *, require_essence=True):
         assets[path.name] = {
             "sha256": sha_file(path), "size_bytes": path.stat().st_size
         }
-    for required in REQUIRED_XML:
-        if required not in assets:
-            raise RuntimeError("Missing SMPTE DCP index: " + required)
+    located={}
+    for canonical,aliases in INDEX_ALIASES.items():
+        matches=[name for name in aliases if name in assets]
+        if len(matches)!=1:
+            raise RuntimeError("Missing or ambiguous DCP index: "+canonical)
+        located[canonical]=matches[0]
     cpls = [p for p in files if p.suffix.lower() == ".xml" and
             _local(_parse_xml(p).tag) == "CompositionPlaylist"]
     pkls = [p for p in files if p.suffix.lower() == ".xml" and
@@ -110,7 +115,7 @@ def inspect_dcp_directory(dcp, *, require_essence=True):
     mxfs = [p for p in files if p.suffix.lower() == ".mxf"]
     if len(cpls) != 1 or len(pkls) != 1 or len(mxfs) < 2:
         raise RuntimeError("Expected one CPL, one PKL and actual picture/sound MXFs")
-    asset_map = _parse_xml(dcp / "ASSETMAP.xml")
+    asset_map = _parse_xml(dcp / located["ASSETMAP.xml"])
     if _local(asset_map.tag) != "AssetMap":
         raise RuntimeError("Not a SMPTE DCP asset map")
     cpl = _parse_xml(cpls[0])
