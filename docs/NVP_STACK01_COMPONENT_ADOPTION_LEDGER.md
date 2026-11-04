@@ -25,6 +25,14 @@ The external Blender worker adopts **standard Windows Job Objects through mainta
 
 **Pending:** Windows native Blender/Job Object scene acceptance, Linux whole-tree cgroup or guardian containment, NVP runtime multi-instance lock/lease, RAM/VRAM preflight, full existing Blender path migration and retail bundle source/notices. Preserve these as explicit unresolved tasks; never silently mark source/film release readiness.
 
+## STACK-02C completed and follow-up production tasks
+
+**Adopted established OS facilities rather than inventing a new distributed lock:** `fcntl.flock(LOCK_EX|LOCK_NB)` (Linux) and `msvcrt.locking(LK_NBLCK)` (Windows) now own a Blender worker journal for an entire execution or journal crash-recovery operation. Real independent processes proved lease contention, automatic release after actual `os._exit`, and prevention of false second-host recovery. These are **local-filesystem** guarantees, not a distributed service.
+
+**Real Blender on Windows:** the official portable Blender 5.2.3 ZIP was verified against its published SHA-256 manifest and run under a Windows Job Object, using native Cycles CPU on the headless runner. Full original NVP approved-scene build and independent Blender geometry audit passed **nine checks**, including source hashes. [Run 41767354797](https://github.com/vjmichael/nvp_offline_film/actions/runs/41767354797) completed **4/4 jobs** (Windows 14 worker/kernel/lease tests, Linux 13 plus one Windows-only skip, genuine Windows and Linux Blender scene/audit). [Detailed acceptance report](NVP_STACK02C_HOST_LEASE_AND_WINDOWS_BLENDER_ACCEPTANCE.md).
+
+**Next tasks, do not mark complete:** `STACK-02C2` Linux **whole detached-grandchild process-tree** cleanup through delegated cgroup v2 or equivalent OS-managed guardian with a real hard-host-exit test; `STACK-02C3` conservative RAM/VRAM render-admission guardrails and actual Windows GPU device acceptance; `STACK-02D` migrate all direct Blender/Cycles/animation/retarget paths through the same supervisor; `STACK-01E` one signed, GPL-compliant offline Windows installer with verified install/uninstall lifecycle. Multi-machine network shares need a different distributed locking model.
+
 ## Decision record for every adopted component
 
 Copy the template to `docs/stack-decisions/STACK-DECISION-<ID>.md`:

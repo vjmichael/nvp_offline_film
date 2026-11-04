@@ -29,7 +29,15 @@ source=json.loads(Path(options["--manifest"]).read_text("utf8"))
 if source["format"]!="nvp.test.worker.frozen.v1":
     raise RuntimeError("Untrusted immutable worker source manifest")
 scene=bpy.context.scene
-scene.render.engine="BLENDER_WORKBENCH"
+# Windows headless CI has no WGL/Workbench OpenGL device.
+# Reuse Blender's established CPU Cycles renderer rather than software
+# graphics emulation or an uncontained application-specific fallback.
+if sys.platform == "win32":
+    scene.render.engine="CYCLES"
+    scene.cycles.device="CPU"
+    scene.cycles.samples=1
+else:
+    scene.render.engine="BLENDER_WORKBENCH"
 scene.render.resolution_x=128
 scene.render.resolution_y=72
 scene.render.resolution_percentage=100
