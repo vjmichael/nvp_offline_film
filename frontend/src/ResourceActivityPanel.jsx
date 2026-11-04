@@ -97,6 +97,9 @@ export default function ResourceActivityPanel({endpoint='/api/system/activity',p
               hint="Unknown VRAM budget. NVP queues GPU-heavy work."/>}
         {sample.memory_psi_full10!=null && <p className="ra-desc">Linux memory stall pressure (10 seconds): {sample.memory_psi_full10.toFixed(1)}%</p>}
       </>:<p className="ra-desc">Checking hardware telemetry…</p>}
+      <div className="ra-reservations" role="status">
+        <strong>NVP task reservations:</strong> {((report?.reservations?.ram_mb||0)/1024).toFixed(1)} GiB RAM · {((report?.reservations?.gpu_mb||0)/1024).toFixed(1)} GiB VRAM
+      </div>
       <div className="ra-section"><strong>Production tasks</strong><span>{active.length} active or queued</span></div>
       {!active.length && <p className="ra-desc">No heavy NVP tasks running. Model load/unload activity requires a connected provider adapter.</p>}
       {active.map(t=><Task key={t.id} item={t}/>)}
