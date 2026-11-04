@@ -11,6 +11,7 @@ import CharacterRigPanel from './CharacterRigPanel.jsx';
 import RetargetPanel from './RetargetPanel.jsx';
 import ColorGradingGuide from './ColorGradingGuide.jsx';
 import ColorGradingPanel from './ColorGradingPanel.jsx';
+import ResourceActivityPanel from './ResourceActivityPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -374,6 +375,7 @@ export default function App() {
       <div className="small-title">YOUR MOVIES</div>
       <button className="side-button" onClick={() => { setProject(null); setError(''); setNotice(''); }}>+ Make a movie</button>
       {projects.map((p) => <button key={p.id} className={'side-button ' + (p.id === project?.id ? 'chosen' : '')} onClick={() => open(p.id)}>{p.title}</button>)}
+      <ResourceActivityPanel />
       <div className="sidebar-bottom">● Offline-first planning<br/><span className="muted">No cloud account required</span></div>
     </aside>
     <main>
