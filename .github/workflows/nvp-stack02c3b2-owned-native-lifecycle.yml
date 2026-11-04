@@ -42,3 +42,28 @@ jobs:
       - run: python -m unittest discover -s tests -p test_resource_scheduler.py -v
       - run: python -m unittest discover -s tests -p test_resource_governor.py -v
       - run: python -m unittest discover -s tests -p test_blender_resource_admission.py -v
+
+  linux-real-approved-blender:
+    name: Real Blender approved source, memory denial, re-admission and output audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+      - name: Real approved worker source-to-output test
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b2_approved_blender_fixture \
+            --out acceptance_artifacts/stack02c3b2_native_approved
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-stack02c3b2-real-approved-blender
+          path: acceptance_artifacts/stack02c3b2_native_approved/
+          retention-days: 7
+          if-no-files-found: warn
