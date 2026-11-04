@@ -25,6 +25,14 @@ _MAX_STDOUT = 32768
 _MAX_AGE_SECONDS = 300
 
 
+def _hash_file(path):
+    digest=sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda:stream.read(1024*1024),b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",",":"), allow_nan=False)
 
@@ -111,7 +119,7 @@ class TrustedLmsEstimator:
             raise ValueError("A trusted native executable with a pinned SHA-256 is required")
         if type(port) is not int or not 1024<=port<=65535:
             raise ValueError("Estimate port must be an explicit unprivileged loopback port")
-        if sha256(path.read_bytes()).hexdigest()!=executable_sha256:
+        if _hash_file(path)!=executable_sha256:
             raise ValueError("Local LM Studio CLI executable SHA mismatch")
         self.path=path.resolve()
         self.sha=executable_sha256
@@ -123,7 +131,7 @@ class TrustedLmsEstimator:
             raise ValueError("Unsafe local model key")
         if type(context_length) is not int or not 512<=context_length<=262144:
             raise ValueError("Invalid model context")
-        if sha256(self.path.read_bytes()).hexdigest()!=self.sha:
+        if _hash_file(self.path)!=self.sha:
             raise RuntimeError("Pinned local LM Studio estimator changed before use")
         args=("load","--estimate-only",model_key,"--context-length",
               str(context_length),"--gpu","off","--host",f"127.0.0.1:{self.port}")
