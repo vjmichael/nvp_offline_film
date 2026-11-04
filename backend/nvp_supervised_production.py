@@ -17,7 +17,7 @@ from backend.nvp_production_scene import ProductionScene, compact
 
 def run_supervised_scene(
     production: ProductionScene, project_id: str, scene_id: str,
-    supervisor: BlenderWorkerSupervisor,
+    supervisor: BlenderWorkerSupervisor, *, require_linux_cgroup_v2: bool=False,
 ):
     """Build -> fresh independent Blender reopen/audit -> output SHA validation.
 
@@ -37,6 +37,7 @@ def run_supervised_scene(
         outputs={"approved_scene.blend":"blend"},
         arguments={"--output":"approved_scene.blend"},
         timeout_seconds=240,
+        require_linux_cgroup_v2=require_linux_cgroup_v2,
     )
     built=supervisor.run(build_job)
     if built["state"]!="SUCCEEDED":
@@ -62,6 +63,7 @@ def run_supervised_scene(
             "--render":"checked_scene.png",
         },
         timeout_seconds=240,
+        require_linux_cgroup_v2=require_linux_cgroup_v2,
     )
     audited=supervisor.run(audit_job)
     if audited["state"]!="SUCCEEDED":
