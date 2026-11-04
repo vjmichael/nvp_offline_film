@@ -19,6 +19,12 @@ Use this sheet as a **decision gate** for every planned substantial custom imple
 | P2 | Characters, mocap, faces, TTS/lip sync | Blender rigs/NLA, CMU/etc licensed mocap, Rhubarb, proven speech/aligners | Early actor proxy and motion retarget tests | **STACK-01D:** Evaluate authentic licensed character/motion performance and fidelity |
 | P2 | Finish/deliver movie/DCP | FFmpeg, DCP-o-matic | Technical DCP and ProRes/DNxHR native proofs passed | Preserve independent bit-depth/sample/raster and manifest validation; audit actual codec licensing |
 
+## OS worker containment adoption — STACK-02B
+
+The external Blender worker adopts **standard Windows Job Objects through maintained pywin32**, and Linux `prctl(PR_SET_PDEATHSIG)` + `resource.RLIMIT_AS`, not a homegrown alternative. [STACK-02B technical gate](NVP_STACK02B_OS_WORKER_CONTAINMENT.md) has independently passed code-level Windows/Linux kernel crash tests and native Linux Blender acceptance. This is an *engine integration result*, not a complete installer or GPL clearance.
+
+**Pending:** Windows native Blender/Job Object scene acceptance, Linux whole-tree cgroup or guardian containment, NVP runtime multi-instance lock/lease, RAM/VRAM preflight, full existing Blender path migration and retail bundle source/notices. Preserve these as explicit unresolved tasks; never silently mark source/film release readiness.
+
 ## Decision record for every adopted component
 
 Copy the template to `docs/stack-decisions/STACK-DECISION-<ID>.md`:
