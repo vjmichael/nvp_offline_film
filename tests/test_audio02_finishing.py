@@ -80,9 +80,18 @@ class AudioFinishing(unittest.TestCase):
         with self.assertRaises(PermissionError):
             approve_final_mix(capture,pid,"rawmix",self.source,qc,"approvedmix",
                 event,verify_creator_action=lambda *_:False)
-        result=approve_final_mix(capture,pid,"rawmix",self.source,qc,"approvedmix",
-            event,verify_creator_action=lambda got,scope:
-            got is event and scope["final_master"] is False)
+        # Isolate the creator decision from costly FFmpeg in this unit;
+        # the separate native QC test measures a real source through FFmpeg.
+        with patch("backend.nvp_audio02c_mix_approval.measure_mix",return_value=qc):
+            result=approve_final_mix(capture,pid,"rawmix",self.source,qc,"approvedmix",
+                event,verify_creator_action=lambda got,scope:
+                got is event and scope["final_master"] is False)
+        with patch("backend.nvp_audio02c_mix_approval.measure_mix",
+                   return_value={**qc,"qc_passed":False}):
+            with self.assertRaisesRegex(RuntimeError,"does not match"):
+                approve_final_mix(capture,pid,"rawmix",self.source,qc,
+                    "anotherapproval",event,
+                    verify_creator_action=lambda *_:True)
         self.assertEqual(result["status"],"CREATOR_APPROVED_FINAL_MIX")
         self.assertFalse(result["final_master"])
         reopened=DigitalCapture(Studio(self.root/"studio.sqlite3"))
