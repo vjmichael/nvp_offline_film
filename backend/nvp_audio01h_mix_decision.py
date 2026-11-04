@@ -5,11 +5,10 @@ automated-stem revision and independent measurement, and may be superseded
 by a later decision revision; history is never overwritten.
 """
 from __future__ import annotations
-import hashlib
-import json
 import math
 from backend.nvp_audio01h_stem_revision import FORMAT as AUTOMATED_FORMAT
 from backend.nvp_film_index import _id
+from backend.nvp_audio01h_loudness import analyze_wav
 
 FORMAT = "nvp.audio01h.creator_mix_decision.v1"
 
@@ -31,7 +30,7 @@ def _check_evidence(evidence, wav_sha):
 
 
 def record_mix_decision(capture, project_id, automated_id, decision_id,
-                        evidence, *, decision, creator_event, authorize):
+                        evidence, *, decision, creator_event, authorize, ffmpeg="ffmpeg"):
     """Append an exact creator ACCEPT/REJECT/REVOKE decision to FilmIndex.
 
     Approval requires a current real creator action. Native host must bind
@@ -49,8 +48,15 @@ def record_mix_decision(capture, project_id, automated_id, decision_id,
         data.get("director_approved") is not False):
         raise RuntimeError("Must review a frozen unapproved automated stem")
     wav_sha = data["automated_wav_sha256"]
-    capture.index.verify_media_file(project_id, wav_sha, "audio/wav")
+    stored = capture.index.verify_media_file(project_id, wav_sha, "audio/wav")
     _check_evidence(evidence, wav_sha)
+    # Refuse self-reported loudness. Independent native FFmpeg evidence must
+    # agree with the exact content-addressed FilmIndex WAV being approved.
+    measured = analyze_wav(stored["path"], ffmpeg=ffmpeg,
+                           expected_samples=data["samples_per_channel"])
+    for metric in ("integrated_lufs", "true_peak_dbtp", "loudness_range_lu"):
+        if abs(measured[metric] - evidence[metric]) > 0.01:
+            raise RuntimeError("Loudness evidence disagrees with indexed WAV")
     try:
         previous = capture.index.read_revision(project_id, decision_id)
     except KeyError:
