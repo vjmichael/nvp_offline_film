@@ -35,3 +35,11 @@ Acceptance is **not** 120 fully rendered frames or a playable movie: the complet
 4. Extend procedural proxy animation to genuinely rigged/retargeted actors with measured pose/contact checks and upgraded camera/lighting production standards.
 
 **PR:** NVP B8 draft stacked on B7. No Lu or Cognitum code changes.
+
+## B8B — Immutable derived technical presentation in FilmIndex
+
+Once the original frozen-take build and second-process actor/camera/PNG audit are **already completed and independently verified**, `backend/nvp_frozen_take_presentation.py` publishes **a new `presentation` object**, not a revision of the take. It preserves a typed `source_take` edge to the exact original take revision 1. The verified `.blend` is copied into FilmIndex using bounded streaming media publication; audit JSON and technical PNG are stored by SHA-256 as project-scoped blobs. A small derived manifest records original capture SHA, frame rate and total frames, worker and audit SHA receipts, camera/actor check count and explicit `complete_video=False`/`genuine_scene_linear_exr_sequence=False` flags.
+
+`verify_presentation` re-opens the immutable original Digital Take, FilmIndex's derived presentation revision and the three indexed output blobs after restart. It independently checks their exact hashes, expected source lineage, timed performance/script SHA, original 24fps frame count and the complete, nonduplicated native Blender timeline-check set. The publisher cannot launch Blender, mint consent, overwrite a frozen take or call any Lu interface. If an output is incomplete, tampered, missing or from a foreign project, it refuses to publish/verify. A second identical publication uses the same content-addressed immutable presentation ID rather than revising historical evidence.
+
+This derived presentation is a **single-frame technical animation preview and reusable native `.blend`**. It is not a rendered 120-frame movie, not a full editorial cut and not yet high-bit-depth/ACES EXR delivery. Full-frame native rendering and professional film presentation remain the next explicit production gates.
