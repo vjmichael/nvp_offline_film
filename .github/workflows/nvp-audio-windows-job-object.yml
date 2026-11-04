@@ -1,0 +1,45 @@
+name: NVP Windows native audio Job Object acceptance
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  win11-job-object-audio:
+    name: Windows actual process-tree kill and native audio recovery
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Windows native Job Object support
+        shell: pwsh
+        run: |
+          python -m pip install "pywin32>=306"
+          python -m pip install -r requirements-foundation.txt
+      - name: Compile native host and OS test fixtures
+        shell: pwsh
+        run: |
+          python -m compileall -q backend/nvp_audio01e3_native_host.py backend/nvp_worker_containment.py tests/test_audio_windows_job_object_descendants.py tests/test_audio_native_os_termination.py tests/test_audio_admission_outbox.py tests/test_audio_admission_crash_gap.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native test compile failure' }
+      - name: Prove actual Job Object descendant kill and kill-on-close
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_audio_windows_job_object_descendants.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Job Object descendant kill failed' }
+      - name: Prove authentic worker kill and crash recovery
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_audio_native_os_termination.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native audio termination/recovery failed' }
+      - name: Recheck durable admission outbox after Windows process death
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_audio_admission_outbox.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native durable admission outbox failed' }
+          python -m unittest discover -s tests -p test_audio_admission_crash_gap.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native admission audit failed' }
