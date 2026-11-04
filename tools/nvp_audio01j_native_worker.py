@@ -60,8 +60,9 @@ def main():
         ffmpeg=plan["ffmpeg"],ffprobe=plan["ffprobe"])
     receipt={"format":"nvp.audio01j.worker_receipt.v1",
              "export_id":plan["export_id"],
+             "candidate_id":result["candidate_id"],
              "document_sha256":result["document_sha256"],
-             "mov_sha256":result["mov_sha256"],"final_master":True,
+             "mov_sha256":result["mov_sha256"],"final_master":False,
              "dcp_delivered":False}
     with (filename.parent/"worker_receipt.json").open("xb") as out:
         out.write(canonical_bytes(receipt));out.flush();os.fsync(out.fileno())
