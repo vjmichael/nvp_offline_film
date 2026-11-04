@@ -1,7 +1,7 @@
 # NVP-STACK-02C3 — Memory safety, admission control and truthful progress
 
 **Engineering date:** 2026-11-03  
-**Status:** Measured development gate; full production rollout and managed AI load/unload still open.  
+**Status:** **Initial development gate ACCEPTED** in [CI run 41774472490](https://github.com/vjmichael/nvp_offline_film/actions/runs/41774472490): **4/4 jobs green**. Full production rollout, on-device VRAM stress and managed AI load/unload remain open.  
 **Parent:** [STACK-02C2 native worker/cgroup acceptance](NVP_STACK02C2_LINUX_CGROUP_WHOLE_TREE.md) · [Reuse-first decision](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md)
 
 ## Creator-directed user experience
@@ -79,7 +79,7 @@ Reference: [LM Studio REST v1 API](https://lmstudio.ai/docs/developer/rest), [lo
 
 ## Acceptance status and remaining gates
 
-**Measured first full run:** [GitHub Actions 41773491907](https://github.com/vjmichael/nvp_offline_film/actions/runs/41773491907) passed all **four jobs**, including real Blender 4.x CPU resource queue/admission and independent output SHA verification. The subsequently added stale-heartbeat handling and final docs must be tested on their own latest revision; do not count a prior SHA as final acceptance.
+**Final code acceptance:** [GitHub Actions 41774472490](https://github.com/vjmichael/nvp_offline_film/actions/runs/41774472490) passed **4/4 jobs** on commit `b586781b3b3a6a0da7ca39c5e3ebd4170877ec79`. Windows **28/28** and Linux **28/28** backend contracts, including genuine two-process RAM-reservation contention and stale-heartbeat recovery; the two jsdom React interaction tests and Vite production build also passed. Real Ubuntu Blender 4.0.2 queued when unsafe RAM was injected, then ran only after actual OS RAM was measured, created a genuine `.blend` and PNG and passed independent output readback/release. Final native artifact `nvp-stack02c3-real-resource-guarded-blender` passed ZIP integrity verification. Cross-process stress discovered a real SQLite race from repeatedly setting `PRAGMA journal_mode=WAL`; it was fixed by configuring the busy handler first and initializing WAL only during schema setup. The final test now exercises simultaneous independent NVP processes sharing the same resource ledger. This is a **guarded CPU Blender proof**, not live Radeon GPU stress, managed LM Studio model eviction, or final-film production integration.
 
 **NOT yet verified for retail release:**
 - Windows AMD Radeon AI Pro R9700 physical telemetry and live GPU pressure, multi-adapter matching, CPU fallback of Blender GPU jobs and real 32 GiB RAM/VRAM desktop contention with local AI plus native GPU Cycles;
