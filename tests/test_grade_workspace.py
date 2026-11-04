@@ -83,6 +83,28 @@ class GradeWorkspaceTests(unittest.TestCase):
                              self.src_record["document_sha256"])
             self.assertNotIn("screening_ready",str(doc))
 
+    def test_preview_guard_bounded_and_released_on_decoder_failure(self):
+        class Gate:
+            def __init__(self,allow):
+                self.allow=allow
+                self.released=0
+            def acquire(self,blocking=False):
+                self.assertFalseBlock = blocking
+                return self.allow
+            def release(self):
+                self.released+=1
+        busy=Gate(False)
+        with patch("backend.nvp_grade_workspace._PREVIEW_SLOTS",busy):
+            with self.assertRaisesRegex(RuntimeError,"two-worker limit"):
+                self.ws.preview(self.pid,"source",1)
+        self.assertEqual(busy.released,0)
+        entered=Gate(True)
+        with patch("backend.nvp_grade_workspace._PREVIEW_SLOTS",entered),patch.object(
+            self.ws,"_preview_actual",side_effect=RuntimeError("decode error")):
+            with self.assertRaisesRegex(RuntimeError,"decode error"):
+                self.ws.preview(self.pid,"source",1)
+        self.assertEqual(entered.released,1)
+
     def test_source_change_and_invalid_recipe_are_refused(self):
         with patch.object(self.ws.master,"_source",
                           return_value=(self.fake_source,self.fake_frames,256,144)) as src:
