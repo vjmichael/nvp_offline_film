@@ -28,6 +28,7 @@ jobs:
         run: python -m unittest discover -s tests -p test_lu_alpha_contract.py -v
       - name: "Regression: resource governor and owned model estimates"
         run: |
+          python -m unittest discover -s tests -p test_resource_init_contention.py -v
           python -m unittest discover -s tests -p test_resource_governor.py -v
           python -m unittest discover -s tests -p test_model_estimate_recovery.py -v
 
@@ -46,5 +47,6 @@ jobs:
         run: python -m unittest discover -s tests -p test_lu_alpha_contract.py -v
       - name: "Regression: resource governor and owned model estimates"
         run: |
+          python -m unittest discover -s tests -p test_resource_init_contention.py -v
           python -m unittest discover -s tests -p test_resource_governor.py -v
           python -m unittest discover -s tests -p test_model_estimate_recovery.py -v
