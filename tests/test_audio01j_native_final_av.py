@@ -83,10 +83,17 @@ class NativeAudio01JEndToEnd(unittest.TestCase):
                     ledger(root),root/"audioi",
                     verify_creator_action=lambda *_:False,strict_linux_tree=False),
                 strict_linux_tree=False)
-            check=verify_final_av(reopened.capture,pid,"finalfilm",
+            check=reopened.verify_published(pid,"finalfilm",
                 root/"final_av",root,root/"audiofinal",
                 ffmpeg="ffmpeg",ffprobe="ffprobe")
             self.assertEqual(check["status"],"VERIFIED_FINAL_AV_MASTER")
+            recovery=reopened.recover_completed(queued["job_id"])
+            self.assertEqual(recovery["state"],"SUCCEEDED")
+            self.assertFalse(recovery["rerendered"])
+            with self.assertRaises(PermissionError):
+                av.stage(pid,"picturelock","audiofinal",root,
+                    root/"audiofinal",root/"another_av","anotherfilm",
+                    "human_approves_final_av")
             self.assertEqual(hashlib.sha256(picture_file.read_bytes()).hexdigest(),
                              original_picture_hash)
             self.assertEqual(hashlib.sha256((root/"audiofinal"/"master.wav").read_bytes()).hexdigest(),
