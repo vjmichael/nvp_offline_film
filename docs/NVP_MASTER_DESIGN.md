@@ -38,6 +38,11 @@ Immediately audit current homegrown grading curves and image routines against **
 
 This is binding implementation guidance; consult [NVP-ADR-STACK-001](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md) for criteria and ordered tests. Earlier detailed feature-roadmap entries remain desired *capabilities* but no longer imply bespoke implementation.
 
+### 0.2 Blender-first GPL-aware external-worker boundary [C] — approved 2026-11-03
+
+NVP will use **Blender as its primary independent 3D production worker** for scenes, actors, animation, lighting, cameras and rendering. NVP remains a **separate proprietary orchestrator**; job data and derived artifacts cross a standards-based file/CLI boundary instead of linking Blender GPL libraries into the NVP process. Distributable `bpy` adapters must be separately GPL-reviewed/licensed. Original Digital Film World and frozen Takes remain authoritative; `.blend` and rendered EXRs are derived versions. **A separate OpenUSD runtime is deferred**, not required for the baseline installer; Blender-native USD import/export is available for limited interchange, with actual composition fidelity checked before use. Only a *demonstrated multi-application layer/reference/variant composition gap* justifies independent OpenUSD integration. See [NVP-ADR-STACK-002](NVP_ADR_STACK02_BLENDER_WORKER_USD_DEFERRED.md). Commercial packaging remains gated by real redistribution compliance and native worker acceptance.
+
+
 ## 1. Purpose, users, and nonnegotiable product requirements
 
 ### 1.1 Product purpose [C]
