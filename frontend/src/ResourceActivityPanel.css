@@ -23,3 +23,8 @@
 .ra-history{font-size:11px;color:#c6bbc2;margin:12px 0}.ra-history summary{cursor:pointer}
 .ra-disclaimer{margin:18px 0 0}
 @media(max-width:950px){.ra-details{max-height:400px}}
+
+.ra-reservations{background:#2e323c;border:1px solid #48535a;border-radius:8px;padding:10px;font-size:11px;color:#b6d3cb;margin:10px 0 15px}
+.ra-task progress:indeterminate{background:linear-gradient(90deg,#343743 0%,#568777 45%,#343743 100%);background-size:200% 100%;animation:ra-activity 1.8s linear infinite}
+@keyframes ra-activity{0%{background-position:0 0}100%{background-position:200% 0}}
+@media(prefers-reduced-motion:reduce){.ra-task progress:indeterminate{animation:none;background:#568777}}
