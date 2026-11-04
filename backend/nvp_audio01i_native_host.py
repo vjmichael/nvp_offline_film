@@ -396,6 +396,19 @@ class NativeAudio01IHost:
         plan=json.loads(sealed.read_bytes())
         if plan["project_id"]!=project_id or plan["candidate_id"]!=candidate_id:
             raise RuntimeError("Master native custody differs")
+        # The original contained worker's destination is part of custody.
+        # An altered candidate path cannot be masked by an intact blob copy.
+        original_output=Path(plan["destination"])
+        receipt_file=self.root/job/"worker_receipt.json"
+        if (original_output.is_symlink() or not original_output.is_file()
+            or sha_file(original_output)!=doc["candidate_wav_sha256"]
+            or receipt_file.is_symlink() or not receipt_file.is_file()):
+            raise RuntimeError("Original native mastering output is missing or changed")
+        receipt=json.loads(receipt_file.read_bytes())
+        if (receipt.get("document_sha256")!=record["document_sha256"]
+            or receipt.get("wav_sha256")!=doc["candidate_wav_sha256"]
+            or receipt.get("final_master") is not False):
+            raise RuntimeError("Native mastering worker receipt changed")
         decision,_,_=self._native_approved_mix(
             project_id,doc["decision_id"],doc["decision_revision"])
         if doc["decision_sha256"]!=decision["document_sha256"]:
