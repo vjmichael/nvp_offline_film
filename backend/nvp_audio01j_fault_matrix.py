@@ -21,6 +21,7 @@ BOUNDARIES=(
     "av_filmindex_registered",
     "av_worker_receipt_fsynced",
     "av_worker_reaped",
+    "av_master_registered",
     "av_stop_witness_committed",
     "av_result_committed",
     "av_ledger_succeeded",
