@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import sqlite3
 import sys
 import time
@@ -304,6 +305,76 @@ class NativeAudio01HHost:
         self.ledger.finish(job,"SUCCEEDED","Independent stopped-worker replay verified")
         return {"job_id":job,"state":"SUCCEEDED","rerendered":False}
 
+    def _measure_contained(self, wav_path, *, ffmpeg, expected_samples):
+        """Resource-admitted, Job-Object-contained FFmpeg loudness measurement."""
+        wav = Path(wav_path)
+        if wav.is_symlink() or not wav.is_file():
+            raise RuntimeError("Indexed WAV required for protected measurement")
+        executable = shutil.which(ffmpeg)
+        if not executable:
+            raise RuntimeError("FFmpeg missing")
+        executable = str(Path(executable).resolve(strict=True))
+        job = "measurejob" + secrets.token_hex(16)
+        folder = self.root / job
+        folder.mkdir(mode=0o700)
+        plan = {"format":"nvp.audio01h.measure_plan.v1",
+                "wav":str(wav.resolve(strict=True)),
+                "wav_sha256":_sha(wav),"samples":expected_samples,
+                "ffmpeg":executable,"ffmpeg_sha256":_sha(executable),
+                "final_master":False}
+        plan_file = folder / "plan.json"
+        with plan_file.open("xb") as file:
+            file.write(canonical_bytes(plan))
+            file.flush()
+            os.fsync(file.fileno())
+        admitted=self.ledger.admit(AdmissionRequest(
+            job,"compositing","Contained final-mix loudness measurement",1024))
+        if not admitted["admitted"]:
+            raise RuntimeError("Native measurement resource budget unavailable")
+        proc=None
+        reaped=False
+        try:
+            if _sha(executable) != plan["ffmpeg_sha256"] or _sha(wav) != plan["wav_sha256"]:
+                raise RuntimeError("Loudness input or native executable changed")
+            self.ledger.update(job,"verifying_output","Contained FFmpeg EBU R128 inspection")
+            script = ROOT / "tools" / "nvp_audio01h_measure_worker.py"
+            with (folder/"stdout.log").open("wb") as out, (folder/"stderr.log").open("wb") as err:
+                proc=launch_contained(
+                    [str(self.python),str(script),"--plan",str(plan_file)],
+                    cwd=str(folder),stdout=out,stderr=err,memory_mb=1024,
+                    linux_cgroup_tree_required=self.strict_linux_tree)
+                code=wait_guarded(proc,self.ledger,job,timeout_seconds=150)
+                if code != 0:
+                    raise RuntimeError("Native FFmpeg analysis failed: " + str(code))
+                proc.close()
+                proc=None
+                reaped=True
+            output=folder/"measurement.json"
+            if output.is_symlink() or not output.is_file() or _sha(wav) != plan["wav_sha256"]:
+                raise RuntimeError("Missing protected measurement or altered WAV")
+            receipt=json.loads(output.read_bytes())
+            if (receipt.get("wav_sha256") != plan["wav_sha256"] or
+                receipt.get("samples_per_channel") != expected_samples or
+                receipt.get("measure_method") != "ffmpeg_loudnorm_analysis_ebu_r128" or
+                receipt.get("normalized") is not False or
+                receipt.get("final_mix") is not False):
+                raise RuntimeError("Measured loudness receipt does not match pinned media")
+            self.ledger.finish(job,"SUCCEEDED","Verified real contained EBU R128 analysis")
+            return receipt
+        except BaseException:
+            if proc is not None:
+                try:
+                    if proc.poll() is None:
+                        proc.terminate_tree()
+                    reaped = proc.poll() is not None
+                    proc.close()
+                except BaseException:
+                    reaped=False
+            if reaped and self.ledger.get_task(job)["state"]=="ACTIVE":
+                self.ledger.finish(job,"FAILED","Contained loudness measurement failed")
+            # Unknown native process state keeps ACTIVE resource reservation.
+            raise
+
     def creator_decision(self, project_id, automated_id, decision_id, evidence,
                          *, decision, creator_event, ffmpeg="ffmpeg"):
         """Creator-only host entrypoint, with durable replay prevention."""
@@ -322,9 +393,20 @@ class NativeAudio01HHost:
             db.commit()
         def trusted(event,scope):
             return event == creator_event and self.creator(event,scope) is True
+        # Only an authenticated human action may cause a native measurement
+        # worker to launch. Final exact scope is checked again on publication.
+        if self.creator(creator_event, {
+            "operation":"nvp.audio01h.measure_for_mix_review",
+            "project_id":project_id,"automated_id":automated_id,
+            "decision_id":decision_id,"decision":decision}) is not True:
+            raise PermissionError("Creator denied native audio inspection")
+        def measured(path, *, ffmpeg, expected_samples):
+            return self._measure_contained(path,ffmpeg=ffmpeg,
+                                           expected_samples=expected_samples)
         result = record_mix_decision(
             self.capture,project_id,automated_id,decision_id,evidence,
-            decision=decision,creator_event=creator_event,authorize=trusted,ffmpeg=ffmpeg)
+            decision=decision,creator_event=creator_event,authorize=trusted,
+            ffmpeg=ffmpeg,measure=measured)
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE native_audio01h_creator_events SET revision=? WHERE event_digest=? AND revision=-1",
