@@ -19,6 +19,7 @@ from backend.nvp_audio01e_wav_publication import (
     FORMAT as AUDIO_FORMAT, verify_published_wavs,
 )
 from backend.nvp_film_index import _id
+from backend.nvp_audio01g_fault_matrix import crash_after
 
 FORMAT="nvp.audio01f.picture_sound_technical_preview.v1"
 FPS=24
@@ -226,13 +227,17 @@ def build_picture_sound_preview(capture,project_id,candidate_id,audio_id,
     if staging.exists() or staging.is_symlink():
         raise RuntimeError("Previous interrupted mux staging requires native audit")
     staging.mkdir(mode=0o700)
+    crash_after("stage_directory_created")
     mux=staging/"picture_sound_review.mov"
     timing=mux_picture_sound_review(source,wav,mux,
                                     frames=picdata["frame_count"],
                                     ffmpeg=ffmpeg,ffprobe=ffprobe)
+    crash_after("mov_bytes_written")
     indexed=capture.index.put_media_file(project_id,mux,"video/quicktime")
     if indexed["sha256"]!=timing["mov_sha256"]:
         raise RuntimeError("FilmIndex ingest changed review movie")
+    crash_after("mov_independently_verified")
+    crash_after("filmindex_media_ingested")
     document={
         "format":FORMAT,"status":"unapproved_synchronized_picture_sound_review",
         "project_id":project_id,"picture_id":candidate_id,
@@ -252,17 +257,21 @@ def build_picture_sound_preview(capture,project_id,candidate_id,audio_id,
         handle.write(raw)
         handle.flush()
         os.fsync(handle.fileno())
+    crash_after("manifest_file_fsynced")
     # A completed, independently decoded MOV and canonical manifest are
     # atomically promoted together. FilmIndex presentation follows promotion,
     # never preceding a partial file. Crash windows retain inspectable orphans.
     with mux.open("r+b") as handle:
         handle.flush()
         os.fsync(handle.fileno())
+    crash_after("movie_file_fsynced")
     os.replace(staging,output)
+    crash_after("staging_directory_promoted")
     if os.name=="posix":
         fd=os.open(str(output.parent),os.O_RDONLY | getattr(os,"O_DIRECTORY",0))
         try:os.fsync(fd)
         finally:os.close(fd)
+    crash_after("destination_parent_fsynced")
     deps=[
         {"object_id":candidate_id,"revision":1,"role":"presentation"},
         {"object_id":audio_id,"revision":1,"role":"audio"},
@@ -271,6 +280,7 @@ def build_picture_sound_preview(capture,project_id,candidate_id,audio_id,
     ]
     published=capture.index.register_revision(project_id,presentation_id,
         "presentation",document,expected_revision=0,dependencies=deps)
+    crash_after("filmindex_presentation_registered")
     return {"status":"VERIFIED_UNAPPROVED_PICTURE_SOUND_REVIEW",
             "document_sha256":published["document_sha256"],
             "presentation_id":presentation_id,**timing,
