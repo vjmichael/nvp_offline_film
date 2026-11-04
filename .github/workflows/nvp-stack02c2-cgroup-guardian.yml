@@ -150,6 +150,15 @@ jobs:
             env PATH="$PATH" PYTHONPATH="$PWD" NVP_REQUIRE_REAL_CGROUP=1 \
             xvfb-run -a python -m tools.nvp_stack02a_worker_fixture \
             --out acceptance_artifacts/stack02c2_strict
+      - name: Actual native Blender plus detached process under hard NVP host crash
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 180s systemd-run --user --scope --property=Delegate=yes \
+            --property=DelegateSubgroup=nvp.host --collect --quiet \
+            env PATH="$PATH" PYTHONPATH="$PWD" NVP_REQUIRE_REAL_CGROUP=1 \
+            xvfb-run -a python -m tools.nvp_stack02c2_blender_crash_fixture \
+            --out acceptance_artifacts/stack02c2_blender_hardcrash
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -157,5 +166,6 @@ jobs:
           path: |
             acceptance_artifacts/stack02c2/
             acceptance_artifacts/stack02c2_strict/
+            acceptance_artifacts/stack02c2_blender_hardcrash/
           retention-days: 7
           if-no-files-found: warn
