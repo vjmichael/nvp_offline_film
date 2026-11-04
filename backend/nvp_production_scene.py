@@ -613,6 +613,11 @@ for item in manifest["instances"]:
               (pose["x"], pose["y"], height / 2),
               item["dimensions"], colors[item["category"]])
     obj.rotation_euler.z = math.radians(pose["rotation"])
+    # Persistent director visibility edits must affect the actual Blender
+    # world, not only the JSON hash / NVP 2D planning preview.
+    hidden = item.get("visible", True) is False
+    obj.hide_render = hidden
+    obj.hide_viewport = hidden
     obj["nvp_asset_id"] = item["asset_id"]
     obj["nvp_instance_id"] = item["instance_id"]
     obj["nvp_original_name"] = item["name"]
