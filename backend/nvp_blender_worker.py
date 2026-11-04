@@ -12,6 +12,7 @@ Windows Job Objects / persistent kernel containment are a later acceptance gate.
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+from contextlib import contextmanager
 from pathlib import Path
 import hashlib
 import json
@@ -112,12 +113,19 @@ class BlenderWorkerSupervisor:
                 );
             """)
 
+    @contextmanager
     def _connect(self):
+        # sqlite3.Connection.__exit__ commits/rolls back, but it DOES NOT
+        # close the handle. Explicit closure is essential on Windows so the
+        # user can delete/uninstall worker journals without WinError 32.
         connection=sqlite3.connect(self.db,timeout=15,isolation_level=None)
-        connection.execute("PRAGMA busy_timeout=15000")
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=FULL")
-        return connection
+        try:
+            connection.execute("PRAGMA busy_timeout=15000")
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=FULL")
+            yield connection
+        finally:
+            connection.close()
 
     def _transition(self, job_id: str, state: str, *, error=None,
                     worker_pid=None, exit_code=None, outputs=None, progress=None):
