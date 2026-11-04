@@ -26,7 +26,8 @@ assert scene.get("nvp_take_sha")==plan["sequence_sha256"]
 assert scene.get("nvp_take_dependencies")==plan["dependency_sha256"]
 assert scene.render.fps==plan["fps"] and scene.frame_end==plan["total_frames"]
 width,height=plan["resolution"]
-assert 64<=width<=1920 and 64<=height<=1080
+assert 64<=width<=3840 and 64<=height<=2160
+assert width%2==0 and height%2==0
 scene.render.engine="BLENDER_WORKBENCH"
 scene.render.resolution_x=width
 scene.render.resolution_y=height
