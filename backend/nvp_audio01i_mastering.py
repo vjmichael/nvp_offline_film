@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 
+from backend.nvp_audio01i_fault_matrix import crash_after
 from backend.nvp_audio01h_mix_decision import FORMAT as DECISION_FORMAT
 from backend.nvp_audio01h_stem_revision import FORMAT as AUTOMATED_FORMAT
 from backend.nvp_film_index import _id
@@ -160,6 +161,7 @@ def render_candidate(capture,project_id,decision_id,decision_revision,candidate_
             dependencies=[
                 {"object_id":decision_id,"revision":decision_revision,"role":"audio"},
                 {"object_id":source["object_id"],"revision":1,"role":"audio"}])
+        crash_after("candidate_filmindex_registered")
         return {"status":"UNAPPROVED_MASTER_CANDIDATE",
                 "document_sha256":result["document_sha256"],
                 "candidate_id":candidate_id,"wav_sha256":stored["sha256"],
