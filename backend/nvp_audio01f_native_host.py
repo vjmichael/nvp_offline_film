@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import sys
 import time
 
@@ -33,6 +34,14 @@ def _hash_file(path):
         for block in iter(lambda:stream.read(1024*1024),b""):
             h.update(block)
     return h.hexdigest()
+
+
+def plan_path_ffmpeg(plan_path,key):
+    plan=json.loads(Path(plan_path).read_text("ascii"))
+    path=Path(plan[key])
+    if not path.is_absolute() or path.is_symlink() or not path.is_file():
+        raise RuntimeError("Pinned native media executable unavailable")
+    return path
 
 
 class NativeAudio01FHost:
@@ -87,7 +96,9 @@ class NativeAudio01FHost:
                 row["spec_sha"]!=seal or spec.get("task_id")!=job or
                 spec.get("kind")!="compositing" or
                 _hash_file(self.python)!=row["python_sha"] or
-                _hash_file(self.worker)!=row["worker_sha"]):
+                _hash_file(self.worker)!=row["worker_sha"] or
+                _hash_file(plan_path_ffmpeg(self.root/job/"native_plan.json", "ffmpeg"))!=spec["ffmpeg_sha"] or
+                _hash_file(plan_path_ffmpeg(self.root/job/"native_plan.json", "ffprobe"))!=spec["ffprobe_sha"]):
                 return False
             folder=self.root/job
             path=folder/"native_plan.json"
@@ -143,6 +154,16 @@ class NativeAudio01FHost:
         try:self.capture.index.read_revision(project_id,presentation_id)
         except KeyError:pass
         else:raise RuntimeError("Native mux presentation is already registered")
+        # Resolve native media tools as absolute, immutable-by-digest inputs.
+        # Never accept arbitrary commands or allow shell interpretation.
+        actual_ffmpeg=shutil.which(ffmpeg)
+        actual_ffprobe=shutil.which(ffprobe)
+        if not actual_ffmpeg or not actual_ffprobe:
+            raise RuntimeError("Native FFmpeg and FFprobe unavailable")
+        ffmpeg=str(Path(actual_ffmpeg).resolve(strict=True))
+        ffprobe=str(Path(actual_ffprobe).resolve(strict=True))
+        ffmpeg_sha=_hash_file(ffmpeg)
+        ffprobe_sha=_hash_file(ffprobe)
         # Pin the original source paths and 1:1 exact picture/audio identities.
         sources={sid:str(Path(path).resolve(strict=True)) for sid,path in audio_sources.items()}
         job="muxjob"+secrets.token_hex(16)
@@ -172,7 +193,8 @@ class NativeAudio01FHost:
               "picture_sha":picture["document_sha256"],
               "audio_sha":audio["document_sha256"],
               "presentation_id":presentation_id,"destination":target,
-              "ram_mb":ram_mb,"creator_scope":scope}
+              "ram_mb":ram_mb,"ffmpeg_sha":ffmpeg_sha,
+              "ffprobe_sha":ffprobe_sha,"creator_scope":scope}
         folder=self.root/job
         folder.mkdir(mode=0o700)
         with (folder/"native_plan.json").open("xb") as stream:
