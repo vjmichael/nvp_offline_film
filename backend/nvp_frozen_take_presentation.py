@@ -24,7 +24,7 @@ def _require_completed_review(auditor,approval_id):
     if not isinstance(auditor,NativeFrozenTakeAuditor):
         raise TypeError("Approved native frozen Digital Take auditor required")
     with auditor.ledger._db() as db:
-        row=db.execute("""SELECT job_id FROM native_frozen_take_audits
+        row=db.execute("""SELECT job_id,operation_json FROM native_frozen_take_audits
             WHERE approval_id=?""",(approval_id,)).fetchone()
     if row is None:
         raise RuntimeError("Native review has not been executed")
@@ -33,7 +33,10 @@ def _require_completed_review(auditor,approval_id):
         raise RuntimeError("Native review is not independently verified complete")
     # The replay is idempotent after SUCCEEDED: rechecks both worker/source
     # journals and exact output bytes; it does not launch Blender again.
-    outcome=auditor.reopen_and_verify(approval_id)
+    from backend.nvp_blender_worker import BlenderOperation
+    recorded_operation=BlenderOperation(**json.loads(row[1]))
+    outcome=auditor.reopen_and_verify(
+        approval_id,ram_mb=recorded_operation.memory_limit_mb)
     if outcome["state"]!="VERIFIED":
         raise RuntimeError("Native technical preview has no verified output")
     return outcome
@@ -59,6 +62,8 @@ def publish_verified_preview(auditor:NativeFrozenTakeAuditor,approval_id:str):
     if (not blend.is_file() or not json_path.is_file() or not png.is_file() or
         any(p.is_symlink() for p in (blend,json_path,png))):
         raise RuntimeError("Previously audited native output no longer safe/available")
+    if any(not 0 < p.stat().st_size <= 32*1024*1024 for p in (json_path,png)):
+        raise RuntimeError("Technical preview or audit exceeds FilmIndex bounded blob size")
     if (sha256(json_path.read_bytes()).hexdigest()!=proof["audit_json_sha256"] or
         sha256(png.read_bytes()).hexdigest()!=proof["preview_png_sha256"]):
         raise RuntimeError("Original verified audit or PNG bytes were changed")
@@ -140,13 +145,16 @@ def verify_presentation(capture,project_id,presentation_id):
         raise RuntimeError("Derived presentation record or lineage is inconsistent")
     original=capture.reopen(project_id,item["source_take_id"])
     if (original["record"]["document_sha256"]!=item["source_capture_sha256"] or
-        item["world_sha256"]!=original["audit"]["world_sha256"]):
+        item["world_sha256"]!=original["audit"]["world_sha256"] or
+        item["scene_id"]!=original["record"]["data"]["scene_id"]):
         raise RuntimeError("Technical preview source no longer matches original frozen take")
     expected=_source(capture,project_id,item["source_take_id"])
     if (expected["timed_render_sha256"]!=item["timed_render_sha256"] or
         expected["script_sha256"]!=item["approved_script_sha256"] or
         expected["frame_count"]!=item["timeline_frames"] or
-        expected["frame_rate"]!=item["fps"]):
+        expected["frame_rate"]!=item["fps"] or
+        expected["shot_count"]!=item["shots"] or
+        expected["actor_count"]!=item["actors"]):
         raise RuntimeError("Technical presentation timeline disagrees with indexed take")
     blend=index.verify_media_file(project_id,item["technical_blend_asset_sha256"],
                                   "application/octet-stream")
