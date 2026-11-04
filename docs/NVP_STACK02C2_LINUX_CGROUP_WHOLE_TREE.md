@@ -1,7 +1,7 @@
 # NVP-STACK-02C2 — Delegated Linux cgroup v2 and real descendant cleanup
 
 **Engineering date:** 2026-11-03  
-**Status:** **STRICT, OPT-IN CGROUP TECHNICAL ACCEPTANCE PASSED** — [GitHub run 41769499518](https://github.com/vjmichael/nvp_offline_film/actions/runs/41769499518): 4/4 jobs, including 4/4 real delegated cgroup tests and genuine Blender 5.2.3 under a strict cgroup. Production-by-default enablement, GPU/VRAM admission, installer and GPL release review remain open.  
+**Status:** **STRICT, OPT-IN CGROUP + REAL BLENDER CRASH TECHNICAL ACCEPTANCE PASSED** — [GitHub run 41770547351](https://github.com/vjmichael/nvp_offline_film/actions/runs/41770547351) **5/5 jobs green**, including 4/4 strict delegated cgroup tests, genuine Blender 5.2.3 rendering and independent scene audit within the strict leaf, and **both Blender 4.0.2 and 5.2.3 actual hard-host-exit + detached-child cleanup**. Production-by-default enablement, GPU/VRAM admission, installer and GPL release review remain open.  
 **Related:** [STACK-02C host lease + Windows Blender](NVP_STACK02C_HOST_LEASE_AND_WINDOWS_BLENDER_ACCEPTANCE.md) · [Reuse-first ADR](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md) · [Blender worker ADR](NVP_ADR_STACK02_BLENDER_WORKER_USD_DEFERRED.md)
 
 ## Why the previous Linux implementation was insufficient
@@ -50,14 +50,30 @@ The production worker **refuses** a strict operation. The delegated test job is 
 
 **Native artifact:** `nvp-stack02c2-native-baseline-real-blender` in the GitHub run contains both full separate FilmIndex/SQLite worker trees and reports. The ZIP was downloaded and independently checked: **58 entries and no CRC errors**. The strict report records `strict_linux_cgroup_tree_mode=true`, independent approved stage status `passed_blender_supervised`, `audit_checks=9`, original output corruption refusal and cancellation/restart evidence. The strict production demo's rendered .blend SHA-256 was `c9df3e8630ce358d78f8057a45d27ae8d62031b6c348488b6a35db96ab197c80`; PNG SHA-256 `24874f75c8be49e4edcfaee60dd6a81efb0b2b9ddc6ff7425c36d4261fc2ba82`. The original immutable scene/geometry lineage remained intact.
 
-**Follow-up hardening:** Source change after this run also moves the **strict Blender `--version` probe** into the same kernel cgroup, avoiding an uncontained Blender process before the main render. Its final revision CI is tracked separately; only call that change accepted after its native strict rerun is green.
+**Follow-up hardening accepted:** Strict Blender `--version` probes are also launched inside the verified cgroup + guardian boundary; the code and native fixture passed CI in [41769769454](https://github.com/vjmichael/nvp_offline_film/actions/runs/41769769454) and the later five-job acceptance.
 
 **Scope distinction:** The real hard-crash test uses a process that deliberately spawns an escaping descendant. The real Blender test separately proves Blender uses the strict profile, original geometry audit and resource bounds. The native Blender acceptance report's historical `orphan_cleanup_after_real_host_crash_proven=false` field refers to the Blender fixture alone; the separate real kernel test **does** prove detached-grandchild cleanup. It would be misleading to conflate them or claim an actual Blender-specific host-hard-kill was simulated.
+
+## Combined REAL Blender hard-host-exit acceptance (STACK-02C2B)
+
+[GitHub CI run 41770547351](https://github.com/vjmichael/nvp_offline_film/actions/runs/41770547351) passed **all five jobs** after introducing a new real-application crash fixture:
+
+1. The official **SHA-verified Blender 5.2.3 LTS** is launched by the existing strictly confined `BlenderWorkerSupervisor`. Its trusted test-only bpy script spawns an actual `sleep` child via `subprocess.Popen(...,start_new_session=True)`, breaking out of the Blender process group while remaining within the cgroup.
+2. The NVP host confirms the actual Blender PID, detached child PID and journal state RUNNING, then deliberately calls **`os._exit(37)`**, bypassing Python `finally` and normal cancellation.
+3. The independent guardian detects pipe EOF, calls kernel `cgroup.kill`, confirms *both* OS processes gone and the unique cgroup leaf removed.
+4. A fresh `BlenderWorkerSupervisor` claims the journal's released kernel lease and calls `recover_interrupted()`. The original job becomes **INTERRUPTED**, never SUCCEEDED; `verify_completed` refuses the abandoned output.
+5. The same test independently passed with **Ubuntu-signed Blender 4.0.2** installed from the distribution package manager, so crash cleanup is not an accident of one Blender release or dependent on the Blender.org CDN.
+
+**Independently inspected native artifacts:** Official 5.2.3 native ZIP `nvp-stack02c2-native-baseline-real-blender` contains **65 files**, valid ZIP CRC, original Blender render/audit and the combined crash report: Blender executable SHA-256 `b8b07a190fb25db76aae6de08dbc6c2b3d64e22e82bed6ba90de9545859f3431`, Blender PID 3030, detached grandchild PID 3039, host exit 37, guardian removed leaf, both terminated, recovered state INTERRUPTED, no accepted output. The same native archive's strict Blender run records `strict_linux_cgroup_tree_mode=true` and 9 independent NVP scene checks.
+
+The Ubuntu Blender 4.0.2 crash ZIP `nvp-stack02c2-real-blender-hardcrash-evidence` also passed CRC checks; Blender executable SHA-256 `aab13f2e20400a7bc161813151acfe4586889aa964624f7a0bcfdfc066f9749d`, Blender PID 4152, detached grandchild 4169, host exit 37, cgroup leaf removal, journal INTERRUPTED and no accepted output.
+
+The previous functional native and strict-cgroup run [41769769454](https://github.com/vjmichael/nvp_offline_film/actions/runs/41769769454) also passed all four jobs including strict containment of Blender's `--version` probe. The native 5.2.3 CI run is distinct from the standalone kernel test; **this newer combined test closes the Blender-specific abrupt-host-death gap**. The result does **not** establish VRAM safety, GPU-render workload acceptance, systemd-service installation or commercial GPL compliance.
 
 ## Next release requirements
 
 - Switch every production Blender/Cycles/animation operation to the strict cgroup requirement on supported Linux deployments, and add appropriate systemd user-service delegation and worker health UX.
-- Repeat with **a real pinned Blender worker that deliberately launches a detached descendant** and a genuine hard NVP host kill in one combined scenario. Kernel detached-process cleanup and strict Blender execution are independently proven above; this combined Blender-specific crash replay remains an extra release gate.
+- **Completed:** real pinned Blender 5.2.3 and distro Blender 4.0.2 each spawned a detached descendant before an abrupt NVP host exit; guardian killed the whole kernel tree and the journal refused abandoned results. Retain as a mandatory CI gate for changes to supervisor/guardian semantics.
 - Keep a conservative host-wide RAM/VRAM admission policy: cgroup `memory.max` controls system memory, **not VRAM** or driver allocations.
 - Test cgroup cleanup after failed Blender scripts, cancellation, timeouts, SIGKILL to the host, system shutdown and competing NVP hosts.
 - Preserve the one-installer, GPL Blender side-script/license, source notices and offline-application constraints before retail distribution.
