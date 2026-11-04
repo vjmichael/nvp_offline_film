@@ -4,7 +4,7 @@ import PyOpenColorIO as ocio
 
 CONFIG_NAME="cg-config-v4.0.0_aces-v2.0_ocio-v2.5"
 cfg=ocio.Config.CreateFromBuiltinConfig(CONFIG_NAME)
-spaces=[cfg.getColorSpaceNameByIndex(i) for i in range(cfg.getNumColorSpaces())]
+spaces=[space.getName() for space in cfg.getColorSpaces()]
 displays=list(cfg.getDisplays())
 report={
     "library_version":ocio.GetVersion(),
@@ -12,7 +12,7 @@ report={
     "config_cache_id":cfg.getCacheID(),
     "spaces":spaces,
     "displays":{name:list(cfg.getViews(name)) for name in displays},
-    "role_scene_linear":cfg.getRoleColorSpace(ocio.ROLE_SCENE_LINEAR).getName()
-        if cfg.getRoleColorSpace(ocio.ROLE_SCENE_LINEAR) else None,
+    "role_scene_linear":(cfg.getColorSpace("scene_linear").getName()
+        if cfg.getColorSpace("scene_linear") else None),
 }
 print(json.dumps(report, indent=2, sort_keys=True))
