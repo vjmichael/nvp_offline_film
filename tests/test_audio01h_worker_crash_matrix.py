@@ -43,7 +43,6 @@ def child(root, point):
     raise AssertionError("Native worker should have exited at fault gate")
 
 
-@unittest.skipUnless(__import__("shutil").which("ffmpeg"),"FFmpeg required")
 class WorkerCrashMatrix(unittest.TestCase):
     def test_abrupt_worker_exit_cannot_be_promoted_or_approved(self):
         for point in POINTS:
