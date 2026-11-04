@@ -35,3 +35,11 @@ AUDIO-01F currently offers a technically verified 24 fps / 48 kHz review mux, bo
 - Integrate AUDIO-01F mux as a separately approved and resource-supervised native task, without expanding the trusted surface for arbitrary commands or filesystem paths.
 - Production-length picture conform and professional loudness/true-peak audio QC.
 - Revisit strict delegated Linux cgroup-v2 evidence only when a writable delegated host or explicitly configured self-hosted runner exists.
+
+## Windows post-exit verification recovery correction
+
+The native audio host now records `worker_reaped=True` before discarding a closed Windows PROCESS/Job Object handle. If the independent PCM verifier fails *after* successful worker exit, the error path no longer invokes `poll()` on a released Windows PROCESS handle. It persists an OS-stop witness only after a genuinely reaped worker, transitions the journal to recovery-required, and leaves the TaskLedger record `INTERRUPTED` rather than falsely completing it.
+
+A real-worker regression test `test_verified_worker_exit_then_host_verifier_failure_is_recoverable` injects the host-side verification failure after the child has genuinely exited. Its Windows acceptance remains pending the exact current CI run.
+
+**Deferred unchanged:** Linux cgroup-v2 delegated host-crash acceptance stays OPEN and is not part of Windows closeout.
