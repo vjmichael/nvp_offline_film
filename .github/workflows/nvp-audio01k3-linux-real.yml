@@ -39,6 +39,8 @@ jobs:
             'https://dcpomatic.com/dl?id=ubuntu-24.04-x86-cli&version=2.18.51' \
             --output "$RUNNER_TEMP/nvp-cinema/dcpomatic-cli.deb"
           dpkg-deb --info "$RUNNER_TEMP/nvp-cinema/dcpomatic-cli.deb"
+          package_version="$(dpkg-deb -f "$RUNNER_TEMP/nvp-cinema/dcpomatic-cli.deb" Version)"
+          case "$package_version" in 2.18.51*) ;; *) echo "::error::Unexpected DCP-o-matic package version: $package_version"; exit 1 ;; esac
           sha256sum "$RUNNER_TEMP/nvp-cinema/dcpomatic-cli.deb"
           sudo apt-get install -y "$RUNNER_TEMP/nvp-cinema/dcpomatic-cli.deb"
           curl --fail --location --retry 3 --connect-timeout 20 \
@@ -61,6 +63,8 @@ jobs:
           dcpomatic2_create --version
           dcpomatic2_cli --version
           dcpdoctor --version
+          dcpomatic2_cli --version | grep -F '2.18.51'
+          dcpdoctor --version | grep -F '1.3.2'
       - name: Run source contract and real native SMPTE DCP encode
         env:
           NVP_AUDIO01K3_ARTIFACT_DIR: ${{ runner.temp }}/nvp_dcp_candidate
