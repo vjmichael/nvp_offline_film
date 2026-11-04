@@ -7,6 +7,7 @@ import sys
 if __name__=="__main__" and not __package__:
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from backend.nvp_approved_tasks import canonical_bytes
+from backend.nvp_audio01i_fault_matrix import crash_after
 from backend.nvp_audio01i_mastering import render_candidate
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_studio import Studio
@@ -38,6 +39,7 @@ def main():
         out.write(canonical_bytes(receipt))
         out.flush()
         os.fsync(out.fileno())
+    crash_after("candidate_receipt_fsynced")
 
 
 if __name__=="__main__":
