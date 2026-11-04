@@ -28,10 +28,11 @@ jobs:
           python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
       - name: Compile B10 native renderer, pinned OCIO and project color index
         run: |
-          python -m compileall -q backend/nvp_b10_render_profiles.py backend/nvp_b10_ocio.py backend/nvp_b10_color_verify.py backend/nvp_b10_color_worker.py backend/nvp_b10_color_publish.py tests/test_b10_color.py tools/nvp_stack02c3b10_real_hires_aces.py
+          python -m compileall -q backend/nvp_b10_render_profiles.py backend/nvp_b10_ocio.py backend/nvp_b10_color_verify.py backend/nvp_b10_color_worker.py backend/nvp_b10_color_publish.py tests/test_b10_color.py tests/test_b10_native_color_worker.py tools/nvp_stack02c3b10_real_hires_aces.py
       - name: Validate exact official OCIO transform, 32-bit EXR pixel readback, denied budgets and baseline lineage
         run: |
           python -m unittest discover -s tests -p test_b10_color.py -v
+          python -m unittest discover -s tests -p test_b10_native_color_worker.py -v
           python -m unittest discover -s tests -p test_exr_fidelity.py -v
           python -m unittest discover -s tests -p test_exr_sequence_contract.py -v
 
@@ -49,10 +50,11 @@ jobs:
           python -m pip install -r requirements-foundation.txt httpx
           python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
       - name: Compile B10 color code
-        run: python -m compileall -q backend/nvp_b10_render_profiles.py backend/nvp_b10_ocio.py backend/nvp_b10_color_verify.py backend/nvp_b10_color_worker.py backend/nvp_b10_color_publish.py tests/test_b10_color.py tools/nvp_stack02c3b10_real_hires_aces.py
+        run: python -m compileall -q backend/nvp_b10_render_profiles.py backend/nvp_b10_ocio.py backend/nvp_b10_color_verify.py backend/nvp_b10_color_worker.py backend/nvp_b10_color_publish.py tests/test_b10_color.py tests/test_b10_native_color_worker.py tools/nvp_stack02c3b10_real_hires_aces.py
       - name: Check source authority, official OCIO processor, genuine Float32 EXR pixels and high-resolution headroom
         run: |
           python -m unittest discover -s tests -p test_b10_color.py -v
+          python -m unittest discover -s tests -p test_b10_native_color_worker.py -v
           if ($LASTEXITCODE -ne 0) { throw 'B10 OCIO or high-res tests failed' }
           python -m unittest discover -s tests -p test_exr_fidelity.py -v
           if ($LASTEXITCODE -ne 0) { throw 'OpenEXR safety baseline failed' }
