@@ -22,3 +22,12 @@ The accepted independent Lu desktop exposes model commands as internal Tauri met
 ## Next gates
 
 A Lu-owned, opt-in native status service with verified creator approval, protected OS-local credentials, Windows ACL/peer identity and Linux permission gates must be implemented in a *new* Lu development branch. Run the exact NVP client against that genuine Rust host on both operating systems; a Python simulated host is insufficient. Only afterward add separately authorized inference operations with host-held session identity, model admission, streaming and recovery. Real GGUF/AMD resource co-admission, Blender coexistence and physical Windows tests remain release-blocking.
+
+
+## DLC-API-00 design supersession (2026-11-03)
+
+The above B5 implementation remains valid **only as a tested, read-only transport/anti-replay fixture**. **It is not the intended full NVP-to-Lu interface.** The first-party Film Workspace needs model discovery, resource-admitted session acquisition, inference requests, token/event streaming, per-session cancellation and durable recovery, and release of **its own** model lease. Existing B5 \`status\` requests must not be extended ad hoc with unaudited \`load\`/\`unload\` commands or treated as a public Lu host API.
+
+The new [NVP first-party Film Workspace contract](NVP_FIRST_PARTY_LU_DLC_WORKSPACE_CONTRACT_20261103.md) maps the intended operations, both in-Lu native SDK and separate standalone application over authenticated IPC. The **canonical Lu-owned** generic platform RFC and draft Protobuf schema are tracked in [Lu issue #8](https://github.com/vjmichael/Lu-AI-GUI/issues/8). Lu's model/resource/session/effect ownership remains authoritative; NVP owns the film domain and its conventional render workers. Cognitum CEs follow the matching provider pattern under the same host interface.
+
+**Status:** Design reconciliation only; no real Lu host service was added or connected by B5. Keep the real Windows Job Object source mismatch [Lu issue #7](https://github.com/vjmichael/Lu-AI-GUI/issues/7) independent from the interface design.
