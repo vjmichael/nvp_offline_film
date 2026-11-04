@@ -77,7 +77,7 @@ class KernelContainmentTests(unittest.TestCase):
             )
             env=dict(os.environ)
             env["PYTHONPATH"]=str(Path(__file__).resolve().parents[1])+os.pathsep+env.get("PYTHONPATH","")
-            host=subprocess.Popen([sys.executable,"-S","-c",host_code],
+            host=subprocess.Popen([sys.executable,"-c",host_code],
                 cwd=temp,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             try:
                 _,error=host.communicate(timeout=25)
