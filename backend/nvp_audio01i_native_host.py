@@ -18,6 +18,7 @@ from backend.nvp_approved_tasks import ApprovedTaskBindings,canonical_bytes
 from backend.nvp_audio01i_mastering import (
     FORMAT as CANDIDATE_FORMAT, PROFILES, accepted_source,
     inspect_native,sha_file)
+from backend.nvp_audio01i_fault_matrix import crash_after
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_film_index import _id
 from backend.nvp_resource_guard import AdmissionRequest
@@ -233,6 +234,7 @@ class NativeAudio01IHost:
             db.execute("INSERT INTO native_audio01i_master_events VALUES(?,?,?,?)",
                        (event_sha,project_id,candidate_id,job))
             db.commit()
+        crash_after("master_event_reserved")
         plan={"format":FORMAT,"studio_db_path":str(self.capture.studio.db_path),
               "project_id":project_id,"decision_id":decision_id,
               "decision_revision":decision_revision,"candidate_id":candidate_id,
@@ -258,14 +260,17 @@ class NativeAudio01IHost:
                sha_file(self.worker),sha_file(binaries["ffmpeg"]),
                sha_file(binaries["ffprobe"]),time.time()+duration_s))
             db.commit()
+        crash_after("master_grant_committed")
         self.bindings.enqueue(
             AdmissionRequest(job,"compositing","PCM24 native mastering candidate",ram_mb),
             owner_key=self.owner,lane="standard",approval_id=approval,document=spec)
+        crash_after("master_queued")
         return {"job_id":job,"state":"QUEUED","candidate_id":candidate_id}
 
     def run_next(self,*,timeout_seconds=600):
         admitted=self.bindings.claim_next(owner_key=self.owner)
         if admitted is None or not admitted["admitted"]:return admitted
+        crash_after("master_claimed")
         job=admitted["task_id"]
         proc=None;reaped=False
         try:
@@ -282,10 +287,12 @@ class NativeAudio01IHost:
                 code=wait_guarded(proc,self.ledger,job,timeout_seconds=timeout_seconds)
                 if code:raise RuntimeError("Mastering worker failed: "+str(code))
                 proc.close();proc=None;reaped=True
+        crash_after("master_worker_reaped")
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("UPDATE native_audio01i_grants SET stopped=1 WHERE job_id=?",(job,))
                 db.commit()
+        crash_after("master_stop_witness_committed")
             self.ledger.update(job,"verifying_output","Independent mastered PCM24 verification")
             rec=self.capture.index.read_revision(plan["project_id"],plan["candidate_id"],1)
             doc=rec["data"]
@@ -314,7 +321,9 @@ class NativeAudio01IHost:
                 db.execute("UPDATE native_audio01i_grants SET result_sha=? WHERE job_id=?",
                            (rec["document_sha256"],job))
                 db.commit()
+        crash_after("master_result_committed")
             self.ledger.finish(job,"SUCCEEDED","Verified immutable unapproved PCM24 candidate")
+        crash_after("master_ledger_finished")
             return {"job_id":job,"state":"SUCCEEDED","candidate_id":plan["candidate_id"],
                     "document_sha256":rec["document_sha256"],"final_master":False}
         except BaseException:
@@ -461,11 +470,14 @@ class NativeAudio01IHost:
             db.execute("INSERT INTO native_audio01i_delivery_events VALUES(?,?,?,-1)",
                        (nonce,project_id,delivery_id))
             db.commit()
+        crash_after("delivery_event_reserved")
         stage.mkdir(mode=0o700)
+        crash_after("delivery_stage_created")
         deliver_wav=stage/"master.wav"
         with src.open("rb") as original,deliver_wav.open("xb") as target:
             shutil.copyfileobj(original,target,1024*1024)
             target.flush();os.fsync(target.fileno())
+        crash_after("delivery_wav_fsynced")
         if sha_file(deliver_wav)!=doc["candidate_wav_sha256"]:
             raise RuntimeError("Delivery copy changed approved master bytes")
         document={"format":DELIVERY,"status":"creator_approved_final_audio",
@@ -480,21 +492,25 @@ class NativeAudio01IHost:
         manifest=stage/"manifest.json"
         with manifest.open("xb") as output:
             output.write(canonical_bytes(document));output.flush();os.fsync(output.fileno())
+        crash_after("delivery_manifest_fsynced")
         os.replace(stage,path)
         if os.name=="posix":
             fd=os.open(str(path.parent),os.O_RDONLY|getattr(os,"O_DIRECTORY",0))
             try:os.fsync(fd)
             finally:os.close(fd)
+        crash_after("delivery_directory_promoted")
         result=self.capture.index.register_revision(
             project_id,delivery_id,"audio",document,expected_revision=0,
             dependencies=[{"object_id":candidate_id,"revision":1,"role":"audio"},
                           {"object_id":doc["decision_id"],
                            "revision":doc["decision_revision"],"role":"audio"}])
+        crash_after("delivery_filmindex_registered")
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE native_audio01i_delivery_events SET revision=? WHERE event_sha=?",
                        (result["revision"],nonce))
             db.commit()
+        crash_after("delivery_event_finalized")
         return {"status":"CREATOR_APPROVED_FINAL_AUDIO","delivery_id":delivery_id,
                 "document_sha256":result["document_sha256"],
                 "wav_sha256":doc["candidate_wav_sha256"],
