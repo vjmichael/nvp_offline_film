@@ -18,6 +18,22 @@ This milestone does not demand full feature-film scale, advanced VFX, DCP, or co
 - At least one time-critical visible action with an associated synchronized sound effect, with optional dialogue or musical score licensed/original as appropriate. Silence alone does not count.
 - A creator-review playback format and a professional high-quality **video+audio** master (e.g. proper ProRes 422 HQ MOV with PCM audio, appropriately tagged; additional mezzanine or H.264 preview optional). Frame rate, dimensions, bit depth/chroma, sound sample rate/channels and correct color transfer/primaries recorded and independently checked.
 
+## Foundational processing rule: data-addressed, batched or streamed
+
+**The full Digital Take and production package are persistent indexed data, not a requirement to load the whole film into RAM, VRAM, or one worker.** NVP shall materialize only the active working set needed for a step, using streaming or independently scheduled chunks as appropriate. Length limits in B12/B13/B14 are *temporary fixture/worker-policy bounds*, not architectural maximum film lengths.
+
+- **Data-first:** FilmIndex owns source identities, temporal ranges, revision dependencies, media hashes and output receipts. Producers read exact needed ranges rather than deserializing the entire package into process memory.
+- **Adaptive batches:** choose batch size based on measured free resources, frame resolution, renderer/codec needs and worker admission; 24/48/96 frames are examples, not fixed limits. Work can be processed out of order when independent, then conformed in timeline order.
+- **Streaming:** use backpressure-aware bounded queues for successive render/color/encode/audio stages; write completed products to durable storage as needed. Streaming should not force redundant full-disk copies, but a partially emitted master is never called complete.
+- **Durability:** each completed chunk records project/take/edit revision, source interval, presentation interval, pipeline version/color transform, output hash, committed receipt and dependency inputs. Atomically publish committed batches; restart skips only those that reverify.
+- **Continuity:** effects that depend on adjacent frames (motion blur, denoise, interpolation, particle/simulation history, crossfades) request overlap/halo windows or persist validated state between batches. Never stitch independent chunks with incorrect temporal boundaries.
+- **Audio:** keep a rational timeline and 48 kHz sample positions, aligning audio chunks to exact edit frame/sample boundaries, not accumulated floating-point timestamps. Preserve lookahead/crossfade state where required.
+- **Revision invalidation:** changes to one shot or audio segment invalidate only dependent chunks and downstream conform/master outputs. Immutable original takes and unrelated rendered assets are reused.
+- **Resource safety:** bound RAM/VRAM, disk occupancy, open files and parallel workers. Apply backpressure, cancellation, checkpoint/recovery and disk-budget checks. The final deliverable can be much longer than the active in-memory window.
+- **Verification:** independently check all chunk manifests, ordering, overlap policies, continuity edges, decoded full master and entire duration. No arbitrary cap on film duration is inferred from a per-worker chunk limit.
+
+This rule is a design requirement for scaling NVP, not a claim that every stage already implements streaming or crash-safe chunk scheduling.
+
 ## Source-of-truth production workflow
 
 1. Author and freeze world, shots, performances and production instructions into indexed Digital Take(s).
