@@ -131,18 +131,13 @@ class NativeSQLiteCrashMatrix(unittest.TestCase):
             self.skipTest("Native FFmpeg tools required for authorized preflight")
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
-            prepare_fixture(root)
             for point in ADMISSION_POINTS:
                 with self.subTest(point=point):
                     case=root/point
                     case.mkdir()
-                    # Reuse immutable media fixture; each case has isolated
-                    # native ledger and job directory.
-                    for name in ("studio.sqlite3","project_id.txt","silent.mov","mix_preview.wav"):
-                        import shutil as copy
-                        copy.copy2(root/name,case/name)
-                    # FilmIndex storage is derived from the studio location;
-                    # source revisions are available through the copied DB.
+                    # Each case has its own complete FilmIndex and immutable
+                    # source asset store; copying SQLite alone drops media.
+                    prepare_fixture(case)
                     self.run_case(case,point,"admission")
                     ledger=ledger_at(case)
                     with ledger._db() as db:
