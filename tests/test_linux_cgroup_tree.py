@@ -54,7 +54,7 @@ class CgroupTreeTests(unittest.TestCase):
 
     def test_guardian_refuses_foreign_directory(self):
         with tempfile.TemporaryDirectory() as temp:
-            target=Path(temp)/"nvp-worker-"+"a"*32 if False else Path(temp)/("nvp-worker-"+"a"*32)
+            target=Path(temp)/("nvp-worker-"+"a"*32)
             target.mkdir()
             (target/"cgroup.kill").write_text("1")
             (target/"cgroup.events").write_text("populated 0\n")
