@@ -31,9 +31,13 @@ def _sha_file(path):
     return h.hexdigest()
 
 class NativeAudioHost:
-    def __init__(self, ledger:TaskLedger, root, *, verify_creator_action):
+    def __init__(self, ledger:TaskLedger, root, *, verify_creator_action,
+                 strict_linux_tree=False):
         if not isinstance(ledger,TaskLedger) or not callable(verify_creator_action):
             raise TypeError("Native audio host requires a real ledger and creator policy")
+        if type(strict_linux_tree) is not bool:
+            raise TypeError("Strict Linux containment flag must be boolean")
+        self.strict_linux_tree=strict_linux_tree
         self.ledger=ledger
         self.root=Path(root)
         if self.root.is_symlink():raise RuntimeError("Unsafe audio job root")
@@ -217,7 +221,8 @@ class NativeAudioHost:
                     command.append("--test-hold-after-one-chunk")
                 proc=launch_contained(command,
                                       cwd=str(folder),stdout=out,stderr=err,
-                                      memory_mb=self._grant_ram(job))
+                                      memory_mb=self._grant_ram(job),
+                                      linux_cgroup_tree_required=self.strict_linux_tree)
                 self._running[job]=proc
                 code=wait_guarded(proc,self.ledger,job,timeout_seconds=timeout_seconds)
                 if code!=0:raise RuntimeError("Contained audio worker exited "+str(code))
