@@ -138,6 +138,10 @@ class Audio01IEndToEnd(unittest.TestCase):
             # worker destination and its immutable receipt.
             with self.assertRaises(RuntimeError):
                 host.recover_candidate(queued["job_id"])
+            with self.assertRaises(RuntimeError):
+                host.deliver(pid,"candidate","tampered_delivery",
+                             root/"tampered_delivery","creator_publish_tampered")
+            self.assertFalse((root/"tampered_delivery").exists())
 
     def test_unknown_profile_rejected_prelaunch(self):
         with tempfile.TemporaryDirectory() as temporary:
