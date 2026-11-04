@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './ColorGradingPanel.css';
+import ColorAdvancedPanel from './ColorAdvancedPanel.jsx';
 
 const DEFAULT = {
   exposure_stops: 0,
@@ -286,6 +287,8 @@ export default function ColorGradingPanel({ project, onHelp }) {
           </div>
         </div>
       </div>
+      <ColorAdvancedPanel project={project} sourceId={sourceId} frame={frame}
+        onFrameChange={setFrame} globalGrade={recipe}/>
       <div className="card grade-save-panel">
         <h3>Save a look · never overwrite the frozen take</h3>
         <label>Look ID
