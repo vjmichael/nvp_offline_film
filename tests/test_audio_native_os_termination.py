@@ -12,6 +12,7 @@ import threading
 import time
 import unittest
 import wave
+from unittest.mock import patch
 from pathlib import Path
 
 from backend.nvp_audio01d_chunked_recovery import RATE, _read_state
@@ -155,6 +156,24 @@ class ActualAudioContainment(unittest.TestCase):
         self.assertIsNotNone(proc.poll())
         self.assertEqual(self.ledger.get_task(job)["state"],"INTERRUPTED")
         self.assertEqual(self.host.journal.read(job)["state"],"recovery_required")
+
+    def test_verified_worker_exit_then_host_verifier_failure_is_recoverable(self):
+        job=self.prepare()
+        # Worker genuinely runs, exits, is reaped, and the Windows process
+        # handle is closed before host-side verification fault injection.
+        with patch("backend.nvp_audio01e3_native_host.verify_chunked_preview",
+                   side_effect=RuntimeError("forced post-exit proof failure")):
+            with self.assertRaisesRegex(RuntimeError,"forced post-exit proof failure"):
+                self.host.run_next(timeout_seconds=40)
+        self.assertEqual(self.ledger.get_task(job)["state"],"INTERRUPTED")
+        self.assertEqual(self.host.journal.read(job)["state"],"recovery_required")
+        with self.ledger._db() as db:
+            stopped=db.execute("""SELECT worker_reaped FROM audio_native_os_stop_receipts
+                                  WHERE job_id=?""",(job,)).fetchone()
+        self.assertEqual(stopped,(1,))
+        # This assertion would previously crash on Windows because the
+        # exception handler tried to poll a closed PROCESS handle.
+        self.assertNotIn(job,self.host._running)
 
     def test_real_child_normal_completion_verified(self):
         job=self.prepare()
