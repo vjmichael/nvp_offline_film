@@ -161,6 +161,7 @@ def encode_candidate(input_mov, workspace, title, *, create_bin, cli_bin,
     output = _run(encode_cmd, cwd=root, timeout=1800)
     candidates = [Path(line.strip()) for line in output.splitlines()
                   if line.strip()]
+    candidates = [p if p.is_absolute() else root / p for p in candidates]
     if len(candidates) != 1 or not candidates[0].is_dir():
         raise RuntimeError("No single completed DCP path from native encoder")
     dcp = candidates[0].resolve(strict=True)
@@ -170,3 +171,47 @@ def encode_candidate(input_mov, workspace, title, *, create_bin, cli_bin,
     if sha_file(mov) != expected_mov_sha:
         raise RuntimeError("DCP encoding altered original approved MOV")
     return dcp, report
+
+
+def validate_strict_smpte(dcp, doctor_bin, *, timeout=1800):
+    """Mandatory independent DcpDoctor SMPTE and deep-essence validation.
+
+    Requires exit 0, fails on skipped validator checks; never supplies
+    --no-hashes/--no-mxf/--no-deep-j2k flags. This is a technical gate,
+    not a projector ingest / exhibition certification.
+    """
+    binary = Path(doctor_bin)
+    if (not binary.is_absolute() or binary.is_symlink() or
+        not binary.is_file()):
+        raise RuntimeError("Pinned independent DcpDoctor binary is missing")
+    package = Path(dcp)
+    before = inspect_dcp_directory(package)
+    result = subprocess.run(
+        [str(binary), "validate", "--strict", str(package)],
+        cwd=str(package.parent), stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
+        check=False)
+    stdout = result.stdout.decode("utf8", "replace")[:65536]
+    stderr = result.stderr.decode("utf8", "replace")[:65536]
+    if result.returncode != 0:
+        raise RuntimeError("Independent strict SMPTE validator rejected DCP: " +
+                           (stdout + stderr)[-1500:])
+    # An explicit skipped essential check cannot be interpreted as PASS.
+    if re.search(r"(?:check_skipped|schema_validation_skipped|"
+                 r"\\bSKIPPED\\b)", stdout + stderr, re.I):
+        raise RuntimeError("Independent DCP QC skipped required validation")
+    after = inspect_dcp_directory(package)
+    if before["assets"] != after["assets"]:
+        raise RuntimeError("DCP changed while independent validator inspected it")
+    return {
+        "format": "nvp.audio01k3.independent_smpte_qc.v1",
+        "validator": "dcpdoctor_strict",
+        "validator_sha256": sha_file(binary),
+        "returncode": result.returncode,
+        "stdout_sha256": hashlib.sha256(result.stdout).hexdigest(),
+        "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
+        "all_required_checks": True,
+        "asset_sha256_proof": after["assets"],
+        "smpte_validator_passed": True,
+        "theatrical_exhibition_certified": False,
+    }
