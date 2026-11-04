@@ -55,6 +55,15 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_audio01f_windows_contained_mux.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Windows AUDIO-01F contained mux failed' }
+      - name: AUDIO-01G interrupted mux journal and AUDIO-02 finishing gates
+        shell: pwsh
+        run: |
+          python -m compileall -q backend/nvp_audio01g_mux_intent.py backend/nvp_audio01g_mux_recovery.py backend/nvp_audio02a_automation.py backend/nvp_audio02b_loudness_qc.py backend/nvp_audio02c_mix_approval.py
+          if ($LASTEXITCODE -ne 0) { throw 'Audio recovery/finishing compilation failed' }
+          python -m unittest discover -s tests -p test_audio01g_mux_recovery.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows recovery failed' }
+          python -m unittest discover -s tests -p test_audio02_finishing.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-02 native finishing failed' }
       - name: Recheck durable admission outbox after Windows process death
         shell: pwsh
         run: |
