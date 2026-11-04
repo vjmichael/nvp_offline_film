@@ -110,6 +110,36 @@ class ActualAudioContainment(unittest.TestCase):
                                (job,)).fetchone()
         self.assertEqual(witness,(1,))
 
+    def test_reconciled_job_requires_new_authorized_native_attempt(self):
+        job=self.prepare()
+        thread,result=self.run_background()
+        process=self.started(job)
+        process.terminate_tree()
+        thread.join(timeout=30)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(self.ledger.get_task(job)["state"],"INTERRUPTED")
+        restarted=NativeAudioHost(self.ledger,self.root/"native",
+            verify_creator_action=lambda event,scope:
+            event=="creator_confirmed" and scope["final_master"] is False)
+        proof=restarted.recover_stopped(job)
+        self.assertEqual(proof["state"],"reconciled")
+        first=(self.root/"rendered"/"mix_chunk_0000000.pcm").read_bytes()
+        resumed=restarted.stage_and_approve(
+            self.plan,{"voice":self.src},self.n,self.root/"rendered",
+            "creator_confirmed",ram_mb=1024,duration_s=3600,resume_from=job)
+        self.assertNotEqual(resumed["job_id"],job)
+        with self.assertRaises(RuntimeError):
+            restarted.stage_and_approve(
+                self.plan,{"voice":self.src},self.n,self.root/"rendered",
+                "creator_confirmed",ram_mb=1024,duration_s=3600,resume_from=job)
+        final=restarted.run_next(timeout_seconds=40)
+        self.assertEqual(final["state"],"SUCCEEDED")
+        self.assertEqual(final["job_id"],resumed["job_id"])
+        self.assertEqual(self.ledger.get_task(resumed["job_id"])["state"],"SUCCEEDED")
+        self.assertEqual(self.ledger.get_task(job)["state"],"INTERRUPTED")
+        self.assertEqual(first,(self.root/"rendered"/"mix_chunk_0000000.pcm").read_bytes())
+        self.assertEqual(restarted.journal.read(resumed["job_id"])["state"],"completed")
+
     def test_resource_watchdog_kills_real_contained_audio_child(self):
         job=self.prepare()
         thread,result=self.run_background()
