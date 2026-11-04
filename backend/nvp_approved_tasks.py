@@ -124,8 +124,21 @@ class ApprovedTaskBindings:
         return document
 
     def claim_next(self,*,owner_key):
-        # The owner namespace must be dedicated to approved dispatchers. A
-        # legacy unbound task could otherwise block this queue; fail closed.
+        # Preflight the head-of-line binding before reserving memory. A
+        # revoked approval should not strand host RAM merely because the
+        # queued task has become unauthorized. The policy is rechecked again
+        # after the atomic admission to handle concurrent approval changes.
+        TaskLedger._schedule_args(owner_key)
+        with self.ledger._db() as db:
+            candidate=db.execute("""SELECT t.id FROM tasks t
+                JOIN task_schedule s ON s.task_id=t.id
+                WHERE t.state='QUEUED' AND s.owner_key=?
+                ORDER BY CASE s.lane WHEN 'interactive' THEN 2
+                    WHEN 'standard' THEN 1 ELSE 0 END DESC,
+                    s.queued_at ASC,t.id ASC LIMIT 1""",(owner_key,)).fetchone()
+        if candidate is None:
+            return None
+        self.verified_spec(candidate[0],owner_key=owner_key,require_active=False)
         result=self.ledger.claim_next(owner_key=owner_key)
         if result is None or not result["admitted"]:
             return result
