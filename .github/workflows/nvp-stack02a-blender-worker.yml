@@ -93,7 +93,7 @@ jobs:
           mkdir -p /tmp/nvp-blender
           tar -xJf "$archive" -C /tmp/nvp-blender --strip-components=1
           echo "/tmp/nvp-blender" >> "$GITHUB_PATH"
-      - name: Real Blender: bounded child, version, input and output SHA, cancel and recovery
+      - name: 'Real Blender: bounded child, version, input and output SHA, cancel and recovery'
         shell: bash
         run: |
           set -euo pipefail
