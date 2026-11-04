@@ -8,6 +8,7 @@ from __future__ import annotations
 from contextlib import ExitStack
 import json
 import os
+import re
 from pathlib import Path
 import struct
 import wave
@@ -45,6 +46,8 @@ def validate_stem_plan(plan, sources, output_frames):
         if type(stem) is not dict or set(stem) != {"stem_id", "kind", "clips"}:
             raise ValueError("Unexpected stem fields")
         sid = _id(stem["stem_id"], "stem identity")
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", sid):
+            raise ValueError("Stem identity must be portable on Windows and Linux")
         if sid in seen or stem["kind"] not in KINDS:
             raise ValueError("Duplicate stem or unsupported category")
         seen.add(sid)
