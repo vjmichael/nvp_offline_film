@@ -88,7 +88,7 @@ class CrewRoles(unittest.TestCase):
     def test_project_isolation(self):
         self.approved("secret","silver locket")
         other=self.studio.create_project("Elsewhere","A second film")
-        task=prepare_crew_task(self.studio,other,"script_supervisor","Review")
+        task=prepare_crew_task(self.studio,other["id"],"script_supervisor","Review")
         self.assertNotIn("silver locket",task["user"])
 
     def test_never_claim_legacy_placeholder_is_actual_execution(self):
