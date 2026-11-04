@@ -103,6 +103,36 @@ class NativeAudio01JEndToEnd(unittest.TestCase):
             self.assertEqual(len(indexed["dependencies"]),2)
             self.assertFalse(indexed["data"]["dcp_delivered"])
 
+    def test_revoked_approved_mix_cannot_be_used_for_final_av(self):
+        from backend.nvp_audio01h_native_host import NativeAudio01HHost
+        from backend.nvp_audio01h_loudness import analyze_wav
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            cap,pid,original_host=setup_approved(root)
+            audio_host=NativeAudio01IHost(cap,ledger(root),root/"audioi",
+                verify_creator_action=lambda *_:True,strict_linux_tree=False)
+            audio_host.stage(pid,"mixdecision",1,"candidate",
+                "archive_pcm24_v1",root/"master_candidate.wav","master_create")
+            self.assertEqual(audio_host.run_next(timeout_seconds=180)["state"],"SUCCEEDED")
+            audio_host.deliver(pid,"candidate","audiofinal",
+                root/"audiofinal","human_audio_publish")
+            source_picture(cap,pid,root)
+            av=NativeAudio01JHost(cap,ledger(root),root/"avhost",
+                verify_creator_action=lambda *_:True,audio_host=audio_host,
+                strict_linux_tree=False)
+            with patch("backend.nvp_audio01j_picture_lock.verify_edited_technical_mov",
+                       return_value={"status":"VERIFIED_EDITED_TECHNICAL_MOV_CANDIDATE"}):
+                av.approve_picture(pid,"picture","picturelock",root,root,root,
+                    "human_locks_picture")
+            evidence=analyze_wav(root/"processed.wav",expected_samples=48000)
+            original_host.creator_decision(pid,"automatedmix","mixdecision",evidence,
+                decision="REVOKE",creator_event="human_revokes_mix")
+            with self.assertRaises(PermissionError):
+                av.stage(pid,"picturelock","audiofinal",root,
+                    root/"audiofinal",root/"blocked","finalfilm",
+                    "human_final_export")
+            self.assertFalse((root/"blocked").exists())
+
     def test_no_unapproved_sources_may_be_exported(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
