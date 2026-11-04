@@ -17,6 +17,8 @@ B9 proved an actual 120-frame 24fps sequence of native Blender `OPEN_EXR` **32-b
 | up to 1920×1080 (Full HD) | 1 | 3072 MiB |
 | up to 3840×2160 (UHD/4K) | 1 | 8192 MiB |
 
+**UHD/4K is currently a planning/capacity profile, not executable:** B9's Workbench worker does not yet declare a measured GPU-device VRAM reservation. B10 refuses 4K execution until a device-scoped GPU budget is admitted by NVP's resource governor. A declared 8192-MiB RAM floor alone is insufficient to protect a workstation GPU. Full HD and HD remain the executable native B10 paths; real Windows VRAM/stability acceptance is still open.
+
 Every frame still uses B9's exact frozen-take source, saved Blender project, 32-bit RGBA ZIP OpenEXR writer, measured CPU/RAM admission, bounded OS-contained worker, second native readback and content-addressed FilmIndex publication when all frames are present. The full take's estimated uncompressed RGBA32 bytes are checked against free disk **including output duplication during archival** before accepting whole-sequence consent. Higher-resolution native work needs explicit resolution, RAM and chunk-count consent; it cannot silently escalate the workload.
 
 B10 Linux CI executes one genuine Blender 1920×1080 Float32 EXR frame with independent native readback, while B9's complete **120-frame** test remains 160×90. **A complete 120-frame Full HD or 4K production run is not yet claimed**; full-frame higher-resolution stress, Windows GPU workloads, independent lighting/artistic acceptance and actual rigged actor fidelity remain separate gates.
