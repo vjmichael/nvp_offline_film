@@ -30,7 +30,8 @@ def automate_stem(capture, project_id, source_audio_id, stem_id, points,
     broker before entering this function.
     """
     _id(output_id, "automated stem ID")
-    _id(stem_id, "original stem ID")
+    if stem_id is not None:
+        _id(stem_id, "original stem ID")
     source_record = capture.index.read_revision(project_id, source_audio_id, 1)
     source_data = source_record["data"]
     if (source_record["kind"] != "audio" or
@@ -38,8 +39,8 @@ def automate_stem(capture, project_id, source_audio_id, stem_id, points,
         source_data.get("final_mix") is not False):
         raise RuntimeError("Automation requires immutable unapproved AUDIO-01E stems")
     items = [x for x in source_data["wav_outputs"] if x["stem_id"] == stem_id]
-    if len(items) != 1:
-        raise RuntimeError("Exactly one indexed source stem required")
+    if len(items) != 1 or (stem_id is None and items[0]["filename"] != "mix_preview.wav"):
+        raise RuntimeError("Exactly one indexed source stem/composite required")
     item = items[0]
     source = Path(source_dir) / item["filename"]
     target = Path(destination)
