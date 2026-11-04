@@ -1202,3 +1202,53 @@ def grade_advanced_read(project_id:str,grade_id:str,revision:int|None=None):
 def grade_advanced_preview(project_id:str,payload:AdvancedGradePreviewInput):
     return run(lambda:AdvancedGradeWorkspace(studio).render_scope_preview(
         project_id,payload.source_id,payload.frame,payload.plan))
+
+
+# GRADE-UI-02B1: source-linked HDR EV tone curves and non-applying reference advice.
+from backend.nvp_grade_curves import CurveGradeWorkspace
+
+class CurvePreviewInput(BaseModel):
+    source_id: str = Field(min_length=1,max_length=80)
+    frame: int = Field(ge=1,le=48)
+    plan: dict[str,_GradeAny]
+
+class CurveSaveInput(BaseModel):
+    source_id: str = Field(min_length=1,max_length=80)
+    grade_id: str = Field(min_length=1,max_length=80)
+    expected_revision: int = Field(ge=0)
+    source_primaries_declared: bool = False
+    plan: dict[str,_GradeAny]
+
+class MatchReferenceInput(BaseModel):
+    source_id: str = Field(min_length=1,max_length=80)
+    target_frame: int = Field(ge=1,le=48)
+    reference_frame: int = Field(ge=1,le=48)
+    base_plan: dict[str,_GradeAny]
+
+@app.post('/api/projects/{project_id}/color-grading/curves/preview')
+def grade_curve_preview(project_id:str,payload:CurvePreviewInput):
+    return run(lambda:CurveGradeWorkspace(studio).render_curve_preview(
+        project_id,payload.source_id,payload.frame,payload.plan))
+
+@app.post('/api/projects/{project_id}/color-grading/curves/reference-suggestion')
+def grade_curve_reference(project_id:str,payload:MatchReferenceInput):
+    return run(lambda:CurveGradeWorkspace(studio).compare_reference(
+        project_id,payload.source_id,payload.target_frame,
+        payload.reference_frame,payload.base_plan))
+
+@app.post('/api/projects/{project_id}/color-grading/curves/grades',status_code=201)
+def grade_curve_save(project_id:str,payload:CurveSaveInput):
+    if payload.source_primaries_declared is not True:
+        raise HTTPException(status_code=422,detail='Declare the original source EXR primaries before saving a curve draft')
+    return run(lambda:CurveGradeWorkspace(studio).save_curve(
+        project_id,payload.source_id,payload.grade_id,
+        payload.plan,payload.expected_revision))
+
+@app.get('/api/projects/{project_id}/color-grading/curves/grades/{grade_id}')
+def grade_curve_reopen(project_id:str,grade_id:str,revision:int|None=None):
+    row=run(lambda:CurveGradeWorkspace(studio).reopen_curve(
+        project_id,grade_id,revision))
+    return {'id':grade_id,'revision':row['record']['revision'],
+            'sha256':row['record']['document_sha256'],
+            'source_id':row['record']['data']['source_id'],
+            'plan':row['plan'],'approval':'not_approved'}
