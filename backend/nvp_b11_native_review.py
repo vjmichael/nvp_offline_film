@@ -19,7 +19,8 @@ import time
 
 from backend.nvp_approved_tasks import ApprovedTaskBindings,canonical_bytes
 from backend.nvp_b11_editorial import (
-    frozen_review_source,verify_sdr_review,SOURCE_COLOR_SPACE)
+    frozen_review_source,verify_sdr_review,SOURCE_COLOR_SPACE,
+    NEAR_OPAQUE_ALPHA_POLICY,MAX_ALPHA_SHORTFALL)
 from backend.nvp_color_ocio import color_policy
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_film_index import _id
@@ -136,7 +137,9 @@ class NativeB11ReviewHost:
             if (meta["source_presentation_sha256"]!=row["exr_source_sha256"] or
                 meta["source_take_sha256"]!=row["take_sha256"] or
                 meta["review_id"]!=row["review_id"] or
-                meta["policy_sha256"]!=row["policy_sha256"]):
+                meta["policy_sha256"]!=row["policy_sha256"] or
+                meta.get("alpha_policy")!=NEAR_OPAQUE_ALPHA_POLICY or
+                meta.get("max_alpha_shortfall")!=MAX_ALPHA_SHORTFALL):
                 return False
             policy,_=color_policy()
             if _digest(policy)!=row["policy_sha256"]:
@@ -171,6 +174,9 @@ class NativeB11ReviewHost:
             "output":"color_managed_ACES2_sRGB_16bit_RGB_PNG_sequence",
             "ocio_config_sha256":policy["config_sha256"],
             "processor_cache_id":policy["processor_cache_id"],
+            "alpha_policy":NEAR_OPAQUE_ALPHA_POLICY,
+            "max_alpha_shortfall":MAX_ALPHA_SHORTFALL,
+            "transparency_compositing_approved":False,
             "estimated_disk_headroom_bytes":bytes_reserved,
             "ram_mb":ram_mb,
         }
@@ -200,6 +206,8 @@ class NativeB11ReviewHost:
             "output_dir":str(folder/"display_frames"),"source_primaries":SOURCE_COLOR_SPACE,
             "frames":source["frame_count"],"fps":24,
             "resolution":[width,height],"policy_sha256":source_policy_sha,
+            "alpha_policy":NEAR_OPAQUE_ALPHA_POLICY,
+            "max_alpha_shortfall":MAX_ALPHA_SHORTFALL,
         }
         try:
             _write_exclusive(folder,PLAN,canonical_bytes(plan))
