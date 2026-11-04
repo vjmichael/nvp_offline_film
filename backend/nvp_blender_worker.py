@@ -188,18 +188,49 @@ class BlenderWorkerSupervisor:
             records=db.execute("SELECT at_utc,state,detail FROM worker_events WHERE job_id=? ORDER BY id",(job_id,)).fetchall()
         return [{"at":a,"state":b,"detail":c} for a,b,c in records]
 
-    def probe(self):
+    def probe(self, *, strict_linux_cgroup=False, memory_limit_mb=8192):
         if sha_file(self.binary)!=self.binary_sha256:
             raise RuntimeError("Pinned Blender executable SHA-256 changed")
-        try:
-            result=subprocess.run([str(self.binary),"-b","--version"],
-                                  capture_output=True,text=True,timeout=15,check=False)
-        except (subprocess.TimeoutExpired,OSError) as exc:
-            raise RuntimeError("Pinned Blender binary failed version probe") from exc
-        if result.returncode or not result.stdout.splitlines() or result.stdout.splitlines()[0].strip()!=self.blender_version:
+        if strict_linux_cgroup and sys.platform=="linux":
+            # A strict job must never invoke even its Blender --version
+            # probe outside the proven cgroup tree + guardian boundary.
+            import tempfile
+            with tempfile.TemporaryDirectory(prefix="nvp-blender-probe-",dir=self.root) as probe_dir:
+                out_path=Path(probe_dir)/"stdout.log"
+                err_path=Path(probe_dir)/"stderr.log"
+                proc=None
+                try:
+                    with out_path.open("wb") as out,err_path.open("wb") as err:
+                        proc=launch_contained([str(self.binary),"-b","--version"],
+                            cwd=probe_dir,stdout=out,stderr=err,
+                            memory_mb=memory_limit_mb,linux_cgroup_tree_required=True)
+                        code=proc.wait(timeout=15)
+                    proc.close()
+                    stdout=out_path.read_text("utf8",errors="replace")
+                    if code:
+                        raise RuntimeError("Contained Blender version check failed with exit "+str(code))
+                except (OSError,subprocess.TimeoutExpired) as exc:
+                    raise RuntimeError("Contained Blender version check failed") from exc
+                finally:
+                    if proc is not None:
+                        if proc.poll() is None:
+                            proc.terminate_tree()
+                        proc.close()
+            first=stdout.splitlines()[0].strip() if stdout.splitlines() else ""
+        else:
+            try:
+                result=subprocess.run([str(self.binary),"-b","--version"],
+                                      capture_output=True,text=True,timeout=15,check=False)
+            except (subprocess.TimeoutExpired,OSError) as exc:
+                raise RuntimeError("Pinned Blender binary failed version probe") from exc
+            first=result.stdout.splitlines()[0].strip() if result.stdout.splitlines() else ""
+            if result.returncode:
+                raise RuntimeError("Blender version check returned nonzero exit")
+        if first!=self.blender_version:
             raise RuntimeError("Blender version differs from pinned worker policy")
         return {"blender":self.blender_version,"binary_sha256":self.binary_sha256,
-                "binary_path":str(self.binary)}
+                "binary_path":str(self.binary),
+                "strict_linux_cgroup_probe":bool(strict_linux_cgroup and sys.platform=="linux")}
 
     def _validate(self, op: BlenderOperation):
         if not isinstance(op,BlenderOperation) or not JOB_ID.fullmatch(op.job_id):
@@ -334,7 +365,8 @@ class BlenderWorkerSupervisor:
                 raise RuntimeError("Idempotency ID reused for different Blender operation")
             raise RuntimeError("Blender job already registered; never rerun or overwrite an existing attempt")
         jobdir,script,script_args=self._validate(op)
-        self.probe()
+        self.probe(strict_linux_cgroup=op.require_linux_cgroup_v2,
+                   memory_limit_mb=op.memory_limit_mb)
         with self._lock,self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             exists=db.execute("SELECT spec_sha256,state FROM worker_jobs WHERE job_id=?",(op.job_id,)).fetchone()
