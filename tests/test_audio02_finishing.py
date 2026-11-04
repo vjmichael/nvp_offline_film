@@ -96,9 +96,10 @@ class AudioFinishing(unittest.TestCase):
             "measured_not_normalized":True,"director_approved":False,
             "final_master":False}
         event=object()
-        with self.assertRaises(PermissionError):
-            approve_final_mix(capture,pid,"rawmix",self.source,qc,"approvedmix",
-                event,verify_creator_action=lambda *_:False)
+        with patch("backend.nvp_audio02c_mix_approval.measure_mix",return_value=qc):
+            with self.assertRaises(PermissionError):
+                approve_final_mix(capture,pid,"rawmix",self.source,qc,"approvedmix",
+                    event,verify_creator_action=lambda *_:False)
         # Isolate the creator decision from costly FFmpeg in this unit;
         # the separate native QC test measures a real source through FFmpeg.
         with patch("backend.nvp_audio02c_mix_approval.measure_mix",return_value=qc):
