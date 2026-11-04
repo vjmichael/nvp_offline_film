@@ -141,10 +141,21 @@ jobs:
           echo "/tmp/nvp-blender" >> "$GITHUB_PATH"
       - name: Native Blender worker and source-authenticated ProductionScene regression
         run: xvfb-run -a python -m tools.nvp_stack02a_worker_fixture --out acceptance_artifacts/stack02c2
+      - name: Real Blender operations inside delegated kernel cgroup v2 + independent guardian
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 240s systemd-run --user --scope --property=Delegate=yes \
+            --property=DelegateSubgroup=nvp.host --collect --quiet \
+            env PATH="$PATH" PYTHONPATH="$PWD" NVP_REQUIRE_REAL_CGROUP=1 \
+            xvfb-run -a python -m tools.nvp_stack02a_worker_fixture \
+            --out acceptance_artifacts/stack02c2_strict
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: nvp-stack02c2-native-baseline-real-blender
-          path: acceptance_artifacts/stack02c2/
+          path: |
+            acceptance_artifacts/stack02c2/
+            acceptance_artifacts/stack02c2_strict/
           retention-days: 7
           if-no-files-found: warn
