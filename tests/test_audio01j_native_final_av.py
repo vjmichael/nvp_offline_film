@@ -100,7 +100,13 @@ class NativeAudio01JEndToEnd(unittest.TestCase):
                              original_audio_hash)
             indexed=reopened.capture.index.read_revision(pid,"finalfilm",1)
             self.assertEqual(indexed["kind"],"master")
-            self.assertEqual(len(indexed["dependencies"]),2)
+            self.assertEqual(len(indexed["dependencies"]),3)
+            candidate_id=__import__("backend.nvp_audio01j_final_av",
+                fromlist=["candidate_id_for"]).candidate_id_for(pid,"finalfilm")
+            candidate=reopened.capture.index.read_revision(pid,candidate_id,1)
+            self.assertFalse(candidate["data"]["final_master"])
+            self.assertFalse(candidate["data"]["director_approved"])
+            self.assertEqual(candidate["kind"],"presentation")
             self.assertFalse(indexed["data"]["dcp_delivered"])
 
     def test_revoked_approved_mix_cannot_be_used_for_final_av(self):
