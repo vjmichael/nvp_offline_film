@@ -19,6 +19,7 @@ export default function ProductionAuthoringPanel({ project, api, action, busy })
   const [assets, setAssets] = useState([]);
   const [meshes, setMeshes] = useState([]);
   const [blender, setBlender] = useState(null);
+  const [renderPreflight, setRenderPreflight] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [instance, setInstance] = useState('');
@@ -44,6 +45,7 @@ export default function ProductionAuthoringPanel({ project, api, action, busy })
   const room = world?.manifest?.room_m || [8, 6, 3];
 
   useEffect(() => { setSceneId(project.scenes[0]?.id || ''); }, [project.id]);
+  useEffect(() => { setRenderPreflight(null); }, [project.id, sceneId, project.revision, world?.revision]);
 
   async function refresh() {
     if (!sceneId) return;
@@ -211,6 +213,19 @@ export default function ProductionAuthoringPanel({ project, api, action, busy })
       })}>Import verified mesh</button>
       {meshes.map(m => <p key={m.asset_id} className="fineprint">{m.asset_id}: {m.mesh_count} mesh(es), {m.faces} faces · {m.license}</p>)}
       <h3>Blender acceptance</h3>
+      <p className="fineprint">Review the precise director-approved proxy world and Blender script hashes before a future trusted native render approval. This preview does not start Blender or reserve RAM/VRAM.</p>
+      <button disabled={busy || !sceneId || !world?.manifest || world?.stale} onClick={() => execute(async () => {
+        const proof = await api(path + '/render-preflight');
+        setRenderPreflight(proof);
+        setNotice('Render source verified. No Blender job or native approval was created.');
+      })}>Inspect render preflight</button>
+      {renderPreflight && <div role="status" className="scene-item">
+        <strong>Source preview — Blender not started</strong>
+        <p className="fineprint">Project revision {renderPreflight.project_revision} · World revision {renderPreflight.world_revision} · {renderPreflight.instance_count} proxy objects.</p>
+        <p className="fineprint" style={{overflowWrap:'anywhere'}}>World SHA-256: <code>{renderPreflight.world_sha256}</code></p>
+        <p className="fineprint" style={{overflowWrap:'anywhere'}}>Blender script SHA-256: <code>{renderPreflight.blender_script_sha256}</code></p>
+        <p className="fineprint">Native authorization: not granted · Resource admission: not checked · Output: not rendered.</p>
+      </div>}
       <p className="fineprint">{blender?.available ? blender.version + ' found' : 'Native Blender not installed here; generated scripts require Blender 5.2 LTS.'}</p>
       <button disabled={busy || !world?.manifest || world?.stale} onClick={() => execute(async () => {
         const out = await api(path + '/world/blender-script');

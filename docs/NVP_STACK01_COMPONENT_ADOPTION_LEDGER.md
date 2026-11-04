@@ -119,3 +119,9 @@ Adopted the provider's own LM Studio estimate-only facility instead of inventing
 ## B5 — authenticated Lu read-only AF_UNIX status lane
 
 Native Windows/Linux true AF_UNIX tests exercise the NVP client with a test-only simulated Lu host using canonical framed status, a host-injected project/epoch-bound 256-bit HMAC grant, expiring one-use requests, SQLite replay/revocation and independent reply correlation. No model-control functions, no borrowed private llama.cpp token, and no assumed alpha integration. [B5 gate](NVP_STACK02C3B5_LU_AUTHENTICATED_STATUS_WIRE.md); [Lu Windows missing method issue #7](https://github.com/vjmichael/Lu-AI-GUI/issues/7). A real Lu-owned host adapter and real GGUF remain OPEN.
+
+## B6 — Native-ready approved proxy scene source preflight (NVP-only)
+
+The Film authoring UI previews exact project/world/script revisions and SHA-256. Internal native-ready staging fsyncs immutable approved source/script files under a pinned Blender worker root, builds typed BlenderOperation and verifies hashes/staleness again; it cannot grant creator consent, reserve memory or execute. Native Windows/Linux + React tests under B6. [B6 source and acceptance](NVP_STACK02C3B6_SOURCE_BOUND_RENDER_PREFLIGHT.md).
+
+**Scheduling decision:** Lu–DLC interop postponed until after Lu v1.0; no Lu service is a prerequisite for NVP production.

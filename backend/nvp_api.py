@@ -7,6 +7,7 @@ from backend.nvp_story_bible import StoryBible
 from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
 from backend.nvp_model_service import discover_models, writer_for
 from backend.nvp_resource_ledger import TaskLedger
+from backend.nvp_render_preflight import preflight_scene
 import uuid
 
 app = FastAPI(title="NVP — Your movie, your way", version="0.3.0-creative-foundation")
@@ -668,6 +669,13 @@ def production_world_history(project_id: str, scene_id: str):
 def production_world_blender(project_id: str, scene_id: str):
     return {'script':run(lambda: WorldState(studio).export_blender_script(project_id,scene_id)),
             'execution':'not_started','note':'Requires a real local Blender installation'}
+
+
+@app.get('/api/projects/{project_id}/production/scenes/{scene_id}/render-preflight')
+def production_render_preflight(project_id: str, scene_id: str):
+    # Read-only scene/source proof. This API is not an authenticated native
+    # execution endpoint and cannot mint creator approval or launch a worker.
+    return run(lambda: preflight_scene(studio, project_id, scene_id))
 
 
 @app.get('/api/production/blender-availability')
