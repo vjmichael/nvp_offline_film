@@ -70,11 +70,21 @@ def host(root,blender):
     thread=threading.Thread(target=sup.run,args=(op,),daemon=True)
     thread.start()
     evidence=jobdir/marker
+    ready=False
     for _ in range(1000):
-        if evidence.is_file():break
+        if evidence.is_file():
+            try:
+                d=json.loads(evidence.read_text("utf8"))
+                ready=(d.get("passed") is True and
+                       type(d.get("blender_pid")) is int and
+                       type(d.get("detached_descendant")) is int)
+                if ready and sup.inspect(op.job_id)["state"]=="RUNNING":
+                    break
+            except (OSError,ValueError,KeyError):
+                pass
         if not thread.is_alive():break
         time.sleep(.05)
-    if not evidence.is_file():
+    if not ready:
         try:
             info=sup.inspect(op.job_id)
             sys.stderr.write("Actual Blender strict worker failure: "+str(info)+"\n")
@@ -154,7 +164,7 @@ def fixture(root,blender):
             "both_os_processes_terminated":True,
             "reopened_journal_state":"INTERRUPTED",
             "untrusted_output_accepted":False,
-            "source_take_modified":False,
+            "source_take_scope":"Not part of this worker-containment test",
             "creative_approval":False,
         }
         (root/"real_blender_hardcrash_report.json").write_text(
