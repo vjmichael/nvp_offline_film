@@ -20,6 +20,10 @@ def low():
     return ResourceSnapshot(1,16384,1000,0,())
 
 
+def plenty():
+    return ResourceSnapshot(1,16384,12000,0,())
+
+
 class NativeOCIOWorkerContracts(unittest.TestCase):
     def setUp(self):
         import OpenEXR
@@ -106,6 +110,17 @@ class NativeOCIOWorkerContracts(unittest.TestCase):
                 self.host.run_next()
             launch.assert_not_called()
         self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],0)
+
+    def test_unknown_os_launcher_cleanup_holds_active_reservation(self):
+        token=self.approve()
+        self.ledger.sampler=plenty
+        with patch("backend.nvp_b10_color_worker.launch_contained",
+                   side_effect=RuntimeError("launcher lost kernel handle")):
+            with self.assertRaisesRegex(RuntimeError,"kernel handle"):
+                self.host.run_next()
+        task=self.ledger.get_task(token["job_id"])
+        self.assertEqual(task["state"],"ACTIVE")
+        self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],2048)
 
     def test_expired_exact_creator_grant_cannot_spawn_worker(self):
         token=self.approve()
