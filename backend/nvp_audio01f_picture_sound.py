@@ -255,7 +255,8 @@ def build_picture_sound_preview(capture,project_id,candidate_id,audio_id,
     # A completed, independently decoded MOV and canonical manifest are
     # atomically promoted together. FilmIndex presentation follows promotion,
     # never preceding a partial file. Crash windows retain inspectable orphans.
-    with mux.open("rb") as handle:
+    with mux.open("r+b") as handle:
+        handle.flush()
         os.fsync(handle.fileno())
     os.replace(staging,output)
     if os.name=="posix":
