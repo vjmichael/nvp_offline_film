@@ -97,10 +97,18 @@ class ActualAudioContainment(unittest.TestCase):
         self.assertEqual(self.host.journal.read(job)["state"],"recovery_required")
         state=_read_state(self.root/"rendered")
         self.assertGreaterEqual(state["next_sample"],RATE)
-        # The trusted native host holds the stopped-worker evidence.
-        recovered=self.host.recover_stopped(job)
+        # Rebuild the trusted host to prove a persisted OS-stop receipt,
+        # rather than relying on a stale in-memory worker handle.
+        restarted=NativeAudioHost(self.ledger,self.root/"native",
+                verify_creator_action=lambda event,scope: event=="creator_confirmed"
+                and scope["final_master"] is False)
+        recovered=restarted.recover_stopped(job)
         self.assertEqual(recovered["state"],"reconciled")
         self.assertGreaterEqual(recovered["next_sample"],RATE)
+        with self.ledger._db() as db:
+            witness=db.execute("SELECT worker_reaped FROM audio_native_os_stop_receipts WHERE job_id=?",
+                               (job,)).fetchone()
+        self.assertEqual(witness,(1,))
 
     def test_resource_watchdog_kills_real_contained_audio_child(self):
         job=self.prepare()
