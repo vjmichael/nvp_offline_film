@@ -180,3 +180,21 @@ class OwnedCpuModelManager:
             return [{"task_id":task_id,"instance_id":identifier,"state":state}
                 for task_id,identifier,state in db.execute(
                     "SELECT task_id,instance_id,state FROM owned_model_attempts ORDER BY attempted_at")]
+
+
+def create_local_owned_cpu_manager(ledger:TaskLedger,*,approval_check,port:int=1234):
+    """Construct official SDK client for a verified loopback-only API host.
+
+    No environment-supplied remote URL, DNS host or network interface is
+    accepted. This function is called by a trusted NVP native host only.
+    """
+    if type(port) is not int or not 1024<=port<=65535:
+        raise ValueError("LM Studio SDK port must be a local unprivileged TCP port")
+    try:
+        import lmstudio
+    except ImportError as exc:
+        raise RuntimeError("Optional official LM Studio Python SDK is not installed") from exc
+    # Client(host:port) is documented by the official SDK and refuses implicit
+    # default-port discovery. The host is always the numeric IPv4 loopback.
+    client=lmstudio.Client("127.0.0.1:"+str(port))
+    return OwnedCpuModelManager(ledger,approval_check=approval_check,client=client)
