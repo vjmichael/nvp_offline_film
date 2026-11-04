@@ -227,3 +227,51 @@ def validate_strict_smpte(dcp, doctor_bin, *, timeout=21600, report_dir=None):
         "smpte_validator_passed": True,
         "theatrical_exhibition_certified": False,
     }
+
+def inspect_cpl_timing(dcp, expected_frames):
+    """Require 2D picture/sound reel durations to match approved 24fps edit.
+
+    This is independent from the external SMPTE validator. The latter still
+    owns deep JPEG 2000, MXF PCM and application-profile verification.
+    """
+    if type(expected_frames) is not int or not 1 <= expected_frames <= 24*60*60*5:
+        raise ValueError("Invalid source-bound DCP frame budget")
+    folder=Path(dcp)
+    files=list(folder.iterdir())
+    playlists=[_parse_xml(p) for p in files if p.suffix.lower()==".xml"
+               and _local(_parse_xml(p).tag)=="CompositionPlaylist"]
+    if len(playlists)!=1:
+        raise RuntimeError("Expected one SMPTE CPL for source-bound timing")
+    reels=_members(playlists[0],"Reel")
+    if not reels or len(reels)>64:
+        raise RuntimeError("Missing or unbounded cinema reel list")
+    total=0
+    for reel in reels:
+        pictures=_members(reel,"MainPicture")
+        sounds=_members(reel,"MainSound")
+        if len(pictures)!=1 or len(sounds)!=1:
+            raise RuntimeError("Stereo 2D cinema reel needs one picture and sound asset")
+        durations=[]
+        for item in (pictures[0],sounds[0]):
+            rates=_members(item,"EditRate")
+            lengths=_members(item,"Duration")
+            if len(rates)!=1 or len(lengths)!=1:
+                raise RuntimeError("Cinema CPL missing explicit reel edit rate/duration")
+            rate=(rates[0].text or "").replace("/"," ").split()
+            if rate!=["24","1"]:
+                raise RuntimeError("Cinema CPL reel must have 24/1 edit rate")
+            try:duration=int(lengths[0].text)
+            except (TypeError,ValueError) as exc:
+                raise RuntimeError("Unparseable cinema reel duration") from exc
+            if duration<1:
+                raise RuntimeError("Empty cinema reel")
+            durations.append(duration)
+        if durations[0]!=durations[1]:
+            raise RuntimeError("Cinema picture and sound reel clocks differ")
+        total+=durations[0]
+    if total!=expected_frames:
+        raise RuntimeError("Encoded cinema CPL duration differs from approved film")
+    return {"format":"nvp.audio01k3.cpl_timing.v1",
+            "reels":len(reels),"frames":total,"fps":24,
+            "samples_per_channel":total*2000,
+            "picture_sound_same_clock":True}
