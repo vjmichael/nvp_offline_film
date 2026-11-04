@@ -1,0 +1,111 @@
+name: NVP B11 frozen FLOAT32 to ACES2 SDR16 editorial review
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b11-sdr-editorial-handoff-20261104
+  pull_request:
+    branches:
+      - nvp/stack02c3b10-ocio-aces-highres-20261104
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-b11-aces2-editorial
+  cancel-in-progress: true
+
+jobs:
+  linux-native-editorial-contract:
+    name: Linux immutable DTP/SDR editing consent and resource-contract tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP native and official ACES2 test dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Compile B11 approval, FilmIndex bridge, real fixture
+        run: python -m compileall -q backend/nvp_b11_editorial.py backend/nvp_b11_native_review.py tools/nvp_b11_review_worker.py tests/test_b11_native_editorial.py tools/nvp_stack02c3b11_real_editorial.py
+      - name: Exact native creator permission and frozen camera-cut regression
+        run: |
+          python -m unittest discover -s tests -p test_b11_native_editorial.py -v
+          python -m unittest discover -s tests -p test_exr_fidelity.py -v
+          python -m unittest discover -s tests -p test_frozen_take_native.py -v
+          python -m unittest discover -s tests -p test_b10_color.py -v
+
+  windows-native-editorial-contract:
+    name: Windows immutable DTP/SDR editing consent and resource-contract tests
+    runs-on: windows-2025
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP native and official ACES2 test dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Compile B11 approval, FilmIndex bridge, real fixture
+        run: python -m compileall -q backend/nvp_b11_editorial.py backend/nvp_b11_native_review.py tools/nvp_b11_review_worker.py tests/test_b11_native_editorial.py tools/nvp_stack02c3b11_real_editorial.py
+      - name: Exact native creator permission and frozen camera-cut regression
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_b11_native_editorial.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B11 native approval or source lineage failed' }
+          python -m unittest discover -s tests -p test_exr_fidelity.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Original Float32 OpenEXR parser failed' }
+          python -m unittest discover -s tests -p test_frozen_take_native.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B8 original frozen Digital Take regression' }
+          python -m unittest discover -s tests -p test_b10_color.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B10 official OCIO working-space regression' }
+
+  linux-real-full-120-aces2-sdr:
+    name: Real native Blender 120 Float32 frames to 120 ACES2 16bit PNG editorial review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual Blender, FFmpeg and virtual X display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth ffmpeg
+      - name: Install official pinned ACES2 OCIO Python and OpenEXR
+        run: python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Actually render original Float32 take and display-view all 120 frames
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b11_real_editorial \
+            --out acceptance_artifacts/stack02c3b11_real_editorial
+      - name: Keep original indexed Float32 files, all independent SDR16 PNGs and editorial cut proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-stack02c3b11-real-120-frame-aces2-sdr-editorial
+          path: acceptance_artifacts/stack02c3b11_real_editorial/
+          retention-days: 7
+          if-no-files-found: warn
+
+  react-film-regression:
+    name: React NVP authoring/film preview non-privileged native consent regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build NVP React and existing film authoring regression suite
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui
