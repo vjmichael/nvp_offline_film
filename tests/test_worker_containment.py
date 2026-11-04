@@ -98,6 +98,53 @@ class KernelContainmentTests(unittest.TestCase):
                         try: os.killpg(pid,signal.SIGKILL)
                         except ProcessLookupError: pass
 
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object descendant contract")
+    def test_windows_job_closure_kills_child_and_grandchild(self):
+        # A *real* descendant is created by the worker, then the supervising
+        # host exits via os._exit without invoking close/cancellation.
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            marker=root/"tree.json"
+            child_code=(
+                "import os,json,time,subprocess,sys; from pathlib import Path;"
+                "gc=subprocess.Popen([sys.executable,'-S','-c','import time; time.sleep(90)']);"
+                f"Path({str(marker)!r}).write_text(json.dumps({{'child':os.getpid(),'grandchild':gc.pid}}));"
+                "time.sleep(90)"
+            )
+            host_code=(
+                "import os,sys,time; from pathlib import Path;"
+                "from backend.nvp_worker_containment import launch_contained;"
+                f"root=Path({temp!r});"
+                'out=(root/"treeout").open("wb");err=(root/"treeerr").open("wb");'
+                f'worker=launch_contained([sys.executable,"-S","-c",{child_code!r}],'
+                'cwd=str(root),stdout=out,stderr=err,memory_mb=1024);'
+                f'marker=Path({str(marker)!r});'
+                '[(time.sleep(.05)) for i in range(200) if not marker.exists()];'
+                'assert marker.exists() and worker.poll() is None;os._exit(19)'
+            )
+            env=dict(os.environ)
+            env["PYTHONPATH"]=str(Path(__file__).resolve().parents[1])+os.pathsep+env.get("PYTHONPATH","")
+            host=subprocess.Popen([sys.executable,"-c",host_code],cwd=temp,env=env,
+                stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            try:
+                _,error=host.communicate(timeout=25)
+                self.assertEqual(host.returncode,19,error.decode("utf8",errors="replace"))
+                pids=json.loads(marker.read_text())
+                for _ in range(100):
+                    if all(not running(pid) for pid in pids.values()):
+                        break
+                    time.sleep(.1)
+                self.assertTrue(all(not running(pid) for pid in pids.values()),
+                    "Closing supervisor Job Object did not kill the entire real process tree")
+            finally:
+                if host.poll() is None:
+                    host.kill();host.wait()
+                if marker.exists():
+                    for pid in json.loads(marker.read_text()).values():
+                        if running(pid):
+                            subprocess.run(["taskkill","/PID",str(pid),"/T","/F"],
+                                capture_output=True,timeout=12,check=False)
+
     def test_kernel_memory_limit_prevents_oversized_allocation(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
