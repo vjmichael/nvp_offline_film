@@ -24,7 +24,7 @@ jobs:
       - name: Verify B14 exact edit map and output safety
         shell: pwsh
         run: |
-          python -m compileall -q backend/nvp_b14_picture_conform.py backend/nvp_b14_native_conform.py tools/nvp_b14_conform_worker.py backend/nvp_b14_edited_movie.py tools/nvp_stack02c3b14_real_conform.py backend/nvp_audio01_picture_follow.py backend/nvp_audio01b_dialogue_edit.py backend/nvp_audio01c_multistem.py backend/nvp_audio01d_chunked_recovery.py backend/nvp_audio01e_wav_publication.py tests/test_audio01_picture_follow.py tests/test_audio01b_dialogue_edit.py tests/test_audio01c_multistem.py tests/test_audio01d_chunked_recovery.py tests/test_audio01e_wav_publication.py tests/test_b14_picture_conform.py
+          python -m compileall -q backend/nvp_b14_picture_conform.py backend/nvp_b14_native_conform.py tools/nvp_b14_conform_worker.py backend/nvp_b14_edited_movie.py tools/nvp_stack02c3b14_real_conform.py backend/nvp_audio01_picture_follow.py backend/nvp_audio01b_dialogue_edit.py backend/nvp_audio01c_multistem.py backend/nvp_audio01d_chunked_recovery.py backend/nvp_audio01e_wav_publication.py backend/nvp_audio01e2_orphan_recovery.py tests/test_audio01_picture_follow.py tests/test_audio01b_dialogue_edit.py tests/test_audio01c_multistem.py tests/test_audio01d_chunked_recovery.py tests/test_audio01e_wav_publication.py tests/test_audio01e2_orphan_recovery.py tests/test_b14_picture_conform.py
           python -m unittest discover -s tests -p test_b14_picture_conform.py -v
           python -m unittest discover -s tests -p test_resource_supervisor.py -v
           python -m unittest discover -s tests -p test_crew_roles.py -v
@@ -33,6 +33,7 @@ jobs:
           python -m unittest discover -s tests -p test_audio01c_multistem.py -v
           python -m unittest discover -s tests -p test_audio01d_chunked_recovery.py -v
           python -m unittest discover -s tests -p test_audio01e_wav_publication.py -v
+          python -m unittest discover -s tests -p test_audio01e2_orphan_recovery.py -v
           if ($LASTEXITCODE -ne 0) { throw 'B14 Windows contract failed' }
   linux-conform-contract:
     runs-on: ubuntu-24.04
@@ -47,7 +48,7 @@ jobs:
           python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
       - name: Verify B14 exact edit map and output safety
         run: |
-          python -m compileall -q backend/nvp_b14_picture_conform.py backend/nvp_b14_native_conform.py tools/nvp_b14_conform_worker.py backend/nvp_b14_edited_movie.py tools/nvp_stack02c3b14_real_conform.py backend/nvp_audio01_picture_follow.py backend/nvp_audio01b_dialogue_edit.py backend/nvp_audio01c_multistem.py backend/nvp_audio01d_chunked_recovery.py backend/nvp_audio01e_wav_publication.py tests/test_audio01_picture_follow.py tests/test_audio01b_dialogue_edit.py tests/test_audio01c_multistem.py tests/test_audio01d_chunked_recovery.py tests/test_audio01e_wav_publication.py tests/test_b14_picture_conform.py
+          python -m compileall -q backend/nvp_b14_picture_conform.py backend/nvp_b14_native_conform.py tools/nvp_b14_conform_worker.py backend/nvp_b14_edited_movie.py tools/nvp_stack02c3b14_real_conform.py backend/nvp_audio01_picture_follow.py backend/nvp_audio01b_dialogue_edit.py backend/nvp_audio01c_multistem.py backend/nvp_audio01d_chunked_recovery.py backend/nvp_audio01e_wav_publication.py backend/nvp_audio01e2_orphan_recovery.py tests/test_audio01_picture_follow.py tests/test_audio01b_dialogue_edit.py tests/test_audio01c_multistem.py tests/test_audio01d_chunked_recovery.py tests/test_audio01e_wav_publication.py tests/test_audio01e2_orphan_recovery.py tests/test_b14_picture_conform.py
           python -m unittest discover -s tests -p test_b14_picture_conform.py -v
           python -m unittest discover -s tests -p test_resource_supervisor.py -v
           python -m unittest discover -s tests -p test_crew_roles.py -v
@@ -56,6 +57,7 @@ jobs:
           python -m unittest discover -s tests -p test_audio01c_multistem.py -v
           python -m unittest discover -s tests -p test_audio01d_chunked_recovery.py -v
           python -m unittest discover -s tests -p test_audio01e_wav_publication.py -v
+          python -m unittest discover -s tests -p test_audio01e2_orphan_recovery.py -v
 
   real-blender-edited-picture-conform:
     name: Real Blender source to two native conformed edits and audited edited ProRes MOV
