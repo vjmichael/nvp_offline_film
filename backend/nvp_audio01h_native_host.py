@@ -242,6 +242,68 @@ class NativeAudio01HHost:
                 self.ledger.update(job,"recovering","Interrupted; output quarantined for native audit")
             raise
 
+    def recover_completed(self, job):
+        """After restart, reconcile ONLY a proven reaped and verified result.
+
+        No evidence of OS stop -> no resource release. No implicit rerender.
+        This is deliberately more restrictive than worker-side receipts.
+        """
+        grant = self._grant(job)
+        task = self.ledger.get_task(job)
+        if grant["stopped"] != 1 or task is None:
+            raise PermissionError("No durable native OS worker stop witness")
+        plan_file = self.root / job / "plan.json"
+        if plan_file.is_symlink() or _sha(plan_file) != grant["plan_sha"]:
+            raise RuntimeError("Recovered plan was changed")
+        plan = json.loads(plan_file.read_bytes())
+        source = self.capture.index.read_revision(plan["project_id"],
+                                                  plan["source_audio_id"],1)
+        scope = plan["authorized_scope"]
+        if (source["document_sha256"] != scope["audio_document_sha"] or
+            scope["source_sha256"] != next(x["sha256"] for x in source["data"]["wav_outputs"]
+                                          if x["stem_id"] == plan["stem_id"])):
+            raise RuntimeError("Recovered source did not match original approval")
+        rec = self.capture.index.read_revision(plan["project_id"], plan["output_id"],1)
+        data = rec["data"]
+        receipt_file = self.root / job / "worker_receipt.json"
+        if receipt_file.is_symlink():
+            raise RuntimeError("Unsafe recovered worker receipt")
+        receipt = json.loads(receipt_file.read_bytes())
+        if (rec["kind"] != "audio" or data.get("format") != AUTOMATED_FORMAT or
+            data.get("source_audio_sha256") != source["document_sha256"] or
+            data.get("source_stem_id") != plan["stem_id"] or
+            data.get("automation") != plan["points"] or
+            data.get("final_mix") is not False or
+            receipt.get("format") != "nvp.audio01h.worker_receipt.v1" or
+            receipt.get("document_sha256") != rec["document_sha256"] or
+            receipt.get("wav_sha256") != data["automated_wav_sha256"] or
+            receipt.get("final_master") is not False):
+            raise RuntimeError("Recovered media and receipt disagree")
+        target = Path(plan["destination"])
+        if target.is_symlink() or not target.is_file() or _sha(target) != data["automated_wav_sha256"]:
+            raise RuntimeError("Recovered output changed")
+        self.capture.index.verify_media_file(plan["project_id"],
+                                             data["automated_wav_sha256"],"audio/wav")
+        if grant["result_sha"] not in (None,rec["document_sha256"]):
+            raise RuntimeError("Conflicting durable completion")
+        if task["state"] == "SUCCEEDED":
+            if grant["result_sha"] != rec["document_sha256"]:
+                with self.ledger._db() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    db.execute("UPDATE native_audio01h_grants SET result_sha=? WHERE job_id=?",
+                               (rec["document_sha256"],job))
+                    db.commit()
+            return {"job_id":job,"state":"SUCCEEDED","rerendered":False}
+        if task["state"] != "ACTIVE":
+            raise RuntimeError("Only a stopped ACTIVE native job may reconcile")
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("UPDATE native_audio01h_grants SET result_sha=? WHERE job_id=?",
+                       (rec["document_sha256"],job))
+            db.commit()
+        self.ledger.finish(job,"SUCCEEDED","Independent stopped-worker replay verified")
+        return {"job_id":job,"state":"SUCCEEDED","rerendered":False}
+
     def creator_decision(self, project_id, automated_id, decision_id, evidence,
                          *, decision, creator_event, ffmpeg="ffmpeg"):
         """Creator-only host entrypoint, with durable replay prevention."""
