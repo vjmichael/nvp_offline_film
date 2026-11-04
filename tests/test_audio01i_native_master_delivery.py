@@ -42,8 +42,6 @@ def setup_approved(root):
 
 
 class Audio01IEndToEnd(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
-                         "Native real FFmpeg and FFprobe required")
     def test_archival_pcm24_through_native_host_to_second_approved_delivery(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
@@ -89,8 +87,6 @@ class Audio01IEndToEnd(unittest.TestCase):
                 host.deliver(pid,"mastercandidate","anotherdelivery",root/"delivery",
                     "a_different_creator_event")
 
-    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
-                         "Native FFmpeg/FFprobe required")
     def test_revoked_mix_disallows_any_new_mastering(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
@@ -104,6 +100,44 @@ class Audio01IEndToEnd(unittest.TestCase):
                 host.stage(pid,"mixdecision",1,"candidate","archive_pcm24_v1",
                     root/"blocked.wav","creator_after_revoke")
             self.assertFalse((root/"blocked.wav").exists())
+
+    def test_streaming_profile_is_independently_measured_not_assumed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            cap,pid,_=setup_approved(root)
+            host=NativeAudio01IHost(cap,ledger(root),root/"audioi",
+                verify_creator_action=lambda *_:True,strict_linux_tree=False)
+            queued=host.stage(pid,"mixdecision",1,"streamcandidate",
+                "streaming_pcm24_v1",root/"stream_candidate.wav",
+                "creator_streaming_candidate")
+            result=host.run_next(timeout_seconds=180)
+            self.assertEqual(result["state"],"SUCCEEDED")
+            candidate=cap.index.read_revision(pid,"streamcandidate",1)
+            self.assertEqual(candidate["data"]["analysis"]["bit_depth"],24)
+            self.assertLessEqual(
+                candidate["data"]["analysis"]["true_peak_dbtp"],-1.4)
+            self.assertFalse(candidate["data"]["final_master"])
+            self.assertFalse(candidate["data"]["master_approved"])
+            recovered=host.recover_candidate(queued["job_id"])
+            self.assertEqual(recovered["state"],"SUCCEEDED")
+            self.assertFalse(recovered["rerendered"])
+
+    def test_changed_candidate_does_not_become_final_delivery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            cap,pid,_=setup_approved(root)
+            host=NativeAudio01IHost(cap,ledger(root),root/"audioi",
+                verify_creator_action=lambda *_:True,strict_linux_tree=False)
+            queued=host.stage(pid,"mixdecision",1,"candidate",
+                "archive_pcm24_v1",root/"candidate.wav","make_candidate")
+            host.run_next(timeout_seconds=180)
+            with (root/"candidate.wav").open("ab") as stream:
+                stream.write(b"tamper")
+            # Even with a matching content-addressed FilmIndex blob, the
+            # trusted native candidate must remain bound to the original
+            # worker destination and its immutable receipt.
+            with self.assertRaises(RuntimeError):
+                host.recover_candidate(queued["job_id"])
 
     def test_unknown_profile_rejected_prelaunch(self):
         with tempfile.TemporaryDirectory() as temporary:
