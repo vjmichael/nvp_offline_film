@@ -125,3 +125,7 @@ Native Windows/Linux true AF_UNIX tests exercise the NVP client with a test-only
 The Film authoring UI previews exact project/world/script revisions and SHA-256. Internal native-ready staging fsyncs immutable approved source/script files under a pinned Blender worker root, builds typed BlenderOperation and verifies hashes/staleness again; it cannot grant creator consent, reserve memory or execute. Native Windows/Linux + React tests under B6. [B6 source and acceptance](NVP_STACK02C3B6_SOURCE_BOUND_RENDER_PREFLIGHT.md).
 
 **Scheduling decision:** Lu–DLC interop postponed until after Lu v1.0; no Lu service is a prerequisite for NVP production.
+
+## B7 — native authorized Blender execution and independent output readback
+
+NVP now binds a director-approved, versioned proxy scene and its hash-pinned Blender script to a bounded, revocable, SQLite-durable **native-only** creator event authorization. The existing dispatcher revalidates the exact operation before/after resource admission, and a second resource-admitted Blender worker reopens the `.blend` to audit real geometry and director visibility plus render a PNG proof. Linux real Blender and Windows/Linux native contract gates are tracked in [B7 native build/reopen acceptance](NVP_STACK02C3B7_NATIVE_APPROVED_SCENE_AND_REOPEN.md). The installed creator-authenticated native desktop approval handler, real Windows GPU physical acceptance, animated Digital Takes, scene-linear EXR and professional output remain OPEN. **No Lu–DLC dependency until after Lu v1.0.**

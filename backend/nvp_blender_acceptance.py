@@ -32,6 +32,11 @@ for item in manifest['instances']:
     check('instance_exists:'+item['instance_id'], obj is not None, name)
     if obj is None: continue
     check('identity:'+item['instance_id'],obj.get('nvp_asset_id') == item['asset_id'], 'persistent asset ID')
+    hidden = item.get('visible', True) is False
+    check('visibility:'+item['instance_id'],
+          bool(obj.hide_render) == hidden and bool(obj.hide_viewport) == hidden,
+          {'expected_hidden':hidden,'render_hidden':bool(obj.hide_render),
+           'viewport_hidden':bool(obj.hide_viewport)})
     pose=item['pose']
     xyz=[round(float(v),4) for v in obj.location]
     expect=[round(float(pose['x']),4),round(float(pose['y']),4),round(float(item['dimensions'][2])/2,4)]

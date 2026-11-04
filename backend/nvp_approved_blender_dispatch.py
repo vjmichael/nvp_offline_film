@@ -15,7 +15,7 @@ from backend.nvp_resource_ledger import TaskLedger
 
 
 class ApprovedBlenderDispatcher:
-    def __init__(self,supervisor:BlenderWorkerSupervisor,ledger:TaskLedger,*,approval_check):
+    def __init__(self,supervisor:BlenderWorkerSupervisor,ledger:TaskLedger,*,approval_check,pre_worker_check=None):
         if not isinstance(supervisor,BlenderWorkerSupervisor):
             raise TypeError("Only the established native Blender supervisor may dispatch")
         if supervisor.activity is not ledger:
@@ -24,6 +24,9 @@ class ApprovedBlenderDispatcher:
         self.ledger=ledger
         self.owner_key="blender_"+hashlib.sha256(str(supervisor.root).encode()).hexdigest()[:20]
         self.bindings=ApprovedTaskBindings(ledger,approval_check=approval_check)
+        if pre_worker_check is not None and not callable(pre_worker_check):
+            raise TypeError("Native pre-worker authorization check must be callable")
+        self.pre_worker_check=pre_worker_check
 
     def enqueue(self,operation:BlenderOperation,*,approval_id,lane="standard"):
         if not isinstance(operation,BlenderOperation):
@@ -56,6 +59,12 @@ class ApprovedBlenderDispatcher:
                 raise RuntimeError("Approved operation memory budget changed")
             self.ledger.update(task_id,"checking_memory",
                                "Approved immutable Blender specification and resource claim verified")
+            # Recheck live project/creator policy after successful resource
+            # admission and immediately before native worker dispatch.
+            # Any refusal is fail-closed; the safety reservation is retained
+            # for host reconciliation rather than risking an orphaned job.
+            if self.pre_worker_check is not None:
+                self.pre_worker_check(task_id,document)
             # Single existing contained worker. It supplies the real job
             # ledger, native OS containment, input/output hashes and recovery.
             result=self.supervisor._run_worker(operation)
