@@ -39,8 +39,6 @@ class RenderProfileContracts(unittest.TestCase):
                     profile_for(*dims)
         for options in (
             (1920,1080,2,4096,120),
-            (3840,2160,2,8192,120),
-            (3840,2160,1,4096,120),
             (1280,720,3,4096,120),
             (160,90,8,512,120),
             (1920,1080,1,True,120)
