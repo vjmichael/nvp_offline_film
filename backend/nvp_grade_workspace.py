@@ -11,6 +11,7 @@ from pathlib import Path
 import hashlib
 import subprocess
 import tempfile
+import threading
 
 from backend.nvp_color_mastering import (
     ColorMasteringPipeline, grade_recipe, validate_grade, grade_pixels,
@@ -22,6 +23,9 @@ from backend.nvp_studio import Studio
 
 FORMAT="nvp.color.grade.workspace.v1"
 MAX_PREVIEW_BYTES=4*1024*1024
+# Two OCIO/FFmpeg previews at most, even if a browser sends many requests
+# while a user scrubs the image. Disallow unbounded tool/process fanout.
+_PREVIEW_SLOTS=threading.BoundedSemaphore(value=2)
 
 
 class GradeWorkspace:
@@ -158,11 +162,16 @@ class GradeWorkspace:
         return records
 
     def preview(self,project_id,source_exr_id,frame,recipe=None,*,ffmpeg=None):
-        """Generate a real view-transformed, uncalibrated browser preview PNG.
+        """Bound live previews; one API request never queues worker processes."""
+        if not _PREVIEW_SLOTS.acquire(blocking=False):
+            raise RuntimeError("Color preview is busy (two-worker limit); retry when the current preview completes")
+        try:
+            return self._preview_actual(project_id,source_exr_id,frame,recipe,ffmpeg=ffmpeg)
+        finally:
+            _PREVIEW_SLOTS.release()
 
-        No project-scoped files or records are changed. Each request derives
-        the image from a fresh verified FilmIndex read of the source EXR.
-        """
+    def _preview_actual(self,project_id,source_exr_id,frame,recipe=None,*,ffmpeg=None):
+        """Actual EXR + OCIO preview; source and FilmIndex remain unchanged."""
         source,rows,width,height=self.master._source(project_id,source_exr_id)
         if type(frame) is not int or not 1<=frame<=len(rows):
             raise ValueError("Preview frame outside the actual frozen take")
