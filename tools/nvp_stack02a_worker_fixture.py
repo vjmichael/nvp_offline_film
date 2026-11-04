@@ -105,7 +105,7 @@ def fixture(out, blender):
                  "blender_audit.json":"json_audit"},
         arguments={"--manifest":"source_manifest.json","--output":"real_scene.blend",
                    "--render":"real_frame.png","--audit":"blender_audit.json"},
-        timeout_seconds=180
+        timeout_seconds=180,
         require_linux_cgroup_v2=strict_linux_tree)
     result=worker.run(op)
     if result["state"]!="SUCCEEDED":
@@ -144,7 +144,7 @@ def fixture(out, blender):
     bad=BlenderOperation(job_id=bad_dir.name,script="bad.py",
         script_sha256=sha_file(bad_dir/"bad.py"),inputs={},
         outputs={"will_not_exist.json":"json_audit"},arguments={},
-        timeout_seconds=40
+        timeout_seconds=40,
         require_linux_cgroup_v2=strict_linux_tree)
     bad_result=worker.run(bad)
     if bad_result["state"]!="FAILED" or bad_result["outputs"] is not None:
@@ -157,7 +157,7 @@ def fixture(out, blender):
     slow=BlenderOperation(job_id=slow_dir.name,script="slow.py",
         script_sha256=sha_file(slow_dir/"slow.py"),inputs={},
         outputs={"never.json":"json_audit"},arguments={},
-        timeout_seconds=70
+        timeout_seconds=70,
         require_linux_cgroup_v2=strict_linux_tree)
     response={}
     thread=threading.Thread(target=lambda:response.update(worker=worker.run(slow)))
