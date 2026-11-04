@@ -181,7 +181,7 @@ class NativeAudioHost:
               "worker_sha":_sha_file(self.worker),
               "resume_from":resume_from}
         seal=hashlib.sha256(canonical_bytes(spec)).hexdigest()
-        approval="audioapproval_"+secrets.token_hex(12)
+        approval="audioapproval"+secrets.token_hex(12)
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
             dest=str(target.absolute())
@@ -283,6 +283,31 @@ class NativeAudioHost:
         finally:
             if staging_lock is not None:
                 staging_lock.release()
+
+    def reconcile_journal_only(self,job):
+        """Fail-closed cleanup of a never-admitted journal-only crash record.
+
+        No worker may have started: require absent native grant, TaskLedger
+        task, staging lease, and output path. Preserve a terminal audit trail;
+        never synthesize creator consent, OS-stop receipts or queued work.
+        """
+        record=self.journal.read(job)
+        if (record["state"]!="approved" or record["generation"]!=0 or
+            record["last_next_sample"]!=0):
+            raise RuntimeError("Journal-only cleanup requires untouched approved intent")
+        spec=record["spec"]
+        target=Path(spec["directory"])
+        with AudioStagingLock(target):
+            with self.ledger._db() as db:
+                grant=db.execute("SELECT 1 FROM audio_native_grants WHERE job_id=?",
+                                 (job,)).fetchone()
+                task=db.execute("SELECT 1 FROM tasks WHERE id=?",(job,)).fetchone()
+                lease=db.execute("""SELECT 1 FROM audio_native_staging_leases
+                    WHERE job_id=? OR directory=?""",(job,str(target.absolute()))).fetchone()
+            if grant or task or lease or target.exists() or target.is_symlink():
+                raise RuntimeError("Journal-only record has unverified downstream effects")
+            return self.journal.transition(job,0,"failed",
+                "pre_admission_crash_closed_without_worker")
 
     def reconcile_admission_outbox(self,job):
         """Idempotent native replay of split-commit grant to TaskLedger queue.
