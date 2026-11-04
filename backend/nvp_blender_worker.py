@@ -150,6 +150,25 @@ class BlenderWorkerSupervisor:
         doc["outputs"]=json.loads(doc.pop("output_manifest_json")) if doc["output_manifest_json"] else None
         return doc
 
+    def verify_completed(self, job_id: str):
+        """Independent restart-safe output verification; not trust in journal alone."""
+        status=self.inspect(job_id)
+        if status["state"]!="SUCCEEDED" or not status["outputs"]:
+            raise RuntimeError("No successfully verified worker output is available")
+        with self._connect() as db:
+            row=db.execute("SELECT spec_json FROM worker_jobs WHERE job_id=?",(job_id,)).fetchone()
+        if not row:
+            raise KeyError("Worker job was not journaled")
+        spec=BlenderOperation(**json.loads(row[0]))
+        if hashlib.sha256(spec.canonical().encode()).hexdigest()!=status["spec_sha256"]:
+            raise RuntimeError("Worker job specification changed")
+        jobdir=(self.root/job_id).resolve()
+        self._check_inputs(spec,jobdir)
+        fresh=self._audit_outputs(spec,jobdir)
+        if fresh!=status["outputs"]:
+            raise RuntimeError("Blender output changed since successful acceptance")
+        return status
+
     def events(self, job_id: str):
         self.inspect(job_id)
         with self._connect() as db:
