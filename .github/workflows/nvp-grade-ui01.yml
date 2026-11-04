@@ -88,6 +88,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
+          npm run test:ui
 
   native-filmin-index-preview:
     name: Genuine frozen Cycles EXR -> OCIO before/after -> two draft revisions -> independent restart
