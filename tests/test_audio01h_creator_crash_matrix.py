@@ -39,7 +39,6 @@ def child(root, point):
     raise RuntimeError("Creator crash gate not reached")
 
 
-@unittest.skipUnless(__import__("shutil").which("ffmpeg"),"Real FFmpeg required")
 class CreatorDecisionCrashMatrix(unittest.TestCase):
     def test_every_creator_decision_boundary_is_durable_and_nonreplayable(self):
         for point in POINTS:
