@@ -1,7 +1,7 @@
 # NVP-STACK-02C2 — Delegated Linux cgroup v2 and real descendant cleanup
 
 **Engineering date:** 2026-11-03  
-**Status:** Cgroup v2 integration under native test; independent complete full-tree proof must be recorded before marking accepted.  
+**Status:** **STRICT, OPT-IN CGROUP TECHNICAL ACCEPTANCE PASSED** — [GitHub run 41769499518](https://github.com/vjmichael/nvp_offline_film/actions/runs/41769499518): 4/4 jobs, including 4/4 real delegated cgroup tests and genuine Blender 5.2.3 under a strict cgroup. Production-by-default enablement, GPU/VRAM admission, installer and GPL release review remain open.  
 **Related:** [STACK-02C host lease + Windows Blender](NVP_STACK02C_HOST_LEASE_AND_WINDOWS_BLENDER_ACCEPTANCE.md) · [Reuse-first ADR](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md) · [Blender worker ADR](NVP_ADR_STACK02_BLENDER_WORKER_USD_DEFERRED.md)
 
 ## Why the previous Linux implementation was insufficient
@@ -39,10 +39,25 @@ Authoritative documentation: [Linux kernel cgroup v2](https://www.kernel.org/doc
 
 The production worker **refuses** a strict operation. The delegated test job is reported **BLOCKED / FAILED** (non-gating exploratory CI lane); it cannot be interpreted as passed. GitHub-hosted runners might not provide the required delegated controllers, even if a cgroup v2 mount is present. The engineering team must provide a properly delegated runner/user service and run the same test with `NVP_REQUIRE_REAL_CGROUP=1`. **Do not call STACK-02C2 complete on a runner that skipped these tests**.
 
+## Recorded real acceptance — measured independently
+
+**Four GitHub CI jobs passed in [run 41769499518](https://github.com/vjmichael/nvp_offline_film/actions/runs/41769499518)**:
+
+- **Real delegated Linux user scope:** `systemd-run --user --scope --property=Delegate=yes --property=DelegateSubgroup=nvp.host` provided a genuine writable delegation and allowed `memory` and `pids` controller enabling. Four strict tests passed **without skips**. In particular, a real worker spawned a **detached grandchild** with a different session, the real host exited via `os._exit(27)`, and the independent guardian's `cgroup.kill` stopped both. A second test proved normal worker exit also cleans the detached descendant. A forged foreign cgroup and missing delegation were refused.
+- **Real Linux Blender 5.2.3:** NVP rendered the *same production fixture twice*: the previous legacy PDEATHSIG profile and a new **`strict_linux_cgroup_tree_mode=true` profile**. The strict one produced a real 128×72 PNG and .blend, ran the approved NVP source stage and the independent second-process Blender geometry audit (**nine checks**), independently reopened its source and outputs, rejected a bad script and output tampering, and successfully cancelled another real Blender worker. All applicable operations passed inside a delegated cgroup leaf with an out-of-tree guardian.
+- **Windows:** all **14** historical Job Object, host lease and durable worker tests passed unchanged. Windows continues using its already accepted Job Object child/grandchild OS guarantees; no Linux cgroup code is executed there.
+- **Normal Linux runner (outside systemd delegation):** verified strict delegation refusal and all previous contract regressions. The two kernel tests rightly skip **outside delegation**; that is NOT the separate strict-scope test, which ran and passed independently.
+
+**Native artifact:** `nvp-stack02c2-native-baseline-real-blender` in the GitHub run contains both full separate FilmIndex/SQLite worker trees and reports. The ZIP was downloaded and independently checked: **58 entries and no CRC errors**. The strict report records `strict_linux_cgroup_tree_mode=true`, independent approved stage status `passed_blender_supervised`, `audit_checks=9`, original output corruption refusal and cancellation/restart evidence. The strict production demo's rendered .blend SHA-256 was `c9df3e8630ce358d78f8057a45d27ae8d62031b6c348488b6a35db96ab197c80`; PNG SHA-256 `24874f75c8be49e4edcfaee60dd6a81efb0b2b9ddc6ff7425c36d4261fc2ba82`. The original immutable scene/geometry lineage remained intact.
+
+**Follow-up hardening:** Source change after this run also moves the **strict Blender `--version` probe** into the same kernel cgroup, avoiding an uncontained Blender process before the main render. Its final revision CI is tracked separately; only call that change accepted after its native strict rerun is green.
+
+**Scope distinction:** The real hard-crash test uses a process that deliberately spawns an escaping descendant. The real Blender test separately proves Blender uses the strict profile, original geometry audit and resource bounds. The native Blender acceptance report's historical `orphan_cleanup_after_real_host_crash_proven=false` field refers to the Blender fixture alone; the separate real kernel test **does** prove detached-grandchild cleanup. It would be misleading to conflate them or claim an actual Blender-specific host-hard-kill was simulated.
+
 ## Next release requirements
 
 - Switch every production Blender/Cycles/animation operation to the strict cgroup requirement on supported Linux deployments, and add appropriate systemd user-service delegation and worker health UX.
-- Verify the real, pinned **Blender binary under the delegated cgroup**, including descendants detached during a *genuine hard NVP host exit*.
+- Repeat with **a real pinned Blender worker that deliberately launches a detached descendant** and a genuine hard NVP host kill in one combined scenario. Kernel detached-process cleanup and strict Blender execution are independently proven above; this combined Blender-specific crash replay remains an extra release gate.
 - Keep a conservative host-wide RAM/VRAM admission policy: cgroup `memory.max` controls system memory, **not VRAM** or driver allocations.
 - Test cgroup cleanup after failed Blender scripts, cancellation, timeouts, SIGKILL to the host, system shutdown and competing NVP hosts.
 - Preserve the one-installer, GPL Blender side-script/license, source notices and offline-application constraints before retail distribution.
