@@ -86,6 +86,14 @@ class Audio01IEndToEnd(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 host.deliver(pid,"mastercandidate","anotherdelivery",root/"delivery",
                     "a_different_creator_event")
+            with self.assertRaises(PermissionError):
+                host.deliver(pid,"mastercandidate","nonce_reuse",root/"reused",
+                    "real_creator_master_publish")
+            self.assertFalse((root/"reused").exists())
+            with (root/"delivery"/"master.wav").open("ab") as altered:
+                altered.write(b"bad")
+            with self.assertRaises(RuntimeError):
+                reopened.verify_delivery(pid,"delivery",root/"delivery")
 
     def test_revoked_mix_disallows_any_new_mastering(self):
         with tempfile.TemporaryDirectory() as temporary:
