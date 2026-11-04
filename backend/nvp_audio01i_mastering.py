@@ -12,7 +12,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import wave
 
 from backend.nvp_audio01h_mix_decision import FORMAT as DECISION_FORMAT
 from backend.nvp_audio01h_stem_revision import FORMAT as AUTOMATED_FORMAT
@@ -55,10 +54,13 @@ def inspect_native(path,ffmpeg,ffprobe,expected_samples):
     if (info.get("codec_name")!="pcm_s24le" or
         int(info.get("sample_rate",0))!=RATE or int(info.get("channels",0))!=2):
         raise RuntimeError("Master requires 48 kHz stereo PCM24")
-    # Independently count the actual 24-bit payload, not rounded container duration.
-    with wave.open(str(path),"rb") as w:
-        if (w.getnchannels(),w.getsampwidth(),w.getframerate(),w.getnframes()) != (2,3,RATE,expected_samples):
-            raise RuntimeError("Master PCM sample clock mismatched picture")
+    # Decode the full stream and count actual PCM24 samples. WAV headers may
+    # use WAVE_FORMAT_EXTENSIBLE, which Python 3.11 wave cannot parse.
+    raw=_run([str(ffmpeg),"-nostdin","-v","error","-xerror","-i",str(path),
+              "-map","0:a:0","-ac","2","-ar","48000",
+              "-c:a","pcm_s24le","-f","s24le","pipe:1"])
+    if len(raw.stdout)!=expected_samples*6:
+        raise RuntimeError("Decoded PCM24 sample clock mismatched picture")
     run=_run([str(ffmpeg),"-nostdin","-hide_banner","-v","info","-i",str(path),
               "-map","0:a:0","-af","loudnorm=I=-23:TP=-2:LRA=7:print_format=json",
               "-f","null","-"])
