@@ -38,6 +38,14 @@ Immediately audit current homegrown grading curves and image routines against **
 
 This is binding implementation guidance; consult [NVP-ADR-STACK-001](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md) for criteria and ordered tests. Earlier detailed feature-roadmap entries remain desired *capabilities* but no longer imply bespoke implementation.
 
+### 0.3 OS-contained native Blender production work [ENGINEERING] — STACK-02B
+
+Following the accepted external Blender worker and durable SQLite ledger, NVP now uses **Windows Job Objects (suspended-first execution, kill-on-close and bounded job committed-memory)** and **Linux kernel parent-death signaling with a bounded address-space cap**. In both cases Blender is still an independent executable; this is host integration, not a new rendering engine or a GPL library linked into NVP. The source/take/film custody and creative approval rules do not change.
+
+The actual limits of Linux `PR_SET_PDEATHSIG` are explicit: it kills the immediate Blender worker after a hard supervising-thread/process death, but does not establish descendant-tree cleanup equivalent to cgroups v2. Windows Job Objects can cover the child tree and require direct process-tree crash tests. Neither mechanism is GPU VRAM control or multi-instance host leasing.
+
+See [STACK-02B implementation, measured acceptance and open gates](NVP_STACK02B_OS_WORKER_CONTAINMENT.md). Next tasks: Linux cgroup or guardian tree guarantee; actual Windows Blender native worker validation; multi-instance worker-lease protection and all-path supervisor migration; hardware memory/VRAM load guardrails; single NSIS installer with license/SBOM/source notices. Do not claim those as complete based on a job-level unit test.
+
 ### 0.2 Blender-first GPL-aware external-worker boundary [C] — approved 2026-11-03
 
 NVP will use **Blender as its primary independent 3D production worker** for scenes, actors, animation, lighting, cameras and rendering. NVP remains a **separate proprietary orchestrator**; job data and derived artifacts cross a standards-based file/CLI boundary instead of linking Blender GPL libraries into the NVP process. Distributable `bpy` adapters must be separately GPL-reviewed/licensed. Original Digital Film World and frozen Takes remain authoritative; `.blend` and rendered EXRs are derived versions. **A separate OpenUSD runtime is deferred**, not required for the baseline installer; Blender-native USD import/export is available for limited interchange, with actual composition fidelity checked before use. Only a *demonstrated multi-application layer/reference/variant composition gap* justifies independent OpenUSD integration. See [NVP-ADR-STACK-002](NVP_ADR_STACK02_BLENDER_WORKER_USD_DEFERRED.md). Commercial packaging remains gated by real redistribution compliance and native worker acceptance.
