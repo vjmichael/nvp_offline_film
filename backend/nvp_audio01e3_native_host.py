@@ -276,6 +276,38 @@ class NativeAudioHost:
             if staging_lock is not None:
                 staging_lock.release()
 
+    def audit_incomplete_admissions(self):
+        """Read-only crash audit; never release a resource or forge approval.
+
+        A host crash between journal registration, grant/lease commit and
+        ApprovedTaskBindings.enqueue can leave a staged but unscheduled job.
+        Only report these cases. A separate trusted transaction reconciler
+        must verify all OS and source effects before changing anything.
+        """
+        with self.ledger._db() as db:
+            rows=db.execute("""SELECT g.job_id,g.spec_sha,l.directory,
+                t.state,a.task_id
+                FROM audio_native_grants g
+                LEFT JOIN audio_native_staging_leases l ON l.job_id=g.job_id
+                LEFT JOIN tasks t ON t.id=g.job_id
+                LEFT JOIN authorized_task_specs a ON a.task_id=g.job_id
+                ORDER BY g.job_id""").fetchall()
+        results=[]
+        for job,sha,directory,task_state,sealed in rows:
+            record=self.journal.read(job)
+            reason=None
+            if task_state is None or sealed is None:
+                reason="ADMISSION_NOT_ATOMIC_WITH_GRANT"
+            elif record["state"]=="approved" and task_state=="ACTIVE":
+                reason="ADMITTED_BUT_WORKER_NOT_ATTESTED"
+            if reason:
+                results.append({"job_id":job,"status":"QUARANTINED_NEEDS_NATIVE_AUDIT",
+                                "reason":reason,"journal_state":record["state"],
+                                "task_state":task_state,
+                                "lease_present":directory is not None,
+                                "spec_sha256":sha})
+        return results
+
     def _grant_ram(self,job):
         with self.ledger._db() as db:
             return db.execute("SELECT ram_mb FROM tasks WHERE id=?",(job,)).fetchone()[0]
