@@ -1,0 +1,104 @@
+name: NVP B13 verified external OTIO edit import and immutable picture revisions
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b13-otio-reimport-revisions-20261104
+  pull_request:
+    branches:
+      - nvp/stack02c3b12-editorial-interchange-delivery-20261104
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-b13-otio-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-edited-picture-contract:
+    name: Windows official OTIO edit validation, CAS revision and native approval
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned NVP editing, OCIO and FilmIndex runtime
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Compile B13 host parser, isolated worker, source test and real acceptance
+        run: python -m compileall -q backend/nvp_b13_editorial_roundtrip.py backend/nvp_b13_native_reimport.py tools/nvp_b13_reimport_worker.py tests/test_b13_editorial_roundtrip.py tools/nvp_stack02c3b13_real_roundtrip.py
+      - name: Prove 24fps edited OTIO native rejection/lineage and frozen source correctness
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_b13_editorial_roundtrip.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B13 edited OTIO or native creator acceptance failed' }
+          python -m unittest discover -s tests -p test_b12_editorial_delivery.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B12 original OTIO source regression failed' }
+
+  linux-edited-picture-contract:
+    name: Linux official OTIO edit validation, CAS revision and native approval
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned NVP editing and frozen FilmIndex source runtime
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Compile and prove native OTIO edit source contract
+        run: |
+          python -m compileall -q backend/nvp_b13_editorial_roundtrip.py backend/nvp_b13_native_reimport.py tools/nvp_b13_reimport_worker.py tests/test_b13_editorial_roundtrip.py tools/nvp_stack02c3b13_real_roundtrip.py
+          python -m unittest discover -s tests -p test_b13_editorial_roundtrip.py -v
+          python -m unittest discover -s tests -p test_b12_editorial_delivery.py -v
+
+  real-blender-otio-two-revision-roundtrip:
+    name: Real B12 original 120-frame film to two contained edited OTIO revisions after restart
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install genuine Blender, FFmpeg/FFprobe and virtual X display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender ffmpeg xvfb xauth
+      - name: Install exact official film editing and scene-color libraries
+        run: python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Run true frozen Digital Take and native NLE-like edit reimport
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b13_real_roundtrip \
+            --out acceptance_artifacts/nvp_stack02c3b13_actual_roundtrip
+      - name: Preserve original film and two source-bound edited OTIO revisions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-b13-real-native-edited-otio-reimport
+          path: acceptance_artifacts/nvp_stack02c3b13_actual_roundtrip/
+          retention-days: 7
+          if-no-files-found: warn
+
+  react-original-authoring-regression:
+    name: NVP React film/UI regression, no model-granted native edit permission
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build native NVP authoring UI
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui
