@@ -80,15 +80,25 @@ def parse_edited_otio(raw:bytes,original:dict):
     cuts={str(c["shot_id"]):c for c in original["camera_cutlist"]}
     if len(cuts)!=len(original["camera_cutlist"]):
         raise RuntimeError("Original frozen camera shot IDs are ambiguous")
-    metadata=timeline.metadata.get("nvp",{}) if isinstance(timeline.metadata,dict) else {}
-    if isinstance(metadata,dict):
-        for label,original_key in (("project_id","project_id"),
-                                   ("source_take_id","source_take_id"),
-                                   ("review_id","source_review_id")):
-            if label in metadata and metadata[label]!=original[original_key]:
-                raise RuntimeError("Edited timeline origin metadata conflicts with indexed source")
-        if metadata.get("soundtrack_present") is True:
-            raise RuntimeError("Timeline claims audio the edit importer cannot authorize")
+    # Native OTIO metadata is AnyDictionary, NOT Python 'dict'.
+    # Never bypass source validation because the serialization library uses a
+    # typed mapping: NLE-controlled origin claims are untrusted even when
+    # their structural representation differs from a plain Python dict.
+    native_meta=timeline.metadata
+    if not hasattr(native_meta,"get"):
+        raise RuntimeError("Edited timeline origin metadata is missing")
+    metadata=native_meta.get("nvp")
+    if metadata is None or not hasattr(metadata,"get"):
+        raise RuntimeError("Edited timeline original-film origin is missing")
+    for label,original_key in (("project_id","project_id"),
+                               ("source_take_id","source_take_id"),
+                               ("review_id","source_review_id")):
+        if metadata.get(label)!=original[original_key]:
+            raise RuntimeError("Edited timeline origin metadata conflicts with indexed source")
+    if (metadata.get("soundtrack_present") is not False or
+        metadata.get("fps")!=RATE or
+        metadata.get("frames")!=original_total):
+        raise RuntimeError("Edited timeline origin FPS/audio/frame record changed")
     out=[]
     segments=[]
     for clip in clips:
