@@ -40,9 +40,12 @@ def fake_receipt(*,key="local/model",context=4096,age=0):
 class Handle:
     def __init__(self,ident):
         self.ident=ident
+        self.model_key="local/model"
+        self.instance_reference="real-provider-reference-original"
         self.unloads=0
     def get_info(self):
-        return {"identifier":self.ident}
+        return {"identifier":self.ident,"modelKey":self.model_key,
+                "instanceReference":self.instance_reference}
     def unload(self):
         self.unloads+=1
 
@@ -179,6 +182,36 @@ class LifecycleAndRestartContracts(unittest.TestCase):
             manager.release("task_one")
             self.assertEqual(client.llm.handle.unloads,1)
             self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],0)
+
+
+    def test_reused_provider_identifier_cannot_authorize_foreign_unload(self):
+        with TemporaryDirectory() as root:
+            ledger,store,client,manager=self.manager(root)
+            manager.enqueue_estimated("task_one",fake_receipt(),approval_id="creator_approved")
+            loaded=manager.load_next()
+            client.llm.handle.instance_reference="different-instance-same-name"
+            with self.assertRaises(RuntimeError):
+                manager.release(loaded["task_id"])
+            self.assertEqual(client.llm.handle.unloads,0)
+            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],5504)
+
+    def test_wrong_model_key_blocks_acceptance_and_keeps_reservation(self):
+        with TemporaryDirectory() as root:
+            ledger,store,client,manager=self.manager(root)
+            client.llm.load_new_instance=lambda key,ident,*,config:Handle(ident)
+            # This fake deliberately reports a foreign key despite the same
+            # instance identifier; real producer must not accept that model.
+            def wrong(key,ident,*,config):
+                handle=Handle(ident)
+                handle.model_key="foreign/model"
+                client.llm.handle=handle
+                return handle
+            client.llm.load_new_instance=wrong
+            manager.enqueue_estimated("task_one",fake_receipt(),approval_id="creator_approved")
+            with self.assertRaises(RuntimeError):
+                manager.load_next()
+            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],5504)
+            self.assertEqual(client.llm.handle.unloads,0)
 
     def test_estimate_expiry_before_claim_never_loads(self):
         with TemporaryDirectory() as root:
