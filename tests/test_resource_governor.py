@@ -96,9 +96,15 @@ class ResourceGuardTests(unittest.TestCase):
             l=TaskLedger(tmp,sampler=lambda:sample())
             l.admit(AdmissionRequest("lost_worker","blender","Blender",4096))
             l.heartbeat("lost_worker")
-            with sqlite3.connect(l.db_path) as db:
+            db=sqlite3.connect(l.db_path)
+            try:
                 db.execute("UPDATE tasks SET updated_at=? WHERE id=?",
                            (time.time()-60,"lost_worker"))
+                db.commit()
+            finally:
+                # sqlite3's context manager commits but does NOT close handles;
+                # Windows won't delete the test folder until it is closed.
+                db.close()
             shown=l.snapshot()
             self.assertEqual(shown["tasks"][0]["state"],"STALE_UNVERIFIED")
             self.assertIsNone(shown["tasks"][0]["completed_fraction"])
