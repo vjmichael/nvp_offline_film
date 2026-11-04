@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 
 from backend.nvp_audio01j_picture_lock import validate_picture_lock
+from backend.nvp_audio01j_fault_matrix import crash_after
 from backend.nvp_audio01i_native_host import DELIVERY as AUDIO_DELIVERY
 from backend.nvp_audio01i_mastering import sha_file
 from backend.nvp_audio01f_picture_sound import _decoded_sha
@@ -118,18 +119,21 @@ def export_final_av(capture,project_id,lock_id,audio_delivery_id,
         or dest.parent.is_symlink() or not dest.parent.is_dir()):
         raise RuntimeError("AV export destination must be absent, without stale staging")
     stage.mkdir(mode=0o700)
+    crash_after("av_stage_created")
     mov=stage/"final_picture_sound.mov"
     _run([str(ffmpeg),"-nostdin","-hide_banner","-v","error","-xerror",
         "-i",str(video),"-i",str(wav),"-map","0:v:0","-map","1:a:0",
         "-c:v","copy","-c:a","pcm_s24le","-ar","48000","-ac","2",
         "-f","mov",str(mov)],timeout=600)
     proof=verify_mux(mov,video,wav,frames,ffmpeg=ffmpeg,ffprobe=ffprobe)
+    crash_after("av_mov_verified")
     if (sha_file(video)!=picture["data"]["movie_sha256"] or
         sha_file(wav)!=audio["data"]["wav_sha256"]):
         raise RuntimeError("Approved AV source was replaced during mux")
     indexed=capture.index.put_media_file(project_id,mov,"video/quicktime")
     if indexed["sha256"]!=proof["mov_sha256"]:
         raise RuntimeError("Indexed AV output changed on publication")
+    crash_after("av_media_indexed")
     doc={"format":FORMAT,"status":"approved_final_audiovisual_master",
          "project_id":project_id,"picture_lock_id":lock_id,
          "picture_lock_sha256":lock["document_sha256"],
@@ -149,16 +153,19 @@ def export_final_av(capture,project_id,lock_id,audio_delivery_id,
         f.write(canonical_bytes(doc));f.flush();os.fsync(f.fileno())
     with mov.open("r+b") as f:
         f.flush();os.fsync(f.fileno())
+    crash_after("av_manifest_fsynced")
     os.replace(stage,dest)
     if os.name=="posix":
         fd=os.open(str(dest.parent),os.O_RDONLY|getattr(os,"O_DIRECTORY",0))
         try:os.fsync(fd)
         finally:os.close(fd)
+    crash_after("av_directory_promoted")
     record=capture.index.register_revision(
         project_id,export_id,"master",doc,expected_revision=0,
         dependencies=[
             {"object_id":lock_id,"revision":1,"role":"presentation"},
             {"object_id":audio_delivery_id,"revision":1,"role":"audio"}])
+    crash_after("av_filmindex_registered")
     return {"status":"FINAL_AV_MASTER_PUBLISHED","export_id":export_id,
             "document_sha256":record["document_sha256"],
             "mov_sha256":indexed["sha256"],"frames":frames,
