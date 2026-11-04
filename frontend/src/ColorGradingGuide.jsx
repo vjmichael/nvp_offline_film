@@ -59,12 +59,23 @@ const SECTIONS = [
     ]
   },
   {
-    title: '6. Future professional controls',
+    title: '6. Grade one shot at a time, and read the scopes',
+    summary: 'What lift, gamma, gain, histogram, waveform and vectorscope actually tell you.',
+    body: [
+      'Choose a shot card below the Essentials controls. Its frozen frame boundaries come from the original Digital Take; each shot has its own lift, gamma and gain values. The overall Essentials grade still affects every shot.',
+      'Lift gently adjusts dark tonal values; gamma changes the middle tones around the scene-linear gray pivot; gain scales RGB values, often affecting bright color balance. Neutral settings are lift 0, gamma 1, gain 1.',
+      'Use the histogram to see pixel counts across dark and bright levels; the waveform to see where brightness appears across the picture; the vectorscope to see chroma direction and saturation.',
+      'The scopes are measured from the same post-ACES 16-bit RGB values as the actual preview, rather than browser CSS. They are software instruments, not a calibrated grading monitor.',
+      'Save advanced draft looks with a separate look ID and explicit source-primaries declaration. Saved versions are reversible and do not export a final master.'
+    ]
+  },
+  {
+    title: '7. Future professional controls',
     summary: 'A roadmap, not a list of controls already delivered.',
     body: [
       'Available in Essentials: exposure and RGB controls, before/after wipe, undo/redo, global look presets and versioned draft saves. A per-shot gallery remains future work.',
-      'Advanced: lift/gamma/gain wheels, luma and hue curves, RGB parade, waveform, histogram, vectorscope, references and LUTs with declared color spaces.',
-      'Professional: masks, qualifiers, motion tracking, per-shot grades, grading keyframes, HDR scopes, color-managed monitoring and independent color calibration.',
+      'Still planned: graphical trackball wheels, luma and hue curves, detailed RGB parade, color-reference matching and validated LUTs with declared color spaces.',
+      'Professional work still planned: masks, qualifiers, motion tracking, per-frame grading keyframes, HDR scopes, calibrated monitoring and independently verified color targets.',
       'AI can propose a look or assist with shot matching, but the filmmaker approves and can always revert its edits.'
     ]
   }
@@ -77,7 +88,7 @@ export default function ColorGradingGuide() {
       <div className="kicker">NVP LEARNING CENTER</div>
       <h2 id="nvp-color-guide-title">Color grading — start with the story</h2>
       <p>Color correction makes images technically consistent. Color grading shapes the visual feeling of your film. You can learn both without sacrificing the original Digital Take.</p>
-      <p><strong>Current status:</strong> The Essentials grading interface now supports real source EXR previews and versioned global looks. Advanced wheels, scopes, masks, monitor calibration and creative-delivery approval remain future milestones.</p>
+      <p><strong>Current status:</strong> Essentials includes real EXR previews and global draft looks. The advanced section now adds per-shot lift/gamma/gain adjustments and real post-ACES waveform, RGB histogram and vectorscope readings. Calibrated monitors, curves, masks and final grading approval remain future work.</p>
       <div aria-label="Color grading topics">
         {SECTIONS.map((section, index) => (
           <section key={section.title} style={{ margin: '0.75rem 0', borderTop: '1px solid var(--border, #444)', paddingTop: '0.75rem' }}>
