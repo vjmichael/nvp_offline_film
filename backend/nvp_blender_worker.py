@@ -245,7 +245,12 @@ class BlenderWorkerSupervisor:
             with path.open("rb") as f:
                 head=f.read(8)
             if ((kind=="png" and head!=b"\x89PNG\r\n\x1a\n") or
-                (kind=="blend" and not head.startswith(b"BLENDER")) or
+                # Blender 5.x can save Zstandard-compressed .blend containers
+                # (28 b5 2f fd), not just legacy raw BLENDER headers. Media
+                # magic is only a preflight; independent Blender reopen/audit
+                # establishes actual scene validity before NVP acceptance.
+                (kind=="blend" and not (head.startswith(b"BLENDER") or
+                    head.startswith(b"\\x28\\xb5\\x2f\\xfd"))) or
                 (kind=="exr" and head[:4]!=b"\x76\x2f\x31\x01")):
                 raise RuntimeError("Blender output failed media magic verification")
             if kind=="json_audit":
