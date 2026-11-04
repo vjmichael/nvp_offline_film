@@ -62,7 +62,7 @@ class FullNativeEXRSequenceContracts(unittest.TestCase):
         self.scopes=[]
         def verify(event,scope):
             self.scopes.append(scope)
-            return event is self.event and scope.get("frame_count")==120
+            return event is self.event and (scope.get("frame_count")==120 or scope.get("frames")==120)
         self.host=NativeEXRSequence(
             self.capture,self.worker,self.ledger,
             verify_creator_action=verify)
@@ -153,6 +153,40 @@ class FullNativeEXRSequenceContracts(unittest.TestCase):
                 self.host.run_queued_chunk()
             launch.assert_not_called()
         self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],0)
+
+    def test_revocation_requires_real_native_action_and_cancels_only_queued(self):
+        receipt=self.approve()
+        staged=self.host.queue_next_chunk(receipt["sequence_id"])
+        with self.assertRaises(PermissionError):
+            self.host.revoke_from_trusted_native_action(
+                receipt["sequence_id"],{"browser_clicked":True})
+        self.assertEqual(self.ledger.get_task(staged["task_id"])["state"],"QUEUED")
+        revoked=self.host.revoke_from_trusted_native_action(
+            receipt["sequence_id"],self.event)
+        self.assertTrue(revoked["revoked"])
+        self.assertEqual(revoked["cancelled_queued_task_ids"],[staged["task_id"]])
+        self.assertFalse(revoked["active_worker_cleanup_claimed"])
+        self.assertEqual(self.ledger.get_task(staged["task_id"])["state"],"CANCELLED")
+        self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],0)
+        with self.assertRaises(PermissionError):
+            self.host.queue_next_chunk(receipt["sequence_id"])
+
+    def test_crash_before_enqueue_recovers_exact_staged_original_source(self):
+        receipt=self.approve()
+        with patch.object(self.host.dispatcher,"enqueue",
+                          side_effect=RuntimeError("interrupted enqueue")), \\
+             patch.object(self.ledger,"get_task",
+                          side_effect=RuntimeError("simulated crash inside cleanup")):
+            with self.assertRaisesRegex(RuntimeError,"simulated crash"):
+                self.host.queue_next_chunk(receipt["sequence_id"])
+        staged=self.host._chunk(receipt["sequence_id"],1)
+        self.assertIsNotNone(staged)
+        self.assertIsNone(self.ledger.get_task(self.worker._activity_id(staged["job_id"])))
+        recovered=self.host.queue_next_chunk(receipt["sequence_id"])
+        self.assertTrue(recovered["recovered_staged_source"])
+        self.assertEqual(recovered["job_id"],staged["job_id"])
+        self.assertEqual(recovered["state"],"QUEUED")
+        self.assertEqual(self.ledger.get_task(recovered["task_id"])["state"],"QUEUED")
 
     def test_publishing_before_all_120_frames_does_not_claim_video_or_exr(self):
         receipt=self.approve()
