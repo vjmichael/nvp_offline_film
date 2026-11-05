@@ -9,6 +9,7 @@ service neither grants permission nor silently rewrites a FilmIndex source.
 from __future__ import annotations
 
 import json
+import hashlib
 from fractions import Fraction
 from pathlib import Path
 import shutil
@@ -77,10 +78,101 @@ def probe_reel(movie: Path, *, ffprobe: str, expected_frames: int | None = None)
             raise ValueError("Indexed source frame count differs from decoded media")
     except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
         raise RuntimeError("Invalid or incompatible ProRes/PCM24 AV reel") from exc
+    # Exact samples/frames alone do not exclude timestamp gaps at reel joins.
+    # Require both independent packet clocks to begin at zero and be contiguous.
+    for selector, expected in (("v:0", Fraction(frames, FPS)),
+                               ("a:0", Fraction(frames * 2000, AUDIO_RATE))):
+        _verify_packet_clock(movie, ffprobe=ffprobe, selector=selector,
+                             expected_seconds=expected)
     return {"frames": frames, "width": width, "height": height, "fps": FPS,
             "audio_samples": int(audio_samples), "video_codec": "prores_422_hq",
             "audio_codec": "pcm_s24le", "sample_rate": AUDIO_RATE, "channels": 2}
 
+
+
+
+
+def _verify_packet_clock(movie: Path, *, ffprobe: str, selector: str,
+                         expected_seconds: Fraction) -> None:
+    raw = _native([ffprobe, "-v", "error", "-select_streams", selector,
+                   "-show_streams", "-show_packets",
+                   "-show_entries", "stream=time_base:packet=pts,duration",
+                   "-of", "json", str(movie)], timeout=120)
+    try:
+        body = json.loads(raw)
+        tb = Fraction(body["streams"][0]["time_base"])
+        rows = body["packets"]
+        if not rows or tb <= 0:
+            raise ValueError("No timed packets")
+        next_pts = 0
+        for row in rows:
+            pts = int(row["pts"])
+            duration = int(row["duration"])
+            if pts != next_pts or duration <= 0:
+                raise ValueError("Gapped, overlapping or non-monotonic packet timestamps")
+            next_pts = pts + duration
+        if next_pts * tb != expected_seconds:
+            raise ValueError("Packet timestamp extent differs from exact film clock")
+    except (KeyError, ValueError, TypeError, ZeroDivisionError) as exc:
+        raise RuntimeError("Source/review packet timestamps are not contiguous") from exc
+
+
+def _video_packet_hashes(movie: Path, *, ffprobe: str, frames: int) -> list[str]:
+    """SHA-256 of real compressed ProRes packets in presentation order."""
+    raw = _native([ffprobe, "-v", "error", "-select_streams", "v:0",
+                   "-show_packets", "-show_data_hash", "sha256",
+                   "-show_entries", "packet=data_hash", "-of", "json",
+                   str(movie)], timeout=120)
+    try:
+        values = [p["data_hash"] for p in json.loads(raw)["packets"]]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError("Cannot verify original video packet payloads") from exc
+    if len(values) != frames or any(
+        not isinstance(value, str) or not value.startswith("SHA256:")
+        or len(value) != 71 or not all(c in "0123456789abcdef" for c in value[7:])
+        for value in values
+    ):
+        raise RuntimeError("Compressed video packet count or SHA proof invalid")
+    return values
+
+
+def _decoded_pcm(movie: Path, *, ffmpeg: str, frames: int) -> bytes:
+    """Bounded PCM24 exact evidence: 60 seconds requires <=17.3 MiB."""
+    raw = _native([ffmpeg, "-nostdin", "-v", "error", "-xerror",
+                   "-i", str(movie), "-map", "0:a:0", "-c:a", "pcm_s24le",
+                   "-f", "s24le", "pipe:1"], timeout=180)
+    if len(raw) != frames * 2000 * 6:
+        raise RuntimeError("Decoded PCM24 reel length differs from picture clock")
+    return raw
+
+
+def _verify_stream_copy(reels: list[dict], movie: Path, *,
+                        ffmpeg: str, ffprobe: str) -> dict:
+    """Prove concatenated compressed video and decoded audio are byte-identical.
+
+    Frame totals alone could hide duplicated footage, dropped packets or
+    padded/shifted silence. This compares EVERY compressed frame packet and
+    EVERY decoded stereo PCM24 sample, in the director-specified reel order.
+    """
+    frames = sum(r["frames"] for r in reels)
+    ordered = []
+    pcm = hashlib.sha256()
+    for reel in reels:
+        src = Path(reel["path"])
+        ordered.extend(_video_packet_hashes(src, ffprobe=ffprobe, frames=reel["frames"]))
+        pcm.update(_decoded_pcm(src, ffmpeg=ffmpeg, frames=reel["frames"]))
+    delivered_packets = _video_packet_hashes(movie, ffprobe=ffprobe, frames=frames)
+    if delivered_packets != ordered:
+        raise RuntimeError("Source-to-review video packet content/order changed")
+    delivered_audio = _decoded_pcm(movie, ffmpeg=ffmpeg, frames=frames)
+    delivered_pcm_sha = hashlib.sha256(delivered_audio).hexdigest()
+    if delivered_pcm_sha != pcm.hexdigest():
+        raise RuntimeError("Source-to-review PCM audio samples differ")
+    packet_sha = hashlib.sha256("\n".join(ordered).encode("ascii")).hexdigest()
+    return {"compressed_video_packet_order_sha256": packet_sha,
+            "decoded_pcm24_sha256": delivered_pcm_sha,
+            "all_video_packets_identical": True,
+            "all_audio_samples_identical": True}
 
 
 def index_technical_reel(index: FilmIndex, project_id: str, reel_id: str,
@@ -208,6 +300,7 @@ def assemble_review(index: FilmIndex, project_id: str, review_id: str,
         result = probe_reel(output, ffprobe=probe, expected_frames=total)
         if result["audio_samples"] != total * 2000 or (result["width"], result["height"]) != dimensions:
             raise RuntimeError("Native multi-reel AV output differs from source clock")
+        stream_evidence = _verify_stream_copy(reels, output, ffmpeg=ff, ffprobe=probe)
         # Rehash each input after native work; detect concurrent external damage.
         for reel in reels:
             index.verify_media_file(project_id, reel["movie_sha256"], "video/quicktime")
@@ -219,6 +312,7 @@ def assemble_review(index: FilmIndex, project_id: str, review_id: str,
                "video_codec": result["video_codec"], "audio_codec": result["audio_codec"],
                "audio_samples": result["audio_samples"], "movie_sha256": media["sha256"],
                "reels": [{k: v for k, v in x.items() if k != "path"} for x in reels],
+               "stream_copy_evidence": stream_evidence,
                "creator_approved_final_master": False, "dcp_delivered": False}
         indexed = index.register_revision(project_id, review_id, "presentation", doc,
                                           expected_revision=0, dependencies=dependencies)
@@ -247,17 +341,23 @@ def reopen_review(index: FilmIndex, project_id: str, review_id: str, *,
         raise RuntimeError("Technical review source dependency edges changed")
     if sum(x["frames"] for x in data["reels"]) != data["frames"]:
         raise RuntimeError("Technical review reel frame totals changed")
+    source_paths = []
     for reel in data["reels"]:
         source = index.read_revision(project_id, reel["object_id"], reel["revision"])
         if source["document_sha256"] != reel["document_sha256"] or source["data"].get("movie_sha256") != reel["movie_sha256"]:
             raise RuntimeError("Technical review source revision provenance changed")
-        index.verify_media_file(project_id, reel["movie_sha256"], "video/quicktime")
+        source_paths.append(index.verify_media_file(project_id, reel["movie_sha256"], "video/quicktime")["path"])
     checked = index.verify_media_file(project_id, data["movie_sha256"], "video/quicktime")
     probe = _binary("ffprobe", ffprobe)
     technical = probe_reel(Path(checked["path"]), ffprobe=probe, expected_frames=data["frames"])
     if (technical["audio_samples"] != data["audio_samples"]
         or technical["width"] != data["width"] or technical["height"] != data["height"]):
         raise RuntimeError("Technical review video/audio or raster changed")
+    fresh = _verify_stream_copy(
+        [{**r, "path": p} for r, p in zip(data["reels"], source_paths)],
+        Path(checked["path"]), ffmpeg=_binary("ffmpeg", None), ffprobe=probe)
+    if fresh != data.get("stream_copy_evidence"):
+        raise RuntimeError("Original compressed picture/decoded audio comparison changed")
     return {"status": "VERIFIED_TECHNICAL_REVIEW_UNAPPROVED",
             "review_id": review_id, "frames": data["frames"],
             "duration_seconds": data["duration_seconds"],
