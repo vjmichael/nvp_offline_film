@@ -70,20 +70,27 @@ jobs:
           if ($process.ExitCode -ne 0) { throw 'NSIS silent install failed' }
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           if (-not (Test-Path $installed)) { throw 'Installed NVP.exe missing' }
-          $test=Start-Process -FilePath $installed -ArgumentList '--smoke' -PassThru -Wait
-          if ($test.ExitCode -ne 0) { throw 'Installed app startup/project SQLite restart failed' }
+          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
+          $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru -Wait
+          if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed' }
+          $second=Start-Process -FilePath $installed -ArgumentList '--smoke-reopen' -PassThru -Wait
+          if ($second.ExitCode -ne 0) { throw 'Second fresh native app launch lost SQLite film project' }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
+            throw 'No persistent original film project database'
+          }
       - name: Uninstall without deleting creator project data
         shell: pwsh
         run: |
           $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstaller)) { throw 'Uninstaller missing' }
-          $owned=Join-Path $env:LOCALAPPDATA 'NVP/Projects'
-          New-Item -ItemType Directory -Force -Path $owned | Out-Null
-          'user film data must survive' | Set-Content -LiteralPath (Join-Path $owned 'preserve-me.txt')
+          $owned=$env:NVP_HOME
+          if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) {
+            throw 'Missing creator SQLite film database before uninstall'
+          }
           $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
           if ($result.ExitCode -ne 0) { throw 'Uninstall failed' }
           Start-Sleep -Seconds 2
-          if (-not (Test-Path (Join-Path $owned 'preserve-me.txt'))) { throw 'Uninstall deleted film data' }
+          if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
       - uses: actions/upload-artifact@v4
         if: always()
