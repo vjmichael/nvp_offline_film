@@ -22,6 +22,7 @@
 | FilmIndex and provenance | Implemented source/index foundation; not complete whole-film acceptance | backend/nvp_film_index.py; tests/test_film_index.py; confirm exact-head cross-platform tests |
 | Screenplay editing | Editable 1-based gutter, AI excerpt numbering and line navigation are committed | frontend/src/LineNumberedTextarea.jsx; backend/nvp_story_context.py; source line tests. Native Windows WebView interaction still needs physical acceptance |
 | AI-01 read-only source resolver | Initial implementation committed | backend/nvp_ai_refs.py; tests/test_nvp_ai_refs.py. Read-only Python service only, **not an authorized model tool or exposed API**. Requires host integration, more cross-revision tests |
+| MASTER-01C host-owned unapproved film publication | **Implemented and locally verified; actual film/Windows remains open** | Opt-in native host-staged worker, SHA-bound real ProRes/PCM24 30s/60s, hard-exit before/after host FilmIndex commit, no replay, staging tamper refusal, cancellation before publication; 57 targeted tests across 5 groups; see docs/NVP_MASTER01C_HOST_PUBLICATION.md |
 | MASTER-01B contained AV review | **Implemented and locally verified; Windows/strict Linux acceptance open** | Native creator-scoped host, queue/admission, containment, controlled cancellation, genuine hard-exit/recovery, saved source hashes. 46 Linux tests across 3 groups; see docs/NVP_MASTER01B_NATIVE_SUPERVISED_REVIEW.md |
 | MASTER-01A real 30–60s technical review | Native technical assembly implemented, not a finished AI film | backend/nvp_longform_review.py, tests/test_nvp_longform_review.py; real FFmpeg/FFprobe 36s and 60s checks; 30 related tests passed, CI/native Windows still pending |
 | AI-02 through AI-07 | Proposed architecture, not implemented/accepted | AI review document; staged context, capability, inventory, impact and evidence acceptance gates |
@@ -48,7 +49,7 @@
 
 ## Next actionable engineering sequence
 
-**Priority A (current): MASTER-01C** — move technical review media publication out of native worker into host-owned prepared/verified/committed steps with crash/fault injection. Then bind original captured Digital Takes, real performances, dialogue and AI-generation outputs and prove a creator-reviewed continuous 30–60-second short. Current procedural color/sine fixtures are not finished-film evidence.
+**Priority A (current): MASTER-01D** — adapt authentic frozen Digital Take/Pipeline/B14 and synchronized dialogue/audio outputs into exact indexed AV reels for the new two-phase host-owned native assembler. Build a 30–60-second coherent, creator-reviewed cinematic short, not procedural color/sine fixtures. Verify selective revision, persistent character/shot identity, sound sync and editable FilmIndex source lineage.
 
 **Windows packaging: PAUSED by creator 2026-11-05.** Earlier v3 diagnostics remain historical but NSIS and installer follow-up are not active tasks. Resume only when explicitly requested.
 
@@ -57,6 +58,8 @@
 **Priority C (film deliverable):** maintain native AUDIO-01K.3 and E2E-01D crash/verification gates and real approved 30–60 s film acceptance. Exact-head native workflow evidence is mandatory before merge or release acceptance.
 
 ## Change log (append-only entries)
+
+- **2026-11-05 later:** MASTER-01C two-phase staging passed 57 Linux native/related tests across 5 bounded groups (6 new host tests, 5 new staged-media tests, 9 MASTER-01B, 7 MASTER-01A, 30 existing index/scheduler/worker tests). Genuine 30s/60s ProRes/PCM24 technical reels, host publication, real OS-process crash before and after index commit, cancellation before publication and tamper refusal. Native Windows/strict Linux whole-tree results remain pending. Next MASTER-01D authentic film source integration. No new installer work.
 
 - **2026-11-05 later:** MASTER-01B native reviewer passed 46 Linux Python tests in three targeted groups (9 new, 7 MASTER-01A, 30 existing). Actual contained 30s AV output, creator scope, strict executable selection, controlled cancellation, post-worker-stop host hard exit and no-replay restart reconciliation verified. Windows and delegated Linux cgroup whole-tree acceptance still unverified; next MASTER-01C two-phase host-owned publication.
 
