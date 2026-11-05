@@ -145,19 +145,34 @@ def run_persistent_installed_smoke(mode):
                 headers={"Content-Type":"application/json"},method="POST")
             with urllib.request.urlopen(request,timeout=10) as reply:
                 record=json.load(reply)
+            screenplay="INT. EDIT SUITE - DAY\\n\\nA camera rolls."
+            edit_request=urllib.request.Request(
+                base+"/api/projects/"+record["id"]+"/screenplay",
+                data=json.dumps({"screenplay":screenplay,
+                                 "expected_revision":0}).encode("utf8"),
+                headers={"Content-Type":"application/json"},method="PUT")
+            with urllib.request.urlopen(edit_request,timeout=10) as reply:
+                saved=json.load(reply)
+            if saved.get("revision")!=1:
+                raise RuntimeError("NVP installed screenplay save did not commit")
             marker.write_text(json.dumps({"id":record["id"],
-                        "title":record["title"]}),encoding="utf8")
+                        "title":record["title"],"screenplay":screenplay,
+                        "revision":1}),encoding="utf8")
         else:
             expected=json.loads(marker.read_text("utf8"))
             with urllib.request.urlopen(
                     base+"/api/projects/"+expected["id"],timeout=10) as reply:
                 reopened=json.load(reply)
-            if reopened["title"]!=expected["title"]:
-                raise RuntimeError("Installed NVP lost its project across restart")
+            if (reopened["title"]!=expected["title"]
+                or reopened["screenplay"]!=expected["screenplay"]
+                or reopened["revision"]!=expected["revision"]):
+                raise RuntimeError("Installed NVP lost project/edit history across restart")
             from backend.nvp_studio import Studio
-            if Studio(root/"nvp_studio.sqlite3").get_project(
-                    expected["id"])["title"]!=expected["title"]:
-                raise RuntimeError("SQLite custody changed after reopening app")
+            durable=Studio(root/"nvp_studio.sqlite3").get_project(expected["id"])
+            if (durable["title"]!=expected["title"]
+                or durable["screenplay"]!=expected["screenplay"]
+                or durable["revision"]!=expected["revision"]):
+                raise RuntimeError("SQLite screenplay revision changed after reopening app")
         return 0
     finally:
         server.should_exit=True
