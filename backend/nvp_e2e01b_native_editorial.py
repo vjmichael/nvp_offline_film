@@ -29,7 +29,8 @@ from backend.nvp_film_index import _id
 
 IDENT=re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,79}\Z")
 STATES=frozenset({
-    "IMPORT_QUEUED", "IMPORT_VERIFIED", "CONFORM_QUEUED",
+    "IMPORT_STAGING_UNCERTAIN", "IMPORT_QUEUED", "IMPORT_VERIFIED",
+    "CONFORM_STAGING_UNCERTAIN", "CONFORM_QUEUED",
     "CONFORM_VERIFIED", "CANCELLED_BEFORE_IMPORT", "BLOCKED_REVIEW"
 })
 
@@ -109,18 +110,8 @@ class NativeEditorialChain:
             or destination.exists() or destination.is_symlink()
             or not destination.parent.is_dir() or destination.parent.is_symlink()):
             raise RuntimeError("Editorial source/destination is missing or unsafe")
-        # Stage exactly once for this presentation: repeated creator events
-        # must not allocate duplicate native workers.
-        with self.ledger._db() as db:
-            duplicate=db.execute("""SELECT 1 FROM native_e2e01b_chains
-                WHERE project_id=? AND presentation_id=?""",
-                (project_id,presentation_id)).fetchone()
-        if duplicate:
-            raise RuntimeError("NVP editorial presentation already staged")
-        ticket=self.b13.stage_and_approve(
-            project_id,delivery_id,package,incoming_otio,creator_event,
-            edit_id=edit_id,expected_revision=expected_edit_revision,
-            ram_mb=ram_mb)
+        # Durable intent is recorded first; if the native host stages a task
+        # and the process dies before returning, do NOT stage a second task.
         chain_id="editorial_"+secrets.token_hex(16)
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -128,8 +119,24 @@ class NativeEditorialChain:
                 (?,?,?,?,?,NULL,?,?,?,?,NULL,?,?,?)""",
                 (chain_id,project_id,delivery_id,edit_id,
                  expected_edit_revision+1,str(package),str(destination),
-                 presentation_id,ticket["job_id"],"IMPORT_QUEUED",
-                 time.time(),time.time()))
+                 presentation_id,"pending_"+chain_id,
+                 "IMPORT_STAGING_UNCERTAIN",time.time(),time.time()))
+            db.commit()
+        ticket=self.b13.stage_and_approve(
+            project_id,delivery_id,package,incoming_otio,creator_event,
+            edit_id=edit_id,expected_revision=expected_edit_revision,
+            ram_mb=ram_mb)
+        if (ticket.get("state")!="QUEUED" or not ticket.get("job_id")):
+            raise RuntimeError("Native B13 returned no durable queued worker ticket")
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            changed=db.execute("""UPDATE native_e2e01b_chains
+                SET import_job=?,state='IMPORT_QUEUED',updated_at=?
+                WHERE chain_id=? AND state='IMPORT_STAGING_UNCERTAIN'""",
+                (ticket["job_id"],time.time(),chain_id))
+            if changed.rowcount!=1:
+                db.rollback()
+                raise RuntimeError("Import coordinator changed during native stage")
             db.commit()
         return {"chain_id":chain_id,"state":"IMPORT_QUEUED",
                 "import_job":ticket["job_id"],
@@ -172,11 +179,14 @@ class NativeEditorialChain:
         row=self._row(chain_id)
         if row["state"]!="IMPORT_VERIFIED" or not row["edit_sha"]:
             raise RuntimeError("Imported edit lacks durable source checksum")
+        self._transition(chain_id,"IMPORT_VERIFIED","CONFORM_STAGING_UNCERTAIN")
         ticket=self.b14.stage_and_approve(
             row["project_id"],row["edit_id"],row["edit_revision"],
             Path(row["package_dir"]),Path(row["destination_dir"]),
             creator_event,presentation_id=row["presentation_id"],ram_mb=ram_mb)
-        self._transition(chain_id,"IMPORT_VERIFIED","CONFORM_QUEUED",
+        if ticket.get("state")!="QUEUED" or not ticket.get("job_id"):
+            raise RuntimeError("Native B14 returned no durable queued worker ticket")
+        self._transition(chain_id,"CONFORM_STAGING_UNCERTAIN","CONFORM_QUEUED",
                          conform_job=ticket["job_id"])
         return {"chain_id":chain_id,"state":"CONFORM_QUEUED",
                 "conform_job":ticket["job_id"],"worker_started":False,
@@ -248,6 +258,10 @@ class NativeEditorialChain:
     def reopen(self,chain_id):
         """After crash, verify custody; do not infer worker termination."""
         row=self._row(chain_id)
+        if row["state"] in ("IMPORT_STAGING_UNCERTAIN","CONFORM_STAGING_UNCERTAIN"):
+            return {"chain_id":chain_id,"state":row["state"],
+                    "requires_native_reconciliation":True,
+                    "recovered_without_relaunch":False}
         if row["state"]=="IMPORT_QUEUED":
             task=self.ledger.get_task(row["import_job"])
             if not task or task["state"]!="SUCCEEDED":
