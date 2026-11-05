@@ -197,6 +197,53 @@ class NativeFinishingContracts(unittest.TestCase):
             self.assertEqual(recovered["state"],"DISTRIBUTION_VERIFIED")
             self.assertTrue(recovered["recovered_without_rerender"])
 
+    def test_unique_stopped_native_av_grant_reconciles_after_lost_ticket(self):
+        import hashlib
+        import json
+        import time
+        from backend.nvp_resource_guard import AdmissionRequest
+        with patch("backend.nvp_e2e01c_finishing.validate_picture_lock",
+                   side_effect=self._fake_lock),patch.object(
+                   self.audio,"verify_delivery",return_value={
+                   "status":"VERIFIED_FINAL_AUDIO"}):
+            self._register()
+        self.chain._move(self.pid,"approved_movie","APPROVALS_VERIFIED",
+                         "AV_STAGING_UNCERTAIN")
+        self._verified_av()
+        job="avjob_recovered"
+        admitted=self.ledger.admit(AdmissionRequest(
+            job,"compositing","Recovered original AV task",1024))
+        self.assertTrue(admitted["admitted"])
+        self.ledger.finish(job,"SUCCEEDED","fixture simulated OS-stop witness")
+        folder=self.av.root/job
+        folder.mkdir()
+        plan={"job_id":job,"project_id":self.pid,"export_id":"approved_movie",
+              "picture_lock_id":"picture_lock",
+              "audio_delivery_id":"audio_delivery",
+              "movie_dir":str(self.movie_dir.resolve()),
+              "audio_dir":str(self.audio_dir.resolve()),
+              "destination":str(self.root/"approved_film")}
+        raw=json.dumps(plan,sort_keys=True).encode()
+        (folder/"plan.json").write_bytes(raw)
+        digest=hashlib.sha256(raw).hexdigest()
+        with self.ledger._db() as db:
+            db.execute("""INSERT INTO native_audio01j_grants(
+                job_id,approval_id,spec_sha,plan_sha,python_sha,
+                worker_sha,ffmpeg_sha,ffprobe_sha,expires_at,stopped)
+                VALUES(?,?,?,?,?,?,?,?,?,1)""",
+                (job,"testapproval",digest,digest,digest,digest,digest,digest,
+                 time.time()+600))
+        with patch("backend.nvp_e2e01c_finishing.validate_picture_lock",
+                   side_effect=self._fake_lock),patch.object(
+                   self.audio,"verify_delivery",return_value={
+                   "status":"VERIFIED_FINAL_AUDIO"}),patch.object(
+                   self.av,"verify_published",return_value={
+                   "status":"VERIFIED_FINAL_AV_MASTER"}):
+            result=self.chain.reopen(self.pid,"approved_movie")
+        self.assertEqual(result["state"],"AV_VERIFIED")
+        self.assertTrue(result["recovered_without_rerender"])
+        self.assertEqual(self.chain._row(self.pid,"approved_movie")["av_job"],job)
+
     def test_unverified_distribution_after_crash_stays_uncertain(self):
         self._stage_av()
         self._verified_av()
