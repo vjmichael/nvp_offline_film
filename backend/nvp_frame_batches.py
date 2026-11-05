@@ -30,26 +30,31 @@ def _sync_dir(directory):
             os.close(fd)
 
 
-def plan_batches(rows, *, source_revision_sha256, batch_frames=48):
-    """Map original source frames to bounded ordered output batches."""
+def iter_batches(rows, *, source_revision_sha256, batch_frames=48,
+                 start_frame=1):
+    """Lazily seal a bounded batch from source rows, regardless of film length.
+
+    'rows' can be an iterator backed by an indexed edit/timeline cursor, so
+    this never materializes a whole feature's frame map. A resumed cursor
+    must supply its exact first output frame. No permission is conferred.
+    """
     if (type(batch_frames) is not int or not 1 <= batch_frames <= 96 or
+        type(start_frame) is not int or not 1 <= start_frame < 2**63 or
         type(source_revision_sha256) is not str or
         len(source_revision_sha256) != 64 or
         any(c not in "0123456789abcdef" for c in source_revision_sha256)):
-        raise ValueError("Invalid batch bounds or source revision digest")
-    packets, active, expected = [], [], 1
+        raise ValueError("Invalid batch bounds, start frame or source revision digest")
+    active, expected = [], start_frame
+    seen = False
 
-    def flush():
-        nonlocal active
-        if active:
-            doc = {"format": FORMAT,
-                   "source_revision_sha256": source_revision_sha256,
-                   "start_frame": active[0]["edit_frame"],
-                   "end_frame_exclusive": active[-1]["edit_frame"] + 1,
-                   "frames": active}
-            doc["plan_sha256"] = _sha(_canonical(doc))
-            packets.append(doc)
-            active = []
+    def seal(frames):
+        doc = {"format": FORMAT,
+               "source_revision_sha256": source_revision_sha256,
+               "start_frame": frames[0]["edit_frame"],
+               "end_frame_exclusive": frames[-1]["edit_frame"] + 1,
+               "frames": frames}
+        doc["plan_sha256"] = _sha(_canonical(doc))
+        return doc
 
     for row in rows:
         if type(row) is not dict or set(row) != {
@@ -58,20 +63,28 @@ def plan_batches(rows, *, source_revision_sha256, batch_frames=48):
             raise ValueError("Incomplete or unexpected source mapping")
         n, src = row["edit_frame"], row["source_frame"]
         digest, shot = row["source_sha256"], row["shot_id"]
-        if (type(n) is not int or n != expected or
-            type(src) is not int or src < 1 or
+        if (type(n) is not int or n != expected or n >= 2**63 or
+            type(src) is not int or not 1 <= src < 2**63 or
             type(digest) is not str or len(digest) != 64 or
             any(c not in "0123456789abcdef" for c in digest) or
             type(shot) is not str or not 1 <= len(shot) <= 160):
             raise ValueError("Untrusted, non-contiguous or invalid source frame mapping")
         active.append(dict(row))
+        seen = True
         expected += 1
         if len(active) == batch_frames:
-            flush()
-    flush()
-    if expected == 1:
+            yield seal(active)
+            active = []
+    if active:
+        yield seal(active)
+    if not seen:
         raise ValueError("Cannot plan an empty film")
-    return packets
+
+
+def plan_batches(rows, *, source_revision_sha256, batch_frames=48):
+    """Legacy short-fixture wrapper; long-form producers MUST use iter_batches."""
+    return list(iter_batches(rows, source_revision_sha256=source_revision_sha256,
+                             batch_frames=batch_frames))
 
 
 def _check_plan(packet):
