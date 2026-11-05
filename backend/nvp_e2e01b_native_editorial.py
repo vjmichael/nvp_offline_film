@@ -101,7 +101,10 @@ class NativeEditorialChain:
         if edit_id==presentation_id or type(expected_edit_revision) is not int or expected_edit_revision<0:
             raise ValueError("Invalid native editorial source/revision identity")
         destination=Path(destination_dir).absolute()
-        package=Path(package_dir).resolve(strict=True)
+        package_input=Path(package_dir)
+        if package_input.is_symlink():
+            raise RuntimeError("Original NVP source package must not be a symlink")
+        package=package_input.resolve(strict=True)
         if (not package.is_dir() or package.is_symlink()
             or destination.exists() or destination.is_symlink()
             or not destination.parent.is_dir() or destination.parent.is_symlink()):
