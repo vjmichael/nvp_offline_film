@@ -38,6 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -r requirements-foundation.txt
+          python -m pip install 'opentimelineio>=0.18.1,<0.19'
       - name: Compile actual B13/B14 native host plus E2E bridge
         shell: bash
         run: |
@@ -48,3 +49,5 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p test_nvp_e2e01b_native_handoff.py -v
+          python -m unittest discover -s tests -p test_b13_editorial_roundtrip.py -v
+          python -m unittest discover -s tests -p test_b14_picture_conform.py -v
