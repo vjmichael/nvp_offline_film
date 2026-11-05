@@ -95,3 +95,64 @@ binaries. No native DCP could be created locally here.
 **Closeout decision: BLOCKED ON NATIVE EXECUTION EVIDENCE, NOT COMPLETE.**
 Remaining work can continue without waiting on GitHub queues, but this
 gate must not be released or merged as production-cinema-ready.
+
+
+## 2026-11-04 offline Library native execution evidence (NEW)
+
+The user-uploaded Library contains both a complete DCP-o-matic 2.18.51 Debian
+package and a matching Ubuntu 26.10 offline dependency ZIP with 238 packages,
+plus two earlier real technical DCP evidence archives.
+
+The original `dcpomatic_1+2.18.51-1_amd64.deb` SHA-256 matches the offline
+manifest: `8b8f1d38fa2db1c2d65690f7007f99e0df2a0fdec5ac25cd78477412c21a1e70`.
+All 238 packaged Debian dependency archives matched their manifest SHA-256
+and byte sizes. The complete runtime was extracted **under an isolated
+working directory**; Debian 13 libraries were not overwritten.
+
+Actual `dcpomatic2_create --version` returned `2.18.51 920fb9b044`.
+Actual `dcpomatic2_cli`, `dcpomatic2_create`, and
+`dcpomatic2_verify_cli` help revealed a code defect: `--dcp-path`
+is a switch followed by the `make-dcp <film>` subcommand, not an argument
+named path. The native call has now been corrected in the DCP generator.
+
+**Two new real native DCP technical encodes were completed:**
+
+1. One-second 24fps ProRes video plus 48kHz, six-channel PCM24:
+   real SMPTE DCP with JPEG2000 picture MXF, PCM sound MXF, CPL/PKL,
+   ASSETMAP/VOLINDEX. Native libdcp verification returned exit 0.
+   Full FFmpeg decoded exactly 24 JPEG2000 frames and 864,000 raw PCM24
+   bytes (48,000 samples × 6 channels × 3 bytes).
+2. One-second 24fps ProRes video plus **stereo** 48kHz PCM24:
+   real SMPTE DCP with **six-channel cinema PCM**, with the original
+   left/right program mapped to channels 1–2 and channels 3–6 silent.
+   Native libdcp verification returned exit 0. This is the validated
+   initial NVP stereo-to-cinema6 delivery mapping. The code and contract
+   now use `--audio-channels 6` and
+   `smpte_2k_24fps_unencrypted_stereo_to_cinema6_v1`.
+
+The existing uploaded CINEMA-01B and CINEMA-01C archives also independently
+passed the actual native DCP-o-matic verifier (exit code 0). The new first
+DCP's picture MXF was altered by changing one byte at offset 65536;
+the verifier returned **exit 1** and reported the mismatch between the
+picture-asset SHA-1 and PKL. The older CINEMA-01C corrupted picture MXF
+also failed with exit 1.
+
+Both newly generated DCPs use real JPEG2000 at **1998×1080, 24fps, 24 frames**
+and **six-channel 48kHz/24bit PCM**, 1 second in each stream.
+Real output archives with SHA256SUMS and the native technical verification
+reports have been materialized in the conversation.
+
+**Important limits:** The container runtime disallows device mounts/nodes;
+isolated tool execution used temporary static random input in place of
+`/dev/urandom`, so it is ONLY a technical test configuration, not secure
+production cinema ID/certificate authoring. No independent DcpDoctor
+binary was available; the reported PASS is the **native DCP-o-matic/libdcp
+verifier**, NOT DcpDoctor. These DCPs are synthetic sources, not the
+NVP creator-approved AUDIO-01J film, and the new FilmIndex reopening
+workflow has NOT run against these newly generated tests.
+
+**Revised closeout:** Real encoder, real J2K/MXF, native libdcp verifier,
+picture/sound clock and modified-MXF rejection are now locally proven
+on Linux for synthetic test media. DcpDoctor strict independent QC,
+Windows Job Object native machine, unmocked NVP approved film, durable
+FilmIndex reopen and real production entropy remain OPEN.
