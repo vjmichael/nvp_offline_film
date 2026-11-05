@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 
 from backend.nvp_external_media_catalog import ExternalMediaCatalog, _read_and_hash
 from backend.nvp_film_index import _id, _require_pid
@@ -107,14 +108,21 @@ def ffprobe_media(path, *, ffprobe="ffprobe", timeout=60):
             "color_transfer,color_space,channels,channel_layout,sample_rate",
             "-of", "json", str(p)]
     # ffprobe is an independent native executable; no shell or path expansion.
-    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            timeout=timeout, check=False)
-    if result.returncode != 0 or len(result.stdout) > PROBE_LIMIT:
-        raise RuntimeError("Native FFprobe failed or exceeded metadata limit")
-    try:
-        document = json.loads(result.stdout)
-    except (UnicodeError, ValueError) as exc:
-        raise RuntimeError("Unreadable FFprobe metadata") from exc
+    # Avoid collecting an untrusted native process's stdout/stderr in RAM.
+    # This is a disk-backed, bounded *read*; final output size is checked
+    # before parsing. It is not a process-level disk quota.
+    with tempfile.TemporaryFile() as report:
+        completed = subprocess.run(
+            args, stdout=report, stderr=subprocess.DEVNULL,
+            timeout=timeout, check=False)
+        size = report.seek(0, os.SEEK_END)
+        if completed.returncode != 0 or size > PROBE_LIMIT:
+            raise RuntimeError("Native FFprobe failed or exceeded metadata limit")
+        report.seek(0)
+        try:
+            document = json.loads(report.read(PROBE_LIMIT + 1))
+        except (UnicodeError, ValueError) as exc:
+            raise RuntimeError("Unreadable FFprobe metadata") from exc
     return normalize_probe(document)
 
 
