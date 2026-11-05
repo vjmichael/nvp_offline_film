@@ -73,9 +73,12 @@ All four combinations must actually run. No missing-binary skip is accepted.
   interfaces, FilmIndex approval IDs and restart custody. Four-cell contract
   workflow added; full real color/audio/AV mastering and crash acceptance
   remain pending. See `docs/NVP_E2E01C_CREATIVE_FINISHING.md`.
-- [ ] **E2E-01D complete crash/restart:** Restart between media ingest,
-  edit registration, worker execution, picture lock, audio approval,
-  final mux, approved distribution and after interrupted publication.
+- [ ] **E2E-01D complete crash/restart:** Durable staging-intent repair
+  and abrupt-process-death tests committed for B13, B14, J, K and actual
+  TaskLedger ACTIVE RAM reservation. Test reopens new host/Studio objects
+  and rejects inferred completion. Native worker kill/crash-injection
+  and full filmmaker approval/export recovery remain unverified.
+  See `docs/NVP_E2E01D_CRASH_RECOVERY.md`.
 - [ ] **E2E-01E installed Windows alpha:** Run an NSIS install, launch
   real standalone GUI, import and cut an existing media file, save
   project, close/reopen app, preview, approve and export; test clean
