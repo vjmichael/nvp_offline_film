@@ -171,6 +171,21 @@ class NativeFinishingHandoff:
         return {"state":"AV_QUEUED","job_id":ticket["job_id"],
                 "final_master":False,"dcp_delivered":False}
 
+    def run_final_av(self,project_id,export_id,*,timeout_seconds=900,
+                     ffmpeg="ffmpeg",ffprobe="ffprobe"):
+        """Execute only the original J-host task, never an arbitrary render."""
+        row=self._row(project_id,export_id)
+        if row["state"]!="AV_QUEUED" or not row["av_job"]:
+            raise RuntimeError("No exact queued native AV job")
+        result=self.av.run_next(timeout_seconds=timeout_seconds)
+        if result is None or not result.get("admitted",True):
+            return result
+        if (result.get("job_id")!=row["av_job"]
+            or result.get("state")!="SUCCEEDED"):
+            raise RuntimeError("Wrong native AV worker completed; manual reconciliation")
+        return self.verify_final_av(project_id,export_id,
+                                   ffmpeg=ffmpeg,ffprobe=ffprobe)
+
     def verify_final_av(self,project_id,export_id,*,ffmpeg="ffmpeg",ffprobe="ffprobe"):
         row=self._row(project_id,export_id)
         if row["state"] not in ("AV_QUEUED","AV_VERIFIED","DISTRIBUTION_UNCERTAIN",
@@ -257,6 +272,18 @@ class NativeFinishingHandoff:
             except (RuntimeError,PermissionError,KeyError,OSError):
                 return {"state":"DISTRIBUTION_UNCERTAIN",
                         "requires_native_reconciliation":True,"dcp_delivered":False}
+        if row["state"]=="AV_QUEUED":
+            task=self.ledger.get_task(row["av_job"]) if row["av_job"] else None
+            if task and task["state"]=="SUCCEEDED" and task["reserved"]==0:
+                try:
+                    verified=self.verify_final_av(
+                        project_id,export_id,ffmpeg=ffmpeg,ffprobe=ffprobe)
+                    return {**verified,"recovered_without_rerender":True}
+                except (RuntimeError,PermissionError,KeyError,OSError):
+                    pass
+            return {"state":"AV_QUEUED","worker_state":None if not task else task["state"],
+                    "requires_native_reconciliation":True,
+                    "dcp_delivered":False}
         if row["state"] in ("AV_VERIFIED","DISTRIBUTION_VERIFIED"):
             self.verify_final_av(project_id,export_id,
                                  ffmpeg=ffmpeg,ffprobe=ffprobe)
