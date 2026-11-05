@@ -31,7 +31,8 @@ root=pathlib.Path(sys.argv[1])
 mode=sys.argv[2]
 child=subprocess.Popen([sys.executable, "-c", "import time; time.sleep(90)"],
     stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,close_fds=True)
+    stderr=subprocess.DEVNULL,close_fds=True,
+    start_new_session=(mode=="detached"))
 (root/"descendant.pid").write_text(str(child.pid),encoding="ascii")
 (root/"worker.ready").write_text(str(os.getpid()),encoding="ascii")
 if mode=="parent_exits":
@@ -148,6 +149,46 @@ class NativeWorkerTermination(unittest.TestCase):
     @unittest.skipUnless(os.name=="nt","Job Object kill-on-close is Windows-specific")
     def test_windows_job_close_kills_grandchild_after_worker_exits(self):
         self._probe("parent_exits")
+
+    @unittest.skipUnless(sys.platform=="linux","Linux cgroup v2 only")
+    def test_real_cgroup_kill_includes_detached_session_child(self):
+        from backend.nvp_worker_linux_cgroup import current_delegated_parent
+        try:
+            current_delegated_parent()
+        except RuntimeError as exc:
+            self.skipTest("Real delegated cgroup v2 required: "+str(exc))
+        with tempfile.TemporaryDirectory(prefix="nvp-cgroup-real-") as directory:
+            root=Path(directory)
+            proc=None
+            descendant=None
+            try:
+                with (root/"stdout.log").open("wb") as out,(
+                     root/"stderr.log").open("wb") as err:
+                    proc=launch_contained(
+                        [str(Path(sys.executable).resolve()),"-c",WORKER_CODE,
+                         str(root),"detached"],cwd=str(root),
+                        stdout=out,stderr=err,memory_mb=512,
+                        linux_cgroup_tree_required=True)
+                    self.assertTrue(wait_until(
+                        lambda:(root/"worker.ready").is_file()),
+                        "Delegated native worker failed to execute")
+                    descendant=int((root/"descendant.pid").read_text("ascii"))
+                    self.assertTrue(pid_running(descendant))
+                    # This detached descendant is not in the worker PGID.
+                    self.assertNotEqual(os.getpgid(descendant),proc.pid)
+                    proc.terminate_tree()
+                    proc.close()
+                    self.assertTrue(wait_until(lambda:not pid_running(descendant)),
+                                    "Kernel cgroup.kill left detached worker alive")
+            finally:
+                if proc is not None:
+                    try:
+                        if proc.poll() is None:
+                            proc.terminate_tree()
+                        proc.close()
+                    except BaseException:
+                        pass
+                kill_unowned(descendant)
 
     @unittest.skipUnless(sys.platform=="linux","Linux cgroup v2 only")
     def test_strict_cgroup_requires_real_delegated_kernel_scope(self):
