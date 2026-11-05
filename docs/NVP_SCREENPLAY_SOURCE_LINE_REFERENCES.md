@@ -11,7 +11,7 @@
 
 The source gutter is 1-based. Blank lines and a trailing newline count as lines; CRLF and CR inputs are normalized for reference computation to match the parser and HTML textarea. The input uses `wrap="off"` so that physical lines and displayed numbers never drift when words wrap; long lines can be scrolled horizontally. The vertical gutter scrolls with the editor.
 
-The current cursor line and total line count are displayed below the editor. **Copy with line numbers for AI** exports text such as:
+The current cursor line and total line count are displayed below the editor. The **Go to line** field accepts a one-based source line and moves the caret there without changing the screenplay; `Ctrl+G` or `Cmd+G` focuses the field. The gutter follows vertical scrolling. **Copy selection / all for AI** exports complete original source lines for any nonempty selection, or the entire screenplay when no text is selected. Selection end is exclusive (a selection ending at the first character of the next line does not include that line). Numbered output retains original global line references; the clipboard result never becomes saved screenplay text. Example:
 
 ```text
 L01 | INT. KITCHEN - NIGHT
@@ -50,8 +50,15 @@ python -m unittest tests.test_studio tests.test_story_context tests.test_screenp
 cd frontend && node node_modules/vite/bin/vite.js build
 ```
 
-Validated in the Debian development container: 3 Node source-line checks, 57 Python screenplay/story tests, and a successful Vite production compile (55 transformed modules).
+Validated in the Debian development container: 5 Node source-line checks, 57 Python screenplay/story tests, and a successful Vite production compile (55 transformed modules).
 
 **Not yet verified:** interactive Chromium/WebView2 UI acceptance. The local sandbox browser blocked navigation even to loopback and file/data pages, so scroll position and native clipboard must be smoke-tested in the installed Windows app. The offline frontend toolchain currently uses React 19 as recovered from Lu's Yarn cache, although `frontend/package.json` declares React 18; check this version mismatch before final Windows release.
 
 The Windows NSIS installer status is independent of this feature.
+
+### Follow-on navigation acceptance (2026-11-05)
+
+- Jump to an existing first, blank, middle, or trailing source line; reject zero and out-of-range destinations.
+- Select text crossing blank lines and copy exact global source-line references. When selection ends at a newline boundary, omit the unselected next line.
+- Repeat with CRLF imports and more than 100 lines; verify emitted line labels and original Fountain text remain intact.
+- Browser validation in the Debian tool session remains **not accepted**: Chromium was denied access to loopback with ERR_BLOCKED_BY_ADMINISTRATOR; run interactive UI acceptance in the installed Windows client.
