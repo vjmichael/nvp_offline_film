@@ -54,15 +54,87 @@ def source_proof():
     return {"status":"VERIFIED_FINAL_AV_MASTER","final_master":True}
 
 
-def subprocess_publish(root):
+def subprocess_publish(root,mode="copy"):
     studio=Studio(root/"studio.sqlite3")
     project=(root/"project_id").read_text("ascii")
     capture=DigitalCapture(studio)
-    publish_mezzanine(capture,project,"approved_movie","mezzanine",
-        root/"original",root/"distribution",verify_native_master=source_proof)
+    if mode=="host":
+        from backend.nvp_resource_ledger import TaskLedger
+        from backend.nvp_audio01k_native_host import NativeAudio01KHost
+        class VerifiedAVFixture:
+            def verify_published(self,*_args,**_kwargs):
+                return source_proof()
+        host=NativeAudio01KHost(
+            capture,TaskLedger(root/"resource_ledger"),
+            av_host=VerifiedAVFixture(),
+            verify_creator_action=lambda *_args:True)
+        host.publish(project,"approved_movie","mezzanine",
+                     root/"original",root/"original",root/"original",
+                     root/"distribution","technical-creator-event-fixture")
+    else:
+        publish_mezzanine(capture,project,"approved_movie","mezzanine",
+            root/"original",root/"distribution",verify_native_master=source_proof)
 
 
 class NativeKCrashIO(unittest.TestCase):
+    def test_native_host_creator_event_crashes_preserve_one_time_approval(self):
+        from backend.nvp_resource_ledger import TaskLedger
+        from backend.nvp_audio01k_native_host import NativeAudio01KHost
+        import shutil
+        for point in ("creator_event_reserved","creator_event_published"):
+            with self.subTest(point=point):
+                with tempfile.TemporaryDirectory(prefix="nvp-k-host-crash-") as tmp:
+                    root=Path(tmp)
+                    origin=root/"original"
+                    origin.mkdir()
+                    movie=make_mov(origin)
+                    digest=hashlib.sha256(movie.read_bytes()).hexdigest()
+                    studio=Studio(root/"studio.sqlite3")
+                    pid=studio.create_project("Real K host event crash","")["id"]
+                    (root/"project_id").write_text(pid,"ascii")
+                    capture=DigitalCapture(studio)
+                    capture.index.register_revision(pid,"approved_movie","master",{
+                        "format":AV_FORMAT,"director_approved":True,
+                        "final_master":True,"dcp_delivered":False,
+                        "rendered_mov_sha256":digest,"frames":12})
+                    env=os.environ.copy()
+                    env["NVP_AUDIO01K_FAULT_TEST"]="enabled"
+                    env["NVP_AUDIO01K_CRASH_AFTER"]=point
+                    child=subprocess.run([sys.executable,
+                        str(Path(__file__).resolve()),"--child",str(root),"host"],
+                        cwd=Path(__file__).resolve().parents[1],
+                        stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,timeout=90,env=env)
+                    self.assertEqual(child.returncode,98,
+                        child.stderr.decode("utf8","replace"))
+                    ledger=TaskLedger(root/"resource_ledger")
+                    with ledger._db() as db:
+                        events=db.execute("""SELECT status,document_sha
+                            FROM native_audio01k_events WHERE project_id=?""",
+                            (pid,)).fetchall()
+                    self.assertEqual(len(events),1)
+                    self.assertEqual(events[0][0],
+                        "RESERVED" if point=="creator_event_reserved" else "PUBLISHED")
+                    reopened=DigitalCapture(Studio(root/"studio.sqlite3"))
+                    if point=="creator_event_reserved":
+                        self.assertIsNone(events[0][1])
+                        with self.assertRaises(KeyError):
+                            reopened.index.read_revision(pid,"mezzanine",1)
+                    else:
+                        record=reopened.index.read_revision(pid,"mezzanine",1)
+                        self.assertEqual(events[0][1],record["document_sha256"])
+                        self.assertTrue((root/"distribution"/"feature_master.mov").is_file())
+                    class VerifiedAVFixture:
+                        def verify_published(self,*_args,**_kwargs):
+                            return source_proof()
+                    host=NativeAudio01KHost(reopened,ledger,
+                        av_host=VerifiedAVFixture(),
+                        verify_creator_action=lambda *_args:True)
+                    with self.assertRaises(PermissionError):
+                        host.publish(pid,"approved_movie","mezzanine",
+                            origin,origin,origin,root/"distribution",
+                            "technical-creator-event-fixture")
+
     def test_all_real_copy_fsync_rename_and_filmindex_boundaries(self):
         for point in BOUNDARIES:
             if point in ("creator_event_reserved","creator_event_published"):
@@ -135,7 +207,9 @@ class NativeKCrashIO(unittest.TestCase):
 
 
 if __name__=="__main__":
-    if len(sys.argv)==3 and sys.argv[1]=="--child":
-        subprocess_publish(Path(sys.argv[2]))
+    if len(sys.argv)>=3 and sys.argv[1]=="--child":
+        subprocess_publish(Path(sys.argv[2]),
+                           "host" if len(sys.argv)>3 and sys.argv[3]=="host"
+                           else "copy")
     else:
         unittest.main()
