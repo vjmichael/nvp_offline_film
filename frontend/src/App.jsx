@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import StoryTimeline from './StoryTimeline.jsx';
 import SceneMindPanel from './SceneMindPanel.jsx';
 import ScreenplayReviewPanel from './ScreenplayReviewPanel.jsx';
+import LineNumberedTextarea from './LineNumberedTextarea.jsx';
 import SceneStagePanel from './SceneStagePanel.jsx';
 import ProductionAuthoringPanel from './ProductionAuthoringPanel.jsx';
 import TakeSequencePanel from './TakeSequencePanel.jsx';
@@ -395,7 +396,7 @@ export default function App() {
           {startMode === 'idea'
             ? <label>What's your idea? Write it however you like.<textarea rows={6} maxLength={10000} value={idea} placeholder="A person returns home and discovers..." onChange={(e) => setIdea(e.target.value)}/></label>
             : <><label>Bring your existing script (.fountain or .txt)<input type="file" accept=".fountain,.txt" onChange={(e) => importScript(e, setOpeningScript)}/></label>
-                <label>Or paste it here<textarea rows={9} value={openingScript} maxLength={1000000} onChange={(e) => setOpeningScript(e.target.value)} placeholder="INT. APARTMENT - NIGHT..."/></label></>}
+                <label>Or paste it here</label><LineNumberedTextarea rows={9} label="Imported screenplay text" value={openingScript} maxLength={1000000} onChange={(e) => setOpeningScript(e.target.value)} placeholder="INT. APARTMENT - NIGHT..."/></>}
           <div className="actions"><button className="primary" disabled={busy || !title.trim() || (startMode === 'script' && !openingScript.trim())} onClick={create}>Start making my movie →</button></div>
         </section>
         <p className="fineprint">Your ideas stay on this computer. This is a working planning prototype; actual film rendering is not connected yet.</p>
@@ -506,10 +507,12 @@ export default function App() {
               <button className="secondary" disabled={busy || storyNeedsReview || !!bibleWritingContext?.error || !selectedModelId || localModelStatus?.state !== 'available'} onClick={generateWriting}>Ask selected local AI to draft</button>
             </div>
             <p className="fineprint">NVP uses only the local model server. A model listed above is not necessarily loaded or tested. Drafts remain proposals until you approve them.</p>
-            <label>Draft (write it yourself, edit AI output, or paste an existing draft)
-              <textarea className="script" rows={16} value={draftText} maxLength={120000} onChange={(e) => setDraftText(e.target.value)}
-                placeholder={writingStage === 'screenplay' ? 'INT. HOME - NIGHT\n\nA door opens...' : 'Write your story idea here...'}/>
-            </label>
+            <label>Draft (write it yourself, edit AI output, or paste an existing draft)</label>
+            {writingStage === 'screenplay'
+              ? <LineNumberedTextarea rows={16} label="Screenplay draft" value={draftText} maxLength={120000}
+                  onChange={(e) => setDraftText(e.target.value)} placeholder="INT. HOME - NIGHT\n\nA door opens..."/>
+              : <textarea className="script" rows={16} value={draftText} maxLength={120000}
+                  onChange={(e) => setDraftText(e.target.value)} placeholder="Write your story idea here..."/>}
             <div className="actions">
               <button className="secondary" disabled={busy || !draftText.trim() || (selectedDraft && selectedDraft.status !== 'proposed')} onClick={saveWriting}>
                 {selectedDraft ? 'Save revised draft' : 'Save my draft'}
@@ -545,7 +548,7 @@ export default function App() {
           <section className="card">
             <h2>Your screenplay</h2><p className="muted">Write or edit any scene directly, or develop it collaboratively in the previous tab. Use headings such as INT. KITCHEN - NIGHT.</p>
             <label>Import a .fountain or .txt screenplay<input type="file" accept=".fountain,.txt" onChange={(e) => importScript(e, setScript)} /></label>
-            <textarea className="script" rows={18} value={script} onChange={(e) => setScript(e.target.value)} placeholder="INT. BEDROOM - NIGHT&#10;&#10;A character opens a letter..." />
+            <LineNumberedTextarea rows={18} label="Your screenplay" value={script} maxLength={1000000} onChange={(e) => setScript(e.target.value)} placeholder={"INT. BEDROOM - NIGHT\n\nA character opens a letter..."} />
             <div className="actions">
               <button className="secondary" disabled={busy || script.trim().length > 0} onClick={() => setScript(SAMPLE)}>Try a sample</button>
               <button className="primary" disabled={busy || !unsaved} onClick={saveScript}>Save and find scenes</button>
