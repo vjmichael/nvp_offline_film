@@ -1,15 +1,5 @@
 name: NVP E2E-01D Complete Workflow Crash Recovery
 on:
-  push:
-    branches:
-      - nvp/stack02c3b14-picture-conform-20261104
-    paths:
-      - 'backend/nvp_e2e01b_native_editorial.py'
-      - 'backend/nvp_e2e01c_finishing.py'
-      - 'tests/test_nvp_e2e01b_native_handoff.py'
-      - 'tests/test_nvp_e2e01c_finishing.py'
-      - 'tests/test_nvp_e2e01d_process_crash.py'
-      - '.github/workflows/nvp-e2e01d-recovery.yml'
   pull_request:
     paths:
       - 'backend/nvp_e2e01b_native_editorial.py'
