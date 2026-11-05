@@ -29,6 +29,7 @@ class DCPContract(unittest.TestCase):
             self.assertIn("24",create)
             self.assertIn("rec709",create)
             self.assertIn("--audio-channels",create)
+            self.assertEqual(create[create.index("--audio-channels")+1],"6")
             self.assertNotIn("--encrypt",create)
             self.assertEqual(encode[1:3],["--no-remote","--dcp-path"])
             for title in ("../bad","space in name","", "t"*82):
