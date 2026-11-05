@@ -64,7 +64,8 @@ def _tool(name: str, value: str | None) -> Path:
 
 class NativeMasterReviewHost:
     def __init__(self, index: FilmIndex, ledger: TaskLedger, root: Path, *,
-                 verify_creator_action, strict_linux_tree: bool = False):
+                 verify_creator_action, strict_linux_tree: bool = False,
+                 publication_mode: str = "worker_publishes"):
         if (not isinstance(index, FilmIndex) or not isinstance(ledger, TaskLedger)
             or not callable(verify_creator_action)):
             raise TypeError("Trusted FilmIndex, TaskLedger and creator verifier required")
@@ -77,10 +78,14 @@ class NativeMasterReviewHost:
         self.root = requested.resolve()
         self.index, self.ledger = index, ledger
         self.creator = verify_creator_action
+        if publication_mode not in ("worker_publishes", "host_staged"):
+            raise ValueError("Unsupported native film publication mode")
         self.strict_linux_tree = strict_linux_tree
+        self.publication_mode = publication_mode
         self.python = Path(sys.executable).resolve(strict=True)
         self.worker = Path(__file__).resolve().parents[1] / "tools" / "nvp_master01b_native_worker.py"
         self.module = Path(__file__).resolve().with_name("nvp_longform_review.py")
+        self.stage_module = Path(__file__).resolve().with_name("nvp_master01c_two_phase.py")
         self.owner = "master01b_" + hashlib.sha256(str(self.root).encode()).hexdigest()[:22]
         self.events: dict[str, str] = {}  # Native, ephemeral: lost approvals fail closed on restart.
         self._cancel: dict[str, threading.Event] = {}
@@ -163,9 +168,10 @@ class NativeMasterReviewHost:
                 or plan["project_id"] != grant["project_id"]
                 or plan["review_id"] != grant["review_id"]
                 or plan["ram_mb"] != grant["ram_mb"]
+                or plan["publication_mode"] != spec["creator_scope"]["publication_mode"]
                 or plan["source_binding_sha256"] != spec["source_binding_sha256"]
                 or any(_sha(Path(plan[key])) != plan[key + "_sha256"] for key in
-                       ("python", "worker", "module", "ffmpeg", "ffprobe"))
+                       ("python", "worker", "module", "stage_module", "ffmpeg", "ffprobe"))
                 or self.events.get(job) is None):
                 return False
             refs = self._source_binding(plan["project_id"], plan["source_refs"])
@@ -201,6 +207,7 @@ class NativeMasterReviewHost:
                  "source_binding_sha256": binding,
                  "source_revisions": sources, "frames": sum(x["frames"] for x in sources),
                  "ram_mb": ram_mb, "task_duration_seconds": duration_seconds,
+                 "publication_mode": self.publication_mode,
                  "native_binary_sha256": {"ffmpeg": _sha(ff), "ffprobe": _sha(probe)},
                  "creator_approved_final_master": False}
         if self.creator(creator_event, dict(scope)) is not True:
@@ -218,11 +225,13 @@ class NativeMasterReviewHost:
                 "studio_db_path": str(self.index.studio.db_path.resolve(strict=True)),
                 "project_id": project_id, "review_id": review_id,
                 "source_refs": refs, "source_binding_sha256": binding,
+                "publication_mode": self.publication_mode,
                 "creator_approved_final_master": False, "dcp_delivered": False,
                 "ram_mb": ram_mb,
                 "python": str(self.python), "worker": str(self.worker),
-                "module": str(self.module), "ffmpeg": str(ff), "ffprobe": str(probe)}
-        for key in ("python", "worker", "module", "ffmpeg", "ffprobe"):
+                "module": str(self.module), "stage_module": str(self.stage_module),
+                "ffmpeg": str(ff), "ffprobe": str(probe)}
+        for key in ("python", "worker", "module", "stage_module", "ffmpeg", "ffprobe"):
             plan[key + "_sha256"] = _sha(Path(plan[key]))
         job_dir = self.root / job
         job_dir.mkdir(mode=0o700)
@@ -324,12 +333,63 @@ class NativeMasterReviewHost:
             or receipt.get("dcp_delivered") is not False):
             raise RuntimeError("Native film worker result receipt differs from reopened film")
 
+    def _complete_staged_after_stop(self, job: str, plan: dict) -> dict:
+        """Native worker prepared only. Host revalidates and commits once."""
+        from backend.nvp_master01c_two_phase import verify_prepared, commit_prepared
+        # A queued job or a cold-start recovery must not silently execute a
+        # different staging verifier, codec binary or native worker than the
+        # sealed creator-approved plan specified.
+        for key in ("python", "worker", "module", "stage_module", "ffmpeg", "ffprobe"):
+            if _sha(Path(plan[key])) != plan[key + "_sha256"]:
+                raise RuntimeError("Pinned native film dependency changed before publication")
+        prepared = verify_prepared(self.index, self.root / job / "stage",
+                                   ffmpeg=plan["ffmpeg"], ffprobe=plan["ffprobe"])
+        manifest = prepared["manifest"]
+        refs = self._source_binding(plan["project_id"], plan["source_refs"])
+        source_digest = hashlib.sha256(canonical_bytes({"sources": refs})).hexdigest()
+        if (manifest["project_id"] != plan["project_id"]
+            or manifest["review_id"] != plan["review_id"]
+            or manifest["source_refs"] != plan["source_refs"]
+            or source_digest != plan["source_binding_sha256"]):
+            raise RuntimeError("Prepared review is not bound to the approved source plan")
+        receipt_path = self.root / job / "worker_receipt.json"
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise RuntimeError("Native preparation receipt missing")
+        original = receipt_path.read_bytes()
+        receipt = json.loads(original)
+        if (canonical_bytes(receipt) != original
+            or receipt.get("format") != "nvp.master01c.native_preparation_receipt.v1"
+            or receipt.get("job_id") != job
+            or receipt.get("project_id") != plan["project_id"]
+            or receipt.get("review_id") != plan["review_id"]
+            or receipt.get("source_binding_sha256") != source_digest
+            or receipt.get("prepared_manifest_sha256") != prepared["manifest_sha256"]
+            or receipt.get("movie_sha256") != prepared["movie_sha256"]
+            or receipt.get("frames") != prepared["frames"]
+            or receipt.get("creator_approved_final_master") is not False
+            or receipt.get("dcp_delivered") is not False):
+            raise RuntimeError("Native preparation receipt differs from staged film")
+        if self._cancel.get(job) is not None and self._cancel[job].is_set():
+            raise NativeCancelRequested("Creator cancelled before host FilmIndex publication")
+        # Only the host publishes. The staged worker never calls put_media_file
+        # or register_revision. A crash after either step is safe to reconcile
+        # against the existing precise FilmIndex revision without rerendering.
+        committed = commit_prepared(self.index, self.root / job / "stage",
+                                    ffmpeg=plan["ffmpeg"], ffprobe=plan["ffprobe"])
+        return {"proof": reopen_review(self.index, plan["project_id"], plan["review_id"],
+                        ffmpeg=plan["ffmpeg"], ffprobe=plan["ffprobe"]),
+                "document_sha256": committed["document_sha256"]}
+
     def _complete_after_stop(self, job: str) -> dict:
         grant = self._grant(job)
         if grant["stop_witness"] != 1 or grant["stop_exit_code"] != 0:
             raise RuntimeError("Cannot verify film without successful OS worker stop witness")
-        independent = self._verify(job)
-        self._receipt(job, independent)
+        plan = self._plan(job)
+        if plan.get("publication_mode", "worker_publishes") == "host_staged":
+            independent = self._complete_staged_after_stop(job, plan)
+        else:
+            independent = self._verify(job)
+            self._receipt(job, independent)
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE native_master01b_grants SET result_sha=? WHERE job_id=?",
