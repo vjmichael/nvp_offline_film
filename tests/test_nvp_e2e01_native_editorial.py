@@ -116,7 +116,7 @@ class NativeEditorialE2E(unittest.TestCase):
                     "source_frames":24,
                     "codec":"prores_pcm24"
                 },expected_revision=0,dependencies=[])
-                self.assertEqual(doc["data"]["source_sha256"],media["sha256"])
+                self.assertEqual(index.read_revision(pid,asset_id,1)["data"]["source_sha256"],media["sha256"])
                 indexed.append(index.verify_media_file(
                     pid,media["sha256"],"video/quicktime"))
                 mov.unlink()
