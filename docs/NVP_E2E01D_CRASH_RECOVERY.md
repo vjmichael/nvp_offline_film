@@ -203,3 +203,40 @@ The AUDIO-01J equivalent recovers only one uniquely matched stopped,
 `SUCCEEDED`, unreserved grant, a byte-exact original plan and creator/
 FilmIndex publication. It does not recover an ACTIVE J worker or replay
 an interrupted creator event.
+
+## E2E-01D next gate — Real AUDIO-01K native media publication
+
+`tests/test_nvp_e2e01d_real_k_publication.py` creates an actual short
+FFmpeg ProRes/PCM24 movie and an actual SQLite FilmIndex source master.
+It invokes production `publish_mezzanine` in a **separate process** with
+real file copy, fsync, SHA-256, manifest/SHA256SUMS publication,
+`os.replace` directory promotion and FilmIndex registration.
+
+The child is terminated with `os._exit(98)` at each of the six
+AUDIO-01K filesystem/SQLite boundaries:
+
+1. `staging_directory_created`
+2. `movie_bytes_fsynced`
+3. `manifest_fsynced`
+4. `checksums_fsynced`
+5. `directory_promoted`
+6. `filmindex_registered`
+
+The parent independently reopens the original SQLite Studio/FilmIndex,
+re-verifies unmodified source MOV bytes, and checks the exact distinction
+between a staging directory, an externally visible promoted output and
+a committed immutable FilmIndex record. The promotion-before-index crash
+must **not** be reported as a completed distribution. Once indexed, the
+real K verifier must re-validate the source movie/checksums/dependency.
+
+**Scope limitation:** the synthetic creator-approval callback in this
+specific K filesystem crash test is a labeled technical fixture. This
+does not prove that a real creator authorized the film, nor is the test
+allowed to substitute for `NativeAudio01KHost` creator-event or original
+AUDIO-01J stopped-worker custody. The separate no-mocks,
+self-hosted approved-film workflow remains the release gate.
+
+`.github/workflows/nvp-e2e01d-recovery.yml` now installs actual
+FFmpeg on Windows and Linux and runs this real K fsync/rename/FilmIndex
+hard-kill matrix. All four native matrix cells must execute and pass;
+none of them is considered accepted while queued.
