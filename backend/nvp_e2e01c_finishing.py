@@ -254,7 +254,6 @@ class NativeFinishingHandoff:
         row=self._row(project_id,export_id)
         if row["state"]!="AV_STAGING_UNCERTAIN":
             raise RuntimeError("Only an uncertain stage can be reconciled")
-        self._approved(row,ffmpeg=ffmpeg,ffprobe=ffprobe)
         with self.ledger._db() as db:
             records=db.execute("""SELECT g.job_id,g.plan_sha
                 FROM native_audio01j_grants g JOIN tasks t ON t.id=g.job_id
@@ -286,6 +285,7 @@ class NativeFinishingHandoff:
         if len(candidates)!=1:
             raise RuntimeError("Multiple completed native AV grants claim one film")
         job=candidates[0]
+        self._approved(row,ffmpeg=ffmpeg,ffprobe=ffprobe)
         # Native J-host independently proves original creator publication,
         # authoritative stop witness, immutable plan, and finished FilmIndex.
         proof=self.av.verify_published(project_id,export_id,row["final_dir"],
