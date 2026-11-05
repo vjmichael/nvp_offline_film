@@ -42,6 +42,9 @@ intended dependency versions. This smoke is not a dependency lockfile.
 - Focused Python regressions: **40 tests and 15 subtests passed**, with
   5/5 abrupt process-death tests after correcting the resource-only
   reservation check.
+- Subsequent complete local E2E-01D crash suite (`test_nvp_e2e01d_*.py`):
+  **14 tests run, 2 skipped, zero failures** in 100.022 seconds on Linux.
+  The two skips remain unverified; this is not Windows 10 native acceptance.
 
 ## Source repairs committed
 
