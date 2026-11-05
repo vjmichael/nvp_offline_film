@@ -6,12 +6,14 @@ on:
       - "backend/nvp_external_media_catalog.py"
       - "backend/nvp_source_media_inventory.py"
       - "backend/nvp_source_film_bridge.py"
+      - "backend/nvp_bound_editorial.py"
       - "backend/nvp_studio.py"
       - "backend/nvp_film_index.py"
       - "tests/test_nvp_editorial_catalog.py"
       - "tests/test_nvp_external_media_catalog.py"
       - "tests/test_nvp_source_media_inventory.py"
       - "tests/test_nvp_source_film_bridge.py"
+      - "tests/test_nvp_bound_editorial.py"
       - ".github/workflows/nvp-scale01-02.yml"
   workflow_dispatch:
 
@@ -40,7 +42,7 @@ jobs:
           ffmpeg -version
           ffprobe -version
       - name: Compile production catalog and tests
-        run: python -m compileall -q backend/nvp_editorial_catalog.py backend/nvp_external_media_catalog.py backend/nvp_source_media_inventory.py backend/nvp_source_film_bridge.py tests/test_nvp_editorial_catalog.py tests/test_nvp_external_media_catalog.py tests/test_nvp_source_media_inventory.py tests/test_nvp_source_film_bridge.py
+        run: python -m compileall -q backend/nvp_editorial_catalog.py backend/nvp_external_media_catalog.py backend/nvp_source_media_inventory.py backend/nvp_source_film_bridge.py backend/nvp_bound_editorial.py tests/test_nvp_editorial_catalog.py tests/test_nvp_external_media_catalog.py tests/test_nvp_source_media_inventory.py tests/test_nvp_source_film_bridge.py tests/test_nvp_bound_editorial.py
       - name: Run compact feature editorial tests
         run: python -m unittest discover -s tests -p "test_nvp_editorial_catalog.py" -v
       - name: Run external original-media tests
@@ -49,3 +51,5 @@ jobs:
         run: python -m unittest discover -s tests -p "test_nvp_source_media_inventory.py" -v
       - name: Run real FilmIndex external source custody tests
         run: python -m unittest discover -s tests -p "test_nvp_source_film_bridge.py" -v
+      - name: Run exact-revision bound editorial and impact tests
+        run: python -m unittest discover -s tests -p "test_nvp_bound_editorial.py" -v
