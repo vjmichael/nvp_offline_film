@@ -57,8 +57,11 @@ process** and invokes `os._exit(93)` at these points:
 | TaskLedger admission after active RAM reservation | ACTIVE with reserved=1 and original RAM budget retained after process death |
 
 The parent inspects SQLite **after the child is gone** and refuses any
-fabricated `SUCCEEDED` task or final master. A separate ledger instance
-reopens reservations to ensure they are not silently freed.
+fabricated `SUCCEEDED` task or final master. It also instantiates fresh
+Studio, FilmIndex, TaskLedger and original native B13/B14 or I/J/K hosts,
+reopens the coordinator, and verifies the uncertain state still requires
+native reconciliation. A separate ledger instance reopens the live RAM
+reservation to ensure it is not silently freed.
 
 `tests/test_nvp_e2e01b_native_handoff.py` also covers staging exceptions,
 exact edited revision, duplicate submission rejection, and explicit
@@ -80,6 +83,8 @@ Actual native host OS failure acceptance is a separate remaining gate.
 - Ubuntu 24.04 × Python 3.11 and 3.13.
 - Must run the real process-death suite and E2E-01B/01C regression suites.
 - A compile-only result or a queued/skipped job does not count as accepted.
+- This workflow uses PR or explicit dispatch, not duplicate simultaneous
+  push and PR triggers, to limit queued runner congestion.
 
 ## Remaining production crash/restore acceptance
 
