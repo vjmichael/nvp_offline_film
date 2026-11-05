@@ -42,16 +42,26 @@ def verify_pe64_gui(exe: Path) -> dict:
             raise RuntimeError("NVP desktop must be AMD64 PE32+")
         if subsystem != 2:
             raise RuntimeError("NVP desktop must have Windows GUI subsystem")
+    with exe.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
     return {
         "bytes": size,
-        "sha256": hashlib.file_digest(exe.open("rb"), "sha256").hexdigest(),
+        "sha256": digest,
         "machine": "AMD64",
         "subsystem": "Windows GUI",
     }
 
 
 def verify_bundle(folder: Path) -> dict:
-    root = folder.resolve(strict=True)
+    # Refuse links anywhere in the payload: NSIS must install only audited,
+    # repository-built regular files, never follow an external filesystem path.
+    if folder.is_symlink():
+        raise RuntimeError("Installer payload directory is a symlink")
+    if not folder.is_dir():
+        raise RuntimeError("Missing Windows bundle directory")
+    for member in folder.rglob("*"):
+        if member.is_symlink():
+            raise RuntimeError("Installer payload contains symlink: " + str(member))
     exe = folder / "NVP.exe"
     evidence = verify_pe64_gui(exe)
     base = folder / "_internal"
