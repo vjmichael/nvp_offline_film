@@ -1,0 +1,61 @@
+name: NVP E2E-01D Approved Film Native Acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  approved-film-windows:
+    name: Genuine approved film - original Windows alpha
+    runs-on: [self-hosted, Windows, nvp-alpha-custody]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require installed-alpha native fixture and original interpreter
+        shell: pwsh
+        env:
+          NVP_FILM_MANIFEST: ${{ vars.NVP_E2E01D_APPROVED_FILM_MANIFEST_WIN }}
+          NVP_ORIGINAL_PYTHON: ${{ vars.NVP_E2E01D_ORIGINAL_PYTHON_WIN }}
+        run: |
+          if (-not $env:NVP_FILM_MANIFEST -or -not (Test-Path -LiteralPath $env:NVP_FILM_MANIFEST -PathType Leaf)) {
+            throw 'Original Windows FilmIndex/host fixture manifest missing; no simulated film may pass acceptance.'
+          }
+          if (-not $env:NVP_ORIGINAL_PYTHON -or -not (Test-Path -LiteralPath $env:NVP_ORIGINAL_PYTHON -PathType Leaf)) {
+            throw 'Original NVP Windows Python runtime is required to validate stored worker custody.'
+          }
+          & $env:NVP_ORIGINAL_PYTHON -m tools.nvp_e2e01d_verify_approved_film --manifest $env:NVP_FILM_MANIFEST --report "$env:RUNNER_TEMP\nvp-e2e01d-win-approved-film.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvp-e2e01d-windows-approved-film-proof
+          path: ${{ runner.temp }}/nvp-e2e01d-win-approved-film.json
+          if-no-files-found: error
+
+  approved-film-linux:
+    name: Genuine approved film - original Linux development host
+    runs-on: [self-hosted, Linux, nvp-alpha-custody]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require installed-alpha native fixture and original interpreter
+        shell: bash
+        env:
+          NVP_FILM_MANIFEST: ${{ vars.NVP_E2E01D_APPROVED_FILM_MANIFEST_LINUX }}
+          NVP_ORIGINAL_PYTHON: ${{ vars.NVP_E2E01D_ORIGINAL_PYTHON_LINUX }}
+        run: |
+          set -euo pipefail
+          test -n "$NVP_FILM_MANIFEST" && test -f "$NVP_FILM_MANIFEST" || {
+            echo "::error::Original Linux FilmIndex/native-host fixture missing; never substitute synthetic movie."
+            exit 1
+          }
+          test -n "$NVP_ORIGINAL_PYTHON" && test -x "$NVP_ORIGINAL_PYTHON" || {
+            echo "::error::Original Linux NVP runtime missing."
+            exit 1
+          }
+          "$NVP_ORIGINAL_PYTHON" -m tools.nvp_e2e01d_verify_approved_film \
+            --manifest "$NVP_FILM_MANIFEST" \
+            --report "$RUNNER_TEMP/nvp-e2e01d-linux-approved-film.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvp-e2e01d-linux-approved-film-proof
+          path: ${{ runner.temp }}/nvp-e2e01d-linux-approved-film.json
+          if-no-files-found: error
