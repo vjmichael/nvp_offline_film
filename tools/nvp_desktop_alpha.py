@@ -18,6 +18,14 @@ import threading
 import time
 import urllib.request
 
+# Source-mode invocation (`python tools/nvp_desktop_alpha.py`) otherwise puts
+# tools/ rather than the repository root on sys.path. A frozen PyInstaller
+# bundle already has its own audited import search paths; leave those intact.
+if not getattr(sys, "frozen", False):
+    repo_root = str(Path(__file__).resolve().parents[1])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
 
 def bundle_root():
     return Path(getattr(sys,"_MEIPASS",Path(__file__).resolve().parents[1]))
