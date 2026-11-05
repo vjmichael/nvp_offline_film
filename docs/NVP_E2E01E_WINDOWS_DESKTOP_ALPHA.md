@@ -31,7 +31,8 @@ attempts:
 5. Silent-install the actual executable as a normal current user.
 6. Launch the installed executable **twice** in separate OS processes:
    first `--smoke-create`, then `--smoke-reopen` with the same external
-   `NVP_HOME`. Require the original SQLite project ID/title to reopen.
+   `NVP_HOME`. Require the original SQLite project ID/title and an edited
+   Fountain screenplay revision to reopen across separate app processes.
 7. Launch a **real visible WebView2 window** with `--smoke-window`; the
    native page-loaded signal must occur before the test reports success.
 8. Silent-uninstall and require the same original film SQLite file to remain.
