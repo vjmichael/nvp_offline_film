@@ -144,6 +144,44 @@ class EditorialChainContracts(unittest.TestCase):
                     self.chain.verify_conform(ticket["chain_id"])
         self.assertEqual(self.chain._row(ticket["chain_id"])["state"],"CONFORM_QUEUED")
 
+    def test_worker_ticket_mismatch_never_promotes_import(self):
+        ticket=self.stage()
+        self.committed_edit()
+        with patch.object(self.b13,"run_next",return_value={
+            "job_id":"another_native_job","state":"SUCCEEDED"}):
+            with self.assertRaisesRegex(RuntimeError,"ticket mismatch"):
+                self.chain.run_import(ticket["chain_id"])
+        self.assertEqual(self.chain._row(ticket["chain_id"])["state"],"IMPORT_QUEUED")
+
+    def test_native_import_then_conform_receipts_and_reopen(self):
+        ticket=self.stage()
+        self.committed_edit()
+        with patch.object(self.b13,"run_next",return_value={
+            "job_id":self.import_job,"state":"SUCCEEDED"}):
+            with patch.object(self.b13,"verify_completed",return_value=self.imported_proof()):
+                accepted=self.chain.run_import(ticket["chain_id"])
+        self.assertEqual(accepted["state"],"IMPORT_VERIFIED")
+        with patch.object(self.b13,"verify_completed",return_value=self.imported_proof()):
+            with patch.object(self.b14,"stage_and_approve",
+                return_value={"job_id":self.conform_job,"state":"QUEUED"}):
+                self.chain.stage_conform(ticket["chain_id"],object())
+            self.capture.index.register_revision(
+                self.pid,"conformed_cut_v1","presentation",{
+                    "format":"nvp.presentation.b14.edited_technical_mov_candidate.v1",
+                    "picture_locked":False,"final_master":False
+                },dependencies=[])
+            verified={"status":"VERIFIED_SDR16_PICTURE_CONFORM","frames":24}
+            with patch.object(self.b14,"run_next",return_value={
+                "job_id":self.conform_job,"state":"SUCCEEDED"}):
+                with patch.object(self.b14,"verify_completed",return_value=verified):
+                    result=self.chain.run_conform(ticket["chain_id"])
+            self.assertEqual(result["state"],"CONFORM_VERIFIED")
+            self.assertFalse(result["final_master"])
+            with patch.object(self.b14,"verify_completed",return_value=verified):
+                reopened=self.chain.reopen(ticket["chain_id"])
+            self.assertTrue(reopened["recovered_without_relaunch"])
+            self.assertEqual(reopened["state"],"CONFORM_VERIFIED")
+
     def test_cancel_requires_original_trusted_native_approval(self):
         ticket=self.stage()
         with patch.object(self.b13,"revoke_from_trusted_native_action",
