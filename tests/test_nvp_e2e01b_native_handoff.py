@@ -118,8 +118,11 @@ class EditorialChainContracts(unittest.TestCase):
                 self.assertEqual(again["conform_job"],self.conform_job)
                 self.assertEqual(spawned.call_count,1)
         self.assertFalse(staged["final_master"])
-        self.assertIsNone(self.chain.reopen(ticket["chain_id"])["worker_state"]
-                          if False else None)  # No implied OS-stop witness
+        with patch.object(self.b13,"verify_completed",return_value=self.imported_proof()):
+            recovered=self.chain.reopen(ticket["chain_id"])
+        self.assertEqual(recovered["state"],"CONFORM_QUEUED")
+        self.assertIsNone(recovered["worker_state"])
+        self.assertFalse(recovered["recovered_without_relaunch"])
 
     def test_corrupt_b14_state_cannot_be_claimed_as_final(self):
         ticket=self.stage()
