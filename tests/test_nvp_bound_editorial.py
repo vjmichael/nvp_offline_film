@@ -4,7 +4,6 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
@@ -61,6 +60,8 @@ class BoundEditorialNativeTests(unittest.TestCase):
                          [{"object_id": "edit1", "revision": 1}])
         self.assertEqual(self.index.impact(self.pid, "take01", 1),
                          [{"object_id": "edit1", "revision": 1}])
+        self.assertEqual(self.publisher.verify_revision(
+            self.pid, "edit1", 1)["status"], "VERIFIED_INDEXED_SOURCE_BINDINGS")
         self.movie.unlink()
         reopened_studio = Studio(self.studio.db_path)
         fresh_index = FilmIndex(reopened_studio)
@@ -110,6 +111,18 @@ class BoundEditorialNativeTests(unittest.TestCase):
             self.publisher.publish(other, "alien_edit", [self.clip()])
         with self.assertRaises(KeyError):
             self.index.read_revision(other, "alien_edit")
+
+    def test_altered_binding_is_detected_by_full_audit(self):
+        self.publisher.publish(self.pid, "alter", [self.clip(), self.clip(2, 4)])
+        with self.studio._connection() as db:
+            db.execute("""UPDATE scale_editorial_source_bindings
+                SET source_document_sha256=?
+                WHERE project_id=? AND edit_id=? AND revision=1 AND ordinal=1""",
+                ("f" * 64, self.pid, "alter"))
+        with self.assertRaises(RuntimeError):
+            self.publisher.verify_revision(self.pid, "alter", 1)
+        with self.assertRaises(RuntimeError):
+            self.publisher.clips(self.pid, "alter", 1)
 
     def test_duplicate_source_version_disallowed(self):
         self.publisher.publish(self.pid, "first", [self.clip()])
