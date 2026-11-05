@@ -79,10 +79,14 @@ All four combinations must actually run. No missing-binary skip is accepted.
   and rejects inferred completion. Native worker kill/crash-injection
   and full filmmaker approval/export recovery remain unverified.
   See `docs/NVP_E2E01D_CRASH_RECOVERY.md`.
-- [ ] **E2E-01E installed Windows alpha:** Run an NSIS install, launch
-  real standalone GUI, import and cut an existing media file, save
-  project, close/reopen app, preview, approve and export; test clean
-  uninstall. A headless test cannot stand in for GUI acceptance.
+- [ ] **E2E-01E installed Windows alpha:** Native React/FastAPI WebView2
+  launcher, per-user NSIS installer and Windows workflow committed. The
+  workflow must build the bundled application, install, reopen a genuine
+  persisted film project in a second app process, load a real visible
+  WebView2 window, uninstall and preserve film SQLite data. **Not yet
+  accepted.** Import/cut/preview/approved export remain unimplemented or
+  unintegrated in the standalone GUI; a shell smoke is not final alpha.
+  See `docs/NVP_E2E01E_WINDOWS_DESKTOP_ALPHA.md`.
 - [ ] **E2E-01F cinema finishing:** Run actual creator-approved film
   through DCP-o-matic, independently validate SMPTE J2K/MXF/CPL/PKL
   with DcpDoctor, reopen FilmIndex and reject altered DCP MXF.
