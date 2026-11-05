@@ -1,0 +1,32 @@
+name: NVP SCALE-01-02 Studio-Scale Metadata and Source Catalog
+on:
+  pull_request:
+    paths:
+      - "backend/nvp_editorial_catalog.py"
+      - "backend/nvp_external_media_catalog.py"
+      - "backend/nvp_studio.py"
+      - "backend/nvp_film_index.py"
+      - "tests/test_nvp_editorial_catalog.py"
+      - "tests/test_nvp_external_media_catalog.py"
+      - ".github/workflows/nvp-scale01-02.yml"
+  workflow_dispatch:
+
+jobs:
+  scale-catalog:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile production catalog and tests
+        run: python -m compileall -q backend/nvp_editorial_catalog.py backend/nvp_external_media_catalog.py tests/test_nvp_editorial_catalog.py tests/test_nvp_external_media_catalog.py
+      - name: Run actual SQLite and media integrity contracts
+        run: python -m unittest discover -s tests -p "test_nvp_editorial_catalog.py" -v
+      - name: Run external original-media contracts
+        run: python -m unittest discover -s tests -p "test_nvp_external_media_catalog.py" -v
