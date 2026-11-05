@@ -115,12 +115,18 @@ class NativeEditorialChain:
         chain_id="editorial_"+secrets.token_hex(16)
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
-            db.execute("""INSERT INTO native_e2e01b_chains VALUES
-                (?,?,?,?,?,NULL,?,?,?,?,NULL,?,?,?)""",
-                (chain_id,project_id,delivery_id,edit_id,
-                 expected_edit_revision+1,str(package),str(destination),
-                 presentation_id,"pending_"+chain_id,
-                 "IMPORT_STAGING_UNCERTAIN",time.time(),time.time()))
+            try:
+                db.execute("""INSERT INTO native_e2e01b_chains VALUES
+                    (?,?,?,?,?,NULL,?,?,?,?,NULL,?,?,?)""",
+                    (chain_id,project_id,delivery_id,edit_id,
+                     expected_edit_revision+1,str(package),str(destination),
+                     presentation_id,"pending_"+chain_id,
+                     "IMPORT_STAGING_UNCERTAIN",time.time(),time.time()))
+            except sqlite3.IntegrityError as exc:
+                db.rollback()
+                raise RuntimeError(
+                    "This presentation already has a durable native editorial chain; reopen it"
+                ) from exc
             db.commit()
         ticket=self.b13.stage_and_approve(
             project_id,delivery_id,package,incoming_otio,creator_event,
@@ -145,7 +151,12 @@ class NativeEditorialChain:
 
     def verify_import(self,chain_id):
         row=self._row(chain_id)
-        proof=self.b13.verify_completed(row["import_job"])
+        try:
+            proof=self.b13.verify_completed(row["import_job"])
+        except KeyError as exc:
+            raise RuntimeError(
+                "Original native B13 import receipt missing; cannot authorize B14 conform"
+            ) from exc
         if (proof["status"]!="VERIFIED_EDITED_OTIO_REVISION" or
             proof["edit_id"]!=row["edit_id"] or
             proof["revision"]!=row["edit_revision"] or
