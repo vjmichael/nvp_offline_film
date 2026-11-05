@@ -20,7 +20,7 @@ from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_audio01i_mastering import sha_file
 
 FORMAT = "nvp.audio01k3.dcp_candidate.v1"
-PROFILE = "smpte_2k_24fps_unencrypted_stereo_v1"
+PROFILE = "smpte_2k_24fps_unencrypted_stereo_to_cinema6_v1"
 MAX_FILES = 128
 MAX_XML_BYTES = 5 * 1024 * 1024
 REQUIRED_XML = ("ASSETMAP.xml", "VOLINDEX.xml")
@@ -53,7 +53,7 @@ def plan_commands(movie, film_dir, title, create_bin, cli_bin):
     return (
         [str(create_bin), "--no-encrypt", "--standard", "SMPTE",
          "--twok", "--twod", "--dcp-frame-rate", "24",
-         "--container-ratio", "185", "--audio-channels", "2",
+         "--container-ratio", "185", "--audio-channels", "6",
          "--colourspace", "rec709", "--dcp-content-type", "FTR",
          "--no-use-isdcf-name", "-n", title, "-o", str(film_dir),
          str(movie)],
