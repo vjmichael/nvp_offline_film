@@ -80,6 +80,9 @@ jobs:
           if ($process.ExitCode -ne 0) { throw 'NSIS silent install failed' }
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           if (-not (Test-Path $installed)) { throw 'Installed NVP.exe missing' }
+          $builtHash=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash
+          $installedHash=(Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
+          if ($installedHash -ne $builtHash) { throw 'Installed NVP.exe does not match verified build payload' }
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
           $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru -Wait
           if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed' }
