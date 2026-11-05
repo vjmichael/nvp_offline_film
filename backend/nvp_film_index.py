@@ -392,7 +392,8 @@ class FilmIndex:
                         dep["revision"], dep["role"]))
         return {"project_id": project_id, "object_id": object_id,
                 "kind": kind, "revision": revision, "document_sha256": sha,
-                "parent_revision": head or None}
+                "parent_revision": head or None,
+                "dependencies": edges}
 
     def read_revision(self, project_id, object_id, revision=None):
         _require_pid(project_id)
