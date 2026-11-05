@@ -200,6 +200,8 @@ class NativeMasterReviewHost:
                  "project_id": project_id, "review_id": review_id,
                  "source_binding_sha256": binding,
                  "source_revisions": sources, "frames": sum(x["frames"] for x in sources),
+                 "ram_mb": ram_mb, "task_duration_seconds": duration_seconds,
+                 "native_binary_sha256": {"ffmpeg": _sha(ff), "ffprobe": _sha(probe)},
                  "creator_approved_final_master": False}
         if self.creator(creator_event, dict(scope)) is not True:
             raise PermissionError("Creator denied exact technical review operation")
