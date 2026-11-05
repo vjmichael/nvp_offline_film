@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { formatNumberedSource } from './lineNumbers.js';
 
 /** Conservative film-only reviewer: no automatic changes to scripts or canon. */
 export default function ScreenplayReviewPanel({ project, api, action, busy }) {
@@ -64,7 +65,7 @@ export default function ScreenplayReviewPanel({ project, api, action, busy }) {
       {report && <p>{report.counts.unreviewed} unreviewed potential issue(s) across {report.counts.candidate_count} evidence matches.</p>}
       {currentScene && <details>
         <summary>Show original screenplay scene</summary>
-        <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{currentScene.text}</pre>
+        <pre className="screenplay-numbered-preview">{formatNumberedSource(currentScene.text, currentScene.start_line || 1)}</pre>
       </details>}
     </section>
     <section className="card">
