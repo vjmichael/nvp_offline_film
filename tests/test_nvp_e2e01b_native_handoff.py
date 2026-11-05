@@ -144,6 +144,45 @@ class EditorialChainContracts(unittest.TestCase):
                     self.chain.verify_conform(ticket["chain_id"])
         self.assertEqual(self.chain._row(ticket["chain_id"])["state"],"CONFORM_QUEUED")
 
+    def test_b13_stage_failure_retains_durable_uncertain_intent(self):
+        with patch.object(self.b13,"stage_and_approve",
+                          side_effect=RuntimeError("crash after native B13 stage")):
+            with self.assertRaisesRegex(RuntimeError,"crash after"):
+                self.chain.stage_edit(
+                    self.pid,"delivery_original",self.package,self.otio,
+                    object(),edit_id="cut_v1",presentation_id="conformed_cut_v1",
+                    destination_dir=self.destination)
+        with self.ledger._db() as db:
+            record=db.execute("""SELECT chain_id,state,import_job
+                FROM native_e2e01b_chains WHERE project_id=?""",(self.pid,)).fetchone()
+        self.assertEqual(record[1],"IMPORT_STAGING_UNCERTAIN")
+        self.assertTrue(record[2].startswith("pending_"))
+        self.assertTrue(self.chain.reopen(record[0])["requires_native_reconciliation"])
+        with patch.object(self.b13,"stage_and_approve") as duplicate:
+            with self.assertRaises(Exception):
+                self.chain.stage_edit(
+                    self.pid,"delivery_original",self.package,self.otio,
+                    object(),edit_id="cut_v1",presentation_id="conformed_cut_v1",
+                    destination_dir=self.destination)
+            duplicate.assert_not_called()
+
+    def test_b14_stage_failure_retains_durable_uncertain_intent(self):
+        ticket=self.stage()
+        self.committed_edit()
+        with patch.object(self.b13,"verify_completed",return_value=self.imported_proof()):
+            with patch.object(self.b14,"stage_and_approve",
+                side_effect=RuntimeError("crash after native B14 stage")):
+                with self.assertRaisesRegex(RuntimeError,"crash after"):
+                    self.chain.stage_conform(ticket["chain_id"],object())
+        self.assertEqual(self.chain._row(ticket["chain_id"])["state"],
+                         "CONFORM_STAGING_UNCERTAIN")
+        self.assertTrue(self.chain.reopen(ticket["chain_id"])[
+                        "requires_native_reconciliation"])
+        with patch.object(self.b14,"stage_and_approve") as duplicate:
+            with self.assertRaises(RuntimeError):
+                self.chain.stage_conform(ticket["chain_id"],object())
+            duplicate.assert_not_called()
+
     def test_worker_ticket_mismatch_never_promotes_import(self):
         ticket=self.stage()
         self.committed_edit()
