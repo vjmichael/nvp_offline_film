@@ -208,3 +208,57 @@ class BoundEditorialPublisher:
         return {**page, "film_document_sha256": rec["document_sha256"],
                 "clips": [{**c, "source_document_sha256": bindings[c["ordinal"]]}
                           for c in page["clips"]]}
+
+    def verify_revision(self, project_id, edit_id, revision):
+        """Stream independently across all stored clip references and hashes.
+
+        This validates indexed metadata, not decoded source frames. It must be
+        invoked before an effectful native conform/film-master publication.
+        """
+        rec = self.index.read_revision(project_id, edit_id, revision)
+        doc = rec["data"]
+        if rec["kind"] != "edit" or doc.get("format") != FORMAT:
+            raise RuntimeError("Not an authoritative compact bound edit")
+        digest = hashlib.sha256()
+        expected_frame = 1
+        expected_ordinal = 0
+        with self.index.studio._connection() as db:
+            source = db.execute("""SELECT c.ordinal,c.source_id,c.source_revision,
+                b.source_document_sha256,c.source_first_frame,
+                c.frame_count,c.output_first_frame,r.document_sha
+                FROM scale_editorial_clips c
+                LEFT JOIN scale_editorial_source_bindings b
+                  ON b.project_id=c.project_id AND b.edit_id=c.edit_id
+                    AND b.revision=c.revision AND b.ordinal=c.ordinal
+                LEFT JOIN film_object_revisions r
+                  ON r.project_id=b.project_id AND r.object_id=b.source_id
+                    AND r.revision=b.source_revision
+                WHERE c.project_id=? AND c.edit_id=? AND c.revision=?
+                ORDER BY c.ordinal""", (project_id, edit_id, revision))
+            for row in source:
+                ordinal, sid, source_rev, sha, first, frames, out, actual = row
+                if (ordinal != expected_ordinal or out != expected_frame or
+                    sha is None or sha != actual or
+                    first < 1 or frames < 1 or first > MAX_I64 - frames + 1 or
+                    expected_frame > MAX_I64 - frames + 1):
+                    raise RuntimeError("Bound editorial source or interval was altered")
+                digest.update(_encoded(
+                    (ordinal, sid, source_rev, sha, first, frames, out)))
+                expected_frame += frames
+                expected_ordinal += 1
+            row = db.execute("""SELECT frame_rate_num,frame_rate_den,total_frames,
+                source_manifest_sha256 FROM scale_editorial_revisions
+                WHERE project_id=? AND edit_id=? AND revision=?""",
+                (project_id, edit_id, revision)).fetchone()
+        if (row is None or expected_ordinal != doc["clip_count"] or
+            expected_frame - 1 != doc["total_frames"] or
+            row["total_frames"] != doc["total_frames"] or
+            row["frame_rate_num"] != doc["fps_num"] or
+            row["frame_rate_den"] != doc["fps_den"] or
+            digest.hexdigest() != doc["clip_manifest_sha256"] or
+            row["source_manifest_sha256"] != doc["clip_manifest_sha256"]):
+            raise RuntimeError("Compact edit and FilmIndex revision disagree")
+        return {"status": "VERIFIED_INDEXED_SOURCE_BINDINGS",
+                "film_document_sha256": rec["document_sha256"],
+                "clip_count": expected_ordinal, "total_frames": expected_frame - 1,
+                "source_bytes_decoded": False}
