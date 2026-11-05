@@ -31,3 +31,19 @@ The source database intentionally does not duplicate huge originals into FilmInd
 6. Benchmark source media indexing at truly large sizes without high RAM residency.
 
 **No claim of multi-terabyte media acceptance or full feature-film support follows from these source changes alone.**
+
+
+## SCALE-02D — SD, microSD and camera-card media (mandatory scope)
+
+**Creator requirement:** Removable media support includes full-size SD, microSD (via adapters/readers), and camera cards exposed through operating-system storage APIs, alongside USB flash drives, external SSD/HDD and other removable sources. A card reader or USB port is a *transport*, not the durable identity of a camera card. A card appearing under a different drive letter, mount point or reader must remain findable by its recorded logical media identity plus validated content.
+
+- **Preserve complete camera-card structures.** Ingest must support camera directory trees, spanned clips, sidecar metadata, XML, proxy/thumbnail files and manufacturer-specific layouts. Do not treat only individual .MOV/.MP4 files as an adequate card backup.
+- **Read-only originals by default.** Never format, rename, delete, modify, write cache files onto, or automatically eject a camera card. Honor physical write-protect switches and OS read-only state, but do not assume they guarantee protection.
+- **Verified ingest:** Copy to creator-selected production storage using durable staged publication, streaming hashes, directory/file inventory and post-copy re-verification. Preserve sidecars, timestamps where possible and original relative paths. An interrupted, incomplete or altered copy must not become an accepted master original. The external-reference-only catalog implemented in SCALE-02B is **not** this verified card-copy operation.
+- **Card/copy identity:** Track physical or OS-exposed device hints when available, but never assume card serial numbers are globally unique or obtainable. The immutable source-file hashes and approved full-card ingest manifest are the source of truth. Same card label, capacity or path is not sufficient to authorize relinking.
+- **Safe disconnect:** Warn when an indexed card is being actively read or a contained ingest job is running. Treat surprise removal as OFFLINE or INTERRUPTED, keep prior indexed metadata and verified destination files, and reconcile pending receipts before retry. A complete verified copy may permit the original card to be released after explicit creator confirmation, but NVP cannot guarantee that a filesystem/device has been safely removed merely from a UI signal.
+- **Multiple verified copies:** Keep all validated replicas and their storage locations separately. Deduplicate identical content identities without conflating distinct takes or automatically deleting any source, card or backup.
+- **Filesystem compatibility:** Test common SD camera filesystems such as FAT32 and exFAT and actual reader/hot-unplug behavior on Windows and Linux, including split/spanned recordings, case differences, Unicode names and near-full cards. FAT32 file size limits must never become a general NVP project limit.
+- **User experience:** Show CARD CONNECTED / INGEST REQUIRED / COPYING / VERIFYING / INGEST VERIFIED / OFFLINE / INGEST INTERRUPTED accurately; make it possible to review indexed metadata while the card is absent.
+
+**Acceptance gate:** On real SD and microSD media, verify a multi-file camera-card copy, mid-ingest removal, corrupt destination, resumed/repeated ingest without silent duplicates, changed mount/reader, original write protection, creator-controlled release and post-restart authoritative source custody. This gate is **OPEN**; adding this requirement does not claim implementation.
