@@ -125,6 +125,39 @@ class NativeFinishingContracts(unittest.TestCase):
                     self.chain.stage_final_av(self.pid,"approved_movie","creator")
                 duplicated.assert_not_called()
 
+    def test_wrong_native_av_job_cannot_complete_movie(self):
+        self._stage_av()
+        with patch.object(self.av,"run_next",return_value={
+                "job_id":"unrelated_job","state":"SUCCEEDED"}):
+            with self.assertRaisesRegex(RuntimeError,"Wrong native AV worker"):
+                self.chain.run_final_av(self.pid,"approved_movie")
+        self.assertEqual(self.chain._row(self.pid,"approved_movie")["state"],
+                         "AV_QUEUED")
+
+    def test_unverified_av_worker_stays_pending_after_restart(self):
+        self._stage_av()
+        with patch.object(self.ledger,"get_task",return_value={
+                "state":"ACTIVE","reserved":1}):
+            response=self.chain.reopen(self.pid,"approved_movie")
+        self.assertEqual(response["state"],"AV_QUEUED")
+        self.assertEqual(response["worker_state"],"ACTIVE")
+        self.assertTrue(response["requires_native_reconciliation"])
+
+    def test_stopped_native_av_reopens_only_with_original_host_proof(self):
+        self._stage_av()
+        self._verified_av()
+        with patch("backend.nvp_e2e01c_finishing.validate_picture_lock",
+                   side_effect=self._fake_lock),patch.object(
+                   self.audio,"verify_delivery",return_value={"status":"VERIFIED"}),patch.object(
+                   self.ledger,"get_task",return_value={
+                       "state":"SUCCEEDED","reserved":0}),patch.object(
+                   self.av,"verify_published",return_value={
+                       "status":"VERIFIED_FINAL_AV_MASTER"}):
+            response=self.chain.reopen(self.pid,"approved_movie")
+        self.assertEqual(response["state"],"AV_VERIFIED")
+        self.assertTrue(response["recovered_without_rerender"])
+        self.assertFalse(response["dcp_delivered"])
+
     def test_cannot_publish_when_worker_did_not_finish(self):
         self._stage_av()
         with patch("backend.nvp_e2e01c_finishing.validate_picture_lock",
