@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from fractions import Fraction
+from unittest.mock import patch
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,7 +15,7 @@ from backend.nvp_film_index import FilmIndex
 from backend.nvp_studio import Studio
 from backend.nvp_longform_review import (
     MIN_FRAMES, MAX_FRAMES, assemble_review, index_technical_reel,
-    probe_reel, reopen_review,
+    probe_reel, reopen_review, _verify_packet_clock,
 )
 
 
@@ -82,6 +85,9 @@ class LongFormNativeReviewTests(unittest.TestCase):
         self.assertFalse(result["creator_approved_final_master"])
         before=self.index.read_revision(self.pid,"longreview",1)
         self.assertEqual(len(before["dependencies"]),3)
+        self.assertTrue(before["data"]["stream_copy_evidence"]["all_video_packets_identical"])
+        self.assertTrue(before["data"]["stream_copy_evidence"]["all_audio_samples_identical"])
+        self.assertEqual(len(before["data"]["stream_copy_evidence"]["decoded_pcm24_sha256"]),64)
         # The entire resulting media survives a new Studio/FilmIndex instance.
         reopened=FilmIndex(Studio(self.db))
         proof=reopen_review(reopened,self.pid,"longreview")
@@ -145,6 +151,16 @@ class LongFormNativeReviewTests(unittest.TestCase):
             assemble_review(self.index, self.pid, "bad_source", refs)
         self.assertFalse(any(x["object_id"] == "bad_source" for x in
                              self.index.list_objects(self.pid)))
+
+    def test_packet_time_gaps_are_rejected_even_if_total_frames_seem_valid(self):
+        broken = {"streams": [{"time_base": "1/48000"}], "packets": [
+            {"pts": 0, "duration": 1024},
+            {"pts": 2048, "duration": 1024},
+        ]}
+        with patch("backend.nvp_longform_review._native", return_value=json.dumps(broken).encode()):
+            with self.assertRaisesRegex(RuntimeError, "timestamps are not contiguous"):
+                _verify_packet_clock(self.root / "not_read.mov", ffprobe="ffprobe",
+                                     selector="a:0", expected_seconds=Fraction(3072, 48000))
 
     def test_reel_must_be_based_on_existing_indexed_media(self):
         with self.assertRaises(KeyError):
