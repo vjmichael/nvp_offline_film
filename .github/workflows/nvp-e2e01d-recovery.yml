@@ -53,17 +53,20 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p test_nvp_e2e01d_process_crash.py -v
-      - name: Install actual FFmpeg for source-bound K crash matrix
+      - name: Install actual FFmpeg on Ubuntu
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
-          else
-            choco install ffmpeg -y --no-progress
-            echo "$ChocolateyInstall/bin" >> "$GITHUB_PATH"
-          fi
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install actual FFmpeg on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Join-Path $env:ChocolateyInstall 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append
       - name: Real ProRes PCM24 AUDIO-01K fsync/rename/FilmIndex hard-kill matrix
         shell: bash
         run: |
