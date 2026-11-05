@@ -35,23 +35,38 @@ def run(plan_path: Path) -> dict:
         or plan.get("dcp_delivered") is not False):
         raise RuntimeError("Invalid native MASTER-01B sealed technical review plan")
     index = FilmIndex(Studio(plan["studio_db_path"]))
-    result = assemble_review(
-        index, plan["project_id"], plan["review_id"], plan["source_refs"],
-        ffmpeg=plan["ffmpeg"], ffprobe=plan["ffprobe"])
-    proof = reopen_review(FilmIndex(Studio(plan["studio_db_path"])),
-        plan["project_id"], plan["review_id"],
-        ffmpeg=plan["ffmpeg"], ffprobe=plan["ffprobe"])
-    if (proof["movie_sha256"] != result["movie_sha256"] or
-        proof["status"] != "VERIFIED_TECHNICAL_REVIEW_UNAPPROVED"):
-        raise RuntimeError("Native worker could not independently reopen review")
-    receipt = {"format": RECEIPT, "job_id": plan["job_id"],
-               "review_id": plan["review_id"], "project_id": plan["project_id"],
-               "source_binding_sha256": plan["source_binding_sha256"],
-               "document_sha256": result["document_sha256"],
-               "movie_sha256": result["movie_sha256"],
-               "frames": result["frames"],
-               "creator_approved_final_master": False,
-               "dcp_delivered": False}
+    if plan.get("publication_mode", "worker_publishes") == "host_staged":
+        from backend.nvp_master01c_two_phase import prepare_unpublished
+        result = prepare_unpublished(index, plan["project_id"], plan["review_id"],
+            plan["source_refs"], plan_path.parent / "stage",
+            ffmpeg=plan["ffmpeg"], ffprobe=plan["ffprobe"])
+        receipt = {"format": "nvp.master01c.native_preparation_receipt.v1",
+                   "job_id": plan["job_id"], "project_id": plan["project_id"],
+                   "review_id": plan["review_id"],
+                   "source_binding_sha256": plan["source_binding_sha256"],
+                   "prepared_manifest_sha256": result["manifest_sha256"],
+                   "movie_sha256": result["movie_sha256"], "frames": result["frames"],
+                   "creator_approved_final_master": False, "dcp_delivered": False}
+    elif plan.get("publication_mode", "worker_publishes") == "worker_publishes":
+        result = assemble_review(
+            index, plan["project_id"], plan["review_id"], plan["source_refs"],
+            ffmpeg=plan["ffmpeg"], ffprobe=plan["ffprobe"])
+        proof = reopen_review(FilmIndex(Studio(plan["studio_db_path"])),
+            plan["project_id"], plan["review_id"],
+            ffmpeg=plan["ffmpeg"], ffprobe=plan["ffprobe"])
+        if (proof["movie_sha256"] != result["movie_sha256"] or
+            proof["status"] != "VERIFIED_TECHNICAL_REVIEW_UNAPPROVED"):
+            raise RuntimeError("Native worker could not independently reopen review")
+        receipt = {"format": RECEIPT, "job_id": plan["job_id"],
+                   "review_id": plan["review_id"], "project_id": plan["project_id"],
+                   "source_binding_sha256": plan["source_binding_sha256"],
+                   "document_sha256": result["document_sha256"],
+                   "movie_sha256": result["movie_sha256"],
+                   "frames": result["frames"],
+                   "creator_approved_final_master": False,
+                   "dcp_delivered": False}
+    else:
+        raise RuntimeError("Unrecognized host-only review publication mode")
     file = plan_path.parent / "worker_receipt.json"
     with file.open("xb") as writer:
         writer.write(canonical_bytes(receipt))
