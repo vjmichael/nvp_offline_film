@@ -460,11 +460,33 @@ class FilmIndex:
             self._project(db, project_id)
             if self._read_revision(db, project_id, object_id, revision) is None:
                 raise KeyError("Source revision not present")
-            return [dict(x) for x in db.execute("""SELECT DISTINCT source_id AS object_id,
+            direct = [dict(x) for x in db.execute("""SELECT DISTINCT source_id AS object_id,
                    source_revision AS revision FROM film_dependencies
                    WHERE project_id=? AND target_id=? AND target_revision=?
                    ORDER BY source_id,source_revision""",
                    (project_id, object_id, revision))]
+            # Studio-scale clip references are normalized into an indexed table
+            # rather than capped at the 128 FilmIndex JSON dependency edges.
+            # The trusted bound-edit publisher inserts these rows in the SAME
+            # FilmIndex commit transaction. Older databases need not have it.
+            exists = db.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
+                   AND name='scale_editorial_source_bindings'""").fetchone()
+            if exists:
+                indexed = db.execute("""SELECT DISTINCT b.edit_id AS object_id,
+                       b.revision AS revision
+                    FROM scale_editorial_source_bindings b
+                    JOIN film_object_revisions r
+                      ON r.project_id=b.project_id
+                      AND r.object_id=b.edit_id AND r.revision=b.revision
+                    WHERE b.project_id=? AND b.source_id=? AND b.source_revision=?
+                      AND b.source_document_sha256=?
+                    ORDER BY b.edit_id,b.revision""",
+                    (project_id, object_id, revision,
+                     self._read_revision(db, project_id, object_id, revision)["document_sha"]))
+                direct.extend(dict(x) for x in indexed)
+            unique = {(r["object_id"], r["revision"]) for r in direct}
+            return [{"object_id": oid, "revision": rev}
+                    for oid, rev in sorted(unique)]
 
     def impact(self, project_id, object_id, revision):
         """Return transitive *indexed* consumers of an old source revision.
