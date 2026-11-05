@@ -197,12 +197,28 @@ def run_visible_window_smoke():
         window.events.loaded += lambda:loaded.set()
         def inspect_and_close():
             try:
-                result["passed"]=loaded.wait(timeout=25)
+                if not loaded.wait(timeout=25):
+                    raise RuntimeError("Native WebView2 did not fire page-loaded event")
+                # HTML loaded is insufficient: require actual React DOM mount.
+                deadline=time.monotonic()+20
+                while time.monotonic()<deadline:
+                    mounted=window.evaluate_js(
+                        "Boolean(document.querySelector('#root') && "
+                        "document.querySelector('#root').children.length > 0)")
+                    if mounted is True:
+                        result["passed"]=True
+                        break
+                    time.sleep(.2)
+                if not result["passed"]:
+                    raise RuntimeError("Bundled NVP React interface did not render")
+            except Exception as exc:
+                result["failure"]=str(exc)
             finally:
                 window.destroy()
         webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
         if not result["passed"]:
-            raise RuntimeError("Real NVP WebView2 desktop window did not load")
+            raise RuntimeError(
+                "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
         return 0
     finally:
         server.should_exit=True
