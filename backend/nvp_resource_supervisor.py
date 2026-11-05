@@ -14,9 +14,13 @@ class ResourceGuardStop(RuntimeError):
     """Sustained critical pressure stopped one NVP-owned contained worker."""
 
 
+class NativeCancelRequested(RuntimeError):
+    """An explicit trusted host cancellation stopped an owned worker tree."""
+
+
 def wait_guarded(worker, ledger, task_id: str, *, timeout_seconds: int,
                  poll_interval: float = 1.0, critical_samples: int = 2,
-                 clock=time.monotonic, sleep=time.sleep):
+                 should_cancel=None, clock=time.monotonic, sleep=time.sleep):
     """Wait for one owned worker, monitoring live RAM/GPU every sample.
 
     Two consecutive critical samples are required by default. The contained
@@ -30,12 +34,17 @@ def wait_guarded(worker, ledger, task_id: str, *, timeout_seconds: int,
     if not callable(getattr(worker, "poll", None)) or not callable(
             getattr(worker, "terminate_tree", None)):
         raise TypeError("A supervisor-owned contained worker is required")
+    if should_cancel is not None and not callable(should_cancel):
+        raise TypeError("Host cancellation predicate must be callable")
     start = clock()
     strikes = 0
     while True:
         code = worker.poll()
         if code is not None:
             return worker.wait(timeout=15)
+        if should_cancel is not None and should_cancel():
+            worker.terminate_tree()
+            raise NativeCancelRequested("Trusted host cancelled NVP-owned worker")
         if clock() - start >= timeout_seconds:
             worker.terminate_tree()
             raise subprocess.TimeoutExpired("NVP contained worker", timeout_seconds)
