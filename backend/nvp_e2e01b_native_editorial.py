@@ -255,13 +255,88 @@ class NativeEditorialChain:
         return {"chain_id":chain_id,"state":"CANCELLED_BEFORE_IMPORT",
                 "live_worker_terminated_claimed":False}
 
+    def reconcile_completed_stage(self,chain_id):
+        """Recover uniquely completed B13/B14 grants, never relaunch workers."""
+        row=self._row(chain_id)
+        if row["state"]=="IMPORT_STAGING_UNCERTAIN":
+            with self.ledger._db() as db:
+                grants=db.execute("""SELECT g.job_id,g.result_document_sha256
+                    FROM native_b13_import_grants g
+                    JOIN tasks t ON t.id=g.job_id
+                    WHERE g.project_id=? AND g.delivery_id=? AND g.edit_id=?
+                      AND g.expected_revision=? AND g.package_dir=?
+                      AND g.revoked_at IS NULL AND g.result_document_sha256 IS NOT NULL
+                      AND t.state='SUCCEEDED' AND t.reserved=0""",
+                    (row["project_id"],row["delivery_id"],row["edit_id"],
+                     row["edit_revision"]-1,row["package_dir"])).fetchall()
+            if len(grants)>1:
+                raise RuntimeError("Ambiguous completed native B13 edit grants")
+            if not grants:
+                return {"chain_id":chain_id,"state":row["state"],
+                        "requires_native_reconciliation":True,
+                        "recovered_without_relaunch":False}
+            job,approved_sha=grants[0]
+            proof=self.b13.verify_completed(job)
+            rec=self.capture.index.read_revision(row["project_id"],
+                                                  row["edit_id"],row["edit_revision"])
+            if (proof.get("status")!="VERIFIED_EDITED_OTIO_REVISION"
+                or proof.get("edit_id")!=row["edit_id"]
+                or proof.get("revision")!=row["edit_revision"]
+                or rec["kind"]!="edit" or rec["document_sha256"]!=approved_sha):
+                raise RuntimeError("Original B13 grant failed native recovery verification")
+            with self.ledger._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                changed=db.execute("""UPDATE native_e2e01b_chains
+                    SET import_job=?,state='IMPORT_QUEUED',updated_at=?
+                    WHERE chain_id=? AND state='IMPORT_STAGING_UNCERTAIN'""",
+                    (job,time.time(),chain_id))
+                if changed.rowcount!=1:
+                    db.rollback()
+                    raise RuntimeError("Concurrent B13 recovery changed staging intent")
+                db.commit()
+            self.verify_import(chain_id)
+            return {"chain_id":chain_id,"state":"IMPORT_VERIFIED",
+                    "recovered_without_relaunch":True}
+        if row["state"]=="CONFORM_STAGING_UNCERTAIN":
+            with self.ledger._db() as db:
+                grants=db.execute("""SELECT g.job_id,g.result_sha
+                    FROM native_b14_conform_grants g
+                    JOIN tasks t ON t.id=g.job_id
+                    WHERE g.project_id=? AND g.edit_id=? AND g.edit_revision=?
+                      AND g.edit_sha=? AND g.package_dir=?
+                      AND g.destination_dir=? AND g.presentation_id=?
+                      AND g.revoked_at IS NULL AND g.result_sha IS NOT NULL
+                      AND t.state='SUCCEEDED' AND t.reserved=0""",
+                    (row["project_id"],row["edit_id"],row["edit_revision"],
+                     row["edit_sha"],row["package_dir"],row["destination_dir"],
+                     row["presentation_id"])).fetchall()
+            if len(grants)>1:
+                raise RuntimeError("Ambiguous completed native B14 conform grants")
+            if not grants:
+                return {"chain_id":chain_id,"state":row["state"],
+                        "requires_native_reconciliation":True,
+                        "recovered_without_relaunch":False}
+            job,approved_sha=grants[0]
+            proof=self.b14.verify_completed(job)
+            rec=self.capture.index.read_revision(row["project_id"],
+                                                  row["presentation_id"],1)
+            if (proof.get("status")!="VERIFIED_SDR16_PICTURE_CONFORM"
+                or rec["kind"]!="presentation"
+                or rec["document_sha256"]!=approved_sha
+                or rec["data"].get("picture_locked") is not False
+                or rec["data"].get("final_master") is not False):
+                raise RuntimeError("Original B14 grant failed native recovery verification")
+            self._transition(chain_id,"CONFORM_STAGING_UNCERTAIN",
+                             "CONFORM_QUEUED",conform_job=job)
+            return {**self.verify_conform(chain_id),
+                    "recovered_without_relaunch":True}
+        raise RuntimeError("No uncertain B13/B14 native staging to reconcile")
+
     def reopen(self,chain_id):
         """After crash, verify custody; do not infer worker termination."""
         row=self._row(chain_id)
         if row["state"] in ("IMPORT_STAGING_UNCERTAIN","CONFORM_STAGING_UNCERTAIN"):
-            return {"chain_id":chain_id,"state":row["state"],
-                    "requires_native_reconciliation":True,
-                    "recovered_without_relaunch":False}
+            return self.reconcile_completed_stage(chain_id)
         if row["state"]=="IMPORT_QUEUED":
             task=self.ledger.get_task(row["import_job"])
             if not task or task["state"]!="SUCCEEDED":
