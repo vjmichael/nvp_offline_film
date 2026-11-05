@@ -244,11 +244,72 @@ class NativeFinishingHandoff:
         return {"state":"DISTRIBUTION_VERIFIED","dcp_delivered":False,
                 "document_sha256":published["document_sha256"]}
 
+    def reconcile_stopped_av_after_crash(self,project_id,export_id,*,
+                                         ffmpeg="ffmpeg",ffprobe="ffprobe"):
+        """Recover only a uniquely proven completed native J-host job.
+
+        Queued/ACTIVE jobs cannot be replayed, because creator event state is
+        held by the original host. No OS worker is launched or released here.
+        """
+        row=self._row(project_id,export_id)
+        if row["state"]!="AV_STAGING_UNCERTAIN":
+            raise RuntimeError("Only an uncertain stage can be reconciled")
+        self._approved(row,ffmpeg=ffmpeg,ffprobe=ffprobe)
+        with self.ledger._db() as db:
+            records=db.execute("""SELECT g.job_id,g.plan_sha
+                FROM native_audio01j_grants g JOIN tasks t ON t.id=g.job_id
+                WHERE g.revoked=0 AND g.stopped=1 AND t.state='SUCCEEDED'
+                    AND t.reserved=0""").fetchall()
+        candidates=[]
+        from backend.nvp_audio01i_mastering import sha_file
+        import json
+        for job,plan_sha in records:
+            sealed=self.av.root/job/"plan.json"
+            if sealed.is_symlink() or not sealed.is_file():
+                continue
+            if sha_file(sealed)!=plan_sha:
+                raise RuntimeError("Original completed native AV plan tampered")
+            plan=json.loads(sealed.read_bytes())
+            if (plan.get("job_id")!=job or plan.get("project_id")!=project_id
+                or plan.get("export_id")!=export_id
+                or plan.get("picture_lock_id")!=row["lock_id"]
+                or plan.get("audio_delivery_id")!=row["audio_delivery_id"]
+                or plan.get("movie_dir")!=row["movie_dir"]
+                or plan.get("audio_dir")!=row["audio_dir"]
+                or plan.get("destination")!=row["final_dir"]):
+                continue
+            candidates.append(job)
+        if not candidates:
+            return {"state":"AV_STAGING_UNCERTAIN",
+                    "requires_native_reconciliation":True,
+                    "dcp_delivered":False}
+        if len(candidates)!=1:
+            raise RuntimeError("Multiple completed native AV grants claim one film")
+        job=candidates[0]
+        # Native J-host independently proves original creator publication,
+        # authoritative stop witness, immutable plan, and finished FilmIndex.
+        proof=self.av.verify_published(project_id,export_id,row["final_dir"],
+            row["movie_dir"],row["audio_dir"],ffmpeg=ffmpeg,ffprobe=ffprobe)
+        if proof.get("status")!="VERIFIED_FINAL_AV_MASTER":
+            raise RuntimeError("Native J-host refuses recovered final AV")
+        master=self.capture.index.read_revision(project_id,export_id,1)
+        if (master["kind"]!="master"
+            or master["data"].get("final_master") is not True
+            or master["data"].get("dcp_delivered") is not False
+            or master["data"].get("picture_lock_id")!=row["lock_id"]
+            or master["data"].get("audio_delivery_id")!=row["audio_delivery_id"]):
+            raise RuntimeError("Recovered AV does not match the approved original")
+        self._move(project_id,export_id,"AV_STAGING_UNCERTAIN",
+                   "AV_QUEUED",av_job=job)
+        verified=self.verify_final_av(project_id,export_id,
+                                      ffmpeg=ffmpeg,ffprobe=ffprobe)
+        return {**verified,"recovered_without_rerender":True}
+
     def reopen(self,project_id,export_id,*,ffmpeg="ffmpeg",ffprobe="ffprobe"):
         row=self._row(project_id,export_id)
         if row["state"]=="AV_STAGING_UNCERTAIN":
-            return {"state":row["state"],"requires_native_reconciliation":True,
-                    "dcp_delivered":False}
+            return self.reconcile_stopped_av_after_crash(
+                project_id,export_id,ffmpeg=ffmpeg,ffprobe=ffprobe)
         if row["state"]=="DISTRIBUTION_UNCERTAIN":
             # Never infer a creator-approved publication from an existing
             # file alone; a K-host publication witness is required.
