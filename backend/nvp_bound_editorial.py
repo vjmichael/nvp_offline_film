@@ -195,14 +195,17 @@ class BoundEditorialPublisher:
             bindings = {}
             for clip in page["clips"]:
                 row = db.execute("""SELECT b.source_document_sha256,
-                    r.document_sha FROM scale_editorial_source_bindings b
+                    b.source_id, b.source_revision, r.document_sha
+                    FROM scale_editorial_source_bindings b
                     JOIN film_object_revisions r
                     ON r.project_id=b.project_id AND r.object_id=b.source_id
                         AND r.revision=b.source_revision
                     WHERE b.project_id=? AND b.edit_id=? AND b.revision=?
                       AND b.ordinal=?""",
                     (project_id, edit_id, revision, clip["ordinal"])).fetchone()
-                if row is None or row["source_document_sha256"] != row["document_sha"]:
+                if (row is None or row["source_document_sha256"] != row["document_sha"]
+                    or row["source_id"] != clip["source_id"]
+                    or row["source_revision"] != clip["source_revision"]):
                     raise RuntimeError("Exact source binding missing or invalid")
                 bindings[clip["ordinal"]] = row["source_document_sha256"]
         return {**page, "film_document_sha256": rec["document_sha256"],
