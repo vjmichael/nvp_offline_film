@@ -154,9 +154,26 @@ def _child_av(root,mode="av"):
     raise AssertionError("os._exit not reached")
 
 
+def _child_reserved_worker(root):
+    from backend.nvp_studio import Studio
+    from backend.nvp_resource_ledger import TaskLedger
+    from backend.nvp_resource_guard import AdmissionRequest,ResourceSnapshot
+    studio=Studio(root/"studio.sqlite3")
+    project=studio.create_project("E2E-D held RAM after host death","")
+    (root/"pid.txt").write_text(project["id"])
+    ledger=TaskLedger(root/"ledger",sampler=lambda:ResourceSnapshot(
+        1,32768,25000,0,()))
+    admitted=ledger.admit(AdmissionRequest(
+        "owned_native_worker","compositing","Crash-injected reserved worker",1024))
+    if not admitted["admitted"]:
+        raise RuntimeError("Test did not reserve RAM before process death")
+    os._exit(EXIT)
+
+
 def child(case,root):
     {"b13":_child_b13,"b14":_child_b14,"av":_child_av,
-     "distribution":lambda p:_child_av(p,mode="distribution")}[case](root)
+     "distribution":lambda p:_child_av(p,mode="distribution"),
+     "reservation":_child_reserved_worker}[case](root)
 
 
 class ProcessDeathRecovery(unittest.TestCase):
@@ -170,7 +187,20 @@ class ProcessDeathRecovery(unittest.TestCase):
             self.assertEqual(result.returncode,EXIT,result.stderr.decode("utf8","replace"))
             pid=(root/"pid.txt").read_text()
             with sqlite3.connect(root/"ledger"/"task_activity.sqlite3") as db:
-                if case in ("b13","b14"):
+                if case=="reservation":
+                    row=db.execute("""SELECT state,reserved,ram_mb FROM tasks
+                        WHERE id='owned_native_worker'""").fetchone()
+                    self.assertEqual(row,("ACTIVE",1,1024))
+                    # A new process cannot infer an OS termination witness.
+                    from backend.nvp_resource_ledger import TaskLedger
+                    from backend.nvp_resource_guard import ResourceSnapshot
+                    opened=TaskLedger(root/"ledger",sampler=lambda:
+                        ResourceSnapshot(1,32768,25000,0,()))
+                    record=opened.get_task("owned_native_worker")
+                    self.assertEqual((record["state"],record["reserved"]),
+                                     ("ACTIVE",1))
+                    self.assertEqual(opened.snapshot()["reservations"]["ram_mb"],1024)
+                elif case in ("b13","b14"):
                     row=db.execute("""SELECT state,import_job,conform_job
                         FROM native_e2e01b_chains WHERE project_id=?""",(pid,)).fetchone()
                     self.assertIsNotNone(row)
@@ -212,6 +242,9 @@ class ProcessDeathRecovery(unittest.TestCase):
 
     def test_distribution_publication_abrupt_process_death(self):
         self._crash("distribution")
+
+    def test_active_native_ram_reservation_survives_host_process_death(self):
+        self._crash("reservation")
 
 
 if __name__=="__main__":
