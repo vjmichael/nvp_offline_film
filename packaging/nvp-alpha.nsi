@@ -2,8 +2,7 @@
 ; Bundled output is built from React Vite + PyInstaller WebView2/FastAPI.
 ; Keep author work in LOCALAPPDATA\NVP\Projects during uninstall.
 Unicode true
-; Resolve relative file payloads from packaging/, not the CI shell cwd.
-!cd "${__FILEDIR__}"
+; Invoke makensis from repository root; relative payload paths resolve from this script.
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !define APP_NAME "NVP Alpha"
