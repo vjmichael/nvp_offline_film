@@ -240,3 +240,18 @@ self-hosted approved-film workflow remains the release gate.
 FFmpeg on Windows and Linux and runs this real K fsync/rename/FilmIndex
 hard-kill matrix. All four native matrix cells must execute and pass;
 none of them is considered accepted while queued.
+
+## K native creator-event crash closeout expansion
+
+The real media crash test also exercises the original
+`NativeAudio01KHost.publish` creator-event transaction at both
+`creator_event_reserved` and `creator_event_published`.
+After an abrupt child-process exit, a new native host reopens the
+resource ledger and verifies exactly one creator event. A reserved
+event is never considered delivered; an event marked PUBLISHED must
+match the immutable FilmIndex distribution document SHA and the real
+promoted ProRes/PCM24 movie. Repeating the same creator event must
+fail even if publication was interrupted. These are *actual native host
+SQLite and copy operations*, but the fixture uses a clearly synthetic
+trusted creator/AV-verification callback; release-level approval must
+still use the no-mocks original-film acceptance gate.
