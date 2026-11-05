@@ -122,7 +122,7 @@ class NativeEditorialChain:
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("""INSERT INTO native_e2e01b_chains VALUES
-                (?,?,?,?,?,NULL,?,?,?,?,NULL,?,?,?,?)""",
+                (?,?,?,?,?,NULL,?,?,?,?,NULL,?,?,?)""",
                 (chain_id,project_id,delivery_id,edit_id,
                  expected_edit_revision+1,str(package),str(destination),
                  presentation_id,ticket["job_id"],"IMPORT_QUEUED",
@@ -188,7 +188,7 @@ class NativeEditorialChain:
         if proof["status"] not in (
             "VERIFIED_SOURCE_BOUND_PICTURE_CONFORM",
             "VERIFIED_B14_SOURCE_BOUND_PICTURE_CONFORM",
-            "VERIFIED_CONFORMED_SDR16"):
+            "VERIFIED_SDR16_PICTURE_CONFORM"):
             # Accept independently audited result only if the exact B14
             # worker verified it; status names are intentionally explicit.
             raise RuntimeError("Native B14 conform did not return a verified receipt")
