@@ -137,6 +137,22 @@ class StoryContinuityTests(unittest.TestCase):
         self.assertLess(len(prompt), 20_000)
         self.assertIn("[CREATOR-APPROVED TREATMENT]", prompt)
 
+    def test_screenplay_ai_uses_editor_line_references_without_modifying_source(self):
+        screenplay = "INT. ROOM - DAY\n\nALEX\nWait.\n\nEXT. STREET - NIGHT\nSAM\nRun."
+        project = self.store.get_project(self.pid)
+        updated = self.store.save_screenplay(self.pid, screenplay, project["revision"])
+        system, prompt = build_story_messages(updated, "screenplay", "Revise line 4", None, [])
+        self.assertIn("L04 | Wait.", prompt)
+        self.assertIn("L02 | ", prompt)
+        self.assertIn("never include line labels", system)
+        self.assertEqual(self.store.get_project(self.pid)["screenplay"], screenplay)
+        selected = updated["scenes"][1]
+        self.assertEqual(selected["start_line"], 6)
+        _, focused = build_story_messages(updated, "screenplay", "Improve the dialogue", selected["id"], [])
+        self.assertIn("L06 | EXT. STREET - NIGHT", focused)
+        self.assertIn("L08 | Run.", focused)
+        self.assertNotIn("L01 | INT. ROOM", focused)
+
     def test_older_stage_never_inherits_later_approved_content(self):
         self.accept("treatment", "LATE-STAGE OUTCOME: THE ALIEN SHIP CRASHES")
         self.pipe.generate(self.pid, "synopsis")
