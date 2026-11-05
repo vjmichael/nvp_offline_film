@@ -220,6 +220,10 @@ class NativeFinishingHandoff:
                           ffmpeg="ffmpeg",ffprobe="ffprobe"):
         row=self._row(project_id,export_id)
         if row["state"]!="AV_VERIFIED":
+            if row["state"]=="AV_QUEUED":
+                raise RuntimeError(
+                    "Native AV worker not stopped or independently verified; cannot distribute"
+                )
             raise RuntimeError("Only independently verified AV may be distributed")
         self.verify_final_av(project_id,export_id,ffmpeg=ffmpeg,ffprobe=ffprobe)
         # Do not retry automatically after an interrupted creator event or
