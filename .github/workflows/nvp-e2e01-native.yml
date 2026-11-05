@@ -15,6 +15,9 @@ on:
       - 'backend/nvp_resource_supervisor.py'
       - 'tools/nvp_master01b_native_worker.py'
       - 'tests/test_nvp_master01b_native.py'
+      - 'backend/nvp_master01c_two_phase.py'
+      - 'tests/test_nvp_master01c_two_phase.py'
+      - 'tests/test_nvp_master01c_native_host.py'
       - '.github/workflows/nvp-e2e01-native.yml'
   pull_request:
     paths:
@@ -29,6 +32,9 @@ on:
       - 'backend/nvp_resource_supervisor.py'
       - 'tools/nvp_master01b_native_worker.py'
       - 'tests/test_nvp_master01b_native.py'
+      - 'backend/nvp_master01c_two_phase.py'
+      - 'tests/test_nvp_master01c_two_phase.py'
+      - 'tests/test_nvp_master01c_native_host.py'
       - '.github/workflows/nvp-e2e01-native.yml'
   workflow_dispatch:
 permissions:
@@ -73,7 +79,7 @@ jobs:
           command -v ffprobe
           ffmpeg -hide_banner -encoders 2>&1 | grep prores_ks
           ffmpeg -hide_banner -encoders 2>&1 | grep pcm_s24le
-          python -m compileall -q backend/nvp_studio.py backend/nvp_film_index.py backend/nvp_production_scene.py tests/test_nvp_e2e01_native_editorial.py backend/nvp_longform_review.py tools/nvp_longform_review.py tests/test_nvp_longform_review.py backend/nvp_master01b_native_host.py backend/nvp_resource_supervisor.py tools/nvp_master01b_native_worker.py tests/test_nvp_master01b_native.py
+          python -m compileall -q backend/nvp_studio.py backend/nvp_film_index.py backend/nvp_production_scene.py tests/test_nvp_e2e01_native_editorial.py backend/nvp_longform_review.py tools/nvp_longform_review.py tests/test_nvp_longform_review.py backend/nvp_master01b_native_host.py backend/nvp_resource_supervisor.py tools/nvp_master01b_native_worker.py tests/test_nvp_master01b_native.py backend/nvp_master01c_two_phase.py tests/test_nvp_master01c_two_phase.py tests/test_nvp_master01c_native_host.py
       - name: Execute genuine media import, trim, render, restart and tamper rejection
         shell: bash
         run: |
@@ -89,3 +95,9 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p test_nvp_master01b_native.py -v
+      - name: Require prepared-only media, host-owned publication, native crash recovery and 60s reel
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_master01c_two_phase.py -v
+          python -m unittest discover -s tests -p test_nvp_master01c_native_host.py -v
