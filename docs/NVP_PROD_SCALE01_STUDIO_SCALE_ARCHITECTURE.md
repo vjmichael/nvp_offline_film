@@ -67,3 +67,31 @@ FilmIndex is the foundation for durable source and output revision identity; nat
 - Do not claim any 3-hour real film or multi-terabyte ingest/render is complete until tested with actual media.
 
 **Policy:** Pause NVP-AI work until core production features and standalone filmmaking workflows are functionally complete. Installation/packaging is a release activity, not a substitute for the film engine.
+
+
+## SCALE-UX-01 — Whole-project access, bounded active working set (creator direction, 2026-11-05)
+
+**User-facing principle:** The filmmaker remains oriented in and can navigate the **entire** film production immediately, even when it spans terabytes. Opening a project is a metadata/index operation; it is **not** a request to load every scene, timeline frame, source movie, animation, sound file or rendered image. Only the current operation has an active resource-intensive working set.
+
+### Separation of responsiveness and readiness
+
+1. **Project navigation READY:** show project, sequences, scenes, shots, takes, media availability, editing versions, approvals, thumbnails and metadata from paged SQLite indexes. Do not require source media to be online to show its existing indexed record. Opening a project must not schedule a render or expand every frame reference.
+2. **Preview READY / PREPARING / OFFLINE:** open a cached or low-cost proxy immediately when verified; otherwise show an honest preparing indicator and continue allowing navigation. Missing/disconnected original drives are displayed as OFFLINE, never silently substituted.
+3. **Full-quality operation READY / WAITING FOR RESOURCES / PROCESSING / FAILED:** only when requested, reserve RAM, VRAM and disk scratch through NVP's existing TaskLedger and measured resource guard; native host authorizes any effectful worker. Navigation does not require the full-quality worker.
+4. **Cache:** bounded, disposable previews, thumbnails, waveforms, metadata and hot source windows. Eviction must respect current task dependencies and never delete immutable originals, frozen takes, approvals or results without proven reproducibility. An LRU-like policy can be selected after measured benchmarks, not prescribed as the only algorithm.
+5. **Transition:** moving from Scene 42 to Scene 7 does not implicitly cancel already-authorized rendering, free reservations before OS worker termination, or overwrite unsaved editorial decisions. It swaps the foreground view/working set while ongoing jobs remain independently supervised in the production progress center.
+6. **Prefetch:** modest, cancellable, lower-priority likely-next assets (adjacent clips, next shot, cached waveform) may be admitted opportunistically only after responsiveness/headroom checks. No runaway predictive loading that causes RAM/VRAM contention or hidden storage amplification.
+7. **Affordability:** set RAM/VRAM/disk budgets from measured available resources and conservative headroom; expose user-adjustable cache budget. A low-memory PC may take longer to build a proxy or render a shot but should not need enough RAM to hold the project. Never promise zero-latency access to offline or uncached multi-gigabyte media.
+8. **Consistency:** index queries are snapshot/revision-bound. Show a known cached preview only with its source revision and SHA, avoid stale results after edits, and preserve exact selection/viewport state through restart.
+
+### Concrete acceptance cases
+
+- Load a metadata-only 3+ hour/20 TB-catalog fixture without reading any large source payload; record time-to-first-navigable-project and memory peak.
+- Jump to the last scene without enumerating 259,200 individual 24-fps frames; prove indexed seek/paged query.
+- Keep project navigation responsive while another OS-contained render is active and the scheduler withholds memory for expensive preview preparation.
+- Detach an external source drive: project navigation and metadata continue, preview/full-quality access truthfully report OFFLINE.
+- Reconnect original media, verify content before accepted reuse, and resume only the required piece.
+- Revise one shot: invalidated previews/derived work are not presented as current; unaffected scene navigation continues.
+- Test low-memory, modest single-GPU and studio workstation profiles with the same project model and no fabricated performance guarantees.
+
+**Implementation status:** The current compact editorial interval catalog and TaskLedger are relevant foundations. This section establishes the UX contract; an integrated working-set cache, asset availability broker, scene navigation/proxy readiness service, and measured UI performance acceptance are **not yet implemented or proven**.
