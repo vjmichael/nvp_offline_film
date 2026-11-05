@@ -183,6 +183,83 @@ class EditorialChainContracts(unittest.TestCase):
                 self.chain.stage_conform(ticket["chain_id"],object())
             duplicate.assert_not_called()
 
+    def _finish_native_task_fixture(self,job):
+        from backend.nvp_resource_guard import AdmissionRequest
+        accepted=self.ledger.admit(AdmissionRequest(
+            job,"compositing","Native recovery fixture",1024))
+        self.assertTrue(accepted["admitted"])
+        self.ledger.finish(job,"SUCCEEDED","Simulated host-verified stop")
+
+    def test_completed_b13_native_grant_reconciles_lost_stage_response(self):
+        import time
+        with patch.object(self.b13,"stage_and_approve",
+                          side_effect=RuntimeError("native host returned after crash")):
+            with self.assertRaises(RuntimeError):
+                self.chain.stage_edit(
+                    self.pid,"delivery_original",self.package,self.otio,
+                    object(),edit_id="cut_v1",presentation_id="conformed_cut_v1",
+                    destination_dir=self.destination)
+        record=self.committed_edit()
+        job="editjob_recovered"
+        self._finish_native_task_fixture(job)
+        digest="a"*64
+        with self.ledger._db() as db:
+            db.execute("""INSERT INTO native_b13_import_grants(
+                job_id,approval_id,project_id,delivery_id,delivery_sha256,
+                take_sha256,package_dir,edit_id,expected_revision,
+                edited_otio_sha256,plan_sha256,spec_sha256,python_sha256,
+                script_sha256,ram_mb,issued_at,expires_at,result_document_sha256)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (job,"approved_import_fixture",self.pid,"delivery_original",
+                 digest,digest,str(self.package.resolve()),"cut_v1",0,
+                 digest,digest,digest,digest,digest,1024,time.time(),
+                 time.time()+1200,record["document_sha256"]))
+            chain_id=db.execute("""SELECT chain_id FROM native_e2e01b_chains
+                WHERE project_id=?""",(self.pid,)).fetchone()[0]
+        with patch.object(self.b13,"verify_completed",
+                          return_value=self.imported_proof()):
+            recovered=self.chain.reopen(chain_id)
+        self.assertEqual(recovered["state"],"IMPORT_VERIFIED")
+        self.assertTrue(recovered["recovered_without_relaunch"])
+        self.assertEqual(self.chain._row(chain_id)["import_job"],job)
+
+    def test_completed_b14_native_grant_reconciles_lost_stage_response(self):
+        import time
+        ticket=self.stage()
+        edit=self.committed_edit()
+        with patch.object(self.b13,"verify_completed",return_value=self.imported_proof()):
+            with patch.object(self.b14,"stage_and_approve",
+                              side_effect=RuntimeError("native stage response lost")):
+                with self.assertRaises(RuntimeError):
+                    self.chain.stage_conform(ticket["chain_id"],object())
+        picture=self.capture.index.register_revision(
+            self.pid,"conformed_cut_v1","presentation",{
+                "format":"fixture.sourcebound.sdr16",
+                "picture_locked":False,"final_master":False})
+        job="conformjob_recovered"
+        self._finish_native_task_fixture(job)
+        digest="b"*64
+        with self.ledger._db() as db:
+            db.execute("""INSERT INTO native_b14_conform_grants(
+                job_id,approval_id,project_id,edit_id,edit_revision,edit_sha,
+                package_dir,destination_dir,presentation_id,ram_mb,plan_sha,
+                spec_sha,python_sha,script_sha,expires_at,result_sha)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (job,"approved_conform_fixture",self.pid,"cut_v1",1,
+                 edit["document_sha256"],str(self.package.resolve()),
+                 str(self.destination.absolute()),"conformed_cut_v1",
+                 1024,digest,digest,digest,digest,time.time()+1200,
+                 picture["document_sha256"]))
+        with patch.object(self.b13,"verify_completed",return_value=self.imported_proof()):
+            with patch.object(self.b14,"verify_completed",
+                              return_value={
+                              "status":"VERIFIED_SDR16_PICTURE_CONFORM",
+                              "frames":24}):
+                restored=self.chain.reopen(ticket["chain_id"])
+        self.assertEqual(restored["state"],"CONFORM_VERIFIED")
+        self.assertTrue(restored["recovered_without_relaunch"])
+        self.assertEqual(self.chain._row(ticket["chain_id"])["conform_job"],job)
+
     def test_worker_ticket_mismatch_never_promotes_import(self):
         ticket=self.stage()
         self.committed_edit()
