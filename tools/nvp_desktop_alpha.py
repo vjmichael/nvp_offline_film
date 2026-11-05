@@ -145,7 +145,7 @@ def run_persistent_installed_smoke(mode):
                 headers={"Content-Type":"application/json"},method="POST")
             with urllib.request.urlopen(request,timeout=10) as reply:
                 record=json.load(reply)
-            screenplay="INT. EDIT SUITE - DAY\\n\\nA camera rolls."
+            screenplay="INT. EDIT SUITE - DAY\n\nA camera rolls."
             edit_request=urllib.request.Request(
                 base+"/api/projects/"+record["id"]+"/screenplay",
                 data=json.dumps({"screenplay":screenplay,
