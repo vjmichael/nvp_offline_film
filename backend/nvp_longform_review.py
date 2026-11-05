@@ -324,7 +324,7 @@ def assemble_review(index: FilmIndex, project_id: str, review_id: str,
 
 
 def reopen_review(index: FilmIndex, project_id: str, review_id: str, *,
-                  ffprobe: str | None = None) -> dict:
+                  ffprobe: str | None = None, ffmpeg: str | None = None) -> dict:
     """Verify stored media, whole-film clock and exact indexed reel lineage."""
     row = index.read_revision(project_id, review_id, 1)
     data = row["data"]
@@ -355,7 +355,7 @@ def reopen_review(index: FilmIndex, project_id: str, review_id: str, *,
         raise RuntimeError("Technical review video/audio or raster changed")
     fresh = _verify_stream_copy(
         [{**r, "path": p} for r, p in zip(data["reels"], source_paths)],
-        Path(checked["path"]), ffmpeg=_binary("ffmpeg", None), ffprobe=probe)
+        Path(checked["path"]), ffmpeg=_binary("ffmpeg", ffmpeg), ffprobe=probe)
     if fresh != data.get("stream_copy_evidence"):
         raise RuntimeError("Original compressed picture/decoded audio comparison changed")
     return {"status": "VERIFIED_TECHNICAL_REVIEW_UNAPPROVED",
