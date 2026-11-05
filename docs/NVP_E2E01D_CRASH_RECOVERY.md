@@ -171,3 +171,35 @@ archive to an arbitrary hosted runner would invalidate custody.
 
 **Current decision:** Implementation and additional CI coverage committed;
 real hosted matrix and original-machine film acceptance are not yet passed.
+
+
+## Source-bound B13/B14 crash reconciliation (follow-up)
+
+`NativeEditorialChain.reconcile_completed_stage` now handles the crash window
+after the original B13 or B14 host finished but before its task ID reached
+the coordinator:
+
+1. Query the original native grant plus durable `TaskLedger` for a **unique**
+   matching project, immutable original source, exact edit revision, source
+   SHA, output identity, a stored result SHA, `SUCCEEDED`, and zero held
+   resource reservation. B13 and B14 have different exact identity keys.
+2. Reopen the original native B13/B14 host's
+   `verify_completed(job)`, which requires its previously recorded
+   trusted completion, native receipt and source-bound FilmIndex audit.
+3. Independently compare the immutable FilmIndex revision SHA to the
+   matching native grant.
+4. Atomically bind the original job ID into the coordinator's prior
+   `IMPORT_STAGING_UNCERTAIN`/`CONFORM_STAGING_UNCERTAIN` record.
+5. Advance only after the established B13 or B14 verifier accepts the
+   existing output. No new worker, creator event or RAM release occurs.
+
+Two matching native grants fail closed as ambiguous. Missing/incomplete or
+ACTIVE/QUEUED grants stay uncertain. The regression suite models the native
+completion result at the existing trusted host boundary, but does exercise
+actual TaskLedger SQLite grants and exact revision reconciliation; actual
+worker crash/OS acceptance remains a separate matrix.
+
+The AUDIO-01J equivalent recovers only one uniquely matched stopped,
+`SUCCEEDED`, unreserved grant, a byte-exact original plan and creator/
+FilmIndex publication. It does not recover an ACTIVE J worker or replay
+an interrupted creator event.
