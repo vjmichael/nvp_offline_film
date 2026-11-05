@@ -124,12 +124,23 @@ class EditorialCatalog:
                 (project_id, edit_id, revision)).fetchone()
             if found is None:
                 raise KeyError("Unknown editorial revision")
-            rows = db.execute("""SELECT ordinal,source_id,source_revision,
-                  source_first_frame,frame_count,output_first_frame
+            # Indexed predecessor lookup finds the interval spanning the
+            # seek frame without scanning all preceding shots in a feature.
+            predecessor = db.execute("""SELECT MAX(output_first_frame)
                 FROM scale_editorial_clips
                 WHERE project_id=? AND edit_id=? AND revision=?
-                  AND output_first_frame + frame_count > ?
-                ORDER BY output_first_frame LIMIT ?""",
-                (project_id, edit_id, revision, first_frame, limit)).fetchall()
+                  AND output_first_frame <= ?""",
+                (project_id, edit_id, revision, first_frame)).fetchone()[0]
+            if first_frame > found["total_frames"]:
+                rows = []
+            else:
+                threshold = predecessor if predecessor is not None else first_frame
+                rows = db.execute("""SELECT ordinal,source_id,source_revision,
+                      source_first_frame,frame_count,output_first_frame
+                    FROM scale_editorial_clips
+                    WHERE project_id=? AND edit_id=? AND revision=?
+                      AND output_first_frame >= ?
+                    ORDER BY output_first_frame LIMIT ?""",
+                    (project_id, edit_id, revision, threshold, limit)).fetchall()
         return {"total_frames": found["total_frames"],
                 "clips": [dict(row) for row in rows]}
