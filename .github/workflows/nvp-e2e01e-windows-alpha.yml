@@ -78,6 +78,14 @@ jobs:
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
           }
+      - name: Require actual visible Windows WebView2 desktop page load
+        shell: pwsh
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru -Wait
+          if ($window.ExitCode -ne 0) {
+            throw 'Real desktop WebView2 window did not load; headless smoke alone cannot accept NVP alpha'
+          }
       - name: Uninstall without deleting creator project data
         shell: pwsh
         run: |
