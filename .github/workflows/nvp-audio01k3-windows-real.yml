@@ -58,7 +58,9 @@ jobs:
           Invoke-WebRequest -Uri 'https://github.com/PostPerfection/dcpdoctor/releases/download/v1.3.2/dcpdoctor-windows-x86_64.zip' -OutFile $zip
           $extracted = Join-Path $toolRoot 'doctor'
           Expand-Archive -Path $zip -DestinationPath $extracted -Force
-          $doctor = Get-ChildItem -Path $extracted -Filter 'dcpdoctor.exe' -File -Recurse | Select-Object -First 1
+          $doctors = @(Get-ChildItem -Path $extracted -Filter 'dcpdoctor.exe' -File -Recurse)
+          if ($doctors.Count -ne 1) { throw "Expected exactly one real Windows DcpDoctor executable, found $($doctors.Count)" }
+          $doctor = $doctors[0]
           if (-not $doctor) { throw 'Real DcpDoctor Windows executable absent from pinned release' }
           $doctor.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append
           Get-FileHash $doctor.FullName -Algorithm SHA256 | Format-List
@@ -74,10 +76,10 @@ jobs:
           $createVersion = (dcpomatic2_create --version | Out-String)
           $cliVersion = (dcpomatic2_cli --version | Out-String)
           $doctorVersion = (dcpdoctor --version | Out-String)
-          if ($createVersion -notmatch '2\\.18\\.51' -or $cliVersion -notmatch '2\\.18\\.51') {
+          if ($createVersion -notmatch '2\.18\.51' -or $cliVersion -notmatch '2\\.18\\.51') {
             throw 'Installed Windows DCP-o-matic version differs from verified release'
           }
-          if ($doctorVersion -notmatch '1\\.3\\.2') {
+          if ($doctorVersion -notmatch '1\.3\.2') {
             throw 'Installed Windows DcpDoctor differs from verified release'
           }
           Write-Host $createVersion
