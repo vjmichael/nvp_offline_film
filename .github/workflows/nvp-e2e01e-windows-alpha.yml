@@ -5,6 +5,8 @@ on:
       - 'tools/nvp_desktop_alpha.py'
       - 'packaging/nvp-alpha.nsi'
       - 'tools/nvp_e2e01e_validate_installer_payload.py'
+      - 'tests/test_nvp_e2e01e_package_guard.py'
+      - 'packaging/build-nvp-nsis.sh'
       - '.github/workflows/nvp-e2e01e-windows-alpha.yml'
       - 'frontend/**'
       - 'backend/nvp_api.py'
@@ -24,6 +26,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Verify NVP packaging guard rejects fake Windows payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01e_package_guard.py -v
       - name: Build offline React application
         shell: pwsh
         run: |
