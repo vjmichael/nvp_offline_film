@@ -57,7 +57,7 @@ def plan_commands(movie, film_dir, title, create_bin, cli_bin):
          "--colourspace", "rec709", "--dcp-content-type", "FTR",
          "--no-use-isdcf-name", "-n", title, "-o", str(film_dir),
          str(movie)],
-        [str(cli_bin), "--no-remote", "--dcp-path", str(film_dir)],
+        [str(cli_bin), "--no-remote", "--dcp-path", "make-dcp", str(film_dir)],
     )
 
 
