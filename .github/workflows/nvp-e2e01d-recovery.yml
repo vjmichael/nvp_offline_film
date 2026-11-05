@@ -9,6 +9,7 @@ on:
       - 'tests/test_nvp_e2e01d_process_crash.py'
       - 'tests/test_nvp_e2e01d_native_tree.py'
       - 'tests/test_nvp_e2e01d_fault_boundaries.py'
+      - 'tests/test_nvp_e2e01d_real_k_publication.py'
       - 'tools/nvp_e2e01d_verify_approved_film.py'
       - 'backend/nvp_worker_containment.py'
       - 'backend/nvp_audio01i_fault_matrix.py'
@@ -52,6 +53,22 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p test_nvp_e2e01d_process_crash.py -v
+      - name: Install actual FFmpeg for source-bound K crash matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          else
+            choco install ffmpeg -y --no-progress
+            echo "$ChocolateyInstall/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Real ProRes PCM24 AUDIO-01K fsync/rename/FilmIndex hard-kill matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01d_real_k_publication.py -v
       - name: Real native child/grandchild termination and kernel fail-closed acceptance
         shell: bash
         run: |
