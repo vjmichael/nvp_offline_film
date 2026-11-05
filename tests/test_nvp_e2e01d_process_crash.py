@@ -87,7 +87,7 @@ def _child_b14(root):
     raise AssertionError("os._exit not reached")
 
 
-def _child_av(root):
+def _child_av(root,mode="av"):
     from backend.nvp_studio import Studio
     from backend.nvp_digital_capture import DigitalCapture
     from backend.nvp_resource_ledger import TaskLedger
@@ -129,13 +129,34 @@ def _child_av(root):
           movie_dir=root/"picture",audio_dir=root/"approved_audio_dir",
           final_dir=root/"final_av",export_id="approved_movie",
           distribution_id="mezzanine",distribution_dir=root/"distribution")
-        with patch.object(av,"stage",side_effect=lambda *_a,**_kw:os._exit(EXIT)):
-            chain.stage_final_av(pid,"approved_movie","native_creator_event")
+        if mode=="av":
+            with patch.object(av,"stage",side_effect=lambda *_a,**_kw:os._exit(EXIT)):
+                chain.stage_final_av(pid,"approved_movie","native_creator_event")
+        else:
+            with patch.object(av,"stage",return_value={
+                    "state":"QUEUED","job_id":"avjob_fixture",
+                    "export_id":"approved_movie"}):
+                chain.stage_final_av(pid,"approved_movie","native_creator_event")
+            capture.index.register_revision(pid,"approved_movie","master",{
+                "format":"nvp.audio01j.final_av_master.v1",
+                "final_master":True,"dcp_delivered":False,
+                "picture_lock_id":"picture_lock",
+                "audio_delivery_id":"approved_audio"})
+            with patch.object(ledger,"get_task",return_value={
+                    "state":"SUCCEEDED","reserved":0}),patch.object(
+                    av,"verify_published",return_value={
+                    "status":"VERIFIED_FINAL_AV_MASTER"}):
+                chain.verify_final_av(pid,"approved_movie")
+                with patch.object(dist,"publish",
+                       side_effect=lambda *_a,**_kw:os._exit(EXIT)):
+                    chain.publish_mezzanine(
+                        pid,"approved_movie","distribution_creator_event")
     raise AssertionError("os._exit not reached")
 
 
 def child(case,root):
-    {"b13":_child_b13,"b14":_child_b14,"av":_child_av}[case](root)
+    {"b13":_child_b13,"b14":_child_b14,"av":_child_av,
+     "distribution":lambda p:_child_av(p,mode="distribution")}[case](root)
 
 
 class ProcessDeathRecovery(unittest.TestCase):
@@ -162,8 +183,12 @@ class ProcessDeathRecovery(unittest.TestCase):
                 else:
                     row=db.execute("""SELECT state,av_job,distribution_sha
                         FROM native_e2e01c_handoffs WHERE project_id=?""",(pid,)).fetchone()
-                    self.assertEqual(row[0],"AV_STAGING_UNCERTAIN")
-                    self.assertIsNone(row[1])
+                    if case=="av":
+                        self.assertEqual(row[0],"AV_STAGING_UNCERTAIN")
+                        self.assertIsNone(row[1])
+                    else:
+                        self.assertEqual(row[0],"DISTRIBUTION_UNCERTAIN")
+                        self.assertEqual(row[1],"avjob_fixture")
                     self.assertIsNone(row[2])
                 # Never synthesize a success or release another producer's
                 # RAM from an unknown worker state.
@@ -174,7 +199,7 @@ class ProcessDeathRecovery(unittest.TestCase):
                     "SELECT COUNT(*) FROM projects WHERE id=?",(pid,)).fetchone()[0],1)
                 self.assertEqual(db.execute(
                     "SELECT COUNT(*) FROM film_objects WHERE project_id=? AND kind='master'",
-                    (pid,)).fetchone()[0],0)
+                    (pid,)).fetchone()[0],1 if case=="distribution" else 0)
 
     def test_b13_staging_abrupt_process_death(self):
         self._crash("b13")
@@ -184,6 +209,9 @@ class ProcessDeathRecovery(unittest.TestCase):
 
     def test_final_av_staging_abrupt_process_death(self):
         self._crash("av")
+
+    def test_distribution_publication_abrupt_process_death(self):
+        self._crash("distribution")
 
 
 if __name__=="__main__":
