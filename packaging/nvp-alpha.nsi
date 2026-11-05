@@ -12,24 +12,28 @@ Unicode true
 Name "${APP_NAME}"
 OutFile "..\dist\NVP-Alpha-Setup.exe"
 InstallDir "$LOCALAPPDATA\Programs\NVP"
-InstallDirRegKey HKCU "${PRODUCT_KEY}" "InstallLocation"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUninstDetails show
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 Section "NVP Alpha" SEC_MAIN
+    StrCmp "$INSTDIR" "$LOCALAPPDATA\Programs\NVP" safe_install
+        Abort "Refusing non-dedicated NVP installation directory"
+    safe_install:
     SetOutPath "$INSTDIR"
-    File /r "${PACKAGE_FILES}\*.*"
+    File /r "${PACKAGE_FILES}\*"
     IfFileExists "$INSTDIR\NVP.exe" +2 0
         Abort "Missing built NVP.exe; installer payload invalid"
+    FileOpen $0 "$INSTDIR\nvp-alpha-install.marker" w
+    FileWrite $0 "NVP-ALPHA-INSTALL-v1"
+    FileClose $0
     WriteUninstaller "$INSTDIR\Uninstall NVP.exe"
     CreateDirectory "$SMPROGRAMS\NVP"
     CreateShortcut "$SMPROGRAMS\NVP\NVP.lnk" "$INSTDIR\NVP.exe"
@@ -42,6 +46,12 @@ Section "NVP Alpha" SEC_MAIN
     WriteRegDWORD HKCU "${PRODUCT_KEY}" "NoRepair" 1
 SectionEnd
 Section "Uninstall"
+    StrCmp "$INSTDIR" "$LOCALAPPDATA\Programs\NVP" safe_remove
+        Abort "Refusing to remove an unexpected installation directory"
+    safe_remove:
+    IfFileExists "$INSTDIR\nvp-alpha-install.marker" marker_present
+        Abort "Refusing to remove directory without NVP install marker"
+    marker_present:
     Delete "$SMPROGRAMS\NVP\NVP.lnk"
     Delete "$SMPROGRAMS\NVP\Uninstall NVP.lnk"
     RMDir "$SMPROGRAMS\NVP"
