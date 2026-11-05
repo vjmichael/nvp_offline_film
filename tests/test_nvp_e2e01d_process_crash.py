@@ -219,9 +219,16 @@ class ProcessDeathRecovery(unittest.TestCase):
     def _crash(self,case):
         with tempfile.TemporaryDirectory(prefix="nvp-e2e01d-") as path:
             root=Path(path)
+            repo_root = Path(__file__).resolve().parents[1]
+            # A script executed by filename puts tests/ (not the repository root)
+            # on sys.path. Give crash-injected children the same backend import
+            # path regardless of pytest, unittest, or runner environment.
+            child_env = os.environ.copy()
+            child_env["PYTHONPATH"] = os.pathsep.join(filter(None, (
+                str(repo_root), child_env.get("PYTHONPATH", ""))))
             result=subprocess.run(
                 [sys.executable,str(Path(__file__).resolve()),"--child",case,str(root)],
-                cwd=Path(__file__).resolve().parents[1],stdin=subprocess.DEVNULL,
+                cwd=repo_root,env=child_env,stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=60,check=False)
             self.assertEqual(result.returncode,EXIT,result.stderr.decode("utf8","replace"))
             pid=(root/"pid.txt").read_text()
@@ -275,9 +282,16 @@ class ProcessDeathRecovery(unittest.TestCase):
             with sqlite3.connect(root/"studio.sqlite3") as db:
                 self.assertEqual(db.execute(
                     "SELECT COUNT(*) FROM projects WHERE id=?",(pid,)).fetchone()[0],1)
-                self.assertEqual(db.execute(
-                    "SELECT COUNT(*) FROM film_objects WHERE project_id=? AND kind='master'",
-                    (pid,)).fetchone()[0],1 if case=="distribution" else 0)
+                film_table=db.execute("""SELECT name FROM sqlite_master
+                    WHERE type='table' AND name='film_objects'""").fetchone()
+                if film_table is None:
+                    # A resource-only crash must not need to initialize the
+                    # FilmIndex just to assert that no film was published.
+                    self.assertEqual(case,"reservation")
+                else:
+                    self.assertEqual(db.execute(
+                        "SELECT COUNT(*) FROM film_objects WHERE project_id=? AND kind='master'",
+                        (pid,)).fetchone()[0],1 if case=="distribution" else 0)
 
     def test_b13_staging_abrupt_process_death(self):
         self._crash("b13")
