@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeLineEndings, countSourceLines, formatNumberedSource, lineAtOffset, lineNumberGutter } from '../src/lineNumbers.js';
+import { normalizeLineEndings, countSourceLines, formatNumberedSource, formatSelectedSourceLines, lineAtOffset, lineNumberGutter, offsetForSourceLine } from '../src/lineNumbers.js';
 
 test('counts blank lines, trailing newline, and Windows CRLF correctly', () => {
   assert.equal(countSourceLines(''), 1);
@@ -24,4 +24,29 @@ test('numbered copy preserves original punctuation and blank source lines', () =
   assert.equal(normalizeLineEndings('A\r\nB\rC'), 'A\nB\nC');
   assert.equal(formatNumberedSource('A\n', 120), 'L120 | A\nL121 | ');
   assert.throws(() => formatNumberedSource('A', 0), RangeError);
+});
+
+test('jump-to-line offsets include empty lines and reject invalid targets', () => {
+  const source = 'INT. ROOM - DAY\r\n\r\nALEX\r\nWait.\r\n';
+  assert.equal(offsetForSourceLine(source, 1), 0);
+  assert.equal(offsetForSourceLine(source, 2), 16);
+  assert.equal(offsetForSourceLine(source, 3), 17);
+  assert.equal(offsetForSourceLine(source, 4), 22);
+  assert.equal(offsetForSourceLine(source, 5), 28);
+  assert.throws(() => offsetForSourceLine(source, 0), RangeError);
+  assert.throws(() => offsetForSourceLine(source, 6), RangeError);
+});
+
+test('copy selected lines preserves global references and handles exclusive selection end', () => {
+  const source = 'A\n\nB\nC\n';
+  assert.equal(formatSelectedSourceLines(source, 2, 4), 'L02 | \nL03 | B');
+  assert.equal(formatSelectedSourceLines(source, 0, 2), 'L01 | A');
+  assert.equal(formatSelectedSourceLines(source, 5, 5), formatNumberedSource(source));
+  assert.equal(formatSelectedSourceLines(source, 6, 6), formatNumberedSource(source));
+  assert.throws(() => formatSelectedSourceLines(source, 5, 4), RangeError);
+  assert.throws(() => formatSelectedSourceLines(source, -1, 2), RangeError);
+  const longSource = Array.from({length:110},(_,i)=>'Line'+(i+1)).join('\n');
+  const start = offsetForSourceLine(longSource, 108);
+  assert.equal(formatSelectedSourceLines(longSource, start, longSource.length),
+    'L108 | Line108\nL109 | Line109\nL110 | Line110');
 });
