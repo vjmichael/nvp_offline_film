@@ -167,6 +167,34 @@ def run_persistent_installed_smoke(mode):
             raise RuntimeError("Installed NVP failed to exit cleanly")
 
 
+def run_visible_window_smoke():
+    """Exercise a real WebView2 desktop window; no headless substitute."""
+    import webview
+    from threading import Event
+    configure_home()
+    app=create_app()
+    server,worker,port,sock=serve(app)
+    loaded=Event()
+    result={"passed":False}
+    try:
+        window=webview.create_window("NVP Alpha Window Acceptance",
+            "http://127.0.0.1:"+str(port),width=1000,height=700)
+        window.events.loaded += lambda:loaded.set()
+        def inspect_and_close():
+            try:
+                result["passed"]=loaded.wait(timeout=25)
+            finally:
+                window.destroy()
+        webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
+        if not result["passed"]:
+            raise RuntimeError("Real NVP WebView2 desktop window did not load")
+        return 0
+    finally:
+        server.should_exit=True
+        worker.join(timeout=12)
+        sock.close()
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
@@ -175,11 +203,15 @@ def main(argv=None):
                         help="Create persistent project for cross-process installed acceptance")
     parser.add_argument("--smoke-reopen",action="store_true",
                         help="Reopen same project after fully exiting previous installed app")
+    parser.add_argument("--smoke-window",action="store_true",
+                        help="Launch a real native Windows WebView2 and verify page loaded")
     args=parser.parse_args(argv)
-    if sum((args.smoke,args.smoke_create,args.smoke_reopen))>1:
+    if sum((args.smoke,args.smoke_create,args.smoke_reopen,args.smoke_window))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
+    if args.smoke_window:
+        return run_visible_window_smoke()
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
             "create" if args.smoke_create else "reopen")
