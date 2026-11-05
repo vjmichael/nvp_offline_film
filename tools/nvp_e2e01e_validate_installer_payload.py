@@ -57,10 +57,12 @@ def verify_bundle(folder: Path) -> dict:
     base = folder / "_internal"
     if not base.is_dir() or base.is_symlink():
         raise RuntimeError("Missing PyInstaller one-directory runtime")
-    # PYZ ships the backend import graph and bootloader is not sufficient
-    # unless the actual app bytes were collected.
-    if not any(base.rglob("*.pyz")):
-        raise RuntimeError("Missing packaged Python module archive")
+    # PyInstaller embeds PYZ in the PE CArchive, not as an external .pyz.
+    # A one-dir package must still ship its Python DLL and base library.
+    if not (base / "base_library.zip").is_file():
+        raise RuntimeError("Missing PyInstaller base_library.zip")
+    if not list(base.glob("python3*.dll")):
+        raise RuntimeError("Missing bundled Python Windows runtime DLL")
     assets = base / "frontend" / "dist" / "assets"
     entry = base / "frontend" / "dist" / "index.html"
     if not assets.is_dir() or not entry.is_file():
