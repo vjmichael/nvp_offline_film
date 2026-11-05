@@ -116,13 +116,73 @@ def run_smoke():
                 raise RuntimeError("NVP API server refused clean shutdown")
 
 
+def run_persistent_installed_smoke(mode):
+    """Installed-app launch, exit, reopen must retain SQLite project data."""
+    import json
+    home=os.environ.get("NVP_HOME")
+    if not home:
+        raise RuntimeError("Installed acceptance requires explicit NVP_HOME")
+    root=Path(home)
+    root.mkdir(parents=True,exist_ok=True)
+    marker=root/"installed-smoke-project.json"
+    app=create_app()
+    server,worker,port,sock=serve(app)
+    base="http://127.0.0.1:"+str(port)
+    try:
+        with urllib.request.urlopen(base+"/api/status",timeout=10) as reply:
+            if json.load(reply).get("status")!="ready":
+                raise RuntimeError("Offline installed API isn't ready")
+        with urllib.request.urlopen(base+"/",timeout=10) as reply:
+            if "assets/" not in reply.read().decode("utf8"):
+                raise RuntimeError("React desktop bundle unavailable after install")
+        if mode=="create":
+            if marker.exists():
+                raise RuntimeError("Persistent test project marker already exists")
+            payload=json.dumps({"title":"NVP Installed Restart Acceptance",
+                                "idea":"Persistent native project save and reopen"}).encode()
+            request=urllib.request.Request(
+                base+"/api/projects",data=payload,
+                headers={"Content-Type":"application/json"},method="POST")
+            with urllib.request.urlopen(request,timeout=10) as reply:
+                record=json.load(reply)
+            marker.write_text(json.dumps({"id":record["id"],
+                        "title":record["title"]}),encoding="utf8")
+        else:
+            expected=json.loads(marker.read_text("utf8"))
+            with urllib.request.urlopen(
+                    base+"/api/projects/"+expected["id"],timeout=10) as reply:
+                reopened=json.load(reply)
+            if reopened["title"]!=expected["title"]:
+                raise RuntimeError("Installed NVP lost its project across restart")
+            from backend.nvp_studio import Studio
+            if Studio(root/"nvp_studio.sqlite3").get_project(
+                    expected["id"])["title"]!=expected["title"]:
+                raise RuntimeError("SQLite custody changed after reopening app")
+        return 0
+    finally:
+        server.should_exit=True
+        worker.join(timeout=12)
+        sock.close()
+        if worker.is_alive():
+            raise RuntimeError("Installed NVP failed to exit cleanly")
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
-                        help="Headless installed UI/backend/SQLite acceptance")
+                        help="Temporary bundled UI/backend/SQLite acceptance")
+    parser.add_argument("--smoke-create",action="store_true",
+                        help="Create persistent project for cross-process installed acceptance")
+    parser.add_argument("--smoke-reopen",action="store_true",
+                        help="Reopen same project after fully exiting previous installed app")
     args=parser.parse_args(argv)
+    if sum((args.smoke,args.smoke_create,args.smoke_reopen))>1:
+        parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
+    if args.smoke_create or args.smoke_reopen:
+        return run_persistent_installed_smoke(
+            "create" if args.smoke_create else "reopen")
     configure_home()
     app=create_app()
     server,worker,port,sock=serve(app)
