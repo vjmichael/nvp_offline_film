@@ -76,7 +76,7 @@ jobs:
           $createVersion = (dcpomatic2_create --version | Out-String)
           $cliVersion = (dcpomatic2_cli --version | Out-String)
           $doctorVersion = (dcpdoctor --version | Out-String)
-          if ($createVersion -notmatch '2\.18\.51' -or $cliVersion -notmatch '2\\.18\\.51') {
+          if ($createVersion -notmatch '2\.18\.51' -or $cliVersion -notmatch '2\.18\.51') {
             throw 'Installed Windows DCP-o-matic version differs from verified release'
           }
           if ($doctorVersion -notmatch '1\.3\.2') {
