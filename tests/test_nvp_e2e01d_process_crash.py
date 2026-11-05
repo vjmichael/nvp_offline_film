@@ -176,6 +176,45 @@ def child(case,root):
      "reservation":_child_reserved_worker}[case](root)
 
 
+def _reopen_coord(root,case,pid):
+    """Instantiate new Studio, ledger, native hosts and coordinator post-crash."""
+    from backend.nvp_studio import Studio
+    from backend.nvp_digital_capture import DigitalCapture
+    from backend.nvp_resource_ledger import TaskLedger
+    from backend.nvp_resource_guard import ResourceSnapshot
+    studio=Studio(root/"studio.sqlite3")
+    capture=DigitalCapture(studio)
+    ledger=TaskLedger(root/"ledger",sampler=lambda:
+        ResourceSnapshot(1,32768,25000,0,()))
+    creator=lambda *_:False  # recovery does not spend new creator permission
+    if case in ("b13","b14"):
+        from backend.nvp_b13_native_reimport import NativeB13ImportHost
+        from backend.nvp_b14_native_conform import NativeB14ConformHost
+        from backend.nvp_e2e01b_native_editorial import NativeEditorialChain
+        b13=NativeB13ImportHost(capture,ledger,root/"b13",
+                                verify_creator_action=creator)
+        b14=NativeB14ConformHost(capture,ledger,root/"b14",
+                                verify_creator_action=creator)
+        coordinator=NativeEditorialChain(capture,ledger,b13,b14)
+        with ledger._db() as db:
+            chain_id=db.execute("""SELECT chain_id FROM native_e2e01b_chains
+                WHERE project_id=?""",(pid,)).fetchone()[0]
+        return coordinator.reopen(chain_id)
+    from backend.nvp_audio01i_native_host import NativeAudio01IHost
+    from backend.nvp_audio01j_native_host import NativeAudio01JHost
+    from backend.nvp_audio01k_native_host import NativeAudio01KHost
+    from backend.nvp_e2e01c_finishing import NativeFinishingHandoff
+    audio=NativeAudio01IHost(capture,ledger,root/"audio",
+            verify_creator_action=creator,strict_linux_tree=False)
+    av=NativeAudio01JHost(capture,ledger,root/"av",
+            verify_creator_action=creator,audio_host=audio,
+            strict_linux_tree=False)
+    dist=NativeAudio01KHost(capture,ledger,av_host=av,
+            verify_creator_action=creator)
+    coordinator=NativeFinishingHandoff(capture,ledger,audio,av,dist)
+    return coordinator.reopen(pid,"approved_movie")
+
+
 class ProcessDeathRecovery(unittest.TestCase):
     def _crash(self,case):
         with tempfile.TemporaryDirectory(prefix="nvp-e2e01d-") as path:
@@ -224,6 +263,15 @@ class ProcessDeathRecovery(unittest.TestCase):
                 # RAM from an unknown worker state.
                 self.assertEqual(db.execute(
                     "SELECT COUNT(*) FROM tasks WHERE state='SUCCEEDED'").fetchone()[0],0)
+            if case!="reservation":
+                recovered=_reopen_coord(root,case,pid)
+                self.assertEqual(recovered["state"],{
+                    "b13":"IMPORT_STAGING_UNCERTAIN",
+                    "b14":"CONFORM_STAGING_UNCERTAIN",
+                    "av":"AV_STAGING_UNCERTAIN",
+                    "distribution":"DISTRIBUTION_UNCERTAIN"}[case])
+                self.assertTrue(recovered["requires_native_reconciliation"])
+                self.assertFalse(recovered.get("recovered_without_relaunch",False))
             with sqlite3.connect(root/"studio.sqlite3") as db:
                 self.assertEqual(db.execute(
                     "SELECT COUNT(*) FROM projects WHERE id=?",(pid,)).fetchone()[0],1)
