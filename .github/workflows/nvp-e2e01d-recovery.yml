@@ -7,6 +7,13 @@ on:
       - 'tests/test_nvp_e2e01b_native_handoff.py'
       - 'tests/test_nvp_e2e01c_finishing.py'
       - 'tests/test_nvp_e2e01d_process_crash.py'
+      - 'tests/test_nvp_e2e01d_native_tree.py'
+      - 'tests/test_nvp_e2e01d_fault_boundaries.py'
+      - 'tools/nvp_e2e01d_verify_approved_film.py'
+      - 'backend/nvp_worker_containment.py'
+      - 'backend/nvp_audio01i_fault_matrix.py'
+      - 'backend/nvp_audio01j_fault_matrix.py'
+      - 'backend/nvp_audio01k_fault_matrix.py'
       - '.github/workflows/nvp-e2e01d-recovery.yml'
   workflow_dispatch:
 permissions:
@@ -31,6 +38,10 @@ jobs:
           set -euo pipefail
           python -m pip install -r requirements-foundation.txt
           python -m pip install 'opentimelineio>=0.18.1,<0.19'
+      - name: Install actual Windows Job Object bindings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python -m pip install pywin32
       - name: Compile all E2E native bridge modules and crash tests
         shell: bash
         run: |
@@ -41,6 +52,16 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p test_nvp_e2e01d_process_crash.py -v
+      - name: Real native child/grandchild termination and kernel fail-closed acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01d_native_tree.py -v
+      - name: All actual AUDIO-01I/J/K crash boundaries are wired and kill isolated processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01d_fault_boundaries.py -v
       - name: Run upstream B13 to B14 handoff regression tests
         shell: bash
         run: |
