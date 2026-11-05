@@ -82,5 +82,15 @@ class PackageGuardTests(unittest.TestCase):
                 verify_bundle(root)
 
 
+    def test_production_nsis_script_restricts_recursive_uninstall(self):
+        script = (Path(__file__).resolve().parents[1] / "packaging" / "nvp-alpha.nsi").read_text(encoding="utf8")
+        self.assertIn('StrCmp "$INSTDIR" "$LOCALAPPDATA\\Programs\\NVP" safe_remove', script)
+        self.assertIn('IfFileExists "$INSTDIR\\nvp-alpha-install.marker" marker_present', script)
+        self.assertIn('Abort "Refusing to remove an unexpected installation directory"', script)
+        self.assertIn('File /r "${PACKAGE_FILES}\\*"', script)
+        self.assertNotIn('MUI_PAGE_DIRECTORY', script)
+
+
+
 if __name__ == "__main__":
     unittest.main()
