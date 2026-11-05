@@ -4,6 +4,7 @@ on:
     paths:
       - 'tools/nvp_desktop_alpha.py'
       - 'packaging/nvp-alpha.nsi'
+      - 'tools/nvp_e2e01e_validate_installer_payload.py'
       - '.github/workflows/nvp-e2e01e-windows-alpha.yml'
       - 'frontend/**'
       - 'backend/nvp_api.py'
@@ -50,6 +51,8 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-submodules backend tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }
           & 'dist/NVP/NVP.exe' --smoke
           if ($LASTEXITCODE -ne 0) { throw 'Uninstalled native alpha smoke failed' }
       - name: Create NSIS single-click installer
@@ -100,6 +103,12 @@ jobs:
           Start-Sleep -Seconds 2
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-alpha-windows-bundle-audit
+          path: ${{ runner.temp }}/nvp-alpha-bundle-audit.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: always()
         with:
