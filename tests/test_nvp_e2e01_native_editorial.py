@@ -99,6 +99,10 @@ class NativeEditorialE2E(unittest.TestCase):
             project=studio.create_project(
                 "E2E-01 Real Two Shot Film","Import edit render restart")
             pid=project["id"]
+            script="INT. EDIT SUITE - DAY\\n\\nA short NVP alpha acceptance film."
+            saved=studio.save_screenplay(pid,script,expected_revision=0)
+            self.assertEqual(saved["revision"],1)
+            self.assertEqual(len(saved["scenes"]),1)
             index=FilmIndex(studio)
             self.assertEqual(len(studio.list_projects()),1)
 
@@ -157,6 +161,10 @@ class NativeEditorialE2E(unittest.TestCase):
             reopened_index=FilmIndex(reopened)
             self.assertEqual(reopened.get_project(pid)["title"],
                              "E2E-01 Real Two Shot Film")
+            self.assertEqual(reopened.get_project(pid)["screenplay"],script)
+            self.assertEqual(reopened.get_project(pid)["revision"],1)
+            with self.assertRaises(RuntimeError):
+                reopened.save_screenplay(pid,"stale overwrite",expected_revision=0)
             after_edit=reopened_index.read_revision(pid,"edit01",1)
             after_export=reopened_index.read_revision(pid,"preview01",1)
             self.assertEqual(after_export["document_sha256"],
