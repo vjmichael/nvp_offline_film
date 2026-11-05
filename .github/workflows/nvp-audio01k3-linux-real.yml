@@ -46,11 +46,18 @@ jobs:
           curl --fail --location --retry 3 --connect-timeout 20 \
             'https://github.com/PostPerfection/dcpdoctor/releases/download/v1.3.2/dcpdoctor-linux-x86_64.tar.gz' \
             --output "$RUNNER_TEMP/nvp-cinema/dcpdoctor.tar.gz"
-          tar -tzf "$RUNNER_TEMP/nvp-cinema/dcpdoctor.tar.gz" | head -40
+          # sed drains the full listing: head can SIGPIPE tar under pipefail.
+          tar -tzf "$RUNNER_TEMP/nvp-cinema/dcpdoctor.tar.gz" | sed -n '1,40p'
           tar -xzf "$RUNNER_TEMP/nvp-cinema/dcpdoctor.tar.gz" -C "$RUNNER_TEMP/nvp-cinema"
-          find "$RUNNER_TEMP/nvp-cinema" -type f -name dcpdoctor -print
-          doctor="$(find "$RUNNER_TEMP/nvp-cinema" -type f -name dcpdoctor | head -n 1)"
-          test -n "$doctor"
+          # Require exactly one real regular-file CLI, instead of selecting an
+          # arbitrary first hit through a find | head pipeline.
+          mapfile -d '' doctors < <(find "$RUNNER_TEMP/nvp-cinema" -type f -name dcpdoctor -print0)
+          if (( ${#doctors[@]} != 1 )); then
+            echo "::error::Expected exactly one DcpDoctor CLI, found ${#doctors[@]}"
+            exit 1
+          fi
+          doctor="${doctors[0]}"
+          test -s "$doctor"
           install -m 0755 "$doctor" "$RUNNER_TEMP/nvp-cinema/bin/dcpdoctor"
           echo "$RUNNER_TEMP/nvp-cinema/bin" >> "$GITHUB_PATH"
       - name: Verify real DCP tools (no mocking or test skips)
