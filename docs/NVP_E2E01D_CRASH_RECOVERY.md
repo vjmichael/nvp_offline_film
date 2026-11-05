@@ -111,3 +111,63 @@ Actual native host OS failure acceptance is a separate remaining gate.
       `dcp_delivered` must remain false until real cinema approval.
 
 **Closeout decision: IMPLEMENTATION IN PROGRESS; NO NATIVE CRASH ACCEPTANCE YET.**
+
+
+## 2026-11-04 native OS and film-wide hardening
+
+New source tests and acceptance gates on the development branch:
+
+- `tests/test_nvp_e2e01d_native_tree.py` uses the **real**
+  `backend.nvp_worker_containment.launch_contained` API. On Windows it
+  creates real Job Object worker and grandchild processes and verifies
+  explicit termination and kill-on-close, including the case where the
+  direct worker exits first. On Linux it exercises actual worker-group
+  termination and checks that ordinary PDEATHSIG mode does not claim
+  detached-child containment. If cgroup-v2 delegation exists, it runs a
+  detached-session grandchild inside the real delegated worker cgroup and
+  requires kernel `cgroup.kill` to terminate it. Without delegation that
+  stronger test is explicitly skipped; the strict launch must fail closed.
+  No fake cgroup is used.
+- `tests/test_nvp_e2e01d_fault_boundaries.py` AST-checks every declared
+  AUDIO-01I/J/K `crash_after` against actual native host, worker and
+  filesystem side-effect callsites. Each checkpoint is exercised in an
+  isolated Python child with an actual `os._exit`, verifying both the
+  expected exit code and the required test-only opt-in. This validates
+  injection plumbing; **it does not prove that a full mastering or DCP
+  production operation recovered from that interruption**.
+- `backend/nvp_e2e01c_finishing.py` now has a limited
+  `reconcile_stopped_av_after_crash` path. When the coordinator missed an
+  AUDIO-01J stage response, it searches original native J-host grants for
+  one exact matching sealed plan and an OS-stopped, `SUCCEEDED`,
+  nonreserved task. It requires native J-host creator/FilmIndex output
+  verification and will not rerender, spend approval, free RAM or
+  advance active/queued/ambiguous work. A lost *incomplete* J stage still
+  needs native operator reconciliation.
+- `tools/nvp_e2e01d_verify_approved_film.py` strictly reopens existing
+  Studio/FilmIndex, picture lock, source-bound technical MOV, approved
+  native AUDIO-01I audio, stopped native AUDIO-01J final AV, and the
+  AUDIO-01K creator-published mezzanine. Source and final frame counts
+  must agree, and `dcp_delivered` remains false. No synthetic approval
+  or replacement source is supplied by the verifier.
+- `.github/workflows/nvp-e2e01d-approved-film.yml` is a separate
+  **manual, fail-closed** proof requiring actual Windows and Linux
+  self-hosted NVP alpha machines with original absolute-path native
+  custody, original runtime and creator-approved film fixture. Required
+  GitHub variables are
+  `NVP_E2E01D_APPROVED_FILM_MANIFEST_WIN`,
+  `NVP_E2E01D_ORIGINAL_PYTHON_WIN`,
+  `NVP_E2E01D_APPROVED_FILM_MANIFEST_LINUX`, and
+  `NVP_E2E01D_ORIGINAL_PYTHON_LINUX`. Both machines must carry labels
+  `nvp-alpha-custody` plus the platform label. This workflow does not
+  claim a pass without provisioned machines and real film inputs.
+
+The ordinary hosted Windows/Linux matrix validates process termination
+and crash-point wiring. The *full approved-film* matrix is a separate
+machine/fixture-dependent acceptance and remains OPEN until it returns
+actual successful native evidence. A technical DCP ZIP cannot substitute
+for a complete creator-approved FilmIndex workspace. Original native
+authorization and absolute file paths must match; simply copying an
+archive to an arbitrary hosted runner would invalidate custody.
+
+**Current decision:** Implementation and additional CI coverage committed;
+real hosted matrix and original-machine film acceptance are not yet passed.
