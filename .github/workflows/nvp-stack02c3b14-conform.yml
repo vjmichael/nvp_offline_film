@@ -47,6 +47,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_resource_supervisor.py' }
           python -m unittest discover -s tests -p test_crew_roles.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_crew_roles.py' }
+          python -m unittest discover -s tests -p test_nvp_ai_refs.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows AI reference contract failed' }
           python -m unittest discover -s tests -p test_audio01_picture_follow.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01_picture_follow.py' }
           python -m unittest discover -s tests -p test_audio01b_dialogue_edit.py -v
@@ -99,6 +101,7 @@ jobs:
           python -m unittest discover -s tests -p test_b14_picture_conform.py -v
           python -m unittest discover -s tests -p test_resource_supervisor.py -v
           python -m unittest discover -s tests -p test_crew_roles.py -v
+          python -m unittest discover -s tests -p test_nvp_ai_refs.py -v
           python -m unittest discover -s tests -p test_audio01_picture_follow.py -v
           python -m unittest discover -s tests -p test_audio01b_dialogue_edit.py -v
           python -m unittest discover -s tests -p test_audio01c_multistem.py -v
