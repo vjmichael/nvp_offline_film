@@ -36,3 +36,40 @@ export function lineAtOffset(value, offset) {
 export function lineNumberGutter(lineCount) {
   return Array.from({ length: lineCount }, (_, i) => String(i + 1)).join('\n');
 }
+
+/** Return a 0-based UTF-16 caret offset for a 1-based source line. */
+export function offsetForSourceLine(value, targetLine) {
+  if (!Number.isSafeInteger(targetLine) || targetLine < 1) {
+    throw new RangeError('Source line must be a positive integer');
+  }
+  const text = normalizeLineEndings(value);
+  if (targetLine === 1) return 0;
+  let line = 1;
+  for (let offset = 0; offset < text.length; offset += 1) {
+    if (text[offset] === '\n' && ++line === targetLine) return offset + 1;
+  }
+  throw new RangeError('Source line is beyond the end of the document');
+}
+
+/**
+ * Export complete selected source lines with their ORIGINAL global line numbers.
+ * Selection end is exclusive, like HTML textarea.selectionEnd. An unselected
+ * caret exports the whole document, matching the existing copy action.
+ */
+export function formatSelectedSourceLines(value, selectionStart = 0, selectionEnd = 0) {
+  const text = normalizeLineEndings(value);
+  if (!Number.isSafeInteger(selectionStart) || !Number.isSafeInteger(selectionEnd)
+      || selectionStart < 0 || selectionEnd < selectionStart || selectionEnd > text.length) {
+    throw new RangeError('Invalid source selection');
+  }
+  if (selectionStart === selectionEnd) return formatNumberedSource(text);
+  const firstLine = lineAtOffset(text, selectionStart);
+  // Avoid accidentally including the next line when selection ends exactly
+  // after a newline; the end of a browser selection is exclusive.
+  const lastLine = lineAtOffset(text, selectionEnd - 1);
+  const lines = text.split('\n');
+  const width = Math.max(2, String(lines.length).length);
+  return lines.slice(firstLine - 1, lastLine)
+    .map((line, i) => 'L' + String(firstLine + i).padStart(width, '0') + ' | ' + line)
+    .join('\n');
+}
