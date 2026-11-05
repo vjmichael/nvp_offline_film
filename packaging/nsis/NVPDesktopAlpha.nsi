@@ -33,7 +33,6 @@ ShowUninstDetails show
 
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -42,6 +41,8 @@ ShowUninstDetails show
 
 Section "NVP Desktop Alpha" SEC_MAIN
   SetShellVarContext current
+  StrCmp "$INSTDIR" "$LOCALAPPDATA\\Programs\\NVP" +2 0
+  Abort "NVP must install only in its dedicated per-user application directory"
   SetOutPath "$INSTDIR"
   ; Stage must already include all necessary native runtime dependencies.
   File /r "${STAGE_DIR}\*"
@@ -59,6 +60,10 @@ SectionEnd
 
 Section "Uninstall"
   SetShellVarContext current
+  StrCmp "$INSTDIR" "$LOCALAPPDATA\\Programs\\NVP" +2 0
+  Abort "Refusing to delete unexpected install directory"
+  IfFileExists "$INSTDIR\\nvp-install.marker" +2 0
+  Abort "Refusing to uninstall directory without NVP install marker"
   ; Never delete %APPDATA%, %LOCALAPPDATA%\NVP, Documents, or creator projects.
   ; Only remove files under this application's dedicated install directory.
   Delete "$SMPROGRAMS\NVP\NVP Desktop.lnk"
