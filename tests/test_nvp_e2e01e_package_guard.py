@@ -46,6 +46,22 @@ class PackageGuardTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError):
                         verify_pe64_gui(path)
 
+    def test_symlink_payload_rejected_before_install(self):
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            bundle = base / "NVP"
+            bundle.mkdir()
+            make_pe(bundle / "NVP.exe")
+            external = base / "unrelated-user-file.txt"
+            external.write_text("never include this in installer", encoding="utf8")
+            (bundle / "external.txt").symlink_to(external)
+            with self.assertRaisesRegex(RuntimeError, "symlink"):
+                verify_bundle(bundle)
+            (bundle / "external.txt").unlink()
+            (base / "linked-bundle").symlink_to(bundle, target_is_directory=True)
+            with self.assertRaisesRegex(RuntimeError, "symlink"):
+                verify_bundle(base / "linked-bundle")
+
     def test_even_correct_pe_header_requires_packaged_runtime_and_ui(self):
         with TemporaryDirectory() as temp:
             root = Path(temp)
