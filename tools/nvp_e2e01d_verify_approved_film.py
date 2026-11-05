@@ -98,6 +98,11 @@ def verify_document(document,*,ffmpeg="ffmpeg",ffprobe="ffprobe"):
         ffmpeg=ffmpeg,ffprobe=ffprobe)
     if video.get("status")!="VERIFIED_FINAL_AV_MASTER":
         raise RuntimeError("No authorized native AV worker and final master")
+    picture_frames=technical.get("frames")
+    movie_frames=video.get("frames")
+    if (type(picture_frames) is not int or picture_frames<=0
+        or type(movie_frames) is not int or movie_frames!=picture_frames):
+        raise RuntimeError("Complete approved film picture/AV frame clock mismatch")
     mezzanine=distribution.verify(
         project,document["distribution_id"],document["distribution_dir"],
         document["final_av_dir"],document["b14_movie_dir"],document["audio_dir"],
