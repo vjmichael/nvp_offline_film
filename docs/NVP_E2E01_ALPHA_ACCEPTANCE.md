@@ -68,9 +68,11 @@ All four combinations must actually run. No missing-binary skip is accepted.
   through the existing NVP B14 source-bound conform, resource watchdog,
   OS-contained workers, creator authorization, cancellation, and recovery
   rather than FFmpeg directly from the test.
-- [ ] **E2E-01C creative finishing:** Connect actual color grade, approved
-  multitrack AUDIO-01H/I mastering, AUDIO-01J final mux and AUDIO-01K
-  distribution to one authoritative FilmIndex dependency tree.
+- [ ] **E2E-01C creative finishing:** Durable native finishing handoff implemented
+  in `backend/nvp_e2e01c_finishing.py` with actual AUDIO-01I/J/K native host
+  interfaces, FilmIndex approval IDs and restart custody. Four-cell contract
+  workflow added; full real color/audio/AV mastering and crash acceptance
+  remain pending. See `docs/NVP_E2E01C_CREATIVE_FINISHING.md`.
 - [ ] **E2E-01D complete crash/restart:** Restart between media ingest,
   edit registration, worker execution, picture lock, audio approval,
   final mux, approved distribution and after interrupted publication.
