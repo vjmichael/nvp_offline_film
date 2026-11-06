@@ -267,11 +267,30 @@ class SlateSequenceAssembly:
             "render_approved":False,
             "retimed":False,
         }
+        # Source retirement cannot silently break an older cut or be bypassed
+        # by referring to a previously published catalog root. Check every
+        # actual selected Take/shot under FilmIndex's SAME writer transaction.
+        def guard(db):
+            table=db.execute("""SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='nvp_film_source_retirements'""").fetchone()
+            if table is None:
+                return
+            referenced={(segment["source_take_id"]) for segment in ordered}
+            referenced.update(segment["source_shot_id"] for segment in ordered
+                              if segment["source_shot_id"] is not None)
+            for source_id in referenced:
+                if db.execute("""SELECT 1 FROM nvp_film_source_retirements
+                    WHERE project_id=? AND object_id=?
+                    AND state!='RESTORED'""",
+                    (project_id,source_id)).fetchone():
+                    raise RuntimeError(
+                        "Cannot activate a new cut using a retired source Take/shot")
         # FilmIndex expected_revision enforces optimistic concurrency and
         # prevents a stale editor window from silently replacing an active cut.
         return self.index.register_revision(
             project_id,edit_id,"edit",document,
-            expected_revision=expected_revision,dependencies=dependencies)
+            expected_revision=expected_revision,dependencies=dependencies,
+            precommit_guard=guard)
 
     def open_edit(self,project_id,edit_id,revision):
         result=self.index.read_revision(project_id,edit_id,revision)
