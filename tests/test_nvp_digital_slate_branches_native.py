@@ -683,6 +683,12 @@ class SlateBranchNativeTests(unittest.TestCase):
             creator_event="director_deletes",expected_head_revision=1)
         self.assertEqual(removed["state"],"RETIRED")
         self.assertTrue(removed["purge_blocked"])
+        self.assertNotIn("take_2",{
+            x["object_id"] for x in self.index.list_objects(
+                self.pid,kind="take")})
+        self.assertIn("take_2",{
+            x["object_id"] for x in self.index.list_objects(
+                self.pid,kind="take",include_retired=True)})
         self.assertEqual(
             assembly.open_edit(self.pid,"old_cut",1)["document_sha256"],
             saved["document_sha256"])
@@ -700,6 +706,9 @@ class SlateBranchNativeTests(unittest.TestCase):
                     {"object_id":"take_2","revision":1,"role":"source_take"}])
         lifecycle.restore(
             self.pid,"take_2",creator_event="director_deletes")
+        self.assertIn("take_2",{
+            x["object_id"] for x in self.index.list_objects(
+                self.pid,kind="take")})
         reopened=assembly.commit(
             self.pid,"new_cut",graph_id="scene_01_slate",
             graph_revision=1,segments=source,editor_event="make_active")
