@@ -27,7 +27,7 @@ class PackagesTests(TestCase):
 
     def test_refuse_arbitrary_package_names_without_os_confirmation(self):
         with mock.patch.object(p.subprocess,"run") as launch:
-            for bad in ("curl","python","../ffmpeg","apt-get","",None):
+            for bad in ("curl","python","../ffmpeg","apt-get","",None,[],{}):
                 with self.subTest(bad=bad):
                     with self.assertRaises(ValueError):
                         p.repair(bad,confirm=lambda _msg:True)
@@ -51,7 +51,7 @@ class PackagesTests(TestCase):
             {"id":"video_tools","status":"ready","repair":None},
         ]}
         fake=mock.Mock(returncode=0)
-        with mock.patch.object(p,"inventory",side_effect=[snapshot,updated]), \
+        with mock.patch.object(p,"inventory",side_effect=[snapshot,snapshot,updated]), \
              mock.patch.object(p,"_manager",return_value=("apt+polkit","/usr/bin/pkexec")), \
              mock.patch.object(p.subprocess,"run",return_value=fake) as run, \
              mock.patch.object(Path,"is_symlink",return_value=False):
@@ -65,3 +65,40 @@ class PackagesTests(TestCase):
             self.assertFalse(kwargs["shell"])
             self.assertLessEqual(kwargs["timeout"],600)
             self.assertFalse(outcome["source_media_modified"])
+
+    def test_ready_components_cannot_be_reinstalled_from_untrusted_frontend(self):
+        snapshot={"components":[{"repair":"ffmpeg",
+                                  "name":"FFmpeg and FFprobe",
+                                  "status":"ready"}]}
+        with mock.patch.object(p,"inventory",return_value=snapshot), \
+             mock.patch.object(p.subprocess,"run") as launch:
+            confirm=mock.Mock(return_value=True)
+            receipt=p.repair("ffmpeg",confirm=confirm)
+            self.assertEqual(receipt["status"],"NOT_REQUIRED_OR_UNSUPPORTED")
+            confirm.assert_not_called()
+            launch.assert_not_called()
+
+    def test_newly_satisfied_component_cannot_use_stale_creator_approval(self):
+        missing={"components":[{"repair":"ffmpeg",
+                                "name":"FFmpeg and FFprobe",
+                                "status":"missing"}]}
+        ready={"components":[{"repair":"ffmpeg",
+                              "name":"FFmpeg and FFprobe",
+                              "status":"ready"}]}
+        with mock.patch.object(p,"inventory",side_effect=[missing,ready]), \
+             mock.patch.object(p.subprocess,"run") as launch:
+            receipt=p.repair("ffmpeg",confirm=lambda _:True)
+            self.assertEqual(receipt["status"],"NOT_REQUIRED_OR_UNSUPPORTED")
+            launch.assert_not_called()
+
+    def test_only_real_debian_or_ubuntu_hosts_enable_apt_repairs(self):
+        with mock.patch.object(p,"Path") as path:
+            for ident,accepted in (("debian",True),("ubuntu",True),
+                                   ("arch",False),("fedora",False),
+                                   ("linuxmint",False)):
+                with self.subTest(ident=ident):
+                    path.return_value.read_text.return_value=(
+                        "NAME=Example Linux\\nID="+ident+"\\nID_LIKE=debian\\n")
+                    self.assertEqual(p._supported_apt_distro(),accepted)
+            path.return_value.read_text.side_effect=OSError("missing")
+            self.assertFalse(p._supported_apt_distro())
