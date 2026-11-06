@@ -168,9 +168,12 @@ class NativeTimeWindowTests(unittest.TestCase):
             creator_event="creator_confirms")
         self.assertEqual(staged["state"],"QUEUED")
         self.assertFalse(staged["native_worker_started"])
-        stopped=self.ledger.cancel_queued(
-            staged["task_id"],owner_key=self.host.owner)
+        stopped=self.host.revoke_queued(staged["task_id"])
         self.assertEqual(stopped["state"],"CANCELLED")
+        self.assertTrue(stopped["creator_grant_revoked"])
+        self.assertIsNone(self.host.run_next())
+        with self.assertRaises(RuntimeError):
+            self.host.revoke_queued(staged["task_id"])
         self.assertFalse((self.home/"cancel_before_run").exists())
 
     def test_contained_host_review_reopens_and_verifies_pinned_receipt(self):
