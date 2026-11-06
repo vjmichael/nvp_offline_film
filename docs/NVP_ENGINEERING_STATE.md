@@ -6,7 +6,7 @@
 
 **Status:** Initial ledger, manually reconciled 2026-11-05. A future automation/CI gate must populate SHA, test and artifact evidence reliably; do not treat this file as self-updating.
 
-## MOST RECENT creator priority — DATA-AV-01 full native migration (2026-11-06)
+## LATEST DIRECTIVE: ZERO-FFMPEG + ordered DA-00–DA-07 closeout (2026-11-06)\n\nNVP no longer uses FFmpeg **anywhere**. This prohibition covers native recording/playback, conventional media import, editing, rendering, mastering, conversion, and final 2D/DCP export, not just the embedded scene engine. Earlier clauses allowing FFmpeg at boundaries are superseded. Prohibited paths remain historical or disabled until rewritten with non-FFmpeg components. Main ordered engineering tasks and independent acceptance statuses: [DA-00–DA-07](NVP_DATA_ALL_TASK_LEDGER.md). Implement tasks in order; do not mark a gate accepted merely because code or a CI test exists.\n\n## MOST RECENT creator priority — DATA-AV-01 full native migration (2026-11-06)
 
 **Supersedes previous AV/indexing/FFmpeg native playback tasks and old
 Windows NSIS pause only for a new native data-first installed-app gate.**
