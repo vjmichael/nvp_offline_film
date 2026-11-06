@@ -15,6 +15,9 @@ on:
       - 'tests/test_nvp_imported_audio.py'
       - 'backend/nvp_final_2d_native.py'
       - 'tests/test_nvp_final_2d_native.py'
+      - 'backend/nvp_native_color_decisions.py'
+      - 'tests/test_nvp_native_color_decisions.py'
+      - 'frontend/src/NativeColorGradePanel.jsx'
       - 'tests/test_nvp_data_first_filming.py'
       - 'tools/nvp_no_ffmpeg_contract.py'
       - 'backend/nvp_slate08b_native_camera_ipc.py'
@@ -75,6 +78,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_data_first_filming.py' -v
           python -m unittest discover -s tests -p 'test_nvp_imported_audio.py' -v
           python -m unittest discover -s tests -p 'test_nvp_final_2d_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_native_color_decisions.py' -v
       - name: Existing frozen source/camera/provenance regressions
         shell: bash
         run: |
