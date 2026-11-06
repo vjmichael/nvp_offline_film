@@ -2,6 +2,7 @@ import React from 'react';
 import {describe,it,expect,vi} from 'vitest';
 import {fireEvent,render,screen,waitFor} from '@testing-library/react';
 import FilmTimeAssemblyPanel from './FilmTimeAssemblyPanel.jsx';
+import {filmTimeClock,clockToFilmTick} from './filmTimeClock.js';
 
 const pid='a'.repeat(32),sha='b'.repeat(64),newsha='c'.repeat(64);
 const edit={
@@ -60,6 +61,31 @@ function setup(native=fixture(),saved=vi.fn()){
 }
 
 describe('INDEX-TIME-07 human-first immutable source assembly',()=>{
+  it('converts readable gap times exactly without lossy JavaScript Number',()=>{
+    expect(clockToFilmTick('00:00:01.000')).toBe('7056000000');
+    expect(clockToFilmTick('00:00:00.001')).toBe('7056000');
+    expect(clockToFilmTick('123:45:06.789')).toBe(
+      ((123n*3600n+45n*60n+6n)*7056000000n+
+       789n*7056000n).toString());
+    const huge='9007199254740993';
+    expect(filmTimeClock(huge)).toContain(':');
+    expect(()=>clockToFilmTick('00:00:60.000')).toThrow();
+    expect(()=>clockToFilmTick('10:00:00.1000')).toThrow();
+    expect(()=>clockToFilmTick('999999:00:00.000')).toThrow();
+  });
+
+  it('previews one-second time gap as exact native source ticks',async()=>{
+    const {native}=setup();
+    fireEvent.change(screen.getByLabelText('Gap time clock'),
+      {target:{value:'00:00:01.000'}});
+    fireEvent.click(screen.getByText('Preview gap by clock'));
+    await screen.findByText(/Proposed new assembly/);
+    expect(native.preview_footage_assembly.mock.calls[0][0].change).toEqual({
+      operation:'set_gap',index:0,gap_before_tick:'7056000000',
+    });
+  });
+
+
   it('splits one original into two adjacent references, not physical copies',async()=>{
     const {native}=setup();
     fireEvent.change(screen.getByLabelText('Split source at frame'),
