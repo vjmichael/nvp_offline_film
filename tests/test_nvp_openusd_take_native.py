@@ -153,6 +153,8 @@ class OpenUSDNativeIntegration(unittest.TestCase):
         self.assertEqual(a["frozen_take_document_sha256"],
                          b["frozen_take_document_sha256"])
         self.assertFalse(a["frames_rendered"])
+        self.assertFalse(a["source_full_audit_this_operation"])
+        self.assertTrue(a["revision_metadata_bound"])
         self.assertEqual(a["output"],"DATA_ONLY_NOT_RENDERED")
         # Compare authored time = one second, not an arbitrary frame identity.
         actor_a=next(p for p in a["presentation_samples"][0]["world_state"]
