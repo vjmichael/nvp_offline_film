@@ -6,13 +6,16 @@ flattened soundtrack is needed.
 """
 import unittest
 
-from test_nvp_data_av_native import NativeDigitalTakeAudioTests,Window,T
+import test_nvp_data_av_native as _fixture
+from test_nvp_data_av_native import Window,T
 from backend.nvp_exact_time_shots import ExactTimeShotSequence
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 
 
-class ExactTimeCameraSequenceTests(NativeDigitalTakeAudioTests):
+class ExactTimeCameraSequenceTests(unittest.TestCase):
+    def setUp(self):
+        _fixture.NativeDigitalTakeAudioTests.setUp(self)
     def shots(self):
         return [
             {"shot_id":"Shot001","camera_path":"/World/ListenerLeft",
