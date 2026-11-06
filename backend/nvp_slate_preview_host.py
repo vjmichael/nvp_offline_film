@@ -91,6 +91,12 @@ class NativeSlatePreviewHost:
                     WHERE approval_id=?""",(approval_id,)).fetchone()
             if row is None:
                 return False
+            # TaskLedger deliberately yields tuples, not sqlite3.Row.
+            names=("approval_id","task_id","project_id","edit_id",
+                   "edit_revision","film_tick","quality","cache_key",
+                   "ticket_sha256","source_manifest_sha256","spec_sha256",
+                   "issued_at","expires_at","revoked_at","queued_at")
+            row=dict(zip(names,row))
             now=time.time()
             if (row["revoked_at"] is not None or
                 not row["issued_at"]<=now<=row["expires_at"] or
