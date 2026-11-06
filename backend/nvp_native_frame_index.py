@@ -178,6 +178,8 @@ class NVPFrameIndex:
                     header.get("source_stamp") != before or
                     header.get("frame_count", 0) <= 0):
                     raise RuntimeError("Stale NVP index; explicit source reacceptance needed")
+                if stamp(source)!=before:
+                    raise RuntimeError("External original changed during warm index validation")
                 return {"status": "REUSED_SOURCE_STAMP_UNVERIFIED", "path": str(path),
                         **header}
         lock = path.with_suffix(".building")
@@ -341,6 +343,8 @@ class NVPFrameIndex:
         if (anchor[0]>first_zero or anchor[1]>rows[0][1] or
             any(rows[i][1] <= rows[i-1][1] for i in range(1,len(rows)))):
             raise RuntimeError("Corrupt indexed presentation timestamp order")
+        if stamp(source)!=info["source_stamp"]:
+            raise RuntimeError("External media changed during indexed window lookup")
         return {"index_status": info["status"], "index_path": info["path"],
                 "frames": [{"ordinal": r[0], "pts": r[1], "keyframe": bool(r[2]),
                             "packet_pos": r[3]} for r in rows],
