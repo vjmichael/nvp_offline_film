@@ -12,7 +12,7 @@ const node=(n,active=false)=>({
   slate:{shot:'01A',take_number:n,camera:'A',wild:false},
 });
 
-describe('SLATE-02 timeline window component',()=>{
+describe('SLATE-03 paged timeline and assembly source cards',()=>{
   it('inspects without activating; Make Active remains explicit host callback',()=>{
     const preview=vi.fn(),approve=vi.fn();
     const graph={project_id:'a'.repeat(32),scene_label:'01',
@@ -40,7 +40,7 @@ describe('SLATE-02 timeline window component',()=>{
     const graph={project_id:'b'.repeat(32),scene_label:'01',
       parallel_groups:{reaction:Array.from({length:60},(_,i)=>node(i+1,i===0))}};
     const {container}=render(<SlateBranchTimelinePane graphView={graph}/>);
-    expect(screen.getByText('60 takes and camera views')).toBeTruthy();
+    expect(screen.getByText(/60 shown takes and camera views/)).toBeTruthy();
     expect(container.querySelectorAll('.nvp-slate-entry').length).toBeLessThan(60);
     const scroller=container.querySelector('.nvp-slate-scroll');
     expect(scroller.style.height).toBe('744px');
@@ -63,4 +63,51 @@ describe('SLATE-02 timeline window component',()=>{
     expect(container.querySelectorAll('.nvp-slate-range.green')).toHaveLength(2);
     expect(container.querySelectorAll('.nvp-slate-entry.inspected')).toHaveLength(1);
   });
+  it('renders real source Take metadata inside assembled cut boxes, with AI unreviewed',()=>{
+    const base=node(1,true);
+    const n={...base,slate:{...base.slate,scene:'01',camera:'B',wild:true},
+      semantic:{
+        shot_type:'reaction',beat_ids:['reunion'],emotion_tags:['surprised'],
+        director_rating:5,technical_status:'acceptable',
+        director_notes:'Best expression during the reaction',
+        ai_observations:[{
+          model_id:'assistant_v1',summary:'Check eyeline on next cut',
+          status:'UNREVIEWED_AI_PROPOSAL',
+          confidence:0.68,
+        }],
+      }};
+    const graph={project_id:'d'.repeat(32),scene_label:'01',
+      parallel_groups:{reaction:[n,node(2)]}};
+    const cut={edit_document_sha256:'f'.repeat(64),sequence:[{
+      segment_id:'clip_A',branch_id:'take_1',
+      source_in_tick:100,source_out_tick:600,
+      timeline_start_tick:0,timeline_end_tick:500,
+      incoming_transition:{requires_continuity_review:true},
+    }]};
+    const {container}=render(<SlateBranchTimelinePane graphView={graph} activeView={cut}/>);
+    expect(screen.getByText('Scene 01 · Shot 01A')).toBeTruthy();
+    expect(screen.getByText('Wild · Take 1 · Camera B')).toBeTruthy();
+    expect(screen.getByText('Edit 0–500 ticks')).toBeTruthy();
+    expect(screen.getByText('Source 100–600 ticks')).toBeTruthy();
+    expect(screen.getByText(/reunion · surprised/)).toBeTruthy();
+    expect(screen.getByText('Director rating 5/5')).toBeTruthy();
+    expect(screen.getByText(/Director: Best expression/)).toBeTruthy();
+    expect(screen.getByText(/AI suggestion · unreviewed: Check eyeline/)).toBeTruthy();
+    expect(screen.getByText('Continuity review at incoming cut')).toBeTruthy();
+    expect(container.querySelectorAll('.nvp-slate-assembly-card')).toHaveLength(1);
+  });
+
+  it('requests more catalog pages without accepting or committing any source branch',()=>{
+    const load=vi.fn(),activate=vi.fn();
+    const page={branch_count:4096,next_after_index:63,
+      items:Array.from({length:64},(_,i)=>node(i+1,i===0))};
+    const {container}=render(<SlateBranchTimelinePane
+      catalogPage={page} onLoadMore={load} onMakeActive={activate}/>);
+    expect(screen.getByText(/64 shown of 4096 takes and camera views/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Load more takes'));
+    expect(load).toHaveBeenCalledWith(63);
+    expect(activate).not.toHaveBeenCalled();
+    expect(container.querySelectorAll('.nvp-slate-entry').length).toBeLessThan(64);
+  });
+
 });
