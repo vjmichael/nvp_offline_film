@@ -120,11 +120,11 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
   // The server never sends a file path. JS receives bounded verified chunks
   // and checks EACH SHA before constructing a temporary private Blob URL.
   useEffect(()=>{
-    if(!review||!ticket.current||!native)return;
+    if(!review||!ticket.current||!native||url.current)return;
     let alive=true,busy=false;
     const gen=generation.current,token=ticket.current;
     async function poll(){
-      if(!alive||busy||downloading)return;
+      if(!alive||busy||url.current)return;
       busy=true;
       try{
         const result=await native.poll_synchronized_av_review(token);
@@ -147,7 +147,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
            !/^\d+$/.test(result.actual_start_tick||'')){
           throw Error('Native A/V receipt disagreed with the frozen assembly.');
         }
-        setReview(result);setDownloading(true);
+        setDownloading(true);
         setStatus('Receiving a verified temporary picture-and-sound proxy…');
         let offset=0;
         const chunks=[];
@@ -182,6 +182,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
         const object=URL.createObjectURL(media);
         if(url.current)URL.revokeObjectURL(url.current);
         url.current=object;
+        setReview(result);
         setSrc(object);
         setStatus('Ready. Play picture and sound together on the native media clock.');
       }catch(e){
@@ -198,7 +199,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     const interval=setInterval(poll,1000);
     return ()=>{alive=false;clearInterval(interval);};
   },[native,review,projectId,edit.edit_id,edit.revision,
-     edit.edit_document_sha256,downloading,revoke]);
+     edit.edit_document_sha256,revoke]);
 
   function changePlayhead(tick){
     revoke();
@@ -233,7 +234,16 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
         aria-label="Temporary picture and synchronized sound preview"
         onPlay={()=>setPlaying(true)}
         onPause={()=>setPlaying(false)}
-        onTimeUpdate={e=>setPlayhead(e.currentTarget.currentTime)}
+        onTimeUpdate={e=>{
+          const seconds=e.currentTarget.currentTime;
+          setPlayhead(seconds);
+          if(review?.actual_start_tick){
+            const tick=BigInt(review.actual_start_tick)+
+              BigInt(Math.round(seconds*1000))*(TICKS_PER_SECOND/1000n);
+            setFilmTick(String(tick>BigInt(edit.duration_tick)
+              ?BigInt(edit.duration_tick):tick));
+          }
+        }}
         onError={()=>setError('The native media decoder refused this review proxy.')}
         />:<p style={{color:'#ddd',padding:'1rem'}}>
           {preparing||downloading?'Preparing a verified A/V playback proxy…':
@@ -261,6 +271,13 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
       <button disabled={preparing||downloading}
         onClick={prepare}>{preparing?'Asking for native approval…':
           'Prepare synchronized review…'}</button>
+      {src&&review?.review_duration_tick&&
+        <button onClick={()=>{
+          const end=BigInt(review.actual_start_tick)+
+            BigInt(review.review_duration_tick);
+          changePlayhead(String(end>BigInt(edit.duration_tick)
+            ?BigInt(edit.duration_tick):end));
+        }}>Continue from end of review</button>}
       {ticket.current&&<button onClick={()=>{
         revoke();setStatus('Review stopped; temporary audio/video is disposable.');
       }}>Stop and discard review</button>}
