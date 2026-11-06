@@ -62,7 +62,7 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
             {"path":"/World/Actor","role":"actor","position":[5,0,0]},
             {"path":"/World/ListenerLeft","role":"camera","position":[0,0,0]},
             {"path":"/World/ListenerRight","role":"anchor","position":[10,0,0]},
-        ],curves=[])
+        ],curves=[],native_schemas=True)
         self.timeline.publish(self.pid,"sound_events",[{
             "event_id":"actor_speaks","event_kind":"dialogue",
             "subject_id":"Actor","start_tick":0,"end_tick":2*T,
