@@ -1285,3 +1285,34 @@ def grade_curve_reopen(project_id:str,grade_id:str,revision:int|None=None):
             'sha256':row['record']['document_sha256'],
             'source_id':row['record']['data']['source_id'],
             'plan':row['plan'],'approval':'not_approved'}
+
+
+
+# INDEX-TIME-05 — safe original-source metadata only. Native FFmpeg worker
+# execution, creator permission and decoded PNG media are deliberately NOT
+# exposed as generic browser HTTP actions.
+from backend.nvp_index_time05_desktop_read import FilmTimeDesktopRead
+
+def _imported_video_index():
+    return FilmTimeDesktopRead(studio)
+
+@app.get("/api/projects/{project_id}/film-time/edits")
+def indexed_film_time_edits(project_id: str):
+    return run(lambda:_imported_video_index().edits(project_id))
+
+@app.get("/api/projects/{project_id}/film-time/edits/{edit_id}/clips")
+def indexed_film_time_clips(project_id: str,edit_id: str,
+                           revision: int,expected_edit_sha256: str,
+                           after_ordinal: int=-1,limit: int=40):
+    return run(lambda:_imported_video_index().clips(
+        project_id,edit_id,revision,
+        expected_edit_sha256=expected_edit_sha256,
+        after_ordinal=after_ordinal,limit=limit))
+
+@app.get("/api/projects/{project_id}/film-time/edits/{edit_id}/seek")
+def indexed_film_time_seek(project_id: str,edit_id: str,
+                           revision: int,expected_edit_sha256: str,
+                           tick: int):
+    return run(lambda:_imported_video_index().seek(
+        project_id,edit_id,revision,
+        expected_edit_sha256=expected_edit_sha256,tick=tick))
