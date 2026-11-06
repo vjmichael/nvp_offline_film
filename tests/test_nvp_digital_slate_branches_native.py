@@ -452,6 +452,14 @@ class SlateBranchNativeTests(unittest.TestCase):
                 "director_notes":"Director preferred close reaction" if n==299 else "",
             }
             if n==299:
+                meta["moment_cues"]=[{
+                    "source_in_tick":T,"source_out_tick":T+T//2,
+                    "beat_ids":["gaze_reaction"],"character_ids":["Actor"],
+                    "dialogue_ids":["dialogue_24"],
+                    "emotion_tags":["surprised"],"action_tags":["reaction"],
+                    "origin":"editor_tag",
+                }]
+            if n==299:
                 meta["ai_observations"]=[{
                     "model_id":"assistant_v1",
                     "summary":"Strong reaction; verify eyeline at transition",
@@ -484,9 +492,16 @@ class SlateBranchNativeTests(unittest.TestCase):
         self.assertEqual(gathered[-1]["branch_id"],"catalog_take_299")
         self.assertEqual(gathered[-1]["parent_id"],"master_take_1")
         self.assertEqual(gathered[-1]["semantic"]["director_rating"],5)
+        self.assertEqual(gathered[-1]["semantic"]["moment_cues"][0][
+            "dialogue_ids"],["dialogue_24"])
         self.assertEqual(
             gathered[-1]["semantic"]["ai_observations"][0]["status"],
             OBS_STATUS)
+        cues=catalog.page(
+            self.pid,"wide_catalog",1,
+            beat_id="gaze_reaction",limit=50)
+        self.assertEqual([x["branch_id"] for x in cues["items"]],
+                         ["catalog_take_299"])
         picks=catalog.page(self.pid,"wide_catalog",1,limit=100,
                            shot_type="closeup",emotion_tag="anxious")
         self.assertGreater(len(picks["items"]),0)
