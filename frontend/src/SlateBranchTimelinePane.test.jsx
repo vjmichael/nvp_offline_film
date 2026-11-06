@@ -207,4 +207,55 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
     expect(container.querySelector('.nvp-slate-proxy-preview img')).toBeNull();
   });
 
+  it('requires committed selection and distinct native-camera choice for authored geometry render',()=>{
+    const request=vi.fn();
+    const graph={project_id:'a'.repeat(32),scene_label:'01',
+      parallel_groups:{reaction:[node(1,true)]}};
+    const source={segment_id:'clip_A',branch_id:'take_1',
+      source_in_tick:100,source_out_tick:600,
+      timeline_start_tick:240,timeline_end_tick:740};
+    const cut={edit_document_sha256:'b'.repeat(64),sequence:[source]};
+    const cameras=[{path:'/World/CamA',label:'Camera A'},
+                   {path:'/World/CamB',label:'Camera B'}];
+    const {container,rerender}=render(<SlateBranchTimelinePane
+      graphView={graph} activeView={cut}
+      onRequestGeometryPreview={request} cameraChoices={cameras}/>);
+    expect(screen.getByText('Render authored 3D preview').disabled).toBe(true);
+    fireEvent.click(container.querySelector('.nvp-slate-assembly-card'));
+    expect(screen.getByText('Render authored 3D preview').disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Authored camera'),
+                     {target:{value:'/World/CamB'}});
+    fireEvent.click(screen.getByText('Render authored 3D preview'));
+    expect(request).toHaveBeenCalledWith({
+      presentation:'geometry',film_tick:240,segment_id:'clip_A',
+      edit_document_sha256:'b'.repeat(64),
+      camera_path:'/World/CamB'});
+    expect(request).toHaveBeenCalledOnce();
+    const draft={draft_uncommitted:true,segments:[{...source}]};
+    rerender(<SlateBranchTimelinePane graphView={graph}
+      activeView={cut} draftView={draft}
+      onRequestGeometryPreview={request} cameraChoices={cameras}/>);
+    expect(screen.getByText('Render authored 3D preview').disabled).toBe(true);
+  });
+
+  it('shows authored OpenUSD geometry separately from proxy and never claims skinning',()=>{
+    const graph={project_id:'c'.repeat(32),scene_label:'01',
+      parallel_groups:{reaction:[node(1,true)]}};
+    const cut={edit_document_sha256:'f'.repeat(64),
+      sequence:[{segment_id:'clip_1',branch_id:'take_1',
+        source_in_tick:0,source_out_tick:500,
+        timeline_start_tick:0,timeline_end_tick:500}]};
+    const presentation={presentation:'geometry',status:'READY',
+      segment_id:'clip_1',edit_document_sha256:'f'.repeat(64),
+      unmeshed_actors:['/World/Actor'],skeletal_rig_count:1,
+      image_data_url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB'};
+    const {container}=render(<SlateBranchTimelinePane
+      graphView={graph} activeView={cut} previewPane={presentation}/>);
+    expect(screen.getByText('Authored OpenUSD geometry preview')).toBeTruthy();
+    fireEvent.click(container.querySelector('.nvp-slate-assembly-card'));
+    expect(screen.getByAltText(/Native OpenUSD geometry and camera preview/)).toBeTruthy();
+    expect(screen.getByText(/actor geometry or rigged deformation/)).toBeTruthy();
+    expect(screen.getByText(/no skinned performance or master approval/)).toBeTruthy();
+  });
+
 });
