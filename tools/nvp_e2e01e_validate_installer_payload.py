@@ -99,7 +99,7 @@ def verify_bundle(folder: Path) -> dict:
                 raise RuntimeError("Bundled video program is not a Windows executable")
             fp.seek(struct.unpack_from("<I",header,0x3c)[0])
             pe=fp.read(24)
-            if pe[:4]!=b"PE\\x00\\x00" or struct.unpack_from("<H",pe,4)[0]!=0x8664:
+            if pe[:4]!=(b"PE"+bytes((0,0))) or struct.unpack_from("<H",pe,4)[0]!=0x8664:
                 raise RuntimeError("Bundled video program is not AMD64 Windows PE")
         video[name]=hashlib.sha256(binary.read_bytes()).hexdigest()
     worker=base/"tools"/"nvp_source_window_worker.py"
