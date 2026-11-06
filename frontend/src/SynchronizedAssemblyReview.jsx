@@ -541,7 +541,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
           'Prepare synchronized review…'}</button>
       {typeof native?.start_progressive_av_review==='function'&&
         <button disabled={preparing||!fullManifest||!!ticket.current}
-          onClick={()=>prepare(true)}>Start progressive long-form review…</button> 
+          onClick={()=>prepare(true)}>Start progressive long-form review…</button>}
       {!progressive&&src&&review?.review_duration_tick&&
         <button onClick={()=>{
           const end=BigInt(review.actual_start_tick)+
