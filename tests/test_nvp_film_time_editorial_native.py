@@ -156,6 +156,25 @@ class FilmTimeEditorialNativeTests(unittest.TestCase):
                 self.pid,"offline_edit",1,clip_ordinal=0,
                 first_zero=10,count=2)
 
+    def test_modified_external_bytes_do_not_rewrite_saved_placement(self):
+        self.publisher.publish(self.pid,"changed_source_edit",[self.clip()])
+        original=self.publisher.clips(
+            self.pid,"changed_source_edit",1)["clips"][0]
+        with self.movie.open("r+b") as stream:
+            stream.seek(128)
+            stream.write(b"NVP-MUTATED-ORIGINAL")
+        # Source identity is held in FilmIndex, not inferred from current
+        # mutable files. The old edit remains navigable but the source
+        # stamp is no longer a valid preview backend.
+        self.assertEqual(self.publisher.verify_revision(
+            self.pid,"changed_source_edit",1)["clips"],1)
+        self.assertEqual(self.publisher.clips(
+            self.pid,"changed_source_edit",1)["clips"][0],original)
+        with self.assertRaises(RuntimeError):
+            self.publisher.map_clip_window(
+                self.pid,"changed_source_edit",1,
+                clip_ordinal=0,first_zero=10,count=2)
+
     def test_source_revision_and_edit_tampering_are_refused(self):
         self.publisher.publish(self.pid,"tamper_edit",[self.clip()])
         with self.studio._connection() as db:
