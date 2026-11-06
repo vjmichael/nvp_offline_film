@@ -53,7 +53,14 @@ def main(argv=None):
         "installer":None,
         "source_camera_recordings_modified":False,
     }
-    commands=[("original_vfr_av_proxy",[
+    commands=[
+        ("trusted_private_media_range",[
+            sys.executable,"-m","unittest","discover","-s","tests",
+            "-p","test_nvp_index_time09_media_range.py","-v"]),
+        ("approved_package_discovery",[
+            sys.executable,"-m","unittest","discover","-s","tests",
+            "-p","test_nvp_system_packages.py","-v"]),
+        ("original_vfr_av_proxy",[
         sys.executable,"-m","unittest","discover","-s","tests",
         "-p","test_nvp_index_time09_av_proxy.py","-v"]),
         ("frozen_original_editor",[
