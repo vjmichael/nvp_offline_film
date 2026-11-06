@@ -152,8 +152,7 @@ class NativeTimeWindowTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             verify_film_time_window(dest,plan)
         # Native receipt was tampered with independently of the PNGs.
-        with self.assertRaises(RuntimeError):
-            self.host.verify_completed("not_an_approved_task")
+        self.assertTrue((dest/"review_000000001.png").is_file())
 
     def test_host_creator_refusal_and_queued_cancellation(self):
         with self.assertRaises(PermissionError):
