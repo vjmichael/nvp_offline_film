@@ -211,3 +211,33 @@ in `backend/nvp_system_packages.py`, with pywebview bridge methods
 `system_package_inventory` and `repair_system_package`, the main
 `frontend/src/SystemReadinessPanel.jsx`, and independent mocked
 approval/install tests. All film footage remains unmodified.
+
+## November 6 continuation — actual seek and package-safety repairs
+
+- The frontend receipt validator was rejecting successful video/audio review
+  responses because it accidentally searched for a literal backslash rather
+  than decimal digits in the native exact start tick. This is repaired in
+  `SynchronizedAssemblyReview.jsx`. The existing normal "READY" playback test
+  and two new tests now cover valid native receipt acceptance.
+- Ordinary time-slider scrubs, small forward/back jumps and cuts that land
+  **inside the currently approved section** now seek the existing native video
+  element. They do not revoke its opaque ticket, rerender the proxy, request
+  a second approval, load an entire media file into JavaScript, or touch
+  original audio/video. A seek **outside** the verified interval retains the
+  previous strict behavior: stop/revoke the old ticket and require a fresh
+  bounded native review plan. The boundary is held in exact BigInt Film Time;
+  only the at-most-20-minute relative decoded offset is converted for the
+  media element.
+- SYSTEM-READY-01 now requires an actual Debian/Ubuntu `/etc/os-release`
+  identity before permitting `apt+polkit` repair. Merely having an
+  `apt-get` binary does not authorize package installation on other
+  distributions. The backend also refuses an already-ready component and
+  checks it again after the creator's native approval, before executing a
+  fixed OS package-manager command. Unknown/unhashable component IDs fail
+  closed. Added native unit tests cover these paths.
+- The changes were committed to draft PR #72, not merged into main.
+  Real React/Vitest on the updated SHA, native Windows/Linux picture+sound
+  worker jobs, host-crash containment, and actual physical installed Windows
+  playback remain unaccepted until independently observed. No change
+  is a claim of feature-film-length seamless playback across 20-minute
+  sections or a proven 256 MiB process-RAM ceiling.
