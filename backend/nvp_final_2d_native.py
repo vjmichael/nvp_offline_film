@@ -37,6 +37,14 @@ OUTPUT_CADENCES=frozenset(((24,1),(25,1),(30,1),(60,1),
                           (24000,1001),(30000,1001)))
 
 
+def _file_sha256(path):
+    digest=sha256()
+    with Path(path).open("rb") as stream:
+        while chunk := stream.read(1024*1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _png_header(data):
     if type(data) is not bytes or not 32<=len(data)<=MAX_PNG_BYTES:
         raise RuntimeError("Native raster renderer returned invalid PNG length")
@@ -59,11 +67,14 @@ class Approved2DPackage:
         self.render=render_png
 
     def export(self,project_id,take_id,expected_take_sha256,
-               presentation_id,output_parent,*,fps_num=24,fps_den=1):
+               presentation_id,output_parent,*,listener_path,
+               fps_num=24,fps_den=1):
         _require_pid(project_id)
         _id(take_id,"original Digital Take")
         _id(presentation_id,"unique final presentation identity")
         _sha(expected_take_sha256)
+        if type(listener_path) is not str or not listener_path.startswith("/World/"):
+            raise ValueError("Creator must select a virtual 3D listener for export")
         if (type(fps_num) is not int or type(fps_den) is not int or
             (fps_num,fps_den) not in OUTPUT_CADENCES):
             raise ValueError("Unsupported native output sampling cadence")
@@ -85,7 +96,8 @@ class Approved2DPackage:
                "presentation_id":presentation_id,
                "fps_num":fps_num,"fps_den":fps_den,
                "frame_count":count,"audio_samples":samples,
-               "original_data_immutable":True,"no_ffmpeg":True}
+               "original_data_immutable":True,"no_ffmpeg":True,
+               "listener_path":listener_path}
         if self.approve(dict(scope)) is not True:
             raise PermissionError("Creator did not authorize exact final 2D sample projection")
         if self.index.read_revision(
@@ -101,7 +113,7 @@ class Approved2DPackage:
             raise FileExistsError("Never overwrite a previous 2D film presentation")
         source=FrozenSceneAV(self.index,project_id,take_id,
             expected_take_sha256=expected_take_sha256,
-            listener_path=self._listener(project_id,data))
+            listener_path=self._listener(project_id,data,listener_path))
         staged=Path(tempfile.mkdtemp(prefix=".nvp-2d-",dir=parent))
         try:
             pictures=staged/"pictures"
@@ -117,11 +129,14 @@ class Approved2DPackage:
                 active=source.timeline.events_at(
                     project_id,data["timeline_id"],data["timeline_revision"],
                     tick=tick,event_kind="camera",limit=2)
-                if len(active)!=1:
-                    raise RuntimeError("Final 2D frame needs exactly one authored camera")
-                camera=active[0]["payload"].get("usd_prim_path")
-                if source.roles.get(camera)!="camera":
+                if len(active)>1:
+                    raise RuntimeError("Multiple simultaneous camera views cannot be flattened")
+                camera=(active[0]["payload"].get("usd_prim_path")
+                        if active else None)
+                if camera is not None and source.roles.get(camera)!="camera":
                     raise RuntimeError("Output camera is not native OpenUSD scene camera")
+                # Gaps are real Film Time; a trusted renderer emits an actual
+                # blank picture for camera=None, never fabricates scene data.
                 encoded=self.render(
                     scope=dict(scope),tick=tick,camera_path=camera,
                     source_snapshot=state)
@@ -152,8 +167,9 @@ class Approved2DPackage:
                     if len(pcm)!=n*4:
                         raise RuntimeError("Native scene sound device sample count changed")
                     track.writeframesraw(pcm)
-            if wave.open(str(wav_path),"rb").getnframes()!=samples:
-                raise RuntimeError("Derived audio film duration does not match original")
+            with wave.open(str(wav_path),"rb") as inspected:
+                if inspected.getnframes()!=samples:
+                    raise RuntimeError("Derived audio film duration does not match original")
             # Producer-owned receipts preserve original source SHA/provenance
             # alongside output digests, even if exported assets are later moved.
             manifest={
@@ -170,7 +186,7 @@ class Approved2DPackage:
                 "audio_file":"soundtrack.wav",
                 "audio_sample_rate":SAMPLE_RATE,
                 "audio_samples":samples,
-                "audio_sha256":sha256(wav_path.read_bytes()).hexdigest(),
+                "audio_sha256":_file_sha256(wav_path),
                 "original_data_modified":False,
                 "source_frames_authoritative":False,
                 "ffmpeg_used":False,
@@ -192,12 +208,12 @@ class Approved2DPackage:
             if staged.exists():
                 shutil.rmtree(staged)
 
-    def _listener(self,project_id,take):
+    def _listener(self,project_id,take,selected):
         scene=self.index.read_revision(project_id,take["scene_id"],
                                       take["scene_revision"])
         # A source camera is one explicit output observation reference.
         cameras=sorted(p for p,role in scene["data"]["prim_roles"].items()
                        if role=="camera")
-        if not cameras:
-            raise RuntimeError("Frozen Take has no virtual microphone/listener")
-        return cameras[0]
+        if selected not in cameras:
+            raise ValueError("Final presentation listener must be an authored camera")
+        return selected
