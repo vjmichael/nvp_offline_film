@@ -331,16 +331,18 @@ def run_visible_window_smoke():
                 "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
         return 0
     finally:
-        if bridge is not None:
-            bridge._close()
         try:
-            server.should_exit=True
-            worker.join(timeout=12)
-            sock.close()
+            if bridge is not None:
+                bridge._close()
         finally:
-            if old_home is None: os.environ.pop("NVP_HOME",None)
-            else: os.environ["NVP_HOME"]=old_home
-            shutil.rmtree(test_home,ignore_errors=True)
+            try:
+                server.should_exit=True
+                worker.join(timeout=12)
+                sock.close()
+            finally:
+                if old_home is None: os.environ.pop("NVP_HOME",None)
+                else: os.environ["NVP_HOME"]=old_home
+                shutil.rmtree(test_home,ignore_errors=True)
 
 
 def main(argv=None):
