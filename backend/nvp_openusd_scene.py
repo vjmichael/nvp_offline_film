@@ -68,11 +68,13 @@ def _layer_from_text(text, label, Sdf):
     return layer
 
 
-def _compose(base, motion, Sdf, Usd, parameters=None):
+def _compose(base, motion, Sdf, Usd, parameters=None, skeletons=None):
     # Strongest first: animation opinions supersede the layout layer.
     root = Sdf.Layer.CreateAnonymous("nvp_composed.usda")
-    root.subLayerPaths = ([parameters.identifier] if parameters is not None
-                          else []) + [motion.identifier, base.identifier]
+    root.subLayerPaths = (
+        ([skeletons.identifier] if skeletons is not None else []) +
+        ([parameters.identifier] if parameters is not None else []) +
+        [motion.identifier, base.identifier])
     stage = Usd.Stage.Open(root, Usd.Stage.LoadNone)
     if not stage:
         raise RuntimeError("Native OpenUSD composition returned no scene")
@@ -104,7 +106,8 @@ class OpenUSDSceneBridge:
 
     def publish(self, project_id, scene_id, *, prims, curves,
                 expected_revision=0, asset_bindings=None,
-                performance_channels=None, native_schemas=False):
+                performance_channels=None, native_schemas=False,
+                skeletal_rigs=None):
         """Create immutable world+motion layer blobs and an exact scene revision.
 
         A failed FilmIndex publication may leave *orphan blobs*, not an approved
@@ -186,7 +189,11 @@ class OpenUSDSceneBridge:
                 paths,performance_channels,native_schemas=native_schemas)
         else:
             parameter_layer,channel_manifest=None,[]
-        composed=_compose(base,motion,Sdf,Usd,parameter_layer)
+        skeleton_layer,rig_manifest=None,[]
+        if skeletal_rigs:
+            from backend.nvp_openusd_skeleton import author_skeleton_layer
+            skeleton_layer,rig_manifest=author_skeleton_layer(paths,skeletal_rigs)
+        composed=_compose(base,motion,Sdf,Usd,parameter_layer,skeleton_layer)
         self._attach_assets(composed,bindings)
         for path in paths:
             _evaluate(composed,path,0,Sdf,Usd,UsdGeom)
@@ -194,9 +201,12 @@ class OpenUSDSceneBridge:
         motion_bytes=motion.ExportToString().encode("utf-8")
         parameter_bytes=(parameter_layer.ExportToString().encode("utf-8")
                          if parameter_layer is not None else b"")
+        skeleton_bytes=(skeleton_layer.ExportToString().encode("utf-8")
+                        if skeleton_layer is not None else b"")
         if (len(base_bytes)>MAX_USD_LAYER_BYTES or
             len(motion_bytes)>MAX_USD_LAYER_BYTES or
-            len(parameter_bytes)>MAX_USD_LAYER_BYTES):
+            len(parameter_bytes)>MAX_USD_LAYER_BYTES or
+            len(skeleton_bytes)>MAX_USD_LAYER_BYTES):
             raise ValueError("Authored OpenUSD layer exceeded blob policy")
         # The immutable scene references the layer *bytes*, not temp paths.
         bsha=self.index.put_blob(project_id,base_bytes,media_type=LAYER_TYPE)
@@ -204,13 +214,19 @@ class OpenUSDSceneBridge:
         psha=(self.index.put_blob(project_id,parameter_bytes,
                                  media_type=LAYER_TYPE)
               if parameter_bytes else None)
+        ssha=(self.index.put_blob(project_id,skeleton_bytes,
+                                 media_type=LAYER_TYPE)
+              if skeleton_bytes else None)
         manifest={"format":FORMAT,
-                  "layer_order":(["parameters","motion","layout"]
-                                 if parameter_layer is not None
-                                 else ["motion","layout"]),
+                  "layer_order":(
+                      (["skeletons"] if skeleton_layer is not None else []) +
+                      (["parameters"] if parameter_layer is not None else []) +
+                      ["motion","layout"]),
                   "layout_layer_sha256":bsha,
                   "motion_layer_sha256":msha,
                   "parameter_layer_sha256":psha,
+                  "skeleton_layer_sha256":ssha,
+                  "skeleton_rigs":rig_manifest,
                   "performance_channels":channel_manifest,
                   "native_schema_version":(
                       "nvp.usd.camera_sphere_light.v1" if native_schemas
@@ -231,7 +247,7 @@ class OpenUSDSceneBridge:
                     (project_id,record["asset_id"],record["asset_revision"])).fetchone()
                 if row is None or row["document_sha"]!=record["asset_document_sha256"]:
                     raise RuntimeError("Referenced USD asset revision changed before scene commit")
-            for sha in (bsha,msha,psha):
+            for sha in (bsha,msha,psha,ssha):
                 if sha is None:
                     continue
                 if db.execute("""SELECT 1 FROM film_blob_refs
@@ -313,7 +329,9 @@ class OpenUSDSceneBridge:
         doc=record["data"]
         if (record["kind"]!="scene" or doc.get("format")!=FORMAT or
             doc.get("layer_order") not in (
-                ["motion","layout"],["parameters","motion","layout"]) or
+                ["motion","layout"],["parameters","motion","layout"],
+                ["skeletons","motion","layout"],
+                ["skeletons","parameters","motion","layout"]) or
             doc.get("contains_external_references") is not False or
             doc.get("ticks_per_second")!=TICKS_PER_SECOND):
             raise RuntimeError("Scene is not an accepted typed OpenUSD source")
@@ -333,11 +351,23 @@ class OpenUSDSceneBridge:
                 self.index.get_blob(
                     project_id,doc["parameter_layer_sha256"]).decode("utf-8"),
                 "reopen_parameters.usda",Sdf)
-        composed=_compose(base,motion,Sdf,Usd,param)
+        skeletons=None
+        if doc["layer_order"][0]=="skeletons":
+            if (not doc.get("skeleton_layer_sha256") or
+                type(doc.get("skeleton_rigs")) is not list):
+                raise RuntimeError("Missing exact frozen USD skeleton layer")
+            skeletons=_layer_from_text(
+                self.index.get_blob(
+                    project_id,doc["skeleton_layer_sha256"]).decode("utf-8"),
+                "reopen_skeleton.usda",Sdf)
+        composed=_compose(base,motion,Sdf,Usd,param,skeletons)
         bindings=self._resolve_assets(
             project_id,doc["prim_roles"],doc.get("asset_bindings",[]),
             verify_manifest=True)
         self._attach_assets(composed,bindings)
+        if skeletons is not None:
+            from backend.nvp_openusd_skeleton import evaluate_skeletons
+            evaluate_skeletons(composed,doc["skeleton_rigs"],0)
         if param is not None:
             from backend.nvp_openusd_channels import evaluate_parameter_channels
             evaluate_parameter_channels(
