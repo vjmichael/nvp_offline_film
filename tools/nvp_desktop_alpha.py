@@ -533,6 +533,26 @@ def run_installed_source_smoke():
 
 def main(argv=None):
     argv=list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0]=="--trusted-av-proxy-worker":
+        # Distinct, hash-pinned native preview worker subcommand for the
+        # signed, one-directory Windows GUI EXE. The parent grants resource
+        # admission and kernel Job Object containment before execution.
+        if not getattr(sys,"frozen",False) or len(argv)<3:
+            raise PermissionError("AV proxy worker requires installed NVP")
+        import hashlib
+        import runpy
+        script=bundle_root()/"tools"/"nvp_av_proxy_worker.py"
+        expected=argv[1]
+        if (script.is_symlink() or not script.is_file() or
+            len(expected)!=64 or
+            any(x not in "0123456789abcdef" for x in expected) or
+            hashlib.sha256(script.read_bytes()).hexdigest()!=expected):
+            raise PermissionError("Installed native AV review worker integrity failed")
+        sys.argv=[str(script),*argv[2:]]
+        if sys.stdout is None:sys.stdout=open(os.devnull,"w",encoding="utf8")
+        if sys.stderr is None:sys.stderr=open(os.devnull,"w",encoding="utf8")
+        runpy.run_path(str(script),run_name="__main__")
+        return 0
     if argv and argv[0]=="--trusted-film-time-worker":
         # This path runs in a separate OS-contained EXE child. It has no
         # desktop window, file dialog, listener or arbitrary input launcher.
