@@ -23,7 +23,8 @@ MAX_SEGMENTS=500
 SEGMENT_KEYS=frozenset(("segment_id","branch_id","source_in_tick",
                         "source_out_tick"))
 EDIT_COMMANDS=frozenset(("insert_before","insert_after","replace","remove",
-                         "trim","move_before","move_after"))
+                         "trim","move_before","move_after","split",
+                         "paste_before","paste_after"))
 
 
 def _canonical(value):
@@ -160,7 +161,8 @@ class SlateSequenceAssembly:
 
     def edit_draft(self,segments,*,operation,segment=None,
                    target_segment_id=None,new_segment_id=None,
-                   trim_in_tick=None,trim_out_tick=None):
+                   trim_in_tick=None,trim_out_tick=None,split_tick=None,
+                   second_segment_id=None):
         """Pure local copy/insert/trim/move operations; NEVER commits the cut."""
         if type(segments) is not list or operation not in EDIT_COMMANDS:
             raise ValueError("Unknown draft assembly edit operation")
@@ -171,20 +173,37 @@ class SlateSequenceAssembly:
         targets=[i for i,x in enumerate(items)
                  if x["segment_id"]==target_segment_id]
         if operation in ("insert_before","insert_after","replace","remove",
-                         "trim","move_before","move_after") and (
+                         "trim","move_before","move_after","split",
+                         "paste_before","paste_after") and (
                          len(targets)!=1):
             raise ValueError("Target segment not found exactly once")
         index=targets[0]
-        if operation in ("insert_before","insert_after","replace"):
+        if operation in ("insert_before","insert_after","replace",
+                         "paste_before","paste_after"):
+            # Paste copies ONLY a source-data reference. Its segment ID
+            # must be distinct, even when Take/shot/time are identical.
+            if operation.startswith("paste_") and segment is not None:
+                segment=dict(segment)
             if type(segment) is not dict or set(segment)!=SEGMENT_KEYS:
-                raise ValueError("Insert requires exact source branch segment")
+                raise ValueError("Insert/paste requires exact source branch reference")
             if segment["segment_id"] in {x["segment_id"] for x in items}:
-                raise ValueError("A duplicate segment needs a NEW segment identity")
-            pos=index+(1 if operation=="insert_after" else 0)
+                raise ValueError("A pasted clip requires a new segment ID")
+            pos=index+(1 if operation in ("insert_after","paste_after") else 0)
             if operation=="replace":
                 items[index]=dict(segment)
             else:
                 items.insert(pos,dict(segment))
+        elif operation=="split":
+            original=dict(items[index])
+            point=_int(split_tick,"split point in original source Film Time")
+            if not original["source_in_tick"]<point<original["source_out_tick"]:
+                raise ValueError("Split must occur inside original source data interval")
+            _id(second_segment_id,"new right-half segment ID")
+            if second_segment_id in {x["segment_id"] for x in items}:
+                raise ValueError("Split needs a new unique right-half ID")
+            left={**original,"source_out_tick":point}
+            right={**original,"segment_id":second_segment_id,"source_in_tick":point}
+            items[index:index+1]=[left,right]
         elif operation=="remove":
             items.pop(index)
         elif operation=="trim":
