@@ -168,7 +168,7 @@ class NVPFrameIndex:
         if path.is_symlink():
             raise RuntimeError("Unsafe indexed source cache")
         if path.exists():
-            with self._open_readonly(path) as db:
+            with closing(self._open_readonly(path)) as db:
                 row = db.execute("SELECT value FROM header WHERE key='metadata'").fetchone()
                 if row is None:
                     raise RuntimeError("Invalid NVP frame index metadata")
@@ -334,7 +334,7 @@ class NVPFrameIndex:
         info = self.ensure(project, asset, source_sha, source)
         if first_zero + count > info["frame_count"]:
             raise ValueError("Requested frame window exceeds indexed source")
-        with self._open_readonly(info["path"]) as db:
+        with closing(self._open_readonly(info["path"])) as db:
             rows = db.execute("SELECT ordinal,pts,keyframe,packet_pos FROM frames WHERE ordinal>=? AND ordinal<? ORDER BY ordinal",
                               (first_zero, first_zero + count)).fetchall()
             anchor = db.execute("SELECT ordinal,pts,packet_pos FROM frames WHERE ordinal<=? AND keyframe=1 ORDER BY ordinal DESC LIMIT 1",
