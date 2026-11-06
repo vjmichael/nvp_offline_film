@@ -92,6 +92,7 @@ def plan(studio,reader,project_id,edit_id,revision,sha,start_tick,*,ffprobe):
     """
     if type(start_tick) is not int or not 0<=start_tick<=MAX_TICK:
         raise ValueError("Exact authored Film Time position required")
+    reader._seek_resolver()
     record=_head(reader,project_id,edit_id,revision,sha)
     duration=record["data"]["duration_tick"]
     if start_tick>=duration:raise ValueError("Review playhead is at end of assembly")
@@ -287,7 +288,7 @@ def verify(destination,plan,ffprobe):
     video=[s for s in streams if s.get("codec_type")=="video"]
     audio=[s for s in streams if s.get("codec_type")=="audio"]
     if (len(video)!=1 or len(audio)!=1 or
-        video[0].get("codec_name")!="mpeg4" or
+        video[0].get("codec_name")!="h264" or
         video[0].get("avg_frame_rate")!="24/1" or
         audio[0].get("codec_name")!="aac" or
         int(audio[0].get("sample_rate",0))!=RATE or
@@ -364,7 +365,7 @@ def execute(studio_path,plan,destination,ffmpeg,ffprobe,*,timeout=1200):
         for path in inputs:command+=["-i",path]
         command+=["-filter_complex",graph,
                   "-map","[v]","-map","[a]",
-                  "-c:v","mpeg4","-q:v","8",
+                  "-c:v","libx264","-preset","veryfast","-crf","31",
                   "-c:a","aac","-b:a","128k",
                   "-ar","48000","-ac","2",
                   "-movflags","+faststart",
