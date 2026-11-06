@@ -182,6 +182,10 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
         const object=URL.createObjectURL(media);
         if(url.current)URL.revokeObjectURL(url.current);
         url.current=object;
+        // READY is terminal for this one-time private chunk transfer. Reset
+        // transfer status BEFORE publishing a new receipt to React; that
+        // receipt causes the polling effect to dispose its old closure.
+        setDownloading(false);
         setReview(result);
         setSrc(object);
         setStatus('Ready. Play picture and sound together on the native media clock.');
