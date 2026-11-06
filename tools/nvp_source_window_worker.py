@@ -13,6 +13,7 @@ if __name__ == "__main__" and not __package__:
 from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_source_window_decode import execute_source_window
 from backend.nvp_native_indexed_window import execute_indexed_window
+from backend.nvp_film_time_window_decode import execute_film_time_window
 
 
 def sha_file(path):
@@ -30,7 +31,7 @@ def main():
     args.add_argument("--studio-db", required=True)
     args.add_argument("--ffmpeg", required=True)
     args.add_argument("--ffmpeg-sha", required=True)
-    args.add_argument("--decoder-backend", choices=("ffmpeg", "nvp_index"),
+    args.add_argument("--decoder-backend", choices=("ffmpeg", "nvp_index", "film_time_index"),
                       default="ffmpeg")
     args.add_argument("--ffprobe")
     args.add_argument("--ffprobe-sha")
@@ -43,10 +44,16 @@ def main():
     if (len(opts.ffmpeg_sha) != 64 or
         sha_file(opts.ffmpeg) != opts.ffmpeg_sha):
         raise PermissionError("Approved FFmpeg executable has changed")
-    if opts.decoder_backend == "nvp_index":
+    if opts.decoder_backend in ("nvp_index", "film_time_index"):
         if (not opts.ffprobe or not opts.ffprobe_sha or not opts.index_root or
             sha_file(opts.ffprobe) != opts.ffprobe_sha):
             raise PermissionError("Sealed native NVP index tool was altered or unavailable")
+    if opts.decoder_backend == "film_time_index":
+        result = execute_film_time_window(
+            opts.studio_db, plan, opts.destination,
+            ffprobe_path=opts.ffprobe, ffmpeg_path=opts.ffmpeg,
+            index_root=opts.index_root)
+    elif opts.decoder_backend == "nvp_index":
         result = execute_indexed_window(
             opts.studio_db, plan, opts.destination,
             ffprobe_path=opts.ffprobe, ffmpeg_path=opts.ffmpeg,
