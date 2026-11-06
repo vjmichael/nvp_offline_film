@@ -229,6 +229,23 @@ class IndexedVideo:
             self.ffms._failure("FFMS2 exact frame decode failed", buf)
         return frame.contents
 
+    def index_frame_info(self, frame_zero):
+        """Read only the FFMS2 indexed metadata, without decoding pixels."""
+        if (not self.handle or type(frame_zero) is not int or
+            not 0 <= frame_zero < self.meta["num_frames"]):
+            raise ValueError("Frame outside validated FFMS2 index")
+        track = self.ffms.track_from_video(self.handle)
+        if not track:
+            raise RuntimeError("FFMS2 indexed track no longer available")
+        entry = self.ffms.frame_info(track, frame_zero)
+        if not entry:
+            raise RuntimeError("FFMS2 index frame metadata not available")
+        return {"frame_zero": frame_zero,
+                "pts": entry.contents.PTS,
+                "keyframe": bool(entry.contents.KeyFrame),
+                "time_base_num": self.meta["time_base_num"],
+                "time_base_den": self.meta["time_base_den"]}
+
     def frame_metadata(self, frame_zero):
         """Exact integer PTS, keyframe flag and independent frame index."""
         if type(frame_zero) is not int or not 0 <= frame_zero < self.meta["num_frames"]:
