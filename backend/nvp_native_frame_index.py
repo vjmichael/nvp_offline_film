@@ -167,7 +167,6 @@ class NVPFrameIndex:
                     header.get("project") != project or header.get("asset") != asset or
                     header.get("source_sha256") != source_sha or
                     header.get("source_stamp") != before or
-                    header.get("ffprobe_sha256") != self.tool_sha or
                     header.get("frame_count", 0) <= 0):
                     raise RuntimeError("Stale NVP index; explicit source reacceptance needed")
                 return {"status": "REUSED_SOURCE_STAMP_UNVERIFIED", "path": str(path),
