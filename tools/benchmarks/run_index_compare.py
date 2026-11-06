@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import platform
+import random
 import shutil
 import statistics
 import subprocess
@@ -72,6 +73,10 @@ def benchmark_one(source,source_sha,root,ffmpeg,ffprobe,ffms,order):
     count=result["nvp_frame_count"]
     positions=sorted({0,1,count//4,count//2,3*count//4,count-2,count-1})
     result["tested_positions"]=positions
+    seek_order=list(positions)
+    random.Random(314159).shuffle(seek_order)
+    result["seek_order"]=seek_order
+    result["seek_order_is_deterministically_shuffled"]=True
     result["nvp_index_bytes"]=Path(native._path(PID,ASSET,source_sha)).stat().st_size
     result["ffms2_index_bytes"]=ffms_index.stat().st_size
     result["nvp_warm_open_seconds"]=timed(create_nvp)[0]
@@ -101,7 +106,7 @@ def benchmark_one(source,source_sha,root,ffmpeg,ffprobe,ffms,order):
     ffms_latencies=[]
     frame_checks=[]
     try:
-        for position in positions:
+        for position in seek_order:
             output_dir=root/("nvp_%d"%position)
             output_dir.mkdir()
             nvp_seconds,observed=timed(lambda:extract(
@@ -137,6 +142,9 @@ def benchmark_one(source,source_sha,root,ffmpeg,ffprobe,ffms,order):
     result.update({
         "nvp_seek_seconds":nvp_latencies,
         "ffms2_seek_seconds":ffms_latencies,
+        "seek_timings_per_position":[
+            {"frame_zero":pos,"nvp_seconds":nv,"ffms2_seconds":ff}
+            for pos,nv,ff in zip(seek_order,nvp_latencies,ffms_latencies)],
         "nvp_seek_median_seconds":statistics.median(nvp_latencies),
         "ffms2_seek_median_seconds":statistics.median(ffms_latencies),
         "frame_checks":frame_checks,
@@ -187,6 +195,8 @@ def main(argv=None):
                 "Both systems use the same recording and exact source ordinals. "
                 "Fresh index builds do not start with preexisting index files, "
                 "but OS page cache is not flushed. Both orderings are run. "
+                "Seek positions are deterministically shuffled, not "
+                "processed monotonically through the source. "
                 "NVP uses FFmpeg CLI and writes PNG on each request; FFMS2 "
                 "keeps a warm decoder and encodes a PNG using Python. "
                 "Warm decoder reuse and process startup are not normalized. "
