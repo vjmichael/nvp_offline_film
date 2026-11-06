@@ -1,0 +1,50 @@
+name: NVP SLATE-08 Read-Only Desktop Camera Source
+
+on:
+  push:
+    branches:
+      - nvp/slate08-desktop-camera-readbridge-20261106
+  pull_request:
+    paths:
+      - "backend/nvp_slate08_desktop_read.py"
+      - "backend/nvp_api.py"
+      - "tests/test_nvp_slate08_desktop_read.py"
+      - "frontend/src/FilmCameraSourcePanel*"
+      - "frontend/src/App.jsx"
+      - "frontend/src/SlateBranchTimelinePane.jsx"
+      - ".github/workflows/nvp-slate08-desktop-camera.yml"
+
+concurrency:
+  group: nvp-slate08-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  read-only-native-camera:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    name: SLATE-08 ${{ matrix.os }} Python ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: 'python -m pip install --only-binary=:all: "usd-core==26.11"'
+      - run: python -m compileall -q backend/nvp_api.py backend/nvp_slate08_desktop_read.py tests/test_nvp_slate08_desktop_read.py
+      - run: python -m unittest discover -s tests -p "test_nvp_slate08_desktop_read.py" -v
+  camera-main-ui:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx

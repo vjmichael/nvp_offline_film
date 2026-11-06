@@ -1285,3 +1285,24 @@ def grade_curve_reopen(project_id:str,grade_id:str,revision:int|None=None):
             'sha256':row['record']['document_sha256'],
             'source_id':row['record']['data']['source_id'],
             'plan':row['plan'],'approval':'not_approved'}
+
+
+# SLATE-08: READ-ONLY versioned OpenUSD source camera discovery/selection.
+# No browser-visible approval, render launch, Take commit or arbitrary path route.
+from fastapi import Query as _FilmCameraQuery
+from backend.nvp_film_index import FilmIndex as _FilmCameraIndex
+from backend.nvp_slate08_desktop_read import FilmCameraReadBridge as _FilmCameraReadBridge
+
+@app.get('/api/projects/{project_id}/film/camera-scenes')
+def film_camera_source_list(project_id: str):
+    return run(lambda: _FilmCameraReadBridge(_FilmCameraIndex(studio)).scenes(project_id))
+
+@app.get('/api/projects/{project_id}/film/camera-scenes/{scene_id}/snapshot')
+def film_camera_source_snapshot(
+    project_id: str, scene_id: str,
+    revision: int = _FilmCameraQuery(ge=1, le=1000000),
+    source_tick: int = _FilmCameraQuery(ge=0, le=1000000000),
+    camera_path: str = _FilmCameraQuery(min_length=1, max_length=240),
+):
+    return run(lambda: _FilmCameraReadBridge(_FilmCameraIndex(studio)).snapshot(
+        project_id,scene_id,revision,tick=source_tick,camera_path=camera_path))

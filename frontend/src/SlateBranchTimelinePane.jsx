@@ -318,19 +318,18 @@ export default function SlateBranchTimelinePane({
          previewPane.image_data_url.length<=12*1024*1024
           ? <img src={previewPane.image_data_url}
                  alt={previewPane.presentation==='geometry'
-                   ? "Native OpenUSD geometry and camera preview; actor skinning and film finishing not verified"
+                   ? "Authored OpenUSD camera and geometry preview; weighted body skinning is shown when sourced, not final film"
                    : "Director's low-resolution geometry-proxy composition, not final film picture"}
                  loading="lazy"/>
           : <p>Preview not ready for this selected committed segment.</p>}
         <small>{previewPane.presentation==='geometry'
-          ? 'Authored geometry · native camera · preview-approximate lighting · no skinned performance or master approval'
+          ? 'Authored geometry · native camera · supported weighted skinning · no final master approval'
           : 'Proxy geometry only · SHA-pinned frozen Take · no master approval'}</small>
         {previewPane.presentation==='geometry' &&
-         (previewPane.unmeshed_actors?.length>0 ||
-          previewPane.skeletal_rig_count>0) &&
+         (previewPane.unmeshed_actors?.length>0) &&
           <p className="nvp-slate-fidelity-notice">
-            Incomplete source presentation: actor geometry or rigged deformation
-            is not yet represented faithfully. Review source coverage before approval.
+            Incomplete source presentation: at least one actor lacks supported
+            mesh geometry. Review source coverage before approval.
           </p>}
       </aside>}
       <p className="nvp-slate-info">{inspection
