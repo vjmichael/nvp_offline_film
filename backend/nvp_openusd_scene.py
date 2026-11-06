@@ -79,6 +79,16 @@ def _compose(base, motion, Sdf, Usd, parameters=None, skeletons=None):
     if not stage:
         raise RuntimeError("Native OpenUSD composition returned no scene")
     stage.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
+    # The composed root is a new stronger anonymous layer. It must copy
+    # the immutable layout's authored global stage units/up-axis rather
+    # than returning the generic USD defaults (centimeters/Y-up). Keep
+    # the layout SHA unmodified; all statements are in-memory metadata.
+    from pxr import UsdGeom
+    original=Usd.Stage.Open(base,Usd.Stage.LoadNone)
+    if not original:
+        raise RuntimeError("Frozen layout stage cannot be reopened")
+    UsdGeom.SetStageMetersPerUnit(stage,UsdGeom.GetStageMetersPerUnit(original))
+    UsdGeom.SetStageUpAxis(stage,UsdGeom.GetStageUpAxis(original))
     return stage
 
 
