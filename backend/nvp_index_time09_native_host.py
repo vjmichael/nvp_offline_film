@@ -170,7 +170,7 @@ class NativeAVProxyHost:
             if session_id is not None and (
                 plan["actual_start_tick"]<grant["start_tick"]-TICKS_PER_SECOND or
                 plan["actual_start_tick"]+plan["review_duration_tick"]>
-                grant["end_tick"]+TICKS_PER_SECOND):
+                grant["end_tick"]):
                 return False
             head=self.desktop.reader.index.read_revision(
                 row["project_id"],row["edit_id"])
@@ -319,7 +319,7 @@ class NativeAVProxyHost:
                 if (plan["actual_start_tick"]<
                     (grant["start_tick"] if continuation else tick)-TICKS_PER_SECOND
                     or plan["actual_start_tick"]+
-                       plan["review_duration_tick"]>approved_end+TICKS_PER_SECOND):
+                       plan["review_duration_tick"]>approved_end):
                     raise RuntimeError("Source snap exceeds progressive grant")
                 if continuation:
                     # Actual snapped boundaries may overlap a held VFR frame
