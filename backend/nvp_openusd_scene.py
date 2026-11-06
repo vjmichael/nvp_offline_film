@@ -343,7 +343,7 @@ class OpenUSDSceneBridge:
             self.index.get_blob(project_id,doc["motion_layer_sha256"]).decode(),
             "reopen_motion.usda",Sdf)
         param=None
-        if doc["layer_order"]==["parameters","motion","layout"]:
+        if "parameters" in doc["layer_order"]:
             if (not doc.get("parameter_layer_sha256") or
                 type(doc.get("performance_channels")) is not list):
                 raise RuntimeError("Missing pinned authored performance layer")
