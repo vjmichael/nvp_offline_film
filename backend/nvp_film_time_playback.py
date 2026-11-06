@@ -10,9 +10,6 @@ path; the source index remains separate from the Temporal Ledger.
 """
 from __future__ import annotations
 
-import hashlib
-from pathlib import Path
-
 from backend.nvp_film_time_editorial import FilmTimeEditorialPublisher
 from backend.nvp_source_pts_film_time import pts_to_film_tick
 from backend.nvp_source_window_decode import _read_sources
@@ -122,6 +119,11 @@ class FilmTimePlaybackResolver:
             next_pts=read(selected+1)
             start_tick=mapped(source_pts)
             end_tick=mapped(next_pts)
+            if selected>lower:
+                previous_pts=read(selected-1)
+                if (previous_pts>=source_pts or
+                    mapped(previous_pts)>=start_tick):
+                    raise RuntimeError("Ambiguous or non-increasing source frame interval")
             if (source_pts>=next_pts or
                 start_tick>tick or tick>=end_tick or
                 end_tick>clip["film_end_tick"] or
