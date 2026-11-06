@@ -47,3 +47,48 @@ Do not conflate "film events are not frames" with "no frames exist": imported fo
 BENCH-01 compares **only the source-video frame-access adapter** (NVP SQLite/FFmpeg versus FFMS2 C API), not NVP's authored temporal event representation. FFMS2 cannot represent actor intentions, script actions, world state or persistent camera motion; it is a video-index/decode library.
 
 See `docs/NVP_BENCH01_OWNED_INDEX_VS_FFMS2.md`. FFMS2 is allowed as an isolated benchmark dependency, not part of the NVP installer. Comparisons require measured CI artifacts and cannot be claimed until real native results have passed.
+
+## Audio clarification — data-first sound access (2026-11-06)
+
+**Creator correction:** The authoritative NVP editor/playback model is
+time-addressed **data**, not an array of rendered video frames, and the same
+applies to authored sound. The authoritative data are semantic sound/dialogue/
+music events, sparse automation curves, exact time spans, source media identities
+and revisions. The native read/mix/render boundary may evaluate samples from
+immutable recorded media at a requested Film Time. PCM samples are *derived or
+recorded media data*, not a replacement for the production source graph.
+
+**Audio access format recommendation, not yet an implementation mandate:**
+- For sample-exact native read/mix/scrub/reverse, use bounded **PCM** windows;
+  a 48-kHz uncompressed WAV (or BWF for exchange/time-reference metadata)
+  supports direct sample-block offset calculation and reverse sample reading
+  without whole-file decoding. For long continuous exports use RF64/BW64
+  when a classic RIFF-WAV size cap would be exceeded.
+- **FLAC** with seek points is suitable for lossless, space-saving source
+  storage; seeking and reversing require local compressed-block decoding to
+  PCM. It is not a byte-for-byte direct sample address like PCM.
+- MP3, AAC and Ogg Opus are valid input/output formats, not preferred
+  authoritative editing intermediates. Seek accuracy depends on container
+  indices, decoder priming/pre-roll and packet dependencies. Never infer
+  exact source audio sample positions from compressed byte offsets alone.
+- Imported originals (WAV, FLAC, MP3, Opus, AAC, etc.) remain hashed and
+  unmodified. NVP should build a versioned, disposable index and decode
+  **only the needed window** to a bounded PCM ring buffer. The sample-rate
+  conversion between 7,056,000,000-tick Film Time and each source sample
+  clock must be exact-rational or have an explicit rounding rule, including
+  source start offsets/encoder delay.
+- Seek backward = choose an earlier Film Time and read there. Audible
+  **reverse playback** additionally requires ordering decoded PCM samples
+  backward and correct channel/transition treatment; playback direction
+  is an editor instruction, not a file-format property.
+- The current INDEX-TIME-09/10 H.264/AAC temporary review proxies are
+  **derived presentation adapters**, not the canonical Film Time model
+  nor proof of an accepted direct-data audio engine. Avoid describing
+  authoring or playback navigation as frame-driven. Video codec picture
+  samples remain an internal rendering/decoding implementation detail.
+
+**Acceptance required later:** sample-exact random seek in both directions,
+bounded scratch/RAM, continuous clock alignment across multi-source clips,
+dialogue/music stems, gaps, cancellation/restart, and unchanged original
+source hashes. Existing CODEC/FFprobe checks alone do not prove these.
+
