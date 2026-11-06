@@ -66,8 +66,12 @@ class FilmTimeDesktopRead:
             raise RuntimeError("Selected edit is not indexed imported video")
         return row
 
-    def _audit(self, record):
-        """Full bounded SQLite manifest audit; never read original media."""
+    def _audit(self, record, *, after_ordinal=None, limit=None):
+        """Full bounded manifest audit and optional page in ONE read snapshot.
+
+        An attacker or concurrent process cannot mutate a row between
+        accepting the manifest and reading the page shown to the creator.
+        """
         pid=record["project_id"]
         ident=record["object_id"]
         revision=record["revision"]
@@ -76,7 +80,9 @@ class FilmTimeDesktopRead:
         count=0
         end=0
         source_refs={}
+        page=None
         with self.studio._connection() as db:
+            db.execute("BEGIN")  # Stable SQLite snapshot for audit + page.
             rows=db.execute("""SELECT * FROM nvp_time_editorial_clips
                 WHERE project_id=? AND edit_id=? AND revision=?
                 ORDER BY ordinal""",(pid,ident,revision))
@@ -94,11 +100,16 @@ class FilmTimeDesktopRead:
                 digest.update(_encode(_fields(clip)))
                 end=clip["film_end_tick"]
                 count+=1
+            if after_ordinal is not None:
+                page=db.execute("""SELECT * FROM nvp_time_editorial_clips
+                    WHERE project_id=? AND edit_id=? AND revision=?
+                      AND ordinal>? ORDER BY ordinal LIMIT ?""",
+                    (pid,ident,revision,after_ordinal,limit+1)).fetchall()
         if (count!=expected["clip_count"] or
             end!=expected["duration_tick"] or
             digest.hexdigest()!=expected["clip_manifest_sha256"]):
             raise RuntimeError("Saved Film Time clip manifest changed")
-        return count
+        return count,page
 
     def edits(self, project_id):
         """Discover real indexed edits, not screenplay/planning impostors."""
@@ -136,12 +147,8 @@ class FilmTimeDesktopRead:
             not -1<=after_ordinal<10000 or
             type(limit) is not int or not 1<=limit<=MAX_PAGE):
             raise ValueError("Bounded clip pagination required")
-        self._audit(record)
-        with self.studio._connection() as db:
-            rows=db.execute("""SELECT * FROM nvp_time_editorial_clips
-                WHERE project_id=? AND edit_id=? AND revision=?
-                AND ordinal>? ORDER BY ordinal LIMIT ?""",
-                (project_id,edit_id,revision,after_ordinal,limit+1)).fetchall()
+        _,rows=self._audit(
+            record,after_ordinal=after_ordinal,limit=limit)
         clips=[_ticks({k:r[k] for k in (
             "ordinal","source_id","source_revision",
             "source_document_sha256","source_in_frame_zero",
