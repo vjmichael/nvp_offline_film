@@ -167,6 +167,7 @@ def capture_geometry(index:FilmIndex,ticket,*,camera_path=None):
     lights=[]
     geometry=[]
     missing_actors=[]
+    skinned_meshes=[]
     for root,role in sorted(roles.items()):
         if role not in VALID_ROLES:
             raise RuntimeError("Unexpected source role during geometry composition")
@@ -224,11 +225,24 @@ def capture_geometry(index:FilmIndex,ticket,*,camera_path=None):
                     child.IsA(UsdGeom.Mesh)):
                 continue
             authored=True
+            geo=_mesh(child,UsdGeom,timecode)
+            if child.IsA(UsdGeom.Mesh):
+                from pxr import UsdSkel
+                if child.HasAPI(UsdSkel.BindingAPI):
+                    if role!="actor":
+                        raise RuntimeError("Only an actor source can bind native skeletal skin")
+                    from backend.nvp_openusd_skinning import evaluate_skin
+                    posed=evaluate_skin(stage,child,root,ticket["source_tick"])
+                    if len(posed["deformed_points"])!=len(geo["points"]):
+                        raise RuntimeError("Native posed actor vertex count changed")
+                    geo["points"]=posed["deformed_points"]
+                    geo["skinning_mode"]="native_UsdSkel_linear_blend"
+                    skinned_meshes.append(posed["source_mesh_path"])
             geometry.append({
                 "path":str(child.GetPath()),"source_role":role,
                 "world_matrix":_matrix(
                     UsdGeom.Xformable(child).ComputeLocalToWorldTransform(timecode)),
-                "geometry":_mesh(child,UsdGeom,timecode),
+                "geometry":geo,
                 "display_color":_get_display_color(child,UsdGeom,timecode),
                 "material_model":"USD_displayColor_only",
             })
@@ -258,7 +272,9 @@ def capture_geometry(index:FilmIndex,ticket,*,camera_path=None):
         "up_axis":up_axis,
         "unmeshed_actors":missing_actors,
         "skeletal_rig_count":rig_count,
-        "skinning_evaluated":False,"facial_animation_evaluated":False,
+        "skinned_mesh_paths":sorted(skinned_meshes),
+        "skinning_evaluated":bool(skinned_meshes),
+        "facial_animation_evaluated":False,
         "usd_material_networks_evaluated":False,
         "usd_light_photometry_exact":False,
         "source_data_modified":False,"final_presentation_approved":False,
