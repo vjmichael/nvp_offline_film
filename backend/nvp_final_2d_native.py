@@ -97,7 +97,10 @@ class Approved2DPackage:
                "fps_num":fps_num,"fps_den":fps_den,
                "frame_count":count,"audio_samples":samples,
                "original_data_immutable":True,"no_ffmpeg":True,
-               "listener_path":listener_path}
+               "listener_path":listener_path,
+               "scene_document_sha256":data["scene_document_sha256"],
+               "timeline_document_sha256":data["timeline_document_sha256"],
+               "output_kind":"png_sequence_pcm_wav_not_single_file_master"}
         if self.approve(dict(scope)) is not True:
             raise PermissionError("Creator did not authorize exact final 2D sample projection")
         if self.index.read_revision(
