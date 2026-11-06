@@ -1,0 +1,87 @@
+name: NVP INDEX-TIME-05 Native Indexed Footage Editor
+
+on:
+  push:
+    branches:
+      - nvp/index-time05-editor-seek-20261106
+  pull_request:
+    paths:
+      - "backend/nvp_index_time05_desktop_read.py"
+      - "backend/nvp_api.py"
+      - "frontend/src/FilmTimeIndexPanel.jsx"
+      - "frontend/src/FilmTimeIndexPanel.test.jsx"
+      - "frontend/src/App.jsx"
+      - "tests/test_nvp_film_time_playback_native.py"
+      - ".github/workflows/nvp-index-time05-editor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: nvp-index-time05-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-index-seek:
+    name: INDEX-TIME-05 ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 28
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install API foundation and test dependencies
+        shell: bash
+        run: 'python -m pip install -r requirements-foundation.txt'
+      - name: Real FFmpeg/FFprobe for VFR original indexed frame acceptance
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Real Windows FFmpeg/FFprobe
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Native FFmpeg install failed' }
+          Join-Path $env:ChocolateyInstall 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+          python -m pip install 'pywin32>=306'
+          if ($LASTEXITCODE -ne 0) { throw 'Native worker containment unavailable' }
+      - name: Check real video tools and compile original index + desktop bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg -hide_banner -version | head -n 1
+          ffprobe -hide_banner -version | head -n 1
+          python -m compileall -q backend/nvp_index_time05_desktop_read.py backend/nvp_film_time_playback.py backend/nvp_film_time_editorial.py backend/nvp_api.py tests/test_nvp_film_time_playback_native.py
+      - name: VFR and B-frame exact Film Time, real native worker, desktop index safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_film_time_playback_native.py -v
+          python -m unittest discover -s tests -p test_nvp_film_time_editorial_native.py -v
+          python -m unittest discover -s tests -p test_nvp_owned_frame_index.py -v
+
+  main-editor-ui:
+    name: INDEX-TIME-05 React main editor and exact 64-bit source seek
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm run test:ui -- src/FilmTimeIndexPanel.test.jsx
