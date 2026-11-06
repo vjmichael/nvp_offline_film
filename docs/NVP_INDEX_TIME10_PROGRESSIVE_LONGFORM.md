@@ -3,6 +3,25 @@
 **November 6, 2026 · Initial production implementation on a stacked draft
 branch; native Windows/Linux and physical installed-app acceptance pending.**
 
+## Authority reminder — film data, not rendered samples
+
+The creator reaffirmed that NVP's **authoritative playback/edit timeline**
+is exact-time, data-first source events, spans and immutable references.
+Any reference below to 24fps pictures, picture frame counts, video player
+decoding or H.264/AAC sections describes a *temporary media adapter*,
+not the film's source representation or the required primary editor
+navigation model. INDEX-TIME-10 currently adapts authored source data
+into review-only MP4 sections; its presence is not proof that a genuinely
+sample-windowed, on-demand data-first player has been completed.
+
+The audio-native direction is to map exact Film Time into sample-addressed
+source read windows and feed a bounded PCM mixer/ring buffer. WAV/BWF
+supports direct PCM sample offsets; FLAC with seek tables supports
+lossless indexed seeks with bounded block decoding; MP3/AAC/Opus need
+codec-aware indices, priming/pre-roll and local decoding. Existing input
+originals remain untouched. See `NVP_DATA_TIME01_EVENTS_NOT_FRAMES.md`.
+This is a design clarification, **not a claim of code acceptance**.
+
 ## Product contract
 
 NVP must always edit **assemblies of immutable source references** and
