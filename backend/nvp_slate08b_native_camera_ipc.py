@@ -108,7 +108,7 @@ class TrustedDesktopCameraBridge:
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="NVP verified preview")
 
-    def attach_window(self, window):
+    def _attach_window(self, window):
         if window is None or not callable(getattr(window,"get_current_url",None))                 or not callable(getattr(window,"create_confirmation_dialog",None)):
             raise TypeError("A real native window with OS confirmation is required")
         if self.window is not None:
@@ -289,7 +289,7 @@ class TrustedDesktopCameraBridge:
                 raise RuntimeError("Native camera delivery identity mismatch")
             png=media["png_bytes"]
             if (type(png) is not bytes or not 33<=len(png)<=MAX_IMAGE_BYTES
-                    or not png.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+                    or not png.startswith(b"\x89PNG\r\n\x1a\n")
                     or sha256(png).hexdigest()!=media["image_sha256"]):
                 raise RuntimeError("Native media delivery failed bounded SHA-256 audit")
             return {
@@ -337,6 +337,6 @@ class TrustedDesktopCameraBridge:
                 self._grants.pop(grant.token,None)
             return {"status":done["state"],"native_worker_cancelled":True}
 
-    def close(self):
+    def _close(self):
         """Do not lie about native termination; recover on the next launch."""
         self._executor.shutdown(wait=False,cancel_futures=False)
