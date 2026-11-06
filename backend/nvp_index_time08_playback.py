@@ -351,6 +351,9 @@ class NativeAssemblyReview:
             for index,window in enumerate(session["windows"]):
                 if session["stop"].is_set() or self._closed:
                     break
+                # Do not continue decoding obsolete source assemblies after
+                # a newer immutable editorial revision becomes current.
+                self._head(session)
                 completed=host.run_next(
                     timeout_seconds=180,
                     should_cancel=lambda:session["stop"].is_set() or self._closed)
