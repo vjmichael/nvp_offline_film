@@ -21,6 +21,7 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
   const [renderResult,setRenderResult]=useState(null);
   const [renderError,setRenderError]=useState('');
   const activeTicket=useRef(null);
+  const sourceGeneration=useRef(0);
   useEffect(()=>{
     let active=true;
     if(!native){setNativeReady(false);return ()=>{active=false;};}
@@ -61,6 +62,7 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
     let active=true;
     setScenes([]);setSceneId('');setCameraPath('');
     setSnapshot(null);setError('');setLoadingList(true);
+    sourceGeneration.current+=1;
     activeTicket.current=null;setRenderTicket(null);setRenderResult(null);
     api('/projects/'+encodeURIComponent(projectId)+'/film/camera-scenes')
       .then(result=>{
@@ -82,6 +84,7 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
   useEffect(()=>{
     setCameraPath(scene?.cameras?.[0]?.path||'');
     setSnapshot(null);
+    sourceGeneration.current+=1;
     activeTicket.current=null;setRenderTicket(null);setRenderResult(null);
     setTick(0);setTickDraft('0');
   },[sceneId,scenes]);
@@ -89,6 +92,7 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
   useEffect(()=>{
     let active=true;
     setSnapshot(null);
+    sourceGeneration.current+=1;
     activeTicket.current=null;setRenderTicket(null);setRenderResult(null);
     if(!scene||!cameraPath)return ()=>{active=false;};
     setLoadingPose(true);setError('');
@@ -155,9 +159,16 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
 
   async function requestNativeStill(payload){
     if(!native||!nativeReady||renderTicket)return;
+    const sourceAtRequest=sourceGeneration.current;
     setRenderError('');setRenderResult({status:'QUEUED'});
     try{
       const result=await native.request_camera_still({project_id:projectId,...payload});
+      if(sourceGeneration.current!==sourceAtRequest){
+        // User moved to another source/time while the OS approval was
+        // displayed. Do not attach that old scene's approved worker ticket
+        // to the newly selected scene or paint its historical PNG.
+        return;
+      }
       if(result.status==='DENIED'){
         setRenderResult(null);
         setRenderError('Native camera render was not approved.');
@@ -174,7 +185,9 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
       activeTicket.current=result.ticket_id;
       setRenderTicket(result.ticket_id);
     }catch(err){
-      setRenderError(err.message);setRenderResult({status:'FAILED'});
+      if(sourceGeneration.current===sourceAtRequest){
+        setRenderError(err.message);setRenderResult({status:'FAILED'});
+      }
     }
   }
   async function cancelNativeStill(){
