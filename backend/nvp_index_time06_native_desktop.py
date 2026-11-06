@@ -647,6 +647,40 @@ class TrustedFootageDesktop:
                     "status":"REFRESH_REQUIRED",
                     "original_modified":False,"master_approved":False}
 
+    # INDEX-TIME-10: native-only progressive session bridge. A single
+    # creator-approved, SHA/revision-scoped session may prepare one successor
+    # while the previous verified section remains playable. JavaScript never
+    # supplies an executable, media path or next-section Film Time tick.
+    def start_progressive_av_review(self,request):
+        try:return self._get_av_host().begin_progressive(request)
+        except Exception:
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"REFRESH_REQUIRED",
+                    "original_modified":False,"master_approved":False}
+
+    def prepare_next_progressive_av_review(self,session_id,anchor_ticket):
+        try:return self._get_av_host().prepare_next_progressive(
+            session_id,anchor_ticket)
+        except Exception:
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"RECOVERY_REQUIRED",
+                    "original_modified":False,"master_approved":False}
+
+    def advance_progressive_av_review(self,session_id,old_ticket,next_ticket):
+        try:return self._get_av_host().advance_progressive(
+            session_id,old_ticket,next_ticket)
+        except Exception:
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"RECOVERY_REQUIRED",
+                    "original_modified":False,"master_approved":False}
+
+    def stop_progressive_av_review(self,session_id):
+        try:return self._get_av_host().stop_progressive(session_id)
+        except Exception:
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"RECOVERY_REQUIRED",
+                    "original_modified":False,"master_approved":False}
+
     def poll_synchronized_av_review(self,ticket):
         try:return self._get_av_host().poll(ticket)
         except Exception:
