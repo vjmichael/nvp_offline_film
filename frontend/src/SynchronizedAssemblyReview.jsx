@@ -197,7 +197,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
            !SHA.test(result.media_sha256||'')||
            !Number.isInteger(result.size_bytes)||
            result.size_bytes<256||result.size_bytes>MAX_SIZE||
-           !/^\\d+$/.test(result.actual_start_tick||'')){
+           !/^\d+$/.test(result.actual_start_tick||'')){
           throw Error('Native A/V receipt disagreed with the frozen assembly.');
         }
         const descriptor=await native.get_synchronized_av_stream(token);
@@ -233,11 +233,34 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     revoke();
     setFilmTick(tick);
     setError('');
-    setStatus('Playhead moved. Prepare a new preview from this position.');
+    setStatus('Playhead moved outside this review. Prepare a new section from this position.');
+  }
+  function seekToTick(tick){
+    // An approved, SHA-checked section is already a seekable MP4 on private
+    // disk. Reuse its native A/V clock rather than rerendering source footage
+    // on every timeline click, cut jump or small scrub.
+    if(src&&player.current&&review?.actual_start_tick!=null&&
+       review?.review_duration_tick!=null){
+      const start=BigInt(review.actual_start_tick);
+      const length=BigInt(review.review_duration_tick);
+      const target=BigInt(tick);
+      if(length>0n&&target>=start&&target<start+length){
+        // Only the bounded <=20 minute delta converts to Number; absolute
+        // film ticks remain BigInt to avoid losing long-form positions.
+        const seconds=Number(target-start)/Number(TICKS_PER_SECOND);
+        player.current.currentTime=seconds;
+        setPlayhead(seconds);
+        setFilmTick(String(target));
+        setStatus('Seeking within this prepared section. Original footage unchanged.');
+        setError('');
+        return;
+      }
+    }
+    changePlayhead(tick);
   }
   function jump(delta){
     const next=jumpTick(filmTick,delta);
-    changePlayhead(BigInt(next)>=BigInt(edit.duration_tick)
+    seekToTick(BigInt(next)>=BigInt(edit.duration_tick)
       ?edit.duration_tick:next);
   }
   function cut(direction){
@@ -245,7 +268,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     const cuts=allClips.map(c=>BigInt(c.film_start_tick))
       .filter(t=>direction>0?t>current:t<current)
       .sort((a,b)=>a<b?-1:a>b?1:0);
-    if(cuts.length)changePlayhead(String(direction>0?cuts[0]:cuts[cuts.length-1]));
+    if(cuts.length)seekToTick(String(direction>0?cuts[0]:cuts[cuts.length-1]));
   }
   return <section className="card" aria-label="Synchronized original footage review">
     <h3>Watch your assembly with sound</h3>
@@ -285,7 +308,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
       <input aria-label="Seek A/V assembly" type="range"
         min="0" max="1000" step="1"
         value={Number(BigInt(filmTick)*1000n/BigInt(edit.duration_tick||'1'))}
-        onChange={e=>changePlayhead(String(
+        onChange={e=>seekToTick(String(
           BigInt(e.target.value)*BigInt(edit.duration_tick)/1000n))}/>
     </label>
     <div className="actions" style={{display:'flex',gap:'0.4rem',flexWrap:'wrap'}}>
@@ -314,7 +337,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     {error&&<p role="alert">{error}</p>}
     <p className="fineprint">One approval covers up to 20 minutes of
       24fps picture with 48 kHz stereo sound. Original camera audio is
-      used when available; silent source sections stay silent. The preview
+      used when available; silent source sections stay silent. Scrubbing and cut jumps inside a prepared section reuse its native A/V clock; leaving it asks for a new bounded section. The preview
       remains on private disk and the native player requests up to 1 MiB
       per verified byte range. The browser manages its own decoded buffer;
       an exact 256 MiB RAM ceiling is not yet independently enforced.
