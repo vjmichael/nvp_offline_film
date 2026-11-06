@@ -1306,3 +1306,40 @@ def film_camera_source_snapshot(
 ):
     return run(lambda: _FilmCameraReadBridge(_FilmCameraIndex(studio)).snapshot(
         project_id,scene_id,revision,tick=source_tick,camera_path=camera_path))
+
+# DA-01 — New native scene authoring is exact Film Time, never 24 fps.
+# This is an EDITORIAL source-revision writer, not an implicit Digital Take
+# freeze or approved final 2D presentation. Frozen Take approval is available
+# exclusively through the trusted native desktop bridge.
+from backend.nvp_exact_time_shots import ExactTimeShotSequence as _NativeShots
+
+class NativeTimeShot(BaseModel):
+    shot_id: str = Field(min_length=1,max_length=80)
+    camera_path: str = Field(min_length=1,max_length=240)
+    start_tick: str = Field(min_length=1,max_length=20)
+    end_tick: str = Field(min_length=1,max_length=20)
+    pattern: str = Field(min_length=1,max_length=40)
+
+class NativeTimeShotRevision(BaseModel):
+    scene_id: str = Field(min_length=1,max_length=80)
+    scene_revision: int = Field(ge=1,le=1000000)
+    expected_revision: int = Field(ge=0,le=1000000)
+    duration_tick: str = Field(min_length=1,max_length=20)
+    shots: list[NativeTimeShot] = Field(min_length=1,max_length=128)
+
+@app.post('/api/projects/{project_id}/film/native-time-shots/{timeline_id}')
+def native_time_shots_publish(project_id: str,timeline_id: str,
+                              payload: NativeTimeShotRevision):
+    return run(lambda:_NativeShots(_FilmCameraIndex(studio)).publish(
+        project_id,timeline_id,
+        scene_id=payload.scene_id,
+        scene_revision=payload.scene_revision,
+        expected_revision=payload.expected_revision,
+        duration_tick=payload.duration_tick,
+        shots=[s.model_dump() for s in payload.shots]))
+
+@app.get('/api/projects/{project_id}/film/native-time-shots/{timeline_id}')
+def native_time_shots_read(project_id: str,timeline_id: str,
+                           revision: int = _FilmCameraQuery(ge=1,le=1000000)):
+    return run(lambda:_NativeShots(_FilmCameraIndex(studio)).read(
+        project_id,timeline_id,revision))
