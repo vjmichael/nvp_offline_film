@@ -568,6 +568,20 @@ def run_installed_source_smoke():
                     !=first["sha256"] or
                 hashlib.sha256(movie.read_bytes()).hexdigest()!=expected_sha):
                 raise RuntimeError("Installed AV delivery bytes/custody failed")
+            # Installed native disk-backed Range implementation must grant
+            # only the reviewed proxy, never the camera original path.
+            disk=native.get_synchronized_av_stream(av["ticket_id"])
+            if (disk.get("status")!="VERIFIED_STREAM" or
+                disk["total_size"]!=synchronized["size_bytes"] or
+                disk["media_sha256"]!=synchronized["media_sha256"] or
+                not disk["url"].startswith("/api/native-av-review/")):
+                raise RuntimeError("Installed source media range stream refused")
+            piece=native._get_av_host().stream_range(
+                av["ticket_id"],0,
+                min(65535,disk["total_size"]-1))
+            if (len(piece)>65536 or not piece or
+                piece!=base64.b64decode(first["data_base64"])[:len(piece)]):
+                raise RuntimeError("Installed verified disk-backed video range differs")
             if sys.stdout is not None:
                 print("INDEX_TIME09_INSTALLED_SYNCED_AV_PASS",
                       updated["edit_document_sha256"],
