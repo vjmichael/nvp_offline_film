@@ -255,6 +255,41 @@ class Slate05NativeTests(unittest.TestCase):
             self.index.read_revision(self.pid,"take_one",1)["document_sha256"],
             original["document_sha256"])
 
+    def test_lru_evicts_only_old_derivative_preview_not_frozen_take(self):
+        take=self.index.read_revision(self.pid,"take_one",1)
+        one=self._request(tick=0)
+        before=self._complete_fixture(one)
+        self.assertTrue(Path(before["png_path"]).exists())
+        two=self._request(tick=T)
+        after=self._complete_fixture(two)
+        self.assertEqual(after["status"],"READY")
+        self.assertEqual(self.cache._job(one["job_id"])["state"],"EVICTED")
+        self.assertFalse(Path(before["png_path"]).exists())
+        self.assertTrue(Path(after["png_path"]).exists())
+        self.assertEqual(
+            self.index.read_revision(self.pid,"take_one",1)["document_sha256"],
+            take["document_sha256"])
+
+    def test_worker_succeeded_but_host_crashed_before_cache_publish(self):
+        request=self._request()
+        row=self.cache._job(request["job_id"])
+        output=self.supervisor.root/request["job_id"]/"preview.png"
+        output.write_bytes(_png(row["width"],row["height"]))
+        digest=sha_file(output)
+        with patch.object(self.supervisor,"verify_completed",return_value={
+            "state":"SUCCEEDED","outputs":{"preview.png":{
+                "kind":"png","sha256":digest,
+                "bytes":output.stat().st_size}}}):
+            recovered=self.cache.recover(self.supervisor)
+        self.assertEqual(recovered,[{
+            "job_id":request["job_id"],"state":"READY",
+            "cache_key":request["cache_key"]}])
+        self.assertEqual(
+            self.cache.lookup(self.pid,request["cache_key"])["status"],"READY")
+        self.assertFalse(
+            self.cache.lookup(self.pid,request["cache_key"])[
+                "source_data_modified"])
+
     def test_stale_source_ticket_and_worker_spec_fail_closed(self):
         request=self._request()
         with self.task_ledger._db() as db:
@@ -288,14 +323,23 @@ class Slate05RealBlenderSmoke(Slate05NativeTests):
             blender_executable=native,blender_sha256=sha_file(native),
             blender_version=version,activity_ledger=self.task_ledger)
         real_cache=SlatePreviewCache(Path(self.temp.name)/"real_cache")
+        from backend.nvp_resource_guard import collect_resources
+        actual_ledger=TaskLedger(
+            Path(self.temp.name)/"real_activity",sampler=collect_resources)
+        # The genuine native smoke must use OS-observed resource admission,
+        # unlike the deterministic unit tests' intentionally mocked sensor.
+        supervisor=BlenderWorkerSupervisor(
+            Path(self.temp.name)/"real_blender",
+            blender_executable=native,blender_sha256=sha_file(native),
+            blender_version=version,activity_ledger=actual_ledger)
         host=NativeSlatePreviewHost(
-            self.index,supervisor,self.task_ledger,real_cache,
+            self.index,supervisor,actual_ledger,real_cache,
             verify_creator_action=lambda event,context:
             event is self.trusted_event and
             context["operation"]=="nvp.slate.authorize_lowfi_preview.v1")
         request=host.request(
             self.pid,"cut",1,film_tick=0,quality="thumbnail",
-            creator_event=self.trusted_event,ram_mb=4096,timeout_seconds=180)
+            creator_event=self.trusted_event,ram_mb=3072,timeout_seconds=180)
         result=host.run_next()
         self.assertEqual(result["state"],"SUCCEEDED")
         png=real_cache.lookup(self.pid,request["cache_key"])
