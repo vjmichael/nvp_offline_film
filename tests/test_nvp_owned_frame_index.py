@@ -4,6 +4,8 @@ Native acceptance; no FFMS2 and no mocked frame decodes.
 """
 import hashlib
 import json
+import os
+import sqlite3
 from pathlib import Path
 import shutil
 import subprocess
@@ -154,6 +156,56 @@ class NativeOwnedIndexTests(unittest.TestCase):
                                            separators=(",", ":")))
         with self.assertRaises(RuntimeError):
             host.verify_completed(ticket["task_id"])
+
+    def test_abandoned_index_build_requires_supervisor_reconciliation(self):
+        index_path=self.cache._path(self.pid,"camera_take",self.sha)
+        lock=index_path.with_suffix(".building")
+        marker={"schema":1,"project":self.pid,"asset":"camera_take",
+                "source_sha256":self.sha,"source_stamp":stamp(self.movie),
+                "builder_pid":os.getpid()}
+        lock.write_text(json.dumps(marker),encoding="ascii")
+        orphan=index_path.parent/(
+            ".nvpframes-"+index_path.stem[:16]+"-orphan.tmp")
+        orphan.write_bytes(b"interrupted partial SQLite file")
+        with self.assertRaises(RuntimeError):
+            self.cache.ensure(self.pid,"camera_take",self.sha,self.movie)
+        with self.assertRaises(PermissionError):
+            self.cache.reconcile_interrupted(
+                self.pid,"camera_take",self.sha,self.movie,
+                confirm_builder_terminated=lambda _:False)
+        self.assertTrue(lock.exists())
+        result=self.cache.reconcile_interrupted(
+            self.pid,"camera_take",self.sha,self.movie,
+            confirm_builder_terminated=lambda info:
+            info["builder_pid"]==os.getpid())
+        self.assertEqual(result["status"],"INTERRUPTED_SCAN_DISCARDED")
+        self.assertEqual(result["partial_files_cleaned"],1)
+        self.assertFalse(lock.exists())
+        self.assertFalse(orphan.exists())
+        published=self.cache.ensure(self.pid,"camera_take",self.sha,self.movie)
+        self.assertEqual(published["frame_count"],150)
+        # Crash after atomic publication but before lock removal must be
+        # recovered without destroying the previously created index.
+        lock.write_text(json.dumps(marker),encoding="ascii")
+        self.assertEqual(self.cache.reconcile_interrupted(
+            self.pid,"camera_take",self.sha,self.movie,
+            confirm_builder_terminated=lambda _:True
+        )["status"],"PUBLISHED_INDEX_RECONCILED")
+        self.assertFalse(lock.exists())
+
+    def test_corrupt_sqlite_frame_window_rejected_without_full_media_hash(self):
+        self.cache.ensure(self.pid,"camera_take",self.sha,self.movie)
+        path=self.cache._path(self.pid,"camera_take",self.sha)
+        with sqlite3.connect(path) as db:
+            before=db.execute(
+                "SELECT pts FROM frames WHERE ordinal=129").fetchone()[0]
+            db.execute("UPDATE frames SET pts=? WHERE ordinal=130",
+                       (before,))
+        with patch("backend.nvp_external_media_catalog._read_and_hash",
+                   side_effect=AssertionError("Do not hash source for cache check")):
+            with self.assertRaises(RuntimeError):
+                self.cache.window(self.pid,"camera_take",self.sha,self.movie,
+                                  first_zero=129,count=6)
 
     def test_index_rejects_foreign_project(self):
         self.cache.ensure(self.pid, "camera_take", self.sha, self.movie)
