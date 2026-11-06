@@ -22,6 +22,7 @@ from backend.nvp_source_media_inventory import SourceMediaInventory
 from backend.nvp_source_film_bridge import SourceFilmBridge
 from backend.nvp_bound_editorial import BoundEditorialPublisher
 from backend.nvp_source_window_preflight import SourceWindowPreflight
+from backend.nvp_source_window_decode import verify_review_window
 from backend.nvp_source_window_native_host import NativeSourceWindowHost
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_resource_guard import ResourceSnapshot
@@ -145,6 +146,18 @@ class FFMS2IndexedNative(unittest.TestCase):
                              self.pid, "take01", self.source, self.sha)["index_sha256"]})
         self.assertEqual(ledger.get_task(ticket["task_id"])["reserved"], 0)
         self.assertEqual(host.verify_completed(ticket["task_id"])["frames"], 6)
+        # Independent verifier must reject falsely relabeled source-frame
+        # provenance even when the receipt is reserialized canonically.
+        receipt_path = self.root / "review" / "review_receipt.json"
+        correct = receipt_path.read_bytes()
+        false_origin = json.loads(correct)
+        false_origin["frames"][0]["source_frame_zero"] += 1
+        receipt_path.write_bytes(json.dumps(
+            false_origin, sort_keys=True, separators=(",", ":")).encode("ascii"))
+        plan_file = self.root / "jobs" / ticket["task_id"] / "window_plan.json"
+        with self.assertRaises(RuntimeError):
+            verify_review_window(self.root / "review", json.loads(plan_file.read_bytes()))
+        receipt_path.write_bytes(correct)
         plan = self.root / "jobs" / ticket["task_id"] / "window_plan.json"
         original = plan.read_bytes()
         plan.write_bytes(b"{}")
