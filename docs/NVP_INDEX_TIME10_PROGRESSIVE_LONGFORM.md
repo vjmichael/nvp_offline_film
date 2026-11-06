@@ -3,18 +3,22 @@
 **November 6, 2026 · Initial production implementation on a stacked draft
 branch; native Windows/Linux and physical installed-app acceptance pending.**
 
-## Scope correction — native captured sound
+## SOUND-01 clarification — this MP4 review is not the 3D sound engine
 
-Only sound **generated, performed or recorded during filming of a 3D
-Digital Take** is in the proposed BWF captured-stem policy. Editor-imported
-music/FX (MP3, etc.) are separate immutable media sources and do not
-require recoding. The governing Digital Take is the typed event,
-emitter/microphone-transform and source-revision graph. An optional
-BWF microphone print is an indexed audio signal, not the authoritative
-semantic 3D take. Real playback should evaluate source events and
-generate needed acoustic PCM windows directly; FFmpeg is limited to
-external media import, review/presentation and export boundaries.
-See `NVP_DATA_TIME01_EVENTS_NOT_FRAMES.md#capture-sound-01--filmed-3d-scene-sound-versus-imported-soundtrack-2026-11-06`.
+The creator explicitly rejected a required BWF recording/stem during
+3D filming. A frozen Digital Take contains authoritative scene/time/event
+data and sound-source references, intended for direct native **spatial
+sound evaluation** through OpenUSD SpatialAudio plus selected audio
+engines. It remains spatial, editable and listener-dependent until
+the chosen **final flattened 2D presentation**. BWF is optional for
+recording/interchange; FFmpeg handles derived media import/presentation
+and final export, not native 3D sound evaluation.
+
+INDEX-TIME-10 is an existing imported-footage/temporary H.264/AAC
+review adapter, **not** evidence that the 3D audio system exists.
+Do not infer native acoustic propagation, sound-event rendering or
+accepted Digital Take audition from this implementation.
+See [NVP-SOUND-01](NVP_SOUND01_NATIVE_SPATIAL_AUDIO.md).
 
 ## Authority reminder — film data, not rendered samples
 
