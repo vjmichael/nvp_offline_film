@@ -36,7 +36,7 @@ function frameClock(start,seconds){
   return filmTimeClock(BigInt(start)+millis*(TICKS_PER_SECOND/1000n));
 }
 
-export default function SynchronizedAssemblyReview({projectId,edit,clips,native,onInspect}){
+export default function SynchronizedAssemblyReview({projectId,edit,clips,native,onInspect,api}){
   const player=useRef(null);
   const generation=useRef(0);
   const ticket=useRef(null);
@@ -51,6 +51,74 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
   const [downloaded,setDownloaded]=useState(0);
   const [playhead,setPlayhead]=useState(0);
   const [playing,setPlaying]=useState(false);
+  const [allClips,setAllClips]=useState([]);
+  const [loadingManifest,setLoadingManifest]=useState(true);
+  const [manifestError,setManifestError]=useState('');
+  const fullManifest=allClips.length===edit.clip_count &&
+    allClips.every((c,i)=>c.ordinal===i);
+
+  // A film editor may show only 40 clips on its initial browsing page.
+  // The playback cut map MUST use the complete immutable edit, not its
+  // partial viewport. Only bounded metadata is loaded, never source video.
+  useEffect(()=>{
+    let live=true;
+    setAllClips([]);setManifestError('');
+    setLoadingManifest(true);
+    if(edit.clip_count>256||edit.clip_count<1){
+      setManifestError('This review supports 1–256 original source clips.');
+      setLoadingManifest(false);
+      return ()=>{live=false;};
+    }
+    if(clips.length===edit.clip_count&&
+       clips.every((c,i)=>c.ordinal===i)){
+      setAllClips(clips);setLoadingManifest(false);
+      return ()=>{live=false;};
+    }
+    if(typeof api!=='function'){
+      setManifestError('The full saved original source edit is unavailable.');
+      setLoadingManifest(false);
+      return ()=>{live=false;};
+    }
+    async function load(){
+      const rows=[];
+      try{
+        while(rows.length<edit.clip_count){
+          const params=new URLSearchParams({
+            revision:String(edit.revision),
+            expected_edit_sha256:edit.edit_document_sha256,
+            after_ordinal:String(rows.length-1),
+            limit:'100',
+          });
+          const page=await api('/projects/'+encodeURIComponent(projectId)+
+            '/film-time/edits/'+encodeURIComponent(edit.edit_id)+
+            '/clips?'+params);
+          if(!live)return;
+          if(page?.format!=='nvp.index_time05.editor_source_read.v1'||
+             page.status!=='INDEXED_EDIT_CLIPS'||
+             page.project_id!==projectId||
+             page.edit_id!==edit.edit_id||
+             page.edit_revision!==edit.revision||
+             page.edit_document_sha256!==edit.edit_document_sha256||
+             page.clip_count!==edit.clip_count||
+             page.original_media_read!==false||
+             !Array.isArray(page.clips)||page.clips.length===0||
+             page.clips.some((c,i)=>c.ordinal!==rows.length+i))
+            throw Error('The complete indexed edit manifest changed during review.');
+          rows.push(...page.clips);
+          if(rows.length<edit.clip_count &&
+             page.next_after_ordinal!==rows.length-1)
+            throw Error('Saved source cut pagination stopped unexpectedly.');
+        }
+        if(rows.length!==edit.clip_count)
+          throw Error('Incomplete saved source clip manifest.');
+        if(live)setAllClips(rows);
+      }catch(e){if(live)setManifestError(e.message);}
+      finally{if(live)setLoadingManifest(false);}
+    }
+    load();
+    return ()=>{live=false;};
+  },[api,projectId,edit.edit_id,edit.revision,
+     edit.edit_document_sha256,edit.clip_count]);
 
   const revoke=useCallback(()=>{
     generation.current++;
@@ -77,7 +145,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
   },[projectId,edit.edit_id,edit.revision,edit.edit_document_sha256,revoke]);
 
   async function prepare(){
-    if(preparing||downloading)return;
+    if(preparing||downloading||!fullManifest)return;
     revoke();
     const gen=generation.current;
     setPreparing(true);setError('');
@@ -218,7 +286,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
   }
   function cut(direction){
     const current=BigInt(filmTick);
-    const cuts=clips.map(c=>BigInt(c.film_start_tick))
+    const cuts=allClips.map(c=>BigInt(c.film_start_tick))
       .filter(t=>direction>0?t>current:t<current)
       .sort((a,b)=>a<b?-1:a>b?1:0);
     if(cuts.length)changePlayhead(String(direction>0?cuts[0]:cuts[cuts.length-1]));
@@ -227,6 +295,8 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     Math.round(downloaded*100/review.size_bytes):0;
   return <section className="card" aria-label="Synchronized original footage review">
     <h3>Watch your assembly with sound</h3>
+    {loadingManifest&&<p role="status">Checking every saved source cut…</p>}
+    {manifestError&&<p role="alert">{manifestError}</p>}
     <p className="fineprint">This viewer prepares an unapproved temporary
       H.264/AAC review movie from your original footage. The native video
       player keeps sound and picture synchronized. Your recordings and
@@ -266,13 +336,13 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     </label>
     <div className="actions" style={{display:'flex',gap:'0.4rem',flexWrap:'wrap'}}>
       <button onClick={()=>jump(-5)}>Back 5s</button>
-      <button onClick={()=>cut(-1)}>Previous cut</button>
-      <button onClick={()=>cut(1)}>Next cut</button>
+      <button disabled={!fullManifest} onClick={()=>cut(-1)}>Previous cut</button>
+      <button disabled={!fullManifest} onClick={()=>cut(1)}>Next cut</button>
       <button onClick={()=>jump(5)}>Forward 5s</button>
       <button onClick={()=>onInspect?.(filmTick)}>Inspect original frame</button>
     </div>
     <div className="actions">
-      <button disabled={preparing||downloading}
+      <button disabled={preparing||downloading||!fullManifest}
         onClick={prepare}>{preparing?'Asking for native approval…':
           'Prepare synchronized review…'}</button>
       {src&&review?.review_duration_tick&&
