@@ -47,10 +47,13 @@ export default function SlateBranchTimelinePane({
     w.document.title='NVP · Parallel Takes';
     w.document.body.style.margin='0';
     w.document.body.style.background='#14161e';
-    const stylesheet=document.createElement('link');
-    stylesheet.rel='stylesheet';
-    stylesheet.href=new URL('./SlateBranchTimelinePane.css',import.meta.url).href;
-    w.document.head.appendChild(stylesheet);
+    // A same-origin detached window must receive the current Vite/bundled
+    // stylesheets. This also handles CSS injected as <style> in dev mode.
+    document.querySelectorAll('link[rel="stylesheet"],style').forEach(source=>{
+      const copy=source.cloneNode(true);
+      if(copy.tagName==='LINK'&&source.href)copy.href=source.href;
+      w.document.head.appendChild(copy);
+    });
     const root=w.document.createElement('div');
     w.document.body.appendChild(root);
     w.addEventListener('pagehide',()=>{popup.current=null;setPopRoot(null);});
