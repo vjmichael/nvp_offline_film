@@ -400,7 +400,7 @@ export default function App() {
                 <label>Or paste it here</label><LineNumberedTextarea rows={9} label="Imported screenplay text" value={openingScript} maxLength={1000000} onChange={(e) => setOpeningScript(e.target.value)} placeholder="INT. APARTMENT - NIGHT..."/></>}
           <div className="actions"><button className="primary" disabled={busy || !title.trim() || (startMode === 'script' && !openingScript.trim())} onClick={create}>Start making my movie →</button></div>
         </section>
-        <p className="fineprint">Your ideas stay on this computer. This is a working planning prototype; actual film rendering is not connected yet.</p>
+        <p className="fineprint">Your ideas stay on this computer. Final film rendering is still in development. Installed NVP supports approved native camera studies for authored OpenUSD scenes; ordinary browsers show read-only lens previews.</p>
       </div> : <div className="page">
         <div className="kicker">YOUR MOVIE</div><h1>{project.title}</h1><p className="lead">{project.idea || 'Every story starts somewhere.'}</p>
         <nav className="tabs">
