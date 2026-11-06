@@ -668,6 +668,13 @@ class NativeAVProxyHost:
                 return {"format":STATUS_FORMAT,"status":"PREPARING",
                         "original_modified":False,"master_approved":False}
             if item["verified"] is None:
+                # The durable SUCCEEDED receipt can precede the in-memory
+                # result publication by a scheduling instant. Fail closed
+                # until the owned future finishes, instead of misreporting
+                # a valid review as unrecoverable on a concurrent poll.
+                if item["future"] is not None and not item["future"].done():
+                    return {"format":STATUS_FORMAT,"status":"PREPARING",
+                            "original_modified":False,"master_approved":False}
                 raise RuntimeError("Native A/V receipt was not independently accepted")
             movie=Path(row["destination"])/"source_review.mp4"
             if movie.is_symlink() or movie.stat().st_size!=item["verified"]["size_bytes"]:
