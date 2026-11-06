@@ -16,6 +16,8 @@ from backend.nvp_ffms2_native import FFMS2, sha_file
 from backend.nvp_film_index import _require_pid, _id, _sha
 
 FORMAT = "nvp.ffms2.source_index.v1"
+MAX_INDEX_BYTES = 2 * 1024 * 1024 * 1024
+MAX_MANIFEST_BYTES = 16 * 1024
 
 
 def _canonical(value):
@@ -75,6 +77,9 @@ class FFMS2SourceIndex:
             if (not index_file.is_file() or index_file.is_symlink() or
                     not manifest_file.is_file() or manifest_file.is_symlink()):
                 raise RuntimeError("Incomplete cached native index requires reconciliation")
+            if (manifest_file.stat().st_size > MAX_MANIFEST_BYTES or
+                index_file.stat().st_size > MAX_INDEX_BYTES):
+                raise RuntimeError("Cached FFMS2 index exceeds native budget")
             metadata = json.loads(manifest_file.read_bytes())
             expected = {
                 "format": FORMAT, "project_id": project_id, "asset_id": asset_id,
@@ -109,8 +114,9 @@ class FFMS2SourceIndex:
             indexed = self.library.create_index(source, stage_path)
             if sha_file(source) != source_sha:
                 raise RuntimeError("Original changed during FFMS2 indexing")
-            if not Path(stage_path).is_file() or Path(stage_path).stat().st_size == 0:
-                raise RuntimeError("FFMS2 generated an empty index")
+            if (not Path(stage_path).is_file() or
+                not 0 < Path(stage_path).stat().st_size <= MAX_INDEX_BYTES):
+                raise RuntimeError("FFMS2 generated invalid or oversized index")
             with self.library.open_video(source, stage_path,
                                          track=indexed["track"]) as video:
                 if video.meta != indexed:
