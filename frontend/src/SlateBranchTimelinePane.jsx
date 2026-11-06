@@ -11,11 +11,12 @@ export default function SlateBranchTimelinePane({
   graphView,activeView=null,draftView=null,catalogPage=null,onLoadMore=null,
   onMakeActive,onInsertBefore,onInsertAfter,onReplace,onPreviewTake,
   onDraftCut,onDraftPaste,onCommitDraft,onRequestDataPreview,
-  previewPane=null
+  onRequestGeometryPreview=null,cameraChoices=[],previewPane=null
 }) {
   const [group,setGroup]=useState('');
   const [inspection,setInspection]=useState('');
   const [target,setTarget]=useState('');
+  const [geometryCamera,setGeometryCamera]=useState('');
   // This clipboard contains only source interval IDs/ticks, never 3D source
   // data, assets, geometry, picture frames or an approved editorial decision.
   const [sourceClipboard,setSourceClipboard]=useState(null);
@@ -249,6 +250,31 @@ export default function SlateBranchTimelinePane({
         <button disabled={!hasCut||hasDraft||!chosenSegment||!onRequestDataPreview}
                 onClick={()=>onRequestDataPreview(chosenSegment.timeline_start_tick)}>
           Preview source data</button>
+        {onRequestGeometryPreview && <>
+          <label className="nvp-slate-camera-choice">
+            Authored camera
+            <select aria-label="Authored camera" value={geometryCamera}
+              onChange={e=>setGeometryCamera(e.target.value)}>
+              <option value="">Use sole native camera</option>
+              {cameraChoices.map(camera=>
+                <option key={camera.path} value={camera.path}>
+                  {camera.label||camera.path}
+                </option>)}
+            </select>
+          </label>
+          <button className="nvp-slate-render-geometry"
+            disabled={!hasCut||hasDraft||!chosenSegment||
+              cameraChoices.length>1&&!geometryCamera}
+            onClick={()=>onRequestGeometryPreview({
+              presentation:'geometry',
+              film_tick:chosenSegment.timeline_start_tick,
+              segment_id:chosenSegment.segment_id,
+              edit_document_sha256:activeView.edit_document_sha256,
+              camera_path:geometryCamera||null,
+            })}>
+            Render authored 3D preview
+          </button>
+        </>}
         <button className="nvp-slate-commit" disabled={!hasDraft||!onCommitDraft}
                 onClick={()=>onCommitDraft(draftView)}>
           Make draft active
@@ -256,22 +282,35 @@ export default function SlateBranchTimelinePane({
       </div>
       {previewPane && <aside className="nvp-slate-proxy-preview"
         aria-label="On-demand low-resolution preview">
-        <strong>Low-fi blocking preview</strong>
+        <strong>{previewPane.presentation==='geometry'
+          ? 'Authored OpenUSD geometry preview'
+          : 'Low-fi blocking preview'}</strong>
         {previewPane.status==='QUEUED' &&
           <p>Preview queued. The frozen 3D source is unchanged.</p>}
         {previewPane.status==='FAILED' &&
           <p>Preview unavailable; original source data are untouched.</p>}
-        {previewPane.status==='READY' &&
+        {(previewPane.status==='READY'||previewPane.status==='CACHE_HIT') &&
          previewPane.edit_document_sha256===activeView?.edit_document_sha256 &&
          previewPane.segment_id===target &&
          typeof previewPane.image_data_url==='string' &&
          previewPane.image_data_url.startsWith('data:image/png;base64,') &&
          previewPane.image_data_url.length<=12*1024*1024
           ? <img src={previewPane.image_data_url}
-                 alt="Director's low-resolution geometry-proxy composition, not final film picture"
+                 alt={previewPane.presentation==='geometry'
+                   ? "Native OpenUSD geometry and camera preview; actor skinning and film finishing not verified"
+                   : "Director's low-resolution geometry-proxy composition, not final film picture"}
                  loading="lazy"/>
           : <p>Preview not ready for this selected committed segment.</p>}
-        <small>Proxy geometry only · SHA-pinned frozen Take · no master approval</small>
+        <small>{previewPane.presentation==='geometry'
+          ? 'Authored geometry · native camera · preview-approximate lighting · no skinned performance or master approval'
+          : 'Proxy geometry only · SHA-pinned frozen Take · no master approval'}</small>
+        {previewPane.presentation==='geometry' &&
+         (previewPane.unmeshed_actors?.length>0 ||
+          previewPane.skeletal_rig_count>0) &&
+          <p className="nvp-slate-fidelity-notice">
+            Incomplete source presentation: actor geometry or rigged deformation
+            is not yet represented faithfully. Review source coverage before approval.
+          </p>}
       </aside>}
       <p className="nvp-slate-info">{inspection
           ? 'Inspecting '+inspection+'. Active source colors have not changed.'

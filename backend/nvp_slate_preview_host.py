@@ -44,6 +44,17 @@ def _digest(doc):
     return sha256(canonical_bytes(doc)).hexdigest()
 
 
+def _adapter_for(presentation):
+    """Only two explicit NVP-owned signed recipes use ONE native supervisor."""
+    if presentation=="blocking":
+        from backend import nvp_slate_proxy_recipe as module
+        return module
+    if presentation=="geometry":
+        from backend import nvp_slate06_geometry as module
+        return module
+    raise ValueError("Unknown trusted OpenUSD presentation mode")
+
+
 class NativeSlatePreviewHost:
     """Host-authenticated, resource-admitted low-fi proxy PNG render adapter."""
 
@@ -76,8 +87,20 @@ class NativeSlatePreviewHost:
                 issued_at REAL NOT NULL,
                 expires_at REAL NOT NULL,
                 revoked_at REAL,
-                queued_at REAL
+                queued_at REAL,
+                presentation TEXT NOT NULL DEFAULT 'blocking',
+                camera_path TEXT
             )""")
+            # Upgrade existing installs without invalidating earlier
+            # blocked/queued SLATE-05 native consent records.
+            cols={x[1] for x in db.execute(
+                "PRAGMA table_info(nvp_slate_preview_consents)")}
+            if "presentation" not in cols:
+                db.execute("""ALTER TABLE nvp_slate_preview_consents
+                    ADD COLUMN presentation TEXT NOT NULL DEFAULT 'blocking'""")
+            if "camera_path" not in cols:
+                db.execute("""ALTER TABLE nvp_slate_preview_consents
+                    ADD COLUMN camera_path TEXT""")
         self.dispatcher=ApprovedBlenderDispatcher(
             supervisor,ledger,approval_check=self._approval_check,
             pre_worker_check=self._before_worker)
@@ -95,7 +118,8 @@ class NativeSlatePreviewHost:
             names=("approval_id","task_id","project_id","edit_id",
                    "edit_revision","film_tick","quality","cache_key",
                    "ticket_sha256","source_manifest_sha256","spec_sha256",
-                   "issued_at","expires_at","revoked_at","queued_at")
+                   "issued_at","expires_at","revoked_at","queued_at",
+                   "presentation","camera_path")
             row=dict(zip(names,row))
             now=time.time()
             if (row["revoked_at"] is not None or
@@ -105,10 +129,12 @@ class NativeSlatePreviewHost:
                 document.get("kind")!="blender" or
                 document.get("task_id")!=row["task_id"]):
                 return False
+            adapter=_adapter_for(row["presentation"])
+            script=adapter.BLENDER_SCRIPT
             op=BlenderOperation(**document["operation"])
             if (self.supervisor._activity_id(op.job_id)!=row["task_id"] or
                 op.script!=SCRIPT_FILE or
-                op.script_sha256!=sha(BLENDER_SCRIPT.encode("utf-8")) or
+                op.script_sha256!=sha(script.encode("utf-8")) or
                 op.inputs!={SOURCE_FILE:row["source_manifest_sha256"]} or
                 op.outputs!={OUTPUT_FILE:"png"} or
                 op.arguments!={"--manifest":SOURCE_FILE,"--preview":OUTPUT_FILE} or
@@ -117,8 +143,13 @@ class NativeSlatePreviewHost:
             ticket=self.lazy.select(
                 row["project_id"],row["edit_id"],row["edit_revision"],
                 film_tick=row["film_tick"],quality=row["quality"])
+            expected_key=(
+                adapter.preview_cache_key(
+                    ticket,row["quality"],camera_path=row["camera_path"])
+                if row["presentation"]=="geometry" else
+                adapter.preview_cache_key(ticket,row["quality"]))
             if (sha(canonical(ticket))!=row["ticket_sha256"] or
-                preview_cache_key(ticket,row["quality"])!=row["cache_key"]):
+                expected_key!=row["cache_key"]):
                 return False
             directory=self.supervisor.root/op.job_id
             if (sha_file(directory/SCRIPT_FILE)!=op.script_sha256 or
@@ -128,11 +159,20 @@ class NativeSlatePreviewHost:
             if len(raw)>128*1024:
                 return False
             source=json.loads(raw)
-            if (source.get("source_take_sha256")!=ticket["source_take_document_sha256"] or
+            if (source.get("format")!=adapter.FORMAT or
+                source.get("renderer_version")!=adapter.RENDERER_VERSION or
+                source.get("worker_script_sha256")!=op.script_sha256 or
+                source.get("source_cache_key")!=row["cache_key"] or
+                source.get("source_take_sha256")!=ticket["source_take_document_sha256"] or
                 source.get("source_shot_sha256")!=ticket["source_shot_document_sha256"] or
                 source.get("source_tick")!=ticket["source_tick"] or
                 source.get("cache_key")!=ticket["cache_key"] or
-                (source.get("width"),source.get("height"))!=DIMENSIONS[row["quality"]]):
+                (source.get("width"),source.get("height"))!=adapter.DIMENSIONS[row["quality"]]):
+                return False
+            if row["presentation"]=="geometry" and (
+                source.get("camera",{}).get("path")!=(
+                    row["camera_path"] or source.get("camera",{}).get("path")) or
+                source.get("final_presentation_approved") is not False):
                 return False
             pending=self.cache._job(op.job_id)
             if (pending["state"]!="PENDING" or
@@ -152,45 +192,93 @@ class NativeSlatePreviewHost:
                 row[0],_digest(document),document):
             raise PermissionError("Low-fi preview source, consent or resource spec changed")
 
+    def source_camera_choices(self,project_id,edit_id,revision,*,film_tick):
+        """Fast UI camera-picker data: no USD stage or image generation."""
+        ticket=self.lazy.select(
+            project_id,edit_id,revision,film_tick=film_tick,
+            quality="thumbnail")
+        if ticket["status"]!="SOURCE_REFERENCE_SELECTED":
+            return {"status":ticket["status"],"cameras":[],"usd_loaded":False}
+        take=self.index.read_revision(
+            project_id,ticket["source_take_id"],ticket["source_take_revision"])
+        scene=self.index.read_revision(
+            project_id,take["data"]["scene_id"],take["data"]["scene_revision"])
+        if scene["document_sha256"]!=take["data"]["scene_document_sha256"]:
+            raise RuntimeError("Native camera list references modified film source")
+        if scene["data"].get("native_schema_version") is None:
+            return {
+                "status":"NATIVE_CAMERAS_NOT_AUTHORED","cameras":[],
+                "source_take_sha256":ticket["source_take_document_sha256"],
+                "usd_loaded":False,"picture_generated":False,
+            }
+        cameras=[
+            {"path":path,"label":path.rsplit("/",1)[-1]}
+            for path,role in sorted(scene["data"]["prim_roles"].items())
+            if role=="camera"]
+        return {
+            "status":"SOURCE_CAMERA_CHOICES",
+            "cameras":cameras,
+            "source_take_sha256":ticket["source_take_document_sha256"],
+            "source_shot_sha256":ticket["source_shot_document_sha256"],
+            "source_tick":ticket["source_tick"],
+            "usd_loaded":False,"picture_generated":False,
+            "shot_visibility_verified":False,
+        }
+
     def request(self,project_id,edit_id,revision,*,film_tick,
                 quality="thumbnail",creator_event,ram_mb=1024,
-                timeout_seconds=120,strict_linux_cgroup=False):
+                timeout_seconds=120,strict_linux_cgroup=False,
+                presentation="blocking",camera_path=None):
         """Cache hit or EXPLICITLY approved queued preview, never automatic run."""
         if (type(ram_mb) is not int or not 256<=ram_mb<=8192 or
             type(timeout_seconds) is not int or not 1<=timeout_seconds<=600 or
             type(strict_linux_cgroup) is not bool):
             raise ValueError("Invalid bounded preview worker resources")
+        adapter=_adapter_for(presentation)
+        if presentation=="blocking" and camera_path is not None:
+            raise ValueError("Only native geometry previews select a camera")
+        if camera_path is not None and (
+            type(camera_path) is not str or
+            not camera_path.startswith("/World/") or len(camera_path)>240):
+            raise ValueError("Invalid source-native camera identity")
         ticket=self.lazy.select(
             project_id,edit_id,revision,film_tick=film_tick,quality=quality)
         if ticket["status"]!="SOURCE_REFERENCE_SELECTED":
             return {"status":ticket["status"],"task_started":False,
                     "source_data_loaded":False,"rendered":False}
-        key=preview_cache_key(ticket,quality)
+        key=(adapter.preview_cache_key(ticket,quality,camera_path=camera_path)
+             if presentation=="geometry" else
+             adapter.preview_cache_key(ticket,quality))
         present=self.cache.lookup(project_id,key)
         if present:
-            return {"status":"CACHE_HIT",**present,"new_task_started":False}
-        # This source lookup is the expensive path and reads at most ONE
-        # OpenUSD source stage, not every Take or entire film timeline.
-        snapshot=capture_proxy(self.index,ticket)
-        doc=recipe(snapshot,quality)
+            return {"status":"CACHE_HIT",**present,
+                    "presentation":presentation,"new_task_started":False}
+        # One exact source stage on a miss. Geometry has no silent fallback
+        # into the less faithful SLATE-05 blocking proxy recipe.
+        snapshot=(adapter.capture_geometry(
+                    self.index,ticket,camera_path=camera_path)
+                  if presentation=="geometry" else
+                  adapter.capture_proxy(self.index,ticket))
+        doc=adapter.recipe(snapshot,quality)
         doc["source_cache_key"]=key
         raw=canonical(doc)
         if len(raw)>128*1024:
             raise ValueError("Bounded low-fi source proxy recipe exceeded budget")
         if self.cache.lookup(project_id,key):
             return {"status":"CACHE_HIT","cache_key":key,
-                    "new_task_started":False}
+                    "presentation":presentation,"new_task_started":False}
         job_id="slateprev_"+secrets.token_hex(12)
         jobdir=self.supervisor.root/job_id
         if jobdir.is_symlink():
             raise RuntimeError("Native preview stage escaped workspace")
         jobdir.mkdir(mode=0o700,exist_ok=False)
         try:
-            _write_exclusive(jobdir,SCRIPT_FILE,BLENDER_SCRIPT.encode("utf-8"))
+            fixed_script=adapter.BLENDER_SCRIPT.encode("utf-8")
+            _write_exclusive(jobdir,SCRIPT_FILE,fixed_script)
             _write_exclusive(jobdir,SOURCE_FILE,raw)
             op=BlenderOperation(
                 job_id=job_id,script=SCRIPT_FILE,
-                script_sha256=sha(BLENDER_SCRIPT.encode("utf-8")),
+                script_sha256=sha(fixed_script),
                 inputs={SOURCE_FILE:sha(raw)},
                 outputs={OUTPUT_FILE:"png"},
                 arguments={"--manifest":SOURCE_FILE,"--preview":OUTPUT_FILE},
@@ -201,7 +289,12 @@ class NativeSlatePreviewHost:
             exact=_spec(self.supervisor,op)
             spec_sha=_digest(exact)
             context={
-                "operation":"nvp.slate.authorize_lowfi_preview.v1",
+                "operation":(
+                    "nvp.slate.authorize_openusd_geometry_preview.v1"
+                    if presentation=="geometry"
+                    else "nvp.slate.authorize_lowfi_preview.v1"),
+                "presentation":presentation,
+                "camera_path":camera_path,
                 "project_id":project_id,"edit_id":edit_id,
                 "edit_revision":revision,"edit_document_sha256":
                     ticket["edit_document_sha256"],
@@ -213,7 +306,10 @@ class NativeSlatePreviewHost:
                 "worker_script_sha256":op.script_sha256,
                 "worker_spec_sha256":spec_sha,"job_id":job_id,
                 "requested_ram_mb":ram_mb,"requested_gpu_mb":0,
-                "output_kind":"lowfi_blocking_proxy_png_not_final_film",
+                "output_kind":(
+                    "native_openusd_geometry_preview_not_actor_skinning_or_master"
+                    if presentation=="geometry" else
+                    "lowfi_blocking_proxy_png_not_final_film"),
                 "final_master_approval":False,
             }
             if self.approve(creator_event,dict(context)) is not True:
@@ -230,7 +326,7 @@ class NativeSlatePreviewHost:
                 # so discard ONLY its inert temporary staging directory.
                 shutil.rmtree(jobdir)
                 return {"status":pending["status"],"cache_key":key,
-                        "task_started":False}
+                        "presentation":presentation,"task_started":False}
             approval_id="slateprevconsent_"+secrets.token_hex(12)
             start=time.time()
             with self.ledger._db() as db:
@@ -238,11 +334,13 @@ class NativeSlatePreviewHost:
                 db.execute("""INSERT INTO nvp_slate_preview_consents(
                     approval_id,task_id,project_id,edit_id,edit_revision,
                     film_tick,quality,cache_key,ticket_sha256,
-                    source_manifest_sha256,spec_sha256,issued_at,expires_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    source_manifest_sha256,spec_sha256,issued_at,expires_at,
+                    presentation,camera_path)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (approval_id,exact["task_id"],project_id,edit_id,revision,
                      film_tick,quality,key,sha(canonical(ticket)),sha(raw),
-                     spec_sha,start,start+MAX_CONSENT_SECONDS))
+                     spec_sha,start,start+MAX_CONSENT_SECONDS,
+                     presentation,camera_path))
                 db.commit()
             try:
                 queued=self.dispatcher.enqueue(
@@ -257,6 +355,7 @@ class NativeSlatePreviewHost:
             return {
                 "status":"QUEUED","task_id":exact["task_id"],
                 "job_id":job_id,"approval_id":approval_id,
+                "presentation":presentation,"camera_path":camera_path,
                 "cache_key":key,"source_recipe_sha256":sha(raw),
                 "native_worker_started":False,"picture_generated":False,
                 "creator_approved_lowfi_preview_only":True,
@@ -284,7 +383,18 @@ class NativeSlatePreviewHost:
             # A completed native audit is necessary but not sufficient:
             # independent PNG hash, dimensions and cache atomic commit follow.
             cached=self.cache.accept_verified(self.supervisor,job_id)
-            return {**result,"cache_result":cached}
+            with self.ledger._db() as db:
+                record=db.execute("""SELECT presentation,camera_path
+                    FROM nvp_slate_preview_consents
+                    WHERE task_id=?""",
+                    (self.supervisor._activity_id(job_id),)).fetchone()
+            if record is None:
+                raise RuntimeError("Verified native preview lost approval provenance")
+            return {**result,"cache_result":{
+                **cached,"presentation":record[0],
+                "camera_path":record[1],
+                "full_character_performance_rendered":False,
+                "final_master_approval":False}}
         if result.get("state") in ("FAILED","CANCELLED","TIMED_OUT"):
             self.cache.fail(job_id,state="FAILED")
         return result
@@ -306,20 +416,74 @@ class NativeSlatePreviewHost:
         if (not data or len(data)>MAX_IMAGE_BYTES or
             sha(data)!=result["image_sha256"]):
             raise RuntimeError("Selected cached PNG changed before native delivery")
+        with self.ledger._db() as db:
+            row=db.execute("""SELECT presentation,camera_path,
+                edit_id,edit_revision,film_tick,quality,ticket_sha256,
+                source_manifest_sha256
+                FROM nvp_slate_preview_consents WHERE task_id=?""",
+                (self.supervisor._activity_id(result["job_id"]),)).fetchone()
+        if row is None or row[0] not in ("blocking","geometry"):
+            raise RuntimeError("Cached derivative lost its source-renderer provenance")
+        mode,camera,edit_id,revision,film_tick,quality,ticket_sha,manifest_sha=row
+        ticket=self.lazy.select(
+            project_id,edit_id,revision,film_tick=film_tick,quality=quality)
+        if (ticket["status"]!="SOURCE_REFERENCE_SELECTED" or
+            sha(canonical(ticket))!=ticket_sha):
+            raise RuntimeError("Cached derivative no longer matches original editor source")
+        from backend.nvp_slate06_geometry import MAX_SOURCE_BYTES
+        original=self.supervisor.root/result["job_id"]/SOURCE_FILE
+        if original.is_symlink() or not original.is_file() or (
+                original.stat().st_size>MAX_SOURCE_BYTES):
+            raise RuntimeError("Verified preview source recipe is absent or unbounded")
+        source_raw=original.read_bytes()
+        if sha(source_raw)!=manifest_sha:
+            raise RuntimeError("Verified preview fidelity manifest changed")
+        source=json.loads(source_raw)
+        adapter=_adapter_for(mode)
+        if (source.get("format")!=adapter.FORMAT or
+            source.get("source_cache_key")!=cache_key or
+            source.get("source_take_sha256")!=ticket["source_take_document_sha256"] or
+            source.get("source_shot_sha256")!=ticket["source_shot_document_sha256"] or
+            source.get("source_tick")!=ticket["source_tick"] or
+            (source.get("width"),source.get("height"))!=(
+                result["width"],result["height"])):
+            raise RuntimeError("Published PNG and source fidelity contract disagree")
         return {
             "format":"nvp.slate.preview_native_delivery.v1",
             "cache_key":cache_key,"project_id":project_id,
             "mime_type":"image/png","png_bytes":data,
             "image_sha256":result["image_sha256"],
             "width":result["width"],"height":result["height"],
-            "lowfi_proxy_only":True,
+            "edit_document_sha256":ticket["edit_document_sha256"],
+            "segment_id":ticket["segment_id"],
+            "source_take_sha256":ticket["source_take_document_sha256"],
+            "source_shot_sha256":ticket["source_shot_document_sha256"],
+            "source_tick":ticket["source_tick"],
+            "presentation":mode,"camera_path":camera,
+            "unmeshed_actors":source.get("unmeshed_actors",[]),
+            "skeletal_rig_count":source.get("skeletal_rig_count",0),
+            "lowfi_proxy_only":mode=="blocking",
+            "authored_geometry_preview_only":mode=="geometry",
+            "usd_material_networks_evaluated":False,
+            "usd_light_photometry_exact":False,
+            "skinned_actor_performance_rendered":False,
             "full_film_frame_approved":False,
         }
 
     def cancel(self,job_id,*,creator_event):
         """Cancellation requires separate authenticated user action."""
         row=self.cache._job(job_id)
-        ctx={"operation":"nvp.slate.cancel_lowfi_preview.v1",
+        with self.ledger._db() as db:
+            consent=db.execute("""SELECT presentation
+                FROM nvp_slate_preview_consents WHERE task_id=?""",
+                (self.supervisor._activity_id(job_id),)).fetchone()
+        if consent is None:
+            raise RuntimeError("Preview cancellation source provenance missing")
+        ctx={"operation":(
+                 "nvp.slate.cancel_openusd_geometry_preview.v1"
+                 if consent[0]=="geometry" else
+                 "nvp.slate.cancel_lowfi_preview.v1"),
+             "presentation":consent[0],
              "project_id":row["project_id"],"job_id":job_id,
              "preview_cache_key":row["cache_key"]}
         if self.approve(creator_event,dict(ctx)) is not True:

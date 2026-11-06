@@ -1,0 +1,103 @@
+name: NVP SLATE-06 Native OpenUSD Geometry Camera Lighting Presentation
+
+on:
+  push:
+    branches:
+      - nvp/slate06-openusd-geometry-presentation-20261106
+    paths:
+      - "backend/nvp_slate06_geometry.py"
+      - "backend/nvp_openusd_scene.py"
+      - "backend/nvp_openusd_native_schemas.py"
+      - "backend/nvp_slate_preview_host.py"
+      - "tests/test_nvp_slate06_geometry_native.py"
+      - "frontend/src/SlateBranchTimelinePane*"
+      - "docs/NVP_SLATE06_HIGH_FIDELITY_OPENUSD_PRESENTATION.md"
+      - ".github/workflows/nvp-slate06-native.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_slate06_geometry.py"
+      - "backend/nvp_openusd_scene.py"
+      - "backend/nvp_openusd_native_schemas.py"
+      - "backend/nvp_slate_preview_host.py"
+      - "tests/test_nvp_slate06_geometry_native.py"
+      - "frontend/src/SlateBranchTimelinePane*"
+      - "docs/NVP_SLATE06_HIGH_FIDELITY_OPENUSD_PRESENTATION.md"
+      - ".github/workflows/nvp-slate06-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-slate06-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-authored-geometry:
+    name: SLATE-06 geometry USD ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine native OpenUSD scene runtime
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Compile source and actual first-party Blender script
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_slate06_geometry.py backend/nvp_slate_preview_host.py tests/test_nvp_slate06_geometry_native.py
+          python -c "from backend.nvp_slate06_geometry import BLENDER_SCRIPT; compile(BLENDER_SCRIPT,'nvp-slate06-blender.py','exec'); from pxr import Usd,UsdGeom; print('REAL_USD',Usd.GetVersion())"
+      - name: Native frozen take geometry, camera, lighting, shot and host authorization
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_slate06_geometry_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_slate05_preview_native.py" -v
+      - name: Preserve earlier native asset/SHOT and branch editing behavior
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_openusd_reusable_assets.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_shot_overrides_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_native_schemas.py" -v
+
+  real-cycles-presentation:
+    name: SLATE-06 actual contained Blender Cycles on frozen OpenUSD geometry
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install real USD and Linux Blender
+        shell: bash
+        run: |
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+          sudo apt-get update -qq
+          sudo apt-get install -y blender
+          /usr/bin/blender -b --version
+      - name: CPU Cycles native PNG, input/output hashes and verified cache publication
+        shell: bash
+        env:
+          NVP_NATIVE_BLENDER_EXECUTABLE: /usr/bin/blender
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_slate06_geometry_native.py" -v
+
+  native-editor-preview-ui:
+    name: SLATE-06 React committed-geometry preview and native camera choice
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm run test:ui -- src/SlateBranchTimelinePane.test.jsx
