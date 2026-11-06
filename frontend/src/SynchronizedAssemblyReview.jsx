@@ -129,7 +129,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     }
     if(player.current)player.current.pause();
     if(url.current){
-      URL.revokeObjectURL(url.current);
+      if(url.current.startsWith('blob:'))URL.revokeObjectURL(url.current);
       url.current=null;
     }
     setSrc(null);setReview(null);setPlaying(false);
@@ -185,23 +185,26 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     }
   }
 
-  // The server never sends a file path. JS receives bounded verified chunks
-  // and checks EACH SHA before constructing a temporary private Blob URL.
+  // INDEX-TIME-09 bounded-memory playback: verified MP4 stays in NVP's
+  // private scratch directory. The native media element requests <=1MiB
+  // HTTP 206 byte ranges through the opaque, per-window review ticket.
+  // No 160MiB JS Blob or full ArrayBuffer is ever created.
   useEffect(()=>{
     if(!review||!ticket.current||!native||url.current)return;
     let alive=true,busy=false;
     const gen=generation.current,token=ticket.current;
     async function poll(){
-      if(!alive||busy||url.current)return;
+      if(!alive||busy||gen!==generation.current||ticket.current!==token)return;
       busy=true;
       try{
         const result=await native.poll_synchronized_av_review(token);
         if(!alive||gen!==generation.current||ticket.current!==token)return;
         if(result?.status==='RECOVERY_REQUIRED'||result?.status==='CANCELLED')
           throw Error('Native review was cancelled or needs worker recovery.');
-        if(result?.format!==FORMAT)return;
+        if(result?.format!==FORMAT)
+          throw Error('Untrusted native review response.');
         if(STATUS.includes(result.status)){
-          setStatus('Preparing verified synchronized audio/video; originals remain untouched…');
+          setStatus('Rendering a bounded, disk-backed original-footage review…');
           return;
         }
         if(result.status!=='READY'||
@@ -212,63 +215,34 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
            !SHA.test(result.media_sha256||'')||
            !Number.isInteger(result.size_bytes)||
            result.size_bytes<256||result.size_bytes>MAX_SIZE||
-           !/^\d+$/.test(result.actual_start_tick||'')){
+           !/^\\d+$/.test(result.actual_start_tick||'')){
           throw Error('Native A/V receipt disagreed with the frozen assembly.');
         }
-        setDownloading(true);
-        setStatus('Receiving a verified temporary picture-and-sound proxy…');
-        let offset=0;
-        const chunks=[];
-        while(offset<result.size_bytes){
-          const c=await native.get_synchronized_av_chunk(token,offset);
-          if(!alive||gen!==generation.current||ticket.current!==token)return;
-          if(c?.format!==FORMAT||c.status!=='VERIFIED_CHUNK'||
-             c.ticket_id!==token||c.offset!==offset||
-             c.total_size!==result.size_bytes||
-             c.original_modified!==false||c.master_approved!==false||
-             !SHA.test(c.sha256||'')||
-             typeof c.data_base64!=='string')
-            throw Error('Native preview chunk identity changed.');
-          const data=decode64(c.data_base64);
-          if(data.length>MAX_CHUNK||data.length===0||
-             c.next_offset!==offset+data.length)
-            throw Error('Native preview chunk broke its approved bounds.');
-          if(!crypto?.subtle)
-            throw Error('The native browser cannot verify preview media SHA.');
-          const hash=hex(await crypto.subtle.digest('SHA-256',data));
-          if(hash!==c.sha256)
-            throw Error('Native preview chunk did not match its SHA256.');
-          chunks.push(data);
-          offset=c.next_offset;
-          setDownloaded(offset);
-        }
-        const media=new Blob(chunks,{type:'video/mp4'});
-        const all=await media.arrayBuffer();
-        if(hex(await crypto.subtle.digest('SHA-256',all))!==result.media_sha256)
-          throw Error('Complete native synchronized media does not match receipt SHA.');
+        const descriptor=await native.get_synchronized_av_stream(token);
         if(!alive||gen!==generation.current||ticket.current!==token)return;
-        const object=URL.createObjectURL(media);
-        if(url.current)URL.revokeObjectURL(url.current);
-        url.current=object;
-        // READY is terminal for this one-time private chunk transfer. Reset
-        // transfer status BEFORE publishing a new receipt to React; that
-        // receipt causes the polling effect to dispose its old closure.
-        setDownloading(false);
+        const expected='/api/native-av-review/'+encodeURIComponent(token)+'/media';
+        if(descriptor?.format!==FORMAT||
+           descriptor.status!=='VERIFIED_STREAM'||
+           descriptor.url!==expected||
+           descriptor.media_sha256!==result.media_sha256||
+           descriptor.total_size!==result.size_bytes||
+           descriptor.content_type!=='video/mp4'||
+           descriptor.original_modified!==false||
+           descriptor.master_approved!==false)
+          throw Error('Disk-backed verified media ticket was refused.');
+        url.current=descriptor.url;
         setReview(result);
-        setSrc(object);
-        setStatus('Ready. Play picture and sound together on the native media clock.');
+        setSrc(descriptor.url);
+        setStatus('Ready. Sound and picture share one native clock; video stays on disk.');
       }catch(e){
         if(alive&&gen===generation.current){
           setError(e.message);
           revoke();
         }
-      }finally{
-        busy=false;
-        if(alive&&gen===generation.current)setDownloading(false);
-      }
+      }finally{busy=false;}
     }
     poll();
-    const interval=setInterval(poll,1000);
+    const interval=setInterval(poll,900);
     return ()=>{alive=false;clearInterval(interval);};
   },[native,review,projectId,edit.edit_id,edit.revision,
      edit.edit_document_sha256,revoke]);
@@ -303,7 +277,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
       previous edits stay untouched.</p>
     <div style={{maxWidth:'100%',background:'#12151b',
       minHeight:'165px',display:'grid',placeItems:'center'}}>
-      {src?<video ref={player} src={src} controls
+      {src?<video ref={player} src={src} controls preload="metadata" playsInline
         style={{width:'100%',maxHeight:'480px'}}
         aria-label="Temporary picture and synchronized sound preview"
         onPlay={()=>setPlaying(true)}
@@ -362,7 +336,9 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     <p className="fineprint">One approval covers up to 20 minutes of
       24fps picture with 48 kHz stereo sound. Original camera audio is
       used when available; silent source sections stay silent. The preview
-      is a separate, compressed review derivative, not frame-accurate
-      final conform. Long movies continue in additional bounded sections.</p>
+      remains on private disk and the native player requests up to 1 MiB
+      per verified byte range. The browser manages its own decoded buffer;
+      an exact 256 MiB RAM ceiling is not yet independently enforced.
+      This is not a final conform. Long films use further bounded sections.</p>
   </section>;
 }
