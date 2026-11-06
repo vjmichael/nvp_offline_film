@@ -79,6 +79,10 @@ class OpenUSDPresentationPlanner:
                     if (value:=evaluate_native_schema(
                         stage,path,scene["data"]["prim_roles"][path],t,
                         channels)) is not None]
+            if scene["data"].get("skeleton_rigs"):
+                from backend.nvp_openusd_skeleton import evaluate_skeletons
+                item["skeletal_pose"]=evaluate_skeletons(
+                    stage,scene["data"]["skeleton_rigs"],t)
             samples.append(item)
         return {
             "format":FORMAT,"project_id":project_id,
