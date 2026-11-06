@@ -89,10 +89,15 @@ def serve(app):
 
 
 def trusted_source_bridge(port):
-    from backend.nvp_api import studio
+    from backend.nvp_api import app,studio
     from backend.nvp_index_time06_native_desktop import TrustedFootageDesktop
-    return TrustedFootageDesktop(
+    native=TrustedFootageDesktop(
         studio,origin="http://127.0.0.1:"+str(port))
+    # The exact installed desktop instance is the ONLY capability owner
+    # behind the read-only disk-backed A/V Range route. Headless FastAPI
+    # never creates media authority. A ticket cannot be minted over HTTP.
+    app.state.native_av_window=native
+    return native
 
 
 def run_smoke():
@@ -661,6 +666,10 @@ def main(argv=None):
         try:
             if native is not None:native._close()
         finally:
+            if native is not None:
+                from backend.nvp_api import app as _app
+                if getattr(_app.state,"native_av_window",None) is native:
+                    _app.state.native_av_window=None
             server.should_exit=True
             worker.join(timeout=12)
             sock.close()
