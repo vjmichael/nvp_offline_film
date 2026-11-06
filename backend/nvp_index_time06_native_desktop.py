@@ -615,6 +615,8 @@ class TrustedFootageDesktop:
                 item["stop"].set()
         # A real worker is stopped by the original contained executor and
         # durable TaskLedger. Never report a mere kill signal as proof.
-        self._executor.shutdown(wait=True,cancel_futures=False)
+        # Stop the playback pipeline first; no approved video decoder may
+        # outlive the desktop window while we wait for a still-frame worker.
         if self._review_playback is not None:
             self._review_playback.close()
+        self._executor.shutdown(wait=True,cancel_futures=False)
