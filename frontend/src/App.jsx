@@ -13,6 +13,7 @@ import RetargetPanel from './RetargetPanel.jsx';
 import ColorGradingGuide from './ColorGradingGuide.jsx';
 import ColorGradingPanel from './ColorGradingPanel.jsx';
 import ResourceActivityPanel from './ResourceActivityPanel.jsx';
+import FilmTimeIndexPanel from './FilmTimeIndexPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -419,8 +420,10 @@ export default function App() {
           <button className={tab === 'retarget' ? 'active' : ''} onClick={() => setTab('retarget')}>14 · Calibrate actors</button>
           <button className={tab === 'grade' ? 'active' : ''} onClick={() => setTab('grade')}>15 · Grade color</button>
           <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>16 · Make the film</button>
+          <button className={tab === 'film-index' ? 'active' : ''} onClick={() => setTab('film-index')}>17 · Indexed footage</button>
           <button className={tab === 'color-guide' ? 'active' : ''} onClick={() => setTab('color-guide')}>Help · Color grading</button>
         </nav>
+        {tab === 'film-index' && <FilmTimeIndexPanel projectId={project.id} api={api}/>}
         {tab === 'develop' && <div className="columns">
           <section className="card">
             <h2>Develop your story</h2>
