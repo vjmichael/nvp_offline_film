@@ -16,6 +16,7 @@ export default function FilmTimeAssemblyPanel({
   const [chosen,setChosen]=useState(0);
   const [trimIn,setTrimIn]=useState('');
   const [trimOut,setTrimOut]=useState('');
+  const [splitAt,setSplitAt]=useState('');
   const [gap,setGap]=useState('0');
   const [sourceEdit,setSourceEdit]=useState('');
   const [sourceOrdinal,setSourceOrdinal]=useState('0');
@@ -106,13 +107,16 @@ export default function FilmTimeAssemblyPanel({
   useEffect(()=>{
     generation.current+=1;setDraft(null);setChange(null);setMessage('');
     setChosen(0);setSourceEdit('');setSourceOrdinal('0');
-    setInsertAt('0');setTrimIn('');setTrimOut('');setGap('0');
+    setInsertAt('0');setTrimIn('');setTrimOut('');setSplitAt('');setGap('0');
   },[projectId,edit.edit_id,edit.revision,edit.edit_document_sha256]);
 
   useEffect(()=>{
     setTrimIn(current?.source_in_frame_zero||'');
     setTrimOut(current?.source_out_frame_zero||'');
     if(current){
+      const first=BigInt(current.source_in_frame_zero);
+      const last=BigInt(current.source_out_frame_zero);
+      setSplitAt((first+(last-first)/2n).toString());
       const prev=assemblyClips.find(c=>c.ordinal===chosen-1);
       const before=prev?.film_end_tick||'0';
       setGap((BigInt(current.film_start_tick)-BigInt(before)).toString());
@@ -120,7 +124,7 @@ export default function FilmTimeAssemblyPanel({
   },[chosen,assemblyClips]);
 
   async function preview(operation){
-    if(busy||!native)return;
+    if(!fullLoaded||busy||!native)return;
     const request=++generation.current;
     setDraft(null);setChange(null);setMessage('');setBusy(true);
     try{
@@ -197,7 +201,7 @@ export default function FilmTimeAssemblyPanel({
     {max<=256&&<>
       <label>Clip to edit
         <select aria-label="Assembly clip" value={current?chosen:''}
-          disabled={!fullLoaded}
+          disabled={!fullLoaded||busy}
           onChange={e=>{setDraft(null);setChange(null);
                         setChosen(Number(e.target.value));}}>
           {assemblyClips.map(c=><option key={c.ordinal} value={c.ordinal}>
@@ -225,13 +229,34 @@ export default function FilmTimeAssemblyPanel({
         </div>
         <div className="columns">
           <div>
+            <label>Cut at original source frame (creates two references)
+              <input aria-label="Split source at frame" value={splitAt}
+                disabled={busy}
+                onChange={e=>{setDraft(null);setChange(null);
+                  setSplitAt(e.target.value);}}/>
+            </label>
+            <button disabled={!buttonsReady||
+              BigInt(current.source_out_frame_zero)-
+                BigInt(current.source_in_frame_zero)<2n}
+              onClick={()=>preview({
+                operation:'split',index:chosen,source_frame_zero:splitAt,
+              })}>Split clip at source frame</button>
+          </div>
+          <div>
+            <p className="fineprint">Split is a non-destructive edit.
+              It creates adjacent references to one original recording;
+              the native index recalculates both PTS ranges.</p>
+          </div>
+        </div>
+        <div className="columns">
+          <div>
             <label>Original first frame (inclusive)
               <input aria-label="Trim source in" value={trimIn}
-                onChange={e=>setTrimIn(e.target.value)} />
+                onChange={e=>{setDraft(null);setChange(null);setTrimIn(e.target.value);}} />
             </label>
             <label>Original end frame (exclusive)
               <input aria-label="Trim source out" value={trimOut}
-                onChange={e=>setTrimOut(e.target.value)} />
+                onChange={e=>{setDraft(null);setChange(null);setTrimOut(e.target.value);}} />
             </label>
             <button disabled={!buttonsReady}
               onClick={()=>preview({
@@ -243,7 +268,7 @@ export default function FilmTimeAssemblyPanel({
           <div>
             <label>Gap before clip (exact Film Time ticks)
               <input aria-label="Gap before source clip" value={gap}
-                onChange={e=>setGap(e.target.value)} />
+                onChange={e=>{setDraft(null);setChange(null);setGap(e.target.value);}} />
             </label>
             <button disabled={!buttonsReady}
               onClick={()=>preview({
@@ -258,7 +283,7 @@ export default function FilmTimeAssemblyPanel({
       <div className="columns">
         <label>Indexed source edit
           <select aria-label="Insert from indexed edit" value={sourceEdit}
-            onChange={e=>setSourceEdit(e.target.value)}>
+            onChange={e=>{setDraft(null);setChange(null);setSourceEdit(e.target.value);}}>
             <option value="">Select source edit…</option>
             {edits.map(e=><option key={e.edit_id} value={e.edit_id}>
               {e.edit_id} · revision {e.revision}
@@ -267,11 +292,11 @@ export default function FilmTimeAssemblyPanel({
         </label>
         <label>Clip ordinal in source edit (zero-based)
           <input aria-label="Insert source ordinal" value={sourceOrdinal}
-            onChange={e=>setSourceOrdinal(e.target.value)}/>
+            onChange={e=>{setDraft(null);setChange(null);setSourceOrdinal(e.target.value);}}/>
         </label>
         <label>Insert before placement slot (zero-based)
           <input aria-label="Assembly insert slot" value={insertAt}
-            onChange={e=>setInsertAt(e.target.value)}/>
+            onChange={e=>{setDraft(null);setChange(null);setInsertAt(e.target.value);}}/>
         </label>
       </div>
       <button disabled={!buttonsReady||!other}
