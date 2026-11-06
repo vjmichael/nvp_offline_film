@@ -127,5 +127,30 @@ class NativeDataFirstOutputTests(unittest.TestCase):
                 listener_path="/World/ListenerLeft")
 
 
+    def test_broken_renderer_png_never_publishes_a_final_package(self):
+        sha=self.create()
+        valid=png(8,19,47)
+        broken_crc=bytearray(valid)
+        payload=valid.index(b"IDAT")+4
+        broken_crc[payload]^=0x01
+        malformed={
+            "truncated_iend":valid[:-12],
+            "polyglot_trailing_bytes":valid+b"not-image-payload",
+            "invalid_idat_crc":bytes(broken_crc),
+        }
+        for case,bad in malformed.items():
+            with self.subTest(case=case):
+                self.exporter.render=lambda **kwargs:bad
+                with self.assertRaises(RuntimeError):
+                    self.exporter.export(
+                        self.pid,"OutputTake",sha,"Corrupt"+case,
+                        self.out,listener_path="/World/ListenerLeft")
+                self.assertEqual(list(self.out.iterdir()),[],
+                    "Failed output must not leave a partial presentation")
+                self.assertEqual(self.index.read_revision(
+                    self.pid,"OutputTake",1)["document_sha256"],sha)
+
+
+
 if __name__=="__main__":
     unittest.main()
