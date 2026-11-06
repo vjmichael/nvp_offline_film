@@ -350,12 +350,13 @@ class TrustedFootageDesktop:
                 "source_tick":str(tick),"source_frame_zero":selected["source_frame_zero"],
                 "source_pts":selected["source_pts"],
                 "stop":threading.Event(),
-                "future":self._executor.submit(
-                    host.run_next,timeout_seconds=180,
-                    should_cancel=lambda: item["stop"].is_set() or self._closed),
-                "dispatched_at":time.monotonic(),"cancelled":False,
+                "future":None,"dispatched_at":time.monotonic(),
+                "cancelled":False,
             }
             self._tickets[ticket]=item
+            item["future"]=self._executor.submit(
+                host.run_next,timeout_seconds=180,
+                should_cancel=lambda: item["stop"].is_set() or self._closed)
             if len(self._tickets)>64:
                 oldest=next(iter(self._tickets))
                 self._tickets.pop(oldest,None)
