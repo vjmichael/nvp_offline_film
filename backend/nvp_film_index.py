@@ -360,6 +360,25 @@ class FilmIndex:
                 raise RuntimeError("An object cannot change its identity or kind")
             if head != expected_revision:
                 raise RuntimeError("Film object revision conflict; reload before committing")
+            # A source is immutable while present, but may be explicitly
+            # retired or purged. The lifecycle table is optional for older
+            # installations; check it inside the SAME SQLite write lease
+            # that publishes a FilmIndex revision. IDs of deleted sources
+            # cannot be reused; a retired source cannot acquire new users.
+            retention=db.execute("""SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='nvp_film_source_retirements'""").fetchone()
+            if retention is not None:
+                blocked=db.execute("""SELECT 1 FROM nvp_film_source_retirements
+                    WHERE project_id=? AND object_id=? AND state!='RESTORED'""",
+                    (project_id,object_id)).fetchone()
+                if blocked is not None:
+                    raise RuntimeError("Film object identity was retired or purged")
+                for dep in edges:
+                    blocked=db.execute("""SELECT 1 FROM nvp_film_source_retirements
+                        WHERE project_id=? AND object_id=? AND state!='RESTORED'""",
+                        (project_id,dep["object_id"])).fetchone()
+                    if blocked is not None:
+                        raise RuntimeError("Cannot publish a new dependency on retired film source")
             if kind == "take" and existing:
                 raise RuntimeError("A frozen digital take cannot be revised in-place")
             for dep in edges:
