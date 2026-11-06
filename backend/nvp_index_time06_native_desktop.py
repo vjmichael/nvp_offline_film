@@ -168,6 +168,7 @@ class TrustedFootageDesktop:
             "can_edit_assembly":True,
             "can_review_assembly_frames":True,
             "can_review_synchronized_av":True,
+            "can_stream_synchronized_av_from_private_disk":True,
             "original_source_path_to_browser":False,
         }
 
@@ -625,6 +626,13 @@ class TrustedFootageDesktop:
 
     def poll_synchronized_av_review(self,ticket):
         try:return self._get_av_host().poll(ticket)
+        except Exception:
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"RECOVERY_REQUIRED",
+                    "original_modified":False,"master_approved":False}
+
+    def get_synchronized_av_stream(self,ticket):
+        try:return self._get_av_host().stream_info(ticket)
         except Exception:
             return {"format":"nvp.index_time09.native_av_host.v1",
                     "status":"RECOVERY_REQUIRED",
