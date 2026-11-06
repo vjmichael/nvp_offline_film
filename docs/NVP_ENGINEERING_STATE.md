@@ -1,5 +1,25 @@
 # NVP — Engineering state and resumption ledger
 
+## Creator correction — data-first Film Time and audio (November 6)
+
+The **authoritative** NVP timeline is sparse, immutable, versioned event and
+source-reference data addressed by exact Film Time ticks, **not video frames**.
+A codec's compressed picture samples, media inspection frames and a
+display's refresh samples are derived/media-adapter internals only. Never
+describe editor navigation, authoring, stored Digital Takes or playback
+scheduling as frame-driven. This is already governed by
+`docs/NVP_DATA_TIME01_EVENTS_NOT_FRAMES.md`; the explicit audio mapping
+and PCM/FLAC input/preview recommendation is now documented there.
+
+For audio, prefer bounded PCM sample buffers as the exact native
+seek/scrub/mix/reverse surface; use WAV/BWF for straightforward sample
+addressing and FLAC with seek tables for compact lossless storage.
+Import MP3/Opus/AAC as immutable originals and decode only requested
+windows. Source time, encoder priming and sample rate must be mapped
+explicitly. Do not silently recode source of truth. INDEX-TIME-10's
+H.264/AAC section render is a **legacy/derived presentation adapter**
+and does not establish data-first end-to-end playback acceptance.
+
 ## Latest checkpoint — INDEX-TIME-10 progressive playback, November 6
 
 - **Stacked development branch:** `nvp/index-time10-progressive-longform-20261106`,
