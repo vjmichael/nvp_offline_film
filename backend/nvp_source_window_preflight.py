@@ -22,7 +22,7 @@ class SourceWindowPreflight:
         self.publisher, self.bridge = publisher, bridge
 
     def prepare(self, project_id, edit_id, revision, *, first_frame, frame_count,
-                verify_original_bytes=True):
+                verify_original_bytes=True, integrity_policy="full"):
         """Map a small output interval to exact immutable source intervals.
 
         No full timeline/frame array is created. Repeated references to the
@@ -34,7 +34,12 @@ class SourceWindowPreflight:
         if frame_count > MAX_WINDOW_FRAMES or first_frame > MAX_I64 - frame_count + 1:
             raise ValueError("Native source window must fit bounded frame policy")
         if verify_original_bytes is not True:
-            raise PermissionError("Native source preflight requires actual source SHA verification")
+            raise PermissionError("Unverified byte bypass is not a supported policy")
+        if integrity_policy not in ("full", "preview"):
+            raise ValueError("Unknown source-integrity policy")
+        # A preview status checks FilmIndex provenance and online state, but
+        # is expressly NOT evidence that external content still hashes to
+        # the ingest SHA. Final publication must use 'full'.
         checked = self.publisher.verify_revision(project_id, edit_id, revision)
         end = first_frame + frame_count
         if end - 1 > checked["total_frames"]:
@@ -60,11 +65,15 @@ class SourceWindowPreflight:
                 key = (sid, source_rev)
                 if key not in source_cache:
                     current = self.bridge.resolve_source(
-                        project_id, sid, source_rev, verify_bytes=True)
-                    if (current["availability"] != "VERIFIED" or
-                        current["verified_bytes"] is not True or
+                        project_id, sid, source_rev,
+                        verify_bytes=(integrity_policy == "full"))
+                    valid_status = ("VERIFIED" if integrity_policy == "full"
+                                    else "PRESENT_UNVERIFIED")
+                    if (current["availability"] != valid_status or
+                        (integrity_policy == "full" and
+                         current["verified_bytes"] is not True) or
                         current["film_document_sha256"] != clip["source_document_sha256"]):
-                        raise RuntimeError("Native source window refuses offline/altered original")
+                        raise RuntimeError("Native source window refuses offline/invalid original")
                     source_cache[key] = current
                 original = source_cache[key]
                 source_first = clip["source_first_frame"] + cursor - begin
@@ -88,7 +97,10 @@ class SourceWindowPreflight:
             "edit_revision": revision,
             "edit_document_sha256": checked["film_document_sha256"],
             "first_frame": first_frame, "frame_count": frame_count,
-            "slices": slices, "source_preflight": "VERIFIED_AT_PREPARATION",
+            "slices": slices,
+            "source_preflight": ("VERIFIED_AT_PREPARATION"
+                                 if integrity_policy == "full"
+                                 else "PRESENT_UNVERIFIED_PREVIEW_ONLY"),
             "creator_approved": False, "frames_decoded": False,
             "native_worker_started": False, "final_master": False,
         }
