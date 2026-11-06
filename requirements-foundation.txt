@@ -6,3 +6,5 @@ pydantic>=2,<3
 # DA-05: independently licensed standalone MP3/FLAC/WAV/Ogg decoder.
 # Bundled in the one-installer native runtime; no FFmpeg/libav dependency.
 miniaudio>=1.71,<2
+# DA-05: HPND-licensed native CPU PNG raster for limited OpenUSD geometry.
+Pillow>=11.0,<13
