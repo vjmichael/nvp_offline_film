@@ -131,6 +131,7 @@ class TrustedDesktopCameraBridge:
         self._tickets = {}
         self._futures = {}
         self._host = None
+        self._data_av_controller = None
         self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
@@ -401,6 +402,32 @@ class TrustedDesktopCameraBridge:
                 self._grants.pop(grant.token,None)
             return {"status":done["state"],"native_worker_cancelled":True}
 
+    # DATA-AV-01: same authenticated native window, wholly distinct from
+    # the optional Blender camera still and conventional video preview.
+    # The browser cannot provide source media paths or grant its own consent.
+    def _data_av(self):
+        if self._data_av_controller is None:
+            from backend.nvp_data_av_desktop import TrustedDataAVController
+            self._data_av_controller=TrustedDataAVController(
+                self.index,native_window=self._native_window,
+                ask_native=self._ask)
+        return self._data_av_controller
+
+    def data_av_catalog(self,project_id):
+        return self._data_av().catalog(project_id)
+
+    def data_av_begin(self,request):
+        return self._data_av().begin(request)
+
+    def data_av_audio_window(self,session_id,first_sample,count):
+        return self._data_av().read_audio(session_id,first_sample,count)
+
+    def data_av_scene_at(self,session_id,tick):
+        return self._data_av().scene_at(session_id,tick)
+
+    def data_av_stop(self,session_id):
+        return self._data_av().stop(session_id)
+
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
 
@@ -412,6 +439,8 @@ class TrustedDesktopCameraBridge:
             if self._closing:
                 return
             self._closing=True
+            if self._data_av_controller is not None:
+                self._data_av_controller.close()
             host=self._host
             tickets=list(self._tickets.values())
         if host is not None:
