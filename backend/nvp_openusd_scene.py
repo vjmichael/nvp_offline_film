@@ -68,10 +68,11 @@ def _layer_from_text(text, label, Sdf):
     return layer
 
 
-def _compose(base, motion, Sdf, Usd):
+def _compose(base, motion, Sdf, Usd, parameters=None):
     # Strongest first: animation opinions supersede the layout layer.
     root = Sdf.Layer.CreateAnonymous("nvp_composed.usda")
-    root.subLayerPaths = [motion.identifier, base.identifier]
+    root.subLayerPaths = ([parameters.identifier] if parameters is not None
+                          else []) + [motion.identifier, base.identifier]
     stage = Usd.Stage.Open(root, Usd.Stage.LoadNone)
     if not stage:
         raise RuntimeError("Native OpenUSD composition returned no scene")
@@ -102,7 +103,8 @@ class OpenUSDSceneBridge:
         self.index=index
 
     def publish(self, project_id, scene_id, *, prims, curves,
-                expected_revision=0, asset_bindings=None):
+                expected_revision=0, asset_bindings=None,
+                performance_channels=None):
         """Create immutable world+motion layer blobs and an exact scene revision.
 
         A failed FilmIndex publication may leave *orphan blobs*, not an approved
@@ -166,22 +168,30 @@ class OpenUSDSceneBridge:
         # The USD session references are recreated only from trusted SHA-
         # addressed in-memory layers, never from arbitrary disk paths.
         bindings=self._resolve_assets(project_id, paths, asset_bindings or [])
-        composed=_compose(base,motion,Sdf,Usd)
+        from backend.nvp_openusd_channels import author_parameter_layer
+        parameter_layer, channel_manifest=author_parameter_layer(
+            paths, performance_channels or [])
+        composed=_compose(base,motion,Sdf,Usd,parameter_layer)
         self._attach_assets(composed,bindings)
         for path in paths:
             _evaluate(composed,path,0,Sdf,Usd,UsdGeom)
         base_bytes=base.ExportToString().encode("utf-8")
         motion_bytes=motion.ExportToString().encode("utf-8")
+        parameter_bytes=parameter_layer.ExportToString().encode("utf-8")
         if (len(base_bytes)>MAX_USD_LAYER_BYTES or
-            len(motion_bytes)>MAX_USD_LAYER_BYTES):
+            len(motion_bytes)>MAX_USD_LAYER_BYTES or
+            len(parameter_bytes)>MAX_USD_LAYER_BYTES):
             raise ValueError("Authored OpenUSD layer exceeded blob policy")
         # The immutable scene references the layer *bytes*, not temp paths.
         bsha=self.index.put_blob(project_id,base_bytes,media_type=LAYER_TYPE)
         msha=self.index.put_blob(project_id,motion_bytes,media_type=LAYER_TYPE)
+        psha=self.index.put_blob(project_id,parameter_bytes,media_type=LAYER_TYPE)
         manifest={"format":FORMAT,
-                  "layer_order":["motion","layout"],
+                  "layer_order":["parameters","motion","layout"],
                   "layout_layer_sha256":bsha,
                   "motion_layer_sha256":msha,
+                  "parameter_layer_sha256":psha,
+                  "performance_channels":channel_manifest,
                   "ticks_per_second":TICKS_PER_SECOND,
                   "usd_timecode_limit":MAX_USD_EXACT_TICK,
                   "prim_roles":paths,
@@ -198,7 +208,7 @@ class OpenUSDSceneBridge:
                     (project_id,record["asset_id"],record["asset_revision"])).fetchone()
                 if row is None or row["document_sha"]!=record["asset_document_sha256"]:
                     raise RuntimeError("Referenced USD asset revision changed before scene commit")
-            for sha in (bsha,msha):
+            for sha in (bsha,msha,psha):
                 if db.execute("""SELECT 1 FROM film_blob_refs
                     WHERE project_id=? AND sha256=?""",
                     (project_id,sha)).fetchone() is None:
@@ -277,7 +287,8 @@ class OpenUSDSceneBridge:
         record=self.index.read_revision(project_id,scene_id,revision)
         doc=record["data"]
         if (record["kind"]!="scene" or doc.get("format")!=FORMAT or
-            doc.get("layer_order")!=["motion","layout"] or
+            doc.get("layer_order") not in (
+                ["motion","layout"],["parameters","motion","layout"]) or
             doc.get("contains_external_references") is not False or
             doc.get("ticks_per_second")!=TICKS_PER_SECOND):
             raise RuntimeError("Scene is not an accepted typed OpenUSD source")
@@ -288,11 +299,24 @@ class OpenUSDSceneBridge:
         motion=_layer_from_text(
             self.index.get_blob(project_id,doc["motion_layer_sha256"]).decode(),
             "reopen_motion.usda",Sdf)
-        composed=_compose(base,motion,Sdf,Usd)
+        param=None
+        if doc["layer_order"]==["parameters","motion","layout"]:
+            if (not doc.get("parameter_layer_sha256") or
+                type(doc.get("performance_channels")) is not list):
+                raise RuntimeError("Missing pinned authored performance layer")
+            param=_layer_from_text(
+                self.index.get_blob(
+                    project_id,doc["parameter_layer_sha256"]).decode("utf-8"),
+                "reopen_parameters.usda",Sdf)
+        composed=_compose(base,motion,Sdf,Usd,param)
         bindings=self._resolve_assets(
             project_id,doc["prim_roles"],doc.get("asset_bindings",[]),
             verify_manifest=True)
         self._attach_assets(composed,bindings)
+        if param is not None:
+            from backend.nvp_openusd_channels import evaluate_parameter_channels
+            evaluate_parameter_channels(
+                composed,doc["performance_channels"],doc["prim_roles"],0)
         for p,role in doc["prim_roles"].items():
             _evaluate(composed,p,0,Sdf,Usd,UsdGeom)
             observed=composed.GetPrimAtPath(p).GetAttribute("nvp:semanticRole").Get()
