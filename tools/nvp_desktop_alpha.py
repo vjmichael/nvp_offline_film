@@ -283,10 +283,17 @@ def run_visible_window_smoke():
                             time.sleep(.2)
                         if result["passed"]:
                             result["passed"]=False
-                            window.evaluate_js(
-                                "(()=>{const b=[...document.querySelectorAll('aside button')]"
-                                ".find(x=>x.textContent.includes('Indexed Footage Window Acceptance'));"
-                                "if(b){b.click();return true;}return false;})()")
+                            end=time.monotonic()+20
+                            opened=False
+                            while time.monotonic()<end:
+                                opened=window.evaluate_js(
+                                    "(()=>{const b=[...document.querySelectorAll('aside button')]"
+                                    ".find(x=>x.textContent.includes('Indexed Footage Window Acceptance'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                if opened:break
+                                time.sleep(.2)
+                            if not opened:
+                                raise RuntimeError("Real installed film project did not appear in sidebar")
                             end=time.monotonic()+20
                             tabbed=False
                             while time.monotonic()<end:
