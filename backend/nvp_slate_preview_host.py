@@ -417,20 +417,55 @@ class NativeSlatePreviewHost:
             sha(data)!=result["image_sha256"]):
             raise RuntimeError("Selected cached PNG changed before native delivery")
         with self.ledger._db() as db:
-            row=db.execute("""SELECT presentation,camera_path
+            row=db.execute("""SELECT presentation,camera_path,
+                edit_id,edit_revision,film_tick,quality,ticket_sha256,
+                source_manifest_sha256
                 FROM nvp_slate_preview_consents WHERE task_id=?""",
                 (self.supervisor._activity_id(result["job_id"]),)).fetchone()
         if row is None or row[0] not in ("blocking","geometry"):
             raise RuntimeError("Cached derivative lost its source-renderer provenance")
+        mode,camera,edit_id,revision,film_tick,quality,ticket_sha,manifest_sha=row
+        ticket=self.lazy.select(
+            project_id,edit_id,revision,film_tick=film_tick,quality=quality)
+        if (ticket["status"]!="SOURCE_REFERENCE_SELECTED" or
+            sha(canonical(ticket))!=ticket_sha):
+            raise RuntimeError("Cached derivative no longer matches original editor source")
+        from backend.nvp_slate06_geometry import MAX_SOURCE_BYTES
+        original=self.supervisor.root/result["job_id"]/SOURCE_FILE
+        if original.is_symlink() or not original.is_file() or (
+                original.stat().st_size>MAX_SOURCE_BYTES):
+            raise RuntimeError("Verified preview source recipe is absent or unbounded")
+        source_raw=original.read_bytes()
+        if sha(source_raw)!=manifest_sha:
+            raise RuntimeError("Verified preview fidelity manifest changed")
+        source=json.loads(source_raw)
+        adapter=_adapter_for(mode)
+        if (source.get("format")!=adapter.FORMAT or
+            source.get("source_cache_key")!=cache_key or
+            source.get("source_take_sha256")!=ticket["source_take_document_sha256"] or
+            source.get("source_shot_sha256")!=ticket["source_shot_document_sha256"] or
+            source.get("source_tick")!=ticket["source_tick"] or
+            (source.get("width"),source.get("height"))!=(
+                result["width"],result["height"])):
+            raise RuntimeError("Published PNG and source fidelity contract disagree")
         return {
             "format":"nvp.slate.preview_native_delivery.v1",
             "cache_key":cache_key,"project_id":project_id,
             "mime_type":"image/png","png_bytes":data,
             "image_sha256":result["image_sha256"],
             "width":result["width"],"height":result["height"],
-            "presentation":row[0],"camera_path":row[1],
-            "lowfi_proxy_only":row[0]=="blocking",
-            "authored_geometry_preview_only":row[0]=="geometry",
+            "edit_document_sha256":ticket["edit_document_sha256"],
+            "segment_id":ticket["segment_id"],
+            "source_take_sha256":ticket["source_take_document_sha256"],
+            "source_shot_sha256":ticket["source_shot_document_sha256"],
+            "source_tick":ticket["source_tick"],
+            "presentation":mode,"camera_path":camera,
+            "unmeshed_actors":source.get("unmeshed_actors",[]),
+            "skeletal_rig_count":source.get("skeletal_rig_count",0),
+            "lowfi_proxy_only":mode=="blocking",
+            "authored_geometry_preview_only":mode=="geometry",
+            "usd_material_networks_evaluated":False,
+            "usd_light_photometry_exact":False,
             "skinned_actor_performance_rendered":False,
             "full_film_frame_approved":False,
         }
