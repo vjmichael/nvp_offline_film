@@ -100,9 +100,13 @@ def plan(studio,reader,project_id,edit_id,revision,sha,start_tick,*,ffprobe):
     if limit<=start_tick:raise ValueError("Empty continuous film review")
     rows=[];after=-1
     while len(rows)<record["data"]["clip_count"]:
-        page=reader.clips(project_id,edit_id,revision,
-                          expected_edit_sha256=sha,after_ordinal=after,limit=100)
-        if not page["clips"]:raise RuntimeError("Incomplete original source clip manifest")
+        # The public browser reader intentionally omits private asset SHA,
+        # source timebase and media PTS needed to compose a trustworthy A/V
+        # proxy. Use the verified native publisher's full clip rows instead.
+        page=reader._publisher.clips(project_id,edit_id,revision,
+                                    after_ordinal=after,limit=100)
+        if (page["edit_document_sha256"]!=sha or not page["clips"]):
+            raise RuntimeError("Incomplete original source clip manifest")
         rows.extend(page["clips"])
         after=rows[-1]["ordinal"]
     if len(rows)!=record["data"]["clip_count"]:
@@ -276,11 +280,12 @@ def verify(destination,plan,ffprobe):
     if (raw!=canonical(document) or
         document.get("format")!=RECEIPT_FORMAT or
         document.get("plan_sha256")!=sha256(canonical(plan)).hexdigest() or
-        document.get("media_sha256")!=sha256(movie.read_bytes()).hexdigest() or
+        document.get("media_sha256")!=_sha_file(movie) or
         document.get("size_bytes")!=movie.stat().st_size or
         document.get("master_approved") is not False or
         document.get("original_modified") is not False):
         raise RuntimeError("Synchronized preview media/receipt was altered")
+    from backend.nvp_source_window_decode import _sha_file
     info=json.loads(_run([
         str(ffprobe),"-v","error","-show_streams","-show_format",
         "-of","json",str(movie)],timeout=90))
