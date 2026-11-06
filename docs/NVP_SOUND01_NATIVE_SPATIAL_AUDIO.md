@@ -1,4 +1,4 @@
-# NVP-SOUND-01 — Native spatial sound through the digital film world
+> **Superseding decision (2026-11-06):** FFmpeg is NOT used by NVP, including imported conventional media, audio render, final 2D presentation or export. Any references below to FFmpeg as optional conversion/export are withdrawn. Seek independent non-FFmpeg library implementations. [DA-00–DA-07 ledger](NVP_DATA_ALL_TASK_LEDGER.md).\n\n# NVP-SOUND-01 — Native spatial sound through the digital film world
 
 **Creator correction: November 6, 2026. Architecture direction accepted [C];
 library evaluation, code integration and independent E2E acceptance OPEN [B/D].**
