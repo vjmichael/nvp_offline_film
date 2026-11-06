@@ -132,6 +132,18 @@ class SourceAudioVideoTests(unittest.TestCase):
         while time.monotonic()<until:
             status=self.desktop.poll_synchronized_av_review(ticket)
             if status["status"] in ("READY","RECOVERY_REQUIRED","CANCELLED"):
+                if status["status"]=="RECOVERY_REQUIRED":
+                    host=self.desktop._get_av_host()
+                    item=host._tickets.get(ticket)
+                    if item is not None:
+                        folder=host.root/item["task"]
+                        error_file=folder/"stderr.log"
+                        stderr=(error_file.read_text("utf8","replace")[-3500:]
+                                if error_file.is_file() else "(no worker stderr)")
+                        task_state=host.ledger.get_task(item["task"])
+                        self.fail("Native A/V recovery; task="+
+                                  repr(task_state)+
+                                  "; worker stderr="+stderr)
                 return status
             time.sleep(.25)
         self.fail("OS-contained audio/video render never completed")
