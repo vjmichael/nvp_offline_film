@@ -128,6 +128,10 @@ class OpenUSDSceneBridge:
         if native_schemas:
             from backend.nvp_openusd_native_schemas import METERS_PER_UNIT
             UsdGeom.SetStageMetersPerUnit(layout,METERS_PER_UNIT)
+            # NVP authored coordinates use Z as vertical (elevation).
+            # Persist that explicitly for all newly published native
+            # scenes; old frozen USD layers remain SHA-stable and untouched.
+            UsdGeom.SetStageUpAxis(layout,UsdGeom.Tokens.z)
         UsdGeom.Xform.Define(layout,"/World")
         paths={}
         for value in prims:
