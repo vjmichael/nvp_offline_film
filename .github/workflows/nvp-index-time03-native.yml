@@ -1,0 +1,70 @@
+name: NVP INDEX-TIME-03 Native Film Time Preview and Conform Prep
+
+on:
+  push:
+    branches:
+      - nvp/index-time03-native-preview-conform-20261105
+    paths:
+      - "backend/nvp_film_time_window_*.py"
+      - "backend/nvp_film_time_editorial.py"
+      - "tools/nvp_source_window_worker.py"
+      - "tests/test_nvp_film_time_window_native.py"
+      - "tests/test_nvp_film_time_editorial_native.py"
+      - "docs/NVP_INDEX_TIME03_NATIVE_PREVIEW_CONFORM.md"
+      - ".github/workflows/nvp-index-time03-native.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_film_time_window_*.py"
+      - "backend/nvp_film_time_editorial.py"
+      - "tools/nvp_source_window_worker.py"
+      - "tests/test_nvp_film_time_window_native.py"
+      - "tests/test_nvp_film_time_editorial_native.py"
+      - "docs/NVP_INDEX_TIME03_NATIVE_PREVIEW_CONFORM.md"
+      - ".github/workflows/nvp-index-time03-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-index-time03-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-film-time-worker:
+    name: INDEX-TIME-03 ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Provision real FFmpeg and FFprobe on Ubuntu
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Provision real FFmpeg and FFprobe + Job Objects on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          python -m pip install pywin32
+      - name: Verify production worker and source-time Python modules
+        shell: bash
+        run: |
+          ffmpeg -version
+          ffprobe -version
+          python -m compileall -q backend/nvp_film_time_window_preflight.py backend/nvp_film_time_window_decode.py backend/nvp_film_time_window_host.py tools/nvp_source_window_worker.py tests/test_nvp_film_time_window_native.py
+      - name: True native VFR PTS review, full-hash conform prep, OS-contained host and recovery
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_film_time_window_native.py" -v
+      - name: Previously indexed source and FilmIndex regressions
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_film_time_editorial_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_source_pts_film_time.py" -v
+          python -m unittest discover -s tests -p "test_nvp_temporal_ledger.py" -v
