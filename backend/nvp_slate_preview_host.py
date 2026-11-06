@@ -44,6 +44,17 @@ def _digest(doc):
     return sha256(canonical_bytes(doc)).hexdigest()
 
 
+def _adapter_for(presentation):
+    """Only two explicit NVP-owned signed recipes use ONE native supervisor."""
+    if presentation=="blocking":
+        from backend import nvp_slate_proxy_recipe as module
+        return module
+    if presentation=="geometry":
+        from backend import nvp_slate06_geometry as module
+        return module
+    raise ValueError("Unknown trusted OpenUSD presentation mode")
+
+
 class NativeSlatePreviewHost:
     """Host-authenticated, resource-admitted low-fi proxy PNG render adapter."""
 
@@ -76,8 +87,20 @@ class NativeSlatePreviewHost:
                 issued_at REAL NOT NULL,
                 expires_at REAL NOT NULL,
                 revoked_at REAL,
-                queued_at REAL
+                queued_at REAL,
+                presentation TEXT NOT NULL DEFAULT 'blocking',
+                camera_path TEXT
             )""")
+            # Upgrade existing installs without invalidating earlier
+            # blocked/queued SLATE-05 native consent records.
+            cols={x[1] for x in db.execute(
+                "PRAGMA table_info(nvp_slate_preview_consents)")}
+            if "presentation" not in cols:
+                db.execute("""ALTER TABLE nvp_slate_preview_consents
+                    ADD COLUMN presentation TEXT NOT NULL DEFAULT 'blocking'""")
+            if "camera_path" not in cols:
+                db.execute("""ALTER TABLE nvp_slate_preview_consents
+                    ADD COLUMN camera_path TEXT""")
         self.dispatcher=ApprovedBlenderDispatcher(
             supervisor,ledger,approval_check=self._approval_check,
             pre_worker_check=self._before_worker)
@@ -95,7 +118,8 @@ class NativeSlatePreviewHost:
             names=("approval_id","task_id","project_id","edit_id",
                    "edit_revision","film_tick","quality","cache_key",
                    "ticket_sha256","source_manifest_sha256","spec_sha256",
-                   "issued_at","expires_at","revoked_at","queued_at")
+                   "issued_at","expires_at","revoked_at","queued_at",
+                   "presentation","camera_path")
             row=dict(zip(names,row))
             now=time.time()
             if (row["revoked_at"] is not None or
@@ -105,10 +129,12 @@ class NativeSlatePreviewHost:
                 document.get("kind")!="blender" or
                 document.get("task_id")!=row["task_id"]):
                 return False
+            adapter=_adapter_for(row["presentation"])
+            script=adapter.BLENDER_SCRIPT
             op=BlenderOperation(**document["operation"])
             if (self.supervisor._activity_id(op.job_id)!=row["task_id"] or
                 op.script!=SCRIPT_FILE or
-                op.script_sha256!=sha(BLENDER_SCRIPT.encode("utf-8")) or
+                op.script_sha256!=sha(script.encode("utf-8")) or
                 op.inputs!={SOURCE_FILE:row["source_manifest_sha256"]} or
                 op.outputs!={OUTPUT_FILE:"png"} or
                 op.arguments!={"--manifest":SOURCE_FILE,"--preview":OUTPUT_FILE} or
@@ -117,8 +143,13 @@ class NativeSlatePreviewHost:
             ticket=self.lazy.select(
                 row["project_id"],row["edit_id"],row["edit_revision"],
                 film_tick=row["film_tick"],quality=row["quality"])
+            expected_key=(
+                adapter.preview_cache_key(
+                    ticket,row["quality"],camera_path=row["camera_path"])
+                if row["presentation"]=="geometry" else
+                adapter.preview_cache_key(ticket,row["quality"]))
             if (sha(canonical(ticket))!=row["ticket_sha256"] or
-                preview_cache_key(ticket,row["quality"])!=row["cache_key"]):
+                expected_key!=row["cache_key"]):
                 return False
             directory=self.supervisor.root/op.job_id
             if (sha_file(directory/SCRIPT_FILE)!=op.script_sha256 or
@@ -128,11 +159,20 @@ class NativeSlatePreviewHost:
             if len(raw)>128*1024:
                 return False
             source=json.loads(raw)
-            if (source.get("source_take_sha256")!=ticket["source_take_document_sha256"] or
+            if (source.get("format")!=adapter.FORMAT or
+                source.get("renderer_version")!=adapter.RENDERER_VERSION or
+                source.get("worker_script_sha256")!=op.script_sha256 or
+                source.get("source_cache_key")!=row["cache_key"] or
+                source.get("source_take_sha256")!=ticket["source_take_document_sha256"] or
                 source.get("source_shot_sha256")!=ticket["source_shot_document_sha256"] or
                 source.get("source_tick")!=ticket["source_tick"] or
                 source.get("cache_key")!=ticket["cache_key"] or
-                (source.get("width"),source.get("height"))!=DIMENSIONS[row["quality"]]):
+                (source.get("width"),source.get("height"))!=adapter.DIMENSIONS[row["quality"]]):
+                return False
+            if row["presentation"]=="geometry" and (
+                source.get("camera",{}).get("path")!=(
+                    row["camera_path"] or source.get("camera",{}).get("path")) or
+                source.get("final_presentation_approved") is not False):
                 return False
             pending=self.cache._job(op.job_id)
             if (pending["state"]!="PENDING" or
