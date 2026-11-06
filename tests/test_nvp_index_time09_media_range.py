@@ -90,8 +90,17 @@ class NativeHTTPRangeTests(TestCase):
                 headers=(("host",f"127.0.0.1:{PORT}"),)))
         self.assertEqual(self.native.host.calls,[])
 
+    def test_mp4_suffix_seek_returns_only_a_verified_short_range(self):
+        result=original_source_proxy_range(TICKET,self.request(
+            headers=(("host",f"127.0.0.1:{PORT}"),
+                     ("range","bytes=-8192"))))
+        self.assertEqual(result.status_code,206)
+        self.assertEqual(result.headers["content-range"],
+                         "bytes 7331840-7340031/7340032")
+        self.assertEqual(len(result.body),8192)
+
     def test_refuse_malformed_multi_range_and_out_of_bounds(self):
-        for bad in ("bytes=-5","bytes=20-19","bytes=7000000-",
+        for bad in ("bytes=-0","bytes=20-19","bytes=7000000-",
                     "bytes=0-10,20-30","files=0-1","bytes=x-1"):
             with self.subTest(bad=bad):
                 with self.assertRaises(HTTPException):
