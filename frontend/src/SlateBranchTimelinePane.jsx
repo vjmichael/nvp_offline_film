@@ -8,8 +8,8 @@ import './SlateBranchTimelinePane.css';
 const ROW=62, WINDOW_ROWS=12;
 
 export default function SlateBranchTimelinePane({
-  graphView,activeView=null,onMakeActive,onInsertBefore,onInsertAfter,
-  onReplace,onPreviewTake
+  graphView,activeView=null,catalogPage=null,onLoadMore=null,
+  onMakeActive,onInsertBefore,onInsertAfter,onReplace,onPreviewTake
 }) {
   const [group,setGroup]=useState('');
   const [inspection,setInspection]=useState('');
@@ -17,7 +17,17 @@ export default function SlateBranchTimelinePane({
   const [scrollTop,setScrollTop]=useState(0);
   const [popRoot,setPopRoot]=useState(null);
   const popup=useRef(null);
-  const groups=graphView?.parallel_groups || {};
+  const groups=useMemo(()=>{
+    if(graphView?.parallel_groups)return graphView.parallel_groups;
+    if(!catalogPage?.items)return {};
+    const result={};
+    for(const node of catalogPage.items){
+      (result[node.group_id]??=[]).push(node);
+    }
+    return result;
+  },[graphView,catalogPage]);
+  const branchInfo=useMemo(()=>Object.fromEntries(
+    Object.values(groups).flat().map(node=>[node.branch_id,node])),[groups]);
   const groupIds=useMemo(()=>Object.keys(groups),[groups]);
   const current=groupIds.includes(group)?group:(groupIds[0]||'');
   const takes=groups[current]||[];
@@ -88,7 +98,8 @@ export default function SlateBranchTimelinePane({
           setGroup(e.target.value);setScrollTop(0);setInspection('');
         }}>
           {groupIds.map(g=><option key={g} value={g}>{g}</option>)}
-        </select></label><span>{takes.length} takes and camera views</span></div>
+        </select></label><span>{takes.length} shown
+          {catalogPage?.branch_count!=null?' of '+catalogPage.branch_count:''} takes and camera views</span></div>
       <div className="nvp-slate-gridhead">
         <span>Digital slate / take</span>
         <span>Parent-child lineage</span><span>Actions</span></div>
@@ -130,6 +141,11 @@ export default function SlateBranchTimelinePane({
         })}
         <div style={{height:Math.max(0,takes.length-first-visible.length)*ROW}}/>
       </div>
+      {catalogPage?.next_after_index!=null&&
+        <button className="nvp-slate-more" disabled={!onLoadMore}
+          onClick={()=>onLoadMore(catalogPage.next_after_index)}>
+          Load more takes
+        </button>}
       <div className="nvp-slate-legend">
         <span><i className="nvp-slate-swatch green"/>Committed</span>
         <span><i className="nvp-slate-swatch gray"/>Available</span>
@@ -138,10 +154,41 @@ export default function SlateBranchTimelinePane({
       </div>
       <h3>Active assembled cut</h3>
       {hasCut?<div className="nvp-slate-segments">
-        {sequences.map(segment=><button key={segment.segment_id}
-          className={target===segment.segment_id?'target':''}
-          onClick={()=>setTarget(segment.segment_id)}>
-          {segment.branch_id}<small>{segment.segment_id}</small></button>)}
+        {sequences.map(segment=>{
+          const node=branchInfo[segment.branch_id];
+          const semantic=node?.semantic||{};
+          const slate=node?.slate||{};
+          const observations=(semantic.ai_observations||[])
+            .filter(obs=>obs.status==='UNREVIEWED_AI_PROPOSAL');
+          return <button key={segment.segment_id}
+            className={'nvp-slate-assembly-card'+(target===segment.segment_id?' target':'')}
+            onClick={()=>setTarget(segment.segment_id)}>
+            <span className="nvp-slate-card-label">Scene {slate.scene||graphView?.scene_label||'—'} · Shot {slate.shot||'—'}</span>
+            <strong>{slate.wild?'Wild · ':''}Take {slate.take_number||'?'} · Camera {slate.camera||'—'}</strong>
+            <span className="nvp-slate-card-sub">{semantic.shot_type||node?.kind||'Source Take'} · {segment.branch_id}</span>
+            <span className="nvp-slate-card-time">Edit {segment.timeline_start_tick}–{segment.timeline_end_tick} ticks</span>
+            <span className="nvp-slate-card-time">Source {segment.source_in_tick}–{segment.source_out_tick} ticks</span>
+            {(semantic.beat_ids?.length>0||semantic.emotion_tags?.length>0)&&
+              <span className="nvp-slate-card-tags">
+                {[...(semantic.beat_ids||[]),...(semantic.emotion_tags||[])].slice(0,4).join(' · ')}
+              </span>}
+            {semantic.director_rating!=null&&
+              <span>Director rating {semantic.director_rating}/5</span>}
+            {semantic.technical_status&&semantic.technical_status!=='unknown'&&
+              <span>Technical: {semantic.technical_status}</span>}
+            {semantic.director_notes&&
+              <span className="nvp-slate-card-notes" title={semantic.director_notes}>
+                Director: {semantic.director_notes}
+              </span>}
+            {segment.incoming_transition?.requires_continuity_review&&
+              <span className="nvp-slate-card-warning">Continuity review at incoming cut</span>}
+            {observations.length>0&&
+              <span className="nvp-slate-card-ai" title={observations[0].summary}>
+                AI suggestion · unreviewed: {observations[0].summary}
+              </span>}
+            <span className="nvp-slate-card-id">Segment {segment.segment_id}</span>
+          </button>;
+        })}
       </div>:<p className="nvp-slate-info">No assembled cut is committed in this viewer.</p>}
       <p className="nvp-slate-info">{inspection
           ? 'Inspecting '+inspection+'. Active source colors have not changed.'
