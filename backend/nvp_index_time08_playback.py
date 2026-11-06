@@ -373,8 +373,12 @@ class NativeAssemblyReview:
                     session["ready"]+=window["count"]
             with self._lock:
                 session["finished"]=True
-        except BaseException:
+        except BaseException as exc:
             with self._lock:
+                # Trusted in-process diagnostics only, never returned to
+                # window IPC or exposed as an original file path.
+                session["private_failure_detail"]=(
+                    type(exc).__name__+": "+str(exc)[:500])
                 session["error"]=True
                 session["finished"]=True
                 session["ready"]=0
