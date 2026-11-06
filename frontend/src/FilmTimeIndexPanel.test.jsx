@@ -67,7 +67,8 @@ describe('INDEX-TIME-05 native source editor',()=>{
       url.includes('tick='+exact))).toBe(true));
     expect(await screen.findByText(/original_camera · frame 49000000000000010/))
       .toBeTruthy();
-    expect(screen.getByText(/120000000000010/)).toBeTruthy();
+    expect(screen.getByLabelText('Selected original indexed frame').textContent)
+      .toContain('120000000000010');
   });
 
   it('surfaces an intentional imported-video gap as empty, not a fake frame',async()=>{
