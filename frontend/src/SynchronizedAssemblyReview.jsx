@@ -266,6 +266,173 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
   },[native,review,projectId,edit.edit_id,edit.revision,
      edit.edit_document_sha256,revoke]);
 
+  // INDEX-TIME-10: the host, not the browser, derives the exact next
+  // section from the preceding sealed plan. At most one successor exists.
+  useEffect(()=>{
+    const session=progressiveSession.current;
+    const current=ticket.current;
+    if(!progressive||!session||!src||!review||nextTicket.current||
+       nextEnd||typeof native?.prepare_next_progressive_av_review!=='function')
+      return;
+    let live=true;
+    const gen=generation.current;
+    async function prepareAhead(){
+      try{
+        const reply=await native.prepare_next_progressive_av_review(
+          session,current);
+        if(!live||gen!==generation.current||ticket.current!==current||
+           progressiveSession.current!==session)return;
+        if(reply?.format!==FORMAT||reply.original_modified!==false||
+           reply.master_approved!==false)
+          throw Error('Native ahead-of-playhead preparation was refused.');
+        if(reply.status==='AT_END'){
+          setNextEnd(true);
+          return;
+        }
+        if(!['QUEUED','ALREADY_QUEUED'].includes(reply.status)||
+           reply.progressive_session_id!==session||
+           typeof reply.ticket_id!=='string'||reply.ticket_id.length<20)
+          throw Error('Unverified next-section grant was refused.');
+        nextTicket.current=reply.ticket_id;
+        setNextPending(reply.ticket_id);
+        setStatus('Playing from disk. NVP is preparing the next section ahead.');
+      }catch(e){
+        if(live&&gen===generation.current){
+          setError(e.message);
+          setNextEnd(true);
+        }
+      }
+    }
+    prepareAhead();
+    return ()=>{live=false;};
+  },[native,progressive,src,review,nextEnd]);
+
+  useEffect(()=>{
+    const token=nextPending;
+    if(!token||!progressiveSession.current)return;
+    let live=true,busy=false;
+    const gen=generation.current,session=progressiveSession.current;
+    async function pollNext(){
+      if(!live||busy||gen!==generation.current||nextTicket.current!==token)
+        return;
+      busy=true;
+      try{
+        const result=await native.poll_synchronized_av_review(token);
+        if(!live||gen!==generation.current||nextTicket.current!==token||
+           progressiveSession.current!==session)return;
+        if(result?.format!==FORMAT||result.status==='RECOVERY_REQUIRED'||
+           result.status==='CANCELLED')
+          throw Error('The next native review failed; transition is blocked.');
+        if(STATUS.includes(result.status))return;
+        if(result.status!=='READY'||result.project_id!==projectId||
+           result.edit_id!==edit.edit_id||
+           result.edit_revision!==edit.revision||
+           result.edit_document_sha256!==edit.edit_document_sha256||
+           result.original_modified!==false||result.master_approved!==false||
+           !SHA.test(result.media_sha256||'')||
+           !Number.isInteger(result.size_bytes)||result.size_bytes<256||
+           result.size_bytes>MAX_SIZE||
+           !/^\d+$/.test(result.actual_start_tick||'')||
+           !/^\d+$/.test(result.review_duration_tick||''))
+          throw Error('The next native source and sound receipt is invalid.');
+        const oldEnd=BigInt(review.actual_start_tick)+
+          BigInt(review.review_duration_tick);
+        const nextStart=BigInt(result.actual_start_tick);
+        const nextEndTick=nextStart+BigInt(result.review_duration_tick);
+        if(nextStart>oldEnd||nextEndTick<=oldEnd)
+          throw Error('Progressive boundary cannot preserve exact Film Time.');
+        const descriptor=await native.get_synchronized_av_stream(token);
+        if(!live||gen!==generation.current||nextTicket.current!==token||
+           progressiveSession.current!==session)return;
+        const expected='/api/native-av-review/'+encodeURIComponent(token)+'/media';
+        if(descriptor?.format!==FORMAT||
+           descriptor.status!=='VERIFIED_STREAM'||
+           descriptor.url!==expected||
+           descriptor.media_sha256!==result.media_sha256||
+           descriptor.total_size!==result.size_bytes||
+           descriptor.content_type!=='video/mp4'||
+           descriptor.original_modified!==false||
+           descriptor.master_approved!==false)
+          throw Error('Ahead-of-playhead media has no native verified ticket.');
+        setNextReady({result,url:descriptor.url,ticket:token,
+          startOffset:Number(oldEnd-nextStart)/Number(TICKS_PER_SECOND)});
+        setNextPending(null);
+      }catch(e){
+        if(live&&gen===generation.current){
+          setError(e.message);
+          setNextPending(null);
+          setNextEnd(true);
+          setWaitingForNext(false);
+        }
+      }finally{busy=false;}
+    }
+    pollNext();
+    const timer=setInterval(pollNext,1250);
+    return ()=>{live=false;clearInterval(timer);};
+  },[native,nextPending,projectId,edit.edit_id,edit.revision,
+     edit.edit_document_sha256,review]);
+
+  async function handoff(candidate){
+    const session=progressiveSession.current,previous=ticket.current;
+    if(!session||!previous||!candidate||candidate.ticket!==nextTicket.current)
+      return;
+    setWaitingForNext(false);
+    try{
+      const ack=await native.advance_progressive_av_review(
+        session,previous,candidate.ticket);
+      if(progressiveSession.current!==session||ticket.current!==previous)
+        return;
+      if(ack?.format!==FORMAT||ack.status!=='ADVANCED'||
+         ack.progressive_session_id!==session||
+         ack.ticket_id!==candidate.ticket||
+         ack.original_modified!==false||ack.master_approved!==false||
+         !/^\d+$/.test(ack.transition_tick||''))
+        throw Error('Native media boundary could not be committed.');
+      ticket.current=candidate.ticket;
+      nextTicket.current=null;
+      url.current=candidate.url;
+      setReview(candidate.result);
+      setSrc(candidate.url);
+      setPlayhead(candidate.startOffset);
+      setFilmTick(ack.transition_tick);
+      setNextReady(null);
+      setNextPending(null);
+      setNextEnd(false);
+      setAutoResume(true);
+      setStatus('Next verified A/V section loaded. Same frozen assembly.');
+    }catch(e){
+      setError(e.message);
+      setStatus('Playback stopped at a verified section boundary.');
+      setNextEnd(true);
+    }
+  }
+
+  useEffect(()=>{
+    if(waitingForNext&&nextReady)handoff(nextReady);
+  },[waitingForNext,nextReady]);
+
+  useEffect(()=>{
+    if(!autoResume||!src||!player.current)return;
+    player.current.currentTime=playhead;
+    const resumed=player.current.play();
+    if(resumed&&typeof resumed.catch==='function')
+      resumed.catch(()=>setStatus(
+        'Next section ready. Press Play to continue with synchronized sound.'));
+    setAutoResume(false);
+  },[autoResume,src]);
+
+  function sectionEnded(){
+    if(!progressiveSession.current)return;
+    if(nextReady){
+      handoff(nextReady);
+    }else if(nextEnd){
+      setStatus('Reached the end of approved review; stop or begin another session.');
+    }else{
+      setWaitingForNext(true);
+      setStatus('Waiting for the verified next section. Picture and sound stay paused together.');
+    }
+  }
+
   function changePlayhead(tick){
     revoke();
     setFilmTick(tick);
