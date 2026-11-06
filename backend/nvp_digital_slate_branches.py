@@ -16,8 +16,8 @@ from backend.nvp_openusd_shot_overrides import FORMAT as SHOT_FORMAT
 
 GRAPH_FORMAT="nvp.slate.branch_graph.v1"
 SELECTION_FORMAT="nvp.slate.branch_selection.v1"
-MAX_BRANCHES=64
-MAX_GROUPS=32
+MAX_BRANCHES=256
+MAX_GROUPS=64
 MAX_NOTE=512
 KINDS=frozenset(("performance","coverage"))
 SLATE_KEYS=frozenset(("scene","setup","shot","camera","take_number",
@@ -206,7 +206,12 @@ class DigitalSlateBranches:
 
     def choose(self,project_id,edit_id,*,graph_id,graph_revision,
                group_id,branch_id,editor_event,expected_revision=0):
-        """Switch one green branch; preserve other groups from prior edit."""
+        """EXPLICIT editorial commit (never called just for UI preview).
+
+        New mixed-take assembly code may use multiple source branches in
+        one edited sequence. This legacy single-choice API is retained for
+        simple single-branch parallel-group edits only.
+        """
         _require_pid(project_id)
         _id(edit_id,"slate edit")
         _id(group_id,"parallel choice group")
