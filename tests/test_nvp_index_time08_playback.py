@@ -218,6 +218,25 @@ class OriginalAssemblyReviewTests(unittest.TestCase):
             self.pid,"camera",1)["document_sha256"],
             original["document_sha256"])
 
+    def test_stop_completed_review_disposes_pngs_not_frozen_source(self):
+        started=self.desktop.start_assembly_review(self.request())
+        self.assertEqual(started["status"],"QUEUED")
+        ticket=started["ticket_id"]
+        self.assertEqual(self.wait_done(ticket)["status"],"COMPLETE")
+        review=self.desktop._get_review_playback()
+        session=review._sessions[ticket]
+        path=Path(review._get_host()._row(
+            session["windows"][0]["task"])["destination"])
+        self.assertTrue((path/"review_000000001.png").is_file())
+        self.assertEqual(self.desktop.cancel_assembly_review(ticket)["status"],
+                         "CANCELLATION_REQUESTED")
+        self.assertFalse((path/"review_000000001.png").exists())
+        denied=self.desktop.get_assembly_review_frame(ticket,0)
+        self.assertEqual(denied["status"],"RECOVERY_REQUIRED")
+        self.assertNotIn("image_data_url",denied)
+        self.assertEqual(sha256(self.movie.read_bytes()).hexdigest(),
+                         self.original_sha)
+
     def test_untrusted_window_origin_cannot_fetch_verified_original_pixels(self):
         started=self.desktop.start_assembly_review(self.request())
         self.assertEqual(started["status"],"QUEUED")
