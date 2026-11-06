@@ -36,8 +36,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [scene,setScene]=useState(null);
   const [direction,setDirection]=useState('forward');
   const controller=useRef({ticket:null,context:null,scheduled:[],
-    generation:0,cursor:0,last:0,first:0,nextAudioAt:0,
-    working:false,active:false,stopping:false});
+    presentationMarks:[],generation:0,cursor:0,last:0,first:0,
+    nextAudioAt:0,working:false,active:false,stopping:false,
+    sceneBusy:false,lastSceneAt:-1});
   const item=takes.find(x=>x.take_id===takeId);
 
   useEffect(()=>{
@@ -81,6 +82,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       try{node.disconnect();}catch{}
     }
     st.scheduled=[];
+    st.presentationMarks=[];
     if(st.context){
       const ctx=st.context;
       st.context=null;
@@ -101,6 +103,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     st.active=false;
     for(const node of st.scheduled)try{node.stop();}catch{}
     st.scheduled=[];
+    st.presentationMarks=[];
     if(st.context)Promise.resolve(st.context.close()).catch(()=>{});
     if(st.ticket&&native)Promise.resolve(
       native.data_av_stop(st.ticket)).catch(()=>{});
@@ -109,6 +112,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
 
   async function inspect(ticket,sample){
     if(!native||!ticket)return;
+    const st=controller.current;
+    if(st.sceneBusy||st.ticket!==ticket)return;
+    st.sceneBusy=true;
     try{
       const response=await native.data_av_scene_at(
         ticket,sample*TICKS_PER_SAMPLE);
@@ -118,7 +124,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       if(controller.current.ticket===ticket)setScene(response);
     }catch(e){
       setNote('Scene view could not be refreshed; audio source remains immutable.');
-    }
+    }finally{st.sceneBusy=false;}
   }
 
   async function queueAudio(gen){
@@ -162,15 +168,17 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         const node=st.context.createBufferSource();
         node.buffer=clip;
         node.connect(st.context.destination);
-        node.start(Math.max(st.context.currentTime+0.025,st.nextAudioAt));
+        const startAt=Math.max(st.context.currentTime+0.025,st.nextAudioAt);
+        node.start(startAt);
         st.scheduled.push(node);
+        st.presentationMarks.push({
+          startAt,endAt:startAt+count/RATE,first,count,reverse,
+        });
+        if(st.presentationMarks.length>32)st.presentationMarks.shift();
         node.onended=()=>{const k=st.scheduled.indexOf(node);
           if(k>=0)st.scheduled.splice(k,1);};
-        st.nextAudioAt=Math.max(
-          st.context.currentTime+0.025,st.nextAudioAt)+count/RATE;
+        st.nextAudioAt=startAt+count/RATE;
         st.cursor=reverse?first:first+count;
-        if(i===0)inspect(st.ticket,reverse?first:st.cursor-1);
-        setSourceSample(String(st.cursor));
       }
     }catch(e){
       if(st.generation===gen){
@@ -216,6 +224,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       await st.context.resume();
       st.generation++;
       st.nextAudioAt=st.context.currentTime+0.08;
+      st.presentationMarks=[];
+      st.lastSceneAt=-1;
       st.active=true;setPlaying(true);
       queueAudio(st.generation);
     }catch(e){setError(e.message);await stop();}
@@ -226,6 +236,34 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     const interval=setInterval(()=>queueAudio(controller.current.generation),45);
     return ()=>clearInterval(interval);
   },[playing,native,direction,item]);
+
+  // Visually inspect the OpenUSD scene at the AUDIO DEVICE's presentation
+  // position, not at the next buffer read cursor (which is ~450ms ahead).
+  // This is still structured scene data; no 2D movie frame is materialized.
+  useEffect(()=>{
+    if(!playing)return;
+    let live=true;
+    const poll=()=>{
+      const st=controller.current;
+      if(!live||!st.active||!st.context||!st.ticket)return;
+      const now=st.context.currentTime;
+      const mark=st.presentationMarks.findLast(
+        m=>m.startAt<=now&&now<m.endAt);
+      if(!mark)return;
+      const delta=Math.max(0,Math.min(mark.count-1,
+        Math.floor((now-mark.startAt)*RATE)));
+      const sample=mark.reverse
+        ?mark.first+mark.count-1-delta:mark.first+delta;
+      setSourceSample(String(sample));
+      if(now-st.lastSceneAt>=0.10){
+        st.lastSceneAt=now;
+        inspect(st.ticket,sample);
+      }
+    };
+    poll();
+    const clock=setInterval(poll,65);
+    return ()=>{live=false;clearInterval(clock);};
+  },[playing,native]);
 
   return <section className="card" aria-label="Data-first native A/V preview">
     <h2>Native Film Time & 3D sound</h2>
