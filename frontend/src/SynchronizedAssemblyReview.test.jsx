@@ -288,8 +288,8 @@ describe('INDEX-TIME-09 synchronized unapproved A/V player',()=>{
       .toHaveBeenCalledWith(session,'opaque_native_av_ticket'));
     await waitFor(()=>expect(screen.getByText(
       'Start progressive long-form review…')).toBeTruthy());
-    await waitFor(()=>expect(screen.getAllByRole('video',{hidden:true}).length)
-      .toBeGreaterThan(0));
+    await waitFor(()=>expect(document.querySelectorAll('video').length)
+      .toBe(2));
     fireEvent.ended(player);
     await waitFor(()=>expect(bridge.advance_progressive_av_review)
       .toHaveBeenCalledWith(session,'opaque_native_av_ticket',successor));
