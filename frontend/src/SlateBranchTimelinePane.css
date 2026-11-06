@@ -94,3 +94,7 @@
   border-color:#5f88a3;background:#274151;color:#ecf4fd}
 .nvp-slate-fidelity-notice{font-size:11px;color:#f5cb85!important;
   border-left:3px solid #d2a85b;padding-left:9px}
+
+.nvp-slate-pose-time{display:flex;flex-direction:column;gap:5px;
+  min-width:220px;color:#c9e5f2;font-size:11px}
+.nvp-slate-pose-time input{min-width:180px;accent-color:#80bfec}
