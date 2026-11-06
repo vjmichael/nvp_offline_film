@@ -71,6 +71,30 @@ class NativeAssemblyReview:
                 index_root=self.desktop.index_root)
         return self._host
 
+    def _dispose(self,session):
+        """Destroy only short-lived decoded picture derivatives.
+
+        Never follow links or remove original footage, source indexes,
+        FilmIndex manifests, journal or process evidence. This is called
+        after the review worker future has reached its terminal state.
+        """
+        root=self.desktop.root/"review_stream"
+        if root.is_symlink() or not root.is_dir():
+            return
+        for i in range(len(session["windows"])):
+            dest=root/("scene_"+session["ticket"]+"_"+str(i))
+            if dest.is_symlink() or not dest.is_dir():
+                continue
+            for entry in dest.iterdir():
+                name=entry.name
+                if (entry.is_symlink() or not entry.is_file() or
+                    not (name=="review_receipt.json" or
+                         (name.startswith("review_") and name.endswith(".png")))):
+                    continue
+                entry.unlink()
+            try:dest.rmdir()
+            except OSError:pass
+
     def _check_window(self):
         if self._closed:
             raise PermissionError("Native film review was closed")
@@ -233,6 +257,9 @@ class NativeAssemblyReview:
                 active=self._sessions[self._current]
                 if not active["future"].done():
                     raise RuntimeError("A source preview is still decoding or cancelling")
+                self._dispose(active)
+                self._sessions.pop(self._current,None)
+                self._current=None
             windows,frames=self._plan(pid,edit,revision,sha,tick)
             seen_clips=sorted({frame["clip_ordinal"] for frame in frames})
             if not self.desktop._confirm(
@@ -300,7 +327,7 @@ class NativeAssemblyReview:
                 raise
             session={
                 "pid":pid,"edit_id":edit,"revision":revision,
-                "sha":sha,"tick":str(tick),"windows":windows,
+                "sha":sha,"ticket":ticket,"tick":str(tick),"windows":windows,
                 "frames":frames,"ready":0,"finished":False,
                 "error":False,"cancelled":False,
                 "stop":threading.Event(),"expires":time.monotonic()+SESSION_SECONDS,
@@ -356,6 +383,8 @@ class NativeAssemblyReview:
                             host.revoke_queued(window["task"])
                     except (KeyError,RuntimeError,TypeError):
                         pass
+                try:self._dispose(session)
+                except OSError:pass
 
     def poll(self,ticket):
         with self._lock:
@@ -464,3 +493,7 @@ class NativeAssemblyReview:
                 session["cancelled"]=True
                 session["stop"].set()
         self._executor.shutdown(wait=True,cancel_futures=False)
+        for session in self._sessions.values():
+            try:self._dispose(session)
+            except OSError:pass
+        self._sessions.clear()
