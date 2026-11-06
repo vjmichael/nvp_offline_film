@@ -63,7 +63,8 @@ def run(args):
                 "-f","lavfi","-i",f"testsrc2=size=64x64:rate={args.fps}",
                 "-t",str(args.duration_seconds),"-c:v","mpeg4",
                 "-g","48","-bf","2","-q:v","7","-y",str(source),
-            ],timeout=max(120,args.duration_seconds//3),check=True)
+            ],timeout=max(120,min(600,(
+                args.duration_seconds*args.fps)//500)),check=True)
         before_sha=digest(source)  # setup/ingest proof ONCE, outside timings
         index=NVPFrameIndex(root/"cache",ffprobe=ffprobe)
         created_s,created=timed(
