@@ -10,6 +10,8 @@ on:
       - 'backend/nvp_exact_time_shots.py'
       - 'frontend/src/ExactFilmTimeShotPanel.jsx'
       - 'tests/test_nvp_exact_time_shots.py'
+      - 'backend/nvp_data_first_filming.py'
+      - 'tests/test_nvp_data_first_filming.py'
       - 'tools/nvp_no_ffmpeg_contract.py'
       - 'backend/nvp_slate08b_native_camera_ipc.py'
       - 'frontend/src/DataFirstAVPanel*'
@@ -66,6 +68,7 @@ jobs:
           python -m compileall -q backend/nvp_data_av_source.py backend/nvp_data_av_scene.py backend/nvp_data_av_usd.py backend/nvp_data_av_desktop.py backend/nvp_slate08b_native_camera_ipc.py tools/nvp_desktop_alpha.py tools/nvp_data_av_installed_acceptance.py tests/test_nvp_data_av_native.py
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_exact_time_shots.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_data_first_filming.py' -v
       - name: Existing frozen source/camera/provenance regressions
         shell: bash
         run: |
