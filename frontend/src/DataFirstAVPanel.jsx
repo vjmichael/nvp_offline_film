@@ -36,6 +36,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [note,setNote]=useState('');
   const [scene,setScene]=useState(null);
   const [direction,setDirection]=useState('forward');
+  const [originalSoundId,setOriginalSoundId]=useState('Music001');
+  const [originalSoundReceipt,setOriginalSoundReceipt]=useState(null);
   const controller=useRef({ticket:null,context:null,scheduled:[],
     presentationMarks:[],generation:0,cursor:0,last:0,first:0,
     nextAudioAt:0,working:false,active:false,stopping:false,
@@ -192,6 +194,27 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     }
   }
 
+  async function importOriginalSound(){
+    if(!native||typeof native.data_av_import_original_audio!=='function')return;
+    setError('');setOriginalSoundReceipt(null);
+    try{
+      if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/.test(originalSoundId))
+        throw Error('Choose a valid unique original sound identity.');
+      const receipt=await native.data_av_import_original_audio(
+        projectId,originalSoundId);
+      if(receipt?.format!=='nvp.data_av.native_audio_import.v1'||
+         receipt.status!=='ORIGINAL_IMPORTED'||
+         receipt.source_id!==originalSoundId||
+         receipt.original_modified!==false||
+         receipt.soundtrack_flattened!==false||
+         receipt.ffmpeg_used!==false)
+        throw Error('Native original sound import failed source verification');
+      setOriginalSoundReceipt(receipt);
+      setNote('Original sound imported unchanged. It is not a soundtrack
+        or part of a Digital Take until you explicitly add an editorial reference.');
+    }catch(e){setError(e.message);}
+  }
+
   async function begin(){
     if(!native||!item||!listener||playing)return;
     setError('');setNote('');
@@ -328,6 +351,22 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <p className="fineprint">{scene.spatial_audio?.bindings?.length||0}
         spatial audio source(s) active at this moment.</p>
     </section>}
+    <section className="card" aria-label="Add creator-supplied original music">
+      <h3>Bring in background music or sound effects</h3>
+      <p className="fineprint">The OS file picker accepts the original MP3,
+        FLAC, WAV or Ogg. NVP retains its exact bytes and hashes; it does
+        not convert the file to a captured 3D scene recording.</p>
+      <label>Unique imported sound identity
+        <input value={originalSoundId}
+          onChange={e=>setOriginalSoundId(e.target.value)}
+          maxLength={80}/></label>
+      <button disabled={!native||typeof native.data_av_import_original_audio!=='function'}
+        onClick={importOriginalSound}>Choose original audio file</button>
+      {originalSoundReceipt&&<p role="status">
+        Imported original {originalSoundReceipt.original_codec.toUpperCase()}
+        · SHA-256 {originalSoundReceipt.original_media_sha256.slice(0,16)}…
+      </p>}
+    </section>
     <p className="fineprint">This first dry spatial mixer includes source
       panning and distance. Real room occlusion, HRTF, reflections and
       photoreal 3D visual presentation require further native acceptance.</p>
