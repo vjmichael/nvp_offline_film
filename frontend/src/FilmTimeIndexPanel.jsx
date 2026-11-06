@@ -21,7 +21,7 @@ export function filmTimeClock(tickText){
     millis.toString().padStart(3,'0');
 }
 
-export default function FilmTimeIndexPanel({projectId,api}){
+export default function FilmTimeIndexPanel({projectId,api,nativeBridge=null}){
   const [edits,setEdits]=useState([]);
   const [editId,setEditId]=useState('');
   const [clips,setClips]=useState([]);
@@ -33,6 +33,44 @@ export default function FilmTimeIndexPanel({projectId,api}){
   const [loading,setLoading]=useState(false);
   const [truncated,setTruncated]=useState(false);
   const generation=useRef(0);
+  const preferredEdit=useRef('');
+  const activePreview=useRef(null);
+  const [refresh,setRefresh]=useState(0);
+  const [native,setNative]=useState(nativeBridge);
+  const [nativeReady,setNativeReady]=useState(false);
+  const [importing,setImporting]=useState(false);
+  const [importResult,setImportResult]=useState(null);
+  const [previewTicket,setPreviewTicket]=useState(null);
+  const [rendered,setRendered]=useState(null);
+  const [renderError,setRenderError]=useState('');
+  const [nativeBusy,setNativeBusy]=useState(false);
+  useEffect(()=>{
+    if(nativeBridge){setNative(nativeBridge);return;}
+    function detect(){
+      const n=window.pywebview?.api;
+      if(n&&[
+        'video_import_capabilities','pick_and_import_footage',
+        'request_source_frame_preview','poll_source_frame_preview',
+        'cancel_source_frame_preview',
+      ].every(key=>typeof n[key]==='function'))setNative(n);
+    }
+    detect();
+    window.addEventListener('pywebviewready',detect);
+    return ()=>window.removeEventListener('pywebviewready',detect);
+  },[nativeBridge]);
+  useEffect(()=>{
+    let live=true;
+    setNativeReady(false);
+    if(native&&typeof native.video_import_capabilities==='function'){
+      Promise.resolve(native.video_import_capabilities())
+        .then(result=>{if(live)setNativeReady(
+          result?.format==='nvp.index_time06.native_capability.v1' &&
+          result.native_window===true && result.native_dialog===true &&
+          result.video_tools_available===true);})
+        .catch(()=>{if(live)setNativeReady(false);});
+    }
+    return ()=>{live=false;};
+  },[native]);
   const selected=useMemo(
     ()=>edits.find(e=>e.edit_id===editId)||null,[edits,editId]);
 
@@ -40,7 +78,8 @@ export default function FilmTimeIndexPanel({projectId,api}){
     let active=true;
     generation.current++;
     setEdits([]);setEditId('');setClips([]);setNext(null);
-    setSelection(null);setError('');setLoading(true);
+    setSelection(null);setRendered(null);setPreviewTicket(null);
+    activePreview.current=null;setError('');setLoading(true);
     api('/projects/'+encodeURIComponent(projectId)+'/film-time/edits')
       .then(value=>{
         if(!active)return;
@@ -49,15 +88,20 @@ export default function FilmTimeIndexPanel({projectId,api}){
           throw new Error('Indexed source list failed custody checks');
         setEdits(value.edits);
         setTruncated(value.truncated===true);
-        setEditId(value.edits[0]?.edit_id||'');
+        const wanted=preferredEdit.current;
+        setEditId(value.edits.find(item=>item.edit_id===wanted)?.edit_id||
+          value.edits[0]?.edit_id||'');
+        preferredEdit.current='';
       }).catch(err=>{if(active)setError(err.message);})
       .finally(()=>{if(active)setLoading(false);});
     return ()=>{active=false;generation.current++;};
-  },[api,projectId]);
+  },[api,projectId,refresh]);
 
   useEffect(()=>{
     const request=++generation.current;
     setClips([]);setNext(null);setSelection(null);setError('');
+    setRendered(null);setRenderError('');setPreviewTicket(null);
+    activePreview.current=null;
     if(!selected)return;
     setTickDraft('0');setLoading(true);
     const params=new URLSearchParams({
@@ -122,9 +166,10 @@ export default function FilmTimeIndexPanel({projectId,api}){
       setError('Selected Film Time is beyond the indexed edit duration.');
       return;
     }
-    const request=generation.current;
+    const request=++generation.current;
     setTickDraft(tick.toString());setBusy(true);setError('');
-    setSelection(null);
+    setSelection(null);setRendered(null);setPreviewTicket(null);
+    activePreview.current=null;
     try{
       const params=new URLSearchParams({
         revision:String(selected.revision),
@@ -152,11 +197,138 @@ export default function FilmTimeIndexPanel({projectId,api}){
     finally{if(request===generation.current)setBusy(false);}
   }
 
+
+  async function importFootage(){
+    if(!nativeReady||importing||busy)return;
+    const projectAtStart=projectId;
+    setImporting(true);setError('');setImportResult(null);
+    try{
+      const result=await native.pick_and_import_footage(projectId);
+      if(projectAtStart!==projectId)return;
+      if(result?.format!=='nvp.index_time06.native_import.v1' ||
+         !['IMPORTED','DENIED','CANCELLED'].includes(result.status))
+        throw new Error('Native source picker returned an unverified import result');
+      if(result.status==='IMPORTED'){
+        if(result.project_id!==projectId||
+           result.original_modified!==false||
+           result.original_copied!==false||
+           result.source_hash_verified_at_import!==true||
+           !result.edit_id||!result.edit_document_sha256)
+          throw new Error('Source import custody was not proven');
+        preferredEdit.current=result.edit_id;
+        setImportResult(result);
+        setRefresh(count=>count+1);
+      }
+    }catch(err){setError(err.message);}
+    finally{setImporting(false);}
+  }
+
+  async function requestPreview(){
+    if(!nativeReady||!native||!selected||!selection||
+       selection.status!=='INDEXED_SOURCE_FRAME_SELECTED'||
+       nativeBusy||previewTicket)return;
+    const request=++generation.current;
+    setNativeBusy(true);setRenderError('');setRendered(null);
+    const chosen={
+      project_id:projectId,edit_id:selected.edit_id,
+      edit_revision:selected.revision,
+      edit_document_sha256:selected.edit_document_sha256,
+      source_tick:selection.requested_film_tick,
+      source_frame_zero:selection.source_frame_zero,
+      source_pts:selection.source_pts,
+    };
+    try{
+      const answer=await native.request_source_frame_preview(chosen);
+      if(request!==generation.current)return;
+      if(answer?.format!=='nvp.index_time06.preview_ticket.v1' ||
+         !['QUEUED','DENIED'].includes(answer.status))
+        throw new Error('Native host refused the source preview protocol');
+      if(answer.status==='DENIED'){setRenderError('Preview was not approved.');return;}
+      if(answer.edit_document_sha256!==chosen.edit_document_sha256||
+         answer.source_frame_zero!==chosen.source_frame_zero||
+         answer.source_tick!==chosen.source_tick||
+         answer.project_id!==projectId || !answer.ticket_id)
+        throw new Error('Native source preview ticket did not match selection');
+      activePreview.current=answer.ticket_id;
+      setPreviewTicket(answer.ticket_id);
+    }catch(err){if(request===generation.current)setRenderError(err.message);}
+    finally{if(request===generation.current)setNativeBusy(false);}
+  }
+
+  useEffect(()=>{
+    if(!native||!previewTicket)return;
+    let live=true,pending=false;
+    const exact=selection&&selected?{
+      edit:selected.edit_id,sha:selected.edit_document_sha256,
+      revision:selected.revision,tick:selection.requested_film_tick,
+      frame:selection.source_frame_zero,pts:selection.source_pts,
+    }:null;
+    async function poll(){
+      if(!live||pending||!exact)return;
+      pending=true;
+      try{
+        const reply=await native.poll_source_frame_preview(previewTicket);
+        if(!live||activePreview.current!==previewTicket)return;
+        if(reply?.status==='READY'){
+          if(reply.format!=='nvp.index_time06.verified_png.v1' ||
+             reply.edit_id!==exact.edit||
+             reply.edit_revision!==exact.revision||
+             reply.edit_document_sha256!==exact.sha||
+             reply.source_tick!==exact.tick||
+             reply.source_frame_zero!==exact.frame||
+             reply.source_pts!==exact.pts||
+             reply.film_master_approved!==false||
+             reply.original_modified!==false||
+             !reply.image_data_url?.startsWith('data:image/png;base64,')||
+             reply.image_data_url.length>17*1024*1024)
+            throw new Error('Native verified PNG mismatched original source selection');
+          setRendered(reply);setPreviewTicket(null);
+        }else if(reply?.status==='RECOVERY_REQUIRED'||reply?.status==='CANCELLED'){
+          setRenderError(reply.status==='CANCELLED'
+            ?'Preview cancelled without modifying the original.'
+            :'Native review failed or needs fenced worker recovery.');
+          setPreviewTicket(null);
+        }else if(reply?.status!=='QUEUED'){
+          throw new Error('Unknown native source preview state');
+        }
+      }catch(err){
+        if(live&&activePreview.current===previewTicket){
+          setRenderError(err.message);setPreviewTicket(null);
+        }
+      }finally{pending=false;}
+    }
+    poll();
+    const timer=setInterval(poll,750);
+    return ()=>{live=false;clearInterval(timer);};
+  },[native,previewTicket,selection,selected]);
+
+  async function cancelPreview(){
+    if(!previewTicket||!native)return;
+    try{
+      const result=await native.cancel_source_frame_preview(previewTicket);
+      if(result?.status!=='DENIED'&&result?.status!=='CANCELLATION_REQUESTED')
+        throw new Error('Native source cancellation was not acknowledged');
+    }catch(err){setRenderError(err.message);}
+  }
+
   return <section className="card" aria-label="Indexed source Film Time">
     <h2>Indexed footage · Film Time</h2>
     <p className="fineprint">Inspect immutable imported-video placements,
       original timestamps, and held source frames without loading a full
       movie or rendering every timeline frame.</p>
+    {nativeReady&&<div className="actions">
+      <button disabled={importing} onClick={importFootage}>
+        {importing?'Hashing and indexing original footage…':'Import original footage…'}
+      </button>
+    </div>}
+    {!nativeReady&&<p className="fineprint">Footage import and approved
+      source picture previews require the installed NVP desktop with
+      its native video tools. Browser-only mode is read-only.</p>}
+    {importResult?.status==='IMPORTED'&&<p role="status">
+      Original indexed: {importResult.indexed_source_frames} measured frames.
+      The initial Film Time edit holds {importResult.placed_frames} frames.
+      The final source frame remains indexed but unplaced until its exact
+      end boundary is known. The original stays on its selected drive.</p>}
     {loading&&<p role="status">Opening indexed source metadata…</p>}
     {!loading&&edits.length===0&&
       <p>No indexed imported-video edit is published in this film yet.
@@ -217,6 +389,22 @@ export default function FilmTimeIndexPanel({projectId,api}){
             {' '}on the film clock.</p>
           <p className="fineprint">Exact ticks:
             {' '}{selection.frame_film_start_tick}–{selection.frame_film_end_tick}</p>
+          {nativeReady&&<div className="actions">
+            <button disabled={nativeBusy||Boolean(previewTicket)}
+              onClick={requestPreview}>Preview actual source frame</button>
+            {previewTicket&&<button onClick={cancelPreview}>
+              Cancel source preview</button>}
+          </div>}
+          {previewTicket&&<p role="status">
+            Native source review queued or decoding; original unchanged.</p>}
+          {rendered?.status==='READY'&&<figure
+            aria-label="Verified original source frame preview">
+            <img src={rendered.image_data_url}
+              alt="Independently verified unapproved frame from indexed original footage"/>
+            <figcaption>Verified native FFmpeg preview · original PTS
+              {' '}{rendered.source_pts} · not a final approved film frame</figcaption>
+          </figure>}
+          {renderError&&<p role="alert">{renderError}</p>}
           <p className="fineprint">Indexed binary seek:
             {' '}{selection.frame_index_pts_reads} SQLite PTS reads.
             Source stamp checked, original bytes not SHA-reverified.
@@ -225,8 +413,8 @@ export default function FilmTimeIndexPanel({projectId,api}){
     </>}
     {error&&<p role="alert">{error}</p>}
     <p className="fineprint">Imported-video indexing is separate from
-      OpenUSD actor/scene events. This pane is read-only.
-      Native preview/conform requires the existing separately authorized
-      source-window worker.</p>
+      OpenUSD actor/scene events. Source import and PNG review are
+      installed-desktop-only native operations with explicit human approval.
+      The original is never overwritten. No review image is an approved master.</p>
   </section>;
 }
