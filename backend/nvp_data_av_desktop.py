@@ -179,6 +179,78 @@ class TrustedDataAVController:
                 "original_modified":False,"master_approved":False,
             }
 
+    def freeze_exact_camera_take(self,request):
+        """Freeze only a verified exact-time scene+camera event revision.
+
+        A browser can request a freeze but cannot impersonate creator approval:
+        the exact scene/timeline SHA scope goes through the real OS dialogue
+        inside the Take publisher's own authorization callback.
+        """
+        self._guard()
+        from backend.nvp_exact_time_shots import ExactTimeShotSequence
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        if type(request) is not dict or set(request)!={
+            "project_id","take_id","scene_id","scene_revision",
+            "scene_document_sha256","timeline_id","timeline_revision",
+            "timeline_document_sha256"}:
+            raise ValueError("Exact Film Time Take freeze requires pinned source IDs")
+        with self._lock:
+            if self._active is not None:
+                raise PermissionError("Stop ongoing native audition before freezing another Take")
+            pid=request["project_id"]
+            _require_pid(pid)
+            tid=request["take_id"]
+            _id(tid,"new immutable Digital Take")
+            scene_id=request["scene_id"]
+            timeline_id=request["timeline_id"]
+            for key in ("scene_document_sha256","timeline_document_sha256"):
+                _sha(request[key])
+            native=ExactTimeShotSequence(self.index)
+            plan=native.read(pid,timeline_id,request["timeline_revision"])
+            if (plan["scene_id"]!=scene_id or
+                plan["scene_revision"]!=request["scene_revision"] or
+                plan["scene_document_sha256"]!=request["scene_document_sha256"] or
+                plan["document_sha256"]!=request["timeline_document_sha256"]):
+                raise RuntimeError("Creator-selected exact-time source revision changed")
+            checkpoints=native.checkpoints(pid,timeline_id,
+                                           request["timeline_revision"])
+            secret=secrets.token_urlsafe(32)
+            confirmed=[False]
+            def native_approval(event,scoped):
+                if event!=secret or confirmed[0]:
+                    return False
+                confirmed[0]=True
+                if (scoped.get("project_id")!=pid or
+                    scoped.get("take_id")!=tid or
+                    scoped.get("scene_document_sha256")!=
+                        request["scene_document_sha256"] or
+                    scoped.get("timeline_document_sha256")!=
+                        request["timeline_document_sha256"]):
+                    return False
+                return self._ask(
+                    "Freeze EXACT immutable Digital Take from authored 3D world?\\n"+
+                    "Take ID: "+tid+"\\n"+
+                    "3D scene SHA-256: "+scoped["scene_document_sha256"]+"\\n"+
+                    "Film Time event SHA-256: "+scoped["timeline_document_sha256"]+"\\n"+
+                    "Duration ticks: "+str(scoped["duration_tick"])+"\\n"+
+                    "This action freezes the scene and shot observations only.\\n"+
+                    "No original is changed, no picture frames/movie/audio master are generated.")
+            saved=OpenUSDTakeCapture(
+                self.index,verify_creator_action=native_approval).freeze(
+                    pid,tid,scene_id=scene_id,
+                    scene_revision=request["scene_revision"],
+                    timeline_id=timeline_id,
+                    timeline_revision=request["timeline_revision"],
+                    sample_ticks=checkpoints,
+                    creator_event=secret)
+            return {"format":FORMAT,"status":"FROZEN_DATA_FIRST_TAKE",
+                    "take_id":tid,
+                    "take_document_sha256":saved["document_sha256"],
+                    "scene_document_sha256":plan["scene_document_sha256"],
+                    "timeline_document_sha256":plan["document_sha256"],
+                    "exact_film_time":True,"frame_based_capture":False,
+                    "original_modified":False,"master_approved":False}
+
     def stop(self,ticket):
         with self._lock:
             state=self._session(ticket)
