@@ -145,7 +145,20 @@ class OpenUSDSceneBridge:
                 prim=UsdGeom.Xform.Define(layout,path)
             prim.GetPrim().CreateAttribute(
                 "nvp:semanticRole",Sdf.ValueTypeNames.String).Set(role)
-            UsdGeom.XformCommonAPI(prim).SetTranslate(Gf.Vec3d(*pos))
+            if native_schemas:
+                authored=prim.GetPrim()
+                # Standard USD xform attributes on typed Camera/Light prims.
+                if not authored.CreateAttribute(
+                    "xformOpOrder",Sdf.ValueTypeNames.TokenArray).Set(
+                    ["xformOp:translate"]):
+                    raise RuntimeError("Cannot author native USD transform order")
+                if not authored.CreateAttribute(
+                    "xformOp:translate",Sdf.ValueTypeNames.Double3).Set(
+                    Gf.Vec3d(*pos)):
+                    raise RuntimeError("Cannot author native USD object position")
+            elif not UsdGeom.XformCommonAPI(prim).SetTranslate(
+                    Gf.Vec3d(*pos)):
+                raise RuntimeError("Cannot author USD layout transform")
             paths[path]=role
         motion=Sdf.Layer.CreateAnonymous("nvp_performance.usda")
         moving=Usd.Stage.Open(motion)
@@ -378,6 +391,12 @@ class OpenUSDSceneBridge:
                     project_id,doc["skeleton_layer_sha256"]).decode("utf-8"),
                 "reopen_skeleton.usda",Sdf)
         composed=_compose(base,motion,Sdf,Usd,param,skeletons)
+        if doc.get("native_schema_version"):
+            from backend.nvp_openusd_native_schemas import METERS_PER_UNIT
+            if not math.isclose(
+                    UsdGeom.GetStageMetersPerUnit(composed),METERS_PER_UNIT,
+                    rel_tol=0,abs_tol=1e-12):
+                raise RuntimeError("Frozen USD scene unit policy changed")
         bindings=self._resolve_assets(
             project_id,doc["prim_roles"],doc.get("asset_bindings",[]),
             verify_manifest=True)
