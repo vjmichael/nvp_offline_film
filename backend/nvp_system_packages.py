@@ -62,6 +62,17 @@ def _installed_binaries():
         getattr(sys,"frozen",False) and all(
             Path(p).is_file() for p in pair))
 
+def _supported_apt_distro():
+    # Some unrelated Linux distros can have an apt-get binary on PATH.
+    # Never treat that alone as permission to alter their package database.
+    try:
+        lines=Path("/etc/os-release").read_text(encoding="utf8").splitlines()
+        ids=[line.split("=",1)[1].strip().strip('"').lower()
+             for line in lines if line.startswith("ID=")]
+        return ids in (["debian"],["ubuntu"])
+    except (OSError,UnicodeError,ValueError):
+        return False
+
 def _manager():
     if os.name=="nt":
         path=shutil.which("winget")
@@ -71,7 +82,8 @@ def _manager():
         # Other distros receive diagnostics rather than guessed commands.
         manager=Path("/usr/bin/apt-get")
         polkit=Path("/usr/bin/pkexec")
-        if (manager.is_file() and not manager.is_symlink() and
+        if (_supported_apt_distro() and
+            manager.is_file() and not manager.is_symlink() and
             polkit.is_file() and not polkit.is_symlink()):
             return "apt+polkit",str(polkit)
     return None,None
@@ -127,14 +139,14 @@ def repair(component,*,confirm,studio_path=None):
     arbitrary installer, or elevation path. All approved commands are
     fixed at build time and pass through OS authentication.
     """
-    if component not in SAFE_COMPONENTS or type(component) is not str:
+    if type(component) is not str or component not in SAFE_COMPONENTS:
         raise ValueError("Unknown NVP system component")
     if not callable(confirm):
         raise PermissionError("Native OS approval callback required")
     before=inventory(studio_path=studio_path)
     item=next((x for x in before["components"]
                if x["repair"]==component),None)
-    if item is None:
+    if item is None or item.get("status")!="missing":
         return {"format":FORMAT,"status":"NOT_REQUIRED_OR_UNSUPPORTED",
                 "component":component,"source_media_modified":False}
     if not confirm(
@@ -145,6 +157,15 @@ def repair(component,*,confirm,studio_path=None):
         "This can require OS authentication and internet access.\n"+
         "No Python environment, footage, or film assembly will change."):
         return {"format":FORMAT,"status":"DECLINED",
+                "component":component,"source_media_modified":False}
+    # Native OS approval is not an open-ended grant: if another process
+    # fixed this dependency while the dialog was open, do not launch an
+    # installer unnecessarily after the creator clicked Yes.
+    latest=inventory(studio_path=studio_path)
+    current=next((x for x in latest["components"]
+                  if x.get("repair")==component),None)
+    if current is None or current.get("status")!="missing":
+        return {"format":FORMAT,"status":"NOT_REQUIRED_OR_UNSUPPORTED",
                 "component":component,"source_media_modified":False}
     manager,path=_manager()
     if component=="webview2" and os.name=="nt" and manager=="winget":
