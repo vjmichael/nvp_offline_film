@@ -103,6 +103,7 @@ class TrustedDesktopCameraBridge:
         self._tickets = {}
         self._futures = {}
         self._host = None
+        self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
         self._executor = ThreadPoolExecutor(
@@ -116,6 +117,8 @@ class TrustedDesktopCameraBridge:
         self.window=window
 
     def _native_window(self):
+        if self._closing:
+            raise PermissionError("Desktop camera bridge is shutting down")
         if self.window is None:
             raise PermissionError("No native desktop window attached")
         current=self.window.get_current_url()
@@ -242,8 +245,7 @@ class TrustedDesktopCameraBridge:
                 oldest=next(iter(self._tickets))
                 self._tickets.pop(oldest,None)
             if result["status"]=="QUEUED":
-                future=self._executor.submit(host.run_next)
-                self._futures[ticket]=future
+                self._futures[ticket]=self._executor.submit(host.run_next)
             return {
                 "format":"nvp.camera.desktop_ticket.v1",
                 "status":result["status"],"ticket_id":ticket,
@@ -264,6 +266,11 @@ class TrustedDesktopCameraBridge:
             host=self._get_host()
             result=host.cache.lookup(item["project_id"],item["cache_key"])
             if result is None:
+                if item["job_id"] is None:
+                    # A cache hit can be evicted/tampered before the UI reads
+                    # its media; there is no worker to retry via this ticket.
+                    return {"status":"RECOVERY_REQUIRED",
+                            "film_master_approved":False}
                 row=host.cache._job(item["job_id"])
                 if row["state"] in ("FAILED","INTERRUPTED","EVICTED"):
                     return {"status":"FAILED","film_master_approved":False}
@@ -282,8 +289,12 @@ class TrustedDesktopCameraBridge:
                         return {"status":"RECOVERY_REQUIRED",
                                 "film_master_approved":False}
                     if outcome is None or (
-                            isinstance(outcome,dict) and
-                            outcome.get("admitted") is False):
+                            isinstance(outcome,dict) and (
+                                outcome.get("admitted") is False or
+                                # Multiple ticket futures can dispatch a
+                                # DIFFERENT approved queued job first. The
+                                # current job remains pending, not failed.
+                                outcome.get("id") != item["job_id"])):
                         # Resource guardian declined this admission. The
                         # durable QUEUED ticket is preserved; throttle attempts
                         # rather than spinning workers or discarding consent.
@@ -363,5 +374,29 @@ class TrustedDesktopCameraBridge:
             return {"status":done["state"],"native_worker_cancelled":True}
 
     def _close(self):
-        """Do not lie about native termination; recover on the next launch."""
-        self._executor.shutdown(wait=False,cancel_futures=False)
+        """Stop accepting JS requests and cancel this window's active workers.
+
+        OS process-tree cleanup remains the responsibility of the original
+        supervisor. We wait for its final receipt rather than reporting that
+        a mere cancellation signal proved process termination.
+        """
+        with self._lock:
+            if self._closing:
+                return
+            self._closing=True
+            host=self._host
+            tickets=list(self._tickets.values())
+        if host is not None:
+            for item in tickets:
+                job=item.get("job_id")
+                if not job:
+                    continue
+                try:
+                    # Native application exit is host lifetime cleanup, not a
+                    # new creator editing command or Take authorization.
+                    host.supervisor.cancel(job)
+                except (RuntimeError,ValueError,KeyError):
+                    # Interrupted/unproven jobs remain in the journal and
+                    # must fail closed at next host recovery.
+                    pass
+        self._executor.shutdown(wait=True,cancel_futures=True)
