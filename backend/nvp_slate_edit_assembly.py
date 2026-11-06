@@ -290,14 +290,23 @@ class SlateSequenceAssembly:
                 "timeline_start_tick":seg["timeline_start_tick"],
                 "timeline_end_tick":seg["timeline_end_tick"],
             })
-        for group in graph["parallel_groups"].values():
+        active_by_group={}
+        for group_id,group in graph["parallel_groups"].items():
+            active_by_group[group_id]=[]
             for node in group:
                 node["selected"]=node["branch_id"] in by_branch
                 node["display_color"]="green" if node["selected"] else "gray"
                 node["active_source_ranges"]=by_branch.get(node["branch_id"],[])
                 node["inspection_focus"]=node["branch_id"]==inspection_branch_id
+                if node["selected"]:
+                    active_by_group[group_id].append(node["branch_id"])
+        # A mixed cut can legitimately use two (or more) alternatives
+        # in the SAME group; SLATE-01's singular default-selection model
+        # is replaced by segment-level green selections for this view.
+        graph.pop("selected_by_group",None)
         return {
             **graph,"format":"nvp.slate.assembled_edit_view.v1",
+            "active_branches_by_group":active_by_group,
             "edit_id":edit_id,"edit_revision":edit_revision,
             "edit_document_sha256":active["document_sha256"],
             "duration_tick":active["data"]["duration_tick"],
