@@ -270,25 +270,39 @@ class NativeFilmTimeWindowHost:
         }
 
     def revoke_queued(self,task):
-        """Revoke an unstarted creator grant without releasing ACTIVE RAM.
+        """Atomically revoke a queued grant and cancel its never-started task.
 
-        An already running worker must instead be cancelled through the
-        host's supervised should_cancel callback and verified OS cleanup.
+        Uses the SAME TaskLedger SQLite writer transaction as scheduler
+        admission: no worker may be admitted between revocation and queue
+        cancellation. ACTIVE workers require supervised process cancellation.
         """
-        row=self._row(task)
-        state=self.ledger.get_task(task)
-        if state is None or state["state"]!="QUEUED":
-            raise RuntimeError("Only never-started film-time review may be revoked here")
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
-            result=db.execute(
-                "UPDATE "+TABLE+" SET revoked_at=? WHERE task_id=? "
-                "AND revoked_at IS NULL",(time.time(),task))
-            if result.rowcount!=1:
-                raise RuntimeError("Film-time job grant already revoked")
+            state=db.execute("""SELECT t.state FROM tasks t
+                JOIN task_schedule s ON s.task_id=t.id
+                WHERE t.id=? AND s.owner_key=?""",
+                (task,self.owner)).fetchone()
+            if state is None or state[0]!="QUEUED":
+                raise RuntimeError("Only never-started owned film-time tasks can be revoked")
+            now=time.time()
+            grant=db.execute(
+                "UPDATE "+TABLE+" SET revoked_at=? "
+                "WHERE task_id=? AND revoked_at IS NULL",
+                (now,task))
+            if grant.rowcount!=1:
+                raise RuntimeError("Creator review grant already revoked or missing")
+            detail="Creator revoked queued film-time review; no worker started"
+            cancelled=db.execute("""UPDATE tasks
+                SET state='CANCELLED',phase='cancelled',detail=?,
+                    completed_fraction=NULL,reserved=0,updated_at=?
+                WHERE id=? AND state='QUEUED'""",
+                (detail,now,task))
+            if cancelled.rowcount!=1:
+                raise RuntimeError("Native task changed during queued revocation")
+            self.ledger._event(db,task,"CANCELLED","cancelled",detail,None)
             db.commit()
-        stopped=self.ledger.cancel_queued(task,owner_key=self.owner)
-        return {**stopped,"creator_grant_revoked":True}
+        return {"task_id":task,"state":"CANCELLED",
+                "worker_started":False,"creator_grant_revoked":True}
 
     def run_next(self,*,timeout_seconds=900,should_cancel=None):
         admitted=self.binding.claim_next(owner_key=self.owner)
