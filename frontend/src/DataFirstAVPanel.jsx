@@ -197,19 +197,21 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       const reply=await native.data_av_begin({
         project_id:projectId,take_id:item.take_id,
         take_document_sha256:item.take_document_sha256,
-        listener_path:listener,first_sample:first,
+        listener_path:listener,first_sample:first,direction,
       });
       if(reply?.status==='DENIED'){setNote('Native audition was not approved.');return;}
       if(reply?.format!==FORMAT||reply.status!=='READY'||
          reply.ffmpeg_runtime_required!==false||
          reply.take_document_sha256!==item.take_document_sha256||
          reply.listener_path!==listener||
+         reply.direction!==direction||
+         !Number.isSafeInteger(reply.approved_first_sample)||
          !Number.isSafeInteger(reply.last_sample_exclusive))
         throw Error('Native Digital Take approval was not source-bound');
       const st=controller.current;
-      st.ticket=reply.session_id;st.first=first;
+      st.ticket=reply.session_id;st.first=reply.approved_first_sample;
       st.last=reply.last_sample_exclusive;
-      st.cursor=direction==='reverse'?st.last:first;
+      st.cursor=first;
       st.context=new Audio({sampleRate:RATE});
       await st.context.resume();
       st.generation++;
