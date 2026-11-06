@@ -13,6 +13,12 @@ on:
       - 'tools/nvp_desktop_alpha.py'
       - 'frontend/src/SynchronizedAssemblyReview.jsx'
       - 'frontend/src/SynchronizedAssemblyReview.test.jsx'
+      - 'frontend/src/SystemReadinessPanel.jsx'
+      - 'frontend/src/SystemReadinessPanel.test.jsx'
+      - 'backend/nvp_system_packages.py'
+      - 'backend/nvp_api.py'
+      - 'tests/test_nvp_system_packages.py'
+      - 'tests/test_nvp_index_time09_media_range.py'
       - 'tests/test_nvp_index_time09_av_proxy.py'
       - '.github/workflows/nvp-index-time09-native-av.yml'
   workflow_dispatch:
@@ -87,4 +93,4 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/SynchronizedAssemblyReview.test.jsx src/FilmTimePlaybackPanel.test.jsx src/FilmTimeAssemblyPanel.test.jsx src/FilmTimeIndexPanel.test.jsx
+      - run: npm run test:ui -- src/SynchronizedAssemblyReview.test.jsx src/FilmTimePlaybackPanel.test.jsx src/FilmTimeAssemblyPanel.test.jsx src/FilmTimeIndexPanel.test.jsx src/SystemReadinessPanel.test.jsx
