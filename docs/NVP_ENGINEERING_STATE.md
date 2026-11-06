@@ -6,6 +6,44 @@
 
 **Status:** Initial ledger, manually reconciled 2026-11-05. A future automation/CI gate must populate SHA, test and artifact evidence reliably; do not treat this file as self-updating.
 
+## MOST RECENT creator priority — DATA-AV-01 full native migration (2026-11-06)
+
+**Supersedes previous AV/indexing/FFmpeg native playback tasks and old
+Windows NSIS pause only for a new native data-first installed-app gate.**
+The creator explicitly directed an end-to-end conversion to native,
+frame-independent scene/audio Film Time evaluation, while stopping stale
+PRs/CI. Native A/V source authority is immutable recorded sound assets,
+OpenUSD scene, exact Film Time events and frozen Digital Take; never an
+FFmpeg-generated MP4 or mandatory BWF recording. See
+`docs/NVP_MASTER_DESIGN.md`,
+`docs/NVP_SOUND01_NATIVE_SPATIAL_AUDIO.md` and
+`docs/NVP_DATA_AV01_NATIVE_MIGRATION.md`.
+
+**PR inventory:** Old imported-video/FFmpeg-viewer PRs #47, #53–57,
+#68–73 closed unmerged. Current new draft PR **#74** on
+`nvp/data-av01-native-scene-playback-20261106`, stacked on native
+scene/SLATE-08B PR #67. Other SLATE/USD source branches remain open.
+Automation "NVP DCP CI Closeout" paused. Old media benchmark/
+FFmpeg-installer workflows are manual-only **on the new branch**.
+Previously running GitHub Actions on retired PRs may still finish;
+the connector does not offer cancellation, so NEVER claim all CI jobs
+are stopped.
+
+**Actual code now committed:** content-addressed small PCM sound
+source chunks; FFmpeg-independent exact-time scene and dialogue/sound
+event evaluation; first dry 3D panning/distance mixer; in-memory native
+UsdMedia SpatialAudio bindings; trusted OS-window grant and WebView2
+JS→native audio data interface; UI WebAudio forward/reverse audition;
+native original/two-listener tests, and new Win/Linux and NSIS-installed
+exact-head native CI. Existing final presentation/export modules are
+**separate**; do not redeclare legacy AVI/PNG/MP4 as core.
+
+**NOT COMPLETE OR ACCEPTED:** real installed device playback, strict
+bounded RAM/latency under long films, acoustic occlusion/reflection/HRTF,
+real continuous native 3D picture alongside audio, capture-session
+sound event producer, multi-track mix and real 3D→final presentation
+end-to-end evidence. Do not bypass these by citing proxy CI.
+
 ## Source identity (recheck before working)
 
 - Repository: vjmichael/nvp_offline_film
