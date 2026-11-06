@@ -164,9 +164,21 @@ class OpenUSDSceneBridge:
             # Authored overrides are composed above immutable layout.
             # Do not author a stronger Xform prim type above a native
             # camera/light schema; motion only contributes transform opinions.
-            xform=(moving.OverridePrim(path) if native_schemas else
-                   UsdGeom.Xform.Define(moving,path))
-            api=UsdGeom.XformCommonAPI(xform)
+            if native_schemas:
+                # A native Camera/Light is typed in the base layer. Its
+                # stronger motion opinion must remain an untyped over.
+                # Author the standard USD transform-op attributes directly.
+                xform=moving.OverridePrim(path)
+                xform.CreateAttribute(
+                    "xformOpOrder",Sdf.ValueTypeNames.TokenArray).Set(
+                    ["xformOp:translate"])
+                translation=xform.CreateAttribute(
+                    "xformOp:translate",Sdf.ValueTypeNames.Double3)
+                api=None
+            else:
+                xform=UsdGeom.Xform.Define(moving,path)
+                api=UsdGeom.XformCommonAPI(xform)
+                translation=None
             previous=-1
             for sample in samples:
                 if type(sample) is not dict or set(sample)!={"tick","position"}:
@@ -176,8 +188,13 @@ class OpenUSDSceneBridge:
                 if tick<=previous:
                     raise ValueError("Motion sample ticks must strictly increase")
                 previous=tick
-                api.SetTranslate(Gf.Vec3d(*_vector(sample["position"])),
-                                 time=Usd.TimeCode(float(tick)))
+                value=Gf.Vec3d(*_vector(sample["position"]))
+                t=Usd.TimeCode(float(tick))
+                if native_schemas:
+                    if not translation.Set(value,t):
+                        raise RuntimeError("Native USD timed transform op failed")
+                elif not api.SetTranslate(value,time=t):
+                    raise RuntimeError("Native USD transform authoring failed")
             animated.add(path)
         # Source assets are logically bound to exact FilmIndex revisions.
         # The USD session references are recreated only from trusted SHA-
