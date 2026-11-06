@@ -30,6 +30,8 @@
 
 FFMS2 C API prototypes and success conventions were checked against the upstream `include/ffms.h` and `doc/ffms2-api.md`: in particular, `FFMS_DoIndexing2` already had the correct indexer/int/error arguments; no ABI change was necessary. Reference library is benchmark-only and **not part of NVP's Windows installer**.
 
+`tools/benchmarks/run_temporal_scale.py` benchmarks the **actual NVP FilmIndex + TemporalLedger**, publishing 10,000 source-bound authored actions across a three-hour film. It measures transactional publication, point and interval lookup medians/p95, and deliberate whole-ledger provenance audit separately. It generates no film frames and does not call FFmpeg. CI now uploads this measured JSON alongside the separate imported-video indexing fixture.
+
 `tools/benchmarks/run_feature_duration_index.py` separately generates a three-hour 1fps 64x64 MPEG-4 B-frame **sparse timeline fixture**, indexes all 10,800 frames, measures warm reuse/SQLite window latency and seeks/decompresses its last frame. It may accept a creator-provided actual film source. **This is not a substitute for 3-hour 4K/24fps/high-bitrate media**, GPU workers, multi-terabyte media libraries, or real-world storage latency. Use full-length production sources under controlled media/storage systems for those acceptance gates.
 
 ### Local supporting native-media observations
