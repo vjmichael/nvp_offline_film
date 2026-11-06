@@ -149,6 +149,7 @@ class OpenUSDTakeCapture:
             "ticks_per_second":timeline["data"]["ticks_per_second"],
             "layout_layer_sha256":source["data"]["layout_layer_sha256"],
             "motion_layer_sha256":source["data"]["motion_layer_sha256"],
+            "asset_bindings":source["data"].get("asset_bindings",[]),
             "sample_ticks":sample_ticks,"sample_digest_sha256":snapshot_sha,
             "host_creator_action_verified":True,
             "artist_presentation_approved":False,
@@ -175,7 +176,8 @@ class OpenUSDTakeCapture:
             timeline["document_sha256"]!=manifest["timeline_document_sha256"] or
             duration!=manifest["duration_tick"] or
             src["data"]["layout_layer_sha256"]!=manifest["layout_layer_sha256"] or
-            src["data"]["motion_layer_sha256"]!=manifest["motion_layer_sha256"]):
+            src["data"]["motion_layer_sha256"]!=manifest["motion_layer_sha256"] or
+            src["data"].get("asset_bindings",[])!=manifest.get("asset_bindings",[])):
             raise RuntimeError("Frozen scene/timed film source changed")
         _,Sdf,Usd,UsdGeom=_usd()
         poses=[]
