@@ -226,6 +226,33 @@ def run_visible_window_smoke():
                 {"path":"/World/Camera","role":"camera",
                  "position":[0,0,8]},
             ],curves=[],native_schemas=True)
+        # Separate native A/V smoke from FFmpeg-backed imported video.
+        # This is one real frozen OpenUSD Digital Take with a SHA-addressed
+        # captured mono signal, for the actual installed WebView2 catalog.
+        from backend.nvp_data_av_source import RecordedSoundSources
+        from backend.nvp_temporal_ledger import TemporalLedger,TICKS_PER_SECOND
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        import struct
+        source_index=FilmIndex(studio)
+        RecordedSoundSources(source_index).publish(
+            project["id"],"smoke_signal",
+            [struct.pack("<"+"h"*4800,*([6000]*4800))])
+        TemporalLedger(source_index).publish(
+            project["id"],"smoke_events",[{
+                "event_id":"smoke_actor_sound","event_kind":"sound",
+                "subject_id":"Actor","start_tick":0,
+                "end_tick":TICKS_PER_SECOND//2,
+                "source_id":"smoke_signal","source_revision":1,
+                "payload":{"usd_prim_path":"/World/Actor","gain":0.8},
+            }],duration_tick=TICKS_PER_SECOND)
+        OpenUSDTakeCapture(
+            source_index,verify_creator_action=lambda event,scope:
+            event=="smoke_only" and scope["operation"]==
+            "nvp.freeze.usd_temporal_take.v1").freeze(
+                project["id"],"smoke_frozen_take",scene_id="smoke_scene",
+                scene_revision=1,timeline_id="smoke_events",
+                timeline_revision=1,sample_ticks=[0],
+                creator_event="smoke_only")
         server,worker,port,sock=serve(app)
     except BaseException:
         if old_home is None: os.environ.pop("NVP_HOME",None)
@@ -317,6 +344,54 @@ def run_visible_window_smoke():
                                 if not result["passed"]:
                                     raise RuntimeError(
                                         "Installed OpenUSD camera source did not reach real React workbench")
+                                # The same installed WebView2 must expose
+                                # actual data-first 3D audio from a frozen
+                                # Digital Take, without any FFmpeg discovery.
+                                result["passed"]=False
+                                have_bridge=window.evaluate_js(
+                                    "Boolean(window.pywebview.api.data_av_catalog "
+                                    "&& window.pywebview.api.data_av_begin "
+                                    "&& window.pywebview.api.data_av_audio_window "
+                                    "&& (window.AudioContext || window.webkitAudioContext))")
+                                if not have_bridge:
+                                    raise RuntimeError(
+                                        "Native WebView2 sound bridge or Web Audio unavailable")
+                                window.evaluate_js(
+                                    "window.__nvpDataAVProbe='PENDING';"
+                                    "window.pywebview.api.data_av_catalog('"+
+                                    project["id"]+"').then(x=>{"
+                                    "window.__nvpDataAVProbe="
+                                    "x.format==='nvp.data_av.native_session.v1' &&"
+                                    "x.ffmpeg_runtime_required===false &&"
+                                    "x.takes.some(t=>t.take_id==='smoke_frozen_take')"
+                                    "?'PASSED':'FAILED';}).catch(()=>{"
+                                    "window.__nvpDataAVProbe='FAILED';});")
+                                until=time.monotonic()+15
+                                while time.monotonic()<until:
+                                    state=window.evaluate_js("window.__nvpDataAVProbe")
+                                    if state=="PASSED":break
+                                    if state=="FAILED":
+                                        raise RuntimeError("Native sound catalog IPC failed")
+                                    time.sleep(.2)
+                                if state!="PASSED":
+                                    raise RuntimeError("Native sound IPC timed out")
+                                window.evaluate_js(
+                                    "(()=>{const b=[...document.querySelectorAll('nav.tabs button')]"
+                                    ".find(x=>x.textContent.includes('Native 3D sound'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                until=time.monotonic()+20
+                                while time.monotonic()<until:
+                                    ready=window.evaluate_js(
+                                        "Boolean(document.querySelector("
+                                        "'section[aria-label=\\\"Data-first native A/V preview\\\"]')"
+                                        " && document.body.textContent.includes('smoke_frozen_take'))")
+                                    if ready:
+                                        result["passed"]=True
+                                        break
+                                    time.sleep(.2)
+                                if not result["passed"]:
+                                    raise RuntimeError(
+                                        "Data-first source audition UI not mounted in installed WebView2")
                                 break
                     time.sleep(.2)
                 if not result["passed"]:
