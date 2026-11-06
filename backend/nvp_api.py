@@ -1364,15 +1364,24 @@ def original_source_proxy_range(ticket: str, request: Request):
             begin,end=0,min(total,_AV_MAX_RANGE)-1
         else:
             match=_AV_RANGE.fullmatch(value.strip())
-            if not match or not match.group(1):
+            if not match or (not match.group(1) and not match.group(2)):
                 deny(416)
-            begin=int(match.group(1))
-            if begin>=total:
-                deny(416)
-            requested_end=int(match.group(2)) if match.group(2) else total-1
-            if requested_end<begin:
-                deny(416)
-            end=min(requested_end,begin+_AV_MAX_RANGE-1,total-1)
+            if match.group(1):
+                begin=int(match.group(1))
+                if begin>=total:
+                    deny(416)
+                requested_end=int(match.group(2)) if match.group(2) else total-1
+                if requested_end<begin:
+                    deny(416)
+                end=min(requested_end,begin+_AV_MAX_RANGE-1,total-1)
+            else:
+                # HTMLMediaElement can seek the MP4's footer by asking for
+                # a suffix; preserve HTTP 206 semantics within the same
+                # one-MiB bound and immutable native ticket.
+                count=int(match.group(2))
+                if count<1:deny(416)
+                end=total-1
+                begin=end-min(count,_AV_MAX_RANGE)+1
         data=host.stream_range(ticket,begin,end)
     except (KeyError,PermissionError,RuntimeError,ValueError,TypeError,OSError):
         deny()
