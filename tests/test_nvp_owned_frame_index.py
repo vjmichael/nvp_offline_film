@@ -241,6 +241,18 @@ class NativeOwnedIndexTests(unittest.TestCase):
                 self.cache.window(self.pid,"camera_take",self.sha,self.movie,
                                   first_zero=129,count=6)
 
+    def test_symlinked_project_cache_parent_is_refused(self):
+        attacker=self.root/"outside_cache"
+        attacker.mkdir()
+        parent=self.cache.root/self.pid
+        try:
+            parent.symlink_to(attacker,target_is_directory=True)
+        except OSError as exc:
+            self.skipTest("OS does not permit symlinks for this test: "+str(exc))
+        with self.assertRaises(RuntimeError):
+            self.cache.ensure(self.pid,"camera_take",self.sha,self.movie)
+        self.assertEqual(list(attacker.iterdir()),[])
+
     def test_index_rejects_foreign_project(self):
         self.cache.ensure(self.pid, "camera_take", self.sha, self.movie)
         with self.assertRaises(ValueError):
