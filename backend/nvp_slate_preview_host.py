@@ -337,5 +337,28 @@ class NativeSlatePreviewHost:
         raise RuntimeError("No active or queued preview job can be cancelled")
 
     def recover(self):
-        """After supervisor crash reconciliation, no replay or false success."""
-        return self.cache.recover(self.supervisor)
+        """Independently reconcile worker jobs before any cache publication.
+
+        A QUEUED pre-crash preview is cancelled instead of silently restarted.
+        An ACTIVE task's RAM reservation stays for separate host recovery if
+        native worker termination cannot be proven.
+        """
+        if self.supervisor._running:
+            raise RuntimeError("Cannot recover while this host owns live preview jobs")
+        interrupted=self.supervisor.recover_interrupted()
+        results=self.cache.recover(self.supervisor)
+        for item in results:
+            if item["state"]!="INTERRUPTED":
+                continue
+            task_id=self.supervisor._activity_id(item["job_id"])
+            row=self.ledger.get_task(task_id)
+            if row is not None and row["state"]=="QUEUED":
+                self.ledger.cancel_queued(
+                    task_id,owner_key=self.dispatcher.owner_key)
+                item["queued_native_task_cancelled"]=True
+        return {
+            "native_worker_interrupted_job_ids":interrupted,
+            "preview_cache_reconciliation":results,
+            "native_jobs_replayed":False,
+            "unproven_active_reservations_released":False,
+        }
