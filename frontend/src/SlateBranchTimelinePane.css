@@ -83,3 +83,14 @@
 .nvp-slate-proxy-preview img{
   display:block;max-width:100%;max-height:360px;aspect-ratio:16/9;
   object-fit:contain;border-radius:6px;background:#111722}
+
+/* A higher-fidelity native USD preview remains a derivative, never an
+   approved finished frame. Camera source selection is explicit. */
+.nvp-slate-camera-choice{display:flex;flex-direction:column;gap:3px;
+  font-size:11px;color:#bbc9cf}
+.nvp-slate-camera-choice select{background:#272d36;color:#e8efef;
+  border:1px solid #5d6a76;border-radius:6px;padding:7px}
+.nvp-slate-draft-tools .nvp-slate-render-geometry{
+  border-color:#5f88a3;background:#274151;color:#ecf4fd}
+.nvp-slate-fidelity-notice{font-size:11px;color:#f5cb85!important;
+  border-left:3px solid #d2a85b;padding-left:9px}
