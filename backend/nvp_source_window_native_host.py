@@ -170,6 +170,32 @@ class NativeSourceWindowHost:
         except (OSError, KeyError, ValueError, TypeError, RuntimeError):
             return False
 
+    def source_index_status(self, project_id, source_id, source_revision=1):
+        """UI-facing FFMS2 cache readiness without reading the original video.
+
+        A notice means rebuild the derived index; it does NOT mean the camera
+        original or FilmIndex revision was altered. Actual decoding still
+        requires the trusted native host's creator authorization.
+        """
+        if self.decoder_backend != "ffms2":
+            return {"status": "DECODER_NOT_FFMS2", "ready": False,
+                    "notice": None}
+        from backend.nvp_ffms2_native import FFMS2
+        from backend.nvp_ffms2_index_maintenance import FFMS2IndexMaintenance
+        record = self.preflight.bridge.index.read_revision(
+            project_id, source_id, source_revision)
+        payload = record["data"]
+        if (record["kind"] != "asset" or
+            payload.get("format") != "nvp.asset.external_source.v1"):
+            raise RuntimeError("Requested source is not immutable external camera media")
+        library = FFMS2(self.ffms2_library)
+        if library.library_sha256 != self.ffms2_sha:
+            raise RuntimeError("Approved FFMS2 library changed")
+        state = FFMS2IndexMaintenance(
+            self.ffms2_cache_root, engine_version=library.version,
+            library_sha256=self.ffms2_sha)
+        return state.inspect(project_id, source_id, payload["content_sha256"])
+
     def stage_and_approve(self, project_id, edit_id, revision, *,
                           first_frame, frame_count, destination, creator_event,
                           ram_mb=1024, duration_s=1800):
