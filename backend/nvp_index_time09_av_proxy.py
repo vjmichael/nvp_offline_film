@@ -294,7 +294,8 @@ def verify(destination,plan,ffprobe):
     audio=[s for s in streams if s.get("codec_type")=="audio"]
     if (len(video)!=1 or len(audio)!=1 or
         video[0].get("codec_name")!="h264" or
-        video[0].get("avg_frame_rate")!="24/1" or
+        video[0].get("r_frame_rate")!="24/1" or
+        int(video[0].get("nb_frames",0))!=plan["expected_review_frames"] or
         audio[0].get("codec_name")!="aac" or
         int(audio[0].get("sample_rate",0))!=RATE or
         int(audio[0].get("channels",0))!=2):
