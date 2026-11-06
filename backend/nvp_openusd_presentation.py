@@ -45,10 +45,10 @@ class OpenUSDPresentationPlanner:
         if (scene["document_sha256"]!=info["scene_document_sha256"] or
             timeline["document_sha256"]!=info["timeline_document_sha256"]):
             raise RuntimeError("Frozen performance source changed")
-        # Re-check frozen checkpoints as metadata evidence before planning.
-        reader=OpenUSDTakeCapture(
-            self.index,verify_creator_action=lambda *_:False)
-        reader.verify_take(project_id,take_id)
+        # FilmIndex revisions and OpenUSD layer blob hashes are checked above.
+        # Do NOT stream the entire feature-length event ledger or re-evaluate
+        # all frozen checkpoints for each interactive preview window.
+        # verify_take() is a deliberate full-integrity acceptance operation.
         plan=self.projection.prepare(
             project_id,info["timeline_id"],info["timeline_revision"],
             start_tick=start_tick,end_tick=end_tick,
@@ -78,6 +78,8 @@ class OpenUSDPresentationPlanner:
             "fps_num":fps_num,"fps_den":fps_den,
             "presentation_samples":samples,
             "source_state_sha256":sha(samples),
+            "source_full_audit_this_operation":False,
+            "revision_metadata_bound":True,
             "creator_approved_for_render":False,
             "frames_rendered":False,"output":"DATA_ONLY_NOT_RENDERED",
         }
