@@ -261,6 +261,48 @@ class VirtualCameraWorkbench:
              "rendered_picture":False,"director_preset_approved":True},
             expected_revision=expected_revision,dependencies=[])
 
+    def apply_to_shot(self,project_id,shot_id,*,take_id,scene_id,
+                      scene_revision,camera_path,settings,start_tick,end_tick,
+                      creator_event,reason,
+                      continuity_policy="preserve",expected_revision=0):
+        """Commit tested optics only when Take is frozen and source scene matches.
+
+        The director's virtual-lens tests cannot silently rewrite the
+        performance or its scene. They become a versioned stronger SHOT-01
+        camera opinion, through the existing explicit approval pathway.
+        """
+        if self.approve is None:
+            raise PermissionError("No authorized director action for optical shot")
+        settings=verified_optics(settings)
+        take=self.index.read_revision(project_id,take_id,1)
+        source=self.index.read_revision(project_id,scene_id,scene_revision)
+        if (take["kind"]!="take" or take["data"].get("frozen") is not True or
+            source["kind"]!="scene" or
+            take["data"]["scene_id"]!=scene_id or
+            take["data"]["scene_revision"]!=scene_revision or
+            take["data"]["scene_document_sha256"]!=source["document_sha256"]):
+            raise RuntimeError("Cannot apply a lens setup to a different frozen Take")
+        if source["data"]["prim_roles"].get(camera_path)!="camera":
+            raise ValueError("Lens decision must target a real frozen scene camera")
+        from backend.nvp_openusd_shot_overrides import OpenUSDShotOverrides
+        changes=[
+            {"path":camera_path,"property":name,"value":value}
+            for name,value in (
+                ("camera_focal_length_mm",settings["focal_length_mm"]),
+                ("camera_f_stop",settings["f_stop"]),
+                ("camera_focus_distance_m",settings["focus_distance_m"]),
+                ("camera_sensor_width_mm",settings["sensor_width_mm"]),
+                ("camera_sensor_height_mm",settings["sensor_height_mm"]))
+        ]
+        return OpenUSDShotOverrides(
+            self.index,verify_director_action=self.approve).publish(
+            project_id,shot_id,take_id=take_id,
+            start_tick=start_tick,end_tick=end_tick,
+            changes=changes,purpose="optics",
+            continuity_policy=continuity_policy,
+            reason=reason,creator_event=creator_event,
+            expected_revision=expected_revision)
+
     def open_preset(self,project_id,preset_id,revision):
         record=self.index.read_revision(project_id,preset_id,revision)
         doc=record["data"]
