@@ -34,6 +34,19 @@ def _table(db):
         FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
         CHECK(state IN ('RETIRED','RESTORED','PURGED'))
     )""")
+    db.execute("""CREATE TABLE IF NOT EXISTS nvp_film_source_lifecycle_events (
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id TEXT NOT NULL,
+        object_id TEXT NOT NULL,
+        previous_state TEXT NOT NULL,
+        new_state TEXT NOT NULL,
+        source_document_sha256 TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        committed_at TEXT NOT NULL,
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )""")
+    db.execute("""CREATE INDEX IF NOT EXISTS nvp_source_lifecycle_event_lookup
+        ON nvp_film_source_lifecycle_events(project_id,object_id,event_id)""")
 
 
 def _active_dependents(db,project_id,object_id):
@@ -73,6 +86,46 @@ class FilmSourceLifecycle:
         self.authorize=verify_creator_action
         with self.index.studio._connection() as db:
             _table(db)
+
+    def audit(self,project_id,object_id,*,after_event_id=0,limit=100):
+        """Read immutable lifecycle receipts, not the original actor/Take bytes."""
+        _require_pid(project_id)
+        _id(object_id,"source identity")
+        _int_bound=type(after_event_id) is int and after_event_id>=0
+        if not _int_bound or type(limit) is not int or not 1<=limit<=100:
+            raise ValueError("Invalid source lifecycle audit page")
+        with self.index.studio._connection() as db:
+            self.index._project(db,project_id)
+            rows=db.execute("""SELECT event_id,previous_state,new_state,
+                source_document_sha256,reason,committed_at
+                FROM nvp_film_source_lifecycle_events
+                WHERE project_id=? AND object_id=? AND event_id>?
+                ORDER BY event_id LIMIT ?""",
+                (project_id,object_id,after_event_id,limit)).fetchall()
+        return [dict(row) for row in rows]
+
+    def impact_report(self,project_id,object_id,*,limit=100):
+        """Advisory report; irreversible purge rechecks under writer lock."""
+        report=self.inspect(project_id,object_id)
+        if type(limit) is not int or not 1<=limit<=100:
+            raise ValueError("Invalid bounded source impact preview")
+        history=(self.index.history(project_id,object_id)
+                 if report["exists"] else [])
+        seen=set()
+        preview=[]
+        for item in history:
+            for dependent in self.index.impact(
+                    project_id,object_id,item["revision"]):
+                key=(dependent["object_id"],dependent["revision"])
+                if key not in seen:
+                    seen.add(key)
+                    if len(preview)<limit:
+                        preview.append(dependent)
+        return {**report,
+                "dependent_revisions_reported":len(seen),
+                "dependent_revisions_sample":preview,
+                "sample_truncated":len(seen)>len(preview),
+                "requires_director_review":report["purge_blocked"]}
 
     def inspect(self,project_id,object_id):
         _require_pid(project_id)
@@ -141,6 +194,12 @@ class FilmSourceLifecycle:
                 reason=excluded.reason""",
                 (project_id,object_id,"RETIRED",now(),expected_head_revision,
                  head["document_sha"],reason.strip()))
+            db.execute("""INSERT INTO nvp_film_source_lifecycle_events
+                (project_id,object_id,previous_state,new_state,
+                 source_document_sha256,reason,committed_at)
+                VALUES(?,?,?,?,?,?,?)""",
+                (project_id,object_id,previous["state"] if previous else "ACTIVE",
+                 "RETIRED",head["document_sha"],reason.strip(),now()))
             deps=_active_dependents(db,project_id,object_id)
         return {
             "state":"RETIRED","project_id":project_id,"object_id":object_id,
@@ -180,6 +239,12 @@ class FilmSourceLifecycle:
                 SET state='RESTORED',restored_at=? WHERE project_id=?
                 AND object_id=? AND state='RETIRED'""",
                 (now(),project_id,object_id))
+            db.execute("""INSERT INTO nvp_film_source_lifecycle_events
+                (project_id,object_id,previous_state,new_state,
+                 source_document_sha256,reason,committed_at)
+                VALUES(?,?,?,?,?,?,?)""",
+                (project_id,object_id,"RETIRED","RESTORED",
+                 record["last_head_document_sha256"],"Creator restored source",now()))
         return {"state":"RESTORED","source_truth_modified":False,
                 "physical_blobs_deleted":False}
 
@@ -225,6 +290,13 @@ class FilmSourceLifecycle:
             db.execute("""UPDATE nvp_film_source_retirements
                 SET state='PURGED',purged_at=? WHERE project_id=? AND object_id=?""",
                 (now(),project_id,object_id))
+            db.execute("""INSERT INTO nvp_film_source_lifecycle_events
+                (project_id,object_id,previous_state,new_state,
+                 source_document_sha256,reason,committed_at)
+                VALUES(?,?,?,?,?,?,?)""",
+                (project_id,object_id,"RETIRED","PURGED",
+                 record["last_head_document_sha256"],
+                 "Creator approved unreferenced registration purge",now()))
         return {"state":"PURGED","registration_deleted":True,
                 "source_data_mutated":False,
                 "physical_blobs_deleted":False,
