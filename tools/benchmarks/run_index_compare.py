@@ -77,6 +77,26 @@ def benchmark_one(source,source_sha,root,ffmpeg,ffprobe,ffms,order):
     result["nvp_warm_open_seconds"]=timed(create_nvp)[0]
     t,video=timed(lambda:ffms.open_video(source,ffms_index))
     result["ffms2_warm_decoder_open_seconds"]=t
+    # This is not decoder speed. It is indexed ordinal -> timestamp lookup
+    # under the actual runtime paths. NVP opens SQLite + checks the source
+    # file stamp; FFMS2 looks up indexed metadata in its warm decoder.
+    # Both are measured independently from PNG encoding and GOP decoding.
+    nvp_lookup=[]
+    ffms_lookup=[]
+    for position in positions * 20:
+        t,_=timed(lambda:native.window(
+            PID,ASSET,source_sha,source,first_zero=position,count=1))
+        nvp_lookup.append(t)
+        t,_=timed(lambda:video.index_frame_info(position))
+        ffms_lookup.append(t)
+    result["nvp_lookup_seconds"]=nvp_lookup
+    result["ffms2_lookup_seconds"]=ffms_lookup
+    result["nvp_lookup_median_seconds"]=statistics.median(nvp_lookup)
+    result["ffms2_lookup_median_seconds"]=statistics.median(ffms_lookup)
+    result["lookup_measurement_note"]=(
+        "NVP opens a read-only SQLite connection and checks its source "
+        "stamp on every lookup; FFMS2 index metadata resides in the warm "
+        "decoder process. Neither measurement decodes pixels.")
     nvp_latencies=[]
     ffms_latencies=[]
     frame_checks=[]
@@ -170,6 +190,9 @@ def main(argv=None):
                 "NVP uses FFmpeg CLI and writes PNG on each request; FFMS2 "
                 "keeps a warm decoder and encodes a PNG using Python. "
                 "Warm decoder reuse and process startup are not normalized. "
+                "Separate index-only NVP SQLite window queries and warm "
+                "FFMS2 in-memory frame-info queries are measured before "
+                "PNG extraction, but their cache/OS overhead differs. "
                 "Output RGB24 and rational PTS are compared independently "
                 "after timing. Use results only with these qualifications."),
             "rounds":rounds,
@@ -182,6 +205,9 @@ def main(argv=None):
         print(r["order"],
               "index_s NVP=",round(r["nvp_index_seconds"],4),
               "FFMS2=",round(r["ffms2_index_seconds"],4),
+              "index_lookup_median_ms NVP=",round(
+                  r["nvp_lookup_median_seconds"]*1000,3),
+              "FFMS2=",round(r["ffms2_lookup_median_seconds"]*1000,3),
               "seek_median_s NVP=",round(r["nvp_seek_median_seconds"],4),
               "FFMS2=",round(r["ffms2_seek_median_seconds"],4),
               "PTSmatch=",r["all_frame_timestamps_agree"],
