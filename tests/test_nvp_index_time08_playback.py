@@ -101,6 +101,12 @@ class OriginalAssemblyReviewTests(unittest.TestCase):
         while time.monotonic()<until:
             value=self.desktop.poll_assembly_review(ticket)
             if value["status"] in ("COMPLETE","RECOVERY_REQUIRED","CANCELLED"):
+                if value["status"]=="RECOVERY_REQUIRED":
+                    session=self.desktop._get_review_playback()._sessions.get(ticket)
+                    if session is not None:
+                        self.fail("Real native original source playback failed: "+
+                                  str(session.get("private_failure_detail",
+                                                  "unknown cause")))
                 return value
             time.sleep(.15)
         self.fail("Real native playback worker never reached terminal receipt")
