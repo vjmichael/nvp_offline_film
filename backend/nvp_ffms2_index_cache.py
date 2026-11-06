@@ -13,6 +13,7 @@ from pathlib import Path
 import tempfile
 
 from backend.nvp_ffms2_native import FFMS2, sha_file
+from backend.nvp_ffms2_index_maintenance import FFMS2IndexMaintenance
 from backend.nvp_film_index import _require_pid, _id, _sha
 
 FORMAT = "nvp.ffms2.source_index.v1"
@@ -37,6 +38,13 @@ class FFMS2SourceIndex:
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.root = root.resolve()
         self.library = library
+        self.maintenance = FFMS2IndexMaintenance(
+            self.root, engine_version=library.version,
+            library_sha256=library.library_sha256)
+
+    def compatibility_status(self, project_id, asset_id, source_sha):
+        """GUI-readable index upgrade notification; no original-file reads."""
+        return self.maintenance.inspect(project_id, asset_id, source_sha)
 
     def _location(self, project_id, asset_id, source_sha):
         _require_pid(project_id)
@@ -71,6 +79,9 @@ class FFMS2SourceIndex:
             raise RuntimeError("FFMS2 media original is offline or unsafe")
         if sha_file(source) != source_sha:
             raise RuntimeError("FFMS2 source differs from immutable FilmIndex bytes")
+        upgrade = self.compatibility_status(project_id, asset_id, source_sha)
+        if upgrade["status"] in ("INDEX_METADATA_UNSAFE", "INDEX_METADATA_INVALID"):
+            raise RuntimeError("Unsafe FFMS2 version marker requires reconciliation")
         index_file, manifest_file = self._location(project_id, asset_id, source_sha)
         if (index_file.exists() or index_file.is_symlink() or
                 manifest_file.exists() or manifest_file.is_symlink()):
@@ -96,8 +107,9 @@ class FFMS2SourceIndex:
                     vid.meta["time_base_num"] != metadata["time_base_num"] or
                     vid.meta["time_base_den"] != metadata["time_base_den"]):
                     raise RuntimeError("FFMS2 cached frame metadata changed")
+            self.maintenance.mark_index_verified(project_id, asset_id, source_sha)
             return {"status": "VERIFIED_REUSED", "index_path": str(index_file),
-                    **metadata}
+                    "index_upgrade_notice": None, **metadata}
         # No partial index must become authoritative after a crash. Preserve
         # suspicious stale lock for host reconciliation instead of stealing.
         lock = index_file.with_suffix(".building")
@@ -141,8 +153,12 @@ class FFMS2SourceIndex:
             stage_path = None
             os.replace(stage_meta, manifest_file)
             stage_meta = None
+            # Publish the user-readable upgrade state only after the real
+            # native index has been created and reread successfully.
+            self.maintenance.mark_index_verified(project_id, asset_id, source_sha)
             return {"status": "VERIFIED_CREATED", "index_path": str(index_file),
-                    **metadata}
+                    "reindexed_after_engine_change": upgrade["status"] == "REINDEX_REQUIRED",
+                    "index_upgrade_notice": upgrade.get("notice"), **metadata}
         finally:
             if stage_path is not None:
                 Path(stage_path).unlink(missing_ok=True)
