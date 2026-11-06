@@ -355,13 +355,19 @@ def main(argv=None):
                         help="Reopen same project after fully exiting previous installed app")
     parser.add_argument("--smoke-window",action="store_true",
                         help="Launch a real native Windows WebView2 and verify page loaded")
+    parser.add_argument("--smoke-data-av",action="store_true",
+                        help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(argv)
-    if sum((args.smoke,args.smoke_create,args.smoke_reopen,args.smoke_window))>1:
+    if sum((args.smoke,args.smoke_create,args.smoke_reopen,
+            args.smoke_window,args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
     if args.smoke_window:
         return run_visible_window_smoke()
+    if args.smoke_data_av:
+        from tools.nvp_data_av_installed_acceptance import run_installed_data_av_smoke
+        return run_installed_data_av_smoke()
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
             "create" if args.smoke_create else "reopen")
