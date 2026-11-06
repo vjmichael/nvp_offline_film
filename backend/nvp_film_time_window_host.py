@@ -269,6 +269,27 @@ class NativeFilmTimeWindowHost:
             "approved_final_master":False,
         }
 
+    def revoke_queued(self,task):
+        """Revoke an unstarted creator grant without releasing ACTIVE RAM.
+
+        An already running worker must instead be cancelled through the
+        host's supervised should_cancel callback and verified OS cleanup.
+        """
+        row=self._row(task)
+        state=self.ledger.get_task(task)
+        if state is None or state["state"]!="QUEUED":
+            raise RuntimeError("Only never-started film-time review may be revoked here")
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            result=db.execute(
+                "UPDATE "+TABLE+" SET revoked_at=? WHERE task_id=? "
+                "AND revoked_at IS NULL",(time.time(),task))
+            if result.rowcount!=1:
+                raise RuntimeError("Film-time job grant already revoked")
+            db.commit()
+        stopped=self.ledger.cancel_queued(task,owner_key=self.owner)
+        return {**stopped,"creator_grant_revoked":True}
+
     def run_next(self,*,timeout_seconds=900,should_cancel=None):
         admitted=self.binding.claim_next(owner_key=self.owner)
         if not admitted or not admitted["admitted"]:
