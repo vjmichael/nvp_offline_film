@@ -307,6 +307,13 @@ class Slate06NativeTests(unittest.TestCase):
         delivered=self.host.read_preview_png(self.pid,req["cache_key"])
         self.assertEqual(delivered["presentation"],"geometry")
         self.assertTrue(delivered["authored_geometry_preview_only"])
+        self.assertEqual(delivered["segment_id"],"angle_part")
+        self.assertEqual(delivered["edit_document_sha256"],
+                         self.index.read_revision(self.pid,"cut",1)[
+                             "document_sha256"])
+        self.assertEqual(delivered["source_tick"],T)
+        self.assertEqual(delivered["unmeshed_actors"],[])
+        self.assertEqual(delivered["skeletal_rig_count"],0)
         self.assertFalse(delivered["lowfi_proxy_only"])
         self.assertFalse(delivered["skinned_actor_performance_rendered"])
         self.assertFalse(delivered["full_film_frame_approved"])
