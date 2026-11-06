@@ -217,9 +217,14 @@ class SlatePagedCatalog:
                 if key not in cached_shots:
                     cached_shots[key]=self.slate._shot(
                         project_id,sid,srev,tid,source_start,source_end)
-                shot_sha=cached_shots[key]["document_sha256"]
-                if cached_shots[key]["data"]["take_id"]!=tid:
-                    raise ValueError("Shared coverage shot belongs to different Take")
+                shot_record=cached_shots[key]
+                shot_sha=shot_record["document_sha256"]
+                shot_info=shot_record["data"]
+                if (shot_info["take_id"]!=tid or
+                    shot_info["start_tick"]>source_start or
+                    shot_info["end_tick"]<source_end):
+                    raise ValueError(
+                        "Shared coverage shot does not include this source interval")
             slate=rec["slate"]
             if (type(slate) is not dict or set(slate)!=SLATE_KEYS or
                 slate["scene"]!=scene_label):
