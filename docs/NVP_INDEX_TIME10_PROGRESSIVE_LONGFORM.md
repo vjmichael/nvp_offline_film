@@ -29,6 +29,11 @@ INDEX-TIME-10 adds an explicitly approved **progressive session**:
   supervisor has a single worker thread: no two 2-GiB encoders run in
   parallel. It can synthesize the next section while the first verified
   section plays from private disk, not while the first is still encoding.
+- Intentional editorial black/silent gaps are actual Film Time.
+  The planner now retains trailing gaps and can render a bounded
+  **gap-only** section using native synthetic black picture + silence;
+  it does not silently skip unfilmed time or fabricate recorded media.
+  A deterministic test checks this exact planner and graph contract.
 - The browser never chooses next Film Time, original source path, native
   executable, output directory or source frame. The trusted host derives
   the next requested start as the current **sealed plan's exact
