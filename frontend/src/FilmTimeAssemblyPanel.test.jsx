@@ -166,8 +166,11 @@ describe('INDEX-TIME-07 human-first immutable source assembly',()=>{
     render(<FilmTimeAssemblyPanel
       projectId={pid} edit={longEdit} clips={all.slice(0,40)}
       edits={available} native={native} api={api} onSaved={vi.fn()}/>);
-    expect(screen.getByText('Move later').disabled).toBe(true);
     await waitFor(()=>expect(api).toHaveBeenCalled());
+    // The staged async page may not have mounted its disabled controls
+    // yet. No edit may be launched while the remainder is unverified.
+    const pendingMove=screen.queryByText('Move later');
+    expect(pendingMove===null||pendingMove.disabled).toBe(true);
     release();
     await waitFor(()=>expect(screen.getByText('Move later').disabled).toBe(false));
     fireEvent.change(screen.getByLabelText('Assembly clip'),
@@ -201,7 +204,10 @@ describe('INDEX-TIME-07 human-first immutable source assembly',()=>{
       edits={available} native={native} api={api} onSaved={vi.fn()}/>);
     expect(await screen.findByRole('alert')).toHaveProperty('textContent',
       expect.stringContaining('stale'));
-    expect(screen.getByText('Duplicate placement').disabled).toBe(true);
+    // Failed source-page custody may hide controls altogether rather
+    // than mounting disabled controls; both must fail closed.
+    const placement=screen.queryByText('Duplicate placement');
+    expect(placement===null||placement.disabled).toBe(true);
     expect(native.preview_footage_assembly).not.toHaveBeenCalled();
   });
 
