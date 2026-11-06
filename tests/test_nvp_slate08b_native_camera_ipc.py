@@ -25,8 +25,8 @@ def png(w=640,h=360):
     def chunk(name,data):
         return struct.pack(">I",len(data))+name+data+struct.pack(
             ">I",zlib.crc32(name+data)&0xffffffff)
-    raw=b"".join(b"\\0"+b"\\xc0\\x80\\x40"*w for _ in range(h))
-    return (b"\\x89PNG\\r\\n\\x1a\\n"+
+    raw=b"".join(b"\0"+b"\xc0\x80\x40"*w for _ in range(h))
+    return (b"\x89PNG\r\n\x1a\n"+
         chunk(b"IHDR",struct.pack(">IIBBBBB",w,h,8,2,0,0,0))+
         chunk(b"IDAT",zlib.compress(raw))+chunk(b"IEND",b""))
 
@@ -135,8 +135,11 @@ class TrustedDesktopCameraContract(unittest.TestCase):
              "native_schema_version":"unit_fixture"})
         self.window=Window()
         self.host=None
+        self.worker_gate=threading.Event()
+        self.worker_gate.set()
         def factory(callback):
             self.host=Host(callback)
+            self.host.runner_gate=self.worker_gate
             self.host.scene_sha=self.record["document_sha256"]
             self.host.expected_key=workbench_preview_key(
                 self.record["document_sha256"],0,"/World/Camera",
@@ -206,8 +209,8 @@ class TrustedDesktopCameraContract(unittest.TestCase):
         self.assertEqual(self.index.list_objects(self.pid,kind="take"),[])
 
     def test_second_native_confirmation_required_to_cancel(self):
+        self.worker_gate.clear()
         ticket=self.bridge.request_camera_still(self.payload())
-        self.host.runner_gate.clear()
         self.window.yes=False
         refusal=self.bridge.cancel_camera_still(ticket["ticket_id"])
         self.assertEqual(refusal["status"],"DENIED")
