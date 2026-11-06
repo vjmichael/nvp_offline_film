@@ -33,8 +33,12 @@ SHOTS=frozenset(("unknown","master","wide","medium","closeup",
                  "extreme_closeup","reaction","insert","over_shoulder","tracking"))
 TECHNICAL=frozenset(("unknown","acceptable","needs_review","rejected"))
 META_KEYS=frozenset(("beat_ids","character_ids","action_tags","emotion_tags",
+                     "dialogue_ids","moment_cues",
                      "shot_type","director_rating","director_notes",
                      "technical_status","continuity_flags","ai_observations"))
+MOMENT_KEYS=frozenset(("source_in_tick","source_out_tick","beat_ids",
+                       "character_ids","dialogue_ids","emotion_tags",
+                       "action_tags","origin"))
 OBS_KEYS=frozenset(("model_id","summary","confidence","source_in_tick",
                     "source_out_tick","status"))
 OBS_STATUS="UNREVIEWED_AI_PROPOSAL"
@@ -66,6 +70,7 @@ def _metadata(raw,start,end):
     fields={
         "beat_ids":_labels(raw.get("beat_ids",[])),
         "character_ids":_labels(raw.get("character_ids",[])),
+        "dialogue_ids":_labels(raw.get("dialogue_ids",[])),
         "action_tags":_labels(raw.get("action_tags",[])),
         "emotion_tags":_labels(raw.get("emotion_tags",[])),
         "shot_type":raw.get("shot_type","unknown"),
@@ -80,6 +85,33 @@ def _metadata(raw,start,end):
     if rating is not None and (
         type(rating) is not int or rating<1 or rating>5):
         raise ValueError("Director rating is 1 to 5 or unknown")
+    # Time-addressed source DATA cues help an AI/editor identify WHICH
+    # portion of a Take carries a beat, dialogue or expression. Unlike
+    # source frames, these spans do not depend on output sampling FPS.
+    moments=raw.get("moment_cues",[])
+    if type(moments) is not list or len(moments)>32:
+        raise ValueError("At most 32 source-time editorial cue spans per branch")
+    fields["moment_cues"]=[]
+    for moment in moments:
+        if type(moment) is not dict or set(moment)!=MOMENT_KEYS:
+            raise ValueError("Cue span requires exact data-time evidence fields")
+        low=_int(moment["source_in_tick"],"cue source inpoint")
+        high=_int(moment["source_out_tick"],"cue source outpoint")
+        if not start<=low<high<=end:
+            raise ValueError("Cue span must fit the frozen source segment")
+        if moment["origin"] not in ("editor_tag","script_note"):
+            raise PermissionError("AI observations cannot self-approve editorial cue spans")
+        fields["moment_cues"].append({
+            "source_in_tick":low,"source_out_tick":high,
+            "origin":moment["origin"],
+            "beat_ids":_labels(moment["beat_ids"]),
+            "character_ids":_labels(moment["character_ids"]),
+            "dialogue_ids":_labels(moment["dialogue_ids"]),
+            "action_tags":_labels(moment["action_tags"]),
+            "emotion_tags":_labels(moment["emotion_tags"]),
+        })
+    fields["moment_cues"].sort(
+        key=lambda x:(x["source_in_tick"],x["source_out_tick"],x["origin"]))
     observations=raw.get("ai_observations",[])
     if type(observations) is not list or len(observations)>MAX_OBSERVATIONS:
         raise ValueError("Only bounded AI observations are accepted")
@@ -364,10 +396,14 @@ class SlatePagedCatalog:
                 if index<=after_index:
                     continue
                 m=node["semantic"]
+                moments=m["moment_cues"]
                 if (group_id is not None and node["group_id"]!=group_id or
-                    beat_id is not None and beat_id not in m["beat_ids"] or
-                    character_id is not None and character_id not in m["character_ids"] or
-                    emotion_tag is not None and emotion_tag not in m["emotion_tags"] or
+                    beat_id is not None and beat_id not in m["beat_ids"] and
+                      not any(beat_id in cue["beat_ids"] for cue in moments) or
+                    character_id is not None and character_id not in m["character_ids"] and
+                      not any(character_id in cue["character_ids"] for cue in moments) or
+                    emotion_tag is not None and emotion_tag not in m["emotion_tags"] and
+                      not any(emotion_tag in cue["emotion_tags"] for cue in moments) or
                     shot_type is not None and shot_type!=m["shot_type"] or
                     technical_status is not None and
                     technical_status!=m["technical_status"]):
