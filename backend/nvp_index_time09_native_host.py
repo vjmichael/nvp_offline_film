@@ -91,6 +91,25 @@ class NativeAVProxyHost:
         self._current=None
         self._session=None
         self._closed=False
+        # A process restart has no surviving creator/session authority.
+        # Old queued tasks are revoked, while active OS-worker reservations
+        # are left for independently verified process-tree reconciliation.
+        self._reconcile_restarted_grants()
+
+    def _reconcile_restarted_grants(self):
+        """Fail closed after host crash; never replay stale progress consent."""
+        with self.ledger._db() as db:
+            stale=[row[0] for row in db.execute(
+                "SELECT task_id FROM "+TABLE+" WHERE revoked=0").fetchall()]
+            db.execute("UPDATE "+TABLE+" SET revoked=1 WHERE revoked=0")
+        for task in stale:
+            state=self.ledger.get_task(task)
+            if state is not None and state["state"]=="QUEUED":
+                try:self.ledger.cancel_queued(task,owner_key=self.owner)
+                except (RuntimeError,PermissionError):
+                    # An already-claimed worker must be fenced by the
+                    # contained-worker supervisor before ledger release.
+                    pass
 
     def _row(self,task):
         with self.ledger._db() as db:
