@@ -25,6 +25,7 @@ from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_resource_guard import ResourceSnapshot
 from backend.nvp_native_frame_index import NVPFrameIndex, stamp
 from backend.nvp_indexed_preview import extract
+from backend.nvp_source_pts_film_time import IndexedSourceFilmTime
 
 
 class NativeOwnedIndexTests(unittest.TestCase):
@@ -122,6 +123,23 @@ class NativeOwnedIndexTests(unittest.TestCase):
             self.assertEqual(output["frames"][0]["source_frame_zero"],ordinal)
             self.assertEqual(output["frames"][0]["pts"],rows[ordinal][0])
             self.assertFalse(output["source_sha_verified_this_operation"])
+        # Place imported VFR media on an authored film's time axis without
+        # ever deriving its source positions from a fixed output FPS.
+        from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+        T=TICKS_PER_SECOND
+        mapped=IndexedSourceFilmTime(self.cache).map_window(
+            self.pid,"vfr_take",source_sha,vfr,
+            source_in_frame_zero=10,film_in_tick=5*T,
+            first_zero=10,count=6,rounding="nearest")
+        self.assertEqual(mapped["frames"][0]["time_tick"],5*T)
+        self.assertEqual(mapped["source_in_pts"],rows[10][0])
+        self.assertEqual(
+            [f["source_frame_zero"] for f in mapped["frames"]],
+            list(range(10,16)))
+        self.assertTrue(all(
+            mapped["frames"][i+1]["time_tick"]>mapped["frames"][i]["time_tick"]
+            for i in range(5)))
+        self.assertFalse(mapped["source_sha_verified_this_operation"])
 
     def test_same_size_change_invalidates_stamp_but_not_provenance_claim(self):
         self.cache.ensure(self.pid, "camera_take", self.sha, self.movie)
