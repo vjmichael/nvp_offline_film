@@ -683,6 +683,11 @@ class SlateBranchNativeTests(unittest.TestCase):
             creator_event="director_deletes",expected_head_revision=1)
         self.assertEqual(removed["state"],"RETIRED")
         self.assertTrue(removed["purge_blocked"])
+        impact=lifecycle.impact_report(self.pid,"take_2")
+        self.assertTrue(impact["purge_blocked"])
+        self.assertGreater(impact["dependent_revisions_reported"],0)
+        self.assertEqual([row["new_state"] for row in lifecycle.audit(
+            self.pid,"take_2")],["RETIRED"])
         self.assertNotIn("take_2",{
             x["object_id"] for x in self.index.list_objects(
                 self.pid,kind="take")})
@@ -709,6 +714,8 @@ class SlateBranchNativeTests(unittest.TestCase):
         self.assertIn("take_2",{
             x["object_id"] for x in self.index.list_objects(
                 self.pid,kind="take")})
+        self.assertEqual([row["new_state"] for row in lifecycle.audit(
+            self.pid,"take_2")],["RETIRED","RESTORED"])
         reopened=assembly.commit(
             self.pid,"new_cut",graph_id="scene_01_slate",
             graph_revision=1,segments=source,editor_event="make_active")
@@ -731,6 +738,8 @@ class SlateBranchNativeTests(unittest.TestCase):
         purged=lifecycle.purge_unreferenced(
             self.pid,"unused_source",creator_event="director_deletes")
         self.assertEqual(purged["state"],"PURGED")
+        self.assertEqual([row["new_state"] for row in lifecycle.audit(
+            self.pid,"unused_source")],["RETIRED","PURGED"])
         self.assertFalse(purged["physical_blobs_deleted"])
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"unused_source",1)
