@@ -316,8 +316,8 @@ def run_visible_window_smoke():
                             end=time.monotonic()+25
                             while time.monotonic()<end:
                                 editing=window.evaluate_js(
-                                    "Boolean(document.querySelector("
-                                    "'[aria-label=\\"Original footage assembly editor\\"]')"
+                                    "Boolean([...document.querySelectorAll('section')]"
+                                    ".some(x=>x.getAttribute('aria-label')==='Original footage assembly editor')"
                                     "&&[...document.querySelectorAll('button')]"
                                     ".some(x=>x.textContent.includes('Split clip at source frame')))")
                                 if editing:
