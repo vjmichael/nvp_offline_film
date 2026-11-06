@@ -28,11 +28,12 @@ def _webview2_windows():
     guid="{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
     keys=(
         (winreg.HKEY_CURRENT_USER,
-         r"Software\Microsoft\EdgeUpdate\Clients\"+guid),
+         chr(92).join(("Software","Microsoft","EdgeUpdate","Clients",guid))),
         (winreg.HKEY_LOCAL_MACHINE,
-         r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\"+guid),
+         chr(92).join(("SOFTWARE","WOW6432Node","Microsoft",
+                       "EdgeUpdate","Clients",guid))),
         (winreg.HKEY_LOCAL_MACHINE,
-         r"SOFTWARE\Microsoft\EdgeUpdate\Clients\"+guid),
+         chr(92).join(("SOFTWARE","Microsoft","EdgeUpdate","Clients",guid))),
     )
     for hive,path in keys:
         try:
