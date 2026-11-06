@@ -1150,12 +1150,22 @@ def prod06d_bundle(project_id:str,scene_id:str):
         'Cache-Control':'no-store'})
 
 
+# DA-06: Retire the old color subsystem only from the ACTIVE API. Its
+# original indexed film data and previous revisions are preserved, but no
+# frame-based EXR decode, old presentation export, external subprocess,
+# codec discovery or FFmpeg-bound grading task is permitted to execute.
+# Native data-first source grade controls are implemented separately.
+def _retired_frame_color():
+    raise HTTPException(status_code=410,detail=(
+        "Frame-based color preview/mastering was retired by DA-06. "
+        "Use the native OpenUSD presentation and data-first color controls."))
+
 # NVP-GRADE-UI-01 — project-scoped, non-destructive grade version history.
 # These endpoints do NOT approve a creative grade or export a final master.
 from typing import Any as _GradeAny
 from fastapi import Query as _GradeQuery
-from backend.nvp_grade_workspace import GradeWorkspace
-from backend.nvp_color_mastering import grade_recipe, validate_grade
+# Retired old EXR/frame-bound codec dependency: from_backend.nvp_grade_workspace import GradeWorkspace
+# Retired old EXR/frame-bound codec dependency: from_backend.nvp_color_mastering import grade_recipe, validate_grade
 
 class GradeWorkspaceSaveInput(BaseModel):
     source_exr_id: str = Field(min_length=1,max_length=80)
@@ -1166,14 +1176,17 @@ class GradeWorkspaceSaveInput(BaseModel):
 
 @app.get('/api/projects/{project_id}/color-grading/sources')
 def color_grade_sources(project_id:str):
+    _retired_frame_color()
     return run(lambda:GradeWorkspace(studio).sources(project_id))
 
 @app.get('/api/projects/{project_id}/color-grading/grades')
 def color_grade_list(project_id:str,source_id:str|None=None):
+    _retired_frame_color()
     return run(lambda:GradeWorkspace(studio).list_grades(project_id,source_id))
 
 @app.post('/api/projects/{project_id}/color-grading/grades',status_code=201)
 def color_grade_save(project_id:str,payload:GradeWorkspaceSaveInput):
+    _retired_frame_color()
     if payload.source_primaries_declared is not True:
         raise HTTPException(status_code=422,detail='Confirm the source EXR color primaries declaration before saving a grade')
     return run(lambda:GradeWorkspace(studio).save(
@@ -1182,6 +1195,7 @@ def color_grade_save(project_id:str,payload:GradeWorkspaceSaveInput):
 
 @app.get('/api/projects/{project_id}/color-grading/grades/{grade_id}')
 def color_grade_read(project_id:str,grade_id:str,revision:int|None=None):
+    _retired_frame_color()
     record=run(lambda:GradeWorkspace(studio).reopen(project_id,grade_id,revision))
     return {'id':grade_id,'revision':record['record']['revision'],
             'source_exr_id':record['record']['data']['source_exr_id'],
@@ -1191,6 +1205,7 @@ def color_grade_read(project_id:str,grade_id:str,revision:int|None=None):
 
 @app.get('/api/projects/{project_id}/color-grading/grades/{grade_id}/history')
 def color_grade_history(project_id:str,grade_id:str):
+    _retired_frame_color()
     return run(lambda:GradeWorkspace(studio).history(project_id,grade_id))
 
 @app.get('/api/projects/{project_id}/color-grading/sources/{source_id}/preview')
@@ -1205,6 +1220,7 @@ def color_grade_preview(
     green_gain:float=_GradeQuery(default=1.0,ge=0.7,le=1.3),
     blue_gain:float=_GradeQuery(default=1.0,ge=0.7,le=1.3),
 ):
+    _retired_frame_color()
     recipe=run(lambda:grade_recipe(
         **({} if mode=='before' else {
             'exposure_stops':exposure_stops,'contrast':contrast,'saturation':saturation,
@@ -1220,9 +1236,7 @@ def color_grade_preview(
 
 # GRADE-UI-02A — source-shot anchored advanced looks, measured post-ACES
 # scopes and exact per-shot RGB preview, all without creative approval.
-from backend.nvp_grade_advanced import (
-    AdvancedGradeWorkspace, validate_plan, neutral_wheels, make_plan,
-)
+# Retired old EXR/frame-bound codec dependency: from_backend.nvp_grade_advanced import (
 
 class AdvancedGradeSaveInput(BaseModel):
     source_id: str = Field(min_length=1,max_length=80)
@@ -1238,10 +1252,12 @@ class AdvancedGradePreviewInput(BaseModel):
 
 @app.get('/api/projects/{project_id}/color-grading/advanced/shots')
 def grade_advanced_shots(project_id:str, source_id:str):
+    _retired_frame_color()
     return run(lambda:AdvancedGradeWorkspace(studio).timeline(project_id,source_id))
 
 @app.post('/api/projects/{project_id}/color-grading/advanced/grades',status_code=201)
 def grade_advanced_save(project_id:str, payload:AdvancedGradeSaveInput):
+    _retired_frame_color()
     if payload.source_primaries_declared is not True:
         raise HTTPException(status_code=422,detail='Declare the actual scene-linear EXR source primaries before saving a shot look')
     return run(lambda:AdvancedGradeWorkspace(studio).save_advanced(
@@ -1249,6 +1265,7 @@ def grade_advanced_save(project_id:str, payload:AdvancedGradeSaveInput):
 
 @app.get('/api/projects/{project_id}/color-grading/advanced/grades/{grade_id}')
 def grade_advanced_read(project_id:str,grade_id:str,revision:int|None=None):
+    _retired_frame_color()
     result=run(lambda:AdvancedGradeWorkspace(studio).reopen_advanced(project_id,grade_id,revision))
     return {
         'id':grade_id,'revision':result['record']['revision'],
@@ -1260,12 +1277,13 @@ def grade_advanced_read(project_id:str,grade_id:str,revision:int|None=None):
 
 @app.post('/api/projects/{project_id}/color-grading/advanced/preview')
 def grade_advanced_preview(project_id:str,payload:AdvancedGradePreviewInput):
+    _retired_frame_color()
     return run(lambda:AdvancedGradeWorkspace(studio).render_scope_preview(
         project_id,payload.source_id,payload.frame,payload.plan))
 
 
 # GRADE-UI-02B1: source-linked HDR EV tone curves and non-applying reference advice.
-from backend.nvp_grade_curves import CurveGradeWorkspace
+# Retired old EXR/frame-bound codec dependency: from_backend.nvp_grade_curves import CurveGradeWorkspace
 
 class CurvePreviewInput(BaseModel):
     source_id: str = Field(min_length=1,max_length=80)
@@ -1287,17 +1305,20 @@ class MatchReferenceInput(BaseModel):
 
 @app.post('/api/projects/{project_id}/color-grading/curves/preview')
 def grade_curve_preview(project_id:str,payload:CurvePreviewInput):
+    _retired_frame_color()
     return run(lambda:CurveGradeWorkspace(studio).render_curve_preview(
         project_id,payload.source_id,payload.frame,payload.plan))
 
 @app.post('/api/projects/{project_id}/color-grading/curves/reference-suggestion')
 def grade_curve_reference(project_id:str,payload:MatchReferenceInput):
+    _retired_frame_color()
     return run(lambda:CurveGradeWorkspace(studio).compare_reference(
         project_id,payload.source_id,payload.target_frame,
         payload.reference_frame,payload.base_plan))
 
 @app.post('/api/projects/{project_id}/color-grading/curves/grades',status_code=201)
 def grade_curve_save(project_id:str,payload:CurveSaveInput):
+    _retired_frame_color()
     if payload.source_primaries_declared is not True:
         raise HTTPException(status_code=422,detail='Declare the original source EXR primaries before saving a curve draft')
     return run(lambda:CurveGradeWorkspace(studio).save_curve(
@@ -1306,6 +1327,7 @@ def grade_curve_save(project_id:str,payload:CurveSaveInput):
 
 @app.get('/api/projects/{project_id}/color-grading/curves/grades/{grade_id}')
 def grade_curve_reopen(project_id:str,grade_id:str,revision:int|None=None):
+    _retired_frame_color()
     row=run(lambda:CurveGradeWorkspace(studio).reopen_curve(
         project_id,grade_id,revision))
     return {'id':grade_id,'revision':row['record']['revision'],
