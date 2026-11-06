@@ -171,21 +171,36 @@ class NVPFrameIndex:
                     raise RuntimeError("Stale NVP index; explicit source reacceptance needed")
                 return {"status": "REUSED_SOURCE_STAMP_UNVERIFIED", "path": str(path),
                         **header}
-        meta = self._stream(source)
         lock = path.with_suffix(".building")
         try:
             fd_lock = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError as exc:
             raise RuntimeError("Interrupted index build requires host reconciliation") from exc
-        os.close(fd_lock)
+        try:
+            with os.fdopen(fd_lock, "wb") as marker:
+                marker.write(_json({"schema":SCHEMA_VERSION, "project":project,
+                                   "asset":asset, "source_sha256":source_sha,
+                                   "source_stamp":before,
+                                   "builder_pid":os.getpid()}).encode("ascii"))
+                marker.flush()
+                os.fsync(marker.fileno())
+        except BaseException:
+            lock.unlink(missing_ok=True)
+            raise
         stage = None
         try:
-            fd, name = tempfile.mkstemp(prefix=".nvpframes-", suffix=".tmp",
-                                         dir=path.parent)
+            meta = self._stream(source)
+            fd, name = tempfile.mkstemp(
+                prefix=".nvpframes-" + path.stem[:16] + "-",suffix=".tmp",
+                dir=path.parent)
             os.close(fd)
             stage = Path(name)
             with sqlite3.connect(stage) as db:
-                db.execute("CREATE TABLE frames (ordinal INTEGER PRIMARY KEY, pts INTEGER NOT NULL, keyframe INTEGER NOT NULL, packet_pos INTEGER)")
+                db.execute("""CREATE TABLE frames (
+                    ordinal INTEGER PRIMARY KEY CHECK(ordinal >= 0),
+                    pts INTEGER NOT NULL,
+                    keyframe INTEGER NOT NULL CHECK(keyframe IN (0,1)),
+                    packet_pos INTEGER CHECK(packet_pos >= 0))""")
                 db.execute("CREATE TABLE header (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
                 command = [str(self.ffprobe), "-v", "error", "-select_streams", "v:0",
                            "-show_frames", "-show_entries",
@@ -242,6 +257,61 @@ class NVPFrameIndex:
             if path.exists():
                 lock.unlink(missing_ok=True)
 
+    def reconcile_interrupted(self, project, asset, source_sha, source, *,
+                              confirm_builder_terminated):
+        """Host-only explicit recovery after supervised worker termination.
+
+        This does NOT resume an interrupted FFprobe scan. A proven inactive
+        builder's incomplete cache is discarded so a new indexed scan can be
+        scheduled; unrelated source caches are never touched. The host must
+        supply a trusted callback that verifies process liveness/fencing.
+        """
+        _identity(project,asset,source_sha)
+        if not callable(confirm_builder_terminated):
+            raise TypeError("Host-supervised worker termination proof required")
+        path=self._path(project,asset,source_sha)
+        lock=path.with_suffix(".building")
+        if lock.is_symlink():
+            raise RuntimeError("Unsafe interrupted-index lock")
+        if not lock.exists():
+            return {"status":"NO_INTERRUPTED_BUILD", "source_stamp":stamp(source)}
+        if not lock.is_file() or lock.stat().st_size>4096:
+            raise RuntimeError("Untrusted interrupted-index lock")
+        try:
+            marker=json.loads(lock.read_text("ascii"))
+        except (ValueError, UnicodeError) as exc:
+            raise RuntimeError("Invalid index build lock; host inspection needed") from exc
+        expected={"schema":SCHEMA_VERSION,"project":project,
+                  "asset":asset,"source_sha256":source_sha}
+        if any(marker.get(k)!=v for k,v in expected.items()):
+            raise RuntimeError("Index build lock identity changed")
+        if confirm_builder_terminated(dict(marker)) is not True:
+            raise PermissionError("Indexed worker still running or unconfirmed")
+        current=stamp(source)
+        if marker.get("source_stamp")!=current:
+            raise RuntimeError("Source changed; reingest/reaccept original first")
+        if path.exists():
+            # A correctly published index can survive a crash before the
+            # .building marker is removed. Reuse it only if valid and intact.
+            candidate=self.ensure(project,asset,source_sha,source)
+            if candidate["status"]!="REUSED_SOURCE_STAMP_UNVERIFIED":
+                raise RuntimeError("Unexpected published-index recovery state")
+            lock.unlink()
+            return {"status":"PUBLISHED_INDEX_RECONCILED",
+                    "frame_count":candidate["frame_count"],
+                    "source_integrity":"SOURCE_STAMP_UNVERIFIED"}
+        prefix=".nvpframes-" + path.stem[:16] + "-"
+        cleaned=0
+        for orphan in path.parent.glob(prefix+"*.tmp"):
+            if orphan.is_symlink() or not orphan.is_file():
+                raise RuntimeError("Unsafe interrupted-index staging file")
+            orphan.unlink()
+            cleaned+=1
+        lock.unlink()
+        return {"status":"INTERRUPTED_SCAN_DISCARDED",
+                "partial_files_cleaned":cleaned,
+                "source_integrity":"SOURCE_STAMP_UNVERIFIED"}
+
     def window(self, project, asset, source_sha, source, *, first_zero, count):
         if (type(first_zero) is not int or type(count) is not int or
             first_zero < 0 or not 1 <= count <= 96):
@@ -256,6 +326,12 @@ class NVPFrameIndex:
                                 (first_zero,)).fetchone()
         if len(rows) != count or anchor is None:
             raise RuntimeError("Index missing expected frame/keyframe range")
+        if any(row[0] != first_zero+i or row[2] not in (0,1)
+               for i,row in enumerate(rows)):
+            raise RuntimeError("Corrupt source frame ordinals or keyframe flags")
+        if (anchor[0]>first_zero or anchor[1]>rows[0][1] or
+            any(rows[i][1] <= rows[i-1][1] for i in range(1,len(rows)))):
+            raise RuntimeError("Corrupt indexed presentation timestamp order")
         return {"index_status": info["status"], "index_path": info["path"],
                 "frames": [{"ordinal": r[0], "pts": r[1], "keyframe": bool(r[2]),
                             "packet_pos": r[3]} for r in rows],
