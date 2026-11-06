@@ -88,7 +88,13 @@ export default function FilmTimePlaybackPanel({
         edit_document_sha256:edit.edit_document_sha256,
         start_tick:begin,
       });
-      if(generationId!==generation.current)return;
+      if(generationId!==generation.current){
+        // A user may scrub away while the OS consent dialog is open.
+        // Never orphan its subsequently accepted native worker grant.
+        if(reply?.status==='QUEUED'&&typeof reply.ticket_id==='string')
+          Promise.resolve(native.cancel_assembly_review(reply.ticket_id)).catch(()=>{});
+        return;
+      }
       if(reply?.status==='DENIED'){
         setStatus('Picture review was not approved. No source was changed.');
         return;
