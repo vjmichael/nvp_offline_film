@@ -99,7 +99,7 @@ class TrustedDataAVController:
                 raise ValueError("Native audio approval window is empty")
             # Consent covers only one frozen Take, one listener and a finite
             # Film Time segment. There is no approval for media export.
-            if self._ask(
+            if not self._ask(
                 "Audition native 3D sound from exact frozen Digital Take?\n"+
                 "Take: "+take+"\n"+
                 "SHA-256: "+sha+"\n"+
