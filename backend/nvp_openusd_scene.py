@@ -84,8 +84,8 @@ def _evaluate(stage, path, tick, Sdf, Usd, UsdGeom):
     _int(tick, "film time", maximum=MAX_USD_EXACT_TICK)
     _path(path,Sdf)
     prim = stage.GetPrimAtPath(path)
-    if not prim or not prim.IsDefined() or not prim.IsA(UsdGeom.Xform):
-        raise KeyError("Composed OpenUSD prim is missing or not a transform")
+    if not prim or not prim.IsDefined() or not UsdGeom.Xformable(prim):
+        raise KeyError("Composed OpenUSD prim is missing or not xformable")
     transform = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(
         Usd.TimeCode(float(tick)))
     pos = transform.ExtractTranslation()
@@ -104,7 +104,7 @@ class OpenUSDSceneBridge:
 
     def publish(self, project_id, scene_id, *, prims, curves,
                 expected_revision=0, asset_bindings=None,
-                performance_channels=None):
+                performance_channels=None, native_schemas=False):
         """Create immutable world+motion layer blobs and an exact scene revision.
 
         A failed FilmIndex publication may leave *orphan blobs*, not an approved
@@ -116,10 +116,15 @@ class OpenUSDSceneBridge:
         if (type(prims) is not list or not 1<=len(prims)<=MAX_PRIMS or
             type(curves) is not list or len(curves)>MAX_CURVES):
             raise ValueError("Scene prim/curve authoring budget exceeded")
+        if type(native_schemas) is not bool:
+            raise ValueError("Explicit native scene schema choice required")
         Gf,Sdf,Usd,UsdGeom=_usd()
         base=Sdf.Layer.CreateAnonymous("nvp_layout.usda")
         layout=Usd.Stage.Open(base)
         layout.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
+        if native_schemas:
+            from backend.nvp_openusd_native_schemas import METERS_PER_UNIT
+            UsdGeom.SetStageMetersPerUnit(layout,METERS_PER_UNIT)
         UsdGeom.Xform.Define(layout,"/World")
         paths={}
         for value in prims:
@@ -130,7 +135,11 @@ class OpenUSDSceneBridge:
             if role not in ROLES or path in paths:
                 raise ValueError("Duplicate scene path or invalid semantic role")
             pos=_vector(value["position"])
-            prim=UsdGeom.Xform.Define(layout,path)
+            if native_schemas:
+                from backend.nvp_openusd_native_schemas import define_native_scene_prim
+                prim=define_native_scene_prim(layout,path,role)
+            else:
+                prim=UsdGeom.Xform.Define(layout,path)
             prim.GetPrim().CreateAttribute(
                 "nvp:semanticRole",Sdf.ValueTypeNames.String).Set(role)
             UsdGeom.XformCommonAPI(prim).SetTranslate(Gf.Vec3d(*pos))
@@ -150,7 +159,10 @@ class OpenUSDSceneBridge:
                 not 2<=len(samples)<=MAX_SAMPLES_PER_CURVE):
                 raise ValueError("Motion curve needs at least two bounded samples")
             # Authored overrides are composed above immutable layout.
-            xform=UsdGeom.Xform.Define(moving,path)
+            # Do not author a stronger Xform prim type above a native
+            # camera/light schema; motion only contributes transform opinions.
+            xform=(moving.OverridePrim(path) if native_schemas else
+                   UsdGeom.Xform.Define(moving,path))
             api=UsdGeom.XformCommonAPI(xform)
             previous=-1
             for sample in samples:
@@ -171,7 +183,7 @@ class OpenUSDSceneBridge:
         from backend.nvp_openusd_channels import author_parameter_layer
         if performance_channels:
             parameter_layer, channel_manifest=author_parameter_layer(
-                paths,performance_channels)
+                paths,performance_channels,native_schemas=native_schemas)
         else:
             parameter_layer,channel_manifest=None,[]
         composed=_compose(base,motion,Sdf,Usd,parameter_layer)
@@ -200,6 +212,9 @@ class OpenUSDSceneBridge:
                   "motion_layer_sha256":msha,
                   "parameter_layer_sha256":psha,
                   "performance_channels":channel_manifest,
+                  "native_schema_version":(
+                      "nvp.usd.camera_sphere_light.v1" if native_schemas
+                      else None),
                   "ticks_per_second":TICKS_PER_SECOND,
                   "usd_timecode_limit":MAX_USD_EXACT_TICK,
                   "prim_roles":paths,
@@ -327,6 +342,17 @@ class OpenUSDSceneBridge:
             from backend.nvp_openusd_channels import evaluate_parameter_channels
             evaluate_parameter_channels(
                 composed,doc["performance_channels"],doc["prim_roles"],0)
+        if doc.get("native_schema_version") is not None:
+            from backend.nvp_openusd_native_schemas import (
+                SCHEMA,evaluate_native_schema)
+            if doc["native_schema_version"]!=SCHEMA:
+                raise RuntimeError("Unknown native USD scene schema version")
+            from backend.nvp_openusd_channels import evaluate_parameter_channels
+            values=evaluate_parameter_channels(
+                composed,doc.get("performance_channels",[]),
+                doc["prim_roles"],0)
+            for p,role in doc["prim_roles"].items():
+                evaluate_native_schema(composed,p,role,0,values)
         for p,role in doc["prim_roles"].items():
             _evaluate(composed,p,0,Sdf,Usd,UsdGeom)
             observed=composed.GetPrimAtPath(p).GetAttribute("nvp:semanticRole").Get()
