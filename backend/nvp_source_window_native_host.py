@@ -38,7 +38,8 @@ def _sha_doc(doc):
 
 class NativeSourceWindowHost:
     def __init__(self, preflight: SourceWindowPreflight, ledger: TaskLedger,
-                 root: Path, *, verify_creator_action):
+                 root: Path, *, verify_creator_action, decoder_backend="ffmpeg",
+                 ffms2_library=None, ffms2_cache_root=None):
         if (not isinstance(preflight, SourceWindowPreflight) or
             not isinstance(ledger, TaskLedger) or
             not callable(verify_creator_action)):
@@ -49,6 +50,25 @@ class NativeSourceWindowHost:
             raise RuntimeError("Native job root must not be a symlink")
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.root = root.resolve()
+        if decoder_backend not in ("ffmpeg", "ffms2"):
+            raise ValueError("Unknown native source window decoder")
+        self.decoder_backend = decoder_backend
+        self.ffms2_library = None
+        self.ffms2_sha = None
+        self.ffms2_cache_root = None
+        if decoder_backend == "ffms2":
+            if ffms2_library is None:
+                raise RuntimeError("FFMS2 selected but native library not provisioned")
+            lib = Path(ffms2_library)
+            if not lib.is_absolute() or lib.is_symlink() or not lib.is_file():
+                raise PermissionError("FFMS2 native library must be a trusted absolute file")
+            self.ffms2_library = lib.resolve()
+            self.ffms2_sha = _sha_file(self.ffms2_library)
+            cache = Path(ffms2_cache_root) if ffms2_cache_root else self.root / "ffms2_cache"
+            if not cache.is_absolute() or cache.is_symlink():
+                raise PermissionError("FFMS2 index cache must have trusted absolute root")
+            cache.mkdir(parents=True, exist_ok=True, mode=0o700)
+            self.ffms2_cache_root = str(cache.resolve())
         self.python = Path(sys.executable).resolve()
         self.script = Path(__file__).resolve().parents[1] / "tools" / "nvp_source_window_worker.py"
         exe = shutil.which("ffmpeg")
@@ -79,6 +99,19 @@ class NativeSourceWindowHost:
                 expires_at REAL NOT NULL,
                 revoked_at REAL,
                 result_sha TEXT)""")
+            # Backward-compatible schema migration: existing FFmpeg grants
+            # retain their original policy while new FFMS2 grants are explicit.
+            columns = {item[1] for item in db.execute(
+                "PRAGMA table_info(native_source_window_grants)")}
+            for name, ddl in (
+                ("decoder_backend", "TEXT NOT NULL DEFAULT 'ffmpeg'"),
+                ("ffms2_library_path", "TEXT"),
+                ("ffms2_sha", "TEXT"),
+                ("ffms2_index_root", "TEXT"),
+            ):
+                if name not in columns:
+                    db.execute("ALTER TABLE native_source_window_grants ADD COLUMN "
+                               + name + " " + ddl)
         self.binding = ApprovedTaskBindings(ledger, approval_check=self._check)
 
     def _row(self, task):
@@ -107,6 +140,13 @@ class NativeSourceWindowHost:
                 doc.get("edit_sha") != row["edit_sha"] or
                 doc.get("destination") != row["destination"] or
                 doc.get("ram_mb") != row["ram_mb"] or
+                doc.get("decoder_backend", "ffmpeg") != row["decoder_backend"] or
+                doc.get("ffms2_sha") != row["ffms2_sha"] or
+                doc.get("ffms2_index_root") != row["ffms2_index_root"] or
+                (row["decoder_backend"] == "ffms2" and (
+                    not row["ffms2_library_path"] or
+                    not row["ffms2_index_root"] or
+                    _sha_file(row["ffms2_library_path"]) != row["ffms2_sha"])) or
                 Path(row["destination"]).exists() or
                 Path(row["destination"]).is_symlink() or
                 _sha_file(self.python) != row["python_sha"] or
@@ -149,6 +189,7 @@ class NativeSourceWindowHost:
                  "revision": revision, "edit_sha": plan["edit_document_sha256"],
                  "first_frame": first_frame, "frame_count": frame_count,
                  "destination": dest, "ram_mb": ram_mb,
+                 "decoder_backend": self.decoder_backend,
                  "final_master": False}
         if self._creator(creator_event, dict(scope)) is not True:
             raise PermissionError("Creator refused exact source-window review")
@@ -169,7 +210,10 @@ class NativeSourceWindowHost:
                 "project_id": project_id, "edit_sha": plan["edit_document_sha256"],
                 "first_frame": first_frame, "frame_count": frame_count,
                 "destination": dest, "ram_mb": ram_mb,
-                "ffmpeg_sha": _sha_file(self.ffmpeg)}
+                "ffmpeg_sha": _sha_file(self.ffmpeg),
+                "decoder_backend": self.decoder_backend,
+                "ffms2_sha": self.ffms2_sha,
+                "ffms2_index_root": self.ffms2_cache_root}
         approval = "srcapproval_" + secrets.token_hex(16)
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -185,6 +229,12 @@ class NativeSourceWindowHost:
                  _sha_file(self.python),_sha_file(self.script),
                  _sha_file(self.ffmpeg),str(self.ffmpeg),ram_mb,
                  time.time()+duration_s))
+            db.execute("""UPDATE native_source_window_grants
+                SET decoder_backend=?,ffms2_library_path=?,
+                    ffms2_sha=?,ffms2_index_root=? WHERE task_id=?""",
+                (self.decoder_backend,
+                 str(self.ffms2_library) if self.ffms2_library else None,
+                 self.ffms2_sha, self.ffms2_cache_root, task))
             db.commit()
         self.binding.enqueue(
             AdmissionRequest(task, "compositing", "Extract exact source review window",
@@ -217,7 +267,12 @@ class NativeSourceWindowHost:
                    "--destination", row["destination"],
                    "--studio-db", row["source_db"],
                    "--ffmpeg", row["ffmpeg_path"],
-                   "--ffmpeg-sha", row["ffmpeg_sha"]]
+                   "--ffmpeg-sha", row["ffmpeg_sha"],
+                   "--decoder-backend", row["decoder_backend"]]
+            if row["decoder_backend"] == "ffms2":
+                cmd.extend(["--ffms2-library", row["ffms2_library_path"],
+                            "--ffms2-sha", row["ffms2_sha"],
+                            "--ffms2-index-root", row["ffms2_index_root"]])
             with (folder / "stdout.log").open("wb") as out, (
                 folder / "stderr.log").open("wb") as err:
                 attempted = True
@@ -237,7 +292,14 @@ class NativeSourceWindowHost:
                 first_frame=row["first_frame"], frame_count=row["frame_count"]) != plan:
                 raise RuntimeError("Source changed during contained native operation")
             result = verify_review_window(row["destination"], plan)
-            receipt_sha = _sha_file(Path(row["destination"]) / "review_receipt.json")
+            receipt_path = Path(row["destination"]) / "review_receipt.json"
+            receipt = json.loads(receipt_path.read_bytes())
+            if (receipt.get("decoder_backend", "ffmpeg") != row["decoder_backend"] or
+                (row["decoder_backend"] == "ffms2" and any(
+                    f.get("index_sha256") is None or f.get("pts") is None
+                    for f in receipt.get("frames", [])))):
+                raise RuntimeError("Native decoder backend evidence missing from receipt")
+            receipt_sha = _sha_file(receipt_path)
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("""UPDATE native_source_window_grants SET result_sha=?
@@ -279,7 +341,10 @@ class NativeSourceWindowHost:
             plan.get("frame_count") != row["frame_count"]):
             raise RuntimeError("Native source-window plan differs from approved operation")
         result = verify_review_window(row["destination"], plan)
-        if (_sha_file(Path(row["destination"]) / "review_receipt.json")
+        receipt_path = Path(row["destination"]) / "review_receipt.json"
+        if json.loads(receipt_path.read_bytes()).get("decoder_backend", "ffmpeg") != row["decoder_backend"]:
+            raise RuntimeError("Native output decoder does not match creator-approved backend")
+        if (_sha_file(receipt_path)
                 != row["result_sha"]):
             raise RuntimeError("Native review publication changed")
         return result
