@@ -158,8 +158,22 @@ export default function SlateBranchTimelinePane({
           const node=branchInfo[segment.branch_id];
           const semantic=node?.semantic||{};
           const slate=node?.slate||{};
+          const cues=(semantic.moment_cues||[]).filter(cue=>
+            cue.source_out_tick>segment.source_in_tick &&
+            cue.source_in_tick<segment.source_out_tick);
+          const observedBeats=[...new Set([
+            ...(semantic.beat_ids||[]),
+            ...cues.flatMap(cue=>cue.beat_ids||[])])];
+          const observedEmotions=[...new Set([
+            ...(semantic.emotion_tags||[]),
+            ...cues.flatMap(cue=>cue.emotion_tags||[])])];
+          const dialogueIds=[...new Set([
+            ...(semantic.dialogue_ids||[]),
+            ...cues.flatMap(cue=>cue.dialogue_ids||[])])];
           const observations=(semantic.ai_observations||[])
-            .filter(obs=>obs.status==='UNREVIEWED_AI_PROPOSAL');
+            .filter(obs=>obs.status==='UNREVIEWED_AI_PROPOSAL' &&
+              obs.source_out_tick>segment.source_in_tick &&
+              obs.source_in_tick<segment.source_out_tick);
           return <button key={segment.segment_id}
             className={'nvp-slate-assembly-card'+(target===segment.segment_id?' target':'')}
             onClick={()=>setTarget(segment.segment_id)}>
@@ -168,9 +182,13 @@ export default function SlateBranchTimelinePane({
             <span className="nvp-slate-card-sub">{semantic.shot_type||node?.kind||'Source Take'} · {segment.branch_id}</span>
             <span className="nvp-slate-card-time">Edit {segment.timeline_start_tick}–{segment.timeline_end_tick} ticks</span>
             <span className="nvp-slate-card-time">Source {segment.source_in_tick}–{segment.source_out_tick} ticks</span>
-            {(semantic.beat_ids?.length>0||semantic.emotion_tags?.length>0)&&
+            {(observedBeats.length>0||observedEmotions.length>0)&&
               <span className="nvp-slate-card-tags">
-                {[...(semantic.beat_ids||[]),...(semantic.emotion_tags||[])].slice(0,4).join(' · ')}
+                {[...observedBeats,...observedEmotions].slice(0,4).join(' · ')}
+              </span>}
+            {dialogueIds.length>0&&
+              <span className="nvp-slate-card-notes">
+                Dialogue cues: {dialogueIds.slice(0,3).join(', ')}
               </span>}
             {semantic.director_rating!=null&&
               <span>Director rating {semantic.director_rating}/5</span>}
