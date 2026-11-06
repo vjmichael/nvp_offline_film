@@ -11,6 +11,8 @@ from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_openusd_shot_overrides import OpenUSDShotOverrides
 from backend.nvp_digital_slate_branches import DigitalSlateBranches
 from backend.nvp_slate_edit_assembly import SlateSequenceAssembly
+from backend.nvp_slate_paged_catalog import (
+    SlatePagedCatalog,PagedSlateAssemblyAdapter,OBS_STATUS)
 
 T=TICKS_PER_SECOND
 
@@ -418,6 +420,148 @@ class SlateBranchNativeTests(unittest.TestCase):
             "source_take_document_sha256"],
             self.index.read_revision(self.pid,"take_2",1)["document_sha256"])
         self.assertFalse(saved["data"]["source_performance_modified"])
+
+    def test_paged_catalog_300_takes_cross_page_lineage_ai_metadata(self):
+        catalog=SlatePagedCatalog(
+            self.index,verify_catalog_action=lambda token,scope:
+            token=="director_catalogs" and
+            scope["operation"]=="nvp.slate.publish_paged_catalog.v1" and
+            scope["final_render_approval"] is False)
+        entries=[]
+        source=self.graph_nodes()
+        for node in source:
+            entries.append({**node,"semantic":{
+                "beat_ids":["reaction"],"character_ids":["Actor"],
+                "shot_type":"reaction",
+                "director_notes":"Selected source coverage",
+                "director_rating":4,
+                "technical_status":"acceptable"}})
+        for n in range(300):
+            node=self._node(
+                "catalog_take_"+str(n),"performance","master_take_1",T,
+                "reaction_beat",False,"take_2" if n%2==0 else "take_3",
+                T,2*T,number=n+4,wild=bool(n%2),
+                slate_shot="01A",camera="B",
+                notes="Parallel digital film Take "+str(n))
+            meta={
+                "beat_ids":["reaction"],"character_ids":["Actor"],
+                "shot_type":"closeup" if n%2 else "reaction",
+                "action_tags":["walking"],"emotion_tags":["anxious"],
+                "technical_status":"acceptable",
+                "director_rating":5 if n==299 else None,
+                "director_notes":"Director preferred close reaction" if n==299 else "",
+            }
+            if n==299:
+                meta["ai_observations"]=[{
+                    "model_id":"assistant_v1",
+                    "summary":"Strong reaction; verify eyeline at transition",
+                    "confidence":0.67,"source_in_tick":T,
+                    "source_out_tick":2*T,"status":OBS_STATUS}]
+            entries.append({**node,"semantic":meta})
+        with self.assertRaises(PermissionError):
+            catalog.publish(
+                self.pid,"unapproved_catalog",scene_id="scene_01",
+                scene_label="01",records=entries,capture_event="model_requests")
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"unapproved_catalog",1)
+        saved=catalog.publish(
+            self.pid,"wide_catalog",scene_id="scene_01",
+            scene_label="01",records=entries,capture_event="director_catalogs")
+        self.assertEqual(saved["kind"],"presentation")
+        root=catalog.open_catalog(self.pid,"wide_catalog",1)
+        self.assertEqual(root["data"]["branch_count"],305)
+        self.assertEqual(root["data"]["page_count"],5)
+        gathered=[]
+        cursor=-1
+        while True:
+            page=catalog.page(
+                self.pid,"wide_catalog",1,after_index=cursor,limit=57)
+            gathered+=page["items"]
+            cursor=page["next_after_index"]
+            if cursor is None:
+                break
+        self.assertEqual(len(gathered),305)
+        self.assertEqual(gathered[-1]["branch_id"],"catalog_take_299")
+        self.assertEqual(gathered[-1]["parent_id"],"master_take_1")
+        self.assertEqual(gathered[-1]["semantic"]["director_rating"],5)
+        self.assertEqual(
+            gathered[-1]["semantic"]["ai_observations"][0]["status"],
+            OBS_STATUS)
+        picks=catalog.page(self.pid,"wide_catalog",1,limit=100,
+                           shot_type="closeup",emotion_tag="anxious")
+        self.assertGreater(len(picks["items"]),0)
+        self.assertTrue(all(x["semantic"]["shot_type"]=="closeup"
+                            for x in picks["items"]))
+        self.assertTrue(all("anxious" in x["semantic"]["emotion_tags"]
+                            for x in picks["items"]))
+        self.assertFalse(picks["ai_observations_authoritative"])
+        self.assertIn(
+            {"object_id":"wide_catalog","revision":1},
+            self.index.impact(self.pid,"take_3",1))
+        new=SlatePagedCatalog(
+            FilmIndex(Studio(self.studio.db_path)),
+            verify_catalog_action=lambda *_:False)
+        reopened=new.page(self.pid,"wide_catalog",1,after_index=303,limit=3)
+        self.assertEqual(reopened["items"][0]["branch_id"],"catalog_take_299")
+        self.assertEqual(
+            reopened["catalog_document_sha256"],saved["document_sha256"])
+
+    def test_paged_catalog_mixed_assembly_and_rejected_ai_self_approval(self):
+        catalog=SlatePagedCatalog(
+            self.index,verify_catalog_action=lambda token,scope:
+            token=="director_catalogs")
+        records=[{**node,"semantic":{}} for node in self.graph_nodes()]
+        for n in range(70):
+            node=self._node(
+                "extra_"+str(n),"performance","master_take_1",T,
+                "reaction_beat",False,"take_3",
+                T,2*T,number=n+4,wild=True,slate_shot="01W")
+            records.append({**node,"semantic":{}})
+        invalid=[dict(x) for x in records]
+        invalid[4]={**invalid[4],"semantic":{"ai_observations":[{
+            "model_id":"assistant_v1","summary":"Self-approved idea",
+            "confidence":0.9,"source_in_tick":T,
+            "source_out_tick":2*T,"status":"APPROVED"}]}}
+        with self.assertRaises(PermissionError):
+            catalog.publish(
+                self.pid,"bad_ai_catalog",scene_id="scene_01",
+                scene_label="01",records=invalid,capture_event="director_catalogs")
+        catalog.publish(
+            self.pid,"scene_catalog",scene_id="scene_01",
+            scene_label="01",records=records,capture_event="director_catalogs")
+        adapter=PagedSlateAssemblyAdapter(catalog)
+        editor=SlateSequenceAssembly(
+            adapter,verify_editor_action=lambda token,scope:
+            token=="director_commits" and
+            scope["final_render_approval"] is False)
+        original={"segment_id":"original","branch_id":"master_take_1",
+                  "source_in_tick":0,"source_out_tick":T}
+        alternative={"segment_id":"wild","branch_id":"extra_69",
+                     "source_in_tick":T,"source_out_tick":2*T}
+        draft=editor.preview(
+            self.pid,"scene_catalog",1,[original,alternative],
+            inspect_branch_id="extra_40")
+        self.assertTrue(draft["draft_uncommitted"])
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"scene_cut",1)
+        edit=editor.commit(
+            self.pid,"scene_cut",graph_id="scene_catalog",
+            graph_revision=1,segments=[original,alternative],
+            editor_event="director_commits")
+        self.assertEqual(edit["kind"],"edit")
+        active=editor.active_view(
+            self.pid,"scene_catalog",1,
+            edit_id="scene_cut",edit_revision=1,
+            inspection_branch_id="extra_40")
+        self.assertEqual([x["branch_id"] for x in active["sequence"]],
+                         ["master_take_1","extra_69"])
+        self.assertEqual(
+            next(x for x in active["parallel_groups"]["reaction_beat"]
+                 if x["branch_id"]=="extra_40")["display_color"],"gray")
+        self.assertEqual(
+            next(x for x in active["parallel_groups"]["reaction_beat"]
+                 if x["branch_id"]=="extra_69")["display_color"],"green")
+        self.assertFalse(active["source_performance_modified"])
 
     def test_refuse_forged_choice_and_never_grant_master_approval(self):
         self.publish()
