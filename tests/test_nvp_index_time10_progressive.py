@@ -169,6 +169,33 @@ class ProgressiveHostTests(TestCase):
         self.assertFalse(receipt["master_approved"])
 
 
+class FilmTailGapTests(TestCase):
+    def test_final_black_silent_gap_is_real_playable_film_time(self):
+        from backend.nvp_index_time09_av_proxy import plan,_graph
+        from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
+        record={"revision":3,"document_sha256":SHA,
+                "data":{"duration_tick":30*T,"clip_count":1}}
+        reader=mock.Mock()
+        reader.index.read_revision.return_value=record
+        reader._publisher.verify_revision.return_value={
+            "edit_document_sha256":SHA}
+        reader._publisher.clips.return_value={
+            "edit_document_sha256":SHA,
+            "clips":[{"ordinal":0,"film_start_tick":"0",
+                      "film_end_tick":str(5*T)}]}
+        section=plan(mock.Mock(),reader,PID,"approved_edit",3,SHA,
+                     6*T,ffprobe=Path("/not-needed/ffprobe"))
+        self.assertEqual(section["actual_start_tick"],6*T)
+        self.assertEqual(section["review_duration_tick"],24*T)
+        self.assertEqual(section["sources"],{})
+        self.assertEqual([p["kind"] for p in section["parts"]],["gap"])
+        self.assertEqual(section["expected_review_frames"],24*24)
+        paths,graph=_graph(section)
+        self.assertEqual(paths,[])
+        self.assertIn("color=c=black",graph)
+        self.assertIn("anullsrc=r=48000",graph)
+
+
 MAX_SECONDS=4*3600
 
 if __name__=="__main__":
