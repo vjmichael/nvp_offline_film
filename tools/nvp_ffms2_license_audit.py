@@ -81,7 +81,11 @@ def inspect(ffmpeg, ffms2_library, *, release_manifest=None):
             doc.get("license_notices_included") is True and
             doc.get("corresponding_sources_available") is True and
             doc.get("release_license_review_approved") is True and
-            flags not in ("NONFREE_REVIEW_STOP", "BUILD_CONFIG_UNKNOWN")):
+            ((flags == "GPL_COMPONENTS_ENABLED" and
+              doc.get("distribution_policy") == "GPL_COMPLIANT_REVIEWED") or
+             (flags in ("LGPL_CANDIDATE_UNVERIFIED_LINKAGE",
+                        "LGPL_VERSION3_CANDIDATE") and
+              doc.get("distribution_policy") == "LGPL_COMPLIANT_REVIEWED"))):
             report.update({
                 "distribution_approved": True,
                 "reviewed_binary_linkage": True,
