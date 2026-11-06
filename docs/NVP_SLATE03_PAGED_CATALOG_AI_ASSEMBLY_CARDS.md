@@ -12,7 +12,7 @@ SLATE-03 introduces pages of 64 branches, each as an immutable SHA-bound FilmInd
 
 ## Metadata
 
-Digital slate identifiers remain source Take/shot IDs, revisions and hashes, scene, setup, camera, Take number, wild flag, parallel group, parent, fork and original time interval. Each source may also have story beats, characters, action and emotion tags, shot type, director rating/notes, technical quality and continuity flags. Machine observations always carry model identity, confidence, exact source interval and UNREVIEWED_AI_PROPOSAL status. The model cannot self-approve these suggestions or activate an edit.
+Digital slate identifiers remain source Take/shot IDs, revisions and hashes, scene, setup, camera, Take number, wild flag, parallel group, parent, fork and original time interval. Each source may also have story beats, characters, dialogue cue IDs, action and emotion tags, shot type, director rating/notes, technical quality and continuity flags. Optional editor/script-tagged moment cues pinpoint the exact source-time intervals carrying a story beat, dialogue, actor action or emotion; these are searchable without video frames or a particular rendering FPS. AI suggestions instead remain in their own source-timed unreviewed observation records. Machine observations always carry model identity, confidence, exact source interval and UNREVIEWED_AI_PROPOSAL status. The model cannot self-approve these suggestions or activate an edit.
 
 ## Cards and controls
 
