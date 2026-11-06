@@ -141,3 +141,20 @@ installed acceptance before those jobs and independent physical test.
 as a *new* version. Playback and any downstream proxy observe a frozen
 source and a selected immutable assembly revision. No source rewrite,
 overwriting camera audio, or hidden capture destruction is permitted.
+
+
+## Off-GitHub native acceptance procedure
+
+`tools/nvp_index_time09_independent_acceptance.py` is now included as a
+reproducible engineering QA harness for Windows and Linux *outside* a
+GitHub Actions runner. It runs real original VFR picture+sound/native
+worker tests, source edit preservation and original-PTS frame inspection
+from disposable local fixtures, then emits a SHA-grounded JSON evidence
+report, with a strict pass/fail exit code and no remote build services.
+On a physical Windows system with an **already installed** NSIS
+`NVP.exe`, its optional `--installed-exe` option also invokes the
+packaged executable's native original-import/source, synced A/V worker
+and real WebView2 UI smoke commands; it does not build or install NSIS
+on the test computer. Actual human audio perception, mouse input and
+in-app physical clickthrough still require a separate manual
+acceptance record. No developer CLI is exposed to filmmakers.
