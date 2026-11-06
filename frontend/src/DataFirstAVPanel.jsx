@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import DataFirstWorldViewport from './DataFirstWorldViewport.jsx';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -307,6 +308,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <button disabled={!controller.current.ticket}
         onClick={stop}>Stop and revoke native audition</button>
     </div>
+    {scene&&<DataFirstWorldViewport
+      objects={scene.scene?.objects||[]}
+      listenerPath={listener}
+      tick={String(scene.scene?.time_tick||'0')}/>}
     {scene&&<section aria-label="Current frozen USD scene state">
       <h3>World state at requested Film Time</h3>
       <p className="fineprint">Native OpenUSD spatial descriptors, not
