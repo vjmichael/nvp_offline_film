@@ -93,6 +93,27 @@ describe('CAM-01 pre-Take interactive spherical lens study',()=>{
     expect(screen.getByText('Apply to shot').disabled).toBe(true);
   });
 
+  it('only displays native optics PNG matching source SHA and current lens settings',()=>{
+    const full={
+      format:'nvp.camera.lens_workbench.v1',
+      preset:'standard_50',sensor:'full_frame',
+      focal_length_mm:50,sensor_width_mm:36,sensor_height_mm:20.25,
+      f_stop:2.8,focus_distance_m:5,
+    };
+    const result={
+      status:'READY',source_tick:12345,camera_path:'/World/Camera',
+      scene_document_sha256:'a'.repeat(64),lens_settings:full,
+      image_data_url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
+    };
+    const {container}=render(<CameraLensWorkbench
+      sceneSnapshot={snapshot} renderResult={result}/>);
+    expect(screen.getByAltText(/Native rendered camera\/lens study/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Lens preset'),
+                     {target:{value:'portrait_85'}});
+    expect(container.querySelector('.nvp-camera-native-image img')).toBeNull();
+    expect(screen.getByText(/Previous optics preview differs/)).toBeTruthy();
+  });
+
   it('does not treat an authorized queue as a completed camera preview',()=>{
     const {container}=render(<CameraLensWorkbench
       sceneSnapshot={snapshot} renderResult={{status:'QUEUED'}}/>);
