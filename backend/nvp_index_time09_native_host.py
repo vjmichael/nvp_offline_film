@@ -149,7 +149,7 @@ class NativeAVProxyHost:
                     return False
             plan=self._plan(row)
             if session_id is not None and (
-                plan["actual_start_tick"]<grant["start_tick"] or
+                plan["actual_start_tick"]<grant["start_tick"]-TICKS_PER_SECOND or
                 plan["actual_start_tick"]+plan["review_duration_tick"]>
                 grant["end_tick"]+TICKS_PER_SECOND):
                 return False
@@ -179,6 +179,12 @@ class NativeAVProxyHost:
         data=self._tickets.get(ticket)
         if data is None or time.monotonic()>data["expires"]:
             raise PermissionError("Native original A/V review expired")
+        if "progressive_session" in data:
+            grant=self._session
+            if (grant is None or grant["stopped"] or
+                data["progressive_session"]!=grant["id"] or
+                time.monotonic()>grant["expires"]):
+                raise PermissionError("Progressive approval expired or was revoked")
         row=self._row(data["task"])
         head=self.desktop.reader.index.read_revision(
             row["project_id"],row["edit_id"])
