@@ -86,6 +86,41 @@ describe('INDEX-TIME-07 human-first immutable source assembly',()=>{
   });
 
 
+  it('selects a source strip placement and inspects that exact Film Time start',async()=>{
+    const native=fixture();
+    const inspect=vi.fn();
+    render(<FilmTimeAssemblyPanel
+      projectId={pid} edit={edit} clips={clips} edits={available}
+      native={native} onSaved={vi.fn()} onInspect={inspect}/>);
+    fireEvent.click(screen.getByLabelText('Select source clip 2'));
+    expect(screen.getByLabelText('Select source clip 2').getAttribute('aria-pressed'))
+      .toBe('true');
+    fireEvent.click(screen.getByText('Inspect clip start'));
+    expect(inspect).toHaveBeenCalledWith('7056000000');
+    expect(native.preview_footage_assembly).not.toHaveBeenCalled();
+    expect(native.save_footage_assembly).not.toHaveBeenCalled();
+  });
+
+  it('splits at the exact real source frame selected on the film playhead',async()=>{
+    const native=fixture();
+    const selected={
+      status:'INDEXED_SOURCE_FRAME_SELECTED',
+      clip_ordinal:0,source_id:'camera_A',source_revision:1,
+      source_frame_zero:'25',source_pts:'54321',
+      edit_document_sha256:sha,
+    };
+    render(<FilmTimeAssemblyPanel
+      projectId={pid} edit={edit} clips={clips} edits={available}
+      native={native} onSaved={vi.fn()}
+      selectedFrame={selected}/>);
+    fireEvent.click(screen.getByText('Split at selected playhead frame'));
+    await screen.findByText(/Proposed new assembly/);
+    expect(native.preview_footage_assembly.mock.calls[0][0].change).toEqual({
+      operation:'split',index:0,source_frame_zero:'25',
+    });
+    expect(native.save_footage_assembly).not.toHaveBeenCalled();
+  });
+
   it('splits one original into two adjacent references, not physical copies',async()=>{
     const {native}=setup();
     fireEvent.change(screen.getByLabelText('Split source at frame'),
