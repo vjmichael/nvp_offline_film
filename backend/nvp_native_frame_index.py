@@ -15,7 +15,6 @@ import sqlite3
 import stat
 import subprocess
 import tempfile
-from urllib.parse import quote
 
 SCHEMA_VERSION = 1
 MAX_LINE = 4096
@@ -119,7 +118,7 @@ class NVPFrameIndex:
 
     @staticmethod
     def _open_readonly(path):
-        return sqlite3.connect("file:" + quote(str(path)) + "?mode=ro", uri=True)
+        return sqlite3.connect(Path(path).as_uri() + "?mode=ro", uri=True)
 
     def _stream(self, source):
         cmd = [str(self.ffprobe), "-v", "error", "-select_streams", "v:0",
@@ -175,7 +174,10 @@ class NVPFrameIndex:
                         **header}
         meta = self._stream(source)
         lock = path.with_suffix(".building")
-        fd_lock = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        try:
+            fd_lock = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError as exc:
+            raise RuntimeError("Interrupted index build requires host reconciliation") from exc
         os.close(fd_lock)
         stage = None
         try:
