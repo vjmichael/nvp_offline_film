@@ -1,0 +1,94 @@
+name: NVP E2E-01D Complete Workflow Crash Recovery
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_e2e01b_native_editorial.py'
+      - 'backend/nvp_e2e01c_finishing.py'
+      - 'tests/test_nvp_e2e01b_native_handoff.py'
+      - 'tests/test_nvp_e2e01c_finishing.py'
+      - 'tests/test_nvp_e2e01d_process_crash.py'
+      - 'tests/test_nvp_e2e01d_native_tree.py'
+      - 'tests/test_nvp_e2e01d_fault_boundaries.py'
+      - 'tests/test_nvp_e2e01d_real_k_publication.py'
+      - 'tools/nvp_e2e01d_verify_approved_film.py'
+      - 'backend/nvp_worker_containment.py'
+      - 'backend/nvp_audio01i_fault_matrix.py'
+      - 'backend/nvp_audio01j_fault_matrix.py'
+      - 'backend/nvp_audio01k_fault_matrix.py'
+      - '.github/workflows/nvp-e2e01d-recovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  crash-recovery:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python-version: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install native workflow contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install 'opentimelineio>=0.18.1,<0.19'
+      - name: Install actual Windows Job Object bindings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python -m pip install pywin32
+      - name: Compile all E2E native bridge modules and crash tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_e2e01b_native_editorial.py backend/nvp_e2e01c_finishing.py tests/test_nvp_e2e01d_process_crash.py
+      - name: Test abrupt process termination and surviving SQLite journals
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01d_process_crash.py -v
+      - name: Install actual FFmpeg on Ubuntu
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install actual FFmpeg on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Join-Path $env:ChocolateyInstall 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Real ProRes PCM24 AUDIO-01K fsync/rename/FilmIndex hard-kill matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01d_real_k_publication.py -v
+      - name: Real native child/grandchild termination and kernel fail-closed acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01d_native_tree.py -v
+      - name: All actual AUDIO-01I/J/K crash boundaries are wired and kill isolated processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01d_fault_boundaries.py -v
+      - name: Run upstream B13 to B14 handoff regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01b_native_handoff.py -v
+      - name: Run creative finishing crash and publication regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01c_finishing.py -v

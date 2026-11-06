@@ -1,0 +1,41 @@
+name: NVP AUDIO-01E.3 native contained worker termination
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-real-audio-worker:
+    name: Linux real audio worker kill and watchdog
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install foundation
+        run: python -m pip install -r requirements-foundation.txt
+      - name: Compile genuine native worker and host
+        run: python -m compileall -q backend/nvp_audio01e3_native_host.py backend/nvp_audio01e3_native_journal.py backend/nvp_audio01e2_orphan_recovery.py backend/nvp_audio01d_chunked_recovery.py tools/nvp_audio_native_worker.py tests/test_audio_native_os_termination.py
+      - name: Launch and kill actual Linux contained worker
+        run: python -m unittest discover -s tests -p test_audio_native_os_termination.py -v
+  windows-real-audio-worker:
+    name: Windows Job Object real audio worker kill and watchdog
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install foundation and Windows native Job Object binding
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install "pywin32>=306"
+      - name: Compile genuine native worker and host
+        run: python -m compileall -q backend/nvp_audio01e3_native_host.py backend/nvp_audio01e3_native_journal.py backend/nvp_audio01e2_orphan_recovery.py backend/nvp_audio01d_chunked_recovery.py tools/nvp_audio_native_worker.py tests/test_audio_native_os_termination.py
+      - name: Launch and kill actual Windows Job Object worker
+        run: python -m unittest discover -s tests -p test_audio_native_os_termination.py -v

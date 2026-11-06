@@ -168,3 +168,9 @@ present but not executed, while the existing NVP-side Python tests (32)
 passed locally with simulated Lu host operations. Film/NVP remains a DLC
 and Lu Core is not to absorb film production logic. The Rust implementation
 is an integration branch subject to security/code review before productization.
+
+## 2026-11-05 source-of-truth clarification (do not attempt early integration)
+
+The historical references above describe an earlier Lu Jan-fork development branch and its *proposed* DLC contract. The current independent Lu product source repository is [vjmichael/Lu-AI-GUI](https://github.com/vjmichael/Lu-AI-GUI), whose [current v1.0 design reconciliation](https://github.com/vjmichael/Lu-AI-GUI/blob/main/docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md) now includes LU-AIW-01 (AI-accessible workspaces and operational continuity). **Do not treat old jan_alt paths as proof of the current shipped Lu interface.** Reinspect exact Lu source and signed/runtime support when actual integration is approved.
+
+NVP remains standalone for the current Windows alpha. The AI-readable adapter and [NVP-AI-01 review](NVP_AI_ACCESSIBLE_ARCHITECTURE_REVIEW_20261105.md) are domain-service preparation only. They must not be used to assume the Lu alpha has a working external Model/Workspace API, add a guessed AF_UNIX endpoint, or request model unload/reload without host-issued authority. Use [NVP engineering-state ledger](NVP_ENGINEERING_STATE.md) to locate current repo/branch, tested artifacts and pending installer gate.

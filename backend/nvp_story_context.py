@@ -25,6 +25,27 @@ def _excerpt(source: str, maximum: int) -> str:
     return source[:maximum] + "\n[EXCERPT TRUNCATED — source continues; do not assume omitted details]"
 
 
+def _numbered_screenplay_excerpt(source: str, maximum: int, start_line: int = 1) -> str:
+    """Ephemeral 1-based source references for local AI; never stored as Fountain.
+
+    Number the original source offset (important for selected scenes). The same
+    LF normalization is used by the screenplay parser and the browser textarea.
+    """
+    if start_line < 1:
+        raise ValueError("Source line references must begin at line 1")
+    clean = source.replace("\r\n", "\n").replace("\r", "\n")
+    truncated = len(clean) > maximum
+    lines = clean[:maximum].split("\n")
+    width = max(2, len(str(start_line + len(lines) - 1)))
+    numbered = "\n".join(
+        f"L{number:0{width}d} | {content}"
+        for number, content in enumerate(lines, start=start_line)
+    )
+    if truncated:
+        numbered += "\n[EXCERPT TRUNCATED — source continues; do not assume omitted details]"
+    return numbered
+
+
 def build_story_messages(project: dict, stage: str, instructions: str,
                          scene_id: str | None, approved: list[dict],
                          bible_context: dict | None = None) -> tuple[str, str]:
@@ -45,9 +66,16 @@ def build_story_messages(project: dict, stage: str, instructions: str,
         scene = next((s for s in project["scenes"] if s["id"] == scene_id), None)
         if scene is None:
             raise KeyError("Selected scene not found")
-        script = f"Selected scene ({scene['heading']}):\n{_excerpt(scene['text'], SCREENPLAY_EXCERPT_LIMIT)}"
+        source_excerpt = (_numbered_screenplay_excerpt(
+            scene["text"], SCREENPLAY_EXCERPT_LIMIT, scene.get("start_line", 1))
+            if (stage == "screenplay" or scene_id is not None)
+            else _excerpt(scene["text"], SCREENPLAY_EXCERPT_LIMIT))
+        script = f"Selected scene ({scene['heading']}):\n{source_excerpt}"
     else:
-        script = _excerpt(project["screenplay"], SCREENPLAY_EXCERPT_LIMIT) if project["screenplay"] else "No screenplay yet"
+        script = (_numbered_screenplay_excerpt(project["screenplay"], SCREENPLAY_EXCERPT_LIMIT)
+                  if stage == "screenplay" and project["screenplay"]
+                  else _excerpt(project["screenplay"], SCREENPLAY_EXCERPT_LIMIT)
+                  if project["screenplay"] else "No screenplay yet")
     system = (
         "You are NVP's collaborative screenplay-development assistant. The human creator decides the story. "
         "Only explicitly approved prior stages and approved Story Bible facts are authoritative; never silently change them. "
@@ -59,6 +87,9 @@ def build_story_messages(project: dict, stage: str, instructions: str,
         "Prioritize clear dramatic causality, filmable actions, believable character choices and authentic dialogue. "
         "Do not claim that video was generated, files were written or software ran. "
         "For screenplay output use Fountain-style INT./EXT. headings, action, character cues and speakable dialogue. "
+        "Line references such as L42 | in existing screenplay context are read-only locators; "
+        "use them to interpret requests about particular lines, but never include line labels "
+        "in the generated Fountain screenplay. "
         "Output the requested draft only, without markdown fences."
     )
     user = (f"Movie: {project['title']}\nOriginal creator idea: {project['idea']}\n"
