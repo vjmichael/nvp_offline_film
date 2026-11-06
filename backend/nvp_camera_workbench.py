@@ -91,6 +91,87 @@ def _stage(index,project_id,scene_id,revision):
     return scene,stage
 
 
+def verified_optics(settings):
+    if type(settings) is not dict:
+        raise ValueError("Expected typed spherical director settings")
+    exact=lens_settings(
+        lens=settings["preset"],sensor=settings["sensor"],
+        f_stop=settings["f_stop"],
+        focus_distance_m=settings["focus_distance_m"],
+        custom_focal_mm=settings["focal_length_mm"],
+        custom_sensor_width_mm=settings["sensor_width_mm"],
+        custom_sensor_height_mm=settings["sensor_height_mm"])
+    if exact!=settings:
+        raise ValueError("Untrusted optical field or unsupported lens effect")
+    return exact
+
+
+def workbench_preview_key(scene_sha,tick,camera_path,settings,quality):
+    """Cache key is computed from metadata BEFORE any USD/geometry load."""
+    from backend.nvp_slate06_geometry import DIMENSIONS,BLENDER_SCRIPT,FORMAT as RENDER_FORMAT
+    if quality not in DIMENSIONS:
+        raise ValueError("Unknown bounded pre-Take preview quality")
+    if type(scene_sha) is not str or len(scene_sha)!=64 or any(
+            x not in "0123456789abcdef" for x in scene_sha):
+        raise ValueError("Scene source identity must be a trusted SHA-256")
+    if (type(camera_path) is not str or not camera_path.startswith("/World/") or
+        len(camera_path)>240):
+        raise ValueError("Invalid native scene camera path")
+    _int(tick,"source time",maximum=MAX_USD_EXACT_TICK)
+    exact=verified_optics(settings)
+    return sha(canonical({
+        "format":RENDER_FORMAT,"preview":"pre_take_camera_workbench",
+        "scene_sha":scene_sha,"source_tick":tick,
+        "camera_path":camera_path,"settings_sha":sha(canonical(exact)),
+        "quality":quality,"resolution":DIMENSIONS[quality],
+        "worker_script_sha256":sha(BLENDER_SCRIPT.encode("utf8")),
+    }))
+
+
+def capture_workbench_still(index,project_id,scene_id,scene_revision,*,
+                            tick,camera_path,settings,quality):
+    """A real native scene STILL using ephemeral optical opinions, no Take."""
+    exact=verified_optics(settings)
+    scene,stage=_stage(index,project_id,scene_id,scene_revision)
+    key=workbench_preview_key(
+        scene["document_sha256"],tick,camera_path,exact,quality)
+    _,_,Usd,UsdGeom=_usd()
+    role=scene["data"]["prim_roles"].get(camera_path)
+    camera_prim=stage.GetPrimAtPath(camera_path)
+    if role!="camera" or not camera_prim or not camera_prim.IsA(UsdGeom.Camera):
+        raise RuntimeError("Camera workbench cannot invent a scene camera")
+    t=Usd.TimeCode(float(tick))
+    if str(UsdGeom.Imageable(camera_prim).ComputeVisibility(t))=="invisible":
+        raise RuntimeError("Preview camera is not visible in this scene")
+    # Session-layer opinions change ONLY this temporary stage instance.
+    stage.SetEditTarget(stage.GetSessionLayer())
+    camera=UsdGeom.Camera(camera_prim)
+    for attribute,value in (
+        (camera.GetFocalLengthAttr(),exact["focal_length_mm"]/MM_PER_CAMERA_UNIT),
+        (camera.GetHorizontalApertureAttr(),
+         exact["sensor_width_mm"]/MM_PER_CAMERA_UNIT),
+        (camera.GetVerticalApertureAttr(),
+         exact["sensor_height_mm"]/MM_PER_CAMERA_UNIT),
+        (camera.GetFStopAttr(),exact["f_stop"]),
+        (camera.GetFocusDistanceAttr(),exact["focus_distance_m"])):
+        if not attribute.Set(value,t):
+            raise RuntimeError("Could not apply temporary camera optical opinion")
+    from backend.nvp_slate06_geometry import extract_composed_stage,recipe
+    snapshot=extract_composed_stage(
+        stage,scene["data"],tick=tick,camera_path=camera_path,
+        source_take_sha=None,source_shot_sha=None,cache_key=key)
+    snapshot.update({
+        "source_kind":"pre_take_scene_not_frozen_take",
+        "source_scene_id":scene_id,"source_scene_revision":scene_revision,
+        "source_scene_document_sha256":scene["document_sha256"],
+        "optical_settings":exact,
+        "frozen_take_created":False,
+        "director_shot_committed":False,
+    })
+    manifest=recipe(snapshot,quality)
+    return manifest
+
+
 class VirtualCameraWorkbench:
     def __init__(self,index:FilmIndex,*,verify_director_action=None):
         if not isinstance(index,FilmIndex):
@@ -162,17 +243,7 @@ class VirtualCameraWorkbench:
         _id(preset_id,"camera preset ID")
         if self.approve is None:
             raise PermissionError("A trusted director approval service is required")
-        if type(settings) is not dict:
-            raise ValueError("Exact typed optics required")
-        revalidated=lens_settings(
-            lens=settings["preset"],sensor=settings["sensor"],
-            f_stop=settings["f_stop"],
-            focus_distance_m=settings["focus_distance_m"],
-            custom_focal_mm=settings["focal_length_mm"],
-            custom_sensor_width_mm=settings["sensor_width_mm"],
-            custom_sensor_height_mm=settings["sensor_height_mm"])
-        if revalidated!=settings:
-            raise ValueError("Preset camera optics contain unapproved fields")
+        settings=verified_optics(settings)
         digest=sha(canonical(settings))
         scope={
             "operation":"nvp.camera.save_optical_preset.v1",
