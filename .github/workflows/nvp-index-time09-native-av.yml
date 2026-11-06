@@ -1,0 +1,88 @@
+name: NVP INDEX-TIME-09 Native Synchronized Audio/Video Assembly
+
+on:
+  push:
+    branches:
+      - nvp/index-time09-continuous-av-proxy-20261106
+  pull_request:
+    paths:
+      - 'backend/nvp_index_time09_av_proxy.py'
+      - 'backend/nvp_index_time09_native_host.py'
+      - 'backend/nvp_index_time06_native_desktop.py'
+      - 'tools/nvp_av_proxy_worker.py'
+      - 'tools/nvp_desktop_alpha.py'
+      - 'frontend/src/SynchronizedAssemblyReview.jsx'
+      - 'frontend/src/SynchronizedAssemblyReview.test.jsx'
+      - 'tests/test_nvp_index_time09_av_proxy.py'
+      - '.github/workflows/nvp-index-time09-native-av.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: nvp-index-time09-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-real-pts-audio:
+    name: INDEX-TIME-09 ${{ matrix.os }} Python ${{ matrix.python }} native VFR plus AAC sync
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04,windows-2025]
+        python: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install foundation
+        shell: bash
+        run: python -m pip install -r requirements-foundation.txt
+      - name: Linux FFmpeg/FFprobe native encoder
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Windows FFmpeg/FFprobe and Job Object
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Native FFmpeg missing' }
+          Join-Path $env:ChocolateyInstall 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+          python -m pip install 'pywin32>=306'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Win32 containment unavailable' }
+      - name: Require H.264/AAC encoding in the pinned native media tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg -version
+          ffprobe -version
+          ffmpeg -hide_banner -encoders 2>&1 | grep -q libx264
+          ffmpeg -hide_banner -encoders 2>&1 | grep -q ' aac'
+          python -m compileall -q backend/nvp_index_time09_av_proxy.py backend/nvp_index_time09_native_host.py backend/nvp_index_time06_native_desktop.py tools/nvp_av_proxy_worker.py tools/nvp_desktop_alpha.py tests/test_nvp_index_time09_av_proxy.py
+      - name: Real original VFR camera audio, silent B roll, editorial gap and verified H264/AAC native proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_nvp_index_time09_av_proxy.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_index_time08_playback.py' -v
+  react-synchronized-media:
+    name: INDEX-TIME-09 real video transport, opaque chunks and SHA refusal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm run test:ui -- src/SynchronizedAssemblyReview.test.jsx src/FilmTimePlaybackPanel.test.jsx src/FilmTimeAssemblyPanel.test.jsx src/FilmTimeIndexPanel.test.jsx
