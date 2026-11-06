@@ -110,10 +110,19 @@ class NVPFrameIndex:
             "schema": SCHEMA_VERSION, "project": project,
             "asset": asset, "source_sha256": source_sha,
         }).encode("ascii")).hexdigest()
-        folder = self.root / project / key[:2]
-        if folder.exists() and folder.is_symlink():
-            raise RuntimeError("Unsafe NVP cache parent")
-        folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+        project_dir=self.root / project
+        if project_dir.is_symlink():
+            raise RuntimeError("Unsafe NVP project cache parent")
+        project_dir.mkdir(mode=0o700,exist_ok=True)
+        if (project_dir.is_symlink() or
+            project_dir.resolve().parent!=self.root.resolve()):
+            raise RuntimeError("NVP cache project directory escaped trusted root")
+        folder = project_dir / key[:2]
+        if folder.is_symlink():
+            raise RuntimeError("Unsafe NVP index cache parent")
+        folder.mkdir(exist_ok=True, mode=0o700)
+        if folder.is_symlink() or folder.resolve().parent!=project_dir.resolve():
+            raise RuntimeError("NVP index cache bucket escaped trusted project")
         return folder / (key + ".sqlite3")
 
     @staticmethod
