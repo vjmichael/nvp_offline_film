@@ -224,7 +224,9 @@ class FilmIndex:
         Never exposes an arbitrary uploaded path as an asset until bytes have
         been copied, hashed, and bound to a project-scoped DB registration.
         """
-        if media_type not in ("video/mp4", "video/quicktime", "audio/wav", "image/x-exr", "application/octet-stream"):
+        if media_type not in ("video/mp4", "video/quicktime", "audio/wav",
+                               "audio/mpeg", "audio/flac", "audio/ogg",
+                               "image/x-exr", "application/octet-stream"):
             raise ValueError("Unsupported indexed media type")
         if type(max_bytes) is not int or max_bytes < 1 or max_bytes > 2*1024**3:
             raise ValueError("Invalid media budget")
