@@ -207,6 +207,11 @@ class Slate05NativeTests(unittest.TestCase):
         self.assertEqual(png["status"],"READY")
         self.assertEqual(png["cache_key"],key)
         self.assertEqual((png["width"],png["height"]),(256,144))
+        delivered=self.host.read_preview_png(self.pid,key)
+        self.assertEqual(delivered["mime_type"],"image/png")
+        self.assertEqual(sha(delivered["png_bytes"]),png["image_sha256"])
+        self.assertTrue(delivered["lowfi_proxy_only"])
+        self.assertFalse(delivered["full_film_frame_approved"])
         with patch.object(self.host,"_approval_check",
                           side_effect=AssertionError("cache hit minted consent")), \
              patch("backend.nvp_slate_preview_host.capture_proxy",
