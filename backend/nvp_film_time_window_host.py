@@ -45,7 +45,15 @@ class NativeFilmTimeWindowHost:
         home.mkdir(parents=True,exist_ok=True,mode=0o700)
         self.root = home.resolve()
         self.python = Path(sys.executable).resolve()
-        self.script = Path(__file__).resolve().parents[1]/"tools"/"nvp_source_window_worker.py"
+        # A frozen desktop executable is not a Python interpreter. Its
+        # dedicated worker subcommand executes the same exact SHA-pinned
+        # source file from the installed one-directory package.
+        self.packaged_worker = bool(getattr(sys,"frozen",False))
+        self.script = (
+            Path(getattr(sys,"_MEIPASS",self.python.parent))/
+                "tools"/"nvp_source_window_worker.py"
+            if self.packaged_worker else
+            Path(__file__).resolve().parents[1]/"tools"/"nvp_source_window_worker.py")
         self.ffmpeg = Path(ffmpeg_path or shutil.which("ffmpeg") or "")
         self.ffprobe = Path(ffprobe_path or shutil.which("ffprobe") or "")
         for executable in (self.python,self.script,self.ffmpeg,self.ffprobe):
@@ -326,8 +334,10 @@ class NativeFilmTimeWindowHost:
             self.ledger.update(task,"rendering",
                                "Decoding bounded unapproved film-time review")
             folder=self.root/task
-            command=[
-                str(self.python),str(self.script),
+            command=(
+                [str(self.python),"--trusted-film-time-worker",row["script_sha"]]
+                if self.packaged_worker else [str(self.python),str(self.script)])
+            command += [
                 "--plan",str(folder/"window_plan.json"),
                 "--destination",row["destination"],
                 "--studio-db",row["source_db"],
