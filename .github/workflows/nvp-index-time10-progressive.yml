@@ -6,6 +6,7 @@ on:
       - nvp/index-time10-progressive-longform-20261106
   pull_request:
     paths:
+      - 'backend/nvp_index_time09_av_proxy.py'
       - 'backend/nvp_index_time09_native_host.py'
       - 'backend/nvp_index_time06_native_desktop.py'
       - 'frontend/src/SynchronizedAssemblyReview.jsx'
