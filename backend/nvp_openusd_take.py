@@ -12,6 +12,7 @@ import json
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_temporal_ledger import TemporalLedger, _int
+from backend.nvp_openusd_channels import evaluate_parameter_channels
 from backend.nvp_openusd_scene import (
     OpenUSDSceneBridge, _evaluate, _usd, MAX_USD_EXACT_TICK, FORMAT as SCENE_FORMAT)
 
@@ -79,8 +80,12 @@ class OpenUSDTakeCapture:
                     for p in requested]
         events=self.temporal.events_at(
             project_id,timeline_id,timeline_revision,tick=tick,limit=500)
+        values=evaluate_parameter_channels(
+            stage,src["data"].get("performance_channels",[]),
+            src["data"]["prim_roles"],tick)
         return {"format":"nvp.usd_time_checkpoint.v1",
                 "tick":tick,"scene_document_sha256":src["document_sha256"],
+                "performance_channels":values,
                 "timeline_document_sha256":timeline["document_sha256"],
                 "transforms":transforms,"active_events":events,
                 "rendered_frames":False}
@@ -116,8 +121,13 @@ class OpenUSDTakeCapture:
                        for p in prims]
             active=self.temporal.events_at(
                 project_id,timeline_id,timeline_revision,tick=tick,limit=500)
-            checkpoints.append({"tick":tick,"poses":positions,
-                                "active_event_ids":[x["event_id"] for x in active]})
+            checkpoint={"tick":tick,"poses":positions,
+                        "active_event_ids":[x["event_id"] for x in active]}
+            if source["data"].get("performance_channels"):
+                checkpoint["performance_channels"]=evaluate_parameter_channels(
+                    stage,source["data"]["performance_channels"],
+                    source["data"]["prim_roles"],tick)
+            checkpoints.append(checkpoint)
         snapshot_sha=sha(checkpoints)
         scoped={
             "operation":"nvp.freeze.usd_temporal_take.v1",
@@ -150,6 +160,8 @@ class OpenUSDTakeCapture:
             "layout_layer_sha256":source["data"]["layout_layer_sha256"],
             "motion_layer_sha256":source["data"]["motion_layer_sha256"],
             "asset_bindings":source["data"].get("asset_bindings",[]),
+            "parameter_layer_sha256":source["data"].get("parameter_layer_sha256"),
+            "performance_channels":source["data"].get("performance_channels",[]),
             "sample_ticks":sample_ticks,"sample_digest_sha256":snapshot_sha,
             "host_creator_action_verified":True,
             "artist_presentation_approved":False,
@@ -177,7 +189,9 @@ class OpenUSDTakeCapture:
             duration!=manifest["duration_tick"] or
             src["data"]["layout_layer_sha256"]!=manifest["layout_layer_sha256"] or
             src["data"]["motion_layer_sha256"]!=manifest["motion_layer_sha256"] or
-            src["data"].get("asset_bindings",[])!=manifest.get("asset_bindings",[])):
+            src["data"].get("asset_bindings",[])!=manifest.get("asset_bindings",[]) or
+            src["data"].get("parameter_layer_sha256")!=manifest.get("parameter_layer_sha256") or
+            src["data"].get("performance_channels",[])!=manifest.get("performance_channels",[])):
             raise RuntimeError("Frozen scene/timed film source changed")
         _,Sdf,Usd,UsdGeom=_usd()
         poses=[]
@@ -187,8 +201,13 @@ class OpenUSDTakeCapture:
             events=self.temporal.events_at(
                 project_id,manifest["timeline_id"],manifest["timeline_revision"],
                 tick=tick,limit=500)
-            poses.append({"tick":tick,"poses":positions,
-                          "active_event_ids":[x["event_id"] for x in events]})
+            checkpoint={"tick":tick,"poses":positions,
+                        "active_event_ids":[x["event_id"] for x in events]}
+            if src["data"].get("performance_channels"):
+                checkpoint["performance_channels"]=evaluate_parameter_channels(
+                    stage,src["data"]["performance_channels"],
+                    src["data"]["prim_roles"],tick)
+            poses.append(checkpoint)
         if sha(poses)!=manifest["sample_digest_sha256"]:
             raise RuntimeError("Frozen Digital Take sampled state digest changed")
         return {"status":"VERIFIED_FROZEN_DATA_TAKE",
