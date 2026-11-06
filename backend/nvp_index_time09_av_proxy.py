@@ -188,9 +188,15 @@ def plan(studio,reader,project_id,edit_id,revision,sha,start_tick,*,ffprobe):
         }
         pieces.append(piece)
         cursor=film_last
+    # INDEX-TIME-10: authored black/silent time after the final camera
+    # clip must be played as a real interval, not deleted just because
+    # no further source rows exist. A source-free tail uses FFmpeg's
+    # bounded color/anullsrc filter sources, never a fake camera file.
+    # Do not extend a window beyond its planned source-part count cap.
+    if cursor<limit and len(pieces)<MAX_PARTS:
+        pieces.append({"kind":"gap","duration_tick":limit-cursor})
+        cursor=limit
     if not pieces:raise RuntimeError("Nothing visible occurs after selected playhead")
-    if not any(p["kind"]=="source" for p in pieces):
-        raise RuntimeError("No original camera footage within bounded review window")
     # Output CFR frames/audio samples are a derived review representation,
     # never a claim that the original source was constant-frame-rate.
     output_frames=0
