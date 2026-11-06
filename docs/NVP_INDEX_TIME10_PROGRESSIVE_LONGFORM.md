@@ -3,6 +3,19 @@
 **November 6, 2026 · Initial production implementation on a stacked draft
 branch; native Windows/Linux and physical installed-app acceptance pending.**
 
+## Scope correction — native captured sound
+
+Only sound **generated, performed or recorded during filming of a 3D
+Digital Take** is in the proposed BWF captured-stem policy. Editor-imported
+music/FX (MP3, etc.) are separate immutable media sources and do not
+require recoding. The governing Digital Take is the typed event,
+emitter/microphone-transform and source-revision graph. An optional
+BWF microphone print is an indexed audio signal, not the authoritative
+semantic 3D take. Real playback should evaluate source events and
+generate needed acoustic PCM windows directly; FFmpeg is limited to
+external media import, review/presentation and export boundaries.
+See `NVP_DATA_TIME01_EVENTS_NOT_FRAMES.md#capture-sound-01--filmed-3d-scene-sound-versus-imported-soundtrack-2026-11-06`.
+
 ## Authority reminder — film data, not rendered samples
 
 The creator reaffirmed that NVP's **authoritative playback/edit timeline**
