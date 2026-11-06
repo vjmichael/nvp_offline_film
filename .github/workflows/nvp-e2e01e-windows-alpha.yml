@@ -51,11 +51,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Could not provision real native video tools' }
+          $source=Join-Path $env:ChocolateyInstall 'lib/ffmpeg/tools'
+          $ffmpeg=Get-ChildItem $source -Filter ffmpeg.exe -File -Recurse |
+            Where-Object { $_.Length -gt 1000000 } | Select-Object -First 1
+          if (-not $ffmpeg) { throw 'No real full FFmpeg binary (Chocolatey shims are forbidden)' }
+          $ffprobe=Join-Path $ffmpeg.Directory.FullName 'ffprobe.exe'
+          if (-not (Test-Path $ffprobe)) { throw 'FFprobe missing beside FFmpeg' }
+          $env:NVP_FFMPEG=$ffmpeg.FullName
+          $env:NVP_FFPROBE=$ffprobe
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "NVP_FFMPEG=$($ffmpeg.FullName)"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "NVP_FFPROBE=$ffprobe"
+          & $ffmpeg.FullName -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg binary cannot execute' }
+          & $ffprobe -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFprobe binary cannot execute' }
       - name: Compile actual desktop entry and build one-directory native EXE
         shell: pwsh
         run: |
           python -m compileall -q tools/nvp_desktop_alpha.py
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-submodules backend tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --add-data 'tools/nvp_source_window_worker.py;tools' --add-binary "$env:NVP_FFMPEG;ffmpeg" --add-binary "$env:NVP_FFPROBE;ffmpeg" --collect-all webview --collect-submodules backend --collect-submodules tools tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
           python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
