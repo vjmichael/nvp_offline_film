@@ -1,5 +1,49 @@
 # NVP — Engineering state and resumption ledger
 
+## Current continuation checkpoint — November 6, 2026
+
+This section supersedes older November 5 navigation priorities **for the
+imported-footage editor workstream only**. Do not infer that the entire native
+film system, Windows installed release, or original 30–60 second AI film is
+accepted. The creator continues to require immutable captured picture/audio,
+non-destructive versioned Film Time assemblies and a straightforward GUI.
+
+- **Active draft:** [INDEX-TIME-09 PR #72](https://github.com/vjmichael/nvp_offline_film/pull/72),
+  branch `nvp/index-time09-continuous-av-proxy-20261106`, stacked on
+  INDEX-TIME-08 PR #71. This is the latest authored work in the
+  original-footage editor. The earlier PR #45 is a separate DCP/picture
+  conform stack, not the head of this editor workstream.
+- **Implementation in PR #72:** bounded up-to-20-minute, 24fps review-only,
+  H.264/AAC 48kHz stereo, film-edit-and-source-SHA-grounded temporary A/V
+  preview with black/silent editorial gaps, native OS approval, contained
+  FFmpeg worker, independent FFprobe/SHA receipt and <=1MiB HTTP 206 private
+  disk ranges. Sources stay original and are never rewritten. Native
+  cache/run-window memory caps remain *design goals*, not hard measured
+  Windows memory acceptance.
+- **SYSTEM-READY-01:** installed app's System readiness screen performs
+  read-only library/codec/runtime/disk checks; optional missing components
+  use exact allowlisted OS-package repairs with native consent plus OS
+  privilege approval. The November 6 follow-up closes gaps around
+  ready-component refusal, post-consent recheck and genuine Debian/Ubuntu
+  identification. This does **not** authorize blanket package downloads.
+- **November 6 repair:** frontend native READY-receipt digit-validation bug
+  corrected; small seek/scrub/cut movements within a verified A/V section
+  reuse the native media clock and current ticket, whereas crossing a section
+  boundary stops/revokes the old one. React/native tests added.
+- **Verification reality:** earlier independent native FFmpeg *filtergraph*
+  fixture passed, but that is not a full installed-app test. The current
+  exact-head Windows/Linux/React GitHub jobs had been queued at last
+  inspection; no pass, installation, human audio perception, crash-kill
+  reconciliation, multi-section seamless playback, or 256MiB RAM compliance
+  may be inferred from implementation alone.
+- **Next:** repair actual updated exact-head CI failures first; run the
+  existing `tools/nvp_index_time09_independent_acceptance.py` on real
+  Linux and already-installed physical Windows (without building NSIS on
+  the creator's machine); validate hostile worker cancellation/host crash;
+  then work on progressive overlap/prebuffering beyond 20 minutes and
+  dialogue/music mixing while keeping every capture frozen. Full public
+  packaging remains a separate creator-controlled release gate.
+
 **Purpose:** One concise, machine-readable-by-convention entrypoint for a newly started AI development conversation.
 
 **LATEST CREATOR PRIORITY (2026-11-05): WINDOWS NSIS INSTALLER WORK IS PAUSED.** Do not attempt setup scripts, packaging or on-PC dependencies unless the creator explicitly resumes that task. Active objective: a real continuous 30–60-second NVP-produced short film, with AI-generation and production continuity verified; technical reel assembly is a stepping stone. Git commits, exact build/test logs, creator approvals and artifact hashes remain the sources of truth. This document is a **navigation index**, not proof that an effect ran.
