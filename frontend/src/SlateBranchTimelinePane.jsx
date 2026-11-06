@@ -245,7 +245,7 @@ export default function SlateBranchTimelinePane({
                 onClick={()=>pasteAt('before')}>Paste before</button>
         <button disabled={!hasDraft||!chosenSegment||!sourceClipboard||!onDraftPaste}
                 onClick={()=>pasteAt('after')}>Paste after</button>
-        <button disabled={!hasCut||!chosenSegment||!onRequestDataPreview}
+        <button disabled={!hasCut||hasDraft||!chosenSegment||!onRequestDataPreview}
                 onClick={()=>onRequestDataPreview(chosenSegment.timeline_start_tick)}>
           Preview source data</button>
         <button className="nvp-slate-commit" disabled={!hasDraft||!onCommitDraft}
