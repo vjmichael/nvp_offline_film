@@ -1,5 +1,26 @@
 # NVP — Engineering state and resumption ledger
 
+## Creator refinement — sound captured while filming a 3D scene (Nov 6)
+
+- **Scope:** NVP capture-sound design applies to the frozen Digital Take:
+  sound-generating events, dialogue/voice identity, exact timestamps,
+  microphone/emitter paths and acoustic environment. Ordinary creator-added
+  background music and FX retain their original MP3/other file formats,
+  without forced BWF conversion.
+- **Recording format candidate:** BWF lossless PCM, 48 kHz, for committed
+  scene/microphone stems and their sample-addressed evidence. FilmIndex
+  remains the authoritative event, provenance and tick mapping. BWF
+  metadata alone cannot preserve all 3D sound semantics.
+- **Playback architecture correction:** No decoder (including FFmpeg)
+  decodes the semantic Digital Take. A typed event evaluator plus audio
+  source resolver, optional 3D acoustic renderer and native sample-window
+  mixer plays the captured data. Evaluate libsndfile + miniaudio, optional
+  spatial simulation; FFmpeg belongs at import/presentation/export
+  boundaries only. Prior H.264/AAC preview is a **derived adapter**,
+  not acceptance of the desired data-first playback core.
+- [CAPTURE-SOUND-01](NVP_DATA_TIME01_EVENTS_NOT_FRAMES.md) records
+  the proposed integration and outstanding real native acceptance.
+
 ## Creator correction — data-first Film Time and audio (November 6)
 
 The **authoritative** NVP timeline is sparse, immutable, versioned event and
