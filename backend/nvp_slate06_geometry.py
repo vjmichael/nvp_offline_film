@@ -301,22 +301,6 @@ def extract_composed_stage(stage,scene_data,*,tick,source_take_sha=None,
     if len(canonical(summary))>MAX_SOURCE_BYTES-256:
         raise RuntimeError("Native source geometry recipe would exceed bounded worker input")
     return summary
-icket["cache_key"],
-        "camera":chosen,"lights":lights,"objects":geometry,
-        "up_axis":up_axis,
-        "unmeshed_actors":missing_actors,
-        "skeletal_rig_count":rig_count,
-        "skinned_mesh_paths":sorted(skinned_meshes),
-        "skinning_evaluated":bool(skinned_meshes),
-        "facial_animation_evaluated":False,
-        "usd_material_networks_evaluated":False,
-        "usd_light_photometry_exact":False,
-        "source_data_modified":False,"final_presentation_approved":False,
-    }
-    if len(canonical(summary))>MAX_SOURCE_BYTES-256:
-        raise RuntimeError("Native source geometry recipe would exceed bounded worker input")
-    return summary
-
 
 def recipe(snapshot,quality):
     if type(snapshot) is not dict or snapshot.get("format")!=FORMAT:
