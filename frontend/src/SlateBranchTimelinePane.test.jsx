@@ -70,9 +70,16 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
         shot_type:'reaction',beat_ids:['reunion'],emotion_tags:['surprised'],
         director_rating:5,technical_status:'acceptable',
         director_notes:'Best expression during the reaction',
+        moment_cues:[{
+          source_in_tick:120,source_out_tick:450,origin:'editor_tag',
+          beat_ids:['eyeline_change'],dialogue_ids:['line_17'],
+          emotion_tags:['relieved'],character_ids:['Actor'],
+          action_tags:['reaction'],
+        }],
         ai_observations:[{
           model_id:'assistant_v1',summary:'Check eyeline on next cut',
           status:'UNREVIEWED_AI_PROPOSAL',
+          source_in_tick:100,source_out_tick:600,
           confidence:0.68,
         }],
       }};
@@ -89,7 +96,8 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
     expect(screen.getByText('Wild · Take 1 · Camera B')).toBeTruthy();
     expect(screen.getByText('Edit 0–500 ticks')).toBeTruthy();
     expect(screen.getByText('Source 100–600 ticks')).toBeTruthy();
-    expect(screen.getByText(/reunion · surprised/)).toBeTruthy();
+    expect(screen.getByText(/reunion · eyeline_change · surprised · relieved/)).toBeTruthy();
+    expect(screen.getByText(/Dialogue cues: line_17/)).toBeTruthy();
     expect(screen.getByText('Director rating 5/5')).toBeTruthy();
     expect(screen.getByText(/Director: Best expression/)).toBeTruthy();
     expect(screen.getByText(/AI suggestion · unreviewed: Check eyeline/)).toBeTruthy();
