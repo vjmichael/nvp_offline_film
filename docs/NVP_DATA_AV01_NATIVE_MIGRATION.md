@@ -5,7 +5,7 @@
 authored OpenUSD SLATE-08B scene branch, NOT the obsolete FFmpeg preview
 branch.
 
-## Supersession and state
+> **Superseding creator clarification:** NVP **never uses FFmpeg**, including incoming media compatibility, native A/V, picture/sound mastering, video encoding/muxing, and the final 2D presentation. Earlier references below permitting FFmpeg for import/final export are historical and expressly withdrawn. Until independently implemented with other components, those legacy operations must be unavailable. Consult the [ordered DA-00–DA-07 ledger](NVP_DATA_ALL_TASK_LEDGER.md).\n\n## Supersession and state
 
 The creator explicitly requires NVP to treat its Digital Film World,
 OpenUSD scene, exact Film Time event ledger, immutable recorded sound
