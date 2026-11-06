@@ -270,8 +270,8 @@ class NativeAssemblyReview:
                             ram_mb=1024,duration_s=SESSION_SECONDS)
                     finally:
                         self.desktop._approvals.pop(grant.token,None)
-                    if task["state"]!="QUEUED" or
-                       task["edit_document_sha256"]!=sha:
+                    if (task["state"]!="QUEUED" or
+                        task["edit_document_sha256"]!=sha):
                         raise RuntimeError("Native source review was not securely queued")
                     window["task"]=task["task_id"]
                     queued.append(task["task_id"])
@@ -392,8 +392,8 @@ class NativeAssemblyReview:
                 raise RuntimeError("Native source timing or PTS receipt changed")
             path=Path(row["destination"])/(
                 "review_"+str(entry["review_frame"]).zfill(9)+".png")
-            if path.is_symlink() or not path.is_file() or
-               not 33<=path.stat().st_size<=MAX_PNG_BYTES:
+            if (path.is_symlink() or not path.is_file() or
+                not 33<=path.stat().st_size<=MAX_PNG_BYTES):
                 raise RuntimeError("Native review PNG is missing or oversized")
             payload=path.read_bytes()
             if (not payload.startswith(PNG_MAGIC) or
