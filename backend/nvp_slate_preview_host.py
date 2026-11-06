@@ -668,7 +668,17 @@ class NativeSlatePreviewHost:
                     WHERE task_id=?""",
                     (self.supervisor._activity_id(job_id),)).fetchone()
             if record is None:
-                raise RuntimeError("Verified native preview lost approval provenance")
+                with self.ledger._db() as db:
+                    live=db.execute("""SELECT camera_path FROM nvp_camera_preview_consents
+                        WHERE task_id=?""",
+                        (self.supervisor._activity_id(job_id),)).fetchone()
+                if live is None:
+                    raise RuntimeError("Verified native preview lost approval provenance")
+                return {**result,"cache_result":{
+                    **cached,"presentation":"pre_take_camera",
+                    "camera_path":live[0],
+                    "frozen_take_created":False,
+                    "final_master_approval":False}}
             return {**result,"cache_result":{
                 **cached,"presentation":record[0],
                 "camera_path":record[1],
@@ -757,7 +767,31 @@ class NativeSlatePreviewHost:
                 FROM nvp_slate_preview_consents WHERE task_id=?""",
                 (self.supervisor._activity_id(job_id),)).fetchone()
         if consent is None:
-            raise RuntimeError("Preview cancellation source provenance missing")
+            with self.ledger._db() as db:
+                camera=db.execute("""SELECT scene_id FROM nvp_camera_preview_consents
+                    WHERE task_id=?""",
+                    (self.supervisor._activity_id(job_id),)).fetchone()
+            if camera is None:
+                raise RuntimeError("Preview cancellation source provenance missing")
+            ctx={
+                "operation":"nvp.camera.cancel_pre_take_still.v1",
+                "project_id":row["project_id"],
+                "scene_id":camera[0],
+                "job_id":job_id,"preview_cache_key":row["cache_key"],
+            }
+            if self.approve(creator_event,dict(ctx)) is not True:
+                raise PermissionError("Pre-Take render cancellation was not authorized")
+            task_id=self.supervisor._activity_id(job_id)
+            task=self.ledger.get_task(task_id)
+            if task and task["state"]=="QUEUED":
+                self.ledger.cancel_queued(task_id,owner_key=self.dispatcher.owner_key)
+                self.cache.fail(job_id,state="FAILED")
+                return {"job_id":job_id,"state":"CANCELLED_QUEUED",
+                        "native_worker_started":False}
+            if self.supervisor.cancel(job_id):
+                return {"job_id":job_id,"state":"CANCEL_REQUESTED",
+                        "native_termination_verified":False}
+            raise RuntimeError("No active pre-Take still can be cancelled")
         ctx={"operation":(
                  "nvp.slate.cancel_openusd_geometry_preview.v1"
                  if consent[0]=="geometry" else
