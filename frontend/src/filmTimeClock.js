@@ -13,3 +13,24 @@ export function filmTimeClock(tickText){
     seconds.toString().padStart(2,'0')+'.'+
     millis.toString().padStart(3,'0');
 }
+
+const MAX_FILM_TICK=9223372036854775807n;
+
+// Accept a human clock without EVER converting the authored tick into JS
+// Number. Milliseconds are exactly representable in NVP's tick clock.
+// Preserve sub-millisecond ticks when no clock edit is requested.
+export function clockToFilmTick(clock){
+  if(typeof clock!=='string' ||
+     !/^\\d{2,6}:[0-5]\\d:[0-5]\\d\\.\\d{3}$/.test(clock)){
+    throw new Error('Film gap must use HH:MM:SS.mmm');
+  }
+  const [hourText,minuteText,secondFraction]=clock.split(':');
+  const [secondText,milliText]=secondFraction.split('.');
+  const seconds=BigInt(hourText)*3600n+
+                BigInt(minuteText)*60n+BigInt(secondText);
+  const ticks=seconds*TICKS_PER_SECOND+
+              BigInt(milliText)*(TICKS_PER_SECOND/1000n);
+  if(ticks>MAX_FILM_TICK)
+    throw new Error('Film gap exceeds the exact 64-bit duration');
+  return ticks.toString();
+}
