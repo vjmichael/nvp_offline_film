@@ -1340,6 +1340,10 @@ def native_time_shots_publish(project_id: str,timeline_id: str,
 
 @app.get('/api/projects/{project_id}/film/native-time-shots/{timeline_id}')
 def native_time_shots_read(project_id: str,timeline_id: str,
-                           revision: int = _FilmCameraQuery(ge=1,le=1000000)):
-    return run(lambda:_NativeShots(_FilmCameraIndex(studio)).read(
-        project_id,timeline_id,revision))
+                           revision: int|None = _FilmCameraQuery(default=None,ge=1,le=1000000)):
+    def resolved():
+        index=_FilmCameraIndex(studio)
+        target=revision if revision is not None else index.read_revision(
+            project_id,timeline_id)["revision"]
+        return _NativeShots(index).read(project_id,timeline_id,target)
+    return run(resolved)
