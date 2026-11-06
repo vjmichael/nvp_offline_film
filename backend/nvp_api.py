@@ -771,6 +771,15 @@ def production_solve_camera(project_id: str, scene_id: str, payload: CameraShotI
         project_id,scene_id,payload.subjects,lens_mm=payload.lens_mm,
         shot_size=payload.shot_size,desired_positions=payload.desired_positions))
 
+# DA-06: old fixed-rate proxy production is READ-ONLY history only.
+# The new camera timeline is /film/native-time-shots, and native OS approval
+# freezes exact-time OpenUSD Takes. Never publish new frame-authoritative
+# captures, clips, or Blender proxy scripts from the active NVP API.
+def _retired_fixed_frame_authoring():
+    raise HTTPException(status_code=410,detail=(
+        "Legacy frame-based proxy authoring retired. Use exact Film Time "
+        "OpenUSD shot revisions and native Digital Take freeze."))
+
 # NVP-PROD-05: author-controlled, frame-accurate shot sequences.
 from backend.nvp_shot_sequence import ShotSequence
 
@@ -797,6 +806,7 @@ class TakeWarningsInput(TakeRevisionInput):
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence', status_code=201)
 def prod05_create(project_id: str, scene_id: str):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).create(project_id,scene_id))
 
 
@@ -807,45 +817,53 @@ def prod05_read(project_id: str, scene_id: str):
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/shots')
 def prod05_append(project_id: str, scene_id: str, payload: TakeShotInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).add_shot(project_id,scene_id,
         payload.camera_id,payload.frames,payload.pattern,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/shots/pop')
 def prod05_remove_last_shot(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).remove_last_shot(project_id,scene_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/cues/{line_id}')
 def prod05_place_cue(project_id: str, scene_id: str, line_id: str, payload: TakeCueInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).place_cue(project_id,scene_id,
         line_id,payload.start_frame,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/cues/{line_id}/clear')
 def prod05_clear_cue(project_id: str, scene_id: str, line_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).clear_cue(project_id,scene_id,
         line_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/warnings/acknowledge')
 def prod05_acknowledge(project_id: str, scene_id: str, payload: TakeWarningsInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).acknowledge(project_id,scene_id,
         payload.codes,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/approve')
 def prod05_approve(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).approve(project_id,scene_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/revision')
 def prod05_revision(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).new_revision(project_id,scene_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/reset')
 def prod05_reset(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).reset_draft(project_id,scene_id,payload.expected_revision))
 
 
@@ -856,11 +874,13 @@ def prod05_history(project_id: str, scene_id: str):
 
 @app.get('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/package')
 def prod05_package(project_id: str, scene_id: str):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).export(project_id,scene_id))
 
 
 @app.get('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/blender-script')
 def prod05_blender_script(project_id: str, scene_id: str):
+    _retired_fixed_frame_authoring()
     return {'script':run(lambda: ShotSequence(studio).blender_script(project_id,scene_id)),
             'language':'python','runtime':'Blender 5.2+ bpy'}
 
@@ -901,18 +921,21 @@ def prod06_clips(project_id:str):
 
 @app.post('/api/projects/{project_id}/production/motion-clips/bvh', status_code=201)
 def prod06_register_bvh(project_id:str,payload:RegisterBVHMotion):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).register(project_id,payload.name,payload.license,
                       bvh=payload.bvh,mapping=payload.mapping))
 
 
 @app.post('/api/projects/{project_id}/production/motion-clips/authored', status_code=201)
 def prod06_register_authored(project_id:str,payload:RegisterAuthoredMotion):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).register(project_id,payload.name,payload.license,
                       frames=payload.frames,fps=payload.fps))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion',status_code=201)
 def prod06_create(project_id:str,scene_id:str):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).create(project_id,scene_id))
 
 
@@ -923,18 +946,21 @@ def prod06_read(project_id:str,scene_id:str):
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/attach')
 def prod06_attach(project_id:str,scene_id:str,payload:AttachMotion):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).attach(project_id,scene_id,
         payload.actor_instance_id,payload.clip_id,payload.start_frame,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/clear')
 def prod06_clear(project_id:str,scene_id:str,payload:ActorMotionRevision):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).clear(project_id,scene_id,
         payload.actor_instance_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/approve')
 def prod06_approve(project_id:str,scene_id:str,payload:TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).approve(project_id,scene_id,payload.expected_revision))
 
 
@@ -945,6 +971,7 @@ def prod06_history(project_id:str,scene_id:str):
 
 @app.get('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/blender-script')
 def prod06_blender(project_id:str,scene_id:str):
+    _retired_fixed_frame_authoring()
     return {'script':run(lambda:RigMotion(studio).blender_script(project_id,scene_id)),
             'language':'python','runtime':'Blender 5.2+ bpy','rig':'humanoid_preview_v1'}
 
