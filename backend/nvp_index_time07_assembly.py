@@ -52,7 +52,7 @@ class IndexedFootageAssembler:
         _int(revision,"indexed edit revision",minimum=1,maximum=1000000)
         _sha(sha)
         record=self.publisher._revision(pid,edit_id,revision)
-        head=self.publisher._revision(pid,edit_id)
+        head=self.publisher.index.read_revision(pid,edit_id)
         if (record["document_sha256"]!=sha or
             head["revision"]!=revision or
             head["document_sha256"]!=sha):
