@@ -391,9 +391,10 @@ def run_installed_source_smoke():
         movie=root/"source.mov"
         args=[str(tools[0]),"-hide_banner","-loglevel","error","-nostdin",
               "-f","lavfi","-i","testsrc2=size=160x90:rate=24",
+              "-f","lavfi","-i","sine=frequency=440:sample_rate=48000",
               "-frames:v","60","-vf","setpts=(N+floor(N/10))/(24*TB)+3/TB",
               "-fps_mode","vfr","-c:v","mpeg4","-bf","2","-g","12",
-              "-q:v","5","-y",str(movie)]
+              "-q:v","5","-c:a","aac","-shortest","-y",str(movie)]
         subprocess.run(args,check=True,timeout=60)
         expected_sha=hashlib.sha256(movie.read_bytes()).hexdigest()
         studio=Studio(root/"nvp_studio.sqlite3")
@@ -522,10 +523,44 @@ def run_installed_source_smoke():
                 original_frame["master_approved"] is not False or
                 hashlib.sha256(movie.read_bytes()).hexdigest()!=expected_sha):
                 raise RuntimeError("Installed source PTS, PNG or original custody failed")
+            # INDEX-TIME-09: prove actual synchronized H264/AAC picture+
+            # camera sound, from THIS installed NVP.exe + packaged native
+            # worker, not Python on the developer's workstation.
+            av=native.start_synchronized_av_review({
+                "project_id":pid,"edit_id":imported["edit_id"],
+                "edit_revision":2,
+                "edit_document_sha256":updated["edit_document_sha256"],
+                "start_tick":"0",
+            })
+            if av.get("status")!="QUEUED":
+                raise RuntimeError("Installed synced picture/audio approval failed")
+            deadline=time.monotonic()+220
+            synchronized=None
+            while time.monotonic()<deadline:
+                synchronized=native.poll_synchronized_av_review(av["ticket_id"])
+                if synchronized["status"]=="READY":break
+                if synchronized["status"]=="RECOVERY_REQUIRED":
+                    raise RuntimeError("Installed native synced A/V proxy worker failed")
+                time.sleep(.35)
+            if (synchronized is None or synchronized["status"]!="READY" or
+                synchronized["video_frames"]<20 or
+                synchronized["sample_rate"]!=48000 or
+                float(synchronized["av_drift_ms"])>50 or
+                synchronized["master_approved"] is not False or
+                window.prompts!=5):
+                raise RuntimeError("Installed A/V proxy sync/source contract failed")
+            import base64
+            from hashlib import sha256
+            first=native.get_synchronized_av_chunk(av["ticket_id"],0)
+            if (first.get("status")!="VERIFIED_CHUNK" or
+                sha256(base64.b64decode(first["data_base64"])).hexdigest()
+                    !=first["sha256"] or
+                hashlib.sha256(movie.read_bytes()).hexdigest()!=expected_sha):
+                raise RuntimeError("Installed AV delivery bytes/custody failed")
             if sys.stdout is not None:
-                print("INDEX_TIME08_INSTALLED_ASSEMBLY_REVIEW_PASS",
+                print("INDEX_TIME09_INSTALLED_SYNCED_AV_PASS",
                       updated["edit_document_sha256"],
-                      original_frame["png_sha256"])
+                      synchronized["media_sha256"])
             return 0
         finally:
             native._close()
