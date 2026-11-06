@@ -11,6 +11,8 @@ on:
       - 'frontend/src/ExactFilmTimeShotPanel.jsx'
       - 'tests/test_nvp_exact_time_shots.py'
       - 'backend/nvp_data_first_filming.py'
+      - 'backend/nvp_imported_audio.py'
+      - 'tests/test_nvp_imported_audio.py'
       - 'tests/test_nvp_data_first_filming.py'
       - 'tools/nvp_no_ffmpeg_contract.py'
       - 'backend/nvp_slate08b_native_camera_ipc.py'
@@ -128,7 +130,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-submodules pxr --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-submodules pxr --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
