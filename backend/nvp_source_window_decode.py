@@ -75,8 +75,29 @@ def verify_review_window(destination, plan):
     frames = doc.get("frames")
     if type(frames) is not list or len(frames) != plan["frame_count"]:
         raise RuntimeError("Incomplete review frame manifest")
+    if doc.get("decoder_backend") == "nvp_sqlite_index_v1":
+        if (doc.get("source_integrity") != "UNVERIFIED_FAST_PREVIEW" or
+            doc.get("source_sha_rehashed") is not False or
+            plan.get("source_preflight") != "PRESENT_UNVERIFIED_PREVIEW_ONLY"):
+            raise RuntimeError("Indexed preview claims unearned source integrity")
     for index, item in enumerate(frames):
         expected = plan["first_frame"] + index
+        if doc.get("decoder_backend") == "nvp_sqlite_index_v1":
+            matching = [s for s in plan["slices"]
+                        if s["output_first_frame"] <= expected <
+                        s["output_first_frame"] + s["frame_count"]]
+            if len(matching) != 1:
+                raise RuntimeError("Indexed receipt frame is outside editorial slices")
+            part = matching[0]
+            correct_frame = (part["source_first_frame"] - 1 +
+                             expected - part["output_first_frame"])
+            if (item.get("source_id") != part["source_id"] or
+                item.get("source_revision") != part["source_revision"] or
+                item.get("source_document_sha256") != part["source_document_sha256"] or
+                item.get("source_sha256_at_original_ingest") != part["source_sha256"] or
+                item.get("source_frame_zero") != correct_frame or
+                type(item.get("pts")) is not int):
+                raise RuntimeError("NVP indexed preview source frame provenance mismatch")
         name = f"review_{expected:09d}.png"
         frame = dest / name
         if (type(item) is not dict or item.get("frame") != expected or
@@ -88,7 +109,9 @@ def verify_review_window(destination, plan):
             if stream.read(8) != PNG_SIGNATURE:
                 raise RuntimeError("Decoded review frame is not a PNG")
     return {"status": "VERIFIED_UNAPPROVED_SOURCE_REVIEW", "frames": len(frames),
-            "edit_document_sha256": doc["edit_document_sha256"]}
+            "edit_document_sha256": doc["edit_document_sha256"],
+            "source_integrity": doc.get("source_integrity", "LEGACY_REVIEW_POLICY"),
+            "decoder_backend": doc.get("decoder_backend", "ffmpeg_legacy")}
 
 
 def execute_source_window(studio_path, plan, destination, *, ffmpeg_path, timeout=900):
