@@ -254,11 +254,23 @@ export default function FilmTimePlaybackPanel({
     setStatus('Playback stopped; your original recordings remain unchanged.');
   }
 
+  function movePlayhead(tick){
+    const exact=clampTick(tick,edit.duration_tick);
+    generation.current++;
+    if(session.current){
+      const obsolete=session.current;
+      session.current=null;
+      Promise.resolve(native.cancel_assembly_review(obsolete)).catch(()=>{});
+    }
+    setTicket(null);setFrames([]);setCursor(0);setPicture(null);
+    setPlaying(false);setBlank(false);setFinished(false);setLoading(false);
+    setError('');
+    setSeekTick(exact);
+    setStatus('Playhead moved. Review from here to show the exact original picture.');
+  }
   function navigate(delta){
-    const next=clampTick(BigInt(seekTick)+BigInt(delta)*TICKS_PER_SECOND,
-      edit.duration_tick);
-    setSeekTick(next);
-    setPlaying(false);
+    const next=BigInt(seekTick)+BigInt(delta)*TICKS_PER_SECOND;
+    movePlayhead(next);
   }
   function cut(direction){
     const here=BigInt(seekTick);
@@ -266,9 +278,8 @@ export default function FilmTimePlaybackPanel({
       .filter(x=>direction>0?x>here:x<here)
       .sort((a,b)=>a<b?-1:a>b?1:0);
     if(candidates.length){
-      setSeekTick(String(direction>0?candidates[0]:
-        candidates[candidates.length-1]));
-      setPlaying(false);
+      movePlayhead(direction>0?candidates[0]:
+        candidates[candidates.length-1]);
     }
   }
 
@@ -306,8 +317,7 @@ export default function FilmTimePlaybackPanel({
       <input aria-label="Scrub film assembly" type="range"
         min="0" max="1000" step="1"
         value={scrubPercent(seekTick,edit.duration_tick)}
-        onChange={e=>{setSeekTick(scrubTick(e.target.value,edit.duration_tick));
-          setPlaying(false);}}/>
+        onChange={e=>movePlayhead(scrubTick(e.target.value,edit.duration_tick))}/>
     </label>
     <div className="actions" style={{display:'flex',flexWrap:'wrap',gap:'0.35rem'}}>
       <button onClick={()=>navigate(-5)}>Back 5s</button>
@@ -332,10 +342,8 @@ export default function FilmTimePlaybackPanel({
         }}>Next frame</button>
         <button onClick={stop}>Stop review</button>
       </>}
-      {canContinue&&<button onClick={()=>{
-        setSeekTick(current.film_end_tick);
-        setPlaying(false);
-      }}>Continue from section end</button>}
+      {canContinue&&<button onClick={()=>movePlayhead(current.film_end_tick)}>
+        Continue from section end</button>}
     </div>
     {ticket&&<p className="fineprint">
       Verified buffer: {frames.length} / {MAX_FRAMES} maximum original
