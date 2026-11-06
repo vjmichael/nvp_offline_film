@@ -88,6 +88,13 @@ def serve(app):
     return server,worker,port,listening
 
 
+def trusted_source_bridge(port):
+    from backend.nvp_api import studio
+    from backend.nvp_index_time06_native_desktop import TrustedFootageDesktop
+    return TrustedFootageDesktop(
+        studio,origin="http://127.0.0.1:"+str(port))
+
+
 def run_smoke():
     with tempfile.TemporaryDirectory(prefix="nvp-installed-smoke-") as tmp:
         os.environ["NVP_HOME"]=str(Path(tmp)/"Projects")
@@ -199,9 +206,13 @@ def run_visible_window_smoke():
     server,worker,port,sock=serve(app)
     loaded=Event()
     result={"passed":False}
+    native=None
     try:
+        native=trusted_source_bridge(port)
         window=webview.create_window("NVP Alpha Window Acceptance",
-            "http://127.0.0.1:"+str(port),width=1000,height=700)
+            "http://127.0.0.1:"+str(port),width=1000,height=700,
+            js_api=native)
+        native._attach_window(window)
         window.events.loaded += lambda:loaded.set()
         def inspect_and_close():
             try:
@@ -214,8 +225,24 @@ def run_visible_window_smoke():
                         "Boolean(document.querySelector('#root') && "
                         "document.querySelector('#root').children.length > 0)")
                     if mounted is True:
-                        result["passed"]=True
-                        break
+                        # Actual JS->Python IPC, not merely a registered name.
+                        window.evaluate_js(
+                            "window.__nvpIndexProbe='PENDING';"
+                            "window.pywebview.api.video_import_capabilities()"
+                            ".then(x=>{window.__nvpIndexProbe="
+                            "x.format==='nvp.index_time06.native_capability.v1'"
+                            "&&x.native_window===true?'PASSED':'FAILED';})"
+                            ".catch(()=>{window.__nvpIndexProbe='FAILED';});")
+                        until=time.monotonic()+10
+                        while time.monotonic()<until:
+                            probe=window.evaluate_js("window.__nvpIndexProbe")
+                            if probe=="PASSED":
+                                result["passed"]=True
+                                break
+                            if probe=="FAILED":
+                                raise RuntimeError("Actual native footage JS IPC failed")
+                            time.sleep(.2)
+                        if result["passed"]:break
                     time.sleep(.2)
                 if not result["passed"]:
                     raise RuntimeError("Bundled NVP React interface did not render")
@@ -229,9 +256,12 @@ def run_visible_window_smoke():
                 "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
         return 0
     finally:
-        server.should_exit=True
-        worker.join(timeout=12)
-        sock.close()
+        try:
+            if native is not None:native._close()
+        finally:
+            server.should_exit=True
+            worker.join(timeout=12)
+            sock.close()
 
 
 def main(argv=None):
@@ -257,17 +287,23 @@ def main(argv=None):
     configure_home()
     app=create_app()
     server,worker,port,sock=serve(app)
+    native=None
     try:
         import webview
-        webview.create_window("NVP — Make Your Movie",
+        native=trusted_source_bridge(port)
+        window=webview.create_window("NVP — Make Your Movie",
             "http://127.0.0.1:"+str(port),
-            width=1280,height=800,min_size=(960,600))
+            width=1280,height=800,min_size=(960,600),js_api=native)
+        native._attach_window(window)
         webview.start(gui="edgechromium",debug=False)
         return 0
     finally:
-        server.should_exit=True
-        worker.join(timeout=12)
-        sock.close()
+        try:
+            if native is not None:native._close()
+        finally:
+            server.should_exit=True
+            worker.join(timeout=12)
+            sock.close()
 
 
 if __name__=="__main__":
