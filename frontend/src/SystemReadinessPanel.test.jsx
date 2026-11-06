@@ -25,7 +25,7 @@ describe('NVP system package discovery and physical consent UX',()=>{
     render(<SystemReadinessPanel nativeBridge={native}/>);
     expect(await screen.findByText('Linux GTK/WebKit')).toBeTruthy();
     expect(screen.getByText('FFmpeg and FFprobe')).toBeTruthy();
-    expect(screen.getByText(/NVP installer/)).toBeTruthy();
+    expect(screen.getByText(/Provided by: NVP installer/)).toBeTruthy();
     expect(native.repair_system_package).not.toHaveBeenCalled();
     expect(screen.getByText('Ask to install Linux GTK/WebKit')).toBeTruthy();
   });
