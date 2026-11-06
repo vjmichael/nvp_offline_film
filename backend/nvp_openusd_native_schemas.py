@@ -26,7 +26,17 @@ def _lux():
 def define_native_scene_prim(stage, path, role):
     _, _, _, UsdGeom = _usd()
     if role == "camera":
-        return UsdGeom.Camera.Define(stage, path)
+        # Native scene units are METERS, whereas USD camera focal/aperture
+        # values use tenths of a scene unit. Do not inherit USD's generic
+        # scene-unit defaults of 50 and 20.955 (which would become 5000mm
+        # focal and 2095.5mm sensor in an NVP meter-scale scene).
+        camera=UsdGeom.Camera.Define(stage, path)
+        if (not camera.GetFocalLengthAttr().Set(50.0/MM_PER_CAMERA_UNIT) or
+            not camera.GetHorizontalApertureAttr().Set(36.0/MM_PER_CAMERA_UNIT) or
+            not camera.GetVerticalApertureAttr().Set(20.25/MM_PER_CAMERA_UNIT) or
+            not camera.GetFocusDistanceAttr().Set(5.0/METERS_PER_UNIT)):
+            raise RuntimeError("Cannot author meter-aware NVP native camera defaults")
+        return camera
     if role == "light":
         return _lux().SphereLight.Define(stage, path)
     return UsdGeom.Xform.Define(stage, path)
