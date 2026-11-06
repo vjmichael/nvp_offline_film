@@ -190,6 +190,15 @@ def run_persistent_installed_smoke(mode):
             raise RuntimeError("Installed NVP failed to exit cleanly")
 
 
+def create_trusted_camera_bridge(port):
+    """Desktop-only pywebview IPC; never registered as an HTTP route."""
+    from backend.nvp_api import studio
+    from backend.nvp_film_index import FilmIndex
+    from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+    return TrustedDesktopCameraBridge(
+        FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
+
+
 def run_visible_window_smoke():
     """Exercise a real WebView2 desktop window; no headless substitute."""
     import webview
@@ -200,8 +209,11 @@ def run_visible_window_smoke():
     loaded=Event()
     result={"passed":False}
     try:
+        bridge=create_trusted_camera_bridge(port)
         window=webview.create_window("NVP Alpha Window Acceptance",
-            "http://127.0.0.1:"+str(port),width=1000,height=700)
+            "http://127.0.0.1:"+str(port),width=1000,height=700,
+            js_api=bridge)
+        bridge._attach_window(window)
         window.events.loaded += lambda:loaded.set()
         def inspect_and_close():
             try:
@@ -214,8 +226,14 @@ def run_visible_window_smoke():
                         "Boolean(document.querySelector('#root') && "
                         "document.querySelector('#root').children.length > 0)")
                     if mounted is True:
-                        result["passed"]=True
-                        break
+                        ipc=window.evaluate_js(
+                            "Boolean(window.pywebview && window.pywebview.api && "
+                            "typeof window.pywebview.api.request_camera_still === 'function' && "
+                            "typeof window.pywebview.api.poll_camera_still === 'function' && "
+                            "typeof window.pywebview.api.cancel_camera_still === 'function')")
+                        if ipc is True:
+                            result["passed"]=True
+                            break
                     time.sleep(.2)
                 if not result["passed"]:
                     raise RuntimeError("Bundled NVP React interface did not render")
@@ -259,9 +277,11 @@ def main(argv=None):
     server,worker,port,sock=serve(app)
     try:
         import webview
-        webview.create_window("NVP — Make Your Movie",
+        bridge=create_trusted_camera_bridge(port)
+        window=webview.create_window("NVP — Make Your Movie",
             "http://127.0.0.1:"+str(port),
-            width=1280,height=800,min_size=(960,600))
+            width=1280,height=800,min_size=(960,600),js_api=bridge)
+        bridge._attach_window(window)
         webview.start(gui="edgechromium",debug=False)
         return 0
     finally:
