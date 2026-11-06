@@ -203,6 +203,80 @@ class NativeSlatePreviewHost:
                 PermissionError,IndexError):
             return False
 
+    def _camera_approval_check(self,approval_id,digest,document):
+        """Validate a PRE-TAKE scene, not a counterfeit frozen-Take receipt."""
+        try:
+            from backend.nvp_camera_workbench import (
+                verified_optics,workbench_preview_key)
+            with self.ledger._db() as db:
+                r=db.execute("""SELECT * FROM nvp_camera_preview_consents
+                    WHERE approval_id=?""",(approval_id,)).fetchone()
+            if r is None:
+                return False
+            names=("approval_id","task_id","project_id","scene_id",
+                   "scene_revision","scene_document_sha256","source_tick",
+                   "camera_path","quality","settings_json","cache_key",
+                   "source_manifest_sha256","spec_sha256",
+                   "issued_at","expires_at","revoked_at")
+            row=dict(zip(names,r))
+            if (row["revoked_at"] is not None or
+                not row["issued_at"]<=time.time()<=row["expires_at"] or
+                row["spec_sha256"]!=digest or _digest(document)!=digest or
+                document.get("kind")!="blender" or
+                document.get("task_id")!=row["task_id"]):
+                return False
+            script=_adapter_for("geometry").BLENDER_SCRIPT
+            op=BlenderOperation(**document["operation"])
+            if (self.supervisor._activity_id(op.job_id)!=row["task_id"] or
+                op.script!=SCRIPT_FILE or
+                op.script_sha256!=sha(script.encode("utf8")) or
+                op.inputs!={SOURCE_FILE:row["source_manifest_sha256"]} or
+                op.outputs!={OUTPUT_FILE:"png"} or
+                op.arguments!={"--manifest":SOURCE_FILE,"--preview":OUTPUT_FILE} or
+                op.scene is not None or op.gpu_memory_mb!=0):
+                return False
+            scene=self.index.read_revision(
+                row["project_id"],row["scene_id"],row["scene_revision"])
+            if (scene["kind"]!="scene" or
+                scene["document_sha256"]!=row["scene_document_sha256"]):
+                return False
+            optics=verified_optics(json.loads(row["settings_json"]))
+            if workbench_preview_key(
+                    scene["document_sha256"],row["source_tick"],
+                    row["camera_path"],optics,row["quality"])!=row["cache_key"]:
+                return False
+            directory=self.supervisor.root/op.job_id
+            if (sha_file(directory/SCRIPT_FILE)!=op.script_sha256 or
+                sha_file(directory/SOURCE_FILE)!=row["source_manifest_sha256"]):
+                return False
+            raw=(directory/SOURCE_FILE).read_bytes()
+            if len(raw)>128*1024:
+                return False
+            doc=json.loads(raw)
+            if (doc.get("format")!=_adapter_for("geometry").FORMAT or
+                doc.get("source_kind")!="pre_take_scene_not_frozen_take" or
+                doc.get("source_scene_document_sha256")!=scene["document_sha256"] or
+                doc.get("source_scene_id")!=row["scene_id"] or
+                doc.get("source_scene_revision")!=row["scene_revision"] or
+                doc.get("source_take_sha256") is not None or
+                doc.get("source_tick")!=row["source_tick"] or
+                doc.get("camera",{}).get("path")!=row["camera_path"] or
+                doc.get("source_cache_key")!=row["cache_key"] or
+                doc.get("optical_settings")!=optics or
+                doc.get("worker_script_sha256")!=op.script_sha256 or
+                doc.get("final_presentation_approved") is not False):
+                return False
+            pending=self.cache._job(op.job_id)
+            if (pending["state"]!="PENDING" or
+                pending["cache_key"]!=row["cache_key"] or
+                pending["source_sha256"]!=scene["document_sha256"] or
+                pending["recipe_sha256"]!=row["source_manifest_sha256"]):
+                return False
+            return True
+        except (OSError,KeyError,ValueError,RuntimeError,TypeError,
+                PermissionError,IndexError,AttributeError):
+            return False
+
     def _before_worker(self,task_id,document):
         with self.ledger._db() as db:
             row=db.execute("""SELECT approval_id FROM nvp_slate_preview_consents
