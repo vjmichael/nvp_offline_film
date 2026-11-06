@@ -267,7 +267,17 @@ class NativeSourceWindowHost:
         if (self.ledger.get_task(task)["state"] != "SUCCEEDED" or
             not row["result_sha"]):
             raise RuntimeError("No completed verified source-window receipt")
-        plan = json.loads((self.root / task / "window_plan.json").read_bytes())
+        plan_path = self.root / task / "window_plan.json"
+        if (plan_path.is_symlink() or _sha_file(plan_path) != row["plan_sha"]):
+            raise RuntimeError("Sealed native source-window plan changed after publication")
+        plan = json.loads(plan_path.read_bytes())
+        if (plan.get("edit_document_sha256") != row["edit_sha"] or
+            plan.get("project_id") != row["project_id"] or
+            plan.get("edit_id") != row["edit_id"] or
+            plan.get("edit_revision") != row["edit_revision"] or
+            plan.get("first_frame") != row["first_frame"] or
+            plan.get("frame_count") != row["frame_count"]):
+            raise RuntimeError("Native source-window plan differs from approved operation")
         result = verify_review_window(row["destination"], plan)
         if (_sha_file(Path(row["destination"]) / "review_receipt.json")
                 != row["result_sha"]):
