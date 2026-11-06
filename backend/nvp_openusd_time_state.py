@@ -14,6 +14,7 @@ from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_openusd_scene import (
     OpenUSDSceneBridge, _path, _usd, MAX_USD_EXACT_TICK)
 from backend.nvp_temporal_ledger import TemporalLedger, _int
+from backend.nvp_openusd_channels import evaluate_parameter_channels
 
 FORMAT = "nvp.usd.scene_state.v1"
 MAX_SCENE_OBJECTS = 128
@@ -91,6 +92,9 @@ class OpenUSDTimeState:
             "scene_document_sha256":scene["document_sha256"],
             "timeline_document_sha256":timeline["document_sha256"],
             "objects":objects,"active_events":active,
+            "performance_channels":[p for p in evaluate_parameter_channels(
+                stage,scene["data"].get("performance_channels",[]),
+                declared,tick) if p["path"] in wanted],
             "rendered_frames":False,"source_full_audit":False,
         }
         snapshot["snapshot_sha256"]=hashlib.sha256(
