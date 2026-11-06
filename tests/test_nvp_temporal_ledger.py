@@ -79,7 +79,7 @@ class TemporalLedgerNativeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             frame_at_tick(TICKS_PER_SECOND // 7, 24, 1, rounding="exact")
         with self.assertRaises(ValueError):
-            tick_from_frame(1, 7, 1)
+            tick_from_frame(1, 13, 1)
 
     def test_project_isolation_and_impossible_references(self):
         another = self.studio.create_project("Separate film", "")["id"]
