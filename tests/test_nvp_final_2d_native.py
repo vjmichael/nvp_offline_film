@@ -127,5 +127,55 @@ class NativeDataFirstOutputTests(unittest.TestCase):
                 listener_path="/World/ListenerLeft")
 
 
+    def test_broken_renderer_png_never_publishes_a_final_package(self):
+        sha=self.create()
+        valid=png(8,19,47)
+        broken_crc=bytearray(valid)
+        payload=valid.index(b"IDAT")+4
+        broken_crc[payload]^=0x01
+        malformed={
+            "truncated_iend":valid[:-12],
+            "polyglot_trailing_bytes":valid+b"not-image-payload",
+            "invalid_idat_crc":bytes(broken_crc),
+        }
+        for case,bad in malformed.items():
+            with self.subTest(case=case):
+                self.exporter.render=lambda **kwargs:bad
+                with self.assertRaises(RuntimeError):
+                    self.exporter.export(
+                        self.pid,"OutputTake",sha,"Corrupt"+case,
+                        self.out,listener_path="/World/ListenerLeft")
+                self.assertEqual(list(self.out.iterdir()),[],
+                    "Failed output must not leave a partial presentation")
+                self.assertEqual(self.index.read_revision(
+                    self.pid,"OutputTake",1)["document_sha256"],sha)
+
+
+
+    def test_concurrent_empty_destination_is_not_overwritten(self):
+        sha=self.create()
+        target=self.out/"NVP2D_Concurrent"
+        attempts=[]
+        def race(*,scope,tick,camera_path,source_snapshot):
+            if not attempts:
+                attempts.append(tick)
+                # Simulate a second approved producer publishing an empty
+                # destination AFTER the initial existence preflight.
+                target.mkdir()
+            return png(13,21,34)
+        self.exporter.render=race
+        with self.assertRaises(FileExistsError):
+            self.exporter.export(
+                self.pid,"OutputTake",sha,"Concurrent",self.out,
+                listener_path="/World/ListenerLeft")
+        self.assertEqual(len(attempts),1)
+        self.assertTrue(target.is_dir())
+        self.assertEqual(list(target.iterdir()),[])
+        self.assertEqual(list(self.out.iterdir()),[target])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"OutputTake",1)["document_sha256"],sha)
+
+
+
 if __name__=="__main__":
     unittest.main()

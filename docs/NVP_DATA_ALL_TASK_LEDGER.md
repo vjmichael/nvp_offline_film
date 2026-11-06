@@ -66,3 +66,11 @@ remain for external media or final export are explicitly withdrawn.
 A decoder/encoder must come from another suitable library or a native
 format adapter; where none exists, the operation remains unavailable
 until implemented instead of silently invoking FFmpeg.
+
+## DA-05B — Protected final 2D derived-package integrity (2026-11-06)
+
+**Implementation: committed on isolated draft branch** `nvp/da05b-2d-package-integrity-20261106`, stacked on PR #74 at `d2e81ea2`. **Native acceptance: OPEN.** This hardening is intentionally independent of the continuing DA-00–DA-07 migration job.
+
+The trusted renderer's PNG response must now pass complete Pillow chunk/CRC validation and bounded pixel decoding, not only IHDR signature checks. Reject missing IEND, extra bytes after IEND, malformed IDAT/CRC, unsupported pixel modes and over-limit dimensions; export failure cleans the staged presentation without changing its frozen Take SHA. A complete package is published with OS-native no-replace directory rename: Windows `os.rename`; Linux `renameat2(RENAME_NOREPLACE)`. A concurrent empty output directory must never be silently overwritten. If atomic no-replace cannot be provided, fail closed.
+
+Regression cases are added to `tests/test_nvp_final_2d_native.py` for corrupted PNGs and a destination-creation race. A separate local Pillow/Linux syscall contract exercise passed, **not** a repository regression or Windows-installed acceptance. Exact-head CI, real original-scene 2D raster acceptance, crash orphan reconciliation, and real approved presentation remain open. No FFmpeg dependency was introduced.
