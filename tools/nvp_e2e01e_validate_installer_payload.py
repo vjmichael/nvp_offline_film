@@ -83,6 +83,30 @@ def verify_bundle(folder: Path) -> dict:
     js = list(assets.glob("*.js"))
     if not js or not all(p.stat().st_size > 0 for p in js):
         raise RuntimeError("Missing compiled React JavaScript")
+    # Native footage review must actually work from an installed EXE:
+    # both real video tools and the executable's pinned worker source are
+    # in the same one-directory bundle. Reject Chocolatey .exe shims and
+    # absent source scripts rather than shipping a UI that cannot decode.
+    video = {}
+    for name in ("ffmpeg.exe", "ffprobe.exe"):
+        binary = base / "ffmpeg" / name
+        if (binary.is_symlink() or not binary.is_file() or
+            binary.stat().st_size < 1_000_000):
+            raise RuntimeError("Missing real bundled native video executable: " + name)
+        with binary.open("rb") as fp:
+            header=fp.read(64)
+            if header[:2]!=b"MZ":
+                raise RuntimeError("Bundled video program is not a Windows executable")
+            fp.seek(struct.unpack_from("<I",header,0x3c)[0])
+            pe=fp.read(24)
+            if pe[:4]!=b"PE\\x00\\x00" or struct.unpack_from("<H",pe,4)[0]!=0x8664:
+                raise RuntimeError("Bundled video program is not AMD64 Windows PE")
+        video[name]=hashlib.sha256(binary.read_bytes()).hexdigest()
+    worker=base/"tools"/"nvp_source_window_worker.py"
+    if (worker.is_symlink() or not worker.is_file() or
+        worker.stat().st_size<1000):
+        raise RuntimeError("Missing SHA-pinned bundled source-window worker")
+    worker_sha256=hashlib.sha256(worker.read_bytes()).hexdigest()
     files = [p for p in folder.rglob("*") if p.is_file()]
     if len(files) < MIN_BUNDLE_FILES:
         raise RuntimeError("NVP package does not contain a real runtime")
@@ -93,6 +117,8 @@ def verify_bundle(folder: Path) -> dict:
         "exe": evidence,
         "files": len(files),
         "asset_js_count": len(js),
+        "video_binary_sha256":video,
+        "native_source_worker_sha256":worker_sha256,
         "react_index_sha256": hashlib.sha256(entry.read_bytes()).hexdigest(),
         "runtime_verified_on_windows": False,
     }
