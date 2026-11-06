@@ -1,7 +1,7 @@
 import React from 'react';
 import {describe,it,expect,vi} from 'vitest';
 import {render,screen,fireEvent,waitFor} from '@testing-library/react';
-import FilmTimeIndexPanel from './FilmTimeIndexPanel.jsx';
+import FilmTimeIndexPanel,{filmTimeClock} from './FilmTimeIndexPanel.jsx';
 
 const pid='a'.repeat(32);
 const sha='b'.repeat(64);
@@ -48,6 +48,13 @@ const endpoint=vi.fn(async url=>{
 });
 
 describe('INDEX-TIME-05 native source editor',()=>{
+  it('shows a human clock derived from exact integer Film Time',()=>{
+    expect(filmTimeClock('0')).toBe('00:00:00.000');
+    expect(filmTimeClock('7056000000')).toBe('00:00:01.000');
+    expect(filmTimeClock('35280000000')).toBe('00:00:05.000');
+    expect(filmTimeClock(exact)).toContain(':');
+  });
+
   it('browses genuine versioned clips without requesting a decoder',async()=>{
     endpoint.mockClear();
     render(<FilmTimeIndexPanel projectId={pid} api={endpoint}/>);
