@@ -107,6 +107,11 @@ def verify_bundle(folder: Path) -> dict:
         worker.stat().st_size<1000):
         raise RuntimeError("Missing SHA-pinned bundled source-window worker")
     worker_sha256=hashlib.sha256(worker.read_bytes()).hexdigest()
+    av_worker=base/"tools"/"nvp_av_proxy_worker.py"
+    if (av_worker.is_symlink() or not av_worker.is_file() or
+        av_worker.stat().st_size<1000):
+        raise RuntimeError("Missing SHA-pinned installed AV playback worker")
+    av_worker_sha256=hashlib.sha256(av_worker.read_bytes()).hexdigest()
     files = [p for p in folder.rglob("*") if p.is_file()]
     if len(files) < MIN_BUNDLE_FILES:
         raise RuntimeError("NVP package does not contain a real runtime")
@@ -119,6 +124,7 @@ def verify_bundle(folder: Path) -> dict:
         "asset_js_count": len(js),
         "video_binary_sha256":video,
         "native_source_worker_sha256":worker_sha256,
+        "native_av_proxy_worker_sha256":av_worker_sha256,
         "react_index_sha256": hashlib.sha256(entry.read_bytes()).hexdigest(),
         "runtime_verified_on_windows": False,
     }
