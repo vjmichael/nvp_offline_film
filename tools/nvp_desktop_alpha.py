@@ -348,6 +348,8 @@ def run_visible_window_smoke():
                             if not window.evaluate_js(
                                 "Boolean([...document.querySelectorAll('button')]"
                                 ".some(x=>x.textContent.includes('Prepare synchronized review'))"
+                                "&&[...document.querySelectorAll('button')]"
+                                ".some(x=>x.textContent.includes('Start progressive long-form review'))"
                                 "&&[...document.querySelectorAll('section')]"
                                 ".some(x=>x.getAttribute('aria-label')==='Synchronized original footage review'))"):
                                 raise RuntimeError("Installed WebView2 A/V picture+sound player not mounted")
