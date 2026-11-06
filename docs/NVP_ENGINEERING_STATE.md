@@ -69,3 +69,11 @@
 ## Required evidence for any future ledger update
 
 Record: date; actor/source (human decision, tool observation, AI hypothesis); branch; source SHA; exact command and tested input; OS/runtime/tool versions; outcome + skips; artifact SHA/path if produced; relationship to prior accepted versions; outstanding blocker; next action. Never invent a successful install, benchmark, model inference or DCP screening. A remembered resource is not a verified current resource.
+
+
+## 2026-11-06 — INDEX-TIME-05 source-index editor integration
+
+- Return from SLATE feature development to preexisting indexing. Source truth remains original indexed footage PTS and immutable FilmIndex, not a rendered frame sequence or a replanned constant-fps approximation.
+- Implemented: FilmTimeDesktopRead 64-bit exact source/time browser; bounded manifest-audited source pagination; project/revision/SHA-locked binary seeks and honest gaps; API GET-only routes; main NVP "Indexed footage" tab; React BigInt decimal ticks; real FFmpeg VFR tests and CI.
+- Submitted on distinct indexing branch stacked on INDEX-TIME-04 PR #57; do not conflate with SLATE-08B PR #67 (still draft native acceptance).
+- Open: native exact-head Windows/Linux/React CI, real Windows installed source browser acceptance, native creator-authorized media review UI, external media import picker, FFMS2 A/B, native installer video tool availability. No full-indexing completion claim or final movie approval.
