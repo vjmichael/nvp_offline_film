@@ -10,10 +10,16 @@ on:
       - nvp/scale03c-ffms2-indexed-seek-20261105
     paths:
       - "backend/nvp_ffms2_*.py"
+      - "tools/nvp_ffms2_license_audit.py"
+      - "tests/test_nvp_ffms2_cache_maintenance.py"
+      - "tests/test_nvp_ffms2_license_audit.py"
       - "backend/nvp_source_window_native_host.py"
       - "backend/nvp_source_window_decode.py"
       - "tools/nvp_source_window_worker.py"
       - "tests/test_nvp_ffms2_indexed_native.py"
+      - "tools/nvp_ffms2_license_audit.py"
+      - "tests/test_nvp_ffms2_cache_maintenance.py"
+      - "tests/test_nvp_ffms2_license_audit.py"
       - ".github/workflows/nvp-scale03c-ffms2.yml"
   pull_request:
     paths:
@@ -73,11 +79,25 @@ jobs:
           ffprobe -version
           python -c "import os; from backend.nvp_ffms2_native import FFMS2; lib=FFMS2(os.environ['NVP_FFMS2_LIBRARY']); print('NATIVE_FFMS2_VERSION',hex(lib.version),'NATIVE_SHA',lib.library_sha256)"
 
+      - name: Development binary-license inventory (not release approval)
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            FFMPEG_EXE="$(command -v ffmpeg)"
+          else
+            FFMPEG_EXE="$(command -v ffmpeg)"
+          fi
+          python tools/nvp_ffms2_license_audit.py --ffmpeg "$FFMPEG_EXE" --ffms2-library "$NVP_FFMS2_LIBRARY"
       - name: Python production module compilation
         shell: bash
         run: |
-          python -m compileall -q backend/nvp_ffms2_native.py backend/nvp_ffms2_index_cache.py backend/nvp_ffms2_source_window.py backend/nvp_source_window_native_host.py backend/nvp_source_window_decode.py tools/nvp_source_window_worker.py tests/test_nvp_ffms2_indexed_native.py
+          python -m compileall -q backend/nvp_ffms2_native.py backend/nvp_ffms2_index_cache.py backend/nvp_ffms2_index_maintenance.py backend/nvp_ffms2_source_window.py backend/nvp_source_window_native_host.py backend/nvp_source_window_decode.py tools/nvp_source_window_worker.py tools/nvp_ffms2_license_audit.py tests/test_nvp_ffms2_indexed_native.py tests/test_nvp_ffms2_cache_maintenance.py tests/test_nvp_ffms2_license_audit.py
 
+      - name: Verify upgrade notices and release license inventory policy
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_ffms2_cache_maintenance.py" -v
+          python -m unittest discover -s tests -p "test_nvp_ffms2_license_audit.py" -v
       - name: Real indexed frame-seek and contained native review acceptance
         shell: bash
         run: python -m unittest discover -s tests -p "test_nvp_ffms2_indexed_native.py" -v
