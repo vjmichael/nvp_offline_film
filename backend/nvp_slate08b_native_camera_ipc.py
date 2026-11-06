@@ -413,6 +413,37 @@ class TrustedDesktopCameraBridge:
                 ask_native=self._ask)
         return self._data_av_controller
 
+    def data_av_import_original_audio(self,project_id,source_id):
+        """Open a REAL native OS picker. The browser supplies IDs, never paths."""
+        self._native_window()
+        from backend.nvp_imported_audio import OriginalAudioImport
+        from webview import FileDialog
+        def selected():
+            window=self._native_window()
+            if not callable(getattr(window,"create_file_dialog",None)):
+                raise PermissionError("No trusted native audio file picker installed")
+            chosen=window.create_file_dialog(
+                FileDialog.OPEN,allow_multiple=False,
+                file_types=("Sound files (*.mp3;*.flac;*.wav;*.ogg)",))
+            if not chosen:
+                return None
+            if len(chosen)!=1:
+                raise PermissionError("Only one original audio file may be imported")
+            return chosen[0]
+        source=OriginalAudioImport(
+            self.index,trusted_native_picker=selected
+        ).register_from_picker(project_id,source_id)
+        data=self.index.read_revision(project_id,source_id,
+                                      source["revision"])["data"]
+        return {"format":"nvp.data_av.native_audio_import.v1",
+                "status":"ORIGINAL_IMPORTED",
+                "source_id":source_id,"source_revision":source["revision"],
+                "source_document_sha256":source["document_sha256"],
+                "original_codec":data["original_codec"],
+                "original_media_sha256":data["source_media_sha256"],
+                "original_modified":False,
+                "soundtrack_flattened":False,"ffmpeg_used":False}
+
     def data_av_freeze_timed_take(self,request):
         return self._data_av().freeze_exact_camera_take(request)
 
