@@ -55,6 +55,19 @@ export default function CameraLensWorkbench({
   ),[sceneSnapshot,focal,sensorWidth,sensorHeight,focus,fStop]);
   const valid=sceneSnapshot?.format==='nvp.camera.lens_workbench.v1' &&
     typeof sceneSnapshot.scene_document_sha256==='string';
+  const imageMatches=valid &&
+    (renderResult?.status==='READY'||renderResult?.status==='CACHE_HIT') &&
+    renderResult.scene_document_sha256===sceneSnapshot.scene_document_sha256 &&
+    renderResult.camera_path===sceneSnapshot.camera_path &&
+    renderResult.source_tick===sceneSnapshot.source_tick &&
+    renderResult.lens_settings?.focal_length_mm===focal &&
+    renderResult.lens_settings?.sensor_width_mm===sensorWidth &&
+    renderResult.lens_settings?.sensor_height_mm===sensorHeight &&
+    renderResult.lens_settings?.f_stop===fStop &&
+    renderResult.lens_settings?.focus_distance_m===focus &&
+    typeof renderResult.image_data_url==='string' &&
+    renderResult.image_data_url.startsWith('data:image/png;base64,') &&
+    renderResult.image_data_url.length<12*1024*1024;
   const settings={
     format:'nvp.camera.lens_workbench.v1',
     preset:lens,sensor,focal_length_mm:focal,
@@ -163,8 +176,16 @@ export default function CameraLensWorkbench({
     </div>
     {renderResult?.status==='QUEUED'&&
       <p>Higher-quality optics preview queued; source scene unchanged.</p>}
-    {renderResult?.status==='READY'&&
-      <p>Render ready. The host may provide the SHA-verified PNG preview.</p>}
+    {imageMatches
+      ? <figure className="nvp-camera-native-image">
+          <img src={renderResult.image_data_url}
+            alt="Native rendered camera/lens study of original 3D scene; not a frozen Take"
+            loading="lazy"/>
+          <figcaption>Verified native camera still · source scene unchanged · not a final shot</figcaption>
+        </figure>
+      : renderResult?.status==='READY'
+        ? <p>Previous optics preview differs from these live lens settings; render again to compare.</p>
+        : null}
     <p className="nvp-camera-disclaimer">
       Spherical lenses use real focal length, filmback, aperture and focus
       models. Anamorphic effects, flares, vignetting and lens distortion
