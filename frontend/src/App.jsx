@@ -5,7 +5,7 @@ import ScreenplayReviewPanel from './ScreenplayReviewPanel.jsx';
 import LineNumberedTextarea from './LineNumberedTextarea.jsx';
 import SceneStagePanel from './SceneStagePanel.jsx';
 import ProductionAuthoringPanel from './ProductionAuthoringPanel.jsx';
-import TakeSequencePanel from './TakeSequencePanel.jsx';
+import ExactFilmTimeShotPanel from './ExactFilmTimeShotPanel.jsx';
 import MotionRigPanel from './MotionRigPanel.jsx';
 import SkinningPanel from './SkinningPanel.jsx';
 import CharacterRigPanel from './CharacterRigPanel.jsx';
@@ -691,7 +691,7 @@ export default function App() {
         </div>}
         {tab === 'stage' && <SceneStagePanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'direct' && <ProductionAuthoringPanel project={project} api={api} action={action} busy={busy} />}
-        {tab === 'take' && <TakeSequencePanel project={project} api={api} action={action} busy={busy} />}
+        {tab === 'take' && <ExactFilmTimeShotPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'rig' && <MotionRigPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'skin' && <SkinningPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'character' && <CharacterRigPanel project={project} api={api} action={action} busy={busy} />}
