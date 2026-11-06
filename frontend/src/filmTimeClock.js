@@ -21,7 +21,7 @@ const MAX_FILM_TICK=9223372036854775807n;
 // Preserve sub-millisecond ticks when no clock edit is requested.
 export function clockToFilmTick(clock){
   if(typeof clock!=='string' ||
-     !/^\\d{2,6}:[0-5]\\d:[0-5]\\d\\.\\d{3}$/.test(clock)){
+     !/^[0-9]{2,6}:[0-5][0-9]:[0-5][0-9][.][0-9]{3}$/.test(clock)){
     throw new Error('Film gap must use HH:MM:SS.mmm');
   }
   const [hourText,minuteText,secondFraction]=clock.split(':');
