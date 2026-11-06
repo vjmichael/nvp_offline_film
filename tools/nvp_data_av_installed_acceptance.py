@@ -85,6 +85,7 @@ def run_installed_data_av_smoke():
                     "project_id":pid,"take_id":"immutable_scene_take",
                     "take_document_sha256":original_take_sha,
                     "listener_path":listener,"first_sample":0,
+                    "direction":"forward",
                 })
                 if response["status"]!="READY":
                     raise RuntimeError("Installed source-local native review denied")
