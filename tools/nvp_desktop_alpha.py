@@ -233,8 +233,30 @@ def run_visible_window_smoke():
                             "typeof window.pywebview.api.poll_camera_still === 'function' && "
                             "typeof window.pywebview.api.cancel_camera_still === 'function')")
                         if ipc is True:
-                            result["passed"]=True
-                            break
+                            # Type signatures alone don't prove that the
+                            # installed WebView2 can invoke native host code.
+                            # Execute a REAL non-mutating JS -> Python IPC,
+                            # without approving any Blender worker.
+                            window.evaluate_js(
+                                "window.__nvpCameraProbe = 'PENDING';"
+                                "window.pywebview.api.camera_render_capabilities()"
+                                ".then(x => { window.__nvpCameraProbe = "
+                                "x.format === 'nvp.camera.desktop_capability.v1' "
+                                "&& x.native_window === true ? 'PASSED' : 'FAILED'; })"
+                                ".catch(() => { window.__nvpCameraProbe = 'FAILED'; });")
+                            until=time.monotonic()+10
+                            while time.monotonic()<until:
+                                outcome=window.evaluate_js(
+                                    "window.__nvpCameraProbe")
+                                if outcome=="PASSED":
+                                    result["passed"]=True
+                                    break
+                                if outcome=="FAILED":
+                                    raise RuntimeError(
+                                        "Desktop native camera JS IPC failed origin/capability validation")
+                                time.sleep(.1)
+                            if result["passed"]:
+                                break
                     time.sleep(.2)
                 if not result["passed"]:
                     raise RuntimeError("Bundled NVP React interface did not render")
