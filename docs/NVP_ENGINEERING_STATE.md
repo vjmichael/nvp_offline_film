@@ -1,25 +1,32 @@
 # NVP — Engineering state and resumption ledger
 
-## Creator refinement — sound captured while filming a 3D scene (Nov 6)
+## Most recent creator correction — 3D sound stays spatial (November 6)
 
-- **Scope:** NVP capture-sound design applies to the frozen Digital Take:
-  sound-generating events, dialogue/voice identity, exact timestamps,
-  microphone/emitter paths and acoustic environment. Ordinary creator-added
-  background music and FX retain their original MP3/other file formats,
-  without forced BWF conversion.
-- **Recording format candidate:** BWF lossless PCM, 48 kHz, for committed
-  scene/microphone stems and their sample-addressed evidence. FilmIndex
-  remains the authoritative event, provenance and tick mapping. BWF
-  metadata alone cannot preserve all 3D sound semantics.
-- **Playback architecture correction:** No decoder (including FFmpeg)
-  decodes the semantic Digital Take. A typed event evaluator plus audio
-  source resolver, optional 3D acoustic renderer and native sample-window
-  mixer plays the captured data. Evaluate libsndfile + miniaudio, optional
-  spatial simulation; FFmpeg belongs at import/presentation/export
-  boundaries only. Prior H.264/AAC preview is a **derived adapter**,
-  not acceptance of the desired data-first playback core.
-- [CAPTURE-SOUND-01](NVP_DATA_TIME01_EVENTS_NOT_FRAMES.md) records
-  the proposed integration and outstanding real native acceptance.
+The earlier BWF captured-stem recommendation has been explicitly
+**superseded**, not accepted as a standard. The creator intends a native
+scene-integrated 3D sound system: OpenUSD SpatialAudio, exact Film Time,
+frozen sound events and their causes, sound emitters, listener/microphone
+transforms, scene acoustic geometry/materials and immutable source sound
+references. Native playback evaluates this 3D scene on demand with
+streamed audio output. It does **not** require writing BWF recordings,
+prebouncing microphone stems or using FFmpeg as the scene decoder.
+BWF may serve as a voluntary recording/interchange output; creator
+MP3/SFX assets remain unchanged.
+
+The **final explicitly approved 2D presentation** is when selected
+spatial sound and 3D picture are rendered into the flattened movie and
+mastered soundtrack. A temporary preview can be derived for audition,
+without becoming authoritative. Evaluate miniaudio plus Steam Audio
+for output/mixing and acoustic propagation, compare OpenAL Soft;
+OpenUSD SpatialAudio is a declarative schema and does not itself
+synthesize signals or run acoustic simulation. No integration is yet
+verified.
+
+**Current governing work order:** [NVP-SOUND-01](NVP_SOUND01_NATIVE_SPATIAL_AUDIO.md).
+The temporary FFmpeg H.264/AAC INDEX-TIME-09/10 renderer remains an
+imported-footage/derived preview adapter and should not be described
+as native 3D sound-system acceptance. Existing native acceptance and
+CI statuses remain separate.
 
 ## Creator correction — data-first Film Time and audio (November 6)
 
