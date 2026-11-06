@@ -653,6 +653,14 @@ class TrustedFootageDesktop:
     # supplies an executable, media path or next-section Film Time tick.
     def start_progressive_av_review(self,request):
         try:return self._get_av_host().begin_progressive(request)
+        except RuntimeError as error:
+            if str(error)=="Previous native A/V worker needs safe cleanup":
+                return {"format":"nvp.index_time09.native_av_host.v1",
+                        "status":"CLEANUP_PENDING",
+                        "original_modified":False,"master_approved":False}
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"REFRESH_REQUIRED",
+                    "original_modified":False,"master_approved":False}
         except Exception:
             return {"format":"nvp.index_time09.native_av_host.v1",
                     "status":"REFRESH_REQUIRED",
