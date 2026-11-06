@@ -38,7 +38,8 @@ def _sha_doc(doc):
 
 class NativeSourceWindowHost:
     def __init__(self, preflight: SourceWindowPreflight, ledger: TaskLedger,
-                 root: Path, *, verify_creator_action):
+                 root: Path, *, verify_creator_action,
+                 decoder_backend="ffmpeg", index_cache_root=None, ffprobe_path=None):
         if (not isinstance(preflight, SourceWindowPreflight) or
             not isinstance(ledger, TaskLedger) or
             not callable(verify_creator_action)):
@@ -49,6 +50,24 @@ class NativeSourceWindowHost:
             raise RuntimeError("Native job root must not be a symlink")
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.root = root.resolve()
+        if decoder_backend not in ("ffmpeg", "nvp_index"):
+            raise ValueError("Unknown source-window backend")
+        self.decoder_backend = decoder_backend
+        self.ffprobe = None
+        self.ffprobe_sha = None
+        self.index_cache_root = None
+        if decoder_backend == "nvp_index":
+            ffprobe = Path(ffprobe_path or shutil.which("ffprobe") or "")
+            if (not ffprobe.is_absolute() or not ffprobe.is_file() or
+                ffprobe.is_symlink()):
+                raise RuntimeError("Native FFprobe must be an approved absolute executable")
+            self.ffprobe = ffprobe.resolve()
+            self.ffprobe_sha = _sha_file(self.ffprobe)
+            cache = Path(index_cache_root) if index_cache_root else self.root / "native_frame_indexes"
+            if not cache.is_absolute() or cache.is_symlink():
+                raise RuntimeError("NVP source index cache needs trusted absolute root")
+            cache.mkdir(parents=True, exist_ok=True, mode=0o700)
+            self.index_cache_root = str(cache.resolve())
         self.python = Path(sys.executable).resolve()
         self.script = Path(__file__).resolve().parents[1] / "tools" / "nvp_source_window_worker.py"
         exe = shutil.which("ffmpeg")
@@ -79,6 +98,17 @@ class NativeSourceWindowHost:
                 expires_at REAL NOT NULL,
                 revoked_at REAL,
                 result_sha TEXT)""")
+            columns = {entry[1] for entry in db.execute(
+                "PRAGMA table_info(native_source_window_grants)")}
+            for name, datatype in (
+                ("decoder_backend", "TEXT NOT NULL DEFAULT 'ffmpeg'"),
+                ("ffprobe_path", "TEXT"),
+                ("ffprobe_sha", "TEXT"),
+                ("index_cache_root", "TEXT"),
+            ):
+                if name not in columns:
+                    db.execute("ALTER TABLE native_source_window_grants ADD COLUMN "
+                               + name + " " + datatype)
         self.binding = ApprovedTaskBindings(ledger, approval_check=self._check)
 
     def _row(self, task):
@@ -107,6 +137,12 @@ class NativeSourceWindowHost:
                 doc.get("edit_sha") != row["edit_sha"] or
                 doc.get("destination") != row["destination"] or
                 doc.get("ram_mb") != row["ram_mb"] or
+                doc.get("decoder_backend", "ffmpeg") != row["decoder_backend"] or
+                doc.get("ffprobe_sha") != row["ffprobe_sha"] or
+                doc.get("index_cache_root") != row["index_cache_root"] or
+                (row["decoder_backend"] == "nvp_index" and (
+                    not row["ffprobe_path"] or not row["index_cache_root"] or
+                    _sha_file(row["ffprobe_path"]) != row["ffprobe_sha"])) or
                 Path(row["destination"]).exists() or
                 Path(row["destination"]).is_symlink() or
                 _sha_file(self.python) != row["python_sha"] or
@@ -136,9 +172,10 @@ class NativeSourceWindowHost:
         if (type(ram_mb) is not int or not 1024 <= ram_mb <= 8192 or
             type(duration_s) is not int or not 60 <= duration_s <= 3600):
             raise ValueError("Invalid approved window resource limits")
+        policy = "preview" if self.decoder_backend == "nvp_index" else "full"
         plan = self.preflight.prepare(
             project_id, edit_id, revision, first_frame=first_frame,
-            frame_count=frame_count)
+            frame_count=frame_count, integrity_policy=policy)
         dest = Path(destination)
         if (dest.exists() or dest.is_symlink() or
             not dest.parent.is_dir() or dest.parent.is_symlink()):
@@ -149,11 +186,14 @@ class NativeSourceWindowHost:
                  "revision": revision, "edit_sha": plan["edit_document_sha256"],
                  "first_frame": first_frame, "frame_count": frame_count,
                  "destination": dest, "ram_mb": ram_mb,
+                 "decoder_backend": self.decoder_backend,
+                 "source_integrity": plan["source_preflight"],
                  "final_master": False}
         if self._creator(creator_event, dict(scope)) is not True:
             raise PermissionError("Creator refused exact source-window review")
         if self.preflight.prepare(project_id, edit_id, revision,
-                                  first_frame=first_frame, frame_count=frame_count) != plan:
+                                  first_frame=first_frame, frame_count=frame_count,
+                                  integrity_policy=policy) != plan:
             raise RuntimeError("Source window changed during creator authorization")
         if Path(dest).exists():
             raise RuntimeError("Native output destination changed")
@@ -169,7 +209,10 @@ class NativeSourceWindowHost:
                 "project_id": project_id, "edit_sha": plan["edit_document_sha256"],
                 "first_frame": first_frame, "frame_count": frame_count,
                 "destination": dest, "ram_mb": ram_mb,
-                "ffmpeg_sha": _sha_file(self.ffmpeg)}
+                "ffmpeg_sha": _sha_file(self.ffmpeg),
+                "decoder_backend": self.decoder_backend,
+                "ffprobe_sha": self.ffprobe_sha,
+                "index_cache_root": self.index_cache_root}
         approval = "srcapproval_" + secrets.token_hex(16)
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -185,6 +228,11 @@ class NativeSourceWindowHost:
                  _sha_file(self.python),_sha_file(self.script),
                  _sha_file(self.ffmpeg),str(self.ffmpeg),ram_mb,
                  time.time()+duration_s))
+            db.execute("""UPDATE native_source_window_grants
+                SET decoder_backend=?,ffprobe_path=?,ffprobe_sha=?,index_cache_root=?
+                WHERE task_id=?""",
+                (self.decoder_backend, str(self.ffprobe) if self.ffprobe else None,
+                 self.ffprobe_sha, self.index_cache_root, task))
             db.commit()
         self.binding.enqueue(
             AdmissionRequest(task, "compositing", "Extract exact source review window",
@@ -206,9 +254,11 @@ class NativeSourceWindowHost:
             self.binding.verified_spec(task, owner_key=self.owner)
             row = self._row(task)
             plan = json.loads((self.root / task / "window_plan.json").read_bytes())
+            policy = "preview" if row["decoder_backend"] == "nvp_index" else "full"
             if self.preflight.prepare(
                 row["project_id"], row["edit_id"], row["edit_revision"],
-                first_frame=row["first_frame"], frame_count=row["frame_count"]) != plan:
+                first_frame=row["first_frame"], frame_count=row["frame_count"],
+                integrity_policy=policy) != plan:
                 raise RuntimeError("Native source was altered before worker admission")
             self.ledger.update(task, "rendering", "Extracting bounded original video window")
             folder = self.root / task
@@ -217,7 +267,12 @@ class NativeSourceWindowHost:
                    "--destination", row["destination"],
                    "--studio-db", row["source_db"],
                    "--ffmpeg", row["ffmpeg_path"],
-                   "--ffmpeg-sha", row["ffmpeg_sha"]]
+                   "--ffmpeg-sha", row["ffmpeg_sha"],
+                   "--decoder-backend", row["decoder_backend"]]
+            if row["decoder_backend"] == "nvp_index":
+                cmd.extend(["--ffprobe", row["ffprobe_path"],
+                            "--ffprobe-sha", row["ffprobe_sha"],
+                            "--index-root", row["index_cache_root"]])
             with (folder / "stdout.log").open("wb") as out, (
                 folder / "stderr.log").open("wb") as err:
                 attempted = True
@@ -234,10 +289,18 @@ class NativeSourceWindowHost:
                                "Independently verifying native window review media")
             if self.preflight.prepare(
                 row["project_id"], row["edit_id"], row["edit_revision"],
-                first_frame=row["first_frame"], frame_count=row["frame_count"]) != plan:
+                first_frame=row["first_frame"], frame_count=row["frame_count"],
+                integrity_policy=policy) != plan:
                 raise RuntimeError("Source changed during contained native operation")
             result = verify_review_window(row["destination"], plan)
-            receipt_sha = _sha_file(Path(row["destination"]) / "review_receipt.json")
+            receipt_path = Path(row["destination"]) / "review_receipt.json"
+            receipt = json.loads(receipt_path.read_bytes())
+            if (row["decoder_backend"] == "nvp_index" and
+                (receipt.get("decoder_backend") != "nvp_sqlite_index_v1" or
+                 receipt.get("source_sha_rehashed") is not False or
+                 receipt.get("source_integrity") != "UNVERIFIED_FAST_PREVIEW")):
+                raise RuntimeError("Indexed preview receipt has false integrity claims")
+            receipt_sha = _sha_file(receipt_path)
             with self.ledger._db() as db:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute("""UPDATE native_source_window_grants SET result_sha=?
@@ -279,6 +342,10 @@ class NativeSourceWindowHost:
             plan.get("frame_count") != row["frame_count"]):
             raise RuntimeError("Native source-window plan differs from approved operation")
         result = verify_review_window(row["destination"], plan)
+        if row["decoder_backend"] == "nvp_index" and (
+            result.get("decoder_backend") != "nvp_sqlite_index_v1" or
+            result.get("source_integrity") != "UNVERIFIED_FAST_PREVIEW"):
+            raise RuntimeError("Completed review changed decoder or integrity status")
         if (_sha_file(Path(row["destination"]) / "review_receipt.json")
                 != row["result_sha"]):
             raise RuntimeError("Native review publication changed")
