@@ -52,6 +52,24 @@ class NativeAssemblyReview:
             max_workers=1,thread_name_prefix="NVP source playback")
         self._closed=False
         self._current=None
+        self._host=None
+
+    def _get_host(self):
+        if self._host is None:
+            from backend.nvp_film_time_window_host import NativeFilmTimeWindowHost
+            from backend.nvp_film_time_window_preflight import FilmTimeWindowPreflight
+            from backend.nvp_resource_ledger import TaskLedger
+            self.desktop._requirements()
+            self.desktop.reader._seek_resolver()
+            self._host=NativeFilmTimeWindowHost(
+                FilmTimeWindowPreflight(self.desktop.reader._publisher),
+                TaskLedger(self.desktop.root/"playback_tasks"),
+                self.desktop.root/"playback_jobs",
+                verify_creator_action=self.desktop._approve,
+                ffmpeg_path=self.desktop.tools[0],
+                ffprobe_path=self.desktop.tools[1],
+                index_root=self.desktop.index_root)
+        return self._host
 
     def _check_window(self):
         if self._closed:
@@ -106,7 +124,7 @@ class NativeAssemblyReview:
         # The first clip/frame is selected with the canonical O(log N)
         # original-PTS index; never guess from nominal frame rate.
         self.desktop.reader._seek_resolver()
-        host=self.desktop._get_host()
+        host=self._get_host()
         clips=self._edit_clips(pid,edit_id,revision,sha)
         selected=self.desktop.reader.seek(
             pid,edit_id,revision,expected_edit_sha256=sha,tick=start_tick)
@@ -239,7 +257,7 @@ class NativeAssemblyReview:
             ticket=secrets.token_urlsafe(24)
             destroot=self.desktop.root/"review_stream"
             destroot.mkdir(parents=True,exist_ok=True,mode=0o700)
-            host=self.desktop._get_host()
+            host=self._get_host()
             queued=[]
             try:
                 for i,window in enumerate(windows):
@@ -301,7 +319,7 @@ class NativeAssemblyReview:
             }
 
     def _run(self,session):
-        host=self.desktop._get_host()
+        host=self._get_host()
         try:
             for index,window in enumerate(session["windows"]):
                 if session["stop"].is_set() or self._closed:
@@ -378,7 +396,7 @@ class NativeAssemblyReview:
             window=session["windows"][entry["segment"]]
             if not window["verified"]:
                 raise RuntimeError("Unverified native source frame")
-            host=self.desktop._get_host()
+            host=self._get_host()
             proof=host.verify_completed(window["task"])
             if (proof.get("status")!="VERIFIED_UNAPPROVED_FILM_TIME_REVIEW" or
                 proof.get("edit_document_sha256")!=session["sha"]):
@@ -425,7 +443,7 @@ class NativeAssemblyReview:
             session=self._get(ticket)
             session["cancelled"]=True
             session["stop"].set()
-            host=self.desktop._get_host()
+            host=self._get_host()
             for window in session["windows"]:
                 task=window["task"]
                 try:
