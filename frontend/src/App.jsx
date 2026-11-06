@@ -14,6 +14,7 @@ import ColorGradingGuide from './ColorGradingGuide.jsx';
 import ColorGradingPanel from './ColorGradingPanel.jsx';
 import ResourceActivityPanel from './ResourceActivityPanel.jsx';
 import FilmTimeIndexPanel from './FilmTimeIndexPanel.jsx';
+import SystemReadinessPanel from './SystemReadinessPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -377,6 +378,8 @@ export default function App() {
       <div className="small-title">YOUR MOVIES</div>
       <button className="side-button" onClick={() => { setProject(null); setError(''); setNotice(''); }}>+ Make a movie</button>
       {projects.map((p) => <button key={p.id} className={'side-button ' + (p.id === project?.id ? 'chosen' : '')} onClick={() => open(p.id)}>{p.title}</button>)}
+      <button className={'side-button'+(tab==='system'?' chosen':'')}
+        onClick={()=>setTab('system')}>System readiness & packages</button>
       <ResourceActivityPanel />
       <div className="sidebar-bottom">● Offline-first planning<br/><span className="muted">No cloud account required</span></div>
     </aside>
@@ -384,7 +387,8 @@ export default function App() {
       <header><span>YOUR PERSONAL FILM STUDIO</span><span>{health ? 'Planning tools ready' : 'Server disconnected'}</span></header>
       {error && <p role="alert" className="alert">{error}</p>}
       {notice && <p role="status" className="notice">{notice}</p>}
-      {!project ? <div className="page introduction">
+      {tab==='system'?<SystemReadinessPanel/>:
+       !project ? <div className="page introduction">
         <div className="kicker">START HERE</div>
         <h1>What's the movie you've been imagining?</h1>
         <p className="lead">Start with a sentence or bring the script you've already written. NVP helps you develop the story and plan how it looks on screen.</p>
