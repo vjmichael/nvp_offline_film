@@ -19,7 +19,7 @@ const clips=[
 const frames=[
   {index:0,clip_ordinal:0,source_id:'cameraA',source_revision:1,
    source_frame_zero:'2',source_pts:'25000',
-   film_time_tick:'0',film_end_tick:'294000000'},
+   film_time_tick:'0',film_end_tick:'7056000000'},
   {index:1,clip_ordinal:1,source_id:'cameraB',source_revision:1,
    source_frame_zero:'30',source_pts:'55000',
    film_time_tick:'14112000000',film_end_tick:'14406000000'},
@@ -94,6 +94,54 @@ describe('INDEX-TIME-08 safe visual source assembly transport',()=>{
     expect(inspect).toHaveBeenCalledWith('14112000000');
     expect(native.start_assembly_review).not.toHaveBeenCalled();
     expect(native.get_assembly_review_frame).not.toHaveBeenCalled();
+  });
+
+  it('moves the visual playhead and advances across an intentional black gap',async()=>{
+    const native=fake();
+    const shortFrames=[
+      {...frames[0],film_end_tick:'7056000'},
+      {...frames[1],film_time_tick:'705600000',
+        film_end_tick:'1411200000'},
+    ];
+    native.poll_assembly_review.mockResolvedValue({
+      format:'nvp.index_time08.original_assembly_review.v1',
+      status:'COMPLETE',project_id:pid,edit_id:edit.edit_id,
+      edit_revision:3,edit_document_sha256:sha,
+      original_modified:false,master_approved:false,
+      planned_frames:2,ready_frames:2,frames:shortFrames,finished:true,
+    });
+    native.get_assembly_review_frame.mockImplementation(async(_token,index)=>({
+      format:'nvp.index_time08.original_assembly_review.v1',
+      status:'VERIFIED_FRAME',project_id:pid,edit_id:edit.edit_id,
+      edit_revision:3,edit_document_sha256:sha,
+      original_modified:false,master_approved:false,
+      ...shortFrames[index],
+      image_data_url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
+    }));
+    view(native);
+    fireEvent.click(screen.getByText('Review & play original footage…'));
+    await waitFor(()=>expect(native.get_assembly_review_frame)
+      .toHaveBeenCalledWith('opaque_native_source_ticket',1),{
+      timeout:2000,
+    });
+    expect(screen.getByText(/Film playhead/).textContent)
+      .toContain('00:00:00.100');
+    expect(screen.getByText(/Original cameraB/)).toBeTruthy();
+  });
+
+  it('clears a previously verified picture when the user scrubs elsewhere',async()=>{
+    const {native}=view();
+    fireEvent.click(screen.getByText('Review & play original footage…'));
+    await screen.findByAltText('Audited temporary original-camera review frame');
+    fireEvent.change(screen.getByLabelText('Scrub film assembly'),
+      {target:{value:'700'}});
+    expect(screen.queryByAltText(
+      'Audited temporary original-camera review frame')).toBeNull();
+    expect(native.cancel_assembly_review).toHaveBeenCalledWith(
+      'opaque_native_source_ticket');
+    expect(screen.getByText(/Film playhead/).textContent)
+      .toContain('00:00:02.100');
+    expect(native.start_assembly_review).toHaveBeenCalledTimes(1);
   });
 
   it('supports exact high precision BigInt scrub positions without Number rounding',()=>{
