@@ -4,22 +4,9 @@ import React,{useEffect,useMemo,useRef,useState} from 'react';
 // Original PTS and Film Time stay exact decimal strings, never JS Number
 // approximations. No browser-side native worker launch or master approval.
 const FORMAT='nvp.index_time05.editor_source_read.v1';
-const TICKS_PER_SECOND=7056000000n;
-
-// Human-readable clock is a DERIVED display. The underlying exact 64-bit
-// integer is never rounded or converted to a JavaScript Number.
-export function filmTimeClock(tickText){
-  const tick=BigInt(tickText);
-  const total=tick/TICKS_PER_SECOND;
-  const millis=tick%TICKS_PER_SECOND*1000n/TICKS_PER_SECOND;
-  const hours=total/3600n;
-  const minutes=total/60n%60n;
-  const seconds=total%60n;
-  return hours.toString().padStart(2,'0')+':'+
-    minutes.toString().padStart(2,'0')+':'+
-    seconds.toString().padStart(2,'0')+'.'+
-    millis.toString().padStart(3,'0');
-}
+import FilmTimeAssemblyPanel from './FilmTimeAssemblyPanel.jsx';
+import {filmTimeClock} from './filmTimeClock.js';
+export {filmTimeClock} from './filmTimeClock.js';
 
 export default function FilmTimeIndexPanel({projectId,api,nativeBridge=null}){
   const [edits,setEdits]=useState([]);
@@ -410,6 +397,21 @@ export default function FilmTimeIndexPanel({projectId,api,nativeBridge=null}){
             Source stamp checked, original bytes not SHA-reverified.
             No decoder launched, and no picture approved.</p>
         </section>}
+      {nativeReady && typeof native?.preview_footage_assembly==='function' &&
+        typeof native?.save_footage_assembly==='function' &&
+        <FilmTimeAssemblyPanel
+          key={selected.edit_id+':'+selected.revision}
+          projectId={projectId}
+          edit={selected} clips={clips} edits={edits} native={native}
+          onSaved={(id)=>{
+            preferredEdit.current=id;
+            setRendered(null);
+            setSelection(null);
+            setPreviewTicket(null);
+            activePreview.current=null;
+            setRefresh(v=>v+1);
+          }}/>
+      }
     </>}
     {error&&<p role="alert">{error}</p>}
     <p className="fineprint">Imported-video indexing is separate from
