@@ -11,6 +11,7 @@ from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND
 from backend.nvp_temporal_projection import TemporalProjection
 from backend.nvp_openusd_scene import OpenUSDSceneBridge, MAX_USD_EXACT_TICK
 from backend.nvp_openusd_take import OpenUSDTakeCapture
+from backend.nvp_openusd_presentation import OpenUSDPresentationPlanner
 
 T = TICKS_PER_SECOND
 
@@ -127,6 +128,38 @@ class OpenUSDNativeIntegration(unittest.TestCase):
             self.pid,"take_old")["status"],"VERIFIED_FROZEN_DATA_TAKE")
         self.assertEqual(self.film.direct_dependents(self.pid,"scene_usd",1),
                          [{"object_id":"take_old","revision":1}])
+
+    def test_two_style_presentation_plans_share_one_frozen_performance(self):
+        self.take.freeze(
+            self.pid,"take_for_styles",scene_id="scene_usd",scene_revision=1,
+            timeline_id="action_timeline",timeline_revision=1,
+            sample_ticks=[0,T,2*T],creator_event="creator_authorized")
+        self.film.register_revision(self.pid,"photo_style","style",
+            {"format":"nvp.style.test","profile":"photoreal"},
+            expected_revision=0)
+        self.film.register_revision(self.pid,"toon_style","style",
+            {"format":"nvp.style.test","profile":"stylized"},
+            expected_revision=0)
+        planner=OpenUSDPresentationPlanner(self.film)
+        a=planner.prepare(
+            self.pid,"take_for_styles",style_id="photo_style",style_revision=1,
+            start_tick=0,end_tick=2*T,fps_num=24,fps_den=1)
+        b=planner.prepare(
+            self.pid,"take_for_styles",style_id="toon_style",style_revision=1,
+            start_tick=0,end_tick=2*T,fps_num=60,fps_den=1)
+        self.assertEqual(len(a["presentation_samples"]),48)
+        self.assertEqual(len(b["presentation_samples"]),96*2 if False else 120)
+        self.assertNotEqual(a["style_document_sha256"],b["style_document_sha256"])
+        self.assertEqual(a["frozen_take_document_sha256"],
+                         b["frozen_take_document_sha256"])
+        self.assertFalse(a["frames_rendered"])
+        self.assertEqual(a["output"],"DATA_ONLY_NOT_RENDERED")
+        # Compare authored time = one second, not an arbitrary frame identity.
+        actor_a=next(p for p in a["presentation_samples"][24]["world_state"]
+                     if p["prim_path"]=="/World/Actor")
+        actor_b=next(p for p in b["presentation_samples"][60]["world_state"]
+                     if p["prim_path"]=="/World/Actor")
+        self.assertEqual(actor_a["world_translation"],actor_b["world_translation"])
 
     def test_no_permission_no_freeze_and_missing_prim_rejection(self):
         with self.assertRaises(PermissionError):
