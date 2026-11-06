@@ -207,13 +207,45 @@ def run_visible_window_smoke():
     configure_home()
     app=create_app()
     from backend.nvp_api import studio
-    studio.create_project("Indexed Footage Window Acceptance",
-                          "Real desktop source picker navigation")
+    project=studio.create_project("Indexed Footage Window Acceptance",
+                                  "Real desktop source editing")
     server,worker,port,sock=serve(app)
     loaded=Event()
     result={"passed":False}
     native=None
     try:
+        # Prepare a real indexed source edit without automating consent
+        # through a spoofed WebView click: this CI-only disposable fixture
+        # exercises the exact same native ingestion as the human OS picker.
+        # The visible Windows WebView2 then tests the actual source editing
+        # controls in addition to the native JS bridge itself.
+        from backend.nvp_index_time06_native_desktop import discover_video_tools
+        import subprocess
+        tools=discover_video_tools()
+        if not tools:
+            raise RuntimeError("Installed WebView2 editor has no bundled video tools")
+        footage=Path(test_home.name)/"window_index_source.mov"
+        subprocess.run([
+            str(tools[0]),"-hide_banner","-v","error","-nostdin",
+            "-f","lavfi","-i","testsrc2=size=128x72:rate=24",
+            "-frames:v","36","-c:v","mpeg4","-bf","2","-g","12",
+            "-q:v","5","-y",str(footage),
+        ],check=True,timeout=60)
+        class FixtureFileDialog:
+            def get_current_url(self):
+                return "http://127.0.0.1:"+str(port)+"/"
+            def create_file_dialog(self,**kwargs):
+                return (str(footage),)
+            def create_confirmation_dialog(self,title,question):
+                return True
+        fixture=trusted_source_bridge(port)
+        fixture._attach_window(FixtureFileDialog())
+        try:
+            created=fixture.pick_and_import_footage(project["id"])
+            if created.get("status")!="IMPORTED":
+                raise RuntimeError("Installed editor fixture source could not be indexed")
+        finally:
+            fixture._close()
         native=trusted_source_bridge(port)
         window=webview.create_window("NVP Alpha Window Acceptance",
             "http://127.0.0.1:"+str(port),width=1000,height=700,
@@ -277,6 +309,23 @@ def run_visible_window_smoke():
                                 time.sleep(.2)
                             if not result["passed"]:
                                 raise RuntimeError("Native footage picker was not wired to real React UI")
+                            # An imported original must expose the human
+                            # non-destructive controls within the installed
+                            # React DOM, not just backend unit tests.
+                            result["passed"]=False
+                            end=time.monotonic()+25
+                            while time.monotonic()<end:
+                                editing=window.evaluate_js(
+                                    "Boolean(document.querySelector("
+                                    "'[aria-label=\\"Original footage assembly editor\\"]')"
+                                    "&&[...document.querySelectorAll('button')]"
+                                    ".some(x=>x.textContent.includes('Split clip at source frame')))")
+                                if editing:
+                                    result["passed"]=True
+                                    break
+                                time.sleep(.25)
+                            if not result["passed"]:
+                                raise RuntimeError("Real installed indexed source assembly UI never opened")
                             break
                     time.sleep(.2)
                 if not result["passed"]:
