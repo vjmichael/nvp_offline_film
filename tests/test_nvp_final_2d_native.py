@@ -152,5 +152,30 @@ class NativeDataFirstOutputTests(unittest.TestCase):
 
 
 
+    def test_concurrent_empty_destination_is_not_overwritten(self):
+        sha=self.create()
+        target=self.out/"NVP2D_Concurrent"
+        attempts=[]
+        def race(*,scope,tick,camera_path,source_snapshot):
+            if not attempts:
+                attempts.append(tick)
+                # Simulate a second approved producer publishing an empty
+                # destination AFTER the initial existence preflight.
+                target.mkdir()
+            return png(13,21,34)
+        self.exporter.render=race
+        with self.assertRaises(FileExistsError):
+            self.exporter.export(
+                self.pid,"OutputTake",sha,"Concurrent",self.out,
+                listener_path="/World/ListenerLeft")
+        self.assertEqual(len(attempts),1)
+        self.assertTrue(target.is_dir())
+        self.assertEqual(list(target.iterdir()),[])
+        self.assertEqual(list(self.out.iterdir()),[target])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"OutputTake",1)["document_sha256"],sha)
+
+
+
 if __name__=="__main__":
     unittest.main()
