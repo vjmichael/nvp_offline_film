@@ -210,8 +210,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          receipt.ffmpeg_used!==false)
         throw Error('Native original sound import failed source verification');
       setOriginalSoundReceipt(receipt);
-      setNote('Original sound imported unchanged. It is not a soundtrack
-        or part of a Digital Take until you explicitly add an editorial reference.');
+      setNote('Original sound imported unchanged. It is not a soundtrack '+
+        'or part of a Digital Take until you explicitly add an editorial reference.');
     }catch(e){setError(e.message);}
   }
 
