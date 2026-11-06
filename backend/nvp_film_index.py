@@ -27,12 +27,12 @@ SHA = re.compile(r"[a-f0-9]{64}\Z")
 KINDS = frozenset({
     "world", "scene", "actor", "asset", "style", "performance",
     "camera", "dialogue", "audio", "lighting", "prop",
-    "take", "presentation", "edit", "master"
+    "take", "presentation", "edit", "master", "temporal"
 })
 EDGE_ROLES = frozenset({
     "world", "scene", "actor", "asset", "style", "performance",
     "camera", "dialogue", "audio", "lighting", "prop",
-    "source_take", "render_job", "presentation", "timeline",
+    "source_take", "render_job", "presentation", "timeline", "temporal",
 })
 MAX_JSON_BYTES = 1024 * 1024
 MAX_BLOB_BYTES = 32 * 1024 * 1024
@@ -484,6 +484,24 @@ class FilmIndex:
                     (project_id, object_id, revision,
                      self._read_revision(db, project_id, object_id, revision)["document_sha"]))
                 direct.extend(dict(x) for x in indexed)
+            # Authored actions are sparse time events, not rendered frames.
+            # Their source revisions are indexed independently of FilmIndex's
+            # legacy bounded direct dependency JSON list.
+            temporal_table = db.execute("""SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='nvp_temporal_events'""").fetchone()
+            if temporal_table:
+                authored = db.execute("""SELECT DISTINCT e.timeline_id AS object_id,
+                    e.revision AS revision
+                    FROM nvp_temporal_events e
+                    JOIN film_object_revisions r
+                      ON r.project_id=e.project_id
+                     AND r.object_id=e.timeline_id AND r.revision=e.revision
+                    WHERE e.project_id=? AND e.source_id=?
+                      AND e.source_revision=? AND e.source_document_sha256=?
+                    ORDER BY e.timeline_id,e.revision""",
+                    (project_id,object_id,revision,
+                     self._read_revision(db,project_id,object_id,revision)["document_sha"]))
+                direct.extend(dict(x) for x in authored)
             unique = {(r["object_id"], r["revision"]) for r in direct}
             return [{"object_id": oid, "revision": rev}
                     for oid, rev in sorted(unique)]
