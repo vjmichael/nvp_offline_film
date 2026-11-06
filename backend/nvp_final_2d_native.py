@@ -14,6 +14,7 @@ Without one, fail closed; never silently render generic cards/proxies.
 from __future__ import annotations
 
 from hashlib import sha256
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,8 @@ import shutil
 import struct
 import tempfile
 import wave
+
+from PIL import Image
 
 from backend.nvp_data_av_scene import FrozenSceneAV,MAX_SAMPLES
 from backend.nvp_film_index import FilmIndex,_id,_require_pid,_sha
@@ -46,6 +49,12 @@ def _file_sha256(path):
 
 
 def _png_header(data):
+    """Reject corrupt, truncated or polyglot image bytes before publication.
+
+    A PNG magic number and forged IHDR alone do not prove valid output.
+    Validate chunk CRCs and decoded bounded pixels; a creator-approved
+    2D derivative must never contain unreadable picture files.
+    """
     if type(data) is not bytes or not 32<=len(data)<=MAX_PNG_BYTES:
         raise RuntimeError("Native raster renderer returned invalid PNG length")
     if data[:8]!=b"\x89PNG\r\n\x1a\n" or data[12:16]!=b"IHDR":
@@ -53,8 +62,21 @@ def _png_header(data):
     width,height=struct.unpack(">II",data[16:24])
     if not 1<=width<=4096 or not 1<=height<=2160 or width*height>MAX_PIXELS:
         raise RuntimeError("Unbounded or non-production PNG raster dimensions")
+    # IEND is fixed by the PNG specification. Trailing data (which many
+    # image readers ignore) is not part of an approved PNG image.
+    if data[-12:]!=bytes.fromhex("0000000049454e44ae426082"):
+        raise RuntimeError("Truncated or trailing native PNG output")
+    try:
+        with Image.open(BytesIO(data)) as image:
+            if (image.format!="PNG" or image.mode not in ("RGB","RGBA")
+                    or image.size!=(width,height)):
+                raise RuntimeError("Unsupported native PNG pixel format")
+            image.verify()  # Validate PNG chunk framing and CRCs.
+        with Image.open(BytesIO(data)) as image:
+            image.load()  # Confirm the bounded pixels actually decompress.
+    except (OSError,ValueError,SyntaxError) as exc:
+        raise RuntimeError("Corrupted native PNG raster data") from exc
     return width,height
-
 
 class Approved2DPackage:
     def __init__(self,index:FilmIndex,*,native_creator_approval,render_png):
