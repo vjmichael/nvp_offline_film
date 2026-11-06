@@ -389,9 +389,46 @@ def run_installed_source_smoke():
                 FilmIndex(studio).read_revision(pid,imported["source_id"],1)[
                     "document_sha256"]!=imported["source_document_sha256"]):
                 raise RuntimeError("Installed native review violated source custody")
+            # INDEX-TIME-07 acceptance in the SAME installed GUI EXE:
+            # propose exact original-range trim, show the native consent,
+            # publish revision 2 and prove revision 1/source SHA survive.
+            change={
+                "operation":"trim","index":0,
+                "source_in_frame_zero":"0",
+                "source_out_frame_zero":
+                    str(int(imported["placed_frames"])-1),
+            }
+            request={
+                "project_id":pid,"edit_id":imported["edit_id"],
+                "edit_revision":imported["edit_revision"],
+                "edit_document_sha256":imported["edit_document_sha256"],
+                "change":change,
+            }
+            plan=native.preview_footage_assembly(request)
+            if (plan.get("format")!="nvp.index_time07.assembly_plan.v1"
+                or not plan.get("plan_sha256") or
+                plan["source_document_sha256"]!=imported["edit_document_sha256"]):
+                raise RuntimeError("Installed original footage assembly preview failed")
+            updated=native.save_footage_assembly({
+                **request,"plan_sha256":plan["plan_sha256"],
+            })
+            if (updated.get("status")!="SAVED_NEW_EDIT_REVISION" or
+                updated["revision"]!=2 or
+                updated["original_sources_modified"] is not False or
+                window.prompts!=3):
+                raise RuntimeError("Native edit approval or immutable revision failed")
+            original=FilmIndex(studio).read_revision(
+                pid,imported["edit_id"],1)
+            successor=FilmIndex(studio).read_revision(
+                pid,imported["edit_id"],2)
+            if (original["document_sha256"]!=imported["edit_document_sha256"] or
+                successor["document_sha256"]!=updated["edit_document_sha256"] or
+                hashlib.sha256(movie.read_bytes()).hexdigest()!=expected_sha):
+                raise RuntimeError("Installed assembly changed the original or earlier edit")
             if sys.stdout is not None:
-                print("INDEX_TIME06_INSTALLED_SOURCE_PASS",
-                      result["png_sha256"],imported["edit_document_sha256"])
+                print("INDEX_TIME07_INSTALLED_ASSEMBLY_PASS",
+                      updated["edit_document_sha256"],
+                      result["png_sha256"])
             return 0
         finally:
             native._close()
