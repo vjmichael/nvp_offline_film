@@ -7,28 +7,12 @@ import {filmTimeClock,TICKS_PER_SECOND} from './filmTimeClock.js';
 // at review-only 24fps/48kHz; exact VFR source/FilmIndex is never modified.
 const FORMAT='nvp.index_time09.native_av_host.v1';
 const MAX_SIZE=160*1024*1024;
-const MAX_CHUNK=1024*1024;
 const SHA=/^[0-9a-f]{64}$/;
 const STATUS=['QUEUED','PREPARING'];
 
-function hex(bytes){
-  return [...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-function decode64(text){
-  const bytes=atob(text);
-  const result=new Uint8Array(bytes.length);
-  for(let i=0;i<bytes.length;i++)result[i]=bytes.charCodeAt(i);
-  return result;
-}
 function jumpTick(value,delta){
   const tick=BigInt(value)+BigInt(delta)*TICKS_PER_SECOND;
   return String(tick<0n?0n:tick);
-}
-function secondsFromTick(tick){
-  // The complete source review is <=1200s, so only a bounded difference
-  // is sent through Number to HTMLMediaElement.currentTime.
-  return Number(BigInt(tick)/TICKS_PER_SECOND)+
-    Number(BigInt(tick)%TICKS_PER_SECOND)/Number(TICKS_PER_SECOND);
 }
 function frameClock(start,seconds){
   // Display purpose only, never a FilmIndex source editorial position.
@@ -47,8 +31,6 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
   const [status,setStatus]=useState('');
   const [error,setError]=useState('');
   const [preparing,setPreparing]=useState(false);
-  const [downloading,setDownloading]=useState(false);
-  const [downloaded,setDownloaded]=useState(0);
   const [playhead,setPlayhead]=useState(0);
   const [playing,setPlaying]=useState(false);
   const [allClips,setAllClips]=useState([]);
@@ -133,7 +115,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
       url.current=null;
     }
     setSrc(null);setReview(null);setPlaying(false);
-    setPlayhead(0);setDownloaded(0);setPreparing(false);setDownloading(false);
+    setPlayhead(0);setPreparing(false);
   },[native]);
 
   useEffect(()=>{
@@ -145,7 +127,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
   },[projectId,edit.edit_id,edit.revision,edit.edit_document_sha256,revoke]);
 
   async function prepare(){
-    if(preparing||downloading||!fullManifest)return;
+    if(preparing||!fullManifest)return;
     revoke();
     const gen=generation.current;
     setPreparing(true);setError('');
@@ -265,8 +247,6 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
       .sort((a,b)=>a<b?-1:a>b?1:0);
     if(cuts.length)changePlayhead(String(direction>0?cuts[0]:cuts[cuts.length-1]));
   }
-  const progress=review?.size_bytes?
-    Math.round(downloaded*100/review.size_bytes):0;
   return <section className="card" aria-label="Synchronized original footage review">
     <h3>Watch your assembly with sound</h3>
     {loadingManifest&&<p role="status">Checking every saved source cut…</p>}
@@ -294,7 +274,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
         }}
         onError={()=>setError('The native media decoder refused this review proxy.')}
         />:<p style={{color:'#ddd',padding:'1rem'}}>
-          {preparing||downloading?'Preparing a verified A/V playback proxy…':
+          {preparing?'Preparing a verified A/V playback proxy…':
           'Choose Prepare review to watch the assembled footage with sound.'}
         </p>}
     </div>
@@ -316,7 +296,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
       <button onClick={()=>onInspect?.(filmTick)}>Inspect original frame</button>
     </div>
     <div className="actions">
-      <button disabled={preparing||downloading||!fullManifest}
+      <button disabled={preparing||!fullManifest}
         onClick={prepare}>{preparing?'Asking for native approval…':
           'Prepare synchronized review…'}</button>
       {src&&review?.review_duration_tick&&
@@ -330,7 +310,6 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
         revoke();setStatus('Review stopped; temporary audio/video is disposable.');
       }}>Stop and discard review</button>}
     </div>
-    {downloading&&<p role="status">Checking private preview bytes: {progress}%</p>}
     {status&&<p role="status">{status}</p>}
     {error&&<p role="alert">{error}</p>}
     <p className="fineprint">One approval covers up to 20 minutes of
