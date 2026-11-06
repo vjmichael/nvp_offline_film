@@ -197,6 +197,42 @@ class OriginalAssemblyReviewTests(unittest.TestCase):
         self.assertEqual(sha256(self.movie.read_bytes()).hexdigest(),
                          self.original_sha)
 
+    def test_temporary_preview_disposed_after_close_without_touching_capture(self):
+        started=self.desktop.start_assembly_review(self.request())
+        self.assertEqual(started["status"],"QUEUED")
+        ticket=started["ticket_id"]
+        self.assertEqual(self.wait_done(ticket)["status"],"COMPLETE")
+        review=self.desktop._get_review_playback()
+        session=review._sessions[ticket]
+        host=review._get_host()
+        receipt=host._row(session["windows"][0]["task"])
+        folder=Path(receipt["destination"])
+        self.assertTrue((folder/"review_000000001.png").is_file())
+        original=FilmIndex(self.studio).read_revision(self.pid,"camera",1)
+        self.desktop._close()
+        self.assertFalse((folder/"review_000000001.png").exists())
+        self.assertTrue(self.movie.is_file())
+        self.assertEqual(sha256(self.movie.read_bytes()).hexdigest(),
+                         self.original_sha)
+        self.assertEqual(FilmIndex(Studio(self.studio.db_path)).read_revision(
+            self.pid,"camera",1)["document_sha256"],
+            original["document_sha256"])
+
+    def test_untrusted_window_origin_cannot_fetch_verified_original_pixels(self):
+        started=self.desktop.start_assembly_review(self.request())
+        self.assertEqual(started["status"],"QUEUED")
+        ticket=started["ticket_id"]
+        self.assertEqual(self.wait_done(ticket)["status"],"COMPLETE")
+        self.window.url="https://other.example/"
+        denied=self.desktop.get_assembly_review_frame(ticket,0)
+        self.assertEqual(denied["status"],"RECOVERY_REQUIRED")
+        self.assertNotIn("image_data_url",denied)
+        self.window.url="http://127.0.0.1:8888/"
+        self.assertEqual(self.desktop.get_assembly_review_frame(ticket,0)["status"],
+                         "VERIFIED_FRAME")
+        self.assertEqual(sha256(self.movie.read_bytes()).hexdigest(),
+                         self.original_sha)
+
     def test_gap_start_seeks_next_source_clip_without_guessing_fps(self):
         session=self.desktop.start_assembly_review({
             **self.request(),"start_tick":str(T),
