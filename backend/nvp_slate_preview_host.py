@@ -219,6 +219,10 @@ class NativeSlatePreviewHost:
                 recipe_sha256=sha(raw),
                 width=doc["width"],height=doc["height"])
             if pending["status"]!="PENDING":
+                # Concurrent requests can race for the same source preview.
+                # The losing request has no authorization/registered worker,
+                # so discard ONLY its inert temporary staging directory.
+                shutil.rmtree(jobdir)
                 return {"status":pending["status"],"cache_key":key,
                         "task_started":False}
             approval_id="slateprevconsent_"+secrets.token_hex(12)
