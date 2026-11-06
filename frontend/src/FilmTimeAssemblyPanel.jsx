@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {filmTimeClock} from './filmTimeClock.js';
+import {filmTimeClock,clockToFilmTick} from './filmTimeClock.js';
 
 // INDEX-TIME-07 — simple human-first assembly, exact original source ranges.
 // This is metadata editing. An OS-level native confirmation guards a new
@@ -18,6 +18,7 @@ export default function FilmTimeAssemblyPanel({
   const [trimOut,setTrimOut]=useState('');
   const [splitAt,setSplitAt]=useState('');
   const [gap,setGap]=useState('0');
+  const [gapClock,setGapClock]=useState('00:00:00.000');
   const [sourceEdit,setSourceEdit]=useState('');
   const [sourceOrdinal,setSourceOrdinal]=useState('0');
   const [insertAt,setInsertAt]=useState('0');
@@ -107,7 +108,8 @@ export default function FilmTimeAssemblyPanel({
   useEffect(()=>{
     generation.current+=1;setDraft(null);setChange(null);setMessage('');
     setChosen(0);setSourceEdit('');setSourceOrdinal('0');
-    setInsertAt('0');setTrimIn('');setTrimOut('');setSplitAt('');setGap('0');
+    setInsertAt('0');setTrimIn('');setTrimOut('');
+    setSplitAt('');setGap('0');setGapClock('00:00:00.000');
   },[projectId,edit.edit_id,edit.revision,edit.edit_document_sha256]);
 
   useEffect(()=>{
@@ -119,7 +121,9 @@ export default function FilmTimeAssemblyPanel({
       setSplitAt((first+(last-first)/2n).toString());
       const prev=assemblyClips.find(c=>c.ordinal===chosen-1);
       const before=prev?.film_end_tick||'0';
-      setGap((BigInt(current.film_start_tick)-BigInt(before)).toString());
+      const actual=(BigInt(current.film_start_tick)-BigInt(before)).toString();
+      setGap(actual);
+      setGapClock(filmTimeClock(actual));
     }
   },[chosen,assemblyClips]);
 
@@ -266,14 +270,31 @@ export default function FilmTimeAssemblyPanel({
               })}>Preview trim</button>
           </div>
           <div>
-            <label>Gap before clip (exact Film Time ticks)
+            <label>Gap before clip (HH:MM:SS.mmm)
+              <input aria-label="Gap time clock" value={gapClock}
+                disabled={busy}
+                onChange={e=>{setDraft(null);setChange(null);
+                  setGapClock(e.target.value);}}/>
+            </label>
+            <button disabled={!buttonsReady}
+              onClick={()=>{
+                try{
+                  preview({operation:'set_gap',index:chosen,
+                    gap_before_tick:clockToFilmTick(gapClock)});
+                }catch(error){setMessage(error.message);}
+              }}>Preview gap by clock</button>
+            <label>Advanced · exact Film Time ticks
               <input aria-label="Gap before source clip" value={gap}
-                onChange={e=>{setDraft(null);setChange(null);setGap(e.target.value);}} />
+                disabled={busy}
+                onChange={e=>{setDraft(null);setChange(null);setGap(e.target.value);}}/>
             </label>
             <button disabled={!buttonsReady}
               onClick={()=>preview({
                 operation:'set_gap',index:chosen,gap_before_tick:gap,
-              })}>Preview spacing</button>
+              })}>Preview exact-tick spacing</button>
+            <p className="fineprint">A clock entry selects millisecond
+              boundaries; the exact-tick field preserves submillisecond
+              source timing when needed.</p>
           </div>
         </div>
       </>}
