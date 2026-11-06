@@ -197,6 +197,17 @@ class NativeAVProxyHost:
 
     def start(self,request,*,progressive=False,continuation=False):
         with self._lock:
+            # Stopped sessions cannot leave review tickets or in-flight
+            # workers available to a later creator's consent. Reap only
+            # independently completed tasks. Pending process-tree cleanup
+            # blocks creation of a new native grant.
+            for obsolete,old in list(self._tickets.items()):
+                if old["stopped"] and old["future"].done():
+                    self._discard(old)
+                    self._tickets.pop(obsolete,None)
+            if any(i["stopped"] and not i["future"].done()
+                   for i in self._tickets.values()):
+                raise RuntimeError("Previous native A/V worker needs safe cleanup")
             self.desktop._window()
             if self._closed:raise RuntimeError("A/V native window closed")
             if type(request) is not dict or set(request)!={
@@ -381,7 +392,17 @@ class NativeAVProxyHost:
 
     def begin_progressive(self,request):
         """One explicit native consent for up to four hours of one exact edit."""
-        return self.start(request,progressive=True)
+        try:
+            return self.start(request,progressive=True)
+        except BaseException:
+            with self._lock:
+                # If grant construction failed before a ticket was accepted,
+                # do not leave a phantom live session that blocks recovery.
+                if (self._session is not None and
+                    self._session["current_ticket"] is None):
+                    self._session["stopped"]=True
+                    self._session=None
+            raise
 
     def prepare_next_progressive(self,session_id,anchor_ticket):
         """Plan only the immediate successor of the current verified section.
@@ -484,9 +505,10 @@ class NativeAVProxyHost:
                                (item["task"],))
             # The in-flight worker remains contained until wait_guarded
             # independently confirms the entire process tree exited.
-            for item in list(self._tickets.values()):
+            for token,item in list(self._tickets.items()):
                 if item["future"].done():
                     self._discard(item)
+                    self._tickets.pop(token,None)
             self._session=None
             self._current=None
             return {"format":STATUS_FORMAT,"status":"CANCELLATION_REQUESTED",
@@ -797,6 +819,11 @@ class NativeAVProxyHost:
                 item["cancel"].set()
         self._executor.shutdown(wait=True,cancel_futures=False)
         for item in self._tickets.values():
+            with self.ledger._db() as db:
+                db.execute("UPDATE "+TABLE+" SET revoked=1 WHERE task_id=?",
+                           (item["task"],))
             try:self._discard(item)
             except OSError:pass
         self._tickets.clear()
+        self._current=None
+        self._session=None
