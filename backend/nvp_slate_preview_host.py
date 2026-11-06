@@ -289,6 +289,33 @@ class NativeSlatePreviewHost:
             self.cache.fail(job_id,state="FAILED")
         return result
 
+    def read_preview_png(self,project_id,cache_key):
+        """Trusted desktop bridge reads exactly ONE verified derived PNG.
+
+        The browser must not receive an arbitrary worker file path. Native
+        IPC can convert returned PNG bytes to a bounded media object/URL.
+        This is image retrieval, not publication or original source editing.
+        """
+        from backend.nvp_slate_preview_cache import MAX_IMAGE_BYTES
+        result=self.cache.lookup(project_id,cache_key)
+        if result is None:
+            raise KeyError("No independently accepted cached proxy preview")
+        file=Path(result["png_path"])
+        with file.open("rb") as handle:
+            data=handle.read(MAX_IMAGE_BYTES+1)
+        if (not data or len(data)>MAX_IMAGE_BYTES or
+            sha(data)!=result["image_sha256"]):
+            raise RuntimeError("Selected cached PNG changed before native delivery")
+        return {
+            "format":"nvp.slate.preview_native_delivery.v1",
+            "cache_key":cache_key,"project_id":project_id,
+            "mime_type":"image/png","png_bytes":data,
+            "image_sha256":result["image_sha256"],
+            "width":result["width"],"height":result["height"],
+            "lowfi_proxy_only":True,
+            "full_film_frame_approved":False,
+        }
+
     def cancel(self,job_id,*,creator_event):
         """Cancellation requires separate authenticated user action."""
         row=self.cache._job(job_id)
