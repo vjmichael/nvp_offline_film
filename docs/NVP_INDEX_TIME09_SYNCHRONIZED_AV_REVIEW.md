@@ -77,17 +77,31 @@ decoding. Partial or changed output is never claimed as accepted.
 Task journaling, exit/kill verification, and reservation clearing must
 precede success. Failure and unproven recovery never return pixels.
 
-A completed derivative must be at most **160 MiB**. The worker writes
-a canonical SHA256 receipt and the host independently validates stream
-types, timing and full file bytes. Browser access is not an HTTP media
-path: an opaque, per-window review ticket permits at most 1 MiB binary
-chunks over `pywebview.api`. Every chunk is SHA-checked again in the
-browser and the complete assembled temporary Blob is compared against
-the native media SHA. HTML5 `video` loads only the verified private
-Blob URL. Closing, scrubbing to another source, cancellation or a
-new immutable edit invalidates the ticket and temporary output.
-Temporary proxy files are deletable; original capture files and
-historical FilmIndex/source indexes are not.
+A completed derivative must be at most **160 MiB**. The worker
+writes a canonical SHA256 receipt and the host independently validates
+streams, timing and complete proxy file bytes. The browser does **NOT**
+receive the entire MP4 via `pywebview.api` or construct a whole-file
+JavaScript Blob: after a native `get_synchronized_av_stream` verifies
+the exact revision/ticket, it receives only a relative media URL under
+the local 127.0.0.1 NVP application origin. The read-only FastAPI
+`/api/native-av-review/{ticket}/media` endpoint requires the active
+native window, an unpredictable private ticket, same-origin requests,
+a current source/edit/PTS binding, independently audited MP4 SHA and
+unchanged file/source stamps. Only **HTTP 206 byte ranges up to 1 MiB**
+are returned per request. WebView2 can request initial, random-seek or
+suffix MP4 ranges while retaining the video on NVP's private disk
+rather than pinning an entire 20-minute MP4 inside JavaScript RAM.
+
+The native H.264/AAC media element still chooses its own decoded-frame
+and compressed-data buffering: **the 256 MiB preview RAM budget is a
+design target, not a proven hard memory limit yet**. NVP should aim for
+3–5 seconds buffered ahead, 1–2 decoded seconds, ~1 second behind, and
+~0.25–0.5 seconds audio buffer, adapting resolution/queue depth under
+pressure. Even with 20-minute review sections, neither source movies
+nor all original frames are decoded into RAM. Closing, scrubbing,
+cancelling, replacing or superseding an edit revokes the ephemeral
+ticket and deletes temporary derivative files only; captured media,
+index, source hash and editorial revisions remain untouched.
 
 ## Verification
 
@@ -158,3 +172,42 @@ and real WebView2 UI smoke commands; it does not build or install NSIS
 on the test computer. Actual human audio perception, mouse input and
 in-app physical clickthrough still require a separate manual
 acceptance record. No developer CLI is exposed to filmmakers.
+
+
+## SYSTEM-READY-01 — Automatic prerequisite discovery and safe installation
+
+The NVP desktop now has a **System readiness & packages** screen
+accessible even before opening a project. It inspects bundled or
+already-installed FFmpeg/FFprobe, the Windows WebView2 runtime (with both
+per-user and machine-wide registry views), Debian/Linux GTK/WebKit2
+library availability and cache free disk space. Inventory is read-only.
+
+On **Windows**, NVP's NSIS single installer already includes its Python
+interpreter, original-frame and A/V worker scripts, and real SHA-pinned
+FFmpeg/FFprobe executables. No Python/pip or FFmpeg install is required
+from the filmmaker. At packaging time the trusted Windows release workflow
+downloads Microsoft's Evergreen WebView2 bootstrapper from Microsoft's
+link, requires a valid Microsoft Authenticode signature, and embeds it.
+NSIS checks the actual installed WebView2 registry and asks permission to
+run the bundled Microsoft installer **only if WebView2 is absent**; it
+verifies the registry again and refuses a falsely successful setup.
+Offline users without WebView2 require a separate signed offline
+standalone runtime variant in a future installer; this bootstrapper needs
+internet access when invoked.
+
+On **Linux**, a read-only scan identifies GTK/WebKit and FFmpeg gaps.
+If a supported apt+polkit environment is present, the user can choose
+a fixed allowed repair in the GUI. NVP then requests a second native
+confirmation and the OS's own privilege authorization before
+`apt-get install` of the exact, hardcoded official repository packages.
+An unknown distro/manager shows an actionable limitation rather than
+guessing a package name, running arbitrary shell commands or installing
+software without permission. The OS package manager's own failure or
+refusal is reported as failure. This is NOT a promise that every Linux
+distro is fully packaged or independently accepted.
+
+Native package detection and fixed installation policy are implemented
+in `backend/nvp_system_packages.py`, with pywebview bridge methods
+`system_package_inventory` and `repair_system_package`, the main
+`frontend/src/SystemReadinessPanel.jsx`, and independent mocked
+approval/install tests. All film footage remains unmodified.
