@@ -72,3 +72,14 @@
 .nvp-slate-draft-tools button{font-size:11px!important}
 .nvp-slate-draft-tools .nvp-slate-commit{
   margin-left:auto;background:#23593e;border-color:#419366;font-weight:700}
+
+.nvp-slate-proxy-preview{
+  display:flex;flex-direction:column;gap:9px;align-items:flex-start;
+  border:1px solid #4b5863;background:#242a33;border-radius:9px;
+  padding:12px;margin:12px 0;color:#e4ecf0}
+.nvp-slate-proxy-preview strong{font-size:13px}
+.nvp-slate-proxy-preview p,.nvp-slate-proxy-preview small{
+  color:#b5c7d0;font-size:11px;margin:0}
+.nvp-slate-proxy-preview img{
+  display:block;max-width:100%;max-height:360px;aspect-ratio:16/9;
+  object-fit:contain;border-radius:6px;background:#111722}
