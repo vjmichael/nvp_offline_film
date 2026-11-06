@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {filmTimeClock} from './FilmTimeIndexPanel.jsx';
+import {filmTimeClock} from './filmTimeClock.js';
 
 // INDEX-TIME-07 — simple human-first assembly, exact original source ranges.
 // This is metadata editing. An OS-level native confirmation guards a new
