@@ -11,7 +11,7 @@ import SkinningPanel from './SkinningPanel.jsx';
 import CharacterRigPanel from './CharacterRigPanel.jsx';
 import RetargetPanel from './RetargetPanel.jsx';
 import ColorGradingGuide from './ColorGradingGuide.jsx';
-import ColorGradingPanel from './ColorGradingPanel.jsx';
+import NativeColorGradePanel from './NativeColorGradePanel.jsx';
 import ResourceActivityPanel from './ResourceActivityPanel.jsx';
 import FilmCameraSourcePanel from './FilmCameraSourcePanel.jsx';
 import DataFirstAVPanel from './DataFirstAVPanel.jsx';
@@ -696,7 +696,7 @@ export default function App() {
         {tab === 'skin' && <SkinningPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'character' && <CharacterRigPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'retarget' && <RetargetPanel project={project} api={api} action={action} busy={busy} />}
-        {tab === 'grade' && <ColorGradingPanel project={project} onHelp={() => setTab('color-guide')} />}
+        {tab === 'grade' && <NativeColorGradePanel project={project} api={api} action={action} busy={busy}/>}
         {tab === 'color-guide' && <ColorGradingGuide />}
         {tab === 'make' && <section className="card make"><div className="kicker">FUTURE MILESTONE</div>
           <h2>Bring your movie to life</h2><p>NVP will eventually build 3D sets, animate characters, film camera shots, edit scenes, mix audio and export the movie. This is not implemented in this foundation build.</p>
