@@ -1,0 +1,102 @@
+name: NVP B8 frozen Digital Take native animation and independent Blender audit
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b8-frozen-take-native-replay-20261104
+  pull_request:
+    branches:
+      - nvp/stack02c3b7-native-approved-proxy-render-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-frozen-take-contract:
+    name: Linux frozen FilmIndex take source native approval and cancellation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install offline NVP film/API test dependencies
+        run: python -m pip install -r requirements-foundation.txt httpx
+      - name: Compile B8 sources
+        run: python -m compileall -q backend/nvp_frozen_take_stage.py backend/nvp_frozen_take_render.py backend/nvp_frozen_take_audit.py backend/nvp_frozen_take_presentation.py tools/nvp_stack02c3b8_real_frozen_take.py tests/test_frozen_take_native.py
+      - name: Frozen indexed take invariants and native executable safety
+        run: |
+          python -m unittest discover -s tests -p test_frozen_take_native.py -v
+          python -m unittest discover -s tests -p test_digital_capture.py -v
+          python -m unittest discover -s tests -p test_shot_sequence.py -v
+          python -m unittest discover -s tests -p test_native_proxy_render.py -v
+          python -m unittest discover -s tests -p test_blender_worker.py -v
+
+  windows-frozen-take-contract:
+    name: Windows frozen FilmIndex take source native approval and cancellation
+    runs-on: windows-2025
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install offline NVP film/API test dependencies
+        run: python -m pip install -r requirements-foundation.txt httpx
+      - name: Compile B8 sources
+        run: python -m compileall -q backend/nvp_frozen_take_stage.py backend/nvp_frozen_take_render.py backend/nvp_frozen_take_audit.py backend/nvp_frozen_take_presentation.py tools/nvp_stack02c3b8_real_frozen_take.py tests/test_frozen_take_native.py
+      - name: Frozen indexed take invariants and native executable safety
+        run: |
+          python -m unittest discover -s tests -p test_frozen_take_native.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B8 frozen native test failed' }
+          python -m unittest discover -s tests -p test_digital_capture.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen FilmIndex capture test failed' }
+          python -m unittest discover -s tests -p test_shot_sequence.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Timed shot sequence test failed' }
+          python -m unittest discover -s tests -p test_native_proxy_render.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native creator approval test failed' }
+          python -m unittest discover -s tests -p test_blender_worker.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native worker baseline failed' }
+
+  linux-real-timed-native-blender:
+    name: Real Blender frozen moving actor/timed cuts and independent audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual native Blender with virtual X display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+      - name: Actual frozen world/performance source to Blender scene and second-process actor/camera audit
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b8_real_frozen_take \
+            --out acceptance_artifacts/stack02c3b8_frozen
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-stack02c3b8-real-timed-take
+          path: acceptance_artifacts/stack02c3b8_frozen/
+          if-no-files-found: warn
+          retention-days: 7
+
+  react-film-authoring-regression:
+    name: React NVP film scene authoring B8 safety regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build and test NVP frontend authoring
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui

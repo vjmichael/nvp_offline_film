@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+dist/
+NVP_Projects/
+nvp_projects/
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+.env

@@ -1,0 +1,57 @@
+name: NVP AUDIO-01F actual picture and sound mux
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-real-ffmpeg-sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native FFmpeg and NVP foundation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements-foundation.txt
+      - name: Real ProRes and PCM16 exact-clock regression
+        run: |
+          ffmpeg -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg is required for Windows native acceptance' }
+          ffprobe -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFprobe is required for Windows native acceptance' }
+          python -m compileall -q backend/nvp_audio01f_picture_sound.py tests/test_audio01f_picture_sound.py
+          python -m unittest discover -s tests -p test_audio01f_picture_sound.py -v
+  windows-real-ffmpeg-sync:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install FFmpeg if absent
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            $env:Path = "$env:ChocolateyInstall\bin;" + $env:Path
+            "$env:ChocolateyInstall\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          }
+          ffmpeg -version
+          ffprobe -version
+      - name: Native Windows ProRes and PCM16 test
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'FFmpeg absent in native test step' }
+          if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) { throw 'FFprobe absent in native test step' }
+          python -m pip install -r requirements-foundation.txt
+          python -m compileall -q backend/nvp_audio01f_picture_sound.py tests/test_audio01f_picture_sound.py
+          python -m unittest discover -s tests -p test_audio01f_picture_sound.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01F Windows genuine ffmpeg acceptance failed' }

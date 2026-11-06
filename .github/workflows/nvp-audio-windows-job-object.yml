@@ -1,0 +1,78 @@
+name: NVP Windows native audio Job Object acceptance
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  win11-job-object-audio:
+    name: Windows actual process-tree kill and native audio recovery
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Windows native Job Object support
+        shell: pwsh
+        run: |
+          python -m pip install "pywin32>=306"
+          python -m pip install -r requirements-foundation.txt
+      - name: Install FFmpeg for actual AUDIO-01F contained mux
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            $env:Path = "$env:ChocolateyInstall\\bin;" + $env:Path
+            "$env:ChocolateyInstall\\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          }
+          ffmpeg -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg is required for Windows native acceptance' }
+          ffprobe -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFprobe is required for Windows native acceptance' }
+      - name: Compile native host and OS test fixtures
+        shell: pwsh
+        run: |
+          python -m compileall -q backend/nvp_audio01e3_native_host.py backend/nvp_worker_containment.py tests/test_audio_windows_job_object_descendants.py tests/test_audio_native_os_termination.py tests/test_audio_admission_outbox.py tests/test_audio_admission_crash_gap.py tests/test_audio01f_windows_contained_mux.py backend/nvp_audio01f_native_host.py tools/nvp_audio01f_native_worker.py tests/test_audio01f_native_authorization.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native test compile failure' }
+      - name: Prove actual Job Object descendant kill and kill-on-close
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_audio_windows_job_object_descendants.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Job Object descendant kill failed' }
+      - name: Prove authentic worker kill and crash recovery
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_audio_native_os_termination.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native audio termination/recovery failed' }
+      - name: Enforce AUDIO-01F creator approval and native TaskLedger admission
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_audio01f_native_authorization.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01F native creator authorization failed' }
+      - name: Run and forcibly terminate actual AUDIO-01F contained FFmpeg mux
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'FFmpeg absent in mux test step' }
+          if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) { throw 'FFprobe absent in mux test step' }
+          python -m unittest discover -s tests -p test_audio01f_windows_contained_mux.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows AUDIO-01F contained mux failed' }
+      - name: AUDIO-01G interrupted mux journal and AUDIO-02 finishing gates
+        shell: pwsh
+        run: |
+          python -m compileall -q backend/nvp_audio01g_mux_intent.py backend/nvp_audio01g_mux_recovery.py backend/nvp_audio02a_automation.py backend/nvp_audio02b_loudness_qc.py backend/nvp_audio02c_mix_approval.py
+          if ($LASTEXITCODE -ne 0) { throw 'Audio recovery/finishing compilation failed' }
+          python -m unittest discover -s tests -p test_audio01g_mux_recovery.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows recovery failed' }
+          python -m unittest discover -s tests -p test_audio02_finishing.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-02 native finishing failed' }
+      - name: Recheck durable admission outbox after Windows process death
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_audio_admission_outbox.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native durable admission outbox failed' }
+          python -m unittest discover -s tests -p test_audio_admission_crash_gap.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native admission audit failed' }

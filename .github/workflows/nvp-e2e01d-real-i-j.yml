@@ -1,0 +1,106 @@
+name: NVP E2E-01D real AUDIO-01I and 01J full crash matrix
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_audio01i_*'
+      - 'backend/nvp_audio01j_*'
+      - 'tools/nvp_audio01i_*'
+      - 'tools/nvp_audio01j_*'
+      - 'tests/test_audio01i_*'
+      - 'tests/test_audio01j_*'
+      - '.github/workflows/nvp-e2e01d-real-i-j.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-native-master-and-av-crash-matrix:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python-version: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Python foundation and native media prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install 'opentimelineio>=0.18.1,<0.19'
+      - name: Install real FFmpeg on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install real FFmpeg and Job Object bindings on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip install 'pywin32>=306'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Join-Path $env:ChocolateyInstall 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Enforce genuine FFmpeg/PCM24/ProRes encoders
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -hide_banner -encoders 2>&1 | grep -F prores_ks
+          ffmpeg -hide_banner -encoders 2>&1 | grep -F pcm_s24le
+      - name: Original AUDIO-01I native candidate and approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_audio01i_native_master_delivery.py -v
+      - name: AUDIO-01I real worker crash and OS-stop evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_audio01i_master_worker_crash_matrix.py -v
+      - name: AUDIO-01I real host crash and durable resource budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_audio01i_master_host_crash_matrix.py -v
+      - name: AUDIO-01I real WAV delivery every filesystem and SQLite checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_audio01i_delivery_crash_matrix.py -v
+      - name: Original AUDIO-01J real synchronized ProRes/PCM24 final MOV
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_audio01j_native_final_av.py -v
+      - name: AUDIO-01J actual picture lock creator event crash
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_audio01j_picture_lock_crash_matrix.py -v
+      - name: AUDIO-01J real FFmpeg mux host and worker crash matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_audio01j_final_av_crash_matrix.py -v
+      - name: Require exact real crash checkpoint wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_audio01i_fault_coverage.py -v
+          python -m unittest discover -s tests -p test_audio01j_fault_coverage.py -v
+      - name: OS worker child and grandchild termination acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01d_native_tree.py -v

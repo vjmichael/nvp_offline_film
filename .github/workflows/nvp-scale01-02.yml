@@ -1,0 +1,76 @@
+name: NVP SCALE-01-03 Native Studio Source Windows
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+    paths:
+      - "backend/nvp_source_window_*.py"
+      - "tools/nvp_source_window_worker.py"
+      - "tests/test_nvp_source_window_*.py"
+      - ".github/workflows/nvp-scale01-02.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_editorial_catalog.py"
+      - "backend/nvp_external_media_catalog.py"
+      - "backend/nvp_source_media_inventory.py"
+      - "backend/nvp_source_film_bridge.py"
+      - "backend/nvp_bound_editorial.py"
+      - "backend/nvp_source_window_preflight.py"
+      - "backend/nvp_source_window_decode.py"
+      - "backend/nvp_source_window_native_host.py"
+      - "tools/nvp_source_window_worker.py"
+      - "backend/nvp_studio.py"
+      - "backend/nvp_film_index.py"
+      - "tests/test_nvp_editorial_catalog.py"
+      - "tests/test_nvp_external_media_catalog.py"
+      - "tests/test_nvp_source_media_inventory.py"
+      - "tests/test_nvp_source_film_bridge.py"
+      - "tests/test_nvp_bound_editorial.py"
+      - "tests/test_nvp_source_window_preflight.py"
+      - "tests/test_nvp_source_window_native.py"
+      - ".github/workflows/nvp-scale01-02.yml"
+  workflow_dispatch:
+
+jobs:
+  scale-catalog:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native FFmpeg / FFprobe on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install native FFmpeg / FFprobe on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
+      - name: Install Windows native OS job support
+        if: runner.os == 'Windows'
+        run: python -m pip install pywin32
+      - name: Verify real tools
+        run: |
+          ffmpeg -version
+          ffprobe -version
+      - name: Compile production catalog and tests
+        run: python -m compileall -q backend/nvp_editorial_catalog.py backend/nvp_external_media_catalog.py backend/nvp_source_media_inventory.py backend/nvp_source_film_bridge.py backend/nvp_bound_editorial.py backend/nvp_source_window_preflight.py backend/nvp_source_window_decode.py backend/nvp_source_window_native_host.py tools/nvp_source_window_worker.py tests/test_nvp_editorial_catalog.py tests/test_nvp_external_media_catalog.py tests/test_nvp_source_media_inventory.py tests/test_nvp_source_film_bridge.py tests/test_nvp_bound_editorial.py tests/test_nvp_source_window_preflight.py tests/test_nvp_source_window_native.py
+      - name: Run compact feature editorial tests
+        run: python -m unittest discover -s tests -p "test_nvp_editorial_catalog.py" -v
+      - name: Run external original-media tests
+        run: python -m unittest discover -s tests -p "test_nvp_external_media_catalog.py" -v
+      - name: Run native video metadata and volume tests
+        run: python -m unittest discover -s tests -p "test_nvp_source_media_inventory.py" -v
+      - name: Run real FilmIndex external source custody tests
+        run: python -m unittest discover -s tests -p "test_nvp_source_film_bridge.py" -v
+      - name: Run exact-revision bound editorial and impact tests
+        run: python -m unittest discover -s tests -p "test_nvp_bound_editorial.py" -v
+      - name: Validate source-window selection from real originals
+        run: python -m unittest discover -s tests -p "test_nvp_source_window_preflight.py" -v
+      - name: Run creator-approved OS-contained native FFmpeg review extraction
+        run: python -m unittest discover -s tests -p "test_nvp_source_window_native.py" -v

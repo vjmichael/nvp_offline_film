@@ -1,0 +1,77 @@
+name: NVP STACK-02C3B2 immutable work and owned CPU model contracts
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b2-owned-native-lifecycle-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c3b1-priority-admission-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-native-ownership:
+    name: Linux creator-authorized native task and model identity contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned official Python SDK (no LM Studio server required)
+        run: python -m pip install -r requirements-model-ownership-optional.txt
+      - name: Verify official SDK API import before running mock contracts
+        run: python -c "import lmstudio; assert callable(lmstudio.Client); print('official LM Studio SDK available')"
+      - run: python -m compileall -q backend tests/test_owned_native_operations.py
+      - run: python -m unittest discover -s tests -p test_owned_native_operations.py -v
+      - run: python -m unittest discover -s tests -p test_resource_scheduler.py -v
+      - run: python -m unittest discover -s tests -p test_resource_governor.py -v
+      - run: python -m unittest discover -s tests -p test_blender_resource_admission.py -v
+
+  windows-native-ownership:
+    name: Windows creator-authorized native task and model identity contracts
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned official Python SDK (no LM Studio server required)
+        run: python -m pip install -r requirements-model-ownership-optional.txt
+      - name: Verify official SDK API import before running mock contracts
+        run: python -c "import lmstudio; assert callable(lmstudio.Client); print('official LM Studio SDK available')"
+      - run: python -m compileall -q backend tests/test_owned_native_operations.py
+      - run: python -m unittest discover -s tests -p test_owned_native_operations.py -v
+      - run: python -m unittest discover -s tests -p test_resource_scheduler.py -v
+      - run: python -m unittest discover -s tests -p test_resource_governor.py -v
+      - run: python -m unittest discover -s tests -p test_blender_resource_admission.py -v
+
+  linux-real-approved-blender:
+    name: Real Blender approved source, memory denial, re-admission and output audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+      - name: Real approved worker source-to-output test
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b2_approved_blender_fixture \
+            --out acceptance_artifacts/stack02c3b2_native_approved
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-stack02c3b2-real-approved-blender
+          path: acceptance_artifacts/stack02c3b2_native_approved/
+          retention-days: 7
+          if-no-files-found: warn
