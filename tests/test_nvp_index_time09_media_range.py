@@ -100,7 +100,7 @@ class NativeHTTPRangeTests(TestCase):
         self.assertEqual(len(result.body),8192)
 
     def test_refuse_malformed_multi_range_and_out_of_bounds(self):
-        for bad in ("bytes=-0","bytes=20-19","bytes=7000000-",
+        for bad in ("bytes=-0","bytes=20-19","bytes=7340032-",
                     "bytes=0-10,20-30","files=0-1","bytes=x-1"):
             with self.subTest(bad=bad):
                 with self.assertRaises(HTTPException):
