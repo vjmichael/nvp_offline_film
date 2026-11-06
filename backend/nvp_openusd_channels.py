@@ -44,7 +44,7 @@ def _channel(property_name, role):
     return ("nvp:performance:" + property_name.replace(".", ":"), low, high)
 
 
-def author_parameter_layer(prim_roles, channels):
+def author_parameter_layer(prim_roles, channels, *, native_schemas=False):
     """Create a separate stronger USD opinions layer with typed scalar keys."""
     if (type(channels) is not list or len(channels) > MAX_CHANNELS):
         raise ValueError("Performance channel count exceeds bounded authoring")
@@ -81,6 +81,10 @@ def author_parameter_layer(prim_roles, channels):
                 raise ValueError("Invalid timing or scalar bound for performance key")
             if not usd_attr.Set(float(val), Usd.TimeCode(float(tick))):
                 raise RuntimeError("Failed to author native USD time sample")
+            if native_schemas and name in FIXED:
+                from backend.nvp_openusd_native_schemas import author_schema_property
+                if not author_schema_property(stage,path,name,val,tick):
+                    raise RuntimeError("Missing real native schema property")
             prior = tick
         descriptors.append({"path": path, "property": name, "usd_attribute": attr})
     return layer, sorted(descriptors, key=lambda v:(v["path"],v["property"]))
