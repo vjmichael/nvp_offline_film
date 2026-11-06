@@ -275,6 +275,7 @@ def verify(destination,plan,ffprobe):
         movie.stat().st_size<256 or movie.stat().st_size>MAX_BYTES or
         receipt.stat().st_size>65536):
         raise RuntimeError("Untrusted or unbounded A/V review derivative")
+    from backend.nvp_source_window_decode import _sha_file
     raw=receipt.read_bytes()
     document=json.loads(raw)
     if (raw!=canonical(document) or
@@ -285,7 +286,6 @@ def verify(destination,plan,ffprobe):
         document.get("master_approved") is not False or
         document.get("original_modified") is not False):
         raise RuntimeError("Synchronized preview media/receipt was altered")
-    from backend.nvp_source_window_decode import _sha_file
     info=json.loads(_run([
         str(ffprobe),"-v","error","-show_streams","-show_format",
         "-of","json",str(movie)],timeout=90))
