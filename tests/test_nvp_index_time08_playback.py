@@ -104,9 +104,18 @@ class OriginalAssemblyReviewTests(unittest.TestCase):
                 if value["status"]=="RECOVERY_REQUIRED":
                     session=self.desktop._get_review_playback()._sessions.get(ticket)
                     if session is not None:
+                        host=self.desktop._get_review_playback()._get_host()
+                        outputs=[]
+                        for window in session.get("windows",[]):
+                            log=host.root/window["task"]/"stderr.log"
+                            if log.is_file():
+                                outputs.append(log.read_text(
+                                    "utf8","replace")[-2500:])
                         self.fail("Real native original source playback failed: "+
                                   str(session.get("private_failure_detail",
-                                                  "unknown cause")))
+                                                  "unknown cause"))+
+                                  "; bounded worker stderr="+
+                                  " | ".join(outputs)[:3500])
                 return value
             time.sleep(.15)
         self.fail("Real native playback worker never reached terminal receipt")
