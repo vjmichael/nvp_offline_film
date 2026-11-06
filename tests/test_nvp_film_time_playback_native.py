@@ -298,8 +298,7 @@ class FilmTimePlaybackNativeTests(unittest.TestCase):
             reader.seek(self.project,"edit",1,
                 expected_edit_sha256="f"*64,tick=5*T)
         another=self.studio.create_project("Other Film","")["id"]
-        with self.assertRaises(KeyError):
-            reader.edits(another)["edits"][0]
+        self.assertEqual(reader.edits(another)["edits"],[])
         with self.assertRaises(KeyError):
             reader.clips(another,"edit",1,expected_edit_sha256=sha)
         with self.studio._connection() as db:
