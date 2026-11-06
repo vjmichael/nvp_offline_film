@@ -92,3 +92,14 @@ build/Vitest. The E2E-01E NSIS job must independently run the updated
 installed executable smoke. Draft until exact-head runs pass, real
 Windows human mouse/file picker/edit interaction is witnessed, and
 the FFmpeg/FFprobe public redistribution/license audit closes.
+
+
+## INDEX-TIME-07 UI hardening continuation — November 6, 2026
+
+Implementation follow-through after the initial PR:
+
+- Native **split** is now a first-class exact source-frame operation. A split at original ordinal `S` creates the two adjacent references `[in,S)` and `[S,out)`, with no new media file or invented constant-FPS timing. Both source intervals are resolved from original PTS by the existing FilmTimeEditorialPublisher; a one-frame interval cannot be split. Real VFR/long-GOP original-movie regression checks source hash, adjacent PTS, old revision preservation and invalid-boundary refusal.
+- A 40-row browser page must never be mistaken for a complete editable timeline. The assembly editor independently fetches and checks every bounded page (up to **256** clips), using project/edit/revision/SHA, contiguous ordinals, clip count and offline-read flags; no edit action is enabled until the whole versioned source manifest has been received. On a tampered/stale page the editor refuses changes rather than applying an index to a hidden clip.
+- A compact horizontal source strip visually enumerates placements and intentional gaps without loading source frames. **Inspect clip start** seeks to the exact original source index; a compatible selected original-frame playhead exposes **Split at selected playhead frame**, binding the split to that existing indexed PTS/ordinal rather than a rounded output FPS.
+- Common gaps are edited with human `HH:MM:SS.mmm` entry, converted to NVP ticks exclusively using `BigInt`; the advanced exact-tick input remains available for submillisecond precision. Editing a form invalidates its previous proposed SHA plan. Native approval, old/updated FilmIndex revision history and original media custody are unchanged.
+- The real installed Windows WebView2 smoke now seeds a disposable genuine indexed video and confirms the source assembly/split controls actually mount in React, retrying asynchronous sidebar load. The existing separate installed `--smoke-source` also verifies native trim publication/old revision/source hash. Physical human OS-dialog clickthrough and green exact-head native CI remain unproven.
