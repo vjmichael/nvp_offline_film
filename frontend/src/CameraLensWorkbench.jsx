@@ -38,6 +38,7 @@ export default function CameraLensWorkbench({
   sceneSnapshot=null,onRequestRenderedPreview=null,
   onSavePreset=null,onApplyToShot=null,onSelectCamera=null,
   cameraChoices=[],renderResult=null,
+  renderBusy=false,onCancelRenderedPreview=null,
 }){
   const [lens,setLens]=useState('standard_50');
   const [sensor,setSensor]=useState('full_frame');
@@ -161,10 +162,14 @@ export default function CameraLensWorkbench({
       </div>
     </div>
     <div className="nvp-camera-actions">
-      <button disabled={!valid||!onRequestRenderedPreview}
+      <button disabled={!valid||!onRequestRenderedPreview||renderBusy}
         onClick={()=>onRequestRenderedPreview(actionPayload())}>
         Render accurate optics still
       </button>
+      {renderBusy&&onCancelRenderedPreview&&
+        <button onClick={onCancelRenderedPreview}>
+          Cancel native still
+        </button>}
       <button disabled={!valid||!onSavePreset}
         onClick={()=>onSavePreset(actionPayload())}>
         Save lens preset
