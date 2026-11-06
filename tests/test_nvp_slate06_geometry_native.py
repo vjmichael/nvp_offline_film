@@ -208,6 +208,8 @@ class Slate06NativeTests(unittest.TestCase):
         self.assertEqual(kinds,{"cube","sphere"})
         self.assertEqual(source["camera"]["path"],"/World/Camera")
         self.assertAlmostEqual(source["camera"]["focal_length_mm"],85,places=3)
+        self.assertAlmostEqual(source["camera"]["sensor_width_mm"],36.0,places=3)
+        self.assertEqual(source["up_axis"],"Z")
         self.assertAlmostEqual(source["lights"][0]["intensity"],220,places=2)
         actor=next(x for x in source["objects"]
                    if x["path"]=="/World/Actor/Geometry")
@@ -222,6 +224,7 @@ class Slate06NativeTests(unittest.TestCase):
         self.assertLess(len(canonical(recipe(source,"thumbnail"))),MAX_SOURCE_BYTES)
         _,canonical_stage=self.scene.open(self.pid,"world",1)
         lens=UsdGeom.Camera(canonical_stage.GetPrimAtPath("/World/Camera"))
+        self.assertEqual(str(UsdGeom.GetStageUpAxis(canonical_stage)),"Z")
         self.assertAlmostEqual(
             float(lens.GetFocalLengthAttr().Get(Usd.TimeCode(float(T))))*100,
             60,places=3)
