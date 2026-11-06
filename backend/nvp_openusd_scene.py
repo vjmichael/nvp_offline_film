@@ -19,6 +19,7 @@ FORMAT = "nvp.scene.openusd.composition.v1"
 LAYER_TYPE = "application/vnd.pixar.usd.ascii"
 MAX_PRIMS = 256
 MAX_CURVES = 512
+MAX_ASSET_BINDINGS = 64
 MAX_SAMPLES_PER_CURVE = 4096
 MAX_USD_LAYER_BYTES = 8 * 1024 * 1024
 # All integer ticks in this range round-trip exactly through OpenUSD's
@@ -101,7 +102,7 @@ class OpenUSDSceneBridge:
         self.index=index
 
     def publish(self, project_id, scene_id, *, prims, curves,
-                expected_revision=0):
+                expected_revision=0, asset_bindings=None):
         """Create immutable world+motion layer blobs and an exact scene revision.
 
         A failed FilmIndex publication may leave *orphan blobs*, not an approved
@@ -161,7 +162,12 @@ class OpenUSDSceneBridge:
                 api.SetTranslate(Gf.Vec3d(*_vector(sample["position"])),
                                  time=Usd.TimeCode(float(tick)))
             animated.add(path)
+        # Source assets are logically bound to exact FilmIndex revisions.
+        # The USD session references are recreated only from trusted SHA-
+        # addressed in-memory layers, never from arbitrary disk paths.
+        bindings=self._resolve_assets(project_id, paths, asset_bindings or [])
         composed=_compose(base,motion,Sdf,Usd)
+        self._attach_assets(composed,bindings)
         for path in paths:
             _evaluate(composed,path,0,Sdf,Usd,UsdGeom)
         base_bytes=base.ExportToString().encode("utf-8")
@@ -180,10 +186,18 @@ class OpenUSDSceneBridge:
                   "usd_timecode_limit":MAX_USD_EXACT_TICK,
                   "prim_roles":paths,
                   "animated_paths":sorted(animated),
+                  "asset_bindings":[entry["manifest"] for entry in bindings],
                   "contains_external_references":False,
                   "rendered":False,
                   "creator_approved":False}
         def guard(db):
+            for entry in bindings:
+                record=entry["manifest"]
+                row=db.execute("""SELECT document_sha FROM film_object_revisions
+                    WHERE project_id=? AND object_id=? AND revision=?""",
+                    (project_id,record["asset_id"],record["asset_revision"])).fetchone()
+                if row is None or row["document_sha"]!=record["asset_document_sha256"]:
+                    raise RuntimeError("Referenced USD asset revision changed before scene commit")
             for sha in (bsha,msha):
                 if db.execute("""SELECT 1 FROM film_blob_refs
                     WHERE project_id=? AND sha256=?""",
@@ -191,8 +205,69 @@ class OpenUSDSceneBridge:
                     raise RuntimeError("Composed OpenUSD source layer lost before commit")
         return self.index.register_revision(
             project_id,scene_id,"scene",manifest,
-            expected_revision=expected_revision,dependencies=[],
+            expected_revision=expected_revision,
+            dependencies=[{"object_id":entry["manifest"]["asset_id"],
+                           "revision":entry["manifest"]["asset_revision"],
+                           "role":"asset"} for entry in bindings],
             precommit_guard=guard)
+
+    def _resolve_assets(self, project_id, paths, asset_bindings, *,
+                        verify_manifest=False):
+        if (type(asset_bindings) is not list or
+            len(asset_bindings)>MAX_ASSET_BINDINGS):
+            raise ValueError("Too many reusable scene assets")
+        from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+        registry=OpenUSDAssetRegistry(self.index)
+        _,Sdf,_,_=_usd()
+        attached=set()
+        result=[]
+        for item in asset_bindings:
+            required=({"path","asset_id","asset_revision",
+                       "asset_document_sha256","asset_layer_sha256"}
+                      if verify_manifest else
+                      {"path","asset_id","asset_revision"})
+            if type(item) is not dict or set(item)!=required:
+                raise ValueError("Invalid typed reusable scene asset binding")
+            path=_path(item["path"],Sdf)
+            if path not in paths or path in attached:
+                raise ValueError("Reusable asset must target one declared prim")
+            attached.add(path)
+            aid=_id(item["asset_id"],"reusable USD asset")
+            rev=item["asset_revision"]
+            if type(rev) is not int or rev<1:
+                raise ValueError("Reusable USD asset must use an exact revision")
+            record,layer=registry.open(project_id,aid,rev)
+            manifest={"path":path,"asset_id":aid,"asset_revision":rev,
+                      "asset_document_sha256":record["document_sha256"],
+                      "asset_layer_sha256":record["data"]["layer_sha256"]}
+            if verify_manifest and manifest!=item:
+                raise RuntimeError("Pinned scene asset differs from immutable source")
+            result.append({"manifest":manifest,"layer":layer})
+        return sorted(result,key=lambda x:x["manifest"]["path"])
+
+    @staticmethod
+    def _attach_assets(stage, entries):
+        if not entries:
+            return
+        _,Sdf,Usd,UsdGeom=_usd()
+        # USD supports references, but this first bridge only references
+        # layers just reconstructed from immutable FilmIndex blobs.
+        # Session-layer opinions are rebuilt from the SHA-pinned manifest on
+        # every reopen. Anonymous identifiers are NEVER persisted as paths.
+        old=stage.GetEditTarget()
+        stage.SetEditTarget(stage.GetSessionLayer())
+        try:
+            for entry in entries:
+                path=entry["manifest"]["path"]
+                layer=entry["layer"]
+                prim=stage.OverridePrim(path)
+                if not prim.GetReferences().AddReference(
+                    layer.identifier,Sdf.Path("/Asset")):
+                    raise RuntimeError("OpenUSD asset composition failed")
+                if not stage.GetPrimAtPath(path+"/Geometry").IsDefined():
+                    raise RuntimeError("Composed reusable asset geometry is missing")
+        finally:
+            stage.SetEditTarget(old)
 
     def open(self, project_id, scene_id, revision):
         record=self.index.read_revision(project_id,scene_id,revision)
@@ -210,6 +285,10 @@ class OpenUSDSceneBridge:
             self.index.get_blob(project_id,doc["motion_layer_sha256"]).decode(),
             "reopen_motion.usda",Sdf)
         composed=_compose(base,motion,Sdf,Usd)
+        bindings=self._resolve_assets(
+            project_id,doc["prim_roles"],doc.get("asset_bindings",[]),
+            verify_manifest=True)
+        self._attach_assets(composed,bindings)
         for p,role in doc["prim_roles"].items():
             _evaluate(composed,p,0,Sdf,Usd,UsdGeom)
             observed=composed.GetPrimAtPath(p).GetAttribute("nvp:semanticRole").Get()
