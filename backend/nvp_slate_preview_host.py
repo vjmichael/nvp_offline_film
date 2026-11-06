@@ -194,43 +194,58 @@ class NativeSlatePreviewHost:
 
     def request(self,project_id,edit_id,revision,*,film_tick,
                 quality="thumbnail",creator_event,ram_mb=1024,
-                timeout_seconds=120,strict_linux_cgroup=False):
+                timeout_seconds=120,strict_linux_cgroup=False,
+                presentation="blocking",camera_path=None):
         """Cache hit or EXPLICITLY approved queued preview, never automatic run."""
         if (type(ram_mb) is not int or not 256<=ram_mb<=8192 or
             type(timeout_seconds) is not int or not 1<=timeout_seconds<=600 or
             type(strict_linux_cgroup) is not bool):
             raise ValueError("Invalid bounded preview worker resources")
+        adapter=_adapter_for(presentation)
+        if presentation=="blocking" and camera_path is not None:
+            raise ValueError("Only native geometry previews select a camera")
+        if camera_path is not None and (
+            type(camera_path) is not str or
+            not camera_path.startswith("/World/") or len(camera_path)>240):
+            raise ValueError("Invalid source-native camera identity")
         ticket=self.lazy.select(
             project_id,edit_id,revision,film_tick=film_tick,quality=quality)
         if ticket["status"]!="SOURCE_REFERENCE_SELECTED":
             return {"status":ticket["status"],"task_started":False,
                     "source_data_loaded":False,"rendered":False}
-        key=preview_cache_key(ticket,quality)
+        key=(adapter.preview_cache_key(ticket,quality,camera_path=camera_path)
+             if presentation=="geometry" else
+             adapter.preview_cache_key(ticket,quality))
         present=self.cache.lookup(project_id,key)
         if present:
-            return {"status":"CACHE_HIT",**present,"new_task_started":False}
-        # This source lookup is the expensive path and reads at most ONE
-        # OpenUSD source stage, not every Take or entire film timeline.
-        snapshot=capture_proxy(self.index,ticket)
-        doc=recipe(snapshot,quality)
+            return {"status":"CACHE_HIT",**present,
+                    "presentation":presentation,"new_task_started":False}
+        # One exact source stage on a miss. Geometry has no silent fallback
+        # into the less faithful SLATE-05 blocking proxy recipe.
+        snapshot=(adapter.capture_geometry(
+                    self.index,ticket,camera_path=camera_path)
+                  if presentation=="geometry" else
+                  adapter.capture_proxy(self.index,ticket))
+        doc=adapter.recipe(snapshot,quality)
         doc["source_cache_key"]=key
         raw=canonical(doc)
         if len(raw)>128*1024:
             raise ValueError("Bounded low-fi source proxy recipe exceeded budget")
         if self.cache.lookup(project_id,key):
             return {"status":"CACHE_HIT","cache_key":key,
-                    "new_task_started":False}
+                    "presentation":presentation,"new_task_started":False}
         job_id="slateprev_"+secrets.token_hex(12)
         jobdir=self.supervisor.root/job_id
         if jobdir.is_symlink():
             raise RuntimeError("Native preview stage escaped workspace")
         jobdir.mkdir(mode=0o700,exist_ok=False)
         try:
-            _write_exclusive(jobdir,SCRIPT_FILE,BLENDER_SCRIPT.encode("utf-8"))
+            fixed_script=adapter.BLENDER_SCRIPT.encode("utf-8")
+            _write_exclusive(jobdir,SCRIPT_FILE,fixed_script)
             _write_exclusive(jobdir,SOURCE_FILE,raw)
             op=BlenderOperation(
                 job_id=job_id,script=SCRIPT_FILE,
-                script_sha256=sha(BLENDER_SCRIPT.encode("utf-8")),
+                script_sha256=sha(fixed_script),
                 inputs={SOURCE_FILE:sha(raw)},
                 outputs={OUTPUT_FILE:"png"},
                 arguments={"--manifest":SOURCE_FILE,"--preview":OUTPUT_FILE},
@@ -241,7 +256,12 @@ class NativeSlatePreviewHost:
             exact=_spec(self.supervisor,op)
             spec_sha=_digest(exact)
             context={
-                "operation":"nvp.slate.authorize_lowfi_preview.v1",
+                "operation":(
+                    "nvp.slate.authorize_openusd_geometry_preview.v1"
+                    if presentation=="geometry"
+                    else "nvp.slate.authorize_lowfi_preview.v1"),
+                "presentation":presentation,
+                "camera_path":camera_path,
                 "project_id":project_id,"edit_id":edit_id,
                 "edit_revision":revision,"edit_document_sha256":
                     ticket["edit_document_sha256"],
@@ -253,7 +273,10 @@ class NativeSlatePreviewHost:
                 "worker_script_sha256":op.script_sha256,
                 "worker_spec_sha256":spec_sha,"job_id":job_id,
                 "requested_ram_mb":ram_mb,"requested_gpu_mb":0,
-                "output_kind":"lowfi_blocking_proxy_png_not_final_film",
+                "output_kind":(
+                    "native_openusd_geometry_preview_not_actor_skinning_or_master"
+                    if presentation=="geometry" else
+                    "lowfi_blocking_proxy_png_not_final_film"),
                 "final_master_approval":False,
             }
             if self.approve(creator_event,dict(context)) is not True:
@@ -270,7 +293,7 @@ class NativeSlatePreviewHost:
                 # so discard ONLY its inert temporary staging directory.
                 shutil.rmtree(jobdir)
                 return {"status":pending["status"],"cache_key":key,
-                        "task_started":False}
+                        "presentation":presentation,"task_started":False}
             approval_id="slateprevconsent_"+secrets.token_hex(12)
             start=time.time()
             with self.ledger._db() as db:
@@ -278,11 +301,13 @@ class NativeSlatePreviewHost:
                 db.execute("""INSERT INTO nvp_slate_preview_consents(
                     approval_id,task_id,project_id,edit_id,edit_revision,
                     film_tick,quality,cache_key,ticket_sha256,
-                    source_manifest_sha256,spec_sha256,issued_at,expires_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    source_manifest_sha256,spec_sha256,issued_at,expires_at,
+                    presentation,camera_path)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (approval_id,exact["task_id"],project_id,edit_id,revision,
                      film_tick,quality,key,sha(canonical(ticket)),sha(raw),
-                     spec_sha,start,start+MAX_CONSENT_SECONDS))
+                     spec_sha,start,start+MAX_CONSENT_SECONDS,
+                     presentation,camera_path))
                 db.commit()
             try:
                 queued=self.dispatcher.enqueue(
@@ -297,6 +322,7 @@ class NativeSlatePreviewHost:
             return {
                 "status":"QUEUED","task_id":exact["task_id"],
                 "job_id":job_id,"approval_id":approval_id,
+                "presentation":presentation,"camera_path":camera_path,
                 "cache_key":key,"source_recipe_sha256":sha(raw),
                 "native_worker_started":False,"picture_generated":False,
                 "creator_approved_lowfi_preview_only":True,
