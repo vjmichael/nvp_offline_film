@@ -98,7 +98,7 @@ class PackagesTests(TestCase):
                                    ("linuxmint",False)):
                 with self.subTest(ident=ident):
                     path.return_value.read_text.return_value=(
-                        "NAME=Example Linux\\nID="+ident+"\\nID_LIKE=debian\\n")
+                        "NAME=Example Linux\nID="+ident+"\nID_LIKE=debian\n")
                     self.assertEqual(p._supported_apt_distro(),accepted)
             path.return_value.read_text.side_effect=OSError("missing")
             self.assertFalse(p._supported_apt_distro())
