@@ -8,6 +8,7 @@ const FORMAT='nvp.index_time07.assembly_plan.v1';
 
 export default function FilmTimeAssemblyPanel({
   projectId,edit,clips,edits,native,onSaved,api,
+  selectedFrame=null,onInspect=null,
 }){
   const [draft,setDraft]=useState(null);
   const [change,setChange]=useState(null);
@@ -192,6 +193,16 @@ export default function FilmTimeAssemblyPanel({
   }
 
   const max=edit.clip_count;
+  const selectedFromPlayhead=selectedFrame?.status==='INDEXED_SOURCE_FRAME_SELECTED' &&
+    selectedFrame.clip_ordinal===chosen &&
+    selectedFrame.edit_document_sha256===edit.edit_document_sha256 &&
+    selectedFrame.source_id===current?.source_id &&
+    selectedFrame.source_revision===current?.source_revision &&
+    typeof selectedFrame.source_frame_zero==='string' &&
+    current && BigInt(selectedFrame.source_frame_zero)>
+      BigInt(current.source_in_frame_zero) &&
+    BigInt(selectedFrame.source_frame_zero)<
+      BigInt(current.source_out_frame_zero);
   const buttonsReady=!busy && !draft && fullLoaded && max<=256 && max>0;
   return <section className="card" aria-label="Original footage assembly editor">
     <h3>Arrange source footage</h3>
@@ -203,6 +214,36 @@ export default function FilmTimeAssemblyPanel({
     {max>256&&<p role="alert">
       This initial editor supports up to 256 source clips in one operation.</p>}
     {max<=256&&<>
+      <div role="group" aria-label="Original source clip strip"
+        style={{display:'flex',gap:'0.35rem',overflowX:'auto',
+                padding:'0.65rem 0',maxWidth:'100%'}}>
+        {assemblyClips.map((c,i)=>{
+          const prev=assemblyClips[i-1];
+          const gap=BigInt(c.film_start_tick)-
+                    BigInt(prev?.film_end_tick||'0');
+          const duration=BigInt(c.film_end_tick)-
+                         BigInt(c.film_start_tick);
+          return <React.Fragment key={c.ordinal}>
+            {gap>0n&&<span className="fineprint" style={{
+              alignSelf:'center',flexShrink:0,padding:'0.35rem'}}>
+              Gap {filmTimeClock(gap.toString())}
+            </span>}
+            <button type="button"
+              disabled={busy}
+              aria-label={'Select source clip '+(c.ordinal+1)}
+              aria-pressed={chosen===c.ordinal}
+              className={chosen===c.ordinal?'active':'secondary'}
+              style={{flexShrink:0,minWidth:'9rem',textAlign:'left',
+                      border:chosen===c.ordinal?'2px solid currentColor':undefined}}
+              onClick={()=>{
+                setDraft(null);setChange(null);setChosen(c.ordinal);
+              }}>
+              {c.ordinal+1}. {c.source_id}
+              {' · '}{filmTimeClock(duration.toString())}
+            </button>
+          </React.Fragment>;
+        })}
+      </div>
       <label>Clip to edit
         <select aria-label="Assembly clip" value={current?chosen:''}
           disabled={!fullLoaded||busy}
@@ -215,6 +256,14 @@ export default function FilmTimeAssemblyPanel({
       </label>
       {current&&<>
         <div className="actions">
+          {onInspect&&<button disabled={!fullLoaded||busy}
+            onClick={()=>onInspect(current.film_start_tick)}>
+            Inspect clip start</button>}
+          {selectedFromPlayhead&&<button disabled={!buttonsReady}
+            onClick={()=>preview({
+              operation:'split',index:chosen,
+              source_frame_zero:selectedFrame.source_frame_zero,
+            })}>Split at selected playhead frame</button>}
           <button disabled={!buttonsReady||chosen===0}
             onClick={()=>preview({
               operation:'move',index:chosen,target:chosen-1,
