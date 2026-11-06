@@ -348,6 +348,8 @@ class NativeAVProxyHost:
                 ffprobe=self.ffprobe)!=plan:
                 raise RuntimeError("Source FilmIndex or PTS changed during render")
             result=verify_proxy(row["destination"],plan,self.ffprobe)
+            if item["cancel"].is_set() or self._closed:
+                raise RuntimeError("Creator cancelled after decode but before AV publication")
             receipt=self.root/task/"verified_result.json"
             with receipt.open("xb") as handle:
                 handle.write(canonical(result))
@@ -360,6 +362,8 @@ class NativeAVProxyHost:
                     "WHERE task_id=? AND result_sha IS NULL",
                     (_sha_file(receipt),task))
                 db.commit()
+            if item["cancel"].is_set() or self._closed:
+                raise RuntimeError("Creator stopped proxy before native publication")
             self.ledger.finish(task,"SUCCEEDED",
                 "Temporary reviewed A/V verified; frozen sources unchanged")
             with self._lock:
@@ -382,6 +386,14 @@ class NativeAVProxyHost:
                     try:self.ledger.cancel_queued(task,owner_key=self.owner)
                     except (RuntimeError,PermissionError):pass
             with self._lock:item["verified"]=False
+        finally:
+            # The worker must have terminated and its OS process tree
+            # been independently reaped before a cancelled derivative is
+            # deleted. Never release active resource reservations on an
+            # unverified cleanup.
+            if item["cancel"].is_set() and cleaned:
+                try:self._discard(item)
+                except OSError:pass
 
     def poll(self,ticket):
         with self._lock:
