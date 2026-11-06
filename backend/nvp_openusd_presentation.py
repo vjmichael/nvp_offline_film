@@ -11,6 +11,7 @@ from backend.nvp_openusd_take import OpenUSDTakeCapture, canonical, sha
 from backend.nvp_openusd_scene import OpenUSDSceneBridge, _evaluate, _usd
 from backend.nvp_temporal_ledger import TemporalLedger
 from backend.nvp_temporal_projection import TemporalProjection
+from backend.nvp_openusd_channels import evaluate_parameter_channels
 
 FORMAT = "nvp.openusd.presentation_plan.v1"
 MAX_PRIMS = 64
@@ -66,6 +67,9 @@ class OpenUSDPresentationPlanner:
                 "output_frame_zero":sample["presentation_frame_zero"],
                 "time_tick":t,
                 "world_state":positions,
+                "performance_channels":evaluate_parameter_channels(
+                    stage,scene["data"].get("performance_channels",[]),
+                    scene["data"]["prim_roles"],t),
             })
         return {
             "format":FORMAT,"project_id":project_id,
