@@ -6,6 +6,8 @@
 **Decision:** [Data-First Filmmaking ADR](NVP_ADR_2026_11_03_DATA_FIRST_FILMMAKING.md)  
 **System authority:** [NVP MASTER DESIGN](NVP_MASTER_DESIGN.md)
 
+> **DATA-TIME-01 creator amendment (2026-11-05):** This November 3 document initially described a Digital Take in terms of *frame/sample time domain* and illustrative `duration_frames`/FPS. Those fields are now **presentation/export metadata, not the fundamental authored timeline**. The authoritative world/performance/take source uses an exact time-addressed stream of semantic events and sparse curves, with immutable FilmIndex revision/hash references; specific picture/audio samples are derived at a selected delivery/backend boundary. Historic manifests retain their original format and interpretation; migrate them explicitly, never retroactively reinterpret previously approved frames. [Read the governing temporal ledger design](NVP_DATA_TIME01_EVENTS_NOT_FRAMES.md). Implementation and whole-pipeline migration remain open to native acceptance.
+
 ## Purpose
 
 NVP should store the **information from which film can be captured and produced**, not treat any generated video clip as the authoritative scene. A living Film World produces immutable Take Packages. Each take produces multiple derived Presentation Packages. An editor selects presentation/audio versions into a finished 2D movie. Every source and derivative remains indexed together and can be traced, branched and partially regenerated.
