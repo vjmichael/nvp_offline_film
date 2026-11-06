@@ -208,6 +208,7 @@ def run_visible_window_smoke():
     server,worker,port,sock=serve(app)
     loaded=Event()
     result={"passed":False}
+    bridge=None
     try:
         bridge=create_trusted_camera_bridge(port)
         window=webview.create_window("NVP Alpha Window Acceptance",
@@ -247,6 +248,8 @@ def run_visible_window_smoke():
                 "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
         return 0
     finally:
+        if bridge is not None:
+            bridge._close()
         server.should_exit=True
         worker.join(timeout=12)
         sock.close()
@@ -275,6 +278,7 @@ def main(argv=None):
     configure_home()
     app=create_app()
     server,worker,port,sock=serve(app)
+    bridge=None
     try:
         import webview
         bridge=create_trusted_camera_bridge(port)
@@ -285,9 +289,13 @@ def main(argv=None):
         webview.start(gui="edgechromium",debug=False)
         return 0
     finally:
-        server.should_exit=True
-        worker.join(timeout=12)
-        sock.close()
+        try:
+            if bridge is not None:
+                bridge._close()
+        finally:
+            server.should_exit=True
+            worker.join(timeout=12)
+            sock.close()
 
 
 if __name__=="__main__":
