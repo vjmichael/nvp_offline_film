@@ -25,6 +25,14 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
   const generation=useRef(0);
   const ticket=useRef(null);
   const url=useRef(null);
+  const progressiveSession=useRef(null);
+  const nextTicket=useRef(null);
+  const [progressive,setProgressive]=useState(false);
+  const [nextPending,setNextPending]=useState(null);
+  const [nextReady,setNextReady]=useState(null);
+  const [nextEnd,setNextEnd]=useState(false);
+  const [waitingForNext,setWaitingForNext]=useState(false);
+  const [autoResume,setAutoResume]=useState(false);
   const [filmTick,setFilmTick]=useState(clips[0]?.film_start_tick||'0');
   const [review,setReview]=useState(null);
   const [src,setSrc]=useState(null);
@@ -104,11 +112,22 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
 
   const revoke=useCallback(()=>{
     generation.current++;
-    if(ticket.current){
-      const previous=ticket.current;
-      ticket.current=null;
-      Promise.resolve(native.stop_synchronized_av_review(previous)).catch(()=>{});
+    const previousSession=progressiveSession.current;
+    const previousTicket=ticket.current;
+    progressiveSession.current=null;
+    ticket.current=null;
+    nextTicket.current=null;
+    if(previousSession){
+      Promise.resolve(native.stop_progressive_av_review(previousSession)).catch(()=>{});
+    }else if(previousTicket){
+      Promise.resolve(native.stop_synchronized_av_review(previousTicket)).catch(()=>{});
     }
+    setProgressive(false);
+    setNextPending(null);
+    setNextReady(null);
+    setNextEnd(false);
+    setWaitingForNext(false);
+    setAutoResume(false);
     if(player.current)player.current.pause();
     if(url.current){
       if(url.current.startsWith('blob:'))URL.revokeObjectURL(url.current);
@@ -126,22 +145,32 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     return revoke;
   },[projectId,edit.edit_id,edit.revision,edit.edit_document_sha256,revoke]);
 
-  async function prepare(){
+  async function prepare(progressiveMode=false){
     if(preparing||!fullManifest)return;
+    if(progressiveMode&&typeof native?.start_progressive_av_review!=='function'){
+      setError('This native NVP build does not support progressive review.');
+      return;
+    }
     revoke();
     const gen=generation.current;
     setPreparing(true);setError('');
     setStatus('Preparing a temporary synchronized picture-and-sound review…');
     try{
       const start=filmTick;
-      const result=await native.start_synchronized_av_review({
+      const result=await (progressiveMode
+        ?native.start_progressive_av_review
+        :native.start_synchronized_av_review).call(native,{
         project_id:projectId,edit_id:edit.edit_id,
         edit_revision:edit.revision,
         edit_document_sha256:edit.edit_document_sha256,
         start_tick:start,
       });
       if(generation.current!==gen){
-        if(result?.status==='QUEUED'&&typeof result.ticket_id==='string')
+        if(result?.status==='QUEUED'&&progressiveMode&&
+           typeof result.progressive_session_id==='string')
+          Promise.resolve(native.stop_progressive_av_review(
+            result.progressive_session_id)).catch(()=>{});
+        else if(result?.status==='QUEUED'&&typeof result.ticket_id==='string')
           Promise.resolve(native.stop_synchronized_av_review(result.ticket_id))
             .catch(()=>{});
         return;
@@ -156,9 +185,17 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
          result.edit_document_sha256!==edit.edit_document_sha256||
          result.original_modified!==false||result.master_approved!==false||
          typeof result.ticket_id!=='string'||
-         !/^\d+$/.test(result.actual_start_tick||''))
+         !/^\d+$/.test(result.actual_start_tick||'')||
+         (progressiveMode&&
+          (typeof result.progressive_session_id!=='string'||
+           result.progressive_session_id.length<20||
+           !/^\d+$/.test(result.progressive_limit_tick||''))))
         throw Error('Native picture-and-sound approval did not match the assembly.');
       ticket.current=result.ticket_id;
+      if(progressiveMode){
+        progressiveSession.current=result.progressive_session_id;
+        setProgressive(true);
+      }
       setReview(result);
     }catch(err){
       if(generation.current===gen)setError(err.message);
@@ -285,6 +322,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
         aria-label="Temporary picture and synchronized sound preview"
         onPlay={()=>setPlaying(true)}
         onPause={()=>setPlaying(false)}
+        onEnded={sectionEnded}
         onTimeUpdate={e=>{
           const seconds=e.currentTarget.currentTime;
           setPlayhead(seconds);
@@ -301,6 +339,9 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
           'Choose Prepare review to watch the assembled footage with sound.'}
         </p>}
     </div>
+    {progressive&&nextReady&&
+      <video aria-hidden="true" muted playsInline preload="metadata"
+        src={nextReady.url} style={{display:'none'}} />}
     {src&&<p className="fineprint">Native A/V playback clock:
       {' '}{frameClock(review.actual_start_tick,playhead)} ·
       source samples never modified · not an approved master</p>}
@@ -320,8 +361,11 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     </div>
     <div className="actions">
       <button disabled={preparing||!fullManifest}
-        onClick={prepare}>{preparing?'Asking for native approval…':
+        onClick={()=>prepare(false)}>{preparing?'Asking for native approval…':
           'Prepare synchronized review…'}</button>
+      {typeof native?.start_progressive_av_review==='function'&&
+        <button disabled={preparing||!fullManifest}
+          onClick={()=>prepare(true)}>Start progressive long-form review…</button> 
       {src&&review?.review_duration_tick&&
         <button onClick={()=>{
           const end=BigInt(review.actual_start_tick)+
@@ -335,7 +379,12 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     </div>
     {status&&<p role="status">{status}</p>}
     {error&&<p role="alert">{error}</p>}
-    <p className="fineprint">One approval covers up to 20 minutes of
+    {progressive&&<p className="fineprint">
+      Progressive review approval covers up to four hours of one exact saved
+      edit, but only the current verified section and one next section may
+      be present. Consecutive media-element files are not yet proven gapless.
+    </p>}
+    <p className="fineprint">Each review section contains up to 20 minutes of
       24fps picture with 48 kHz stereo sound. Original camera audio is
       used when available; silent source sections stay silent. Scrubbing and cut jumps inside a prepared section reuse its native A/V clock; leaving it asks for a new bounded section. The preview
       remains on private disk and the native player requests up to 1 MiB
