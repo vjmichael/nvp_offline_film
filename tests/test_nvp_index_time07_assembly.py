@@ -111,6 +111,48 @@ class AssemblyTests(unittest.TestCase):
             self.pid,"assembly",3)["document_sha256"],
             newer["edit_document_sha256"])
 
+    def test_split_creates_adjacent_original_pts_references_without_reencode(self):
+        old=self._head()
+        before=self.publisher.clips(self.pid,"assembly",1)["clips"]
+        plan,saved=self._save({
+            "operation":"split","index":0,"source_frame_zero":"25"})
+        self.assertEqual(saved["status"],"SAVED_NEW_EDIT_REVISION")
+        self.assertEqual(plan["clip_count"],3)
+        new=self.publisher.clips(self.pid,"assembly",2)["clips"]
+        left,right,following=new
+        self.assertEqual((left["source_in_frame_zero"],
+                          left["source_out_frame_zero"]),(10,25))
+        self.assertEqual((right["source_in_frame_zero"],
+                          right["source_out_frame_zero"]),(25,40))
+        self.assertEqual(left["source_id"],right["source_id"])
+        self.assertEqual(left["source_revision"],right["source_revision"])
+        self.assertEqual(left["source_out_pts"],right["source_in_pts"])
+        self.assertEqual(left["film_end_tick"],right["film_start_tick"])
+        self.assertEqual(left["source_document_sha256"],
+                         right["source_document_sha256"])
+        self.assertEqual(following["source_in_frame_zero"],60)
+        self.assertEqual(self.publisher.clips(
+            self.pid,"assembly",1)["clips"],before)
+        self.assertEqual(FilmIndex(Studio(self.studio.db_path)).read_revision(
+            self.pid,"assembly",1)["document_sha256"],old["document_sha256"])
+        self.assertEqual(hashlib.sha256(self.original.read_bytes()).hexdigest(),
+                         self.source_sha)
+
+    def test_split_refuses_one_frame_borders_or_untrusted_frame_string(self):
+        original=self._head()
+        for invalid in ("10","40","-1","10.5","9007199254740994",
+                        "",10,True):
+            with self.subTest(split=invalid):
+                with self.assertRaises((ValueError,RuntimeError)):
+                    self._plan({
+                        "operation":"split","index":0,
+                        "source_frame_zero":invalid,
+                    })
+        self.assertEqual(self._head()["document_sha256"],
+                         original["document_sha256"])
+        self.assertEqual(hashlib.sha256(self.original.read_bytes()).hexdigest(),
+                         self.source_sha)
+
     def test_trim_and_gap_are_exact_source_pts_not_guessed_fps(self):
         original=self.publisher.clips(self.pid,"assembly",1)["clips"][0]
         plan,saved=self._save({
