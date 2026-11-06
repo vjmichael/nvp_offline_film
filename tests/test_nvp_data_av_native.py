@@ -150,6 +150,7 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
             "project_id":self.pid,"take_id":"frozen_audio_take",
             "take_document_sha256":self.sha,
             "listener_path":"/World/ListenerLeft","first_sample":0,
+            "direction":"forward",
         }
         window.allow=False
         denied=bridge.data_av_begin(request)
@@ -179,6 +180,26 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
         self.assertEqual(bridge.data_av_stop(ticket)["status"],"STOPPED")
         with self.assertRaises(PermissionError):
             bridge.data_av_audio_window(ticket,0,256)
+
+    def test_reverse_audio_permission_is_prior_to_selected_sample(self):
+        bridge=TrustedDesktopCameraBridge(
+            self.index,origin="http://127.0.0.1:7777")
+        self.addCleanup(bridge._close)
+        bridge._attach_window(Window())
+        grant=bridge.data_av_begin({
+            "project_id":self.pid,"take_id":"frozen_audio_take",
+            "take_document_sha256":self.sha,
+            "listener_path":"/World/ListenerLeft",
+            "first_sample":24000,"direction":"reverse"})
+        self.assertEqual(grant["status"],"READY")
+        self.assertEqual(grant["last_sample_exclusive"],24000)
+        self.assertEqual(grant["approved_first_sample"],0)
+        receipt=bridge.data_av_audio_window(grant["session_id"],23900,100)
+        self.assertEqual(receipt["sample_count"],100)
+        with self.assertRaises(PermissionError):
+            bridge.data_av_audio_window(grant["session_id"],24000,100)
+        self.assertEqual(bridge.data_av_stop(grant["session_id"])[
+            "status"],"STOPPED")
 
     def test_original_audio_chunk_tampering_fails_closed(self):
         chunk=self.index.read_revision(self.pid,"mic_signal",1)[
