@@ -72,6 +72,9 @@ def _probe(source,ffprobe):
 
 def _head(reader,pid,edit_id,revision,sha):
     _sha(sha)
+    # A fresh OS-contained worker has a new FilmTimeDesktopRead instance.
+    # Initialize its trusted revision verifier before checking authority.
+    reader._seek_resolver()
     current=reader.index.read_revision(pid,edit_id)
     prior=reader.index.read_revision(pid,edit_id,revision)
     if (current["revision"]!=revision or
@@ -164,8 +167,22 @@ def plan(studio,reader,project_id,edit_id,revision,sha,start_tick,*,ffprobe):
             path=_read_sources(studio,project_id,sid)
             if path.is_symlink() or not path.is_file():
                 raise RuntimeError("Source footage unavailable without a local file")
+            source_stamp=stamp(path)
+            # A changed original cannot be silently approved merely because
+            # its already-recorded FilmIndex digest still names the old file.
+            # Fast review checks saved size/path; it does not pretend to
+            # cryptographically rehash the full external media every seek.
+            with studio._connection() as db:
+                original=db.execute(
+                    "SELECT sha256,size_bytes FROM scale_source_media "
+                    "WHERE project_id=? AND asset_id=?", (project_id,sid)
+                ).fetchone()
+            if (original is None or
+                original["sha256"]!=row["source_sha256"] or
+                source_stamp["size"]!=original["size_bytes"]):
+                raise RuntimeError("Original media differs from registered source")
             sources[sid]={
-                "path":str(path),"stamp":stamp(path),
+                "path":str(path),"stamp":source_stamp,
                 "content_sha256":row["source_sha256"],
                 "source_revision":row["source_revision"],
                 "source_document_sha256":row["source_document_sha256"],
