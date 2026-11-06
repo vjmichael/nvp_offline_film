@@ -243,6 +243,19 @@ class Slate05NativeTests(unittest.TestCase):
         status=self.cache._job(request["job_id"])
         self.assertEqual(status["state"],"INTERRUPTED")
 
+    def test_host_recovery_cancels_stale_queued_preview_without_worker_start(self):
+        request=self._request()
+        report=self.host.recover()
+        self.assertEqual(report["native_worker_interrupted_job_ids"],[])
+        self.assertFalse(report["native_jobs_replayed"])
+        self.assertEqual(
+            report["preview_cache_reconciliation"][0]["state"],"INTERRUPTED")
+        self.assertTrue(report["preview_cache_reconciliation"][0][
+            "queued_native_task_cancelled"])
+        self.assertEqual(
+            self.task_ledger.get_task(request["task_id"])["state"],"CANCELLED")
+        self.assertIsNone(self.cache.lookup(self.pid,request["cache_key"]))
+
     def test_corrupted_png_never_served_and_lru_evicts_only_derived_bytes(self):
         first=self._request()
         verified=self._complete_fixture(first)
