@@ -207,6 +207,39 @@ class SourceAudioVideoTests(unittest.TestCase):
         self.assertEqual(changed["status"],"REFRESH_REQUIRED")
         self.assertEqual(self.window.prompts,1)
 
+    def test_early_stop_never_publishes_late_native_media(self):
+        selected=self.accept()
+        ticket=selected["ticket_id"]
+        halted=self.desktop.stop_synchronized_av_review(ticket)
+        self.assertEqual(halted["status"],"CANCELLATION_REQUESTED")
+        host=self.desktop._get_av_host()
+        future=host._tickets[ticket]["future"]
+        future.result(timeout=90)
+        denied=self.desktop.poll_synchronized_av_review(ticket)
+        self.assertEqual(denied["status"],"CANCELLED")
+        self.assertEqual(self.desktop.get_synchronized_av_chunk(ticket,0)[
+            "status"],"RECOVERY_REQUIRED")
+        row=host._row(host._tickets[ticket]["task"])
+        self.assertFalse((Path(row["destination"])/"source_review.mp4").exists())
+        self.assertEqual(sha256(self.audible.read_bytes()).hexdigest(),
+                         self.source_hashes["sound"])
+
+    def test_new_edit_revision_cannot_reuse_old_av_proxy_ticket(self):
+        selected=self.accept()
+        self.assertEqual(self.ready(selected["ticket_id"])["status"],"READY")
+        latest=self.publisher.publish(self.pid,"assembly",[{
+            "source_id":"sound","source_revision":1,
+            "source_in_frame_zero":8,"source_out_frame_zero":35,
+            "film_in_tick":0,"rounding":"nearest",
+        }],expected_revision=1)
+        self.assertEqual(latest["revision"],2)
+        obsolete=self.desktop.poll_synchronized_av_review(selected["ticket_id"])
+        self.assertEqual(obsolete["status"],"RECOVERY_REQUIRED")
+        self.assertEqual(self.desktop.get_synchronized_av_chunk(
+            selected["ticket_id"],0)["status"],"RECOVERY_REQUIRED")
+        self.assertEqual(sha256(self.audible.read_bytes()).hexdigest(),
+                         self.source_hashes["sound"])
+
     def test_native_stop_revokes_original_video_proxy_and_source_unmodified(self):
         opened=self.accept()
         token=opened["ticket_id"]
