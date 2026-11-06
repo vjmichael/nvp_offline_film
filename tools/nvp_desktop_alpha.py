@@ -264,6 +264,96 @@ def run_visible_window_smoke():
             sock.close()
 
 
+def run_installed_source_smoke():
+    """Real bundled EXE -> native FilmIndex import -> OS-contained child.
+
+    Uses a deterministic fake FILE DIALOG only because CI cannot select a
+    Windows OS file interactively. The separate actual WebView2 window smoke
+    exercises the installed JS->Python IPC path. No user source is touched.
+    """
+    from backend.nvp_studio import Studio
+    from backend.nvp_film_index import FilmIndex
+    from backend.nvp_index_time06_native_desktop import (
+        TrustedFootageDesktop,discover_video_tools,PNG_MAGIC)
+    import hashlib
+    import subprocess
+    tools=discover_video_tools()
+    if tools is None:
+        raise RuntimeError("Installed source acceptance requires bundled FFmpeg/FFprobe")
+    with tempfile.TemporaryDirectory(prefix="nvp-index06-installed-") as temp:
+        root=Path(temp)
+        movie=root/"source.mov"
+        args=[str(tools[0]),"-hide_banner","-loglevel","error","-nostdin",
+              "-f","lavfi","-i","testsrc2=size=160x90:rate=24",
+              "-frames:v","60","-vf","setpts=(N+floor(N/10))/(24*TB)+3/TB",
+              "-fps_mode","vfr","-c:v","mpeg4","-bf","2","-g","12",
+              "-q:v","5","-y",str(movie)]
+        subprocess.run(args,check=True,timeout=60)
+        expected_sha=hashlib.sha256(movie.read_bytes()).hexdigest()
+        studio=Studio(root/"nvp_studio.sqlite3")
+        pid=studio.create_project("Installed source film","Native film clock")["id"]
+        class NativeTestWindow:
+            prompts=0
+            def get_current_url(self):
+                return "http://127.0.0.1:7777/"
+            def create_file_dialog(self,**kwargs):
+                assert kwargs.get("allow_multiple") is False
+                return (str(movie),)
+            def create_confirmation_dialog(self,title,message):
+                self.prompts+=1
+                assert "NVP" in title
+                return True
+        window=NativeTestWindow()
+        native=TrustedFootageDesktop(
+            studio,origin="http://127.0.0.1:7777",tools=tools)
+        native._attach_window(window)
+        try:
+            imported=native.pick_and_import_footage(pid)
+            if imported.get("status")!="IMPORTED":
+                raise RuntimeError("Installed original source was not indexed")
+            found=native.reader.seek(
+                pid,imported["edit_id"],imported["edit_revision"],
+                expected_edit_sha256=imported["edit_document_sha256"],
+                tick=0)
+            if found["status"]!="INDEXED_SOURCE_FRAME_SELECTED":
+                raise RuntimeError("Installed original PTS cannot be sought")
+            requested=native.request_source_frame_preview({
+                "project_id":pid,"edit_id":imported["edit_id"],
+                "edit_revision":imported["edit_revision"],
+                "edit_document_sha256":imported["edit_document_sha256"],
+                "source_tick":"0",
+                "source_frame_zero":found["source_frame_zero"],
+                "source_pts":found["source_pts"],
+            })
+            if requested.get("status")!="QUEUED":
+                raise RuntimeError("Installed native preview did not receive exact consent")
+            until=time.monotonic()+180
+            result=None
+            while time.monotonic()<until:
+                result=native.poll_source_frame_preview(requested["ticket_id"])
+                if result["status"]=="READY":break
+                if result["status"]!="QUEUED":
+                    raise RuntimeError("Native installed worker failed closed: "+
+                                       result["status"])
+                time.sleep(.25)
+            if result is None or result["status"]!="READY":
+                raise RuntimeError("Native source review did not produce verified PNG")
+            if not result["image_data_url"].startswith("data:image/png;base64,"):
+                raise RuntimeError("Missing audited original review picture")
+            if (result["film_master_approved"] is not False or
+                hashlib.sha256(movie.read_bytes()).hexdigest()!=expected_sha or
+                studio.get_project(pid)["title"]!="Installed source film" or
+                window.prompts!=2 or
+                FilmIndex(studio).read_revision(pid,imported["source_id"],1)[
+                    "document_sha256"]!=imported["source_document_sha256"]):
+                raise RuntimeError("Installed native review violated source custody")
+            print("INDEX_TIME06_INSTALLED_SOURCE_PASS",
+                  result["png_sha256"],imported["edit_document_sha256"])
+            return 0
+        finally:
+            native._close()
+
+
 def main(argv=None):
     argv=list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0]=="--trusted-film-time-worker":
@@ -296,9 +386,14 @@ def main(argv=None):
                         help="Reopen same project after fully exiting previous installed app")
     parser.add_argument("--smoke-window",action="store_true",
                         help="Launch a real native Windows WebView2 and verify page loaded")
+    parser.add_argument("--smoke-source",action="store_true",
+                        help="Exercise installed FFmpeg, original FilmIndex and native preview worker")
     args=parser.parse_args(argv)
-    if sum((args.smoke,args.smoke_create,args.smoke_reopen,args.smoke_window))>1:
+    if sum((args.smoke,args.smoke_create,args.smoke_reopen,
+            args.smoke_window,args.smoke_source))>1:
         parser.error("Choose only one installed-app smoke mode")
+    if args.smoke_source:
+        return run_installed_source_smoke()
     if args.smoke:
         return run_smoke()
     if args.smoke_window:
