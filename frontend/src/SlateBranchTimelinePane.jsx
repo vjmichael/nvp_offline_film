@@ -26,6 +26,21 @@ export default function SlateBranchTimelinePane({
   const active=new Set(hasCut
     ? sequences.map(s=>s.branch_id)
     : takes.filter(t=>t.selected).map(t=>t.branch_id));
+  // In an assembled cut the source take may be used for only a small
+  // interval. Paint ONLY those ranges green; the rest stays gray.
+  function activeRanges(node) {
+    if(!hasCut)return node.selected?[{source_in_tick:node.source_start_tick,
+                                     source_out_tick:node.source_end_tick}]:[];
+    return sequences.filter(s=>s.branch_id===node.branch_id);
+  }
+  function rangeStyle(node,segment) {
+    const start=node.source_start_tick,end=node.source_end_tick;
+    const denom=end-start;
+    if(!(Number.isFinite(denom)&&denom>0))return {display:'none'};
+    const left=Math.max(0,Math.min(100,100*(segment.source_in_tick-start)/denom));
+    const right=Math.max(0,Math.min(100,100*(segment.source_out_tick-start)/denom));
+    return {left:left+'%',width:Math.max(0,right-left)+'%'};
+  }
   const limit=Math.min(WINDOW_ROWS,Math.max(takes.length,1));
   const first=Math.max(0,Math.min(
     Math.floor(scrollTop/ROW),Math.max(0,takes.length-limit)));
@@ -93,7 +108,10 @@ export default function SlateBranchTimelinePane({
             </button>
             <div className="nvp-slate-track"
                  aria-label={isActive?'Active source':'Available alternative'}>
-              <i className={'nvp-slate-line '+(isActive?'green':'gray')}/>
+              <i className="nvp-slate-line gray"/>
+              {activeRanges(t).map((range,i)=><i key={i}
+                  className="nvp-slate-range green"
+                  style={rangeStyle(t,range)}/>)}
               {t.parent_id&&<i className="nvp-slate-dash-marker" title={'Parent '+t.parent_id}/>}
               {isFocus&&<span>Inspecting</span>}
             </div>
