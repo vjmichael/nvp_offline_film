@@ -4,6 +4,22 @@ import React,{useEffect,useMemo,useRef,useState} from 'react';
 // Original PTS and Film Time stay exact decimal strings, never JS Number
 // approximations. No browser-side native worker launch or master approval.
 const FORMAT='nvp.index_time05.editor_source_read.v1';
+const TICKS_PER_SECOND=7056000000n;
+
+// Human-readable clock is a DERIVED display. The underlying exact 64-bit
+// integer is never rounded or converted to a JavaScript Number.
+export function filmTimeClock(tickText){
+  const tick=BigInt(tickText);
+  const total=tick/TICKS_PER_SECOND;
+  const millis=tick%TICKS_PER_SECOND*1000n/TICKS_PER_SECOND;
+  const hours=total/3600n;
+  const minutes=total/60n%60n;
+  const seconds=total%60n;
+  return hours.toString().padStart(2,'0')+':'+
+    minutes.toString().padStart(2,'0')+':'+
+    seconds.toString().padStart(2,'0')+'.'+
+    millis.toString().padStart(3,'0');
+}
 
 export default function FilmTimeIndexPanel({projectId,api}){
   const [edits,setEdits]=useState([]);
@@ -155,7 +171,8 @@ export default function FilmTimeIndexPanel({projectId,api}){
           </option>)}
         </select>
       </label>
-      <p className="fineprint">Saved duration: {selected.duration_tick} Film Time ticks.
+      <p className="fineprint">Saved duration: {filmTimeClock(selected.duration_tick)}
+        {' '}({selected.duration_tick} exact Film Time ticks).
         Original media bytes are not rehashed during metadata browsing.
         An indexed lookup is not final-media approval.</p>
       <form onSubmit={e=>{e.preventDefault();seekAt(tickDraft);}}>
@@ -171,7 +188,10 @@ export default function FilmTimeIndexPanel({projectId,api}){
       <div className="nvp-film-index-placements">
         {clips.map(clip=><div key={clip.ordinal} className="card">
           <strong>Clip {clip.ordinal+1} · {clip.source_id}</strong>
-          <p>Film Time {clip.film_start_tick}–{clip.film_end_tick} ticks</p>
+          <p>Film Time {filmTimeClock(clip.film_start_tick)}
+            {' '}– {filmTimeClock(clip.film_end_tick)}</p>
+          <p className="fineprint">Exact ticks:
+            {' '}{clip.film_start_tick}–{clip.film_end_tick}</p>
           <p className="fineprint">Original frame ordinals
             {' '}{clip.source_in_frame_zero}–{clip.source_out_frame_zero}
             {' '} (out-exclusive) · source PTS
@@ -184,14 +204,19 @@ export default function FilmTimeIndexPanel({projectId,api}){
         onClick={more}>Load next indexed clips</button>}
       {selection?.status==='EMPTY_IMPORTED_VIDEO_GAP'&&
         <p role="status">No imported video is placed at Film Time
-          {' '}{selection.requested_film_tick}. This is an intentional gap.</p>}
+          {' '}{filmTimeClock(selection.requested_film_tick)}
+          {' '}({selection.requested_film_tick} ticks).
+          This is an intentional gap.</p>}
       {selection?.status==='INDEXED_SOURCE_FRAME_SELECTED'&&
         <section aria-label="Selected original indexed frame">
           <h3>Selected original frame</h3>
           <p>{selection.source_id} · frame {selection.source_frame_zero}
             {' '} · original PTS {selection.source_pts}</p>
-          <p>Held for Film Time {selection.frame_film_start_tick}
-            {' '}–{selection.frame_film_end_tick} ticks</p>
+          <p>Held from {filmTimeClock(selection.frame_film_start_tick)}
+            {' '}to {filmTimeClock(selection.frame_film_end_tick)}
+            {' '}on the film clock.</p>
+          <p className="fineprint">Exact ticks:
+            {' '}{selection.frame_film_start_tick}–{selection.frame_film_end_tick}</p>
           <p className="fineprint">Indexed binary seek:
             {' '}{selection.frame_index_pts_reads} SQLite PTS reads.
             Source stamp checked, original bytes not SHA-reverified.
