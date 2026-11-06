@@ -406,7 +406,7 @@ export default function FilmTimeIndexPanel({projectId,api,nativeBridge=null}){
         <SynchronizedAssemblyReview
           key={'av:'+selected.edit_id+':'+selected.revision}
           projectId={projectId} edit={selected} clips={clips}
-          native={native} onInspect={seekAt}/>
+          native={native} api={api} onInspect={seekAt}/>
       }
       {nativeReady && typeof native?.start_assembly_review==='function' &&
         typeof native?.poll_assembly_review==='function' &&
