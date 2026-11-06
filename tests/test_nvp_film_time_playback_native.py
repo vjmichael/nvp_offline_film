@@ -160,7 +160,7 @@ class FilmTimePlaybackNativeTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             reopened.resolve(self.project,"edit",1,tick=5*T)
         # Saved metadata can still be navigated without accepting the bytes.
-        self.assertEqual(reopened.edit.clips(
+        self.assertEqual(reopened.publisher.clips(
             self.project,"edit",1)["clips"][0]["film_start_tick"],5*T)
 
     def test_only_existing_host_can_authorize_native_tick_selected_preview(self):
