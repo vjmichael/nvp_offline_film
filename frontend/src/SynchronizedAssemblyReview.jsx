@@ -181,6 +181,10 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
         setStatus('You cancelled review. The captured footage is unchanged.');
         return;
       }
+      if(result?.status==='CLEANUP_PENDING'){
+        setStatus('The previous native media worker is still being stopped safely. Review can resume after cleanup finishes.');
+        return;
+      }
       if(result?.format!==FORMAT||result.status!=='QUEUED'||
          result.project_id!==projectId||result.edit_id!==edit.edit_id||
          result.edit_revision!==edit.revision||
@@ -532,11 +536,11 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
       <button onClick={()=>onInspect?.(filmTick)}>Inspect original frame</button>
     </div>
     <div className="actions">
-      <button disabled={preparing||!fullManifest}
+      <button disabled={preparing||!fullManifest||!!ticket.current}
         onClick={()=>prepare(false)}>{preparing?'Asking for native approval…':
           'Prepare synchronized review…'}</button>
       {typeof native?.start_progressive_av_review==='function'&&
-        <button disabled={preparing||!fullManifest}
+        <button disabled={preparing||!fullManifest||!!ticket.current}
           onClick={()=>prepare(true)}>Start progressive long-form review…</button> 
       {!progressive&&src&&review?.review_duration_tick&&
         <button onClick={()=>{
