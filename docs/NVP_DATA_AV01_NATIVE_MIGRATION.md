@@ -91,3 +91,7 @@ reels. Do not claim 3D A/V is commercially complete until these pass.
 **Source of truth:** `docs/NVP_MASTER_DESIGN.md`, this migration ledger
 and `docs/NVP_SOUND01_NATIVE_SPATIAL_AUDIO.md`; code and exact GitHub
 per-commit native logs control actual acceptance.
+
+## Exact-head CI observation — 2026-11-06
+
+GitHub connector inspected PR #74 at head `440b40f121bf7e1dfa6be24b19c4a90c643f7b06`. The commit-specific workflow query returned eight runs, **all queued, none concluded**: DATA-AV-01 run `42307456319`; USD-01 `42307456303`; USD-02 `42307456347`; USD-02C `42307456340`; USD-02D `42307456418`; SLATE-06 `42307456434`; SLATE-08 `42307456356`; SLATE-08B `42307456385`. No executable job logs or Windows installed `NVP.exe` results existed in that snapshot; **zero native passes may be inferred**. React, real Linux/Windows OpenUSD/PCM and packaged Windows application acceptance remain unproven. These IDs are observations of the original SHA only; any later documentation commit requires a fresh exact-head CI inspection. Next: inspect completed jobs/logs and repair reproducible failures rather than treating queue admission as success.
