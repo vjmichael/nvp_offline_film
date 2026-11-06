@@ -586,6 +586,82 @@ def run_installed_source_smoke():
                 print("INDEX_TIME09_INSTALLED_SYNCED_AV_PASS",
                       updated["edit_document_sha256"],
                       synchronized["media_sha256"])
+            # INDEX-TIME-10: exercise TWO native actual time sections from
+            # the installed NVP.exe and its contained packaged media worker.
+            from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
+            long_edit=native.reader._publisher.publish(
+                pid,"installed_progressive_film",[{
+                    "source_id":imported["source_id"],
+                    "source_revision":1,
+                    "source_in_frame_zero":4,
+                    "source_out_frame_zero":28,
+                    "film_in_tick":(1200+1)*T,
+                    "rounding":"nearest",
+                }])
+            new_review=native.start_progressive_av_review({
+                "project_id":pid,
+                "edit_id":"installed_progressive_film",
+                "edit_revision":1,
+                "edit_document_sha256":long_edit["document_sha256"],
+                "start_tick":"0",
+            })
+            if (new_review.get("status")!="QUEUED" or
+                not new_review.get("progressive_session_id") or
+                window.prompts!=6):
+                raise RuntimeError("Installed long-form native grant denied")
+            grant=new_review["progressive_session_id"]
+            current_ticket=new_review["ticket_id"]
+
+            def wait_native_review(ticket,deadline_seconds=1200):
+                limit=time.monotonic()+deadline_seconds
+                while time.monotonic()<limit:
+                    checked=native.poll_synchronized_av_review(ticket)
+                    if checked.get("status")=="READY":
+                        return checked
+                    if checked.get("status") in ("RECOVERY_REQUIRED","CANCELLED"):
+                        raise RuntimeError(
+                            "Installed progressive native worker did not verify")
+                    time.sleep(.5)
+                raise RuntimeError("Installed progressive audio/video timed out")
+
+            section_a=wait_native_review(current_ticket)
+            if (section_a["actual_start_tick"]!="0" or
+                section_a["review_duration_tick"]!=str(1200*T) or
+                section_a["master_approved"] is not False):
+                raise RuntimeError("Installed first full-section Film Time mismatch")
+            first_stream=native.get_synchronized_av_stream(current_ticket)
+            if first_stream.get("status")!="VERIFIED_STREAM":
+                raise RuntimeError("Installed progressive first range not verified")
+            next_grant=native.prepare_next_progressive_av_review(
+                grant,current_ticket)
+            if (next_grant.get("status")!="QUEUED" or
+                window.prompts!=6):
+                raise RuntimeError("Installed review requested unapproved next section")
+            next_ticket=next_grant["ticket_id"]
+            section_b=wait_native_review(next_ticket)
+            second_stream=native.get_synchronized_av_stream(next_ticket)
+            if (section_b["actual_start_tick"]!=str(1200*T) or
+                second_stream.get("status")!="VERIFIED_STREAM" or
+                second_stream["url"]==first_stream["url"]):
+                raise RuntimeError("Installed source continuation skipped Film Time")
+            advanced=native.advance_progressive_av_review(
+                grant,current_ticket,next_ticket)
+            if (advanced.get("status")!="ADVANCED" or
+                advanced["transition_tick"]!=str(1200*T) or
+                native.get_synchronized_av_stream(
+                    current_ticket).get("status")!="RECOVERY_REQUIRED" or
+                native.get_synchronized_av_stream(
+                    next_ticket).get("status")!="VERIFIED_STREAM"):
+                raise RuntimeError("Installed progressive review handoff failed")
+            stopped=native.stop_progressive_av_review(grant)
+            if (stopped.get("status")!="CANCELLATION_REQUESTED" or
+                hashlib.sha256(movie.read_bytes()).hexdigest()!=expected_sha or
+                stopped["master_approved"] is not False):
+                raise RuntimeError("Installed progressive stop violated source custody")
+            if sys.stdout is not None:
+                print("INDEX_TIME10_INSTALLED_PROGRESSIVE_NATIVE_PASS",
+                      long_edit["document_sha256"],section_a["media_sha256"],
+                      section_b["media_sha256"])
             return 0
         finally:
             native._close()
