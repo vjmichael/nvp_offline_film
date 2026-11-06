@@ -1,0 +1,90 @@
+name: NVP INDEX-TIME-10 Progressive Long-Form A/V Playback
+
+on:
+  push:
+    branches:
+      - nvp/index-time10-progressive-longform-20261106
+  pull_request:
+    paths:
+      - 'backend/nvp_index_time09_native_host.py'
+      - 'backend/nvp_index_time06_native_desktop.py'
+      - 'frontend/src/SynchronizedAssemblyReview.jsx'
+      - 'frontend/src/SynchronizedAssemblyReview.test.jsx'
+      - 'tests/test_nvp_index_time10_progressive.py'
+      - 'tests/test_nvp_index_time09_av_proxy.py'
+      - 'tests/test_nvp_index_time09_media_range.py'
+      - '.github/workflows/nvp-index-time10-progressive.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: nvp-index-time10-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-progressive:
+    name: INDEX-TIME-10 ${{ matrix.os }} Python ${{ matrix.python }} authorized progressive AV and real VFR
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install NVP foundation
+        shell: bash
+        run: python -m pip install -r requirements-foundation.txt
+      - name: Linux native real FFmpeg and FFprobe
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Windows native FFmpeg, FFprobe and Job Object
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Native FFmpeg unavailable' }
+          Join-Path $env:ChocolateyInstall 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+          python -m pip install 'pywin32>=306'
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native Job Object unavailable' }
+      - name: Require genuine audio and picture encoder
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg -version
+          ffprobe -version
+          ffmpeg -hide_banner -encoders 2>&1 | grep -q libx264
+          ffmpeg -hide_banner -encoders 2>&1 | grep -q ' aac'
+          python -m compileall -q backend/nvp_index_time09_native_host.py backend/nvp_index_time06_native_desktop.py frontend tools tests/test_nvp_index_time10_progressive.py
+      - name: Native two-slot authorization and fail-closed crash recovery
+        shell: bash
+        run: python -m unittest discover -s tests -p 'test_nvp_index_time10_progressive.py' -v
+      - name: Authentic original-source VFR camera picture and audio
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p 'test_nvp_index_time09_av_proxy.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_index_time09_media_range.py' -v
+
+  react-progressive:
+    name: INDEX-TIME-10 React verified prefetch/transition/stop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm run test:ui -- src/SynchronizedAssemblyReview.test.jsx src/FilmTimePlaybackPanel.test.jsx src/FilmTimeAssemblyPanel.test.jsx
