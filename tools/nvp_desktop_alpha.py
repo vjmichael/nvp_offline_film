@@ -347,8 +347,9 @@ def run_installed_source_smoke():
                 FilmIndex(studio).read_revision(pid,imported["source_id"],1)[
                     "document_sha256"]!=imported["source_document_sha256"]):
                 raise RuntimeError("Installed native review violated source custody")
-            print("INDEX_TIME06_INSTALLED_SOURCE_PASS",
-                  result["png_sha256"],imported["edit_document_sha256"])
+            if sys.stdout is not None:
+                print("INDEX_TIME06_INSTALLED_SOURCE_PASS",
+                      result["png_sha256"],imported["edit_document_sha256"])
             return 0
         finally:
             native._close()
@@ -375,6 +376,11 @@ def main(argv=None):
             hashlib.sha256(script.read_bytes()).hexdigest()!=expected):
             raise PermissionError("Native worker script changed since approval")
         sys.argv=[str(script),*argv[2:]]
+        # Windowed PyInstaller builds can have no Python stdout/stderr.
+        # Avoid failing an otherwise successful contained frame decode
+        # when its worker writes a JSON diagnostic after fsync.
+        if sys.stdout is None:sys.stdout=open(os.devnull,"w",encoding="utf8")
+        if sys.stderr is None:sys.stderr=open(os.devnull,"w",encoding="utf8")
         runpy.run_path(str(script),run_name="__main__")
         return 0
     parser=argparse.ArgumentParser()
