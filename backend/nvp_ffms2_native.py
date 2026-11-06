@@ -82,6 +82,9 @@ class FFMS2:
             raise PermissionError("Native FFMS2 library must be an absolute verified file")
         self.library_path = lib_path
         self.library_sha256 = sha_file(lib_path)
+        # Windows Python 3.8+ requires explicit DLL search roots for native
+        # dependencies; never mutate process-wide PATH for untrusted media.
+        self._dll_directory = os.add_dll_directory(str(lib_path.parent)) if os.name == "nt" else None
         self.api = C.CDLL(str(lib_path))
 
         def bind(name, result, *args):
