@@ -113,7 +113,9 @@ class NativeSceneSoundCapture:
                 raise ValueError("Captured sound has invalid timing/gain")
             receipt=self.sources.publish(
                 project_id,audio_id,entry["pcm_chunks"],expected_revision=0)
-            available=receipt["data"]["sample_count"]
+            source_record=self.index.read_revision(
+                project_id,audio_id,receipt["revision"])
+            available=source_record["data"]["sample_count"]
             required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
             if available<required:
                 raise RuntimeError("Actual recorded source contains fewer samples than its event")
