@@ -1,0 +1,69 @@
+name: NVP INDEX-TIME-04 VFR Film Time Playback Seek
+
+on:
+  push:
+    branches:
+      - nvp/index-time04-film-time-seek-20261105
+    paths:
+      - "backend/nvp_film_time_playback.py"
+      - "backend/nvp_film_time_editorial.py"
+      - "backend/nvp_film_time_window_*.py"
+      - "tests/test_nvp_film_time_playback_native.py"
+      - "docs/NVP_INDEX_TIME04_FILM_TIME_PLAYBACK.md"
+      - ".github/workflows/nvp-index-time04-native.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_film_time_playback.py"
+      - "backend/nvp_film_time_editorial.py"
+      - "backend/nvp_film_time_window_*.py"
+      - "tests/test_nvp_film_time_playback_native.py"
+      - "docs/NVP_INDEX_TIME04_FILM_TIME_PLAYBACK.md"
+      - ".github/workflows/nvp-index-time04-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-index-time04-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  original-pts-playback:
+    name: INDEX-TIME-04 ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native FFmpeg and FFprobe Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Install native FFmpeg and FFprobe Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          python -m pip install pywin32
+      - name: Compile exact-film-time playback resolver and native tests
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_film_time_playback.py backend/nvp_film_time_editorial.py backend/nvp_source_pts_film_time.py tests/test_nvp_film_time_playback_native.py
+          ffmpeg -version
+          ffprobe -version
+      - name: Native VFR tick seek and OS-contained one-frame review
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_film_time_playback_native.py" -v
+      - name: Earlier native Film Time worker and source-index regressions
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_film_time_window_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_film_time_editorial_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_source_pts_film_time.py" -v
+          python -m unittest discover -s tests -p "test_nvp_temporal_ledger.py" -v
