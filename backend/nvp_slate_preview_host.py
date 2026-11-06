@@ -350,7 +350,18 @@ class NativeSlatePreviewHost:
             # A completed native audit is necessary but not sufficient:
             # independent PNG hash, dimensions and cache atomic commit follow.
             cached=self.cache.accept_verified(self.supervisor,job_id)
-            return {**result,"cache_result":cached}
+            with self.ledger._db() as db:
+                record=db.execute("""SELECT presentation,camera_path
+                    FROM nvp_slate_preview_consents
+                    WHERE task_id=?""",
+                    (self.supervisor._activity_id(job_id),)).fetchone()
+            if record is None:
+                raise RuntimeError("Verified native preview lost approval provenance")
+            return {**result,"cache_result":{
+                **cached,"presentation":record[0],
+                "camera_path":record[1],
+                "full_character_performance_rendered":False,
+                "final_master_approval":False}}
         if result.get("state") in ("FAILED","CANCELLED","TIMED_OUT"):
             self.cache.fail(job_id,state="FAILED")
         return result
@@ -372,20 +383,39 @@ class NativeSlatePreviewHost:
         if (not data or len(data)>MAX_IMAGE_BYTES or
             sha(data)!=result["image_sha256"]):
             raise RuntimeError("Selected cached PNG changed before native delivery")
+        with self.ledger._db() as db:
+            row=db.execute("""SELECT presentation,camera_path
+                FROM nvp_slate_preview_consents WHERE task_id=?""",
+                (self.supervisor._activity_id(result["job_id"]),)).fetchone()
+        if row is None or row[0] not in ("blocking","geometry"):
+            raise RuntimeError("Cached derivative lost its source-renderer provenance")
         return {
             "format":"nvp.slate.preview_native_delivery.v1",
             "cache_key":cache_key,"project_id":project_id,
             "mime_type":"image/png","png_bytes":data,
             "image_sha256":result["image_sha256"],
             "width":result["width"],"height":result["height"],
-            "lowfi_proxy_only":True,
+            "presentation":row[0],"camera_path":row[1],
+            "lowfi_proxy_only":row[0]=="blocking",
+            "authored_geometry_preview_only":row[0]=="geometry",
+            "skinned_actor_performance_rendered":False,
             "full_film_frame_approved":False,
         }
 
     def cancel(self,job_id,*,creator_event):
         """Cancellation requires separate authenticated user action."""
         row=self.cache._job(job_id)
-        ctx={"operation":"nvp.slate.cancel_lowfi_preview.v1",
+        with self.ledger._db() as db:
+            consent=db.execute("""SELECT presentation
+                FROM nvp_slate_preview_consents WHERE task_id=?""",
+                (self.supervisor._activity_id(job_id),)).fetchone()
+        if consent is None:
+            raise RuntimeError("Preview cancellation source provenance missing")
+        ctx={"operation":(
+                 "nvp.slate.cancel_openusd_geometry_preview.v1"
+                 if consent[0]=="geometry" else
+                 "nvp.slate.cancel_lowfi_preview.v1"),
+             "presentation":consent[0],
              "project_id":row["project_id"],"job_id":job_id,
              "preview_cache_key":row["cache_key"]}
         if self.approve(creator_event,dict(ctx)) is not True:
