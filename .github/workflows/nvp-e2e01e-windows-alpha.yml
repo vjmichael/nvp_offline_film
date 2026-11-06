@@ -107,6 +107,19 @@ jobs:
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
           }
+          # The installed GUI executable, not an external Python command,
+          # must import an actual VFR original and launch its own contained
+          # SHA-pinned child to decode and independently verify a review PNG.
+          $native=Start-Process -FilePath $installed -ArgumentList '--smoke-source' -PassThru -Wait
+          if ($native.ExitCode -ne 0) {
+            throw 'Installed FFmpeg/FFprobe original import + frozen source worker failed'
+          }
+          $internal=Join-Path (Split-Path $installed) '_internal/ffmpeg'
+          foreach ($tool in @('ffmpeg.exe','ffprobe.exe')) {
+            $built=(Get-FileHash -Algorithm SHA256 (Join-Path 'dist/NVP/_internal/ffmpeg' $tool)).Hash
+            $final=(Get-FileHash -Algorithm SHA256 (Join-Path $internal $tool)).Hash
+            if ($built -ne $final) { throw "Installed native video executable changed: $tool" }
+          }
       - name: Require actual visible Windows WebView2 desktop page load
         shell: pwsh
         run: |
