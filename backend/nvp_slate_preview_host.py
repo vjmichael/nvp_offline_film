@@ -467,6 +467,189 @@ class NativeSlatePreviewHost:
                 shutil.rmtree(jobdir,ignore_errors=True)
             raise
 
+    def request_camera_workbench(self,project_id,scene_id,scene_revision,*,
+                                 source_tick,camera_path,settings,
+                                 quality="interactive",creator_event,
+                                 ram_mb=2048,timeout_seconds=180,
+                                 strict_linux_cgroup=False):
+        """Native preview of one authored SCENE before ANY Take is frozen.
+
+        A cache hit needs neither scene load nor creator authorization. A
+        miss stages the SAME first-party Cycles worker as SLATE-06, with
+        distinct scene+optics consent, and one immutable FilmIndex scene.
+        """
+        from backend.nvp_camera_workbench import (
+            verified_optics,workbench_preview_key,capture_workbench_still)
+        from backend.nvp_film_index import _require_pid,_id
+        from backend.nvp_temporal_ledger import _int
+        _require_pid(project_id)
+        _id(scene_id,"workbench scene")
+        _int(scene_revision,"source scene revision",minimum=1)
+        _int(source_tick,"source time",maximum=2**53-1)
+        if (type(ram_mb) is not int or not 256<=ram_mb<=8192 or
+            type(timeout_seconds) is not int or not 1<=timeout_seconds<=600 or
+            type(strict_linux_cgroup) is not bool):
+            raise ValueError("Invalid native workbench resource budget")
+        settings=verified_optics(settings)
+        source=self.index.read_revision(project_id,scene_id,scene_revision)
+        if source["kind"]!="scene":
+            raise RuntimeError("Only original authored native scene is previewable")
+        key=workbench_preview_key(
+            source["document_sha256"],source_tick,
+            camera_path,settings,quality)
+        cached=self.cache.lookup(project_id,key)
+        if cached:
+            return {"status":"CACHE_HIT",**cached,
+                    "presentation":"pre_take_camera",
+                    "source_scene_document_sha256":source["document_sha256"],
+                    "source_data_modified":False,"new_task_started":False}
+        doc=capture_workbench_still(
+            self.index,project_id,scene_id,scene_revision,
+            tick=source_tick,camera_path=camera_path,
+            settings=settings,quality=quality)
+        if doc["source_scene_document_sha256"]!=source["document_sha256"]:
+            raise RuntimeError("Pre-Take scene changed before authored lens preview")
+        doc["source_cache_key"]=key
+        raw=canonical(doc)
+        if len(raw)>128*1024:
+            raise RuntimeError("Pre-Take source optics exceeded trusted worker manifest limit")
+        job_id="nvp_cam_"+secrets.token_hex(12)
+        jobdir=self.supervisor.root/job_id
+        jobdir.mkdir(mode=0o700,exist_ok=False)
+        try:
+            from backend.nvp_slate06_geometry import BLENDER_SCRIPT
+            script=BLENDER_SCRIPT.encode("utf8")
+            _write_exclusive(jobdir,SCRIPT_FILE,script)
+            _write_exclusive(jobdir,SOURCE_FILE,raw)
+            op=BlenderOperation(
+                job_id=job_id,script=SCRIPT_FILE,
+                script_sha256=sha(script),
+                inputs={SOURCE_FILE:sha(raw)},
+                outputs={OUTPUT_FILE:"png"},
+                arguments={"--manifest":SOURCE_FILE,"--preview":OUTPUT_FILE},
+                timeout_seconds=timeout_seconds,memory_limit_mb=ram_mb,
+                gpu_memory_mb=0,gpu_device_id=None,
+                require_linux_cgroup_v2=strict_linux_cgroup)
+            self.supervisor._validate(op)
+            spec=_spec(self.supervisor,op)
+            spec_sha=_digest(spec)
+            context={
+                "operation":"nvp.camera.authorize_pre_take_still.v1",
+                "project_id":project_id,
+                "scene_id":scene_id,"scene_revision":scene_revision,
+                "scene_document_sha256":source["document_sha256"],
+                "source_tick":source_tick,"camera_path":camera_path,
+                "optical_settings_sha256":sha(canonical(settings)),
+                "preview_cache_key":key,
+                "source_manifest_sha256":sha(raw),
+                "worker_script_sha256":sha(script),
+                "worker_spec_sha256":spec_sha,
+                "job_id":job_id,
+                "requested_ram_mb":ram_mb,
+                "output_kind":"pre_take_native_optics_png_not_frozen_take",
+                "frozen_take_created":False,"film_master_approved":False,
+            }
+            if self.approve(creator_event,dict(context)) is not True:
+                raise PermissionError("Director did not authorize source-scoped pre-Take preview")
+            reserved=self.cache.reserve(
+                project_id,key,job_id=job_id,
+                source_sha256=source["document_sha256"],
+                recipe_sha256=sha(raw),
+                width=doc["width"],height=doc["height"])
+            if reserved["status"]!="PENDING":
+                shutil.rmtree(jobdir)
+                return {"status":reserved["status"],"cache_key":key,
+                        "presentation":"pre_take_camera",
+                        "new_task_started":False}
+            approval_id="cam_preview_"+secrets.token_hex(12)
+            now=time.time()
+            with self.ledger._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                db.execute("""INSERT INTO nvp_camera_preview_consents(
+                    approval_id,task_id,project_id,scene_id,scene_revision,
+                    scene_document_sha256,source_tick,camera_path,quality,
+                    settings_json,cache_key,source_manifest_sha256,
+                    spec_sha256,issued_at,expires_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (approval_id,spec["task_id"],project_id,
+                     scene_id,scene_revision,source["document_sha256"],
+                     source_tick,camera_path,quality,
+                     json.dumps(settings,sort_keys=True,separators=(",",":")),
+                     key,sha(raw),spec_sha,now,now+600))
+                db.commit()
+            try:
+                self.dispatcher.enqueue(
+                    op,approval_id=approval_id,lane="interactive")
+            except Exception:
+                self.cache.fail(job_id,state="FAILED")
+                raise
+            return {
+                "status":"QUEUED",
+                "presentation":"pre_take_camera",
+                "job_id":job_id,"task_id":spec["task_id"],
+                "cache_key":key,"approval_id":approval_id,
+                "source_scene_document_sha256":source["document_sha256"],
+                "frozen_take_created":False,
+                "source_scene_modified":False,
+                "picture_generated":False,
+                "film_master_approved":False,
+            }
+        except BaseException:
+            with self.ledger._db() as db:
+                consent=db.execute("""SELECT 1 FROM nvp_camera_preview_consents
+                    WHERE task_id=?""",
+                    (self.supervisor._activity_id(job_id),)).fetchone()
+            if consent is None:
+                shutil.rmtree(jobdir,ignore_errors=True)
+            raise
+
+    def read_camera_workbench_png(self,project_id,cache_key):
+        """Only the approved pre-Take preview can return a scene-optical PNG."""
+        result=self.cache.lookup(project_id,cache_key)
+        if result is None:
+            raise KeyError("No verified director camera still is ready")
+        task_id=self.supervisor._activity_id(result["job_id"])
+        with self.ledger._db() as db:
+            row=db.execute("""SELECT scene_id,scene_revision,
+                scene_document_sha256,source_tick,camera_path,settings_json,
+                source_manifest_sha256 FROM nvp_camera_preview_consents
+                WHERE project_id=? AND cache_key=? AND task_id=?""",
+                (project_id,cache_key,task_id)).fetchone()
+        if row is None:
+            raise RuntimeError("Preview cache lacks its original pre-Take consent")
+        scene=self.index.read_revision(project_id,row[0],row[1])
+        from backend.nvp_camera_workbench import (
+            verified_optics,workbench_preview_key)
+        optics=verified_optics(json.loads(row[5]))
+        if (scene["document_sha256"]!=row[2] or
+            workbench_preview_key(row[2],row[3],row[4],optics,
+                 "thumbnail" if (result["width"],result["height"])==(320,180)
+                 else "interactive" if (result["width"],result["height"])==(640,360)
+                 else "inspection")!=cache_key):
+            raise RuntimeError("Original scene or lens identity changed after rendering")
+        source=self.supervisor.root/result["job_id"]/SOURCE_FILE
+        if source.is_symlink() or not source.is_file() or (
+                sha_file(source)!=row[6]):
+            raise RuntimeError("Original lens manifest differs from approved recipe")
+        from backend.nvp_slate_preview_cache import MAX_IMAGE_BYTES
+        image=Path(result["png_path"]).read_bytes()
+        if len(image)>MAX_IMAGE_BYTES or sha(image)!=result["image_sha256"]:
+            raise RuntimeError("Published pre-Take optics PNG failed independent verification")
+        return {
+            "format":"nvp.camera.pre_take_preview_delivery.v1",
+            "presentation":"pre_take_camera",
+            "scene_id":row[0],"scene_revision":row[1],
+            "scene_document_sha256":row[2],
+            "source_tick":row[3],"camera_path":row[4],
+            "lens_settings":optics,
+            "png_bytes":image,"mime_type":"image/png",
+            "image_sha256":result["image_sha256"],
+            "width":result["width"],"height":result["height"],
+            "source_scene_modified":False,
+            "frozen_take_created":False,
+            "film_master_approved":False,
+        }
+
     def run_next(self):
         """One supervised resource-admitted Blender task; then audit/cache PNG."""
         result=self.dispatcher.run_next()
