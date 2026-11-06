@@ -228,6 +228,33 @@ class Slate06NativeTests(unittest.TestCase):
         take=self.index.read_revision(self.pid,"take",1)
         self.assertTrue(take["data"]["frozen"])
 
+    def test_native_usd_mesh_topology_is_not_replaced_with_a_cube(self):
+        from pxr import Gf
+        stage=Usd.Stage.CreateInMemory()
+        shape=UsdGeom.Mesh.Define(stage,"/World/TriangleAndQuad")
+        shape.GetPointsAttr().Set([
+            Gf.Vec3f(0,0,0),Gf.Vec3f(1,0,0),
+            Gf.Vec3f(1,1,0),Gf.Vec3f(0,1,0)])
+        shape.GetFaceVertexCountsAttr().Set([4])
+        shape.GetFaceVertexIndicesAttr().Set([0,1,2,3])
+        geom=_mesh(shape.GetPrim(),UsdGeom,Usd.TimeCode.Default())
+        self.assertEqual(geom["kind"],"mesh")
+        self.assertEqual(geom["triangles"],[[0,1,2],[0,2,3]])
+        shape.GetFaceVertexIndicesAttr().Set([0,1,2,9])
+        with self.assertRaises(RuntimeError):
+            _mesh(shape.GetPrim(),UsdGeom,Usd.TimeCode.Default())
+
+    def test_metadata_only_camera_list_keeps_openusd_scene_unloaded(self):
+        with patch.object(OpenUSDSceneBridge,"open",
+                          side_effect=AssertionError("Camera list loaded USD")):
+            result=self.host.source_camera_choices(
+                self.pid,"cut",1,film_tick=0)
+        self.assertEqual(result["status"],"SOURCE_CAMERA_CHOICES")
+        self.assertEqual(result["cameras"],[
+            {"path":"/World/Camera","label":"Camera"}])
+        self.assertFalse(result["usd_loaded"])
+        self.assertFalse(result["picture_generated"])
+
     def test_high_fidelity_cache_identity_differs_from_blocking_and_lens(self):
         ticket=self.ticket()
         native=preview_cache_key(ticket,"thumbnail",camera_path="/World/Camera")
