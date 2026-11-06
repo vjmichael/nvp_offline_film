@@ -99,6 +99,8 @@ class TrustedFootageDesktop:
         self._approvals={}
         self._tickets={}
         self._host=None
+        self._assembler=None
+        self._assembly_lock=threading.Lock()
         self._host_factory=host_factory
         self._executor=ThreadPoolExecutor(
             max_workers=1,thread_name_prefix="NVP source still")
@@ -161,6 +163,7 @@ class TrustedFootageDesktop:
             "video_tools_available":bool(self.tools and all(
                 p.is_file() and not p.is_symlink() for p in self.tools)),
             "can_import_original":True,"can_approve_preview":True,
+            "can_edit_assembly":True,
             "original_source_path_to_browser":False,
         }
 
@@ -507,6 +510,64 @@ class TrustedFootageDesktop:
                 except RuntimeError:
                     pass  # Worker won the admission lease; token is set.
         return {"status":"CANCELLATION_REQUESTED","ticket_id":ticket}
+
+    def _get_assembler(self):
+        if self._assembler is None:
+            from backend.nvp_index_time07_assembly import IndexedFootageAssembler
+            self.reader._seek_resolver()
+            self._assembler=IndexedFootageAssembler(self.reader._publisher)
+        return self._assembler
+
+    @staticmethod
+    def _assembly_request(request,*,commit=False):
+        required={"project_id","edit_id","edit_revision",
+                  "edit_document_sha256","change"}
+        if commit:required.add("plan_sha256")
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Exact source edit and single typed operation required")
+        _require_pid(request["project_id"])
+        return request
+
+    def preview_footage_assembly(self,request):
+        try:
+            self._window()
+            scope=self._assembly_request(request)
+            assembler=self._get_assembler()
+            plan=assembler.prepare(
+                scope["project_id"],scope["edit_id"],
+                scope["edit_revision"],scope["edit_document_sha256"],
+                scope["change"])
+            # Executable publisher arguments never leave the native host.
+            plan.pop("_commit_placements",None)
+            return plan
+        except Exception:
+            return {"format":"nvp.index_time07.assembly_plan.v1",
+                    "status":"REFRESH_REQUIRED",
+                    "code":"INVALID_OR_CHANGED_EDITORIAL_SOURCE",
+                    "original_sources_modified":False}
+
+    def save_footage_assembly(self,request):
+        try:
+            self._window()
+            scope=self._assembly_request(request,commit=True)
+            if not self._assembly_lock.acquire(blocking=False):
+                return {"format":"nvp.index_time07.assembly_plan.v1",
+                        "status":"BUSY","original_sources_modified":False}
+            try:
+                assembler=self._get_assembler()
+                return assembler.commit(
+                    scope["project_id"],scope["edit_id"],
+                    scope["edit_revision"],scope["edit_document_sha256"],
+                    scope["change"],scope["plan_sha256"],
+                    confirm=lambda message:self._confirm(message))
+            finally:
+                self._assembly_lock.release()
+        except Exception:
+            # pywebview exceptions must not expose original media paths.
+            return {"format":"nvp.index_time07.assembly_plan.v1",
+                    "status":"REFRESH_REQUIRED",
+                    "code":"SOURCE_EDITORIAL_COMMIT_REFUSED",
+                    "original_sources_modified":False}
 
     def _close(self):
         with self._lock:
