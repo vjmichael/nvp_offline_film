@@ -1316,3 +1316,74 @@ def indexed_film_time_seek(project_id: str,edit_id: str,
     return run(lambda:_imported_video_index().seek(
         project_id,edit_id,revision,
         expected_edit_sha256=expected_edit_sha256,tick=tick))
+
+
+# INDEX-TIME-09 — verified local picture/sound review, served by HTTP byte
+# RANGE instead of transferring a whole 160 MiB proxy into JavaScript RAM.
+# Only the installed NVP window can register the trusted native owner in
+# app.state; standalone FastAPI and foreign origins have no media authority.
+# No arbitrary file path, source recording, worker receipt or output writer
+# is accessible through this read-only route.
+from fastapi import Request,Response
+import re as _nvp_regex
+
+_AV_RANGE=_nvp_regex.compile(r"^bytes=(\\d*)-(\\d*)$")
+_AV_MAX_RANGE=1024*1024
+
+@app.get("/api/native-av-review/{ticket}/media",include_in_schema=False)
+def original_source_proxy_range(ticket: str, request: Request):
+    def deny(code=404):
+        raise HTTPException(status_code=code,detail="Native A/V review unavailable")
+    native=getattr(request.app.state,"native_av_window",None)
+    if native is None or len(ticket)<20 or len(ticket)>128:
+        deny()
+    origin=getattr(native,"origin",None)
+    # The installed app binds only to 127.0.0.1 and a random OS port.
+    # A foreign page cannot create an authorized media GET via <video>,
+    # nor can a remote website read content by crossorigin fetch.
+    if (request.url.scheme!="http" or
+        request.url.hostname!="127.0.0.1" or
+        str(request.url.port)!=origin.rsplit(":",1)[-1]):
+        deny(403)
+    if request.headers.get("sec-fetch-site","same-origin") not in ("same-origin","none"):
+        deny(403)
+    supplied_origin=request.headers.get("origin")
+    if supplied_origin and supplied_origin!=origin:
+        deny(403)
+    referer=request.headers.get("referer")
+    if referer and not (referer==origin+"/" or referer==origin):
+        deny(403)
+    try:
+        host=native._get_av_host()
+        details=host.stream_info(ticket)
+        total=details["total_size"]
+        value=request.headers.get("range")
+        if value is None:
+            # Media elements commonly request 0- and then resume with
+            # another Range header. Never send the entire file on GET.
+            begin,end=0,min(total,_AV_MAX_RANGE)-1
+        else:
+            match=_AV_RANGE.fullmatch(value.strip())
+            if not match or not match.group(1):
+                deny(416)
+            begin=int(match.group(1))
+            if begin>=total:
+                deny(416)
+            requested_end=int(match.group(2)) if match.group(2) else total-1
+            if requested_end<begin:
+                deny(416)
+            end=min(requested_end,begin+_AV_MAX_RANGE-1,total-1)
+        data=host.stream_range(ticket,begin,end)
+    except (KeyError,PermissionError,RuntimeError,ValueError,TypeError,OSError):
+        deny()
+    return Response(
+        content=data,status_code=206,media_type="video/mp4",
+        headers={
+            "Content-Range":f"bytes {begin}-{end}/{total}",
+            "Content-Length":str(len(data)),
+            "Accept-Ranges":"bytes",
+            "Cache-Control":"no-store, private",
+            "X-Content-Type-Options":"nosniff",
+            "Referrer-Policy":"no-referrer",
+            "Cross-Origin-Resource-Policy":"same-origin",
+        })
