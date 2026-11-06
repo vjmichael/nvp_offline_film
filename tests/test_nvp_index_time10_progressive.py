@@ -138,6 +138,24 @@ class ProgressiveHostTests(TestCase):
             self.host.prepare_next_progressive(SESSION,CURRENT)
         self.host.start.assert_not_called()
 
+    def test_restarted_host_revokes_old_grants_without_replaying_workers(self):
+        db=mock.MagicMock()
+        db.execute.return_value.fetchall.return_value=[
+            ("old_queued",),("old_running",)]
+        self.host.ledger._db=mock.Mock(side_effect=lambda:nullcontext(db))
+        self.host.ledger.get_task.side_effect=[
+            {"state":"QUEUED"},{"state":"ACTIVE"},
+        ]
+        self.host._reconcile_restarted_grants()
+        self.host.ledger.cancel_queued.assert_called_once_with(
+            "old_queued",owner_key=self.host.owner)
+        self.assertEqual(self.host._session["current_ticket"],CURRENT)
+        self.assertTrue(any(
+            "SET revoked=1" in str(call)
+            for call in db.execute.call_args_list))
+        # An ACTIVE task's reservation remains held. A kill signal or a
+        # new desktop host is not proof that its OS process tree exited.
+
     def test_cancel_revokes_both_disposable_sessions_and_queue(self):
         self._successor()
         self.host.ledger.get_task.return_value={"state":"QUEUED"}
