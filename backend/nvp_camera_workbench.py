@@ -101,8 +101,17 @@ def verified_optics(settings):
         custom_focal_mm=settings["focal_length_mm"],
         custom_sensor_width_mm=settings["sensor_width_mm"],
         custom_sensor_height_mm=settings["sensor_height_mm"])
-    if exact!=settings:
+    if type(settings) is not dict or set(settings)!=set(exact):
         raise ValueError("Untrusted optical field or unsupported lens effect")
+    for field,expected in exact.items():
+        actual=settings[field]
+        if field in ("horizontal_fov_degrees","vertical_fov_degrees"):
+            if (type(actual) not in (int,float) or
+                not math.isfinite(actual) or
+                not math.isclose(actual,expected,rel_tol=0,abs_tol=1e-8)):
+                raise ValueError("Lens field of view differs from selected optics")
+        elif actual!=expected or type(actual) is not type(expected):
+            raise ValueError("Untrusted optical field or unsupported lens effect")
     return exact
 
 
