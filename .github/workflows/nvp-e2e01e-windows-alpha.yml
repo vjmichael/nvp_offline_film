@@ -78,6 +78,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }
           & 'dist/NVP/NVP.exe' --smoke
           if ($LASTEXITCODE -ne 0) { throw 'Uninstalled native alpha smoke failed' }
+      - name: Pin signed official Microsoft WebView2 Evergreen prerequisite for the single installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path 'build' | Out-Null
+          $setup=Join-Path (Resolve-Path 'build').Path 'MicrosoftEdgeWebview2Setup.exe'
+          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $setup -MaximumRedirection 5
+          if ((Get-Item -LiteralPath $setup).Length -lt 100000) {
+            throw 'Official WebView2 bootstrapper is missing or truncated'
+          }
+          $signature=Get-AuthenticodeSignature -LiteralPath $setup
+          if ($signature.Status -ne 'Valid' -or
+              $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
+            throw 'WebView2 bootstrapper is not Microsoft Authenticode signed'
+          }
+          $digest=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
+          Write-Host "Verified official Microsoft WebView2 bootstrapper SHA256: $digest"
       - name: Create NSIS single-click installer
         shell: pwsh
         run: |
