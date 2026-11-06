@@ -108,6 +108,7 @@ class FFMS2:
         self.num_frames = bind("FFMS_GetNumFrames", C.c_int, p)
         self.frame_info = bind("FFMS_GetFrameInfo",
                                C.POINTER(FrameInfoPrefix), p, C.c_int)
+        self.track_from_video = bind("FFMS_GetTrackFromVideo", p, p)
         self.time_base = bind("FFMS_GetTimeBase", C.POINTER(TimeBase), p)
         self.create_video = bind("FFMS_CreateVideoSource", p,
                                  C.c_char_p, C.c_int, p, C.c_int, C.c_int, error)
@@ -230,9 +231,17 @@ class IndexedVideo:
         """Exact integer PTS, keyframe flag and independent frame index."""
         if type(frame_zero) is not int or not 0 <= frame_zero < self.meta["num_frames"]:
             raise ValueError("Frame outside validated FFMS2 index")
-        track = self.ffms.track_from_index  # metadata below from video-owned track
+        track = self.ffms.track_from_video(self.handle)
+        if not track:
+            raise RuntimeError("FFMS2 video-owned frame index unavailable")
+        details = self.ffms.frame_info(track, frame_zero)
+        if not details:
+            raise RuntimeError("FFMS2 exact frame metadata unavailable")
         f = self._frame(frame_zero)
-        return {"frame_zero": frame_zero, "keyframe": bool(f.KeyFrame),
+        return {"frame_zero": frame_zero, "pts": details.contents.PTS,
+                "time_base_num": self.meta["time_base_num"],
+                "time_base_den": self.meta["time_base_den"],
+                "keyframe": bool(details.contents.KeyFrame),
                 "width": f.EncodedWidth, "height": f.EncodedHeight}
 
     def save_png(self, frame_zero, output, *, max_pixels=MAX_REVIEW_PIXELS):
