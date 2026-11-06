@@ -24,7 +24,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  zero-ffmpeg-policy:
+    name: DA-00 zero-FFmpeg native dependency audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Refuse executable FFmpeg/ffprobe in active import graph or installer
+        run: python tools/nvp_no_ffmpeg_contract.py
+
   native-frozen-source:
+    needs: [zero-ffmpeg-policy]
     name: Native scene + PCM / ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
@@ -47,8 +59,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export NVP_FFMPEG='/definitely-not-installed/ffmpeg'
-          export NVP_FFPROBE='/definitely-not-installed/ffprobe'
           python -m compileall -q backend/nvp_data_av_source.py backend/nvp_data_av_scene.py backend/nvp_data_av_usd.py backend/nvp_data_av_desktop.py backend/nvp_slate08b_native_camera_ipc.py tools/nvp_desktop_alpha.py tools/nvp_data_av_installed_acceptance.py tests/test_nvp_data_av_native.py
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
       - name: Existing frozen source/camera/provenance regressions
@@ -60,6 +70,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_data_time_projection.py' -v
 
   native-react:
+    needs: [zero-ffmpeg-policy]
     name: React source audition and no automatic conventional movie proxy
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -79,7 +90,7 @@ jobs:
     name: Real packaged / installed Windows NVP.exe with OpenUSD and PCM (no FFmpeg)
     runs-on: windows-2025
     timeout-minutes: 80
-    needs: [native-react]
+    needs: [zero-ffmpeg-policy, native-react]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -109,7 +120,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-submodules pxr --collect-submodules backend --collect-submodules tools tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-submodules pxr --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
