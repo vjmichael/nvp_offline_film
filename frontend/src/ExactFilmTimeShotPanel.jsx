@@ -98,7 +98,10 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
         throw Error('Shots must not overlap; intentional empty-time gaps are supported.');
       setShots(a=>[...a,{shot_id:'Shot'+String(a.length+1).padStart(3,'0'),
         camera_path:cameraPath,pattern,start_tick:first,end_tick:last}]);
-      setStart(String(Number(last)/Number(T)));
+      const micros=BigInt(last)/US;
+      setStart((micros/1000000n).toString()+
+        ((micros%1000000n)!==0n?'.'+(micros%1000000n).toString()
+          .padStart(6,'0').replace(/0+$/,''):''));
       setNotice('Unsaved shot observation added; the 3D world was not copied.');
     }catch(e){setError(e.message);}
   }
