@@ -475,6 +475,77 @@ class NativeAVProxyHost:
                 "original_modified":False,"master_approved":False,
             }
 
+    def stream_info(self,ticket):
+        """Expose a verified *relative* media URL, never a file path.
+
+        The only source for this link is the already installed native
+        window's random private review ticket. The loopback HTTP route
+        separately requires same-origin and invokes read_range on EVERY
+        request. No general-purpose filesystem HTTP action is created.
+        """
+        with self._lock:
+            item,row=self._check_ticket(ticket)
+            if item["stopped"] or item["verified"] in (None,False):
+                raise PermissionError("No verified original A/V review available")
+            state=self.ledger.get_task(item["task"])
+            if not state or state["state"]!="SUCCEEDED":
+                raise PermissionError("Native source review not completed")
+            movie=Path(row["destination"])/"source_review.mp4"
+            if movie.is_symlink() or not movie.is_file():
+                raise RuntimeError("Verified media was removed")
+            stat=movie.stat()
+            if (stat.st_size!=item["verified"]["size_bytes"] or
+                stat.st_size>MAX_BYTES):
+                raise RuntimeError("Native proxy size changed")
+            identity=(stat.st_dev,stat.st_ino,stat.st_size,
+                      stat.st_mtime_ns,stat.st_ctime_ns)
+            if "stream_stat" not in item:
+                if _sha_file(movie)!=item["verified"]["media_sha256"]:
+                    raise RuntimeError("Native AV proxy changed after verification")
+                item["stream_stat"]=identity
+            if identity!=item["stream_stat"]:
+                raise RuntimeError("Native AV proxy file changed after first read")
+            for original in item["plan"]["sources"].values():
+                if stamp(Path(original["path"]))!=original["stamp"]:
+                    raise RuntimeError("Original media changed since proxy approval")
+            return {
+                "format":STATUS_FORMAT,"status":"VERIFIED_STREAM",
+                "url":"/api/native-av-review/"+ticket+"/media",
+                "total_size":stat.st_size,
+                "media_sha256":item["verified"]["media_sha256"],
+                "content_type":"video/mp4",
+                "original_modified":False,"master_approved":False,
+            }
+
+    def stream_range(self,ticket,begin,finish):
+        """Read up to 1 MiB from the trusted verified proxy on disk.
+
+        The HTTP worker never receives/returns an original path. Each
+        request rechecks the edited head, source stamps, original ticket,
+        file identity and the local native window before reading.
+        """
+        if (type(begin) is not int or type(finish) is not int or
+            begin<0 or finish<begin or finish-begin+1>MAX_CHUNK_BYTES):
+            raise ValueError("Unbounded or invalid media byte-range request")
+        with self._lock:
+            description=self.stream_info(ticket)
+            if finish>=description["total_size"]:
+                raise ValueError("Review byte range exceeds approved media")
+            item,row=self._check_ticket(ticket)
+            movie=Path(row["destination"])/"source_review.mp4"
+            with movie.open("rb") as source:
+                original=os.fstat(source.fileno())
+                def ident(a):
+                    return (a.st_dev,a.st_ino,a.st_size,
+                            a.st_mtime_ns,a.st_ctime_ns)
+                if ident(original)!=item["stream_stat"]:
+                    raise RuntimeError("Verified proxy file changed before byte-range read")
+                source.seek(begin)
+                chunk=source.read(finish-begin+1)
+                if len(chunk)!=finish-begin+1 or ident(os.fstat(source.fileno()))!=ident(original):
+                    raise RuntimeError("Media file changed during approved range transfer")
+            return chunk
+
     def _discard(self,item):
         row=self._row(item["task"])
         folder=Path(row["destination"])
