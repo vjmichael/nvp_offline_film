@@ -206,9 +206,13 @@ class OpenUSDSceneBridge:
         return self.index.register_revision(
             project_id,scene_id,"scene",manifest,
             expected_revision=expected_revision,
-            dependencies=[{"object_id":entry["manifest"]["asset_id"],
-                           "revision":entry["manifest"]["asset_revision"],
-                           "role":"asset"} for entry in bindings],
+            # One asset may appear at many scene paths, but FilmIndex has
+            # exactly one dependency edge per immutable source revision.
+            dependencies=[{"object_id":aid,"revision":rev,"role":"asset"}
+                          for aid,rev in sorted({
+                              (e["manifest"]["asset_id"],
+                               e["manifest"]["asset_revision"])
+                              for e in bindings})],
             precommit_guard=guard)
 
     def _resolve_assets(self, project_id, paths, asset_bindings, *,
