@@ -15,6 +15,7 @@ import unittest
 
 from backend.nvp_ffms2_native import FFMS2, sha_file, MAX_FFMS_FRAME
 from backend.nvp_ffms2_index_cache import FFMS2SourceIndex
+from backend.nvp_ffms2_index_maintenance import FFMS2IndexMaintenance
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_external_media_catalog import ExternalMediaCatalog
@@ -128,6 +129,8 @@ class FFMS2IndexedNative(unittest.TestCase):
             verify_creator_action=lambda event, _: event == "creator_yes",
             decoder_backend="ffms2", ffms2_library=self.ffms_path,
             ffms2_cache_root=self.root / "index-cache")
+        self.assertEqual(host.source_index_status(
+            self.pid, "take01", 1)["status"], "NOT_INDEXED_OR_LEGACY_CACHE")
         ticket = host.stage_and_approve(
             self.pid, "scene_cut", 1, first_frame=3, frame_count=6,
             destination=self.root / "review", creator_event="creator_yes",
@@ -146,6 +149,17 @@ class FFMS2IndexedNative(unittest.TestCase):
                              self.pid, "take01", self.source, self.sha)["index_sha256"]})
         self.assertEqual(ledger.get_task(ticket["task_id"])["reserved"], 0)
         self.assertEqual(host.verify_completed(ticket["task_id"])["frames"], 6)
+        self.assertEqual(host.source_index_status(
+            self.pid, "take01")["status"], "INDEX_VERSION_MATCH_UNVERIFIED")
+        # Simulate an index recorded under an earlier native engine; the
+        # desktop-facing host must warn without touching media originals.
+        older = FFMS2IndexMaintenance(
+            self.root / "index-cache", engine_version=max(0, self.ffms.version - 1),
+            library_sha256="a" * 64)
+        older.mark_index_verified(self.pid, "take01", self.sha)
+        upgrade = host.source_index_status(self.pid, "take01")
+        self.assertEqual(upgrade["status"], "REINDEX_REQUIRED")
+        self.assertEqual(upgrade["notice"]["code"], "VIDEO_INDEX_VERSION_CHANGED")
         # Independent verifier must reject falsely relabeled source-frame
         # provenance even when the receipt is reserialized canonically.
         receipt_path = self.root / "review" / "review_receipt.json"
