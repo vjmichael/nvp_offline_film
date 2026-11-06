@@ -333,6 +333,13 @@ def run_visible_window_smoke():
                                 time.sleep(.25)
                             if not result["passed"]:
                                 raise RuntimeError("Real installed indexed source assembly UI never opened")
+                            result["passed"]=False
+                            if not window.evaluate_js(
+                                "Boolean([...document.querySelectorAll('button')]"
+                                ".some(x=>x.textContent.includes('Review & play original footage'))"
+                                "&&document.querySelector('[aria-label=\\\"Non-destructive footage playback\\\"]'))"):
+                                raise RuntimeError("Native source player was not mounted in installed React")
+                            result["passed"]=True
                             break
                     time.sleep(.2)
                 if not result["passed"]:
@@ -481,10 +488,43 @@ def run_installed_source_smoke():
                 successor["document_sha256"]!=updated["edit_document_sha256"] or
                 hashlib.sha256(movie.read_bytes()).hexdigest()!=expected_sha):
                 raise RuntimeError("Installed assembly changed the original or earlier edit")
+            # INDEX-TIME-08: the *installed* packaged EXE must also
+            # decode multiple original frames as a bounded, creator-
+            # approved source assembly review rather than a single still.
+            preview=native.start_assembly_review({
+                "project_id":pid,"edit_id":imported["edit_id"],
+                "edit_revision":updated["revision"],
+                "edit_document_sha256":updated["edit_document_sha256"],
+                "start_tick":"0",
+            })
+            if preview.get("status")!="QUEUED":
+                raise RuntimeError("Installed original assembly playback was not authorized")
+            deadline=time.monotonic()+200
+            playback=None
+            while time.monotonic()<deadline:
+                playback=native.poll_assembly_review(preview["ticket_id"])
+                if playback["status"]=="COMPLETE":break
+                if playback["status"]=="RECOVERY_REQUIRED":
+                    raise RuntimeError("Installed original assembly playback worker failed")
+                time.sleep(.3)
+            if (playback is None or playback["status"]!="COMPLETE" or
+                playback["ready_frames"]<2 or
+                window.prompts!=4):
+                raise RuntimeError("Packaged multi-frame video review did not complete")
+            original_frame=native.get_assembly_review_frame(
+                preview["ticket_id"],0)
+            second_frame=native.get_assembly_review_frame(
+                preview["ticket_id"],1)
+            if (original_frame["status"]!="VERIFIED_FRAME" or
+                second_frame["status"]!="VERIFIED_FRAME" or
+                original_frame["source_pts"]==second_frame["source_pts"] or
+                original_frame["master_approved"] is not False or
+                hashlib.sha256(movie.read_bytes()).hexdigest()!=expected_sha):
+                raise RuntimeError("Installed source PTS, PNG or original custody failed")
             if sys.stdout is not None:
-                print("INDEX_TIME07_INSTALLED_ASSEMBLY_PASS",
+                print("INDEX_TIME08_INSTALLED_ASSEMBLY_REVIEW_PASS",
                       updated["edit_document_sha256"],
-                      result["png_sha256"])
+                      original_frame["png_sha256"])
             return 0
         finally:
             native._close()
