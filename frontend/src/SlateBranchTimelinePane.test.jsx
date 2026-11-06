@@ -175,4 +175,36 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
     expect(renderTicket).toHaveBeenCalledWith(900);
   });
 
+  it('shows one trusted host PNG proxy only for the currently selected committed edit',()=>{
+    const graph={project_id:'a'.repeat(32),scene_label:'01',
+      parallel_groups:{reaction:[node(1,true)]}};
+    const activeView={edit_document_sha256:'a'.repeat(64),
+      sequence:[{segment_id:'clip_1',branch_id:'take_1',
+        source_in_tick:0,source_out_tick:100,
+        timeline_start_tick:0,timeline_end_tick:100}]};
+    const previewPane={
+      status:'READY',segment_id:'clip_1',
+      edit_document_sha256:'a'.repeat(64),
+      image_data_url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
+    };
+    const {container,rerender}=render(<SlateBranchTimelinePane
+      graphView={graph} activeView={activeView} previewPane={previewPane}/>);
+    expect(container.querySelector('.nvp-slate-proxy-preview img')).toBeNull();
+    fireEvent.click(container.querySelector('.nvp-slate-assembly-card'));
+    expect(screen.getByAltText(/low-resolution geometry-proxy/)).toBeTruthy();
+    rerender(<SlateBranchTimelinePane graphView={graph} activeView={activeView}
+      previewPane={{...previewPane,edit_document_sha256:'b'.repeat(64)}}/>);
+    expect(container.querySelector('.nvp-slate-proxy-preview img')).toBeNull();
+    expect(screen.getByText(/Preview not ready for this selected committed segment/)).toBeTruthy();
+  });
+
+  it('never treats a queued low-fi proxy as a rendered picture',()=>{
+    const graph={project_id:'b'.repeat(32),scene_label:'01',
+      parallel_groups:{reaction:[node(1,true)]}};
+    const {container}=render(<SlateBranchTimelinePane graphView={graph}
+      previewPane={{status:'QUEUED',segment_id:'clip_1'}}/>);
+    expect(screen.getByText(/Preview queued/)).toBeTruthy();
+    expect(container.querySelector('.nvp-slate-proxy-preview img')).toBeNull();
+  });
+
 });
