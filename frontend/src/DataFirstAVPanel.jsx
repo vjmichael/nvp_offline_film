@@ -308,10 +308,14 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <button disabled={!controller.current.ticket}
         onClick={stop}>Stop and revoke native audition</button>
     </div>
-    {scene&&<DataFirstWorldViewport
-      objects={scene.scene?.objects||[]}
-      listenerPath={listener}
-      tick={String(scene.scene?.time_tick||'0')}/>}
+    {scene?.visual?.format==='nvp.data_av.native_visual_state.v1'&&
+      <DataFirstWorldViewport
+        objects={scene.visual.objects||[]}
+        listenerPath={listener}
+        sceneSha={scene.visual.scene_document_sha256}
+        tick={String(scene.visual.time_tick||'0')}/>}
+    {scene&&!scene.visual&&<p role="status">Native source geometry
+      is not verified; spatial sound may still be inspected.</p>}
     {scene&&<section aria-label="Current frozen USD scene state">
       <h3>World state at requested Film Time</h3>
       <p className="fineprint">Native OpenUSD spatial descriptors, not
