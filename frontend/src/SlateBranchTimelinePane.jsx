@@ -10,7 +10,8 @@ const ROW=62, WINDOW_ROWS=12;
 export default function SlateBranchTimelinePane({
   graphView,activeView=null,draftView=null,catalogPage=null,onLoadMore=null,
   onMakeActive,onInsertBefore,onInsertAfter,onReplace,onPreviewTake,
-  onDraftCut,onDraftPaste,onCommitDraft,onRequestDataPreview
+  onDraftCut,onDraftPaste,onCommitDraft,onRequestDataPreview,
+  previewPane=null
 }) {
   const [group,setGroup]=useState('');
   const [inspection,setInspection]=useState('');
@@ -253,6 +254,25 @@ export default function SlateBranchTimelinePane({
           Make draft active
         </button>
       </div>
+      {previewPane && <aside className="nvp-slate-proxy-preview"
+        aria-label="On-demand low-resolution preview">
+        <strong>Low-fi blocking preview</strong>
+        {previewPane.status==='QUEUED' &&
+          <p>Preview queued. The frozen 3D source is unchanged.</p>}
+        {previewPane.status==='FAILED' &&
+          <p>Preview unavailable; original source data are untouched.</p>}
+        {previewPane.status==='READY' &&
+         previewPane.edit_document_sha256===activeView?.edit_document_sha256 &&
+         previewPane.segment_id===target &&
+         typeof previewPane.image_data_url==='string' &&
+         previewPane.image_data_url.startsWith('data:image/png;base64,') &&
+         previewPane.image_data_url.length<=12*1024*1024
+          ? <img src={previewPane.image_data_url}
+                 alt="Director's low-resolution geometry-proxy composition, not final film picture"
+                 loading="lazy"/>
+          : <p>Preview not ready for this selected committed segment.</p>}
+        <small>Proxy geometry only · SHA-pinned frozen Take · no master approval</small>
+      </aside>}
       <p className="nvp-slate-info">{inspection
           ? 'Inspecting '+inspection+'. Active source colors have not changed.'
           : 'Click a take to inspect; Make Active is an explicit editor decision.'}</p>
