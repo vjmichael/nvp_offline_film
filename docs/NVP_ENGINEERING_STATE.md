@@ -69,3 +69,10 @@
 ## Required evidence for any future ledger update
 
 Record: date; actor/source (human decision, tool observation, AI hypothesis); branch; source SHA; exact command and tested input; OS/runtime/tool versions; outcome + skips; artifact SHA/path if produced; relationship to prior accepted versions; outstanding blocker; next action. Never invent a successful install, benchmark, model inference or DCP screening. A remembered resource is not a verified current resource.
+
+## 2026-11-06 — Indexing continuity and SLATE-08B desktop IPC
+
+- Indexing work preceding the SLATE tasks: DATA-01/SCALE-03C original FilmIndex + owned fast media index, INDEX-TIME-01–04 PTS and Film Time bridges, VFR placements, supervised preview/conform and binary seek. Earlier benchmark observation: 259,200 frames / ~4.67 MiB / ~4.53 s indexing / ~0.085 s near-end seek; external FFMS2 comparison and exact-head native acceptance not closed.
+- SLATE-08A: ordinary planning UI now shows real published scene/camera identities and read-only Film Time marker projection. CI/installed acceptance open.
+- SLATE-08B: native PyWebView2 JS API bridge grants scoped original-source Cycles still after native OS user confirmation, routes to existing supervisor/cache, delivers bounded verified PNG by per-window ticket, separately confirms cancellation, checks window URL and source/lens SHA, and disables rendering if no native Blender. No arbitrary native command or model-selected script, no general FastAPI mutating render endpoint, no final film approval.
+- Pending: exact-head CI, real Windows installed WebView2 ↔ worker PNG acceptance, real Blender executable packaging/provenance in single NSIS, source & orphan worker restart reconciliation, plus still-open indexing gates.
