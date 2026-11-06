@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 from pathlib import Path
 import socket
 import sys
@@ -190,18 +191,56 @@ def run_persistent_installed_smoke(mode):
             raise RuntimeError("Installed NVP failed to exit cleanly")
 
 
+def create_trusted_camera_bridge(port):
+    """Desktop-only pywebview IPC; never registered as an HTTP route."""
+    from backend.nvp_api import studio
+    from backend.nvp_film_index import FilmIndex
+    from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+    return TrustedDesktopCameraBridge(
+        FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
+
+
 def run_visible_window_smoke():
-    """Exercise a real WebView2 desktop window; no headless substitute."""
+    """Installed real WebView2 + native OpenUSD source panel smoke.
+
+    Use a throwaway film workspace: tests must never publish a demo source
+    or mutate the creator's durable Projects directory.
+    """
     import webview
     from threading import Event
-    configure_home()
-    app=create_app()
-    server,worker,port,sock=serve(app)
+    test_home=Path(tempfile.mkdtemp(prefix="nvp-slate08b-installed-"))
+    old_home=os.environ.get("NVP_HOME")
+    os.environ["NVP_HOME"]=str(test_home)
+    try:
+        app=create_app()
+        from backend.nvp_api import studio
+        from backend.nvp_film_index import FilmIndex
+        from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        project=studio.create_project("SLATE-08B Window Acceptance",
+            "One native source camera scene")
+        OpenUSDSceneBridge(FilmIndex(studio)).publish(
+            project["id"],"smoke_scene",
+            prims=[
+                {"path":"/World/Actor","role":"actor",
+                 "position":[0,0,0]},
+                {"path":"/World/Camera","role":"camera",
+                 "position":[0,0,8]},
+            ],curves=[],native_schemas=True)
+        server,worker,port,sock=serve(app)
+    except BaseException:
+        if old_home is None: os.environ.pop("NVP_HOME",None)
+        else: os.environ["NVP_HOME"]=old_home
+        shutil.rmtree(test_home,ignore_errors=True)
+        raise
     loaded=Event()
     result={"passed":False}
+    bridge=None
     try:
+        bridge=create_trusted_camera_bridge(port)
         window=webview.create_window("NVP Alpha Window Acceptance",
-            "http://127.0.0.1:"+str(port),width=1000,height=700)
+            "http://127.0.0.1:"+str(port),width=1000,height=700,
+            js_api=bridge)
+        bridge._attach_window(window)
         window.events.loaded += lambda:loaded.set()
         def inspect_and_close():
             try:
@@ -214,8 +253,71 @@ def run_visible_window_smoke():
                         "Boolean(document.querySelector('#root') && "
                         "document.querySelector('#root').children.length > 0)")
                     if mounted is True:
-                        result["passed"]=True
-                        break
+                        ipc=window.evaluate_js(
+                            "Boolean(window.pywebview && window.pywebview.api && "
+                            "typeof window.pywebview.api.request_camera_still === 'function' && "
+                            "typeof window.pywebview.api.poll_camera_still === 'function' && "
+                            "typeof window.pywebview.api.cancel_camera_still === 'function')")
+                        if ipc is True:
+                            # Type signatures alone don't prove that the
+                            # installed WebView2 can invoke native host code.
+                            # Execute a REAL non-mutating JS -> Python IPC,
+                            # without approving any Blender worker.
+                            window.evaluate_js(
+                                "window.__nvpCameraProbe = 'PENDING';"
+                                "window.pywebview.api.camera_render_capabilities()"
+                                ".then(x => { window.__nvpCameraProbe = "
+                                "x.format === 'nvp.camera.desktop_capability.v1' "
+                                "&& x.native_window === true ? 'PASSED' : 'FAILED'; })"
+                                ".catch(() => { window.__nvpCameraProbe = 'FAILED'; });")
+                            until=time.monotonic()+10
+                            while time.monotonic()<until:
+                                outcome=window.evaluate_js(
+                                    "window.__nvpCameraProbe")
+                                if outcome=="PASSED":
+                                    result["passed"]=True
+                                    break
+                                if outcome=="FAILED":
+                                    raise RuntimeError(
+                                        "Desktop native camera JS IPC failed origin/capability validation")
+                                time.sleep(.1)
+                            if result["passed"]:
+                                # The browser must ALSO open a real project,
+                                # visit its camera tab, resolve the authored
+                                # source from SQLite and load native USD.
+                                result["passed"]=False
+                                window.evaluate_js(
+                                    "(() => {const b=[...document.querySelectorAll('aside button')]"
+                                    ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                end=time.monotonic()+20
+                                while time.monotonic()<end:
+                                    clicked=window.evaluate_js(
+                                        "(() => {const b=[...document.querySelectorAll('nav.tabs button')]"
+                                        ".find(x=>x.textContent.includes('Virtual camera'));"
+                                        "if(b){b.click();return true;}return false;})()")
+                                    if clicked is True:
+                                        break
+                                    time.sleep(.2)
+                                if clicked is not True:
+                                    raise RuntimeError(
+                                        "Installed camera tab did not appear in actual project")
+                                end=time.monotonic()+20
+                                while time.monotonic()<end:
+                                    panel=window.evaluate_js(
+                                        "Boolean(document.querySelector("
+                                        "'section[aria-label=\\\"Film source camera\\\"]') && "
+                                        "document.querySelector("
+                                        "'section[aria-label=\\\"Virtual Camera Workbench\\\"]') && "
+                                        "document.body.textContent.includes('smoke_scene'))")
+                                    if panel is True:
+                                        result["passed"]=True
+                                        break
+                                    time.sleep(.2)
+                                if not result["passed"]:
+                                    raise RuntimeError(
+                                        "Installed OpenUSD camera source did not reach real React workbench")
+                                break
                     time.sleep(.2)
                 if not result["passed"]:
                     raise RuntimeError("Bundled NVP React interface did not render")
@@ -229,9 +331,18 @@ def run_visible_window_smoke():
                 "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
         return 0
     finally:
-        server.should_exit=True
-        worker.join(timeout=12)
-        sock.close()
+        try:
+            if bridge is not None:
+                bridge._close()
+        finally:
+            try:
+                server.should_exit=True
+                worker.join(timeout=12)
+                sock.close()
+            finally:
+                if old_home is None: os.environ.pop("NVP_HOME",None)
+                else: os.environ["NVP_HOME"]=old_home
+                shutil.rmtree(test_home,ignore_errors=True)
 
 
 def main(argv=None):
@@ -257,17 +368,24 @@ def main(argv=None):
     configure_home()
     app=create_app()
     server,worker,port,sock=serve(app)
+    bridge=None
     try:
         import webview
-        webview.create_window("NVP — Make Your Movie",
+        bridge=create_trusted_camera_bridge(port)
+        window=webview.create_window("NVP — Make Your Movie",
             "http://127.0.0.1:"+str(port),
-            width=1280,height=800,min_size=(960,600))
+            width=1280,height=800,min_size=(960,600),js_api=bridge)
+        bridge._attach_window(window)
         webview.start(gui="edgechromium",debug=False)
         return 0
     finally:
-        server.should_exit=True
-        worker.join(timeout=12)
-        sock.close()
+        try:
+            if bridge is not None:
+                bridge._close()
+        finally:
+            server.should_exit=True
+            worker.join(timeout=12)
+            sock.close()
 
 
 if __name__=="__main__":

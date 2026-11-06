@@ -479,3 +479,10 @@ See [MASTER-01C host-owned film publication contract, evidence and limits](NVP_M
 ## SLATE-08 — Main Editor Read-Only OpenUSD Camera Browser (Nov 6, 2026)
 
 The source-backed CAM-01 workbench is now exposed from the main React planning interface through a bounded **read-only** project-scoped FilmIndex camera scene list and exact native scene/camera/Film Time snapshot route. The live spherical lens projection is an honest approximation and never edits the underlying scene or frozen Take. Native Blender still render, director preset publication and SHOT opinion commits are deliberately **not** exposed over general planning HTTP; these require an authenticated native desktop action and independently verified media IPC. CI/installed Windows acceptance open. See [NVP_SLATE08_DESKTOP_CAMERA_BRIDGE.md](NVP_SLATE08_DESKTOP_CAMERA_BRIDGE.md).
+
+
+### SLATE-08B — Trusted Desktop Camera Rendering, continued from INDEX-TIME (2026-11-06)
+
+The installed desktop's native WebView2 now binds a narrow Python camera bridge. Ordinary FastAPI exposes **read-only OpenUSD source selection**, but neither renderer launch nor approval nor arbitrary filesystem reads. Native OS dialog confirms one exact FilmIndex scene/revision/SHA, authored camera, Film Time and optical settings. A one-use approval token authorizes the preexisting NativeSlatePreviewHost, TaskLedger, supervised first-party Blender worker and SHA-verified PNG cache. The React camera workbench polls session-scoped native tickets; stale/different-lens renders are refused; a second native approval is required to cancel. Missing installed Blender is detected and the render button disabled. See docs/NVP_SLATE08B_TRUSTED_DESKTOP_RENDERING.md. Windows/Linux native, installed WebView2 and real Blender acceptance still open.
+
+**Chronology:** DATA-01 + SCALE-03C media index → INDEX-TIME-01–04 event/PTS/Film Time and preview/conform index → OpenUSD 3D scene/Takes → SLATE branching/visualization. The indexed original source remains canonical and is not replaced by a rendered still, slate timeline or temporary camera preview. Native indexing validation/FFMS2 comparisons remain separate open gates.
