@@ -110,6 +110,14 @@ def verified_optics(settings):
                 not math.isfinite(actual) or
                 not math.isclose(actual,expected,rel_tol=0,abs_tol=1e-8)):
                 raise ValueError("Lens field of view differs from selected optics")
+        elif type(expected) is float:
+            # Browser JSON encodes 50.0 as the integer token 50; both
+            # represent the same physical parameter. Reject booleans and
+            # nonfinite data rather than requiring the Python float type.
+            if (type(actual) not in (int,float) or
+                not math.isfinite(actual) or
+                not math.isclose(float(actual),expected,rel_tol=0,abs_tol=1e-10)):
+                raise ValueError("Lens physical parameter differs from approved optics")
         elif actual!=expected or type(actual) is not type(expected):
             raise ValueError("Untrusted optical field or unsupported lens effect")
     return exact
