@@ -34,12 +34,17 @@ from backend.nvp_worker_containment import launch_contained
 from backend.nvp_source_window_decode import _sha_file
 from backend.nvp_native_frame_index import stamp
 from backend.nvp_film_index import _require_pid, _id, _sha
-from backend.nvp_temporal_ledger import MAX_TICK
+from backend.nvp_temporal_ledger import MAX_TICK,TICKS_PER_SECOND
 
 STATUS_FORMAT="nvp.index_time09.native_av_host.v1"
 OPERATION="nvp.native.index_time09.av_review.v1"
 TABLE="nvp_native_index_time09_av_grants"
 MAX_CHUNK_BYTES=1024*1024
+# One native OS consent authorizes bounded, sequential reviewed sections for
+# at most four hours. Only current + one ahead are permitted simultaneously.
+MAX_PROGRESSIVE_SECONDS=4*3600
+MAX_PROGRESSIVE_TICKS=MAX_PROGRESSIVE_SECONDS*TICKS_PER_SECOND
+MAX_ACTIVE_TICKETS=2
 
 class NativeAVProxyHost:
     def __init__(self,desktop):
@@ -78,10 +83,13 @@ class NativeAVProxyHost:
         self.bindings=ApprovedTaskBindings(
             self.ledger,approval_check=self._verify_creator)
         self._lock=threading.RLock()
+        # One media worker at a time. The next section waits for the
+        # verified current proxy, never competing for a second 2 GiB worker.
         self._executor=ThreadPoolExecutor(max_workers=1,
             thread_name_prefix="NVP original A/V review")
         self._tickets={}
         self._current=None
+        self._session=None
         self._closed=False
 
     def _row(self,task):
@@ -129,7 +137,22 @@ class NativeAVProxyHost:
                 Path(row["destination"]).exists() or
                 Path(row["destination"]).is_symlink()):
                 return False
+            session_id=spec.get("progressive_session")
+            if session_id is not None:
+                grant=self._session
+                if (grant is None or grant["id"]!=session_id or
+                    grant["stopped"] or time.monotonic()>grant["expires"] or
+                    row["project_id"]!=grant["project_id"] or
+                    row["edit_id"]!=grant["edit_id"] or
+                    row["edit_revision"]!=grant["edit_revision"] or
+                    row["edit_sha"]!=grant["edit_sha"]):
+                    return False
             plan=self._plan(row)
+            if session_id is not None and (
+                plan["actual_start_tick"]<grant["start_tick"] or
+                plan["actual_start_tick"]+plan["review_duration_tick"]>
+                grant["end_tick"]+TICKS_PER_SECOND):
+                return False
             head=self.desktop.reader.index.read_revision(
                 row["project_id"],row["edit_id"])
             if (head["revision"]!=row["edit_revision"] or
@@ -172,7 +195,7 @@ class NativeAVProxyHost:
             raise ValueError("Exact bounded Film Time tick required")
         return int(value)
 
-    def start(self,request):
+    def start(self,request,*,progressive=False,continuation=False):
         with self._lock:
             self.desktop._window()
             if self._closed:raise RuntimeError("A/V native window closed")
@@ -187,7 +210,19 @@ class NativeAVProxyHost:
             if type(rev) is not int or not 1<=rev<=1000000:
                 raise ValueError("Original edit revision missing")
             tick=self._tick(request["start_tick"])
-            if self._current is not None:
+            if continuation:
+                grant=self._session
+                if (not progressive or grant is None or grant["stopped"] or
+                    time.monotonic()>grant["expires"] or
+                    (pid,edit,rev,sha)!=(grant["project_id"],grant["edit_id"],
+                                         grant["edit_revision"],grant["edit_sha"]) or
+                    tick!=grant["expected_next_tick"] or
+                    grant["next_ticket"] is not None or
+                    len(self._tickets)>=MAX_ACTIVE_TICKETS):
+                    raise PermissionError("Unapproved progressive continuation")
+            elif self._session is not None:
+                raise RuntimeError("Stop the active progressive session before a new review")
+            if not continuation and self._current is not None:
                 prior=self._tickets[self._current]
                 if not prior["future"].done():
                     raise RuntimeError("Previous A/V review must finish cancellation")
@@ -198,22 +233,72 @@ class NativeAVProxyHost:
             plan=create_plan(
                 self.desktop.studio,self.desktop.reader,pid,edit,rev,sha,
                 tick,ffprobe=self.ffprobe)
-            if not self.desktop._confirm(
-                "Prepare temporary synchronized PICTURE + SOUND playback?\n"+
-                "Edit: "+edit+" revision "+str(rev)+"\n"+
-                "Film Time: "+str(tick)+" exact ticks\n"+
-                "Review length: up to 20 minutes, max 160 MiB\n"+
-                "Original sources: "+str(len(plan["sources"]))+
-                " · original picture/audio remain frozen.\n"+
-                "NVP creates one bounded 24fps/48kHz preview MOVIE.\n"+
-                "This is neither source editing nor a final mastered film."):
-                return {"format":STATUS_FORMAT,"status":"DENIED",
-                        "original_modified":False,"master_approved":False}
+            if continuation:
+                # No new consent dialog: the original, explicit creator grant
+                # already bounded the entire sequential session (<=4 hours).
+                # Every child still receives its own SHA-pinned approval,
+                # TaskLedger entry, worker guard and independent AV receipt.
+                if tick>=grant["end_tick"]:
+                    raise PermissionError("Progressive approval window ended")
+                session_id=grant["id"]
+            elif progressive:
+                head=self.desktop.reader.index.read_revision(pid,edit)
+                duration=int(head["data"]["duration_tick"])
+                authorized_end=min(duration,tick+MAX_PROGRESSIVE_TICKS)
+                if not self.desktop._confirm(
+                    "Progressive original picture + sound review?\n"+
+                    "Edit: "+edit+" revision "+str(rev)+"\n"+
+                    "Begin at exact Film Time: "+str(tick)+"\n"+
+                    "NVP may automatically prepare sequential review parts up "+
+                    "to FOUR HOURS of this exact saved edit, or its end.\n"+
+                    "At most two 20-minute, 160 MiB temporary sections exist "+
+                    "at once, using one contained worker at a time.\n"+
+                    "No new approval is required for the next section inside "+
+                    "this scope. Stop or edit changes revoke the grant.\n"+
+                    "Captured picture and sound stay frozen. Preview is "+
+                    "NOT an approved master."):
+                    return {"format":STATUS_FORMAT,"status":"DENIED",
+                            "original_modified":False,"master_approved":False}
+                session_id=secrets.token_urlsafe(24)
+            else:
+                if not self.desktop._confirm(
+                    "Prepare temporary synchronized PICTURE + SOUND playback?\n"+
+                    "Edit: "+edit+" revision "+str(rev)+"\n"+
+                    "Film Time: "+str(tick)+" exact ticks\n"+
+                    "Review length: up to 20 minutes, max 160 MiB\n"+
+                    "Original sources: "+str(len(plan["sources"]))+
+                    " · original picture/audio remain frozen.\n"+
+                    "NVP creates one bounded 24fps/48kHz preview MOVIE.\n"+
+                    "This is neither source editing nor a final mastered film."):
+                    return {"format":STATUS_FORMAT,"status":"DENIED",
+                            "original_modified":False,"master_approved":False}
+                session_id=None
             second=create_plan(
                 self.desktop.studio,self.desktop.reader,pid,edit,rev,sha,
                 tick,ffprobe=self.ffprobe)
             if plan!=second or self._closed:
                 raise RuntimeError("Original source/PTS changed during user consent")
+            if progressive:
+                approved_end=grant["end_tick"] if continuation else authorized_end
+                if (plan["actual_start_tick"]<
+                    (grant["start_tick"] if continuation else tick)-TICKS_PER_SECOND
+                    or plan["actual_start_tick"]+
+                       plan["review_duration_tick"]>approved_end+TICKS_PER_SECOND):
+                    raise RuntimeError("Source snap exceeds progressive grant")
+                if continuation:
+                    # Actual snapped boundaries may overlap a held VFR frame
+                    # by under a second. The UI must skip that overlap.
+                    if plan["actual_start_tick"]>tick:
+                        raise RuntimeError("Native next section skipped approved Film Time")
+                else:
+                    self._session={
+                        "id":session_id,"project_id":pid,"edit_id":edit,
+                        "edit_revision":rev,"edit_sha":sha,
+                        "start_tick":tick,"end_tick":authorized_end,
+                        "expires":time.monotonic()+MAX_PROGRESSIVE_SECONDS,
+                        "stopped":False,"current_ticket":None,
+                        "next_ticket":None,"expected_next_tick":None,
+                    }
             ticket=secrets.token_urlsafe(24)
             task="index09_"+secrets.token_hex(16)
             folder=self.root/task
@@ -232,6 +317,8 @@ class NativeAVProxyHost:
                 "plan_sha":sha256(canonical(plan)).hexdigest(),
                 "destination":str(dest),
                 "ram_mb":2048,**self.tool_hashes,
+                **({"progressive_session":session_id}
+                   if session_id is not None else {}),
             }
             row={
                 "task_id":task,"approval_id":approval,
@@ -268,11 +355,22 @@ class NativeAVProxyHost:
                 "plan":plan,"verified":None,"stopped":False,
             }
             self._tickets[ticket]=item
-            self._current=ticket
+            if progressive:
+                item["progressive_session"]=session_id
+                grant=self._session
+                if continuation:
+                    grant["next_ticket"]=ticket
+                else:
+                    grant["current_ticket"]=ticket
+            if not continuation:
+                self._current=ticket
             item["future"]=self._executor.submit(self._run,item)
             return {
                 "format":STATUS_FORMAT,"status":"QUEUED",
                 "ticket_id":ticket,
+                **({"progressive_session_id":session_id,
+                    "progressive_limit_tick":str(self._session["end_tick"])}
+                   if progressive else {}),
                 "project_id":pid,"edit_id":edit,
                 "edit_revision":rev,"edit_document_sha256":sha,
                 "requested_start_tick":str(tick),
@@ -280,6 +378,119 @@ class NativeAVProxyHost:
                 "review_duration_tick":str(plan["review_duration_tick"]),
                 "original_modified":False,"master_approved":False,
             }
+
+    def begin_progressive(self,request):
+        """One explicit native consent for up to four hours of one exact edit."""
+        return self.start(request,progressive=True)
+
+    def prepare_next_progressive(self,session_id,anchor_ticket):
+        """Plan only the immediate successor of the current verified section.
+
+        No browser-chosen next tick or path; the host derives it from the
+        predecessor's sealed Film Time plan, and the original consent.
+        """
+        with self._lock:
+            grant=self._session
+            if (type(session_id) is not str or type(anchor_ticket) is not str or
+                grant is None or grant["id"]!=session_id or grant["stopped"] or
+                grant["current_ticket"]!=anchor_ticket or
+                time.monotonic()>grant["expires"]):
+                raise PermissionError("Progressive session not authorized")
+            if grant["next_ticket"] is not None:
+                return {"format":STATUS_FORMAT,"status":"ALREADY_QUEUED",
+                        "ticket_id":grant["next_ticket"],
+                        "progressive_session_id":session_id,
+                        "original_modified":False,"master_approved":False}
+            state=self.poll(anchor_ticket)
+            if state["status"]!="READY":
+                return {"format":STATUS_FORMAT,"status":"NOT_READY",
+                        "original_modified":False,"master_approved":False}
+            current=self._tickets[anchor_ticket]
+            end=(current["plan"]["actual_start_tick"]+
+                 current["plan"]["review_duration_tick"])
+            if end>=grant["end_tick"]:
+                return {"format":STATUS_FORMAT,"status":"AT_END",
+                        "progressive_session_id":session_id,
+                        "original_modified":False,"master_approved":False}
+            grant["expected_next_tick"]=end
+            request={
+                "project_id":grant["project_id"],"edit_id":grant["edit_id"],
+                "edit_revision":grant["edit_revision"],
+                "edit_document_sha256":grant["edit_sha"],
+                "start_tick":str(end),
+            }
+            return self.start(request,progressive=True,continuation=True)
+
+    def advance_progressive(self,session_id,current_ticket,next_ticket):
+        """Revoke old media after an independently verified successor exists."""
+        with self._lock:
+            grant=self._session
+            if (type(session_id) is not str or grant is None or
+                grant["id"]!=session_id or grant["stopped"] or
+                grant["current_ticket"]!=current_ticket or
+                grant["next_ticket"]!=next_ticket or
+                current_ticket==next_ticket):
+                raise PermissionError("Progressive transition is not authorized")
+            old=self._tickets[current_ticket]
+            upcoming=self._tickets[next_ticket]
+            if (old["progressive_session"]!=session_id or
+                upcoming["progressive_session"]!=session_id or
+                self.poll(next_ticket)["status"]!="READY"):
+                raise RuntimeError("Next A/V review has no verified receipt")
+            expected=(old["plan"]["actual_start_tick"]+
+                      old["plan"]["review_duration_tick"])
+            actual=upcoming["plan"]["actual_start_tick"]
+            if (actual>expected or expected>=actual+
+                upcoming["plan"]["review_duration_tick"]):
+                raise RuntimeError("Source Film Time successor has a missing interval")
+            old["stopped"]=True
+            old["cancel"].set()
+            if not old["future"].done():
+                raise RuntimeError("Current A/V worker has not exited")
+            with self.ledger._db() as db:
+                db.execute("UPDATE "+TABLE+" SET revoked=1 WHERE task_id=?",
+                           (old["task"],))
+            self._discard(old)
+            self._tickets.pop(current_ticket,None)
+            grant["current_ticket"]=next_ticket
+            grant["next_ticket"]=None
+            grant["expected_next_tick"]=None
+            self._current=next_ticket
+            return {
+                "format":STATUS_FORMAT,"status":"ADVANCED",
+                "progressive_session_id":session_id,
+                "ticket_id":next_ticket,"actual_start_tick":str(actual),
+                "transition_tick":str(expected),
+                "original_modified":False,"master_approved":False,
+            }
+
+    def stop_progressive(self,session_id):
+        with self._lock:
+            grant=self._session
+            if (type(session_id) is not str or grant is None or
+                grant["id"]!=session_id):
+                raise PermissionError("Unknown progressive session")
+            self.desktop._window()
+            grant["stopped"]=True
+            for item in self._tickets.values():
+                item["stopped"]=True
+                item["cancel"].set()
+                state=self.ledger.get_task(item["task"])
+                if state is not None and state["state"]=="QUEUED":
+                    try:self.ledger.cancel_queued(item["task"],owner_key=self.owner)
+                    except (RuntimeError,PermissionError):pass
+                with self.ledger._db() as db:
+                    db.execute("UPDATE "+TABLE+" SET revoked=1 WHERE task_id=?",
+                               (item["task"],))
+            # The in-flight worker remains contained until wait_guarded
+            # independently confirms the entire process tree exited.
+            for item in list(self._tickets.values()):
+                if item["future"].done():
+                    self._discard(item)
+            self._session=None
+            self._current=None
+            return {"format":STATUS_FORMAT,"status":"CANCELLATION_REQUESTED",
+                    "original_modified":False,"master_approved":False}
 
     def _run(self,item):
         task=item["task"]
