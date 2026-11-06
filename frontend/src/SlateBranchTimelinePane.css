@@ -40,3 +40,27 @@
    green merely because its branch appears once in a mixed cut. */
 .nvp-slate-range{position:absolute;top:17.5px;height:5px;border-radius:6px;pointer-events:none}
 .nvp-slate-range.green{background:#13a64e}
+
+/* Film data assembly cards, NOT pre-rendered image-frame strips. Every card
+   exposes pinned digital-slate identity, exact source/destination ranges and
+   evidence-separated metadata for humans and AI-assisted proposal review. */
+.nvp-slate-segments{align-items:stretch;gap:10px;scrollbar-width:thin}
+.nvp-slate-assembly-card{
+  flex:0 0 230px!important;max-width:265px;white-space:normal!important;
+  text-align:left;display:flex;flex-direction:column;gap:5px;
+  border:1px solid #3f7052!important;background:#263d36!important;
+  border-radius:11px!important;padding:12px!important;
+  font-size:11px!important;line-height:1.25!important;
+}
+.nvp-slate-assembly-card strong{font-size:13px;color:#ecf8ee}
+.nvp-slate-assembly-card.target{outline:2px solid #edbb79;outline-offset:1px}
+.nvp-slate-card-label{font-size:10px;letter-spacing:.08em;font-weight:700;color:#92d2a5}
+.nvp-slate-card-sub,.nvp-slate-card-time,.nvp-slate-card-id{font-size:10px;color:#c3d0c6}
+.nvp-slate-card-tags{color:#f2e0ad;font-weight:600}
+.nvp-slate-card-warning{color:#f4cc8e}
+.nvp-slate-card-ai{border-top:1px solid #577260;padding-top:6px;color:#c5d6e7}
+.nvp-slate-card-notes,.nvp-slate-card-ai{
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;
+  overflow-wrap:anywhere;
+}
+.nvp-slate-more{margin:10px 0 0;background:#293c3d!important}
