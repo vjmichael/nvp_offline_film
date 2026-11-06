@@ -64,3 +64,11 @@
   overflow-wrap:anywhere;
 }
 .nvp-slate-more{margin:10px 0 0;background:#293c3d!important}
+
+/* Only a source reference is copied/cut/pasted in an uncommitted draft.
+   The separate green active source intervals never change until approval. */
+.nvp-slate-draft-tools{display:flex;gap:7px;flex-wrap:wrap;align-items:center;
+  padding:11px 0;border-top:1px solid #454b59}
+.nvp-slate-draft-tools button{font-size:11px!important}
+.nvp-slate-draft-tools .nvp-slate-commit{
+  margin-left:auto;background:#23593e;border-color:#419366;font-weight:700}

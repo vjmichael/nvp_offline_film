@@ -118,4 +118,61 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
     expect(container.querySelectorAll('.nvp-slate-entry').length).toBeLessThan(64);
   });
 
+  it('copies/cuts/pastes only draft references without changing active green source',()=>{
+    const draftCut=vi.fn(),draftPaste=vi.fn(),commit=vi.fn(),preview=vi.fn();
+    const graph={project_id:'e'.repeat(32),scene_label:'01',
+      parallel_groups:{reaction:[node(1,true),node(2)]}};
+    const source={segment_id:'original',branch_id:'take_1',
+      source_in_tick:100,source_out_tick:600,
+      timeline_start_tick:0,timeline_end_tick:500};
+    const activeView={edit_document_sha256:'a'.repeat(64),
+      sequence:[source]};
+    const draftView={draft_uncommitted:true,segments:[
+      {...source,segment_id:'draft_one'},
+      {...source,segment_id:'draft_two',
+        branch_id:'take_2',timeline_start_tick:500,
+        timeline_end_tick:1000},
+    ]};
+    const {container}=render(<SlateBranchTimelinePane
+      graphView={graph} activeView={activeView}
+      draftView={draftView} onDraftCut={draftCut}
+      onDraftPaste={draftPaste} onCommitDraft={commit}
+      onRequestDataPreview={preview}/>);
+    expect(screen.getByText('Uncommitted draft assembly')).toBeTruthy();
+    expect(container.querySelectorAll('.nvp-slate-range.green')).toHaveLength(1);
+    fireEvent.click(container.querySelectorAll('.nvp-slate-assembly-card')[1]);
+    fireEvent.click(screen.getByText('Copy reference'));
+    expect(draftCut).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Paste before'));
+    expect(draftPaste).toHaveBeenCalledWith({
+      branch_id:'take_2',source_in_tick:100,source_out_tick:600
+    },'draft_two','before');
+    expect(commit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Cut draft reference'));
+    expect(draftCut).toHaveBeenCalledWith('draft_two');
+    expect(container.querySelectorAll('.nvp-slate-range.green')).toHaveLength(1);
+    expect(screen.getByText('Preview source data').disabled).toBe(true);
+    fireEvent.click(screen.getByText('Make draft active'));
+    expect(commit).toHaveBeenCalledWith(draftView);
+    expect(container.querySelectorAll('.nvp-slate-range.green')).toHaveLength(1);
+  });
+
+  it('requests data preview only for a selected committed time interval',()=>{
+    const renderTicket=vi.fn();
+    const graph={project_id:'f'.repeat(32),scene_label:'01',
+      parallel_groups:{reaction:[node(1,true)]}};
+    const cut={edit_document_sha256:'b'.repeat(64),sequence:[{
+      segment_id:'selected',branch_id:'take_1',
+      source_in_tick:100,source_out_tick:600,
+      timeline_start_tick:900,timeline_end_tick:1400,
+    }]};
+    const {container}=render(<SlateBranchTimelinePane graphView={graph}
+      activeView={cut} onRequestDataPreview={renderTicket}/>);
+    expect(renderTicket).not.toHaveBeenCalled();
+    fireEvent.click(container.querySelector('.nvp-slate-assembly-card'));
+    fireEvent.click(screen.getByText('Preview source data'));
+    expect(renderTicket).toHaveBeenCalledOnce();
+    expect(renderTicket).toHaveBeenCalledWith(900);
+  });
+
 });

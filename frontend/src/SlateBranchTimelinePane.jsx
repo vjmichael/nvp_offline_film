@@ -8,12 +8,16 @@ import './SlateBranchTimelinePane.css';
 const ROW=62, WINDOW_ROWS=12;
 
 export default function SlateBranchTimelinePane({
-  graphView,activeView=null,catalogPage=null,onLoadMore=null,
-  onMakeActive,onInsertBefore,onInsertAfter,onReplace,onPreviewTake
+  graphView,activeView=null,draftView=null,catalogPage=null,onLoadMore=null,
+  onMakeActive,onInsertBefore,onInsertAfter,onReplace,onPreviewTake,
+  onDraftCut,onDraftPaste,onCommitDraft,onRequestDataPreview
 }) {
   const [group,setGroup]=useState('');
   const [inspection,setInspection]=useState('');
   const [target,setTarget]=useState('');
+  // This clipboard contains only source interval IDs/ticks, never 3D source
+  // data, assets, geometry, picture frames or an approved editorial decision.
+  const [sourceClipboard,setSourceClipboard]=useState(null);
   const [scrollTop,setScrollTop]=useState(0);
   const [popRoot,setPopRoot]=useState(null);
   const popup=useRef(null);
@@ -32,6 +36,10 @@ export default function SlateBranchTimelinePane({
   const current=groupIds.includes(group)?group:(groupIds[0]||'');
   const takes=groups[current]||[];
   const sequences=activeView?.sequence||[];
+  const draftSegments=draftView?.segments||null;
+  const shownSegments=draftSegments||sequences;
+  const chosenSegment=shownSegments.find(s=>s.segment_id===target)||null;
+  const hasDraft=Boolean(draftSegments);
   const hasCut=Boolean(activeView?.edit_document_sha256);
   const active=new Set(hasCut
     ? sequences.map(s=>s.branch_id)
@@ -59,6 +67,23 @@ export default function SlateBranchTimelinePane({
   function inspect(take) {
     setInspection(take.branch_id);
     onPreviewTake?.(take); // inspect only; active edit remains unchanged
+  }
+  function copySelected() {
+    if(!chosenSegment)return;
+    const {branch_id,source_in_tick,source_out_tick}=chosenSegment;
+    setSourceClipboard({branch_id,source_in_tick,source_out_tick});
+  }
+  function cutSelected() {
+    if(!hasDraft || !chosenSegment || !onDraftCut)return;
+    copySelected();
+    // A CUT removes a reference from the temporary draft only. It never
+    // deletes a frozen Take, nor modifies the active green committed path.
+    onDraftCut(chosenSegment.segment_id);
+  }
+  function pasteAt(side) {
+    if(!hasDraft || !chosenSegment || !sourceClipboard || !onDraftPaste)return;
+    // Host provides a NEW unique segment ID and checks exact source bounds.
+    onDraftPaste(sourceClipboard,chosenSegment.segment_id,side);
   }
   function dock() {
     const w=popup.current; popup.current=null; setPopRoot(null);
@@ -152,9 +177,13 @@ export default function SlateBranchTimelinePane({
         <span><i className="nvp-slate-swatch focus"/>Inspecting only</span>
         <span><i className="nvp-slate-swatch dashed"/>Straight dashed parent line</span>
       </div>
-      <h3>Active assembled cut</h3>
-      {hasCut?<div className="nvp-slate-segments">
-        {sequences.map(segment=>{
+      <h3>{hasDraft?'Uncommitted draft assembly':'Active assembled cut'}</h3>
+      {hasDraft&&<p className="nvp-slate-info">
+        Draft changes are not active. The committed source ranges above
+        remain green until the director authorizes the new cut.
+      </p>}
+      {(hasDraft||hasCut)?<div className="nvp-slate-segments">
+        {shownSegments.map(segment=>{
           const node=branchInfo[segment.branch_id];
           const semantic=node?.semantic||{};
           const slate=node?.slate||{};
@@ -208,6 +237,22 @@ export default function SlateBranchTimelinePane({
           </button>;
         })}
       </div>:<p className="nvp-slate-info">No assembled cut is committed in this viewer.</p>}
+      <div className="nvp-slate-draft-tools" aria-label="Reference-only draft editing">
+        <button disabled={!chosenSegment} onClick={copySelected}>Copy reference</button>
+        <button disabled={!hasDraft||!chosenSegment||!onDraftCut}
+                onClick={cutSelected}>Cut draft reference</button>
+        <button disabled={!hasDraft||!chosenSegment||!sourceClipboard||!onDraftPaste}
+                onClick={()=>pasteAt('before')}>Paste before</button>
+        <button disabled={!hasDraft||!chosenSegment||!sourceClipboard||!onDraftPaste}
+                onClick={()=>pasteAt('after')}>Paste after</button>
+        <button disabled={!hasCut||hasDraft||!chosenSegment||!onRequestDataPreview}
+                onClick={()=>onRequestDataPreview(chosenSegment.timeline_start_tick)}>
+          Preview source data</button>
+        <button className="nvp-slate-commit" disabled={!hasDraft||!onCommitDraft}
+                onClick={()=>onCommitDraft(draftView)}>
+          Make draft active
+        </button>
+      </div>
       <p className="nvp-slate-info">{inspection
           ? 'Inspecting '+inspection+'. Active source colors have not changed.'
           : 'Click a take to inspect; Make Active is an explicit editor decision.'}</p>

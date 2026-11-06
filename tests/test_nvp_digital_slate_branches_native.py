@@ -11,6 +11,8 @@ from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_openusd_shot_overrides import OpenUSDShotOverrides
 from backend.nvp_digital_slate_branches import DigitalSlateBranches
 from backend.nvp_slate_edit_assembly import SlateSequenceAssembly
+from backend.nvp_slate_lazy_preview import SlateLazyPreview
+from backend.nvp_film_source_lifecycle import FilmSourceLifecycle
 from backend.nvp_slate_paged_catalog import (
     SlatePagedCatalog,PagedSlateAssemblyAdapter,OBS_STATUS)
 
@@ -577,6 +579,174 @@ class SlateBranchNativeTests(unittest.TestCase):
             next(x for x in active["parallel_groups"]["reaction_beat"]
                  if x["branch_id"]=="extra_69")["display_color"],"green")
         self.assertFalse(active["source_performance_modified"])
+
+    def test_reference_only_split_copy_paste_reorder_preserves_frozen_takes(self):
+        assembly=self._source_for_assembly()
+        take3_before=self.index.read_revision(self.pid,"take_3",1)
+        source=[
+            {"segment_id":"original","branch_id":"master_take_1",
+             "source_in_tick":0,"source_out_tick":T},
+            {"segment_id":"wild","branch_id":"wild_take_3",
+             "source_in_tick":T,"source_out_tick":3*T},
+        ]
+        split=assembly.edit_draft(
+            source,operation="split",target_segment_id="wild",
+            split_tick=2*T,second_segment_id="wild_right")
+        self.assertEqual(len(split),3)
+        self.assertEqual(split[1]["source_out_tick"],split[2]["source_in_tick"])
+        copy={**split[1],"segment_id":"wild_copy"}
+        pasted=assembly.edit_draft(
+            split,operation="paste_after",target_segment_id="wild_right",
+            segment=copy)
+        self.assertEqual(len(pasted),4)
+        self.assertEqual(pasted[-1]["branch_id"],"wild_take_3")
+        self.assertEqual(pasted[-1]["source_in_tick"],T)
+        self.assertEqual(pasted[-1]["source_out_tick"],2*T)
+        draft=assembly.preview(self.pid,"scene_01_slate",1,pasted)
+        self.assertTrue(draft["draft_uncommitted"])
+        self.assertEqual(len(draft["segments"]),4)
+        self.assertFalse(draft["render_approved"])
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"thin_cut",1)
+        assembly.commit(
+            self.pid,"thin_cut",graph_id="scene_01_slate",
+            graph_revision=1,segments=pasted,editor_event="make_active")
+        self.assertEqual(
+            self.index.read_revision(self.pid,"take_3",1)["document_sha256"],
+            take3_before["document_sha256"])
+        self.assertTrue(all(s["source_data_copied"] is False for s in
+                            assembly.open_edit(self.pid,"thin_cut",1)["data"]["segments"]))
+
+    def test_lazy_preview_resolves_only_selected_source_and_exact_take_time(self):
+        from unittest.mock import patch
+        from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        assembly=self._source_for_assembly()
+        source=[
+            {"segment_id":"opening","branch_id":"master_take_1",
+             "source_in_tick":0,"source_out_tick":T},
+            {"segment_id":"different_camera","branch_id":"camera_B_take2",
+             "source_in_tick":T,"source_out_tick":2*T},
+            {"segment_id":"wild","branch_id":"wild_take_3",
+             "source_in_tick":2*T,"source_out_tick":3*T},
+        ]
+        assembly.commit(
+            self.pid,"reference_cut",graph_id="scene_01_slate",
+            graph_revision=1,segments=source,editor_event="make_active")
+        lazy=SlateLazyPreview(self.index)
+        with patch.object(OpenUSDSceneBridge,"open",
+                          side_effect=AssertionError("playhead loaded 3D world")):
+            ticket=lazy.select(
+                self.pid,"reference_cut",1,film_tick=T+T//2)
+            timeline=lazy.window(
+                self.pid,"reference_cut",1,
+                first_tick=0,count=3,step_tick=T,quality="thumbnail")
+        self.assertEqual(ticket["source_take_id"],"take_2")
+        self.assertEqual(ticket["source_shot_id"],"take2_camera_b")
+        self.assertEqual(ticket["source_tick"],T+T//2)
+        self.assertFalse(ticket["source_data_loaded"])
+        self.assertFalse(ticket["full_3d_world_loaded"])
+        self.assertFalse(ticket["picture_generated"])
+        self.assertEqual([x["source_take_id"] for x in timeline["tickets"]],
+                         ["take_1","take_2","take_3"])
+        self.assertFalse(timeline["all_sources_loaded"])
+        stage=lazy.structural_sample(ticket,prim_paths=["/World/Actor"])
+        self.assertEqual(stage["prim_count"],1)
+        self.assertTrue(stage["one_source_scene_loaded"])
+        self.assertAlmostEqual(
+            stage["prim_states"][0]["world_translation"][0],1.0,places=4)
+        self.assertFalse(stage["picture_generated"])
+        self.assertFalse(stage["actor_performance_audio_or_ik_rendered"])
+        after=lazy.select(
+            self.pid,"reference_cut",1,film_tick=4*T)
+        self.assertEqual(after["status"],"AFTER_ASSEMBLED_CUT")
+        self.assertFalse(after["picture_generated"])
+
+    def test_retirement_preserves_old_edit_and_blocks_new_uses(self):
+        assembly=self._source_for_assembly()
+        source=[
+            {"segment_id":"alt","branch_id":"camera_B_take2",
+             "source_in_tick":T,"source_out_tick":2*T},
+        ]
+        assembly.commit(
+            self.pid,"old_cut",graph_id="scene_01_slate",
+            graph_revision=1,segments=source,editor_event="make_active")
+        saved=assembly.open_edit(self.pid,"old_cut",1)
+        lifecycle=FilmSourceLifecycle(
+            self.index,verify_creator_action=lambda token,scope:
+            token=="director_deletes" and
+            scope["operation"] in (
+                "nvp.film.source.retire.v1",
+                "nvp.film.source.restore.v1",
+                "nvp.film.source.purge_registration.v1"))
+        removed=lifecycle.retire(
+            self.pid,"take_2",reason="Remove from new source choices",
+            creator_event="director_deletes",expected_head_revision=1)
+        self.assertEqual(removed["state"],"RETIRED")
+        self.assertTrue(removed["purge_blocked"])
+        impact=lifecycle.impact_report(self.pid,"take_2")
+        self.assertTrue(impact["purge_blocked"])
+        self.assertGreater(impact["dependent_revisions_reported"],0)
+        self.assertEqual([row["new_state"] for row in lifecycle.audit(
+            self.pid,"take_2")],["RETIRED"])
+        self.assertNotIn("take_2",{
+            x["object_id"] for x in self.index.list_objects(
+                self.pid,kind="take")})
+        self.assertIn("take_2",{
+            x["object_id"] for x in self.index.list_objects(
+                self.pid,kind="take",include_retired=True)})
+        self.assertEqual(
+            assembly.open_edit(self.pid,"old_cut",1)["document_sha256"],
+            saved["document_sha256"])
+        with self.assertRaises(RuntimeError):
+            lifecycle.purge_unreferenced(
+                self.pid,"take_2",creator_event="director_deletes")
+        with self.assertRaises(RuntimeError):
+            assembly.commit(
+                self.pid,"new_cut",graph_id="scene_01_slate",
+                graph_revision=1,segments=source,editor_event="make_active")
+        with self.assertRaises(RuntimeError):
+            self.index.register_revision(
+                self.pid,"new_ref","edit",{"reference":"retired"},
+                dependencies=[
+                    {"object_id":"take_2","revision":1,"role":"source_take"}])
+        lifecycle.restore(
+            self.pid,"take_2",creator_event="director_deletes")
+        self.assertIn("take_2",{
+            x["object_id"] for x in self.index.list_objects(
+                self.pid,kind="take")})
+        self.assertEqual([row["new_state"] for row in lifecycle.audit(
+            self.pid,"take_2")],["RETIRED","RESTORED"])
+        reopened=assembly.commit(
+            self.pid,"new_cut",graph_id="scene_01_slate",
+            graph_revision=1,segments=source,editor_event="make_active")
+        self.assertEqual(reopened["revision"],1)
+
+    def test_explicit_purge_of_unreferenced_source_cannot_reuse_id(self):
+        lifecycle=FilmSourceLifecycle(
+            self.index,verify_creator_action=lambda token,scope:
+            token=="director_deletes")
+        self.index.register_revision(
+            self.pid,"unused_source","performance",
+            {"format":"nvp.test.unused.v1","label":"test"})
+        with self.assertRaises(PermissionError):
+            lifecycle.retire(
+                self.pid,"unused_source",reason="Unused resource",
+                creator_event="model_requests",expected_head_revision=1)
+        lifecycle.retire(
+            self.pid,"unused_source",reason="Unused resource",
+            creator_event="director_deletes",expected_head_revision=1)
+        purged=lifecycle.purge_unreferenced(
+            self.pid,"unused_source",creator_event="director_deletes")
+        self.assertEqual(purged["state"],"PURGED")
+        self.assertEqual([row["new_state"] for row in lifecycle.audit(
+            self.pid,"unused_source")],["RETIRED","PURGED"])
+        self.assertFalse(purged["physical_blobs_deleted"])
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"unused_source",1)
+        with self.assertRaises(RuntimeError):
+            self.index.register_revision(
+                self.pid,"unused_source","performance",
+                {"format":"forged.reused.source.id"})
 
     def test_refuse_forged_choice_and_never_grant_master_approval(self):
         self.publish()

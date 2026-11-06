@@ -23,7 +23,8 @@ MAX_SEGMENTS=500
 SEGMENT_KEYS=frozenset(("segment_id","branch_id","source_in_tick",
                         "source_out_tick"))
 EDIT_COMMANDS=frozenset(("insert_before","insert_after","replace","remove",
-                         "trim","move_before","move_after"))
+                         "trim","move_before","move_after","split",
+                         "paste_before","paste_after"))
 
 
 def _canonical(value):
@@ -160,7 +161,8 @@ class SlateSequenceAssembly:
 
     def edit_draft(self,segments,*,operation,segment=None,
                    target_segment_id=None,new_segment_id=None,
-                   trim_in_tick=None,trim_out_tick=None):
+                   trim_in_tick=None,trim_out_tick=None,split_tick=None,
+                   second_segment_id=None):
         """Pure local copy/insert/trim/move operations; NEVER commits the cut."""
         if type(segments) is not list or operation not in EDIT_COMMANDS:
             raise ValueError("Unknown draft assembly edit operation")
@@ -171,20 +173,37 @@ class SlateSequenceAssembly:
         targets=[i for i,x in enumerate(items)
                  if x["segment_id"]==target_segment_id]
         if operation in ("insert_before","insert_after","replace","remove",
-                         "trim","move_before","move_after") and (
+                         "trim","move_before","move_after","split",
+                         "paste_before","paste_after") and (
                          len(targets)!=1):
             raise ValueError("Target segment not found exactly once")
         index=targets[0]
-        if operation in ("insert_before","insert_after","replace"):
+        if operation in ("insert_before","insert_after","replace",
+                         "paste_before","paste_after"):
+            # Paste copies ONLY a source-data reference. Its segment ID
+            # must be distinct, even when Take/shot/time are identical.
+            if operation.startswith("paste_") and segment is not None:
+                segment=dict(segment)
             if type(segment) is not dict or set(segment)!=SEGMENT_KEYS:
-                raise ValueError("Insert requires exact source branch segment")
+                raise ValueError("Insert/paste requires exact source branch reference")
             if segment["segment_id"] in {x["segment_id"] for x in items}:
-                raise ValueError("A duplicate segment needs a NEW segment identity")
-            pos=index+(1 if operation=="insert_after" else 0)
+                raise ValueError("A pasted clip requires a new segment ID")
+            pos=index+(1 if operation in ("insert_after","paste_after") else 0)
             if operation=="replace":
                 items[index]=dict(segment)
             else:
                 items.insert(pos,dict(segment))
+        elif operation=="split":
+            original=dict(items[index])
+            point=_int(split_tick,"split point in original source Film Time")
+            if not original["source_in_tick"]<point<original["source_out_tick"]:
+                raise ValueError("Split must occur inside original source data interval")
+            _id(second_segment_id,"new right-half segment ID")
+            if second_segment_id in {x["segment_id"] for x in items}:
+                raise ValueError("Split needs a new unique right-half ID")
+            left={**original,"source_out_tick":point}
+            right={**original,"segment_id":second_segment_id,"source_in_tick":point}
+            items[index:index+1]=[left,right]
         elif operation=="remove":
             items.pop(index)
         elif operation=="trim":
@@ -248,11 +267,30 @@ class SlateSequenceAssembly:
             "render_approved":False,
             "retimed":False,
         }
+        # Source retirement cannot silently break an older cut or be bypassed
+        # by referring to a previously published catalog root. Check every
+        # actual selected Take/shot under FilmIndex's SAME writer transaction.
+        def guard(db):
+            table=db.execute("""SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='nvp_film_source_retirements'""").fetchone()
+            if table is None:
+                return
+            referenced={(segment["source_take_id"]) for segment in ordered}
+            referenced.update(segment["source_shot_id"] for segment in ordered
+                              if segment["source_shot_id"] is not None)
+            for source_id in referenced:
+                if db.execute("""SELECT 1 FROM nvp_film_source_retirements
+                    WHERE project_id=? AND object_id=?
+                    AND state!='RESTORED'""",
+                    (project_id,source_id)).fetchone():
+                    raise RuntimeError(
+                        "Cannot activate a new cut using a retired source Take/shot")
         # FilmIndex expected_revision enforces optimistic concurrency and
         # prevents a stale editor window from silently replacing an active cut.
         return self.index.register_revision(
             project_id,edit_id,"edit",document,
-            expected_revision=expected_revision,dependencies=dependencies)
+            expected_revision=expected_revision,dependencies=dependencies,
+            precommit_guard=guard)
 
     def open_edit(self,project_id,edit_id,revision):
         result=self.index.read_revision(project_id,edit_id,revision)
