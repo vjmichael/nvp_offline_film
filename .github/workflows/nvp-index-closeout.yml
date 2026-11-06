@@ -1,0 +1,95 @@
+name: NVP INDEX-CLOSEOUT Native Media and Temporal Index Acceptance
+
+on:
+  push:
+    branches:
+      - nvp/indexing-closeout-20261105
+    paths:
+      - "backend/nvp_native_frame_index.py"
+      - "backend/nvp_indexed_preview.py"
+      - "backend/nvp_temporal_*.py"
+      - "tests/test_nvp_owned_frame_index.py"
+      - "tests/test_nvp_temporal_ledger.py"
+      - "tests/test_data_time_projection.py"
+      - "tools/benchmarks/**"
+      - ".github/workflows/nvp-index-closeout.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_native_frame_index.py"
+      - "backend/nvp_indexed_preview.py"
+      - "backend/nvp_temporal_*.py"
+      - "tests/test_nvp_owned_frame_index.py"
+      - "tests/test_nvp_temporal_ledger.py"
+      - "tests/test_data_time_projection.py"
+      - "tools/benchmarks/**"
+      - ".github/workflows/nvp-index-closeout.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-index-closeout-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  index-native-matrix:
+    name: NVP indexes ${{ matrix.os }} ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Provision actual FFmpeg and FFprobe on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Provision actual FFmpeg and FFprobe on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
+      - name: Verify actual native tools and Python syntax
+        shell: bash
+        run: |
+          ffmpeg -version
+          ffprobe -version
+          python -m compileall -q backend/nvp_native_frame_index.py backend/nvp_indexed_preview.py backend/nvp_temporal_ledger.py backend/nvp_temporal_projection.py tests/test_nvp_owned_frame_index.py tests/test_nvp_temporal_ledger.py tests/test_data_time_projection.py tools/benchmarks
+      - name: Native B-frame VFR offset crash recovery and review receipts
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_owned_frame_index.py" -v
+      - name: Three-hour sparse event ledger and exact independent rates
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_temporal_ledger.py" -v
+          python -m unittest discover -s tests -p "test_data_time_projection.py" -v
+
+  long-duration-source:
+    name: NVP 3-hour native sparse source index
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install actual FFmpeg and FFprobe
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Three-hour source, 10,800 indexed samples and near-end decoder proof
+        shell: bash
+        run: |
+          mkdir -p benchmark-results
+          python tools/benchmarks/run_feature_duration_index.py --duration-seconds 10800 --fps 1 --output benchmark-results/three-hour-sparse.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-feature-duration-index
+          path: benchmark-results/*.json
+          if-no-files-found: warn
+          retention-days: 14
