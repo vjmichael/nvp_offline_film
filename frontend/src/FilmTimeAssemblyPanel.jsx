@@ -7,7 +7,7 @@ import {filmTimeClock} from './filmTimeClock.js';
 const FORMAT='nvp.index_time07.assembly_plan.v1';
 
 export default function FilmTimeAssemblyPanel({
-  projectId,edit,clips,edits,native,onSaved,
+  projectId,edit,clips,edits,native,onSaved,api,
 }){
   const [draft,setDraft]=useState(null);
   const [change,setChange]=useState(null);
@@ -21,8 +21,87 @@ export default function FilmTimeAssemblyPanel({
   const [sourceOrdinal,setSourceOrdinal]=useState('0');
   const [insertAt,setInsertAt]=useState('0');
   const generation=useRef(0);
-  const current=clips.find(c=>c.ordinal===chosen);
+  const [assemblyClips,setAssemblyClips]=useState([]);
+  const [loadingClips,setLoadingClips]=useState(true);
+  const [clipError,setClipError]=useState('');
+  const fullLoaded=assemblyClips.length===edit.clip_count &&
+    assemblyClips.every((item,i)=>item.ordinal===i);
+  const current=assemblyClips.find(c=>c.ordinal===chosen);
   const other=edits.find(e=>e.edit_id===sourceEdit);
+
+  // Parent paginates at 40 clips for read-only browsing. Editorial
+  // operations MUST see the entire ordered original clip manifest, up to
+  // the bounded 256 source references, or an ordinal could target the
+  // wrong hidden clip. Fetch only saved metadata; never open original media.
+  useEffect(()=>{
+    let live=true;
+    setAssemblyClips([]);
+    setClipError('');
+    setLoadingClips(edit.clip_count<=256);
+    if(edit.clip_count>256){
+      setLoadingClips(false);
+      return ()=>{live=false;};
+    }
+    if(clips.length===edit.clip_count &&
+       clips.every((c,i)=>c.ordinal===i)){
+      setAssemblyClips(clips);
+      setLoadingClips(false);
+      return ()=>{live=false;};
+    }
+    if(typeof api!=='function'){
+      setClipError('The complete indexed clip list is unavailable; edits are disabled.');
+      setLoadingClips(false);
+      return ()=>{live=false;};
+    }
+    async function load(){
+      const rows=[];
+      let after=-1;
+      try{
+        while(rows.length<edit.clip_count){
+          const params=new URLSearchParams({
+            revision:String(edit.revision),
+            expected_edit_sha256:edit.edit_document_sha256,
+            after_ordinal:String(after),
+            limit:'100',
+          });
+          const page=await api(
+            '/projects/'+encodeURIComponent(projectId)+
+            '/film-time/edits/'+encodeURIComponent(edit.edit_id)+
+            '/clips?'+params);
+          if(!live)return;
+          if(page?.format!=='nvp.index_time05.editor_source_read.v1' ||
+             page.status!=='INDEXED_EDIT_CLIPS' ||
+             page.project_id!==projectId ||
+             page.edit_id!==edit.edit_id ||
+             page.edit_revision!==edit.revision ||
+             page.edit_document_sha256!==edit.edit_document_sha256 ||
+             page.clip_count!==edit.clip_count ||
+             page.original_media_read!==false ||
+             !Array.isArray(page.clips) || page.clips.length===0 ||
+             page.clips.some((c,i)=>c.ordinal!==after+1+i)){
+            throw new Error('Indexed clip page is stale, incomplete or corrupt.');
+          }
+          rows.push(...page.clips);
+          after=rows[rows.length-1].ordinal;
+          if(rows.length<edit.clip_count && page.next_after_ordinal!==after){
+            throw new Error('Indexed clip pagination ended before the full edit.');
+          }
+        }
+        if(rows.length!==edit.clip_count ||
+           rows.some((c,i)=>c.ordinal!==i)){
+          throw new Error('Indexed source clips did not match saved edit count.');
+        }
+        if(live)setAssemblyClips(rows);
+      }catch(error){
+        if(live)setClipError(error.message);
+      }finally{
+        if(live)setLoadingClips(false);
+      }
+    }
+    load();
+    return ()=>{live=false;};
+  },[api,projectId,edit.edit_id,edit.revision,
+     edit.edit_document_sha256,edit.clip_count]);
 
   useEffect(()=>{
     generation.current+=1;setDraft(null);setChange(null);setMessage('');
@@ -34,11 +113,11 @@ export default function FilmTimeAssemblyPanel({
     setTrimIn(current?.source_in_frame_zero||'');
     setTrimOut(current?.source_out_frame_zero||'');
     if(current){
-      const prev=clips.find(c=>c.ordinal===chosen-1);
+      const prev=assemblyClips.find(c=>c.ordinal===chosen-1);
       const before=prev?.film_end_tick||'0';
       setGap((BigInt(current.film_start_tick)-BigInt(before)).toString());
     }
-  },[chosen,clips]);
+  },[chosen,assemblyClips]);
 
   async function preview(operation){
     if(busy||!native)return;
@@ -105,20 +184,23 @@ export default function FilmTimeAssemblyPanel({
   }
 
   const max=edit.clip_count;
-  const buttonsReady=!busy && !draft && max<=256 && max>0;
+  const buttonsReady=!busy && !draft && fullLoaded && max<=256 && max>0;
   return <section className="card" aria-label="Original footage assembly editor">
     <h3>Arrange source footage</h3>
     <p className="fineprint">Cut, copy, reorder, trim, insert or space clips.
       Save a new version of the assembly; original recordings and earlier
       versions are never changed. No movie is rendered here.</p>
+    {loadingClips&&<p role="status">Loading the complete indexed clip assembly…</p>}
+    {clipError&&<p role="alert">{clipError}</p>}
     {max>256&&<p role="alert">
       This initial editor supports up to 256 source clips in one operation.</p>}
     {max<=256&&<>
       <label>Clip to edit
         <select aria-label="Assembly clip" value={current?chosen:''}
+          disabled={!fullLoaded}
           onChange={e=>{setDraft(null);setChange(null);
                         setChosen(Number(e.target.value));}}>
-          {clips.map(c=><option key={c.ordinal} value={c.ordinal}>
+          {assemblyClips.map(c=><option key={c.ordinal} value={c.ordinal}>
             {c.ordinal+1}. {c.source_id} · {filmTimeClock(c.film_start_tick)}
           </option>)}
         </select>
