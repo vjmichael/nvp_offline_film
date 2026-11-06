@@ -483,6 +483,12 @@ class NativeAssemblyReview:
                         host.revoke_queued(task)
                 except (RuntimeError,KeyError,TypeError):
                     pass
+            # Completed reviews no longer have a running worker to trigger
+            # the _run finalizer. Discard their temporary PNGs immediately
+            # when the creator presses Stop, without touching durable
+            # source/FilmIndex/task evidence or external originals.
+            if session["future"] is not None and session["future"].done():
+                self._dispose(session)
             return {
                 "format":FORMAT,"status":"CANCELLATION_REQUESTED",
                 "original_modified":False,"master_approved":False,
