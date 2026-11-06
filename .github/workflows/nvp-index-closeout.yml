@@ -86,6 +86,7 @@ jobs:
         run: |
           mkdir -p benchmark-results
           python tools/benchmarks/run_feature_duration_index.py --duration-seconds 10800 --fps 1 --output benchmark-results/three-hour-sparse.json
+          python tools/benchmarks/run_feature_duration_index.py --duration-seconds 10800 --fps 24 --output benchmark-results/three-hour-24fps-tiny.json
           python tools/benchmarks/run_temporal_scale.py --duration-seconds 10800 --events 10000 --output benchmark-results/three-hour-events.json
       - uses: actions/upload-artifact@v4
         if: always()
