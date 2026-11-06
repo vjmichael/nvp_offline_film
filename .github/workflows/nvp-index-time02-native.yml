@@ -1,0 +1,68 @@
+name: NVP INDEX-TIME-02 Durable Film-Time Editorial
+
+on:
+  push:
+    branches:
+      - nvp/index-time02-durable-editorial-20261105
+    paths:
+      - "backend/nvp_film_time_editorial.py"
+      - "backend/nvp_film_index.py"
+      - "backend/nvp_source_pts_film_time.py"
+      - "tests/test_nvp_film_time_editorial_native.py"
+      - "tests/test_nvp_source_pts_film_time.py"
+      - ".github/workflows/nvp-index-time02-native.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_film_time_editorial.py"
+      - "backend/nvp_film_index.py"
+      - "backend/nvp_source_pts_film_time.py"
+      - "tests/test_nvp_film_time_editorial_native.py"
+      - "tests/test_nvp_source_pts_film_time.py"
+      - ".github/workflows/nvp-index-time02-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-index-time02-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-ffmpeg-revisioned-editorial:
+    name: INDEX-TIME-02 ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native FFmpeg and FFprobe (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Install native FFmpeg and FFprobe (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
+      - name: Compile versioned imported-film-time source path
+        shell: bash
+        run: |
+          ffmpeg -version
+          ffprobe -version
+          python -m compileall -q backend/nvp_film_time_editorial.py backend/nvp_source_pts_film_time.py backend/nvp_film_index.py tests/test_nvp_film_time_editorial_native.py tests/test_nvp_source_pts_film_time.py
+      - name: Actual video VFR placement restart rollback and source impact
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_film_time_editorial_native.py" -v
+      - name: Rational PTS bridge regression
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_source_pts_film_time.py" -v
+      - name: Sparse Temporal Ledger remains independent
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_temporal_ledger.py" -v
+          python -m unittest discover -s tests -p "test_data_time_projection.py" -v
