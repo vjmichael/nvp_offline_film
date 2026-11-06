@@ -169,15 +169,19 @@ class OpenUSDSceneBridge:
         # addressed in-memory layers, never from arbitrary disk paths.
         bindings=self._resolve_assets(project_id, paths, asset_bindings or [])
         from backend.nvp_openusd_channels import author_parameter_layer
-        parameter_layer, channel_manifest=author_parameter_layer(
-            paths, performance_channels or [])
+        if performance_channels:
+            parameter_layer, channel_manifest=author_parameter_layer(
+                paths,performance_channels)
+        else:
+            parameter_layer,channel_manifest=None,[]
         composed=_compose(base,motion,Sdf,Usd,parameter_layer)
         self._attach_assets(composed,bindings)
         for path in paths:
             _evaluate(composed,path,0,Sdf,Usd,UsdGeom)
         base_bytes=base.ExportToString().encode("utf-8")
         motion_bytes=motion.ExportToString().encode("utf-8")
-        parameter_bytes=parameter_layer.ExportToString().encode("utf-8")
+        parameter_bytes=(parameter_layer.ExportToString().encode("utf-8")
+                         if parameter_layer is not None else b"")
         if (len(base_bytes)>MAX_USD_LAYER_BYTES or
             len(motion_bytes)>MAX_USD_LAYER_BYTES or
             len(parameter_bytes)>MAX_USD_LAYER_BYTES):
@@ -185,9 +189,13 @@ class OpenUSDSceneBridge:
         # The immutable scene references the layer *bytes*, not temp paths.
         bsha=self.index.put_blob(project_id,base_bytes,media_type=LAYER_TYPE)
         msha=self.index.put_blob(project_id,motion_bytes,media_type=LAYER_TYPE)
-        psha=self.index.put_blob(project_id,parameter_bytes,media_type=LAYER_TYPE)
+        psha=(self.index.put_blob(project_id,parameter_bytes,
+                                 media_type=LAYER_TYPE)
+              if parameter_bytes else None)
         manifest={"format":FORMAT,
-                  "layer_order":["parameters","motion","layout"],
+                  "layer_order":(["parameters","motion","layout"]
+                                 if parameter_layer is not None
+                                 else ["motion","layout"]),
                   "layout_layer_sha256":bsha,
                   "motion_layer_sha256":msha,
                   "parameter_layer_sha256":psha,
@@ -209,6 +217,8 @@ class OpenUSDSceneBridge:
                 if row is None or row["document_sha"]!=record["asset_document_sha256"]:
                     raise RuntimeError("Referenced USD asset revision changed before scene commit")
             for sha in (bsha,msha,psha):
+                if sha is None:
+                    continue
                 if db.execute("""SELECT 1 FROM film_blob_refs
                     WHERE project_id=? AND sha256=?""",
                     (project_id,sha)).fetchone() is None:
