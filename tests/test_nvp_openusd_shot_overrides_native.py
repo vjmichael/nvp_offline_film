@@ -109,6 +109,41 @@ class DirectorOpenUSDShotNativeTests(unittest.TestCase):
             self.project,"scene",1,path="/World/Actor",
             tick=T//2)["world_translation"][0],2.5)
 
+    def test_presentation_plans_use_shot_only_without_rewriting_take(self):
+        self.publish("closeup")
+        self.index.register_revision(
+            self.project,"realistic","style",
+            {"format":"nvp.style.test.v1","profile":"realistic"})
+        planner=OpenUSDPresentationPlanner(self.index)
+        common=dict(project_id=self.project,take_id="frozen_take",
+                    style_id="realistic",style_revision=1,
+                    start_tick=0,end_tick=T,fps_den=1)
+        baseline=planner.prepare(**common,fps_num=24)
+        angle24=planner.prepare(
+            **common,fps_num=24,shot_id="closeup",shot_revision=1)
+        angle60=planner.prepare(
+            **common,fps_num=60,shot_id="closeup",shot_revision=1)
+        def actor_x(plan):
+            return next(p["world_translation"][0] for p in
+                        plan["presentation_samples"][0]["world_state"]
+                        if p["prim_path"]=="/World/Actor")
+        self.assertAlmostEqual(actor_x(baseline),0.0)
+        self.assertAlmostEqual(actor_x(angle24),2.0)
+        self.assertAlmostEqual(actor_x(angle60),2.0)
+        self.assertEqual(angle24["frozen_take_document_sha256"],
+                         angle60["frozen_take_document_sha256"])
+        self.assertEqual(angle24["frozen_take_document_sha256"],
+                         baseline["frozen_take_document_sha256"])
+        self.assertTrue(angle24["intentional_continuity_cheat"])
+        self.assertFalse(angle24["render_approved"])
+        self.assertFalse(angle24["frames_rendered"])
+        with self.assertRaises((ValueError,RuntimeError)):
+            planner.prepare(
+                self.project,"frozen_take",style_id="realistic",
+                style_revision=1,start_tick=T,end_tick=2*T,
+                fps_num=24,fps_den=1,
+                shot_id="closeup",shot_revision=1)
+
     def test_old_shot_revision_survives_new_directors_choice_and_restart(self):
         self.publish("blocking_a")
         self.publish("blocking_a",changes=[
