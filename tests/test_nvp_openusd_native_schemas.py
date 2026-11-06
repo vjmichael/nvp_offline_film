@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pxr import UsdGeom, UsdLux, UsdSkel
+from pxr import Usd, UsdGeom, UsdLux, UsdSkel
 
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
@@ -87,7 +87,7 @@ class NativeUsd02D(unittest.TestCase):
         cam=UsdGeom.Camera(stage.GetPrimAtPath("/World/Camera"))
         # At metersPerUnit=1, 35mm focal is 0.35 native camera units.
         self.assertAlmostEqual(float(cam.GetFocalLengthAttr().Get(
-            0)),0.35,places=4)
+            Usd.TimeCode(0))),0.35,places=4)
         snap=self.state.evaluate(
             self.pid,"real_scene",1,"action_timeline",1,tick=T)
         properties={r["schema"]:r for r in snap["native_scene_schemas"]}
@@ -120,7 +120,7 @@ class NativeUsd02D(unittest.TestCase):
         self.assertAlmostEqual(mid["world_translation"][0],1.0,places=4)
         self.assertAlmostEqual(
             float(UsdGeom.Camera(stage.GetPrimAtPath(
-                "/World/Camera")).GetFocalLengthAttr().Get(T)),
+                "/World/Camera")).GetFocalLengthAttr().Get(Usd.TimeCode(float(T)))),
             0.6,places=4)
 
     def test_native_skeleton_joint_motion_is_time_sampled(self):
