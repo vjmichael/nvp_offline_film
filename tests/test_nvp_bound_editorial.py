@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from backend.nvp_studio import Studio
@@ -123,6 +124,36 @@ class BoundEditorialNativeTests(unittest.TestCase):
             self.publisher.verify_revision(self.pid, "alter", 1)
         with self.assertRaises(RuntimeError):
             self.publisher.clips(self.pid, "alter", 1)
+
+    def test_crash_after_guard_inserts_rolls_back_all_rows(self):
+        original = self.index.register_revision
+
+        def crash_after_guard(*args, **kwargs):
+            guard = kwargs["precommit_guard"]
+
+            def simulate_kill_boundary(db):
+                guard(db)
+                raise RuntimeError("injected SQLite publication failure")
+
+            kwargs["precommit_guard"] = simulate_kill_boundary
+            return original(*args, **kwargs)
+
+        with mock.patch.object(self.index, "register_revision",
+                               side_effect=crash_after_guard):
+            with self.assertRaisesRegex(RuntimeError, "injected SQLite"):
+                self.publisher.publish(self.pid, "crash_edit", [self.clip()])
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid, "crash_edit")
+        with self.studio._connection() as db:
+            self.assertEqual(db.execute("""SELECT COUNT(*) FROM scale_editorial_revisions
+                WHERE project_id=? AND edit_id=?""",
+                (self.pid, "crash_edit")).fetchone()[0], 0)
+            self.assertEqual(db.execute("""SELECT COUNT(*) FROM scale_editorial_clips
+                WHERE project_id=? AND edit_id=?""",
+                (self.pid, "crash_edit")).fetchone()[0], 0)
+            self.assertEqual(db.execute("""SELECT COUNT(*) FROM scale_editorial_source_bindings
+                WHERE project_id=? AND edit_id=?""",
+                (self.pid, "crash_edit")).fetchone()[0], 0)
 
     def test_duplicate_source_version_disallowed(self):
         self.publisher.publish(self.pid, "first", [self.clip()])
