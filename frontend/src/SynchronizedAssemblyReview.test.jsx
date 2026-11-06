@@ -39,6 +39,12 @@ function native(){
       sample_rate:48000,channels:2,video_frames:24,
       av_drift_ms:'0',original_modified:false,master_approved:false,
     })),
+    get_synchronized_av_stream:vi.fn(async(ticket)=>({
+      format:FORMAT,status:'VERIFIED_STREAM',
+      url:'/api/native-av-review/'+encodeURIComponent(ticket)+'/media',
+      media_sha256:bytesSha,total_size:512,content_type:'video/mp4',
+      original_modified:false,master_approved:false,
+    })),
     get_synchronized_av_chunk:vi.fn(async(ticket,offset)=>({
       format:FORMAT,status:'VERIFIED_CHUNK',ticket_id:ticket,
       offset,next_offset:512,total_size:512,
@@ -133,14 +139,15 @@ describe('INDEX-TIME-09 synchronized unapproved A/V player',()=>{
     const player=await screen.findByLabelText(
       'Temporary picture and synchronized sound preview');
     expect(player.tagName).toBe('VIDEO');
-    expect(player.getAttribute('src')).toBe('blob:nvp-verified-review');
+    expect(player.getAttribute('src')).toBe(
+      '/api/native-av-review/opaque_native_av_ticket/media');
     expect(api.start_synchronized_av_review).toHaveBeenCalledWith({
       project_id:pid,edit_id:edit.edit_id,edit_revision:3,
       edit_document_sha256:sha,start_tick:'0',
     });
-    expect(api.get_synchronized_av_chunk).toHaveBeenCalledWith(
-      'opaque_native_av_ticket',0);
-    expect(api.get_synchronized_av_chunk).toHaveBeenCalledTimes(1);
+    expect(api.get_synchronized_av_stream).toHaveBeenCalledWith(
+      'opaque_native_av_ticket');
+    expect(api.get_synchronized_av_chunk).not.toHaveBeenCalled();
     expect(screen.getByText(/source samples never modified/)).toBeTruthy();
   });
 
@@ -162,7 +169,7 @@ describe('INDEX-TIME-09 synchronized unapproved A/V player',()=>{
     mount(api);
     fireEvent.click(screen.getByText('Prepare synchronized review…'));
     expect(await screen.findByRole('alert')).toHaveProperty('textContent',
-      expect.stringContaining('does not match receipt SHA'));
+      expect.stringContaining('Disk-backed verified media ticket was refused'));
     expect(screen.queryByLabelText(
       'Temporary picture and synchronized sound preview')).toBeNull();
     expect(api.stop_synchronized_av_review).toHaveBeenCalledWith(
@@ -179,6 +186,7 @@ describe('INDEX-TIME-09 synchronized unapproved A/V player',()=>{
     fireEvent.click(screen.getByText('Prepare synchronized review…'));
     expect(await screen.findByText(/You cancelled review/)).toBeTruthy();
     expect(api.poll_synchronized_av_review).not.toHaveBeenCalled();
+    expect(api.get_synchronized_av_stream).not.toHaveBeenCalled();
     expect(api.get_synchronized_av_chunk).not.toHaveBeenCalled();
   });
 
