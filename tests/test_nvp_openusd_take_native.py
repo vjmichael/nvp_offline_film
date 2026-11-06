@@ -143,21 +143,21 @@ class OpenUSDNativeIntegration(unittest.TestCase):
         planner=OpenUSDPresentationPlanner(self.film)
         a=planner.prepare(
             self.pid,"take_for_styles",style_id="photo_style",style_revision=1,
-            start_tick=0,end_tick=2*T,fps_num=24,fps_den=1)
+            start_tick=T,end_tick=2*T,fps_num=24,fps_den=1)
         b=planner.prepare(
             self.pid,"take_for_styles",style_id="toon_style",style_revision=1,
-            start_tick=0,end_tick=2*T,fps_num=60,fps_den=1)
-        self.assertEqual(len(a["presentation_samples"]),48)
-        self.assertEqual(len(b["presentation_samples"]),96*2 if False else 120)
+            start_tick=T,end_tick=2*T,fps_num=60,fps_den=1)
+        self.assertEqual(len(a["presentation_samples"]),24)
+        self.assertEqual(len(b["presentation_samples"]),60)
         self.assertNotEqual(a["style_document_sha256"],b["style_document_sha256"])
         self.assertEqual(a["frozen_take_document_sha256"],
                          b["frozen_take_document_sha256"])
         self.assertFalse(a["frames_rendered"])
         self.assertEqual(a["output"],"DATA_ONLY_NOT_RENDERED")
         # Compare authored time = one second, not an arbitrary frame identity.
-        actor_a=next(p for p in a["presentation_samples"][24]["world_state"]
+        actor_a=next(p for p in a["presentation_samples"][0]["world_state"]
                      if p["prim_path"]=="/World/Actor")
-        actor_b=next(p for p in b["presentation_samples"][60]["world_state"]
+        actor_b=next(p for p in b["presentation_samples"][0]["world_state"]
                      if p["prim_path"]=="/World/Actor")
         self.assertEqual(actor_a["world_translation"],actor_b["world_translation"])
 
