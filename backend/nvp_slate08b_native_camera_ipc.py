@@ -20,6 +20,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from urllib.parse import urlsplit
@@ -36,14 +37,41 @@ class _NativeGrant:
 
 
 def discover_blender():
-    """Probe an installed native Blender, never accept an executable from JS."""
-    path = os.environ.get("NVP_NATIVE_BLENDER_EXECUTABLE") or shutil.which("blender")
-    if not path:
-        return None
-    candidate = Path(path).resolve()
-    if not candidate.is_file() or candidate.is_symlink():
-        return None
-    return candidate
+    """Find native Blender from trusted host/installed paths, never JS input.
+
+    Windows Blender installers do not normally add blender.exe to PATH.
+    Support a verified portable executable beside the installed NVP bundle
+    as well as normal Windows Blender Foundation installations. SHA pinning
+    and a real version probe are still enforced by build_desktop_camera_host.
+    """
+    configured = os.environ.get("NVP_NATIVE_BLENDER_EXECUTABLE")
+    paths=[]
+    if configured:
+        paths.append(Path(configured))
+    if getattr(sys, "frozen", False):
+        root=Path(getattr(sys, "_MEIPASS",Path(sys.executable).parent))
+        paths.append(root/"blender"/"blender.exe")
+        paths.append(Path(sys.executable).parent/"blender"/"blender.exe")
+    if os.name=="nt":
+        for prefix in (os.environ.get("PROGRAMFILES"),
+                       os.environ.get("PROGRAMW6432")):
+            if prefix:
+                # Finite, expected first-party layout only; no recursive
+                # search of user-controlled project directories or drives.
+                base=Path(prefix)/"Blender Foundation"
+                if base.is_dir() and not base.is_symlink():
+                    paths.extend(sorted(base.glob("Blender */blender.exe"),
+                                        reverse=True)[:12])
+    found=shutil.which("blender")
+    if found:
+        paths.append(Path(found))
+    for candidate in paths:
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        resolved=candidate.resolve()
+        if resolved.is_file():
+            return resolved
+    return None
 
 
 def build_desktop_camera_host(index, callback):
