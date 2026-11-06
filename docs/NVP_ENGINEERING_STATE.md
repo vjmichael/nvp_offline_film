@@ -1,5 +1,34 @@
 # NVP — Engineering state and resumption ledger
 
+## Latest checkpoint — INDEX-TIME-10 progressive playback, November 6
+
+- **Stacked development branch:** `nvp/index-time10-progressive-longform-20261106`,
+  based on the exact INDEX-TIME-09 PR #72 head
+  `974f2413b384e5970462fa6398924ada39c532d6`.
+- Added native trusted progressive session begin/prepare-next/advance/stop,
+  one explicit creator consent scoped to a specific frozen FilmIndex edit
+  and no more than four hours of reviewed playback; at most two verified
+  disposable A/V proxy tickets, one contained encoder worker, max 160 MiB
+  disk derivative per section and bounded same-origin 206 media delivery.
+- Next start derives only from the preceding sealed native plan; stale,
+  altered or foreign session requests are refused. Old ticket is revoked
+  after approved handoff, not while the next child worker is unverified.
+  A late next section pauses both video and sound at its boundary.
+- React indexed-footage editor has `Start progressive long-form review`
+  and may pre-prepare the next disk-backed proxy, check its distinct
+  stream receipt and transition on the media `ended` event. Section
+  switches are **not yet certified gapless**; codec/audio timing and
+  WebView2 RAM must be measured independently.
+- Restart policy revokes previous session grants, cancels queued old
+  tasks and retains unresolved ACTIVE worker reservations pending actual
+  independent process-tree cleanup. Existing source recordings are never
+  rewritten. Added native coordination/unit tests, frontend transition
+  tests and separate Windows/Linux + React GitHub workflow.
+- **Acceptance remains open** until the exact PR head's native CI,
+  real 20+ minute multi-section playback, physical Windows installation,
+  Linux app acceptance and hostile host-crash recovery are observed.
+  Guide: `docs/NVP_INDEX_TIME10_PROGRESSIVE_LONGFORM.md`.
+
 ## Current continuation checkpoint — November 6, 2026
 
 This section supersedes older November 5 navigation priorities **for the
