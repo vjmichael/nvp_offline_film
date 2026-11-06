@@ -337,7 +337,8 @@ def run_visible_window_smoke():
                             if not window.evaluate_js(
                                 "Boolean([...document.querySelectorAll('button')]"
                                 ".some(x=>x.textContent.includes('Review & play original footage'))"
-                                "&&document.querySelector('[aria-label=\\\"Non-destructive footage playback\\\"]'))"):
+                                "&&[...document.querySelectorAll('section')]"
+                                ".some(x=>x.getAttribute('aria-label')==='Non-destructive footage playback'))"):
                                 raise RuntimeError("Native source player was not mounted in installed React")
                             result["passed"]=True
                             break
