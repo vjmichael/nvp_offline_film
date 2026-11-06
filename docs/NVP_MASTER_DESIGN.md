@@ -20,6 +20,8 @@
 
 > **NVP defining principle (2026-11-05):** **NVP is a data-first filmmaking system capable of generating multiple visual presentations from the same frozen film performance.** Frozen Digital Takes and time-addressed performances remain authoritative. Rendered videos and other presentations are derivative outputs and do not replace the original performance data. See [DATA-TIME-01](NVP_DATA_TIME01_EVENTS_NOT_FRAMES.md).
 
+> **2026-11-05 USD-01 OpenUSD foundational integration [C/O]:** NVP adopts native OpenUSD composition and time-sampled scene evaluation as a substrate for its data-first Film World, while **FilmIndex and the Temporal Ledger remain authoritative for semantic performance events, source identity and creator approvals**. The first implementation composes trusted NVP-authored layout and motion USD layers, binds their immutable layer SHA digests and exact authored time evaluations to a frozen single-commit Digital Take revision, and retains the same frozen performance for downstream selectable presentations. **Full external asset references/payloads, rigs, advanced animation, final rendering, desktop integration, and native Windows/Linux acceptance remain open.** See [USD-01 native scene and Digital Take implementation](NVP_USD01_OPENUSD_SCENE_TEMPORAL_TAKE.md).
+
 ## 0. How this document governs development
 
 This is the single *top-level* NVP design baseline. It consolidates decisions, requirements, known source material, and an explicit roadmap; it is not a claim that every described feature has been built. **A new implementation does not amend the design simply because it works.**
