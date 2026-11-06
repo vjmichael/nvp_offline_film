@@ -100,6 +100,7 @@ class TrustedFootageDesktop:
         self._tickets={}
         self._host=None
         self._assembler=None
+        self._review_playback=None
         self._assembly_lock=threading.Lock()
         self._host_factory=host_factory
         self._executor=ThreadPoolExecutor(
@@ -164,6 +165,7 @@ class TrustedFootageDesktop:
                 p.is_file() and not p.is_symlink() for p in self.tools)),
             "can_import_original":True,"can_approve_preview":True,
             "can_edit_assembly":True,
+            "can_review_assembly_frames":True,
             "original_source_path_to_browser":False,
         }
 
@@ -569,6 +571,41 @@ class TrustedFootageDesktop:
                     "code":"SOURCE_EDITORIAL_COMMIT_REFUSED",
                     "original_sources_modified":False}
 
+    def _get_review_playback(self):
+        with self._lock:
+            if self._review_playback is None:
+                from backend.nvp_index_time08_playback import NativeAssemblyReview
+                self._review_playback=NativeAssemblyReview(self)
+            return self._review_playback
+
+    def start_assembly_review(self,request):
+        try:return self._get_review_playback().start(request)
+        except Exception:
+            return {"format":"nvp.index_time08.original_assembly_review.v1",
+                    "status":"REFRESH_REQUIRED","original_modified":False,
+                    "master_approved":False}
+
+    def poll_assembly_review(self,ticket):
+        try:return self._get_review_playback().poll(ticket)
+        except Exception:
+            return {"format":"nvp.index_time08.original_assembly_review.v1",
+                    "status":"RECOVERY_REQUIRED","original_modified":False,
+                    "master_approved":False}
+
+    def get_assembly_review_frame(self,ticket,index):
+        try:return self._get_review_playback().frame(ticket,index)
+        except Exception:
+            return {"format":"nvp.index_time08.original_assembly_review.v1",
+                    "status":"RECOVERY_REQUIRED","original_modified":False,
+                    "master_approved":False}
+
+    def cancel_assembly_review(self,ticket):
+        try:return self._get_review_playback().cancel(ticket)
+        except Exception:
+            return {"format":"nvp.index_time08.original_assembly_review.v1",
+                    "status":"RECOVERY_REQUIRED","original_modified":False,
+                    "master_approved":False}
+
     def _close(self):
         with self._lock:
             if self._closed:return
@@ -579,3 +616,5 @@ class TrustedFootageDesktop:
         # A real worker is stopped by the original contained executor and
         # durable TaskLedger. Never report a mere kill signal as proof.
         self._executor.shutdown(wait=True,cancel_futures=False)
+        if self._review_playback is not None:
+            self._review_playback.close()
