@@ -45,6 +45,7 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
         project_id:pid,take_id:'captured_take',
         take_document_sha256:sha,
         listener_path:'/World/Camera',first_sample:0,
+        direction:'forward',
       }));
       expect(bridge.data_av_audio_window).not.toHaveBeenCalled();
       expect(await screen.findByText('Native audition was not approved.'))
