@@ -502,6 +502,25 @@ class FilmIndex:
                     (project_id,object_id,revision,
                      self._read_revision(db,project_id,object_id,revision)["document_sha"]))
                 direct.extend(dict(x) for x in authored)
+            # Import footage placements use the same normalized, scalable
+            # source-impact pattern as bound frame edits and temporal events:
+            # one exact original may feed many versioned film-time placements.
+            time_edits = db.execute("""SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='nvp_time_editorial_clips'""").fetchone()
+            if time_edits:
+                source_doc = self._read_revision(
+                    db,project_id,object_id,revision)["document_sha"]
+                placed = db.execute("""SELECT DISTINCT c.edit_id AS object_id,
+                    c.revision AS revision
+                    FROM nvp_time_editorial_clips c
+                    JOIN film_object_revisions r
+                      ON r.project_id=c.project_id
+                     AND r.object_id=c.edit_id AND r.revision=c.revision
+                    WHERE c.project_id=? AND c.source_id=?
+                      AND c.source_revision=? AND c.source_document_sha256=?
+                    ORDER BY c.edit_id,c.revision""",
+                    (project_id,object_id,revision,source_doc))
+                direct.extend(dict(row) for row in placed)
             unique = {(r["object_id"], r["revision"]) for r in direct}
             return [{"object_id": oid, "revision": rev}
                     for oid, rev in sorted(unique)]
