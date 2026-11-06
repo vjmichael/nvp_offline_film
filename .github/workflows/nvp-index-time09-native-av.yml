@@ -64,12 +64,14 @@ jobs:
           ffprobe -version
           ffmpeg -hide_banner -encoders 2>&1 | grep -q libx264
           ffmpeg -hide_banner -encoders 2>&1 | grep -q ' aac'
-          python -m compileall -q backend/nvp_index_time09_av_proxy.py backend/nvp_index_time09_native_host.py backend/nvp_index_time06_native_desktop.py tools/nvp_av_proxy_worker.py tools/nvp_desktop_alpha.py tests/test_nvp_index_time09_av_proxy.py
+          python -m compileall -q backend/nvp_index_time09_av_proxy.py backend/nvp_index_time09_native_host.py backend/nvp_index_time06_native_desktop.py tools/nvp_av_proxy_worker.py tools/nvp_desktop_alpha.py tests/test_nvp_index_time09_av_proxy.py tests/test_nvp_index_time09_media_range.py tests/test_nvp_system_packages.py
       - name: Real original VFR camera audio, silent B roll, editorial gap and verified H264/AAC native proxy
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_nvp_index_time09_av_proxy.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_index_time09_media_range.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_system_packages.py' -v
           python -m unittest discover -s tests -p 'test_nvp_index_time08_playback.py' -v
   react-synchronized-media:
     name: INDEX-TIME-09 real video transport, opaque chunks and SHA refusal
