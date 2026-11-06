@@ -47,7 +47,7 @@ jobs:
       - name: Compile production bridge and tests
         shell: bash
         run: |
-          python -m compileall -q backend/nvp_openusd_scene.py backend/nvp_openusd_take.py tests/test_nvp_openusd_take_native.py
+          python -m compileall -q backend/nvp_openusd_scene.py backend/nvp_openusd_take.py backend/nvp_openusd_presentation.py tests/test_nvp_openusd_take_native.py
       - name: Native layered composition + exact-time transform + immutable Digital Take
         shell: bash
         run: python -m unittest discover -s tests -p "test_nvp_openusd_take_native.py" -v
