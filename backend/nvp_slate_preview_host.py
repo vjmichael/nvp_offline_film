@@ -192,6 +192,39 @@ class NativeSlatePreviewHost:
                 row[0],_digest(document),document):
             raise PermissionError("Low-fi preview source, consent or resource spec changed")
 
+    def source_camera_choices(self,project_id,edit_id,revision,*,film_tick):
+        """Fast UI camera-picker data: no USD stage or image generation."""
+        ticket=self.lazy.select(
+            project_id,edit_id,revision,film_tick=film_tick,
+            quality="thumbnail")
+        if ticket["status"]!="SOURCE_REFERENCE_SELECTED":
+            return {"status":ticket["status"],"cameras":[],"usd_loaded":False}
+        take=self.index.read_revision(
+            project_id,ticket["source_take_id"],ticket["source_take_revision"])
+        scene=self.index.read_revision(
+            project_id,take["data"]["scene_id"],take["data"]["scene_revision"])
+        if scene["document_sha256"]!=take["data"]["scene_document_sha256"]:
+            raise RuntimeError("Native camera list references modified film source")
+        if scene["data"].get("native_schema_version") is None:
+            return {
+                "status":"NATIVE_CAMERAS_NOT_AUTHORED","cameras":[],
+                "source_take_sha256":ticket["source_take_document_sha256"],
+                "usd_loaded":False,"picture_generated":False,
+            }
+        cameras=[
+            {"path":path,"label":path.rsplit("/",1)[-1]}
+            for path,role in sorted(scene["data"]["prim_roles"].items())
+            if role=="camera"]
+        return {
+            "status":"SOURCE_CAMERA_CHOICES",
+            "cameras":cameras,
+            "source_take_sha256":ticket["source_take_document_sha256"],
+            "source_shot_sha256":ticket["source_shot_document_sha256"],
+            "source_tick":ticket["source_tick"],
+            "usd_loaded":False,"picture_generated":False,
+            "shot_visibility_verified":False,
+        }
+
     def request(self,project_id,edit_id,revision,*,film_tick,
                 quality="thumbnail",creator_event,ram_mb=1024,
                 timeout_seconds=120,strict_linux_cgroup=False,
