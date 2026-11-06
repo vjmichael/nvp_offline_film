@@ -117,12 +117,12 @@ class FilmTimeEditorialPublisher:
         with index.studio._connection() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS
                 nvp_time_editorial_clips (
+                  project_id TEXT NOT NULL,
+                  edit_id TEXT NOT NULL,
+                  revision INTEGER NOT NULL,
             """+DDL_COLUMNS+""",
-            PRIMARY KEY(project_id,edit_id,revision,ordinal)
-            )""".replace("nvp_time_editorial_clips (\n","nvp_time_editorial_clips (\n"
-                "    project_id TEXT NOT NULL,\n"
-                "    edit_id TEXT NOT NULL,\n"
-                "    revision INTEGER NOT NULL,\n"))
+                  PRIMARY KEY(project_id,edit_id,revision,ordinal)
+                )""")
             db.execute("""CREATE INDEX IF NOT EXISTS
                 nvp_time_editorial_seek ON nvp_time_editorial_clips
                 (project_id,edit_id,revision,film_start_tick)""")
