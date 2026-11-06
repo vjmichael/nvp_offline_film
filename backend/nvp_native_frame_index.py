@@ -5,6 +5,7 @@ rehash the media. A file stamp is an unverified change detector, not a
 cryptographic source-authenticity claim. Final conform remains gated separately.
 """
 from __future__ import annotations
+from contextlib import closing
 from decimal import Decimal, localcontext
 import hashlib
 import json
@@ -206,7 +207,10 @@ class NVPFrameIndex:
                 dir=path.parent)
             os.close(fd)
             stage = Path(name)
-            with sqlite3.connect(stage) as db:
+            # sqlite3.Connection.__exit__ commits but does not close the
+            # native handle. Windows cannot os.replace/unlink an open SQLite
+            # temporary index, so close it before publishing atomically.
+            with closing(sqlite3.connect(stage)) as db:
                 db.execute("""CREATE TABLE frames (
                     ordinal INTEGER PRIMARY KEY CHECK(ordinal >= 0),
                     pts INTEGER NOT NULL,
