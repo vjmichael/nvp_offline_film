@@ -187,19 +187,27 @@ class TrustedDesktopCameraBridge:
             return self._host
 
     def camera_render_capabilities(self):
+        # DA-06: external Blender still capture was part of the retired
+        # frame/proxy bridge. NVP now auditions 3D USD directly. Never
+        # discover or start a legacy media worker from the active editor.
         self._native_window()
         return {
             "format":"nvp.camera.desktop_capability.v1",
             "native_window":True,
-            "blender_discovered":discover_blender() is not None,
-            "supports_approved_still":True,
+            "blender_discovered":False,
+            "supports_approved_still":False,
             "supports_cancel":True,
+            "native_data_first_scene":True,
+            "legacy_render_retired":True,
             "source_modified":False,
         }
 
     def request_camera_still(self, payload):
-        """Untrusted JSON -> exact FilmIndex identity -> native OS approval."""
+        """Retired external proxy renderer. Data-first scene view is native."""
         self._native_window()
+        raise PermissionError(
+            "External camera still/proxy worker retired by DA-06; use native "
+            "OpenUSD WebGL audition without FFmpeg or frame capture.")
         if type(payload) is not dict or set(payload)!={
                 "project_id","source_scene_id","source_scene_revision",
                 "source_scene_document_sha256","source_tick","camera_path",
