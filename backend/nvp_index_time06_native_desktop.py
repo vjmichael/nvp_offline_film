@@ -101,6 +101,7 @@ class TrustedFootageDesktop:
         self._host=None
         self._assembler=None
         self._review_playback=None
+        self._av_host=None
         self._assembly_lock=threading.Lock()
         self._host_factory=host_factory
         self._executor=ThreadPoolExecutor(
@@ -166,6 +167,7 @@ class TrustedFootageDesktop:
             "can_import_original":True,"can_approve_preview":True,
             "can_edit_assembly":True,
             "can_review_assembly_frames":True,
+            "can_review_synchronized_av":True,
             "original_source_path_to_browser":False,
         }
 
@@ -606,6 +608,42 @@ class TrustedFootageDesktop:
                     "status":"RECOVERY_REQUIRED","original_modified":False,
                     "master_approved":False}
 
+    def _get_av_host(self):
+        with self._lock:
+            if self._av_host is None:
+                from backend.nvp_index_time09_native_host import NativeAVProxyHost
+                self._av_host=NativeAVProxyHost(self)
+            return self._av_host
+
+    def start_synchronized_av_review(self,request):
+        try:return self._get_av_host().start(request)
+        except Exception:
+            # pywebview errors must not reveal external media paths.
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"REFRESH_REQUIRED",
+                    "original_modified":False,"master_approved":False}
+
+    def poll_synchronized_av_review(self,ticket):
+        try:return self._get_av_host().poll(ticket)
+        except Exception:
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"RECOVERY_REQUIRED",
+                    "original_modified":False,"master_approved":False}
+
+    def get_synchronized_av_chunk(self,ticket,offset):
+        try:return self._get_av_host().chunk(ticket,offset)
+        except Exception:
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"RECOVERY_REQUIRED",
+                    "original_modified":False,"master_approved":False}
+
+    def stop_synchronized_av_review(self,ticket):
+        try:return self._get_av_host().stop(ticket)
+        except Exception:
+            return {"format":"nvp.index_time09.native_av_host.v1",
+                    "status":"RECOVERY_REQUIRED",
+                    "original_modified":False,"master_approved":False}
+
     def _close(self):
         with self._lock:
             if self._closed:return
@@ -617,6 +655,8 @@ class TrustedFootageDesktop:
         # durable TaskLedger. Never report a mere kill signal as proof.
         # Stop the playback pipeline first; no approved video decoder may
         # outlive the desktop window while we wait for a still-frame worker.
+        if self._av_host is not None:
+            self._av_host.close()
         if self._review_playback is not None:
             self._review_playback.close()
         self._executor.shutdown(wait=True,cancel_futures=False)
