@@ -70,13 +70,16 @@ class TrustedDataAVController:
         self._guard()
         if (type(request) is not dict or set(request)!={
             "project_id","take_id","take_document_sha256",
-            "listener_path","first_sample"}):
+            "listener_path","first_sample","direction"}):
             raise ValueError("Exact source identity and listener required")
         pid=request["project_id"];_require_pid(pid)
         take=request["take_id"];_id(take,"source Digital Take")
         sha=request["take_document_sha256"];_sha(sha)
         listener=request["listener_path"]
         start=request["first_sample"]
+        direction=request["direction"]
+        if direction not in ("forward","reverse"):
+            raise ValueError("Unknown native source playback direction")
         if type(start) is not int or start<0:
             raise ValueError("Invalid requested source sample")
         with self._lock:
@@ -85,10 +88,15 @@ class TrustedDataAVController:
             before=self.index.read_revision(pid,take,1)
             if before["document_sha256"]!=sha:
                 raise PermissionError("Outdated frozen Digital Take")
-            limit=min((before["data"]["duration_tick"]+CLOCK_TICK-1)//CLOCK_TICK,
-                      start+MAX_APPROVED_SAMPLES)
-            if start>=limit:
+            total=before["data"]["duration_tick"]//CLOCK_TICK
+            if start>=total or (direction=="reverse" and start==0):
                 raise ValueError("Requested sound time past source end")
+            approved_first=(start if direction=="forward"
+                            else max(0,start-MAX_APPROVED_SAMPLES))
+            approved_last=(min(total,start+MAX_APPROVED_SAMPLES)
+                           if direction=="forward" else start)
+            if approved_last<=approved_first:
+                raise ValueError("Native audio approval window is empty")
             # Consent covers only one frozen Take, one listener and a finite
             # Film Time segment. There is no approval for media export.
             if self._ask(
@@ -97,6 +105,7 @@ class TrustedDataAVController:
                 "SHA-256: "+sha+"\n"+
                 "Listener: "+str(listener)+"\n"+
                 "First source sample: "+str(start)+" (48 kHz)\n"+
+                "Direction: "+direction+"\n"+
                 "Up to four hours. Output: bounded temporary device buffers.\n"+
                 "Original scene, performance and sound sources remain frozen.\n"+
                 "No FFmpeg, new WAV/BWF recording or flattened film master.\n"+
@@ -111,16 +120,16 @@ class TrustedDataAVController:
             ticket=secrets.token_urlsafe(32)
             self._active={
                 "id":ticket,"session":session,"pid":pid,
-                "first":start,"last":min(
-                    (session.duration//CLOCK_TICK),start+MAX_APPROVED_SAMPLES),
+                "first":approved_first,"last":approved_last,
                 "expires":time.monotonic()+SESSION_SECONDS,
             }
             return {"format":FORMAT,"status":"READY",
                     "session_id":ticket,
                     "take_document_sha256":sha,
                     "listener_path":listener,
-                    "first_sample":start,
-                    "last_sample_exclusive":self._active["last"],
+                    "first_sample":start,"direction":direction,
+                    "approved_first_sample":approved_first,
+                    "last_sample_exclusive":approved_last,
                     "sample_rate":RATE,
                     "ffmpeg_runtime_required":False,
                     "original_modified":False,"master_approved":False}
