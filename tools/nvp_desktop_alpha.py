@@ -340,6 +340,12 @@ def run_visible_window_smoke():
                                 "&&[...document.querySelectorAll('section')]"
                                 ".some(x=>x.getAttribute('aria-label')==='Non-destructive footage playback'))"):
                                 raise RuntimeError("Native source player was not mounted in installed React")
+                            if not window.evaluate_js(
+                                "Boolean([...document.querySelectorAll('button')]"
+                                ".some(x=>x.textContent.includes('Prepare synchronized review'))"
+                                "&&[...document.querySelectorAll('section')]"
+                                ".some(x=>x.getAttribute('aria-label')==='Synchronized original footage review'))"):
+                                raise RuntimeError("Installed WebView2 A/V picture+sound player not mounted")
                             result["passed"]=True
                             break
                     time.sleep(.2)
