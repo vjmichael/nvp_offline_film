@@ -1,10 +1,10 @@
-import React,{useEffect,useMemo,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import CameraLensWorkbench from './CameraLensWorkbench.jsx';
 
 // SLATE-08: the ordinary NVP planning UI only reads real versioned scene
 // sources. Do not let browser-only actions create render approvals or commit
 // a Take/SHOT. Such actions must be wired by an authenticated native host.
-export default function FilmCameraSourcePanel({projectId,api}){
+export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null}){
   const [scenes,setScenes]=useState([]);
   const [sceneId,setSceneId]=useState('');
   const [cameraPath,setCameraPath]=useState('');
@@ -15,6 +15,23 @@ export default function FilmCameraSourcePanel({projectId,api}){
   const [loadingPose,setLoadingPose]=useState(false);
   const [error,setError]=useState('');
   const [truncated,setTruncated]=useState(false);
+  const [native,setNative]=useState(nativeBridge);
+  const [renderTicket,setRenderTicket]=useState(null);
+  const [renderResult,setRenderResult]=useState(null);
+  const [renderError,setRenderError]=useState('');
+  const activeTicket=useRef(null);
+  useEffect(()=>{
+    if(nativeBridge){setNative(nativeBridge);return;}
+    function installedBridge(){
+      const api=window.pywebview?.api;
+      if(api && ['request_camera_still','poll_camera_still',
+                 'cancel_camera_still'].every(name=>typeof api[name]==='function'))
+        setNative(api);
+    }
+    window.addEventListener('pywebviewready',installedBridge);
+    installedBridge();
+    return ()=>window.removeEventListener('pywebviewready',installedBridge);
+  },[nativeBridge]);
   const scene=useMemo(()=>scenes.find(s=>s.scene_id===sceneId)||null,
     [scenes,sceneId]);
 
@@ -22,6 +39,7 @@ export default function FilmCameraSourcePanel({projectId,api}){
     let active=true;
     setScenes([]);setSceneId('');setCameraPath('');
     setSnapshot(null);setError('');setLoadingList(true);
+    activeTicket.current=null;setRenderTicket(null);setRenderResult(null);
     api('/projects/'+encodeURIComponent(projectId)+'/film/camera-scenes')
       .then(result=>{
         if(!active)return;
@@ -42,12 +60,14 @@ export default function FilmCameraSourcePanel({projectId,api}){
   useEffect(()=>{
     setCameraPath(scene?.cameras?.[0]?.path||'');
     setSnapshot(null);
+    activeTicket.current=null;setRenderTicket(null);setRenderResult(null);
     setTick(0);setTickDraft('0');
   },[sceneId,scenes]);
 
   useEffect(()=>{
     let active=true;
     setSnapshot(null);
+    activeTicket.current=null;setRenderTicket(null);setRenderResult(null);
     if(!scene||!cameraPath)return ()=>{active=false;};
     setLoadingPose(true);setError('');
     const params=new URLSearchParams({
@@ -72,6 +92,85 @@ export default function FilmCameraSourcePanel({projectId,api}){
     return ()=>{active=false;};
   },[api,projectId,scene,cameraPath,tick]);
 
+  useEffect(()=>{
+    if(!native||!renderTicket)return;
+    let active=true;
+    let pending=false;
+    async function poll(){
+      if(pending||!active)return;
+      pending=true;
+      try{
+        const answer=await native.poll_camera_still(renderTicket);
+        if(!active||activeTicket.current!==renderTicket)return;
+        if(answer.status==='READY'){
+          if(answer.format!=='nvp.camera.desktop_delivery.v1' ||
+             answer.source_modified!==false ||
+             answer.frozen_take_created!==false ||
+             answer.film_master_approved!==false)
+            throw new Error('Desktop verified still identity or source custody failed');
+          setRenderResult(answer);
+          setRenderTicket(null);
+        }else if(answer.status==='RECOVERY_REQUIRED'||answer.status==='FAILED'){
+          setRenderError(answer.status==='RECOVERY_REQUIRED'
+            ?'Native render needs worker recovery before a still can be accepted.'
+            :'Native render did not complete.');
+          setRenderResult({status:'FAILED'});
+          setRenderTicket(null);
+        }else if(answer.status!=='QUEUED'){
+          throw new Error('Unsupported native render state');
+        }
+      }catch(err){
+        if(active&&activeTicket.current===renderTicket){
+          setRenderError(err.message);setRenderTicket(null);
+          setRenderResult({status:'FAILED'});
+        }
+      }finally{pending=false;}
+    }
+    poll();
+    const interval=setInterval(poll,700);
+    return ()=>{active=false;clearInterval(interval);};
+  },[native,renderTicket]);
+
+  async function requestNativeStill(payload){
+    if(!native||renderTicket)return;
+    setRenderError('');setRenderResult({status:'QUEUED'});
+    try{
+      const result=await native.request_camera_still({project_id:projectId,...payload});
+      if(result.status==='DENIED'){
+        setRenderResult(null);
+        setRenderError('Native camera render was not approved.');
+        return;
+      }
+      if(result.format!=='nvp.camera.desktop_ticket.v1' ||
+          !['QUEUED','CACHE_HIT'].includes(result.status) ||
+          typeof result.ticket_id!=='string' ||
+          result.scene_document_sha256!==payload.source_scene_document_sha256 ||
+          result.camera_path!==payload.camera_path ||
+          result.source_tick!==payload.source_tick){
+        throw new Error('Desktop did not return an exact source-scoped render ticket');
+      }
+      activeTicket.current=result.ticket_id;
+      setRenderTicket(result.ticket_id);
+    }catch(err){
+      setRenderError(err.message);setRenderResult({status:'FAILED'});
+    }
+  }
+  async function cancelNativeStill(){
+    if(!native||!renderTicket)return;
+    try{
+      const reply=await native.cancel_camera_still(renderTicket);
+      if(reply.status==='DENIED')return;
+      if(reply.status!=='CANCELLED_QUEUED'&&reply.status!=='CANCEL_REQUESTED')
+        throw new Error('Unexpected native worker cancellation result');
+      activeTicket.current=null;
+      setRenderTicket(null);
+      setRenderResult({status:'FAILED'});
+      setRenderError(reply.status==='CANCEL_REQUESTED'
+        ?'Cancellation requested. Native worker termination must still be verified.'
+        :'Queued render cancelled without starting Blender.');
+    }catch(err){setRenderError(err.message);}
+  }
+
   function selectScene(id) {
     setSceneId(id);setSnapshot(null);
   }
@@ -88,6 +187,7 @@ export default function FilmCameraSourcePanel({projectId,api}){
     }
     setError('');
     setSnapshot(null);
+    activeTicket.current=null;setRenderTicket(null);setRenderResult(null);
     setTick(number);
   }
   return <section className="card" aria-label="Film source camera">
@@ -127,12 +227,17 @@ export default function FilmCameraSourcePanel({projectId,api}){
     </div>}
     {error&&<p role="alert">{error}</p>}
     {loadingPose&&<p role="status">Reading selected source pose…</p>}
+    {renderError&&<p role="alert">{renderError}</p>}
     {scene&&<CameraLensWorkbench key={scene.scene_id+':'+cameraPath}
-      sceneSnapshot={snapshot}/>}
+      sceneSnapshot={snapshot}
+      onRequestRenderedPreview={native?requestNativeStill:null}
+      onCancelRenderedPreview={native?cancelNativeStill:null}
+      renderBusy={Boolean(renderTicket)}
+      renderResult={renderResult}/>}
     {scene&&<p className="fineprint">
       The instant projection uses camera-space markers, not actual rendered
-      character pixels. Native Blender still rendering, saving an approved
-      lens preset, and applying a lens to a frozen shot require separate
-      trusted desktop approval wiring and are not available in this panel.
+      character pixels. {native
+        ? 'Verified native stills require a separate desktop confirmation. Saving an approved lens preset and applying optics to a frozen shot are not wired yet.'
+        : 'Native Blender still rendering requires the installed desktop application. Preset and shot approval are not exposed to ordinary browsers.'}
     </p>}
   </section>;
