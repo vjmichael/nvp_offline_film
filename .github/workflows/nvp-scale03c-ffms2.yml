@@ -1,5 +1,9 @@
 name: NVP SCALE-03C FFMS2 Indexed Source Windows
 
+concurrency:
+  group: nvp-scale03c-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
@@ -7,6 +11,7 @@ on:
     paths:
       - "backend/nvp_ffms2_*.py"
       - "backend/nvp_source_window_native_host.py"
+      - "backend/nvp_source_window_decode.py"
       - "tools/nvp_source_window_worker.py"
       - "tests/test_nvp_ffms2_indexed_native.py"
       - ".github/workflows/nvp-scale03c-ffms2.yml"
@@ -71,7 +76,7 @@ jobs:
       - name: Python production module compilation
         shell: bash
         run: |
-          python -m compileall -q backend/nvp_ffms2_native.py backend/nvp_ffms2_index_cache.py backend/nvp_ffms2_source_window.py backend/nvp_source_window_native_host.py tools/nvp_source_window_worker.py tests/test_nvp_ffms2_indexed_native.py
+          python -m compileall -q backend/nvp_ffms2_native.py backend/nvp_ffms2_index_cache.py backend/nvp_ffms2_source_window.py backend/nvp_source_window_native_host.py backend/nvp_source_window_decode.py tools/nvp_source_window_worker.py tests/test_nvp_ffms2_indexed_native.py
 
       - name: Real indexed frame-seek and contained native review acceptance
         shell: bash
