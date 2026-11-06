@@ -71,6 +71,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_exact_time_shots.py' -v
           python -m unittest discover -s tests -p 'test_nvp_data_first_filming.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_imported_audio.py' -v
       - name: Existing frozen source/camera/provenance regressions
         shell: bash
         run: |
