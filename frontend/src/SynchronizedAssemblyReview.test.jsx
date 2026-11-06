@@ -63,10 +63,11 @@ beforeEach(()=>{
     subtle:{digest:vi.fn(async(_algo,raw)=>Uint8Array.from(
       createHash('sha256').update(Buffer.from(raw)).digest()).buffer)},
   });
-  vi.stubGlobal('URL',{
-    ...URL,createObjectURL:vi.fn(()=>'blob:nvp-verified-review'),
-    revokeObjectURL:vi.fn(),
-  });
+  const RealURL=URL;
+  class TestURL extends RealURL {}
+  TestURL.createObjectURL=vi.fn(()=>'blob:nvp-verified-review');
+  TestURL.revokeObjectURL=vi.fn();
+  vi.stubGlobal('URL',TestURL);
   Object.defineProperty(HTMLMediaElement.prototype,'pause',
     {configurable:true,value:vi.fn()});
 });
