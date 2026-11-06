@@ -167,6 +167,8 @@ class TrustedDataAVController:
                 raise PermissionError("Scene query outside creator-approved Film Time")
             source=state["session"]
             snapshot=source.snapshot(tick)
+            from backend.nvp_data_av_visual import visual_state
+            visual=visual_state(self.index,state["pid"],snapshot)
             overlay=spatial_audio_at(
                 self.index,state["pid"],
                 source.data["scene_id"],source.data["scene_revision"],
@@ -176,6 +178,7 @@ class TrustedDataAVController:
                 "session_id":ticket,
                 "take_document_sha256":source.take["document_sha256"],
                 "scene":snapshot,"spatial_audio":overlay,
+                "visual":visual,
                 "original_modified":False,"master_approved":False,
             }
 
