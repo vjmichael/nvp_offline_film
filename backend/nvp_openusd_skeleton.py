@@ -1,8 +1,10 @@
 """USD-02D: bounded native UsdSkel joint hierarchy and timed animation.
 
 This encodes an actual USD skeleton and its joint-local animation, not merely
-a custom joint-angle label. It does not yet bind skinning weights to a mesh
-or produce facial deformation. NVP controls source identities and exact ticks.
+a custom joint-angle label. SLATE-07 optionally adds a native UsdSkel-bound
+typed character mesh with bounded per-vertex influences in the SAME source
+layer. Facial deformation and general-purpose rest/bind pose authoring remain
+future tasks. NVP controls source identities and exact native Film Time ticks.
 """
 from __future__ import annotations
 import math
