@@ -358,6 +358,43 @@ class SlateBranchNativeTests(unittest.TestCase):
         self.assertEqual(sum(1 for item in
             view["parallel_groups"]["reaction_beat"] if item["selected"]),1)
 
+    def test_original_mainline_remains_before_and_after_parallel_splices(self):
+        assembly=self._source_for_assembly()
+        # Explicit parent continuity sections stay active before and after
+        # the parallel decision, instead of implying the whole scene forks.
+        source=[
+            {"segment_id":"original_intro","branch_id":"master_take_1",
+             "source_in_tick":0,"source_out_tick":T},
+            {"segment_id":"wild_insert","branch_id":"wild_take_3",
+             "source_in_tick":T,"source_out_tick":2*T},
+            {"segment_id":"alt_camera_B","branch_id":"camera_B_take2",
+             "source_in_tick":T,"source_out_tick":2*T},
+            {"segment_id":"original_outro","branch_id":"master_take_1",
+             "source_in_tick":2*T,"source_out_tick":3*T},
+        ]
+        original_take=self.index.read_revision(self.pid,"take_1",1)
+        assembly.commit(
+            self.pid,"splice_full",graph_id="scene_01_slate",
+            graph_revision=1,segments=source,editor_event="make_active")
+        active=assembly.active_view(
+            self.pid,"scene_01_slate",1,
+            edit_id="splice_full",edit_revision=1)
+        self.assertEqual([x["branch_id"] for x in active["sequence"]],
+                         ["master_take_1","wild_take_3",
+                          "camera_B_take2","master_take_1"])
+        self.assertEqual([x["timeline_start_tick"] for x in active["sequence"]],
+                         [0,T,2*T,3*T])
+        root=active["parallel_groups"]["scene_main"][0]
+        self.assertEqual(len(root["active_source_ranges"]),2)
+        self.assertEqual(
+            [(x["source_in_tick"],x["source_out_tick"])
+             for x in root["active_source_ranges"]],
+            [(0,T),(2*T,3*T)])
+        self.assertEqual(
+            self.index.read_revision(self.pid,"take_1",1)["document_sha256"],
+            original_take["document_sha256"])
+        self.assertFalse(active["render_approved"])
+
     def test_assembled_cut_reopens_from_filmindex_after_restart(self):
         assembly=self._source_for_assembly()
         source=[{"segment_id":"first","branch_id":"wild_take_3",
