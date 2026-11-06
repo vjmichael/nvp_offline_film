@@ -104,6 +104,25 @@ class NativeUsd02D(unittest.TestCase):
             properties["UsdLux.SphereLight"]["temperature_enabled"])
         self.assertFalse(snap["rendered_frames"])
 
+    def test_camera_motion_does_not_replace_native_camera_type(self):
+        motion=[{"path":"/World/Camera","samples":[
+            {"tick":0,"position":[0,1,-5]},
+            {"tick":2*T,"position":[2,1,-5]}]}]
+        self.scenes.publish(
+            self.pid,"camera_move_scene",prims=self.prims,curves=motion,
+            performance_channels=self.channels,native_schemas=True,
+            skeletal_rigs=self.rig)
+        _,stage=self.scenes.open(self.pid,"camera_move_scene",1)
+        self.assertTrue(stage.GetPrimAtPath(
+            "/World/Camera").IsA(UsdGeom.Camera))
+        mid=self.scenes.evaluate(
+            self.pid,"camera_move_scene",1,path="/World/Camera",tick=T)
+        self.assertAlmostEqual(mid["world_translation"][0],1.0,places=4)
+        self.assertAlmostEqual(
+            float(UsdGeom.Camera(stage.GetPrimAtPath(
+                "/World/Camera")).GetFocalLengthAttr().Get(T)),
+            0.6,places=4)
+
     def test_native_skeleton_joint_motion_is_time_sampled(self):
         half=self.state.evaluate(
             self.pid,"real_scene",1,"action_timeline",1,tick=T)
