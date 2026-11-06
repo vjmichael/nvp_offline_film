@@ -179,13 +179,23 @@ def recipe(snapshot,quality):
     }
 
 
-def preview_cache_key(recipe_document):
+def preview_cache_key(ticket,quality):
+    """Compute cache identity BEFORE loading OpenUSD geometry.
+
+    Take SHA freezes the scene and performance; SHOT SHA freezes overrides.
+    A deterministic renderer recipe version + script SHA fixes appearances.
+    This makes repeated scrubs an inexpensive SQLite/disk lookup.
+    """
+    if type(ticket) is not dict or ticket.get("status")!="SOURCE_REFERENCE_SELECTED":
+        raise ValueError("Source reference ticket required for cache lookup")
+    if quality not in DIMENSIONS:
+        raise ValueError("Invalid preview quality")
+    width,height=DIMENSIONS[quality]
     return sha(canonical({
         "format":FORMAT,"renderer":RENDERER_VERSION,
-        "source_take_sha256":recipe_document["source_take_sha256"],
-        "source_shot_sha256":recipe_document["source_shot_sha256"],
-        "source_tick":recipe_document["source_tick"],
-        "width":recipe_document["width"],"height":recipe_document["height"],
-        "scene_geometry_proxy_sha256":sha(canonical(recipe_document["objects"])),
-        "script_sha256":recipe_document["worker_script_sha256"],
+        "source_take_sha256":ticket["source_take_document_sha256"],
+        "source_shot_sha256":ticket["source_shot_document_sha256"],
+        "source_tick":ticket["source_tick"],
+        "width":width,"height":height,
+        "script_sha256":sha(BLENDER_SCRIPT.encode("utf-8")),
     }))
