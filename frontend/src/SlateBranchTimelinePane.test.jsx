@@ -171,7 +171,8 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
     expect(renderTicket).not.toHaveBeenCalled();
     fireEvent.click(container.querySelector('.nvp-slate-assembly-card'));
     fireEvent.click(screen.getByText('Preview source data'));
-    expect(renderTicket).toHaveBeenCalledExactlyOnceWith(900);
+    expect(renderTicket).toHaveBeenCalledOnce();
+    expect(renderTicket).toHaveBeenCalledWith(900);
   });
 
 });
