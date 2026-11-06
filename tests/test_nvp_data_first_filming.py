@@ -1,0 +1,104 @@
+"""DA-03 native OpenUSD filming capture with exact sound event provenance."""
+import unittest
+
+import test_nvp_data_av_native as fixture
+from backend.nvp_exact_time_shots import ExactTimeShotSequence
+from backend.nvp_data_first_filming import NativeSceneSoundCapture
+from backend.nvp_data_av_scene import FrozenSceneAV
+from backend.nvp_openusd_take import OpenUSDTakeCapture
+
+T=fixture.T
+
+class NativeCapturedSpatialSoundTests(unittest.TestCase):
+    def setUp(self):
+        fixture.NativeDigitalTakeAudioTests.setUp(self)
+        self.shots=ExactTimeShotSequence(self.index).publish(
+            self.pid,"FilmingCameraTimeline",scene_id="spatial_world",
+            scene_revision=1,duration_tick=str(3*T),shots=[{
+                "shot_id":"Shot001",
+                "camera_path":"/World/ListenerLeft",
+                "pattern":"continuous",
+                "start_tick":"0","end_tick":str(3*T)
+            }])
+        self.approvals=[]
+        self.capture=NativeSceneSoundCapture(
+            self.index,approve_take=lambda event,scope:
+                self.approvals.append((event,scope)) is None
+                and event.get("kind")=="trusted_native_filming_host")
+
+    def payload(self):
+        return dict(
+            project_id=self.pid,take_id="FilmedTake",
+            scene_id="spatial_world",scene_revision=1,
+            camera_timeline_id="FilmingCameraTimeline",
+            camera_timeline_revision=1,
+            sound_timeline_id="FilmingSoundTimeline",
+            recordings=[{
+                "event_id":"Speech001",
+                "event_kind":"dialogue",
+                "subject_id":"Actor",
+                "source_id":"NewRecordedSpeech",
+                "usd_prim_path":"/World/Actor",
+                "start_tick":0,"end_tick":T,
+                "gain":1.0,
+                "pcm_chunks":[self.original[:24000],self.original[24000:]],
+            }]
+        )
+
+    def test_native_capture_freezes_original_sound_and_camera_in_same_take(self):
+        receipt=self.capture.capture(**self.payload())
+        self.assertEqual(receipt["status"],"FROZEN_ORIGINAL_SCENE_SOUND_TAKE")
+        self.assertFalse(receipt["picture_frames_generated"])
+        self.assertFalse(receipt["audio_mix_flattened"])
+        self.assertFalse(receipt["master_approved"])
+        self.assertEqual(len(self.approvals),1)
+        verified=OpenUSDTakeCapture(
+            self.index,verify_creator_action=lambda event,scope:False
+            ).verify_take(self.pid,"FilmedTake")
+        self.assertEqual(verified["take_document_sha256"],
+                         receipt["take_document_sha256"])
+        left=FrozenSceneAV(self.index,self.pid,"FilmedTake",
+            expected_take_sha256=receipt["take_document_sha256"],
+            listener_path="/World/ListenerLeft")
+        right=FrozenSceneAV(self.index,self.pid,"FilmedTake",
+            expected_take_sha256=receipt["take_document_sha256"],
+            listener_path="/World/ListenerRight")
+        first=left.audio_window(64,1024)
+        second=right.audio_window(64,1024)
+        self.assertEqual(first["audible_event_ids"],["Speech001"])
+        self.assertNotEqual(first["audio_sha256"],second["audio_sha256"])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"spatial_world",1)["document_sha256"],
+                         self.shots["scene_document_sha256"])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"FilmingCameraTimeline",1)["document_sha256"],
+                         self.shots["document_sha256"])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"NewRecordedSpeech",1)["data"]["sample_count"],
+                         48000)
+
+    def test_denied_take_is_not_falsely_frozen(self):
+        capture=NativeSceneSoundCapture(
+            self.index,approve_take=lambda event,scope:False)
+        request=self.payload()
+        request["take_id"]="DeniedTake"
+        request["sound_timeline_id"]="DeniedSoundTimeline"
+        request["recordings"][0]["source_id"]="DeniedSoundSource"
+        with self.assertRaises(PermissionError):
+            capture.capture(**request)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"DeniedTake",1)
+        self.assertIsNotNone(self.index.read_revision(
+            self.pid,"DeniedSoundSource",1))
+
+    def test_capture_rejects_unknown_world_emitter(self):
+        req=self.payload()
+        req["recordings"][0]["usd_prim_path"]="/World/NotThere"
+        with self.assertRaises(RuntimeError):
+            self.capture.capture(**req)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"NewRecordedSpeech",1)
+
+
+if __name__=="__main__":
+    unittest.main()
