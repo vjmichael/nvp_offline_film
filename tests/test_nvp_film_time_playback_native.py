@@ -229,5 +229,102 @@ class FilmTimePlaybackNativeTests(unittest.TestCase):
             self.seek.resolve(other,"edit",1,tick=5*T)
 
 
+    def test_index_time05_editor_lists_only_real_edits_and_pages_vfr(self):
+        from backend.nvp_index_time05_desktop_read import FilmTimeDesktopRead
+        reader=FilmTimeDesktopRead(self.studio,
+            ffprobe_path=Path(self.ffprobe),index_root=self.cache_root)
+        published=reader.edits(self.project)
+        self.assertEqual(published["format"],
+            "nvp.index_time05.editor_source_read.v1")
+        self.assertFalse(published["original_media_read"])
+        self.assertFalse(published["worker_started"])
+        self.assertEqual(len(published["edits"]),1)
+        selected=published["edits"][0]
+        self.assertEqual(selected["edit_id"],"edit")
+        sha=selected["edit_document_sha256"]
+        first=reader.clips(self.project,"edit",1,
+            expected_edit_sha256=sha,limit=1)
+        self.assertEqual(first["clip_count"],2)
+        self.assertEqual(len(first["clips"]),1)
+        self.assertEqual(first["clips"][0]["source_in_frame_zero"],"10")
+        self.assertEqual(first["clips"][0]["film_start_tick"],str(5*T))
+        self.assertIsNotNone(first["next_after_ordinal"])
+        second=reader.clips(self.project,"edit",1,
+            expected_edit_sha256=sha,
+            after_ordinal=first["next_after_ordinal"],limit=1)
+        self.assertEqual(second["clips"][0]["source_in_frame_zero"],"60")
+        self.assertIsNone(second["next_after_ordinal"])
+        # No original paths, OS device/inode stamps or SHA-authority claims
+        # leak through the human-first source index.
+        self.assertNotIn("media_path",str(first))
+        self.assertNotIn("source_stamp",str(first))
+
+    def test_index_time05_editor_seek_exact_pts_gap_and_no_worker(self):
+        from backend.nvp_index_time05_desktop_read import FilmTimeDesktopRead
+        reader=FilmTimeDesktopRead(self.studio,
+            ffprobe_path=Path(self.ffprobe),index_root=self.cache_root)
+        sha=reader.edits(self.project)["edits"][0]["edit_document_sha256"]
+        original=reader.seek(self.project,"edit",1,
+            expected_edit_sha256=sha,tick=5*T)
+        self.assertEqual(original["status"],"INDEXED_SOURCE_FRAME_SELECTED")
+        self.assertEqual(original["requested_film_tick"],str(5*T))
+        self.assertEqual(original["source_frame_zero"],"10")
+        self.assertIsInstance(original["source_pts"],str)
+        self.assertTrue(original["frame_index_pts_reads"]<=64)
+        self.assertFalse(original["native_worker_started"])
+        self.assertFalse(original["film_master_approved"])
+        self.assertNotIn("source_stamp",original)
+        self.assertNotIn("source_path",original)
+        next_tick=int(original["frame_film_end_tick"])
+        next_frame=reader.seek(self.project,"edit",1,
+            expected_edit_sha256=sha,tick=next_tick)
+        self.assertEqual(next_frame["source_frame_zero"],"11")
+        empty=reader.seek(self.project,"edit",1,
+            expected_edit_sha256=sha,tick=10*T)
+        self.assertEqual(empty["status"],"EMPTY_IMPORTED_VIDEO_GAP")
+        self.assertIsNone(empty["clip_ordinal"])
+        self.assertFalse(empty["picture_rendered"])
+        self.assertEqual(self.index.list_objects(self.project,kind="master"),[])
+
+    def test_index_time05_denies_stale_or_tampered_or_cross_project_edit(self):
+        from backend.nvp_index_time05_desktop_read import FilmTimeDesktopRead
+        reader=FilmTimeDesktopRead(self.studio,
+            ffprobe_path=Path(self.ffprobe),index_root=self.cache_root)
+        sha=reader.edits(self.project)["edits"][0]["edit_document_sha256"]
+        with self.assertRaises(RuntimeError):
+            reader.clips(self.project,"edit",1,
+                expected_edit_sha256="f"*64)
+        with self.assertRaises(RuntimeError):
+            reader.seek(self.project,"edit",1,
+                expected_edit_sha256="f"*64,tick=5*T)
+        another=self.studio.create_project("Other Film","")["id"]
+        with self.assertRaises(KeyError):
+            reader.edits(another)["edits"][0]
+        with self.assertRaises(KeyError):
+            reader.clips(another,"edit",1,expected_edit_sha256=sha)
+        with self.studio._connection() as db:
+            db.execute("""UPDATE nvp_time_editorial_clips
+                SET film_end_tick=film_end_tick+1
+                WHERE project_id=? AND edit_id=? AND revision=1 AND ordinal=0""",
+                (self.project,"edit"))
+        with self.assertRaises(RuntimeError):
+            reader.clips(self.project,"edit",1,
+                expected_edit_sha256=sha)
+        with self.assertRaises(RuntimeError):
+            reader.seek(self.project,"edit",1,
+                expected_edit_sha256=sha,tick=5*T)
+
+    def test_index_time05_64_bit_coordinates_never_truncate_in_webview(self):
+        from backend.nvp_index_time05_desktop_read import _ticks
+        precise=(2**53)+145
+        converted=_ticks({"source_pts":precise,
+            "requested_film_tick":precise,
+            "source_frame_zero":precise,"ordinal":17})
+        self.assertEqual(converted["source_pts"],str(precise))
+        self.assertEqual(converted["requested_film_tick"],str(precise))
+        self.assertEqual(converted["source_frame_zero"],str(precise))
+        self.assertEqual(converted["ordinal"],17)
+
+
 if __name__=="__main__":
     unittest.main()
