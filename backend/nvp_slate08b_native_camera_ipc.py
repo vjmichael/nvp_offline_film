@@ -413,6 +413,9 @@ class TrustedDesktopCameraBridge:
                 ask_native=self._ask)
         return self._data_av_controller
 
+    def data_av_freeze_timed_take(self,request):
+        return self._data_av().freeze_exact_camera_take(request)
+
     def data_av_catalog(self,project_id):
         return self._data_av().catalog(project_id)
 
