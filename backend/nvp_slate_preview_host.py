@@ -101,6 +101,25 @@ class NativeSlatePreviewHost:
             if "camera_path" not in cols:
                 db.execute("""ALTER TABLE nvp_slate_preview_consents
                     ADD COLUMN camera_path TEXT""")
+        with ledger._db() as db:
+            db.execute("""CREATE TABLE IF NOT EXISTS nvp_camera_preview_consents(
+                approval_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL UNIQUE,
+                project_id TEXT NOT NULL,
+                scene_id TEXT NOT NULL,
+                scene_revision INTEGER NOT NULL,
+                scene_document_sha256 TEXT NOT NULL,
+                source_tick INTEGER NOT NULL,
+                camera_path TEXT NOT NULL,
+                quality TEXT NOT NULL,
+                settings_json TEXT NOT NULL,
+                cache_key TEXT NOT NULL,
+                source_manifest_sha256 TEXT NOT NULL,
+                spec_sha256 TEXT NOT NULL,
+                issued_at REAL NOT NULL,
+                expires_at REAL NOT NULL,
+                revoked_at REAL
+            )""")
         self.dispatcher=ApprovedBlenderDispatcher(
             supervisor,ledger,approval_check=self._approval_check,
             pre_worker_check=self._before_worker)
@@ -113,7 +132,7 @@ class NativeSlatePreviewHost:
                 row=db.execute("""SELECT * FROM nvp_slate_preview_consents
                     WHERE approval_id=?""",(approval_id,)).fetchone()
             if row is None:
-                return False
+                return self._camera_approval_check(approval_id,digest,document)
             # TaskLedger deliberately yields tuples, not sqlite3.Row.
             names=("approval_id","task_id","project_id","edit_id",
                    "edit_revision","film_tick","quality","cache_key",
@@ -188,9 +207,12 @@ class NativeSlatePreviewHost:
         with self.ledger._db() as db:
             row=db.execute("""SELECT approval_id FROM nvp_slate_preview_consents
                 WHERE task_id=?""",(task_id,)).fetchone()
+            if row is None:
+                row=db.execute("""SELECT approval_id FROM nvp_camera_preview_consents
+                    WHERE task_id=?""",(task_id,)).fetchone()
         if row is None or not self._approval_check(
                 row[0],_digest(document),document):
-            raise PermissionError("Low-fi preview source, consent or resource spec changed")
+            raise PermissionError("Native source preview, consent or resource spec changed")
 
     def source_camera_choices(self,project_id,edit_id,revision,*,film_tick):
         """Fast UI camera-picker data: no USD stage or image generation."""
