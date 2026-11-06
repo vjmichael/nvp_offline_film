@@ -157,7 +157,7 @@ export default function FilmTimePlaybackPanel({
             setPlaying(false);
             return [];
           }
-          return reply.frames;
+          return reply.frames.length===old.length?old:reply.frames;
         });
         setFinished(reply.status==='COMPLETE');
         setLoading(reply.ready_frames===0);
@@ -170,6 +170,7 @@ export default function FilmTimePlaybackPanel({
         if(live&&session.current===ticket){
           setError(e.message);setPlaying(false);setLoading(false);
           session.current=null;setTicket(null);setPicture(null);
+          Promise.resolve(native.cancel_assembly_review(ticket)).catch(()=>{});
         }
       }finally{busy=false;}
     }
