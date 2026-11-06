@@ -10,6 +10,7 @@ from backend.nvp_openusd_scene import OpenUSDSceneBridge
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_openusd_shot_overrides import OpenUSDShotOverrides
 from backend.nvp_digital_slate_branches import DigitalSlateBranches
+from backend.nvp_slate_edit_assembly import SlateSequenceAssembly
 
 T=TICKS_PER_SECOND
 
@@ -209,6 +210,177 @@ class SlateBranchNativeTests(unittest.TestCase):
             self.slate.publish_graph(
                 other,"alien_graph",scene_id="scene_01",
                 scene_label="01",nodes=source)
+
+    def _source_for_assembly(self):
+        # A third camera coverage of a DIFFERENT original performance:
+        # this is the user's Wild Take 3 -> Camera B of Take 2 case.
+        self.shots.publish(
+            self.pid,"take2_camera_b",take_id="take_2",
+            start_tick=T,end_tick=2*T,
+            changes=[{"path":"/World/Actor","property":"translation_offset",
+                      "value":[-2,0,0]}],
+            purpose="framing",continuity_policy="intentional_cheat",
+            reason="Take 2 reverse angle has a stronger reaction",
+            creator_event="director_blocks_shot")
+        nodes=self.graph_nodes()
+        nodes.append(self._node(
+            "camera_B_take2","coverage","take_2_branch",T,
+            "reaction_beat",False,"take_2",T,2*T,
+            shot_id="take2_camera_b",shot_revision=1,
+            camera="B",slate_shot="02B",number=2))
+        self.publish(nodes)
+        assembly=SlateSequenceAssembly(
+            self.slate,verify_editor_action=lambda token,scope:
+            token=="make_active" and
+            scope["operation"]=="nvp.slate.commit_assembled_edit.v1" and
+            scope["final_render_approval"] is False)
+        return assembly
+
+    def test_edit_mixed_take_sequence_and_explicit_make_active_only(self):
+        assembly=self._source_for_assembly()
+        wild={"segment_id":"wild_clip","branch_id":"wild_take_3",
+              "source_in_tick":T,"source_out_tick":2*T}
+        angle={"segment_id":"camera_b_clip","branch_id":"camera_B_take2",
+               "source_in_tick":T,"source_out_tick":2*T}
+        draft=assembly.preview(
+            self.pid,"scene_01_slate",1,[wild],
+            inspect_branch_id="camera_B_take2")
+        self.assertTrue(draft["draft_uncommitted"])
+        self.assertEqual(draft["inspection_only_branch_id"],"camera_B_take2")
+        self.assertFalse(draft["selection_changes_active_cut"])
+        self.assertEqual(draft["active_segments_by_branch"],{})
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"assembled_cut",1)
+        two=assembly.edit_draft(
+            [wild],operation="insert_after",
+            target_segment_id="wild_clip",segment=angle)
+        result=assembly.preview(
+            self.pid,"scene_01_slate",1,two,
+            inspect_branch_id="camera_A")
+        self.assertEqual([s["branch_id"] for s in result["segments"]],
+                         ["wild_take_3","camera_B_take2"])
+        self.assertEqual(result["duration_tick"],2*T)
+        self.assertTrue(result["segments"][1]["incoming_transition"][
+            "requires_continuity_review"])
+        self.assertEqual(result["segments"][1]["timeline_start_tick"],T)
+        with self.assertRaises(PermissionError):
+            assembly.commit(
+                self.pid,"assembled_cut",graph_id="scene_01_slate",
+                graph_revision=1,segments=two,editor_event="only_inspecting")
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"assembled_cut",1)
+        committed=assembly.commit(
+            self.pid,"assembled_cut",graph_id="scene_01_slate",
+            graph_revision=1,segments=two,editor_event="make_active")
+        self.assertEqual(committed["revision"],1)
+        active=assembly.active_view(
+            self.pid,"scene_01_slate",1,
+            edit_id="assembled_cut",edit_revision=1,
+            inspection_branch_id="camera_A")
+        active_reaction=active["parallel_groups"]["reaction_beat"]
+        self.assertEqual(
+            {n["branch_id"] for n in active_reaction if n["selected"]},
+            {"wild_take_3","camera_B_take2"})
+        self.assertTrue(next(x for x in active_reaction if
+                             x["branch_id"]=="camera_A")["inspection_focus"])
+        self.assertEqual(
+            next(x for x in active_reaction if
+                 x["branch_id"]=="camera_A")["display_color"],"gray")
+        self.assertEqual(len(active["sequence"]),2)
+        self.assertFalse(active["render_approved"])
+
+    def test_copy_paste_before_move_and_trim_do_not_change_old_cut(self):
+        assembly=self._source_for_assembly()
+        wild={"segment_id":"wild","branch_id":"wild_take_3",
+              "source_in_tick":T,"source_out_tick":3*T}
+        angle={"segment_id":"angle","branch_id":"camera_B_take2",
+               "source_in_tick":T,"source_out_tick":2*T}
+        first=assembly.commit(
+            self.pid,"film_cut",graph_id="scene_01_slate",
+            graph_revision=1,segments=[wild,angle],editor_event="make_active")
+        self.assertEqual(first["revision"],1)
+        # Duplicate source by REFERENCE with a new segment ID, not by
+        # copying actors, the underlying USD or any physical media.
+        copy={**angle,"segment_id":"another_angle"}
+        expanded=assembly.edit_draft(
+            [wild,angle],operation="insert_before",
+            target_segment_id="wild",segment=copy)
+        moved=assembly.edit_draft(
+            expanded,operation="move_after",
+            target_segment_id="angle",new_segment_id="wild")
+        trimmed=assembly.edit_draft(
+            moved,operation="trim",target_segment_id="wild",
+            trim_in_tick=2*T,trim_out_tick=3*T)
+        self.assertEqual([s["segment_id"] for s in trimmed],
+                         ["another_angle","angle","wild"])
+        preview=assembly.preview(
+            self.pid,"scene_01_slate",1,trimmed,
+            active_edit_id="film_cut",active_edit_revision=1,
+            inspect_branch_id="camera_A")
+        self.assertEqual(len(preview["active_segments_by_branch"][
+            "wild_take_3"]),1)
+        self.assertEqual(preview["segments"][-1]["source_in_tick"],2*T)
+        self.assertTrue(preview["draft_uncommitted"])
+        self.assertEqual(len(assembly.open_edit(
+            self.pid,"film_cut",1)["data"]["segments"]),2)
+        newer=assembly.commit(
+            self.pid,"film_cut",graph_id="scene_01_slate",
+            graph_revision=1,segments=trimmed,editor_event="make_active",
+            expected_revision=1)
+        self.assertNotEqual(first["document_sha256"],newer["document_sha256"])
+        self.assertEqual(
+            [s["segment_id"] for s in assembly.open_edit(
+                self.pid,"film_cut",1)["data"]["segments"]],
+            ["wild","angle"])
+        self.assertEqual(
+            [s["segment_id"] for s in assembly.open_edit(
+                self.pid,"film_cut",2)["data"]["segments"]],
+            ["another_angle","angle","wild"])
+        with self.assertRaises(Exception):
+            assembly.commit(
+                self.pid,"film_cut",graph_id="scene_01_slate",
+                graph_revision=1,segments=[wild],editor_event="make_active",
+                expected_revision=1)
+
+    def test_sixty_takes_plus_coverage_are_not_arbitrarily_limited_to_64(self):
+        nodes=self.graph_nodes()
+        for n in range(60):
+            nodes.append(self._node(
+                "extra_take_"+str(n),"performance","master_take_1",T,
+                "reaction_beat",False,"take_2" if n%2==0 else "take_3",
+                T,2*T,number=n+4,wild=bool(n%2),
+                slate_shot="01A",camera="B",
+                notes="Slate extra version "+str(n)))
+        graph=self.publish(nodes,graph_id="large_slate")
+        view=self.slate.view(self.pid,"large_slate",1)
+        self.assertEqual(len(view["parallel_groups"]["reaction_beat"]),64)
+        self.assertEqual(graph["data"]["source_take_count"],3)
+        self.assertEqual(sum(1 for item in
+            view["parallel_groups"]["reaction_beat"] if item["selected"]),1)
+
+    def test_assembled_cut_reopens_from_filmindex_after_restart(self):
+        assembly=self._source_for_assembly()
+        source=[{"segment_id":"first","branch_id":"wild_take_3",
+                 "source_in_tick":T,"source_out_tick":2*T},
+                {"segment_id":"next","branch_id":"camera_B_take2",
+                 "source_in_tick":T,"source_out_tick":2*T}]
+        assembly.commit(
+            self.pid,"cut",graph_id="scene_01_slate",graph_revision=1,
+            segments=source,editor_event="make_active")
+        studio=Studio(self.studio.db_path)
+        index=FilmIndex(studio)
+        recovered=SlateSequenceAssembly(
+            DigitalSlateBranches(index,verify_editor_action=lambda *_:False),
+            verify_editor_action=lambda *_:False)
+        saved=recovered.open_edit(self.pid,"cut",1)
+        self.assertEqual(len(saved["data"]["segments"]),2)
+        self.assertEqual(saved["data"]["segments"][0][
+            "source_take_document_sha256"],
+            self.index.read_revision(self.pid,"take_3",1)["document_sha256"])
+        self.assertEqual(saved["data"]["segments"][1][
+            "source_take_document_sha256"],
+            self.index.read_revision(self.pid,"take_2",1)["document_sha256"])
+        self.assertFalse(saved["data"]["source_performance_modified"])
 
     def test_refuse_forged_choice_and_never_grant_master_approval(self):
         self.publish()
