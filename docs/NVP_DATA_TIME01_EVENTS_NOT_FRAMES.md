@@ -92,69 +92,34 @@ bounded scratch/RAM, continuous clock alignment across multi-source clips,
 dialogue/music stems, gaps, cancellation/restart, and unchanged original
 source hashes. Existing CODEC/FFprobe checks alone do not prove these.
 
-## CAPTURE-SOUND-01 — Filmed 3D scene sound versus imported soundtrack (2026-11-06)
+## SOUND-01 — 3D sound remains a native part of a frozen scene (2026-11-06)
 
-**Creator scope clarification [C]:** This audio-format and data-first
-capture decision concerns **sound belonging to a filmed 3D scene**. It
-does **not** require user-added background music or sound effects to be
-transcoded or stored as BWF. User-supplied MP3/WAV/FLAC/other supported
-assets retain their exact original bytes and hashes; import/decode/render
-adapters handle them separately at playback/export boundaries.
+**Supersedes the earlier CAPTURE-SOUND-01 recommendation.** The creator
+clarified that BWF was only an interesting possibility, **not** a selected
+or mandated format for 3D filmed scene capture. NVP is to combine
+OpenUSD `UsdMediaSpatialAudio`, scene/temporal event data, sound-source
+assets or procedural generators, and reusable native spatial-acoustic/
+mixer libraries into an editable **3D sound engine**. The Digital Take
+remains scene data, not a sound file and not a captured mixed track.
+User-imported music and sound FX can remain MP3/other original assets.
 
-The authoritative Digital Take contains **time-addressable semantic
-sound events and their causes**, voice/dialogue identity, performance,
-source-asset revision IDs, sound-emitter transforms, virtual microphone
-identities/transforms and the scene geometry/material/acoustics revisions
-needed to reproduce or re-render a selected acoustic view. Silent events
-and exact editorial gaps are meaningful data. Frozen captures store exact
-Film Time ticks, immutable SHA/revisions, provenance, creator approvals,
-and links to optional recorded/voice-generated PCM source signals.
-An AI assistant can query the typed source graph by speaker, event,
-material, source/microphone, place, exact time window and revision without
-reverse-engineering a finished soundtrack.
+Interactive audition recomputes audio for the requested listener and
+time interval, using small transient output buffers. The definitive
+conversion of authored 3D picture and audio into a flattened soundtrack
+and 2D film occurs at **explicit final presentation**. A disposable
+preview may render an approximation but is not the final presentation.
+BWF is optional for recording/interchange/export and is not fundamental
+to runtime playback. FFmpeg belongs at imported conventional media
+or selected presentation/export boundaries, not the native Digital Take
+evaluator or 3D acoustic system.
 
-**Captured or virtual-microphone audio signal format:** Prefer
-48-kHz lossless PCM **Broadcast Wave Format (BWF)** for captured/
-rendered sound stems (and the independent source/microphone receipts).
-A BWF `bext` chunk gives origin, coding history and audio time-reference
-sample count. A film-tick-to-sample mapping belongs explicitly in the
-FilmIndex/source manifest; `bext` time reference is **not** the canonical
-film clock and BWF cannot by itself represent 3D scene causes,
-microphone animations or sound-event semantics. BWF is a portable
-recording/interchange companion to the Digital Take, **not** its
-replacement. For recordings exceeding ordinary RIFF limits,
-evaluate RF64/BW64. Spatial ADM/BW64 is optional for object-based
-audio interoperability, not a required source-of-truth model.
+The governing detailed design, reusable-library comparison, AI-facing
+queries and outstanding acceptance gates are in
+[NVP-SOUND-01 — Native spatial sound](NVP_SOUND01_NATIVE_SPATIAL_AUDIO.md).
+The earlier `Audio clarification` discussion concerns only how actual
+audio signals can be read when they exist; it never requires the core
+capture to serialize a BWF sound print.
 
-**Runtime/decoder boundary:** An event ledger is not an FFmpeg media
-file; it needs a typed temporal **scene evaluator**, source-reference
-resolver, acoustic renderer and a bounded native audio mixer/output,
-not a video/media transcode decoder. Candidate reusable components:
-- `libsndfile` for BWF/WAV/PCM chunk metadata, exact sample-position
-  reads/writes (`sf_seek` and `SFC_GET/SET_BROADCAST_INFO`).
-- `miniaudio` for portable real-time audio device output, bounded
-  streaming/ring buffers and ordinary WAV/MP3/FLAC playback; its basic
-  spatialization does not currently supply geometry occlusion/HRTF.
-- An **optional** `Steam Audio`-type acoustic simulation backend for
-  emitter/listener positions, occlusion and reflections, if licensing,
-  packaging, performance and geometry integration independently pass.
-- NVP's existing OpenUSD scene representation may use
-  `UsdMediaSpatialAudio` for authored positional/nonpositional audio
-  references. It is scene description, not a full sound renderer.
-
-**FFmpeg role:** Keep as a **boundary adapter** to decode conventional
-imported media when needed, conform a chosen presentation, encode/transcode
-review/delivery formats or export final flat audiovisual masters. It
-must not govern Digital Take authority, event evaluation, scene acoustic
-propagation, Film Time stepping or core recorded sound playback.
-INDEX-TIME-09/10's H.264/AAC MP4 review path is an existing derived
-presentation adapter only, not fulfillment of this data-native engine.
-
-**Implementation status [B/D]:** Documented product boundary and
-shortlisted reusable components only. No claim that the exact BWF
-writer/reader, scene event→acoustic→PCM player or independent native
-performance test exists. Future acceptance must verify source hashes,
-precise Film Time/sample mapping, recorded speaker/mic provenance,
-arbitrary seek, forward/reverse read, bounded RAM, 3D acoustic evaluation,
-native Windows/Linux containment, project reopen and no source rewrites.
-
+**Implementation status [B/D]:** The architectural correction is
+recorded; no live spatial acoustic engine, native sound scene reader
+or installed-app E2E acceptance is claimed.
