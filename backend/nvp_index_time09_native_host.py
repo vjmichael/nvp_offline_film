@@ -287,9 +287,21 @@ class NativeAVProxyHost:
         attempted=False
         cleaned=False
         try:
-            admitted=self.bindings.claim_next(owner_key=self.owner)
-            if not admitted or not admitted["admitted"] or admitted["task_id"]!=task:
-                raise RuntimeError("Native A/V review admission refused")
+            # Resource pressure is a waiting condition, not a reason to
+            # abandon a live approved QUEUED task. Never run FFmpeg outside
+            # the admission policy while memory is unavailable.
+            deadline=time.monotonic()+180
+            while True:
+                if item["cancel"].is_set() or self._closed:
+                    raise RuntimeError("Creator cancelled source A/V review")
+                admitted=self.bindings.claim_next(owner_key=self.owner)
+                if admitted and admitted.get("admitted"):
+                    if admitted.get("task_id")!=task:
+                        raise RuntimeError("Native A/V worker claimed a foreign task")
+                    break
+                if time.monotonic()>deadline:
+                    raise RuntimeError("Native A/V review admission timed out safely")
+                time.sleep(.5)
             spec=self.bindings.verified_spec(task,owner_key=self.owner)
             row=self._row(task)
             plan=self._plan(row)
@@ -362,9 +374,13 @@ class NativeAVProxyHost:
                 except BaseException:cleaned=False
             if not attempted:cleaned=True
             state=self.ledger.get_task(task)
-            if (cleaned and state is not None and state["state"]=="ACTIVE"):
-                self.ledger.finish(
-                    task,"FAILED","Native original A/V proxy failed safely")
+            if cleaned and state is not None:
+                if state["state"]=="ACTIVE":
+                    self.ledger.finish(
+                        task,"FAILED","Native original A/V proxy failed safely")
+                elif state["state"]=="QUEUED":
+                    try:self.ledger.cancel_queued(task,owner_key=self.owner)
+                    except (RuntimeError,PermissionError):pass
             with self._lock:item["verified"]=False
 
     def poll(self,ticket):
@@ -466,10 +482,12 @@ class NativeAVProxyHost:
             state=self.ledger.get_task(item["task"])
             if state and state["state"]=="QUEUED":
                 try:
+                    self.ledger.cancel_queued(item["task"],owner_key=self.owner)
                     with self.ledger._db() as db:
-                        db.execute("BEGIN IMMEDIATE")
-                        self.ledger.cancel_queued(item["task"])
-                except BaseException:
+                        db.execute("UPDATE "+TABLE+
+                                   " SET revoked=1 WHERE task_id=?",
+                                   (item["task"],))
+                except (RuntimeError,PermissionError):
                     pass
             if item["future"].done():
                 self._discard(item)
