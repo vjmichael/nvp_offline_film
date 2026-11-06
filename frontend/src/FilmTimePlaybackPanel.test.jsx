@@ -186,6 +186,29 @@ describe('INDEX-TIME-08 safe visual source assembly transport',()=>{
       'Audited temporary original-camera review frame')).toBeNull();
   });
 
+  it('revokes a late OS approval after the playhead has moved',async()=>{
+    const native=fake();
+    let resume;
+    const gated=new Promise(resolve=>{resume=resolve;});
+    native.start_assembly_review.mockReturnValue(gated);
+    view(native);
+    fireEvent.click(screen.getByText('Review & play original footage…'));
+    fireEvent.change(screen.getByLabelText('Scrub film assembly'),
+      {target:{value:'600'}});
+    resume({
+      format:'nvp.index_time08.original_assembly_review.v1',
+      status:'QUEUED',ticket_id:'late_approved_ticket',
+      project_id:pid,edit_id:edit.edit_id,edit_revision:3,
+      edit_document_sha256:sha,requested_film_tick:'0',
+      planned_frames:2,ready_frames:0,
+      original_modified:false,master_approved:false,
+    });
+    await waitFor(()=>expect(native.cancel_assembly_review)
+      .toHaveBeenCalledWith('late_approved_ticket'));
+    expect(native.poll_assembly_review).not.toHaveBeenCalled();
+    expect(native.get_assembly_review_frame).not.toHaveBeenCalled();
+  });
+
   it('respects a native OS rejection without revealing a frame',async()=>{
     const native=fake();
     native.start_assembly_review.mockResolvedValue({
