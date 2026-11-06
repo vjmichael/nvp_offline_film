@@ -34,3 +34,9 @@
 .nvp-slate-segments small{font-size:10px;color:#d1d5dd}
 .nvp-slate-placeholder{background:#292a35;color:#e2e5ed;border:1px solid #545667;border-radius:10px;padding:16px;display:flex;gap:12px;align-items:center}
 @media(max-width:850px){.nvp-slate-gridhead,.nvp-slate-entry{grid-template-columns:160px minmax(50px,1fr) 300px;gap:7px}.nvp-slate-pane{min-width:640px}.nvp-slate-vertical-dashes{left:174px}}
+
+/* Selected source subranges from the active edit are green; unselected
+   portions of that SAME Take remain gray. Never paint a whole source line
+   green merely because its branch appears once in a mixed cut. */
+.nvp-slate-range{position:absolute;top:17.5px;height:5px;border-radius:6px;pointer-events:none}
+.nvp-slate-range.green{background:#13a64e}
