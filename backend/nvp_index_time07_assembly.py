@@ -105,6 +105,7 @@ class IndexedFootageAssembler:
             "copy":{"operation","index","target"},
             "remove":{"operation","index"},
             "trim":{"operation","index","source_in_frame_zero","source_out_frame_zero"},
+            "split":{"operation","index","source_frame_zero"},
             "set_gap":{"operation","index","gap_before_tick"},
             "insert":{"operation","target","source_edit_id","source_edit_revision",
                       "source_edit_sha256","source_ordinal"},
@@ -150,6 +151,23 @@ class IndexedFootageAssembler:
                 raise ValueError("Trim must be within the existing original source range")
             row["source_in_frame_zero"]=lower
             row["source_out_frame_zero"]=upper
+        elif op=="split":
+            at=existing(change["index"])
+            if len(rows)>=MAX_ASSEMBLY_CLIPS:
+                raise ValueError("Source assembly clip limit exceeded")
+            cut=_int_decimal(change["source_frame_zero"],"original cut frame")
+            left=rows[at]
+            if not left["source_in_frame_zero"]<cut<left["source_out_frame_zero"]:
+                raise ValueError("Split must lie strictly within original frame bounds")
+            # A split creates two adjacent references to the SAME immutable
+            # original. Their in/out and PTS are recalculated by _source_bound,
+            # never by assuming frames per second. The second placement has
+            # no artificial film gap between the new cuts.
+            right=dict(left)
+            right["source_in_frame_zero"]=cut
+            right["gap_before_tick"]=0
+            left["source_out_frame_zero"]=cut
+            rows.insert(at+1,right)
         elif op=="set_gap":
             at=existing(change["index"])
             rows[at]["gap_before_tick"]=_int_decimal(
