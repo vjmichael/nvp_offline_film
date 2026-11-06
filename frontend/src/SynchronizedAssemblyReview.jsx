@@ -27,6 +27,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
   const url=useRef(null);
   const progressiveSession=useRef(null);
   const nextTicket=useRef(null);
+  const handoffBusy=useRef(false);
   const [progressive,setProgressive]=useState(false);
   const [nextPending,setNextPending]=useState(null);
   const [nextReady,setNextReady]=useState(null);
@@ -117,6 +118,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
     progressiveSession.current=null;
     ticket.current=null;
     nextTicket.current=null;
+    handoffBusy.current=false;
     if(previousSession){
       Promise.resolve(native.stop_progressive_av_review(previousSession)).catch(()=>{});
     }else if(previousTicket){
@@ -374,8 +376,9 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
 
   async function handoff(candidate){
     const session=progressiveSession.current,previous=ticket.current;
-    if(!session||!previous||!candidate||candidate.ticket!==nextTicket.current)
-      return;
+    if(!session||!previous||!candidate||candidate.ticket!==nextTicket.current||
+       handoffBusy.current)return;
+    handoffBusy.current=true;
     setWaitingForNext(false);
     try{
       const ack=await native.advance_progressive_av_review(
@@ -404,6 +407,8 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
       setError(e.message);
       setStatus('Playback stopped at a verified section boundary.');
       setNextEnd(true);
+    }finally{
+      handoffBusy.current=false;
     }
   }
 
@@ -533,7 +538,7 @@ export default function SynchronizedAssemblyReview({projectId,edit,clips,native,
       {typeof native?.start_progressive_av_review==='function'&&
         <button disabled={preparing||!fullManifest}
           onClick={()=>prepare(true)}>Start progressive long-form review…</button> 
-      {src&&review?.review_duration_tick&&
+      {!progressive&&src&&review?.review_duration_tick&&
         <button onClick={()=>{
           const end=BigInt(review.actual_start_tick)+
             BigInt(review.review_duration_tick);
