@@ -1,0 +1,76 @@
+name: NVP SLATE-03 Paged Catalog and Data-First Cards
+
+on:
+  push:
+    branches:
+      - nvp/slate03-paged-metadata-20261106
+    paths:
+      - "backend/nvp_slate_paged_catalog.py"
+      - "backend/nvp_digital_slate_branches.py"
+      - "backend/nvp_slate_edit_assembly.py"
+      - "tests/test_nvp_digital_slate_branches_native.py"
+      - "frontend/src/SlateBranchTimelinePane*"
+      - "docs/NVP_SLATE03_PAGED_CATALOG_AI_ASSEMBLY_CARDS.md"
+      - ".github/workflows/nvp-slate03-native.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_slate_paged_catalog.py"
+      - "backend/nvp_digital_slate_branches.py"
+      - "backend/nvp_slate_edit_assembly.py"
+      - "tests/test_nvp_digital_slate_branches_native.py"
+      - "frontend/src/SlateBranchTimelinePane*"
+      - "docs/NVP_SLATE03_PAGED_CATALOG_AI_ASSEMBLY_CARDS.md"
+      - ".github/workflows/nvp-slate03-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-slate03-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-catalog-native:
+    name: SLATE-03 backend ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install real OpenUSD runtime and native film data deps
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Compile immutable paged slate/catalog and mixed Take assembly
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_slate_paged_catalog.py backend/nvp_digital_slate_branches.py backend/nvp_slate_edit_assembly.py tests/test_nvp_digital_slate_branches_native.py
+          python -c "from pxr import Usd,UsdGeom; print('NATIVE_USD',Usd.GetVersion())"
+      - name: Native real frozen Take catalog paging, metadata, AI provenance and mixed source cut
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_digital_slate_branches_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_shot_overrides_native.py" -v
+
+  editor-assembly-cards:
+    name: SLATE-03 React source assembly cards and bounded pagination
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install frontend build requirements
+        run: npm install --no-audit --no-fund
+      - name: Build director interface
+        run: npm run build
+      - name: Verify data-rich source interval cards and inspect versus activate
+        run: npm run test:ui -- src/SlateBranchTimelinePane.test.jsx
