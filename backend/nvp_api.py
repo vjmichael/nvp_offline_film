@@ -1396,3 +1396,28 @@ def native_time_shots_read(project_id: str,timeline_id: str,
             project_id,timeline_id)["revision"]
         return _NativeShots(index).read(project_id,timeline_id,target)
     return run(resolved)
+
+# DA-06 — color grading is structured non-destructive source/presentation
+# data. Old fixed-frame EXR/MOV grading APIs above are deliberately 410.
+from backend.nvp_native_color_decisions import NativeColorDecisions as _NativeColor
+
+class NativeColorPlanInput(BaseModel):
+    take_id: str = Field(min_length=1,max_length=80)
+    take_sha256: str = Field(min_length=64,max_length=64)
+    expected_revision: int = Field(ge=0,le=1000000)
+    parameters: dict[str,float]
+
+@app.post('/api/projects/{project_id}/film/native-color/{grade_id}')
+def native_color_publish(project_id:str,grade_id:str,
+                         payload:NativeColorPlanInput):
+    return run(lambda:_NativeColor(_FilmCameraIndex(studio)).publish(
+        project_id,grade_id,take_id=payload.take_id,
+        take_sha256=payload.take_sha256,
+        expected_revision=payload.expected_revision,
+        parameters=payload.parameters))
+
+@app.get('/api/projects/{project_id}/film/native-color/{grade_id}')
+def native_color_read(project_id:str,grade_id:str,
+                      revision:int|None=_FilmCameraQuery(default=None,ge=1,le=1000000)):
+    return run(lambda:_NativeColor(_FilmCameraIndex(studio)).read(
+        project_id,grade_id,revision))
