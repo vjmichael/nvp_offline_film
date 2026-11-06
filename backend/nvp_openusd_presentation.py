@@ -27,7 +27,8 @@ class OpenUSDPresentationPlanner:
         self.projection=TemporalProjection(self.temporal)
 
     def prepare(self, project_id, take_id, *, style_id, style_revision,
-                start_tick, end_tick, fps_num, fps_den):
+                start_tick, end_tick, fps_num, fps_den,
+                shot_id=None, shot_revision=None):
         _id(take_id,"frozen Digital Take ID")
         _id(style_id,"presentation style ID")
         take=self.index.read_revision(project_id,take_id,1)
@@ -43,6 +44,24 @@ class OpenUSDPresentationPlanner:
             project_id,info["scene_id"],info["scene_revision"])
         timeline=self.temporal._revision(
             project_id,info["timeline_id"],info["timeline_revision"])
+        if (shot_id is None)!=(shot_revision is None):
+            raise ValueError("Shot ID and exact revision must be selected together")
+        shot_record=None
+        shot_opinions=set()
+        if shot_id is not None:
+            from backend.nvp_openusd_shot_overrides import OpenUSDShotOverrides
+            reader=OpenUSDShotOverrides(
+                self.index,verify_director_action=lambda *_:False)
+            shot_record,shot_scene,stage=reader.open_shot(
+                project_id,shot_id,shot_revision,tick=start_tick)
+            sd=shot_record["data"]
+            if (sd["take_id"]!=take_id or
+                sd["take_document_sha256"]!=take["document_sha256"] or
+                sd["scene_document_sha256"]!=scene["document_sha256"] or
+                end_tick>sd["end_tick"]):
+                raise RuntimeError("Shot override not scoped to selected frozen Take/time")
+            shot_opinions={(item["path"],item["property"])
+                           for item in sd["opinions"]}
         if (scene["document_sha256"]!=info["scene_document_sha256"] or
             timeline["document_sha256"]!=info["timeline_document_sha256"]):
             raise RuntimeError("Frozen performance source changed")
@@ -78,13 +97,19 @@ class OpenUSDPresentationPlanner:
                     value for path in paths
                     if (value:=evaluate_native_schema(
                         stage,path,scene["data"]["prim_roles"][path],t,
-                        channels)) is not None]
+                        [entry for entry in channels
+                         if (entry["path"],"camera_focal_length_mm"
+                             if entry["property"]=="camera.focal_length_mm"
+                             else "light_intensity"
+                             if entry["property"]=="light.intensity"
+                             else entry["property"]) not in shot_opinions]
+                        )) is not None]
             if scene["data"].get("skeleton_rigs"):
                 from backend.nvp_openusd_skeleton import evaluate_skeletons
                 item["skeletal_pose"]=evaluate_skeletons(
                     stage,scene["data"]["skeleton_rigs"],t)
             samples.append(item)
-        return {
+        result={
             "format":FORMAT,"project_id":project_id,
             "frozen_take_id":take_id,
             "frozen_take_document_sha256":take["document_sha256"],
@@ -100,3 +125,14 @@ class OpenUSDPresentationPlanner:
             "creator_approved_for_render":False,
             "frames_rendered":False,"output":"DATA_ONLY_NOT_RENDERED",
         }
+        if shot_record is not None:
+            result["director_shot_id"]=shot_id
+            result["director_shot_revision"]=shot_revision
+            result["director_shot_document_sha256"]=shot_record["document_sha256"]
+            result["director_shot_source_layer_sha256"]=(
+                shot_record["data"]["usd_layer_sha256"])
+            result["intentional_continuity_cheat"]=(
+                shot_record["data"]["continuity_policy"]=="intentional_cheat")
+            result["shot_data_approved"]=True
+            result["render_approved"]=False
+        return result
