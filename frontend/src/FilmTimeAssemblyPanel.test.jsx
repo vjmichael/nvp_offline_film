@@ -60,6 +60,90 @@ function setup(native=fixture(),saved=vi.fn()){
 }
 
 describe('INDEX-TIME-07 human-first immutable source assembly',()=>{
+  it('splits one original into two adjacent references, not physical copies',async()=>{
+    const {native}=setup();
+    fireEvent.change(screen.getByLabelText('Split source at frame'),
+      {target:{value:'25'}});
+    fireEvent.click(screen.getByText('Split clip at source frame'));
+    await screen.findByText(/Proposed new assembly/);
+    expect(native.preview_footage_assembly.mock.calls[0][0].change).toEqual({
+      operation:'split',index:0,source_frame_zero:'25',
+    });
+    expect(native.save_footage_assembly).not.toHaveBeenCalled();
+  });
+
+  it('refuses incomplete 65-clip assembly until all pages are source-bound',async()=>{
+    const longEdit={...edit,clip_count:65};
+    const all=Array.from({length:65},(_,i)=>({
+      ordinal:i,source_id:'source_camera',source_revision:1,
+      source_in_frame_zero:'10',source_out_frame_zero:'40',
+      film_start_tick:(BigInt(i)*7056000000n).toString(),
+      film_end_tick:(BigInt(i+1)*7056000000n).toString(),
+      rounding_policy:'nearest',
+    }));
+    let release;
+    const gate=new Promise(resolve=>{release=resolve;});
+    const api=vi.fn(async url=>{
+      const after=new URL('http://localhost'+url).searchParams.get('after_ordinal');
+      if(after==='-1')return {
+        format:'nvp.index_time05.editor_source_read.v1',
+        status:'INDEXED_EDIT_CLIPS',
+        project_id:pid,edit_id:edit.edit_id,edit_revision:2,
+        edit_document_sha256:sha,clip_count:65,original_media_read:false,
+        clips:all.slice(0,40),next_after_ordinal:39,
+      };
+      await gate;
+      return {
+        format:'nvp.index_time05.editor_source_read.v1',
+        status:'INDEXED_EDIT_CLIPS',
+        project_id:pid,edit_id:edit.edit_id,edit_revision:2,
+        edit_document_sha256:sha,clip_count:65,original_media_read:false,
+        clips:all.slice(40),next_after_ordinal:null,
+      };
+    });
+    const native=fixture();
+    render(<FilmTimeAssemblyPanel
+      projectId={pid} edit={longEdit} clips={all.slice(0,40)}
+      edits={available} native={native} api={api} onSaved={vi.fn()}/>);
+    expect(screen.getByText('Move later').disabled).toBe(true);
+    await waitFor(()=>expect(api).toHaveBeenCalled());
+    release();
+    await waitFor(()=>expect(screen.getByText('Move later').disabled).toBe(false));
+    fireEvent.change(screen.getByLabelText('Assembly clip'),
+      {target:{value:'64'}});
+    fireEvent.click(screen.getByText('Split clip at source frame'));
+    await screen.findByText(/Proposed new assembly/);
+    expect(native.preview_footage_assembly.mock.calls[0][0].change).toEqual({
+      operation:'split',index:64,source_frame_zero:'25',
+    });
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed on mismatched second page rather than editing hidden clips',async()=>{
+    const large={...edit,clip_count:45};
+    const initial=Array.from({length:40},(_,i)=>({
+      ...clips[0],ordinal:i,
+      film_start_tick:(BigInt(i)*7056000000n).toString(),
+      film_end_tick:(BigInt(i+1)*7056000000n).toString(),
+    }));
+    const api=vi.fn(async url=>({
+      format:'nvp.index_time05.editor_source_read.v1',
+      status:'INDEXED_EDIT_CLIPS',project_id:pid,
+      edit_id:edit.edit_id,edit_revision:2,
+      edit_document_sha256:'0'.repeat(64),
+      clip_count:45,original_media_read:false,
+      clips:initial,next_after_ordinal:39,
+    }));
+    const native=fixture();
+    render(<FilmTimeAssemblyPanel
+      projectId={pid} edit={large} clips={initial}
+      edits={available} native={native} api={api} onSaved={vi.fn()}/>);
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent',
+      expect.stringContaining('stale'));
+    expect(screen.getByText('Duplicate placement').disabled).toBe(true);
+    expect(native.preview_footage_assembly).not.toHaveBeenCalled();
+  });
+
   it('previews a move and asks native OS confirmation only on save',async()=>{
     const {native,saved}=setup();
     fireEvent.change(screen.getByLabelText('Assembly clip'),
