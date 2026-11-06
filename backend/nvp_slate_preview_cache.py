@@ -117,6 +117,14 @@ class SlatePreviewCache:
                 db.execute("""UPDATE slate_preview_cache SET state='INTERRUPTED',
                     updated_ns=? WHERE project_id=? AND cache_key=?
                     AND state='READY'""",(time.time_ns(),project_id,cache_key))
+            # The cache namespace owns this derivative path. Discard its
+            # corrupt bytes (never FilmIndex source bytes), so a fresh,
+            # independently verified preview may be published later.
+            try:
+                if path.is_symlink() or path.is_file():
+                    path.unlink()
+            except OSError:
+                pass
             return None
         with self._db() as db:
             db.execute("""UPDATE slate_preview_cache SET last_use_ns=?
