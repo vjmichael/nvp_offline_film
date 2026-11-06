@@ -235,6 +235,7 @@ class TrustedDesktopCameraBridge:
                 "source_tick":tick,"camera_path":camera_path,
                 "settings":settings,"cache_key":key,
                 "job_id":result.get("job_id"),"status":result["status"],
+                "last_dispatch_at":time.monotonic(),
             }
             if len(self._tickets)>64:
                 # Discard only in-memory GUI tokens; never a native job or source.
@@ -263,16 +264,40 @@ class TrustedDesktopCameraBridge:
             host=self._get_host()
             result=host.cache.lookup(item["project_id"],item["cache_key"])
             if result is None:
-                future=self._futures.get(ticket_id)
-                if future is not None and future.done():
-                    try:
-                        future.result()
-                    except Exception:
-                        return {"status":"RECOVERY_REQUIRED",
-                                "film_master_approved":False}
                 row=host.cache._job(item["job_id"])
                 if row["state"] in ("FAILED","INTERRUPTED","EVICTED"):
                     return {"status":"FAILED","film_master_approved":False}
+                if row["state"]=="READY":
+                    # A READY record whose physical PNG is not independently
+                    # re-readable is not a completed picture.
+                    return {"status":"RECOVERY_REQUIRED",
+                            "film_master_approved":False}
+                future=self._futures.get(ticket_id)
+                if future is not None and future.done():
+                    try:
+                        outcome=future.result()
+                    except Exception:
+                        # Unknown OS cleanup/receipt status: never release the
+                        # reserved memory or fabricate a completed still.
+                        return {"status":"RECOVERY_REQUIRED",
+                                "film_master_approved":False}
+                    if outcome is None or (
+                            isinstance(outcome,dict) and
+                            outcome.get("admitted") is False):
+                        # Resource guardian declined this admission. The
+                        # durable QUEUED ticket is preserved; throttle attempts
+                        # rather than spinning workers or discarding consent.
+                        if time.monotonic()-item["last_dispatch_at"]>=5:
+                            item["last_dispatch_at"]=time.monotonic()
+                            self._futures[ticket_id]=self._executor.submit(
+                                host.run_next)
+                        return {"status":"QUEUED",
+                                "waiting_for_resources":True,
+                                "film_master_approved":False}
+                    # A worker returned but a verified derivative is absent.
+                    # No unchecked output may be surfaced as camera picture.
+                    return {"status":"RECOVERY_REQUIRED",
+                            "film_master_approved":False}
                 return {"status":"QUEUED","film_master_approved":False}
             # The ORIGINAL host independently checks consent, scene SHA,
             # manifest, cache hash, renderer receipt and physical PNG size.
