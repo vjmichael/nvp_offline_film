@@ -1327,7 +1327,7 @@ def indexed_film_time_seek(project_id: str,edit_id: str,
 from fastapi import Request,Response
 import re as _nvp_regex
 
-_AV_RANGE=_nvp_regex.compile(r"^bytes=(\\d*)-(\\d*)$")
+_AV_RANGE=_nvp_regex.compile(r"^bytes=(\d*)-(\d*)$")
 _AV_MAX_RANGE=1024*1024
 
 @app.get("/api/native-av-review/{ticket}/media",include_in_schema=False)
