@@ -265,6 +265,28 @@ def run_visible_window_smoke():
 
 
 def main(argv=None):
+    argv=list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0]=="--trusted-film-time-worker":
+        # This path runs in a separate OS-contained EXE child. It has no
+        # desktop window, file dialog, listener or arbitrary input launcher.
+        # A bound parent supervisor must supply the pinned script SHA. The
+        # verified source worker itself verifies all pinned media/tool/plan
+        # hashes and exact editor revision again after process launch.
+        if not getattr(sys,"frozen",False) or len(argv)<3:
+            raise PermissionError("Trusted film-time worker requires installed NVP")
+        import hashlib
+        import runpy
+        script=bundle_root()/"tools"/"nvp_source_window_worker.py"
+        if script.is_symlink() or not script.is_file():
+            raise RuntimeError("Packaged source review worker missing")
+        expected=argv[1]
+        if (len(expected)!=64 or
+            any(c not in "0123456789abcdef" for c in expected) or
+            hashlib.sha256(script.read_bytes()).hexdigest()!=expected):
+            raise PermissionError("Native worker script changed since approval")
+        sys.argv=[str(script),*argv[2:]]
+        runpy.run_path(str(script),run_name="__main__")
+        return 0
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
