@@ -151,6 +151,40 @@ describe('INDEX-TIME-09 synchronized unapproved A/V player',()=>{
     expect(screen.getByText(/source samples never modified/)).toBeTruthy();
   });
 
+  it('keeps one approved disk-backed review and native audio clock when seeking inside it',async()=>{
+    const api=mount();
+    fireEvent.click(screen.getByText('Prepare synchronized review…'));
+    const player=await screen.findByLabelText(
+      'Temporary picture and synchronized sound preview');
+    fireEvent.change(screen.getByRole('slider',{name:'Seek A/V assembly'}),{
+      target:{value:'160'},
+    });
+    // The source edit is 3s long; 160/1000 seeks to 480ms, which is
+    // inside the prepared 1s section. No approval or transcoding repeats.
+    expect(player.currentTime).toBeCloseTo(0.48,2);
+    expect(screen.getByText(/Film Time playhead/).textContent)
+      .toContain('00:00:00.480');
+    expect(api.start_synchronized_av_review).toHaveBeenCalledTimes(1);
+    expect(api.stop_synchronized_av_review).not.toHaveBeenCalled();
+    expect(api.get_synchronized_av_chunk).not.toHaveBeenCalled();
+    expect(screen.getByText(/Seeking within this prepared section/))
+      .toBeTruthy();
+  });
+
+  it('revokes a prepared review when scrubbing beyond its verified section',async()=>{
+    const api=mount();
+    fireEvent.click(screen.getByText('Prepare synchronized review…'));
+    await screen.findByLabelText('Temporary picture and synchronized sound preview');
+    fireEvent.change(screen.getByRole('slider',{name:'Seek A/V assembly'}),{
+      target:{value:'750'},
+    });
+    expect(api.stop_synchronized_av_review).toHaveBeenCalledWith(
+      'opaque_native_av_ticket');
+    expect(screen.queryByLabelText(
+      'Temporary picture and synchronized sound preview')).toBeNull();
+    expect(api.start_synchronized_av_review).toHaveBeenCalledTimes(1);
+  });
+
   it('sends native source cut navigation without fetching any original media',()=>{
     const api=mount();
     fireEvent.click(screen.getByText('Next cut'));
