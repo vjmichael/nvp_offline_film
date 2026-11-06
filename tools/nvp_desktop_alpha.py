@@ -201,8 +201,14 @@ def run_visible_window_smoke():
     """Exercise a real WebView2 desktop window; no headless substitute."""
     import webview
     from threading import Event
+    test_home=tempfile.TemporaryDirectory(prefix="nvp-index06-webview-")
+    old_home=os.environ.get("NVP_HOME")
+    os.environ["NVP_HOME"]=str(Path(test_home.name)/"Projects")
     configure_home()
     app=create_app()
+    from backend.nvp_api import studio
+    studio.create_project("Indexed Footage Window Acceptance",
+                          "Real desktop source picker navigation")
     server,worker,port,sock=serve(app)
     loaded=Event()
     result={"passed":False}
@@ -231,7 +237,8 @@ def run_visible_window_smoke():
                             "window.pywebview.api.video_import_capabilities()"
                             ".then(x=>{window.__nvpIndexProbe="
                             "x.format==='nvp.index_time06.native_capability.v1'"
-                            "&&x.native_window===true?'PASSED':'FAILED';})"
+                            "&&x.native_window===true"
+                            "&&x.video_tools_available===true?'PASSED':'FAILED';})"
                             ".catch(()=>{window.__nvpIndexProbe='FAILED';});")
                         until=time.monotonic()+10
                         while time.monotonic()<until:
@@ -242,7 +249,35 @@ def run_visible_window_smoke():
                             if probe=="FAILED":
                                 raise RuntimeError("Actual native footage JS IPC failed")
                             time.sleep(.2)
-                        if result["passed"]:break
+                        if result["passed"]:
+                            result["passed"]=False
+                            window.evaluate_js(
+                                "(()=>{const b=[...document.querySelectorAll('aside button')]"
+                                ".find(x=>x.textContent.includes('Indexed Footage Window Acceptance'));"
+                                "if(b){b.click();return true;}return false;})()")
+                            end=time.monotonic()+20
+                            tabbed=False
+                            while time.monotonic()<end:
+                                tabbed=window.evaluate_js(
+                                    "(()=>{const b=[...document.querySelectorAll('nav.tabs button')]"
+                                    ".find(x=>x.textContent.includes('Indexed footage'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                if tabbed:break
+                                time.sleep(.2)
+                            if not tabbed:
+                                raise RuntimeError("Installed indexed footage tab never appeared")
+                            end=time.monotonic()+20
+                            while time.monotonic()<end:
+                                ready=window.evaluate_js(
+                                    "Boolean([...document.querySelectorAll('button')]"
+                                    ".some(x=>x.textContent.includes('Import original footage')))")
+                                if ready:
+                                    result["passed"]=True
+                                    break
+                                time.sleep(.2)
+                            if not result["passed"]:
+                                raise RuntimeError("Native footage picker was not wired to real React UI")
+                            break
                     time.sleep(.2)
                 if not result["passed"]:
                     raise RuntimeError("Bundled NVP React interface did not render")
@@ -259,9 +294,16 @@ def run_visible_window_smoke():
         try:
             if native is not None:native._close()
         finally:
-            server.should_exit=True
-            worker.join(timeout=12)
-            sock.close()
+            try:
+                server.should_exit=True
+                worker.join(timeout=12)
+                sock.close()
+            finally:
+                if old_home is None:
+                    os.environ.pop("NVP_HOME",None)
+                else:
+                    os.environ["NVP_HOME"]=old_home
+                test_home.cleanup()
 
 
 def run_installed_source_smoke():
