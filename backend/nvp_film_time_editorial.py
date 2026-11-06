@@ -137,7 +137,8 @@ class FilmTimeEditorialPublisher:
         out=_int(clip["source_out_frame_zero"],"source outpoint ordinal")
         film=_int(clip["film_in_tick"],"film placement tick")
         rounding=clip["rounding"]
-        if rounding not in ROUNDING or out<=start:
+        if (type(rounding) is not str or rounding not in ROUNDING
+                or out<=start):
             raise ValueError("A source clip must have increasing in/out ordinals")
         source_record=self.index.read_revision(project_id,sid,revision)
         if (source_record["kind"]!="asset" or
@@ -389,7 +390,14 @@ class FilmTimeEditorialPublisher:
             source_in_frame_zero=clip["source_in_frame_zero"],
             film_in_tick=clip["film_start_tick"],first_zero=first_zero,
             count=count,rounding=clip["rounding_policy"])
-        if (mapped["source_in_pts"]!=clip["source_in_pts"] or
+        outpoint=self.frame_index.window(
+            project_id,clip["source_id"],clip["source_sha256"],path,
+            first_zero=clip["source_out_frame_zero"],count=1)
+        if (outpoint["source_stamp"]!=mapped["source_stamp"] or
+            outpoint["time_base_num"]!=clip["time_base_num"] or
+            outpoint["time_base_den"]!=clip["time_base_den"] or
+            outpoint["frames"][0]["pts"]!=clip["source_out_pts"] or
+            mapped["source_in_pts"]!=clip["source_in_pts"] or
             mapped["frames"][0]["source_time_base_num"]!=clip["time_base_num"] or
             mapped["frames"][0]["source_time_base_den"]!=clip["time_base_den"] or
             mapped["source_sha256_at_original_ingest"]!=clip["source_sha256"] or
