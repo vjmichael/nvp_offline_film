@@ -74,6 +74,59 @@ beforeEach(()=>{
 afterEach(()=>vi.unstubAllGlobals());
 
 describe('INDEX-TIME-09 synchronized unapproved A/V player',()=>{
+  it('loads all 65 immutable source clips before enabling safe long-form cut navigation',async()=>{
+    const edits=Array.from({length:65},(_,i)=>({
+      ordinal:i,source_id:'camera_'+i,source_revision:1,
+      film_start_tick:(BigInt(i)*7056000000n).toString(),
+      film_end_tick:(BigInt(i+1)*7056000000n).toString(),
+    }));
+    const selected={...edit,clip_count:65,duration_tick:
+      (65n*7056000000n).toString()};
+    const api=vi.fn(async url=>{
+      const q=new URL('http://127.0.0.1'+url).searchParams;
+      const after=Number(q.get('after_ordinal'));
+      const subset=after<0?edits.slice(0,40):edits.slice(40);
+      return {
+        format:'nvp.index_time05.editor_source_read.v1',
+        status:'INDEXED_EDIT_CLIPS',
+        project_id:pid,edit_id:selected.edit_id,
+        edit_revision:3,edit_document_sha256:sha,
+        clip_count:65,original_media_read:false,
+        clips:subset,
+        next_after_ordinal:after<0?39:null,
+      };
+    });
+    const apiBridge=native();
+    mount(apiBridge,{
+      edit:selected,clips:edits.slice(0,40),api,
+    });
+    expect(screen.getByText('Next cut').disabled).toBe(true);
+    await waitFor(()=>expect(screen.getByText('Next cut').disabled).toBe(false));
+    fireEvent.click(screen.getByText('Next cut'));
+    expect(screen.getByText(/Film Time playhead/).textContent)
+      .toContain('00:00:01.000');
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(apiBridge.start_synchronized_av_review).not.toHaveBeenCalled();
+  });
+
+  it('refuses playback when the native saved source page disagrees with SHA',async()=>{
+    const selected={...edit,clip_count:3};
+    const api=vi.fn(async()=>({
+      format:'nvp.index_time05.editor_source_read.v1',
+      status:'INDEXED_EDIT_CLIPS',project_id:pid,
+      edit_id:selected.edit_id,edit_revision:3,
+      edit_document_sha256:'f'.repeat(64),
+      clip_count:3,original_media_read:false,
+      clips:[...clips],next_after_ordinal:null,
+    }));
+    const nativeBridge=native();
+    mount(nativeBridge,{edit:selected,api});
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent',
+      expect.stringContaining('complete indexed edit manifest changed'));
+    expect(screen.getByText('Prepare synchronized review…').disabled).toBe(true);
+    expect(nativeBridge.start_synchronized_av_review).not.toHaveBeenCalled();
+  });
+
   it('uses one verified H264/AAC media element clock, never independent picture/audio timers',async()=>{
     const api=mount();
     fireEvent.click(screen.getByText('Prepare synchronized review…'));
