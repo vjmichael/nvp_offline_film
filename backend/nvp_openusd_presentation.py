@@ -63,14 +63,27 @@ class OpenUSDPresentationPlanner:
             t=sample["time_tick"]
             positions=[_evaluate(stage,path,t,Sdf,Usd,UsdGeom)
                        for path in paths]
-            samples.append({
+            channels=evaluate_parameter_channels(
+                stage,scene["data"].get("performance_channels",[]),
+                scene["data"]["prim_roles"],t)
+            item={
                 "output_frame_zero":sample["presentation_frame_zero"],
                 "time_tick":t,
                 "world_state":positions,
-                "performance_channels":evaluate_parameter_channels(
-                    stage,scene["data"].get("performance_channels",[]),
-                    scene["data"]["prim_roles"],t),
-            })
+                "performance_channels":channels,
+            }
+            if scene["data"].get("native_schema_version"):
+                from backend.nvp_openusd_native_schemas import evaluate_native_schema
+                item["native_scene_schemas"]=[
+                    value for path in paths
+                    if (value:=evaluate_native_schema(
+                        stage,path,scene["data"]["prim_roles"][path],t,
+                        channels)) is not None]
+            if scene["data"].get("skeleton_rigs"):
+                from backend.nvp_openusd_skeleton import evaluate_skeletons
+                item["skeletal_pose"]=evaluate_skeletons(
+                    stage,scene["data"]["skeleton_rigs"],t)
+            samples.append(item)
         return {
             "format":FORMAT,"project_id":project_id,
             "frozen_take_id":take_id,

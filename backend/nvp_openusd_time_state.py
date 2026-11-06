@@ -87,6 +87,16 @@ class OpenUSDTimeState:
                 project_id,event["source_id"],event["source_revision"])
             if source["document_sha256"]!=event["source_document_sha256"]:
                 raise RuntimeError("Timed event source revision no longer matches")
+        native_schemas=[]
+        if scene["data"].get("native_schema_version"):
+            from backend.nvp_openusd_native_schemas import evaluate_native_schema
+            sampled=evaluate_parameter_channels(
+                stage,scene["data"].get("performance_channels",[]),declared,tick)
+            for path in wanted:
+                observation=evaluate_native_schema(
+                    stage,path,declared[path],tick,sampled)
+                if observation is not None:
+                    native_schemas.append(observation)
         snapshot={
             "format":FORMAT,"time_tick":tick,
             "scene_document_sha256":scene["document_sha256"],
@@ -97,6 +107,15 @@ class OpenUSDTimeState:
                 declared,tick) if p["path"] in wanted],
             "rendered_frames":False,"source_full_audit":False,
         }
+        if scene["data"].get("native_schema_version"):
+            snapshot["native_scene_schemas"]=native_schemas
+            snapshot["native_schema_version"]=scene["data"]["native_schema_version"]
+        if scene["data"].get("skeleton_rigs"):
+            from backend.nvp_openusd_skeleton import evaluate_skeletons
+            snapshot["skeletal_pose"]=[
+                item for item in evaluate_skeletons(
+                    stage,scene["data"]["skeleton_rigs"],tick)
+                if item["path"] in wanted]
         snapshot["snapshot_sha256"]=hashlib.sha256(
             _canonical(snapshot)).hexdigest()
         return snapshot

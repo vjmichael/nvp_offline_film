@@ -83,12 +83,27 @@ class OpenUSDTakeCapture:
         values=evaluate_parameter_channels(
             stage,src["data"].get("performance_channels",[]),
             src["data"]["prim_roles"],tick)
-        return {"format":"nvp.usd_time_checkpoint.v1",
+        native=[]
+        if src["data"].get("native_schema_version"):
+            from backend.nvp_openusd_native_schemas import evaluate_native_schema
+            for p in requested:
+                item=evaluate_native_schema(
+                    stage,p,src["data"]["prim_roles"][p],tick,values)
+                if item is not None:
+                    native.append(item)
+        result={"format":"nvp.usd_time_checkpoint.v1",
                 "tick":tick,"scene_document_sha256":src["document_sha256"],
                 "performance_channels":values,
                 "timeline_document_sha256":timeline["document_sha256"],
                 "transforms":transforms,"active_events":events,
                 "rendered_frames":False}
+        if src["data"].get("native_schema_version"):
+            result["native_scene_schemas"]=native
+        if src["data"].get("skeleton_rigs"):
+            from backend.nvp_openusd_skeleton import evaluate_skeletons
+            result["skeletal_pose"]=evaluate_skeletons(
+                stage,src["data"]["skeleton_rigs"],tick)
+        return result
 
     def freeze(self, project_id, take_id, *,
                scene_id, scene_revision, timeline_id, timeline_revision,
@@ -127,6 +142,20 @@ class OpenUSDTakeCapture:
                 checkpoint["performance_channels"]=evaluate_parameter_channels(
                     stage,source["data"]["performance_channels"],
                     source["data"]["prim_roles"],tick)
+            if source["data"].get("native_schema_version"):
+                from backend.nvp_openusd_native_schemas import evaluate_native_schema
+                values=evaluate_parameter_channels(
+                    stage,source["data"].get("performance_channels",[]),
+                    source["data"]["prim_roles"],tick)
+                checkpoint["native_scene_schemas"]=[
+                    value for p in prims
+                    if (value:=evaluate_native_schema(
+                        stage,p,source["data"]["prim_roles"][p],tick,
+                        values)) is not None]
+            if source["data"].get("skeleton_rigs"):
+                from backend.nvp_openusd_skeleton import evaluate_skeletons
+                checkpoint["skeletal_pose"]=evaluate_skeletons(
+                    stage,source["data"]["skeleton_rigs"],tick)
             checkpoints.append(checkpoint)
         snapshot_sha=sha(checkpoints)
         scoped={
@@ -163,6 +192,9 @@ class OpenUSDTakeCapture:
             "parameter_layer_sha256":source["data"].get("parameter_layer_sha256"),
             "performance_channels":source["data"].get("performance_channels",[]),
             "sample_ticks":sample_ticks,"sample_digest_sha256":snapshot_sha,
+            "native_schema_version":source["data"].get("native_schema_version"),
+            "skeleton_layer_sha256":source["data"].get("skeleton_layer_sha256"),
+            "skeleton_rigs":source["data"].get("skeleton_rigs",[]),
             "host_creator_action_verified":True,
             "artist_presentation_approved":False,
             "frozen":True,"rendered_frames":False,
@@ -191,7 +223,10 @@ class OpenUSDTakeCapture:
             src["data"]["motion_layer_sha256"]!=manifest["motion_layer_sha256"] or
             src["data"].get("asset_bindings",[])!=manifest.get("asset_bindings",[]) or
             src["data"].get("parameter_layer_sha256")!=manifest.get("parameter_layer_sha256") or
-            src["data"].get("performance_channels",[])!=manifest.get("performance_channels",[])):
+            src["data"].get("performance_channels",[])!=manifest.get("performance_channels",[]) or
+            src["data"].get("native_schema_version")!=manifest.get("native_schema_version") or
+            src["data"].get("skeleton_layer_sha256")!=manifest.get("skeleton_layer_sha256") or
+            src["data"].get("skeleton_rigs",[])!=manifest.get("skeleton_rigs",[])):
             raise RuntimeError("Frozen scene/timed film source changed")
         _,Sdf,Usd,UsdGeom=_usd()
         poses=[]
@@ -207,6 +242,20 @@ class OpenUSDTakeCapture:
                 checkpoint["performance_channels"]=evaluate_parameter_channels(
                     stage,src["data"]["performance_channels"],
                     src["data"]["prim_roles"],tick)
+            if src["data"].get("native_schema_version"):
+                from backend.nvp_openusd_native_schemas import evaluate_native_schema
+                values=evaluate_parameter_channels(
+                    stage,src["data"].get("performance_channels",[]),
+                    src["data"]["prim_roles"],tick)
+                checkpoint["native_scene_schemas"]=[
+                    value for p in sorted(src["data"]["prim_roles"])
+                    if (value:=evaluate_native_schema(
+                        stage,p,src["data"]["prim_roles"][p],tick,
+                        values)) is not None]
+            if src["data"].get("skeleton_rigs"):
+                from backend.nvp_openusd_skeleton import evaluate_skeletons
+                checkpoint["skeletal_pose"]=evaluate_skeletons(
+                    stage,src["data"]["skeleton_rigs"],tick)
             poses.append(checkpoint)
         if sha(poses)!=manifest["sample_digest_sha256"]:
             raise RuntimeError("Frozen Digital Take sampled state digest changed")
