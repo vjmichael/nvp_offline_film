@@ -77,6 +77,27 @@ def verify_review_window(destination, plan):
         raise RuntimeError("Incomplete review frame manifest")
     for index, item in enumerate(frames):
         expected = plan["first_frame"] + index
+        if doc.get("decoder_backend") == "ffms2":
+            matching = [s for s in plan["slices"]
+                        if s["output_first_frame"] <= expected
+                        < s["output_first_frame"] + s["frame_count"]]
+            if len(matching) != 1:
+                raise RuntimeError("FFMS2 receipt frame has no unique source interval")
+            part = matching[0]
+            frame_zero = (part["source_first_frame"] - 1 +
+                          expected - part["output_first_frame"])
+            if (item.get("source_id") != part["source_id"] or
+                item.get("source_revision") != part["source_revision"] or
+                item.get("source_frame_zero") != frame_zero or
+                type(item.get("pts")) is not int or
+                type(item.get("time_base_num")) is not int or
+                type(item.get("time_base_den")) is not int or
+                item["time_base_num"] <= 0 or item["time_base_den"] <= 0 or
+                type(item.get("index_sha256")) is not str or
+                len(item["index_sha256"]) != 64 or
+                any(ch not in "0123456789abcdef"
+                    for ch in item["index_sha256"])):
+                raise RuntimeError("FFMS2 review receipt conflicts with source-bound edit")
         name = f"review_{expected:09d}.png"
         frame = dest / name
         if (type(item) is not dict or item.get("frame") != expected or
