@@ -148,6 +148,12 @@ class TrustedFootageDesktop:
         return self.tools
 
     def video_import_capabilities(self):
+        try:return self._video_import_capabilities()
+        except Exception:
+            return {"format":CAP_FORMAT,"native_window":False,
+                    "native_dialog":False,"video_tools_available":False}
+
+    def _video_import_capabilities(self):
         self._window()
         return {
             "format":CAP_FORMAT,"native_window":True,
@@ -159,6 +165,15 @@ class TrustedFootageDesktop:
         }
 
     def pick_and_import_footage(self,project_id):
+        try:return self._pick_and_import_footage(project_id)
+        except Exception:
+            # Exceptions from pywebview JS API can expose Python tracebacks
+            # and original absolute paths. Native errors remain native.
+            return {"format":IMPORT_FORMAT,"status":"FAILED",
+                    "error_code":"NATIVE_IMPORT_FAILED",
+                    "original_modified":False}
+
+    def _pick_and_import_footage(self,project_id):
         """OS picker -> user-approved local original -> immutable source.
 
         No path or volume root is returned to JS, including if an index
@@ -266,6 +281,13 @@ class TrustedFootageDesktop:
             return self._host
 
     def request_source_frame_preview(self,request):
+        try:return self._request_source_frame_preview(request)
+        except Exception:
+            return {"format":TICKET_FORMAT,"status":"FAILED",
+                    "error_code":"SOURCE_PREVIEW_REFUSED",
+                    "film_master_approved":False}
+
+    def _request_source_frame_preview(self,request):
         """Untrusted exact source selection -> scoped OS consent -> worker."""
         self._window()
         if type(request) is not dict or set(request)!={
@@ -369,6 +391,12 @@ class TrustedFootageDesktop:
             }
 
     def poll_source_frame_preview(self,ticket):
+        try:return self._poll_source_frame_preview(ticket)
+        except Exception:
+            return {"format":PREVIEW_FORMAT,"status":"RECOVERY_REQUIRED",
+                    "film_master_approved":False}
+
+    def _poll_source_frame_preview(self,ticket):
         self._window()
         if type(ticket) is not str or not 1<=len(ticket)<=128:
             raise ValueError("Invalid local native preview ticket")
@@ -452,6 +480,11 @@ class TrustedFootageDesktop:
                     "film_master_approved":False}
 
     def cancel_source_frame_preview(self,ticket):
+        try:return self._cancel_source_frame_preview(ticket)
+        except Exception:
+            return {"status":"FAILED","film_master_approved":False}
+
+    def _cancel_source_frame_preview(self,ticket):
         self._window()
         with self._lock:
             item=self._tickets.get(ticket)
