@@ -458,16 +458,30 @@ class FilmIndex:
                 ORDER BY revision""", (project_id, object_id)).fetchall()
         return [dict(row) for row in rows]
 
-    def list_objects(self, project_id, *, kind=None):
+    def list_objects(self, project_id, *, kind=None, include_retired=False):
+        """List available original objects; old retired sources stay addressable
+        by exact revision for historical cut custody, not new selection."""
         _require_pid(project_id)
         if kind is not None and kind not in KINDS:
             raise ValueError("Unrecognized film object type")
+        if type(include_retired) is not bool:
+            raise ValueError("include_retired must be an explicit boolean")
         with self.studio._connection() as db:
             self._project(db, project_id)
-            rows = db.execute("""SELECT object_id,kind,head_revision
+            lifecycle=db.execute("""SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='nvp_film_source_retirements'""").fetchone()
+            if lifecycle is not None and not include_retired:
+                rows=db.execute("""SELECT f.object_id,f.kind,f.head_revision
+                    FROM film_objects f LEFT JOIN nvp_film_source_retirements r
+                    ON r.project_id=f.project_id AND r.object_id=f.object_id
+                    WHERE f.project_id=? AND (? IS NULL OR f.kind=?)
+                      AND (r.state IS NULL OR r.state='RESTORED')
+                    ORDER BY f.kind,f.object_id""",(project_id,kind,kind)).fetchall()
+            else:
+                rows=db.execute("""SELECT object_id,kind,head_revision
                     FROM film_objects WHERE project_id=? AND
                     (? IS NULL OR kind=?) ORDER BY kind,object_id""",
-                    (project_id, kind, kind)).fetchall()
+                    (project_id,kind,kind)).fetchall()
         return [dict(row) for row in rows]
 
     def direct_dependents(self, project_id, object_id, revision):
