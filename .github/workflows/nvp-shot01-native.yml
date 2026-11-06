@@ -1,0 +1,58 @@
+name: NVP SHOT-01 Native Director OpenUSD Artistic Overrides
+
+on:
+  push:
+    branches:
+      - nvp/shot01-director-usd-overrides-20261106
+    paths:
+      - "backend/nvp_openusd_shot_overrides.py"
+      - "backend/nvp_openusd_presentation.py"
+      - "tests/test_nvp_openusd_shot_overrides_native.py"
+      - "docs/NVP_SHOT01_DIRECTOR_OPENUSD_OVERRIDES.md"
+      - ".github/workflows/nvp-shot01-native.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_openusd_shot_overrides.py"
+      - "backend/nvp_openusd_presentation.py"
+      - "tests/test_nvp_openusd_shot_overrides_native.py"
+      - "docs/NVP_SHOT01_DIRECTOR_OPENUSD_OVERRIDES.md"
+      - ".github/workflows/nvp-shot01-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-shot01-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-director-staging:
+    name: SHOT-01 ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual native OpenUSD runtime
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Compile full shot-level source code
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_openusd_shot_overrides.py backend/nvp_openusd_scene.py backend/nvp_openusd_take.py backend/nvp_openusd_presentation.py tests/test_nvp_openusd_shot_overrides_native.py
+          python -c "from pxr import Usd,UsdGeom,UsdLux,UsdSkel; print('REAL_NATIVE_USD',Usd.GetVersion())"
+      - name: Native director shot staging, performance continuity and revisions
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_openusd_shot_overrides_native.py" -v
+      - name: Native frozen Take and reusable USD source regressions
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_openusd_take_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_channels_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_native_schemas.py" -v
