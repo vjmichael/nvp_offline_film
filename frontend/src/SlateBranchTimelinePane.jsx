@@ -17,6 +17,9 @@ export default function SlateBranchTimelinePane({
   const [inspection,setInspection]=useState('');
   const [target,setTarget]=useState('');
   const [geometryCamera,setGeometryCamera]=useState('');
+  // Film Time is integer source data, not an output-frame index.
+  // This local pose cursor cannot mutate a frozen Take or activate a draft.
+  const [poseTick,setPoseTick]=useState(null);
   // This clipboard contains only source interval IDs/ticks, never 3D source
   // data, assets, geometry, picture frames or an approved editorial decision.
   const [sourceClipboard,setSourceClipboard]=useState(null);
@@ -207,7 +210,7 @@ export default function SlateBranchTimelinePane({
               obs.source_in_tick<segment.source_out_tick);
           return <button key={segment.segment_id}
             className={'nvp-slate-assembly-card'+(target===segment.segment_id?' target':'')}
-            onClick={()=>setTarget(segment.segment_id)}>
+            onClick={()=>{setTarget(segment.segment_id);setPoseTick(null);}}>
             <span className="nvp-slate-card-label">Scene {slate.scene||graphView?.scene_label||'—'} · Shot {slate.shot||'—'}</span>
             <strong>{slate.wild?'Wild · ':''}Take {slate.take_number||'?'} · Camera {slate.camera||'—'}</strong>
             <span className="nvp-slate-card-sub">{semantic.shot_type||node?.kind||'Source Take'} · {segment.branch_id}</span>
@@ -251,6 +254,22 @@ export default function SlateBranchTimelinePane({
                 onClick={()=>onRequestDataPreview(chosenSegment.timeline_start_tick)}>
           Preview source data</button>
         {onRequestGeometryPreview && <>
+          {chosenSegment && !hasDraft &&
+            <label className="nvp-slate-pose-time">
+              Performance time · {Math.min(
+                chosenSegment.timeline_end_tick-1,
+                Math.max(chosenSegment.timeline_start_tick,
+                  poseTick??chosenSegment.timeline_start_tick))} ticks
+              <input type="range" aria-label="Performance time"
+                min={chosenSegment.timeline_start_tick}
+                max={chosenSegment.timeline_end_tick-1}
+                step={1}
+                value={Math.min(
+                  chosenSegment.timeline_end_tick-1,
+                  Math.max(chosenSegment.timeline_start_tick,
+                    poseTick??chosenSegment.timeline_start_tick))}
+                onChange={event=>setPoseTick(Number(event.target.value))}/>
+            </label>}
           <label className="nvp-slate-camera-choice">
             Authored camera
             <select aria-label="Authored camera" value={geometryCamera}
@@ -267,7 +286,9 @@ export default function SlateBranchTimelinePane({
               cameraChoices.length>1&&!geometryCamera}
             onClick={()=>onRequestGeometryPreview({
               presentation:'geometry',
-              film_tick:chosenSegment.timeline_start_tick,
+              film_tick:Math.min(chosenSegment.timeline_end_tick-1,
+                Math.max(chosenSegment.timeline_start_tick,
+                  poseTick??chosenSegment.timeline_start_tick)),
               segment_id:chosenSegment.segment_id,
               edit_document_sha256:activeView.edit_document_sha256,
               camera_path:geometryCamera||null,

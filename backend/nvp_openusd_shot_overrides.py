@@ -21,10 +21,13 @@ FORMAT="nvp.usd.director_shot_override.v1"
 MAX_OPINIONS=64
 MAX_SHOT_LAYER_BYTES=256*1024
 PURPOSES=frozenset(("framing","eyeline","lighting","occlusion","emotion",
-                    "continuity","blocking","artistic"))
+                    "continuity","blocking","artistic","optics"))
 CONTINUITY=frozenset(("preserve","intentional_cheat"))
 PROPERTIES=frozenset(("translation_offset","visibility",
-                     "camera_focal_length_mm","light_intensity","eyeline_target"))
+                     "camera_focal_length_mm","camera_f_stop",
+                     "camera_focus_distance_m","camera_sensor_width_mm",
+                     "camera_sensor_height_mm",
+                     "light_intensity","eyeline_target"))
 
 
 def _canonical(document):
@@ -75,10 +78,19 @@ def _normalize(changes,scene,stage):
         elif prop=="visibility":
             if type(val) is not bool or not UsdGeom.Imageable(prim):
                 raise ValueError("Shot visibility requires a boolean imageable prim")
-        elif prop=="camera_focal_length_mm":
+        elif prop in ("camera_focal_length_mm","camera_f_stop",
+                      "camera_focus_distance_m","camera_sensor_width_mm",
+                      "camera_sensor_height_mm"):
             if role!="camera" or not native or not prim.IsA(UsdGeom.Camera):
-                raise ValueError("Real native USD camera required for shot lens")
-            val=_bounded_scalar(val,1.0,300.0)
+                raise ValueError("Real native USD camera required for shot optics")
+            lower,upper={
+                "camera_focal_length_mm":(8.,300.),
+                "camera_f_stop":(0.7,32.),
+                "camera_focus_distance_m":(0.1,1000.),
+                "camera_sensor_width_mm":(6.,70.),
+                "camera_sensor_height_mm":(4.,50.),
+            }[prop]
+            val=_bounded_scalar(val,lower,upper)
         elif prop=="light_intensity":
             if role!="light" or not native:
                 raise ValueError("Native USD light required")
@@ -115,12 +127,20 @@ def _author_layer(opinions):
                 "visibility",Sdf.ValueTypeNames.Token).Set(
                 "inherited" if val else "invisible"):
                 raise RuntimeError("Native shot visibility authoring failed")
-        elif prop=="camera_focal_length_mm":
-            from backend.nvp_openusd_native_schemas import MM_PER_CAMERA_UNIT
-            if not prim.CreateAttribute(
-                "focalLength",Sdf.ValueTypeNames.Float).Set(
-                val/MM_PER_CAMERA_UNIT):
-                raise RuntimeError("Native shot focal length authoring failed")
+        elif prop in ("camera_focal_length_mm","camera_f_stop",
+                      "camera_focus_distance_m","camera_sensor_width_mm",
+                      "camera_sensor_height_mm"):
+            from backend.nvp_openusd_native_schemas import (
+                MM_PER_CAMERA_UNIT,METERS_PER_UNIT)
+            field,scale={
+                "camera_focal_length_mm":("focalLength",1/MM_PER_CAMERA_UNIT),
+                "camera_f_stop":("fStop",1.),
+                "camera_focus_distance_m":("focusDistance",1/METERS_PER_UNIT),
+                "camera_sensor_width_mm":("horizontalAperture",1/MM_PER_CAMERA_UNIT),
+                "camera_sensor_height_mm":("verticalAperture",1/MM_PER_CAMERA_UNIT),
+            }[prop]
+            if not prim.CreateAttribute(field,Sdf.ValueTypeNames.Float).Set(val*scale):
+                raise RuntimeError("Native shot optical parameter authoring failed")
         elif prop=="light_intensity":
             if not prim.CreateAttribute(
                 "inputs:intensity",Sdf.ValueTypeNames.Float).Set(val):
@@ -287,8 +307,20 @@ class OpenUSDShotOverrides:
             if scene["data"].get("native_schema_version"):
                 if scene["data"]["prim_roles"][path]=="camera":
                     from backend.nvp_openusd_native_schemas import MM_PER_CAMERA_UNIT
+                    cam=UsdGeom.Camera(prim)
                     item["shot_focal_length_mm"]=float(
-                        UsdGeom.Camera(prim).GetFocalLengthAttr().Get(
+                        cam.GetFocalLengthAttr().Get(
+                            Usd.TimeCode(float(tick))))*MM_PER_CAMERA_UNIT
+                    item["shot_f_stop"]=float(
+                        cam.GetFStopAttr().Get(Usd.TimeCode(float(tick))))
+                    item["shot_focus_distance_m"]=float(
+                        cam.GetFocusDistanceAttr().Get(
+                            Usd.TimeCode(float(tick))))
+                    item["shot_sensor_width_mm"]=float(
+                        cam.GetHorizontalApertureAttr().Get(
+                            Usd.TimeCode(float(tick))))*MM_PER_CAMERA_UNIT
+                    item["shot_sensor_height_mm"]=float(
+                        cam.GetVerticalApertureAttr().Get(
                             Usd.TimeCode(float(tick))))*MM_PER_CAMERA_UNIT
                 elif scene["data"]["prim_roles"][path]=="light":
                     from pxr import UsdLux

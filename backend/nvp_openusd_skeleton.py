@@ -1,8 +1,10 @@
 """USD-02D: bounded native UsdSkel joint hierarchy and timed animation.
 
 This encodes an actual USD skeleton and its joint-local animation, not merely
-a custom joint-angle label. It does not yet bind skinning weights to a mesh
-or produce facial deformation. NVP controls source identities and exact ticks.
+a custom joint-angle label. SLATE-07 optionally adds a native UsdSkel-bound
+typed character mesh with bounded per-vertex influences in the SAME source
+layer. Facial deformation and general-purpose rest/bind pose authoring remain
+future tasks. NVP controls source identities and exact native Film Time ticks.
 """
 from __future__ import annotations
 import math
@@ -30,7 +32,9 @@ def validate_rigs(roles, rigs):
     seen=set()
     result=[]
     for rig in rigs:
-        if type(rig) is not dict or set(rig)!={"path","joints","samples"}:
+        if (type(rig) is not dict or
+            not {"path","joints","samples"}<=set(rig) or
+            not set(rig)<= {"path","joints","samples","skin"}):
             raise ValueError("Invalid exact USD rig descriptor")
         path=rig["path"]
         if roles.get(path)!="actor" or path in seen:
@@ -61,8 +65,19 @@ def validate_rigs(roles, rigs):
                 raise ValueError("Joint animation keys must cover every joint")
             for position in translations:
                 _vector(position)
-        result.append({"path":path,"joints":list(joints),
-                       "sample_count":len(samples)})
+        descriptor={"path":path,"joints":list(joints),
+                    "sample_count":len(samples)}
+        if "skin" in rig:
+            from backend.nvp_openusd_skinning import normalize_skin,SKIN_MESH_SUFFIX
+            skin=normalize_skin(rig["skin"],len(joints))
+            descriptor.update({
+                "skin_mesh_path":path+SKIN_MESH_SUFFIX,
+                "skin_vertex_count":len(skin["points"]),
+                "skin_face_count":len(skin["faces"]),
+                "skin_weighted":True,
+                "facial_animation_rendered":False,
+            })
+        result.append(descriptor)
     return result
 
 
@@ -96,6 +111,13 @@ def author_skeleton_layer(roles, rigs):
         if not bind.CreateAnimationSourceRel().SetTargets([
             animation.GetPrim().GetPath()]):
             raise RuntimeError("Cannot bind native USD skeleton animation")
+        if "skin" in rig:
+            from backend.nvp_openusd_skinning import author_skin_mesh
+            source=author_skin_mesh(
+                stage,rig["path"],skel.GetPrim().GetPath(),
+                rig["skin"],len(rig["joints"]))
+            if source["mesh_path"]!=rig["path"]+"/Rig/CharacterMesh":
+                raise RuntimeError("Author did not preserve canonical skeleton mesh path")
         for sample in rig["samples"]:
             matrices=[]
             for point in sample["translations"]:

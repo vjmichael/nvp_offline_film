@@ -150,15 +150,30 @@ def capture_geometry(index:FilmIndex,ticket,*,camera_path=None):
             raise RuntimeError("Shot revision SHA changed")
     if scene["document_sha256"]!=take["data"]["scene_document_sha256"]:
         raise RuntimeError("Scene revision SHA changed")
+    return extract_composed_stage(
+        stage,scene["data"],tick=ticket["source_tick"],
+        source_take_sha=ticket["source_take_document_sha256"],
+        source_shot_sha=ticket["source_shot_document_sha256"],
+        cache_key=ticket["cache_key"],camera_path=camera_path)
+
+
+def extract_composed_stage(stage,scene_data,*,tick,source_take_sha=None,
+                           source_shot_sha=None,cache_key=None,camera_path=None):
+    """Read ONE already-open source stage, no FilmIndex mutation.
+
+    Frozen Takes and pre-Take camera exploration share this exact native
+    geometry/lighting/skin extraction. Draft scenes have no Take SHA.
+    """
+    source_tick=tick
     _,_,Usd,UsdGeom=_usd()
     from pxr import UsdLux
-    timecode=Usd.TimeCode(float(ticket["source_tick"]))
-    roles=scene["data"]["prim_roles"]
+    timecode=Usd.TimeCode(float(source_tick))
+    roles=scene_data["prim_roles"]
     # The current NVP-authored geometry layer supports only internal,
     # SHA-addressed assets. No untrusted resolver or external USD file access.
-    if scene["data"].get("contains_external_references") is not False:
+    if scene_data.get("contains_external_references") is not False:
         raise PermissionError("External USD scene references are not allowed")
-    if not scene["data"].get("native_schema_version"):
+    if not scene_data.get("native_schema_version"):
         raise RuntimeError("High-fidelity mode needs an authored native USD Camera")
     up_axis=str(UsdGeom.GetStageUpAxis(stage))
     if up_axis not in ("Y","Z"):
@@ -167,6 +182,7 @@ def capture_geometry(index:FilmIndex,ticket,*,camera_path=None):
     lights=[]
     geometry=[]
     missing_actors=[]
+    skinned_meshes=[]
     for root,role in sorted(roles.items()):
         if role not in VALID_ROLES:
             raise RuntimeError("Unexpected source role during geometry composition")
@@ -191,6 +207,10 @@ def capture_geometry(index:FilmIndex,ticket,*,camera_path=None):
                     UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(timecode)),
                 "focal_length_mm":lens*MM_PER_CAMERA_UNIT,
                 "sensor_width_mm":aperture*MM_PER_CAMERA_UNIT,
+                "f_stop":_bounded_number(
+                    camera.GetFStopAttr().Get(timecode)),
+                "focus_distance_m":_bounded_number(
+                    camera.GetFocusDistanceAttr().Get(timecode)),
                 "projection":"perspective",
             })
             continue
@@ -224,11 +244,24 @@ def capture_geometry(index:FilmIndex,ticket,*,camera_path=None):
                     child.IsA(UsdGeom.Mesh)):
                 continue
             authored=True
+            geo=_mesh(child,UsdGeom,timecode)
+            if child.IsA(UsdGeom.Mesh):
+                from pxr import UsdSkel
+                if child.HasAPI(UsdSkel.BindingAPI):
+                    if role!="actor":
+                        raise RuntimeError("Only an actor source can bind native skeletal skin")
+                    from backend.nvp_openusd_skinning import evaluate_skin
+                    posed=evaluate_skin(stage,child,root,source_tick)
+                    if len(posed["deformed_points"])!=len(geo["points"]):
+                        raise RuntimeError("Native posed actor vertex count changed")
+                    geo["points"]=posed["deformed_points"]
+                    geo["skinning_mode"]="native_UsdSkel_linear_blend"
+                    skinned_meshes.append(posed["source_mesh_path"])
             geometry.append({
                 "path":str(child.GetPath()),"source_role":role,
                 "world_matrix":_matrix(
                     UsdGeom.Xformable(child).ComputeLocalToWorldTransform(timecode)),
-                "geometry":_mesh(child,UsdGeom,timecode),
+                "geometry":geo,
                 "display_color":_get_display_color(child,UsdGeom,timecode),
                 "material_model":"USD_displayColor_only",
             })
@@ -247,18 +280,20 @@ def capture_geometry(index:FilmIndex,ticket,*,camera_path=None):
     chosen=candidates[0]
     if not geometry:
         raise RuntimeError("No actual authored geometry exists; use SLATE-05 proxy")
-    rig_count=len(scene["data"].get("skeleton_rigs",[]))
+    rig_count=len(scene_data.get("skeleton_rigs",[]))
     summary={
         "format":FORMAT,
-        "source_take_sha256":ticket["source_take_document_sha256"],
-        "source_shot_sha256":ticket["source_shot_document_sha256"],
-        "source_tick":ticket["source_tick"],
-        "cache_key":ticket["cache_key"],
+        "source_take_sha256":source_take_sha,
+        "source_shot_sha256":source_shot_sha,
+        "source_tick":source_tick,
+        "cache_key":cache_key,
         "camera":chosen,"lights":lights,"objects":geometry,
         "up_axis":up_axis,
         "unmeshed_actors":missing_actors,
         "skeletal_rig_count":rig_count,
-        "skinning_evaluated":False,"facial_animation_evaluated":False,
+        "skinned_mesh_paths":sorted(skinned_meshes),
+        "skinning_evaluated":bool(skinned_meshes),
+        "facial_animation_evaluated":False,
         "usd_material_networks_evaluated":False,
         "usd_light_photometry_exact":False,
         "source_data_modified":False,"final_presentation_approved":False,
@@ -266,7 +301,6 @@ def capture_geometry(index:FilmIndex,ticket,*,camera_path=None):
     if len(canonical(summary))>MAX_SOURCE_BYTES-256:
         raise RuntimeError("Native source geometry recipe would exceed bounded worker input")
     return summary
-
 
 def recipe(snapshot,quality):
     if type(snapshot) is not dict or snapshot.get("format")!=FORMAT:
@@ -390,6 +424,13 @@ data=bpy.data.cameras.new("NVP_Authored_USD_Camera")
 data.type="PERSP"
 data.lens=float(camera["focal_length_mm"])
 data.sensor_width=float(camera["sensor_width_mm"])
+data.sensor_fit="HORIZONTAL"
+f_stop=float(camera.get("f_stop",0))
+focus=float(camera.get("focus_distance_m",0))
+if f_stop>0 and focus>0:
+    data.dof.use_dof=True
+    data.dof.aperture_fstop=f_stop
+    data.dof.focus_distance=focus
 obj=bpy.data.objects.new("NVP_Authored_USD_Camera",data)
 scene.collection.objects.link(obj)
 obj.matrix_world=matrix(camera["matrix"])

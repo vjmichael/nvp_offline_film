@@ -258,4 +258,28 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
     expect(screen.getByText(/no skinned performance or master approval/)).toBeTruthy();
   });
 
+  it('scrubs real performance Film Time without changing a source Take or activating a draft',()=>{
+    const req=vi.fn();
+    const source={segment_id:'pose_clip',branch_id:'take_1',
+      source_in_tick:100,source_out_tick:600,
+      timeline_start_tick:1000,timeline_end_tick:1500};
+    const cut={edit_document_sha256:'a'.repeat(64),sequence:[source]};
+    const graph={project_id:'e'.repeat(32),scene_label:'01',
+      parallel_groups:{reaction:[node(1,true)]}};
+    const {container}=render(<SlateBranchTimelinePane
+      graphView={graph} activeView={cut}
+      onRequestGeometryPreview={req}
+      cameraChoices={[{path:'/World/Camera'}]}/>);
+    fireEvent.click(container.querySelector('.nvp-slate-assembly-card'));
+    expect(screen.getByLabelText('Performance time')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Performance time'),
+      {target:{value:'1350'}});
+    expect(screen.getByText(/Performance time · 1350 ticks/)).toBeTruthy();
+    expect(req).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Render authored 3D preview'));
+    expect(req).toHaveBeenCalledWith({
+      presentation:'geometry',film_tick:1350,segment_id:'pose_clip',
+      edit_document_sha256:'a'.repeat(64),camera_path:null});
+  });
+
 });
