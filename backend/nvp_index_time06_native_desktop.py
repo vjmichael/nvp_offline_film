@@ -609,6 +609,29 @@ class TrustedFootageDesktop:
                     "status":"RECOVERY_REQUIRED","original_modified":False,
                     "master_approved":False}
 
+    def system_package_inventory(self):
+        """Read-only native host dependency discovery, no network calls."""
+        try:
+            self._window()
+            from backend.nvp_system_packages import inventory
+            return inventory(studio_path=self.studio.db_path)
+        except Exception:
+            return {"format":"nvp.system_ready.native_packages.v1",
+                    "status":"UNAVAILABLE","components":[],
+                    "auto_install":False,"source_media_modified":False}
+
+    def repair_system_package(self,component):
+        """Only typed allowlisted OS-manager repair with native confirmation."""
+        try:
+            self._window()
+            from backend.nvp_system_packages import repair
+            return repair(component,confirm=self._confirm,
+                          studio_path=self.studio.db_path)
+        except Exception:
+            return {"format":"nvp.system_ready.native_packages.v1",
+                    "status":"REPAIR_UNAVAILABLE",
+                    "source_media_modified":False}
+
     def _get_av_host(self):
         with self._lock:
             if self._av_host is None:
