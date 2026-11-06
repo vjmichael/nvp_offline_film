@@ -79,6 +79,39 @@ beforeEach(()=>{
 });
 afterEach(()=>vi.unstubAllGlobals());
 
+function progressiveNative(){
+  const bridge=native();
+  const session='progressive_session_'+'s'.repeat(32);
+  const successor='next_ticket_'+'n'.repeat(32);
+  const firstPoll=bridge.poll_synchronized_av_review;
+  bridge.start_progressive_av_review=vi.fn(async req=>({
+    ...await bridge.start_synchronized_av_review(req),
+    progressive_session_id:session,
+    progressive_limit_tick:edit.duration_tick,
+  }));
+  bridge.prepare_next_progressive_av_review=vi.fn(async (_session,_current)=>({
+    format:FORMAT,status:'QUEUED',ticket_id:successor,
+    progressive_session_id:session,
+    original_modified:false,master_approved:false,
+  }));
+  bridge.poll_synchronized_av_review=vi.fn(async ticket=>
+    ticket===successor?{
+      ...await firstPoll(),
+      actual_start_tick:'7056000000',
+      review_duration_tick:'7056000000',
+    }:firstPoll());
+  bridge.advance_progressive_av_review=vi.fn(async (_session,old,next)=>({
+    format:FORMAT,status:'ADVANCED',ticket_id:next,
+    progressive_session_id:session,transition_tick:'7056000000',
+    original_modified:false,master_approved:false,
+  }));
+  bridge.stop_progressive_av_review=vi.fn(async()=>({
+    format:FORMAT,status:'CANCELLATION_REQUESTED',
+    original_modified:false,master_approved:false,
+  }));
+  return {bridge,session,successor};
+}
+
 describe('INDEX-TIME-09 synchronized unapproved A/V player',()=>{
   it('loads all 65 immutable source clips before enabling safe long-form cut navigation',async()=>{
     const edits=Array.from({length:65},(_,i)=>({
@@ -241,6 +274,51 @@ describe('INDEX-TIME-09 synchronized unapproved A/V player',()=>{
     await waitFor(()=>expect(api.stop_synchronized_av_review)
       .toHaveBeenCalledWith('late_review'));
     expect(api.poll_synchronized_av_review).not.toHaveBeenCalled();
+  });
+
+  it('prefetches one native verified successor then advances on media end',async()=>{
+    const {bridge,session,successor}=progressiveNative();
+    Object.defineProperty(HTMLMediaElement.prototype,'play',
+      {configurable:true,value:vi.fn(async()=>{})});
+    mount(bridge);
+    fireEvent.click(screen.getByText('Start progressive long-form review…'));
+    const player=await screen.findByLabelText(
+      'Temporary picture and synchronized sound preview');
+    await waitFor(()=>expect(bridge.prepare_next_progressive_av_review)
+      .toHaveBeenCalledWith(session,'opaque_native_av_ticket'));
+    await waitFor(()=>expect(screen.getByText(
+      'Start progressive long-form review…')).toBeTruthy());
+    await waitFor(()=>expect(screen.getAllByRole('video',{hidden:true}).length)
+      .toBeGreaterThan(0));
+    fireEvent.ended(player);
+    await waitFor(()=>expect(bridge.advance_progressive_av_review)
+      .toHaveBeenCalledWith(session,'opaque_native_av_ticket',successor));
+    await waitFor(()=>expect(player.getAttribute('src')).toBe(
+      '/api/native-av-review/'+successor+'/media'));
+    expect(bridge.start_progressive_av_review).toHaveBeenCalledTimes(1);
+    expect(bridge.stop_progressive_av_review).not.toHaveBeenCalled();
+    expect(bridge.start_synchronized_av_review).toHaveBeenCalledTimes(1);
+    expect(bridge.get_synchronized_av_chunk).not.toHaveBeenCalled();
+  });
+
+  it('stops both prepared sections through one session cancellation',async()=>{
+    const {bridge,session}=progressiveNative();
+    mount(bridge);
+    fireEvent.click(screen.getByText('Start progressive long-form review…'));
+    await screen.findByLabelText('Temporary picture and synchronized sound preview');
+    fireEvent.click(screen.getByText('Stop and discard review'));
+    await waitFor(()=>expect(bridge.stop_progressive_av_review)
+      .toHaveBeenCalledWith(session));
+    expect(bridge.stop_synchronized_av_review).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText(
+      'Temporary picture and synchronized sound preview')).toBeNull();
+  });
+
+  it('disallows progressive mode on older native runtimes',async()=>{
+    const bridge=native();
+    mount(bridge);
+    expect(screen.queryByText('Start progressive long-form review…')).toBeNull();
+    expect(bridge.start_synchronized_av_review).not.toHaveBeenCalled();
   });
 
   it('can continue next bounded section without changing the saved assembly',async()=>{
