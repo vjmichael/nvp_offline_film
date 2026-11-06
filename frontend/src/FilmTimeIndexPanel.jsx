@@ -403,6 +403,7 @@ export default function FilmTimeIndexPanel({projectId,api,nativeBridge=null}){
           key={selected.edit_id+':'+selected.revision}
           projectId={projectId}
           edit={selected} clips={clips} edits={edits} native={native} api={api}
+          selectedFrame={selection} onInspect={seekAt}
           onSaved={(id)=>{
             preferredEdit.current=id;
             setRendered(null);
