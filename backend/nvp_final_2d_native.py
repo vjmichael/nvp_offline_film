@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import sys
 import tempfile
 import wave
 
@@ -77,6 +78,36 @@ def _png_header(data):
     except (OSError,ValueError,SyntaxError) as exc:
         raise RuntimeError("Corrupted native PNG raster data") from exc
     return width,height
+
+def _publish_no_replace(staged,target):
+    """Atomically publish a completed film package without clobbering one.
+
+    The earlier exists()/is_symlink() check is helpful for quick error
+    reporting but is NOT enough: two independent exporters can pass it
+    concurrently. Both supported native operating systems must enforce
+    no-replace at the actual directory rename, not with a Python mutex.
+    """
+    if os.name=="nt":
+        # Windows MoveFileEx without REPLACE_EXISTING, as used by os.rename,
+        # refuses an existing destination (even an empty directory).
+        os.rename(staged,target)
+    elif sys.platform.startswith("linux"):
+        # renameat2 RENAME_NOREPLACE=1 is an atomic filesystem operation;
+        # os.replace would overwrite an empty existing destination directory.
+        import ctypes
+        try:
+            fn=ctypes.CDLL(None,use_errno=True).renameat2
+        except AttributeError as exc:
+            raise RuntimeError("Atomic no-clobber output publication unavailable") from exc
+        fn.argtypes=(ctypes.c_int,ctypes.c_char_p,
+                     ctypes.c_int,ctypes.c_char_p,ctypes.c_uint)
+        fn.restype=ctypes.c_int
+        if fn(-100,os.fsencode(staged),-100,os.fsencode(target),1)!=0:
+            err=ctypes.get_errno()
+            raise OSError(err,os.strerror(err),os.fspath(target))
+    else:
+        raise RuntimeError("No verified atomic no-replace output on this OS")
+
 
 class Approved2DPackage:
     def __init__(self,index:FilmIndex,*,native_creator_approval,render_png):
@@ -220,7 +251,7 @@ class Approved2DPackage:
             with (staged/"manifest.json").open("x",encoding="utf8") as f:
                 json.dump(manifest,f,sort_keys=True,separators=(",",":"))
                 f.flush();os.fsync(f.fileno())
-            os.replace(staged,target)
+            _publish_no_replace(staged,target)
             return {"status":"DERIVED_2D_PACKAGE",
                     "directory":str(target),
                     "manifest_sha256":sha256(
