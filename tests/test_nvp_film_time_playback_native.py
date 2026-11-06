@@ -163,6 +163,26 @@ class FilmTimePlaybackNativeTests(unittest.TestCase):
         self.assertEqual(reopened.publisher.clips(
             self.project,"edit",1)["clips"][0]["film_start_tick"],5*T)
 
+    def test_corrupt_middle_index_pts_is_not_a_valid_selected_frame(self):
+        import sqlite3
+        first=self.seek.resolve(self.project,"edit",1,tick=5*T)
+        later=self.seek.resolve(
+            self.project,"edit",1,tick=first["frame_film_end_tick"])
+        self.assertEqual(later["source_frame_zero"],11)
+        ingest_sha=self.catalog.list_assets(self.project)[0]["sha256"]
+        index_path=self.native._path(
+            self.project,"source_camera",ingest_sha)
+        with sqlite3.connect(index_path) as db:
+            # Fabricate duplicate PTS while leaving the original source and
+            # source stamp unchanged; the chosen frame is ambiguous.
+            original_pts=db.execute(
+                "SELECT pts FROM frames WHERE ordinal=10").fetchone()[0]
+            db.execute("UPDATE frames SET pts=? WHERE ordinal=11",
+                       (original_pts,))
+        with self.assertRaises(RuntimeError):
+            self.seek.resolve(
+                self.project,"edit",1,tick=first["frame_film_end_tick"])
+
     def test_only_existing_host_can_authorize_native_tick_selected_preview(self):
         ledger=TaskLedger(self.home/"ledger",sampler=resource_sample)
         host=NativeFilmTimeWindowHost(
