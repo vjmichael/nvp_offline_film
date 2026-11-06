@@ -88,6 +88,12 @@ class RealSourceWindowNativeContracts(unittest.TestCase):
             verify_creator_action=lambda event, scope: False)
         check = reopened.verify_completed(job["task_id"])
         self.assertEqual(check["status"], "VERIFIED_UNAPPROVED_SOURCE_REVIEW")
+        plan_file = self.root / "jobs" / job["task_id"] / "window_plan.json"
+        original_plan = plan_file.read_bytes()
+        plan_file.write_bytes(b"{}")
+        with self.assertRaises(RuntimeError):
+            reopened.verify_completed(job["task_id"])
+        plan_file.write_bytes(original_plan)
         frame = self.root / "review" / "review_000000004.png"
         frame.write_bytes(b"altered")
         with self.assertRaises(RuntimeError):
