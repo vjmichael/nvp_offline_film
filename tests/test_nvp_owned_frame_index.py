@@ -89,6 +89,40 @@ class NativeOwnedIndexTests(unittest.TestCase):
         self.assertEqual([r["pts"] for r in result["frames"]],
                          [r["pts"] for r in wanted["frames"]])
 
+    def test_variable_frame_rate_with_nonzero_start_timestamp(self):
+        # No source frame number is inferred from target time * a fixed FPS.
+        # This is actual MPEG4 B-frame footage with missing presentation slots
+        # and a +3-second original timeline offset.
+        vfr=self.root/"vfr_offset.mov"
+        subprocess.run([
+            self.ffmpeg,"-hide_banner","-v","error","-nostdin",
+            "-f","lavfi","-i","testsrc2=size=160x90:rate=24",
+            "-frames:v","120",
+            "-vf","setpts=(N+floor(N/10))/(24*TB)+3/TB",
+            "-fps_mode","vfr","-c:v","mpeg4","-bf","2",
+            "-g","24","-q:v","4","-y",str(vfr),
+        ],check=True,timeout=60)
+        source_sha=hashlib.sha256(vfr.read_bytes()).hexdigest()
+        index=self.cache.ensure(self.pid,"vfr_take",source_sha,vfr)
+        self.assertEqual(index["frame_count"],120)
+        self.assertGreater(index["stream_start_pts"],0)
+        with sqlite3.connect(self.cache._path(
+                self.pid,"vfr_take",source_sha)) as db:
+            rows=db.execute("SELECT pts FROM frames ORDER BY ordinal").fetchall()
+        deltas=[rows[i+1][0]-rows[i][0] for i in range(len(rows)-1)]
+        self.assertGreater(len(set(deltas)),1)
+        self.assertTrue(all(delta>0 for delta in deltas))
+        for ordinal in (0,1,9,10,29,30,59,88,117,119):
+            dest=self.root/("vfr_output_%d"%ordinal)
+            dest.mkdir()
+            output=extract(
+                self.cache,ffmpeg=Path(self.ffmpeg),
+                project=self.pid,asset="vfr_take",source_sha=source_sha,
+                source=vfr,first_zero=ordinal,count=1,output_dir=dest)
+            self.assertEqual(output["frames"][0]["source_frame_zero"],ordinal)
+            self.assertEqual(output["frames"][0]["pts"],rows[ordinal][0])
+            self.assertFalse(output["source_sha_verified_this_operation"])
+
     def test_same_size_change_invalidates_stamp_but_not_provenance_claim(self):
         self.cache.ensure(self.pid, "camera_take", self.sha, self.movie)
         with self.movie.open("r+b") as stream:
