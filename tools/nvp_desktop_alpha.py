@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 from pathlib import Path
 import socket
 import sys
@@ -200,12 +201,37 @@ def create_trusted_camera_bridge(port):
 
 
 def run_visible_window_smoke():
-    """Exercise a real WebView2 desktop window; no headless substitute."""
+    """Installed real WebView2 + native OpenUSD source panel smoke.
+
+    Use a throwaway film workspace: tests must never publish a demo source
+    or mutate the creator's durable Projects directory.
+    """
     import webview
     from threading import Event
-    configure_home()
-    app=create_app()
-    server,worker,port,sock=serve(app)
+    test_home=Path(tempfile.mkdtemp(prefix="nvp-slate08b-installed-"))
+    old_home=os.environ.get("NVP_HOME")
+    os.environ["NVP_HOME"]=str(test_home)
+    try:
+        app=create_app()
+        from backend.nvp_api import studio
+        from backend.nvp_film_index import FilmIndex
+        from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        project=studio.create_project("SLATE-08B Window Acceptance",
+            "One native source camera scene")
+        OpenUSDSceneBridge(FilmIndex(studio)).publish(
+            project["id"],"smoke_scene",
+            prims=[
+                {"path":"/World/Actor","role":"actor",
+                 "position":[0,0,0]},
+                {"path":"/World/Camera","role":"camera",
+                 "position":[0,0,8]},
+            ],curves=[],native_schemas=True)
+        server,worker,port,sock=serve(app)
+    except BaseException:
+        if old_home is None: os.environ.pop("NVP_HOME",None)
+        else: os.environ["NVP_HOME"]=old_home
+        shutil.rmtree(test_home,ignore_errors=True)
+        raise
     loaded=Event()
     result={"passed":False}
     bridge=None
@@ -256,6 +282,41 @@ def run_visible_window_smoke():
                                         "Desktop native camera JS IPC failed origin/capability validation")
                                 time.sleep(.1)
                             if result["passed"]:
+                                # The browser must ALSO open a real project,
+                                # visit its camera tab, resolve the authored
+                                # source from SQLite and load native USD.
+                                result["passed"]=False
+                                window.evaluate_js(
+                                    "(() => {const b=[...document.querySelectorAll('aside button')]"
+                                    ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                end=time.monotonic()+20
+                                while time.monotonic()<end:
+                                    clicked=window.evaluate_js(
+                                        "(() => {const b=[...document.querySelectorAll('nav.tabs button')]"
+                                        ".find(x=>x.textContent.includes('Virtual camera'));"
+                                        "if(b){b.click();return true;}return false;})()")
+                                    if clicked is True:
+                                        break
+                                    time.sleep(.2)
+                                if clicked is not True:
+                                    raise RuntimeError(
+                                        "Installed camera tab did not appear in actual project")
+                                end=time.monotonic()+20
+                                while time.monotonic()<end:
+                                    panel=window.evaluate_js(
+                                        "Boolean(document.querySelector("
+                                        "'section[aria-label=\\\"Film source camera\\\"]') && "
+                                        "document.querySelector("
+                                        "'section[aria-label=\\\"Virtual Camera Workbench\\\"]') && "
+                                        "document.body.textContent.includes('smoke_scene'))")
+                                    if panel is True:
+                                        result["passed"]=True
+                                        break
+                                    time.sleep(.2)
+                                if not result["passed"]:
+                                    raise RuntimeError(
+                                        "Installed OpenUSD camera source did not reach real React workbench")
                                 break
                     time.sleep(.2)
                 if not result["passed"]:
@@ -272,9 +333,14 @@ def run_visible_window_smoke():
     finally:
         if bridge is not None:
             bridge._close()
-        server.should_exit=True
-        worker.join(timeout=12)
-        sock.close()
+        try:
+            server.should_exit=True
+            worker.join(timeout=12)
+            sock.close()
+        finally:
+            if old_home is None: os.environ.pop("NVP_HOME",None)
+            else: os.environ["NVP_HOME"]=old_home
+            shutil.rmtree(test_home,ignore_errors=True)
 
 
 def main(argv=None):
