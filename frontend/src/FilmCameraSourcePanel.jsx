@@ -16,10 +16,32 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
   const [error,setError]=useState('');
   const [truncated,setTruncated]=useState(false);
   const [native,setNative]=useState(nativeBridge);
+  const [nativeReady,setNativeReady]=useState(Boolean(nativeBridge));
   const [renderTicket,setRenderTicket]=useState(null);
   const [renderResult,setRenderResult]=useState(null);
   const [renderError,setRenderError]=useState('');
   const activeTicket=useRef(null);
+  useEffect(()=>{
+    let active=true;
+    if(!native){setNativeReady(false);return ()=>{active=false;};}
+    // Native WebView2 owns renderer discovery; ordinary React must never
+    // infer an executable path, permission receipt, or worker availability.
+    if(typeof native.camera_render_capabilities!=='function'){
+      setNativeReady(Boolean(nativeBridge));
+      return ()=>{active=false;};
+    }
+    setNativeReady(false);
+    Promise.resolve(native.camera_render_capabilities())
+      .then(result=>{
+        if(active)setNativeReady(
+          result?.format==='nvp.camera.desktop_capability.v1' &&
+          result?.native_window===true &&
+          result?.blender_discovered===true &&
+          result?.supports_approved_still===true);
+      })
+      .catch(()=>{if(active)setNativeReady(false);});
+    return ()=>{active=false;};
+  },[native,nativeBridge]);
   useEffect(()=>{
     if(nativeBridge){setNative(nativeBridge);return;}
     function installedBridge(){
@@ -132,7 +154,7 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
   },[native,renderTicket]);
 
   async function requestNativeStill(payload){
-    if(!native||renderTicket)return;
+    if(!native||!nativeReady||renderTicket)return;
     setRenderError('');setRenderResult({status:'QUEUED'});
     try{
       const result=await native.request_camera_still({project_id:projectId,...payload});
@@ -230,14 +252,16 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
     {renderError&&<p role="alert">{renderError}</p>}
     {scene&&<CameraLensWorkbench key={scene.scene_id+':'+cameraPath}
       sceneSnapshot={snapshot}
-      onRequestRenderedPreview={native?requestNativeStill:null}
-      onCancelRenderedPreview={native?cancelNativeStill:null}
+      onRequestRenderedPreview={nativeReady?requestNativeStill:null}
+      onCancelRenderedPreview={nativeReady?cancelNativeStill:null}
       renderBusy={Boolean(renderTicket)}
       renderResult={renderResult}/>}
     {scene&&<p className="fineprint">
       The instant projection uses camera-space markers, not actual rendered
-      character pixels. {native
+      character pixels. {nativeReady
         ? 'Verified native stills require a separate desktop confirmation. Saving an approved lens preset and applying optics to a frozen shot are not wired yet.'
-        : 'Native Blender still rendering requires the installed desktop application. Preset and shot approval are not exposed to ordinary browsers.'}
+        : native
+          ? 'A trusted native Blender executable has not been discovered. Real stills are disabled; source scene and lens controls remain available.'
+          : 'Native Blender still rendering requires the installed desktop application. Preset and shot approval are not exposed to ordinary browsers.'}
     </p>}
   </section>;
