@@ -72,6 +72,8 @@ class Host:
         self.runner_gate=threading.Event()
         self.runner_gate.set()
         self.cache=Cache(self)
+        self.supervisor=type("Supervisor",(object,),{
+            "cancel":lambda _,job_id: True})()
         self.requests=0
         self.replays_rejected=False
     def request_camera_workbench(self,pid,scene_id,revision,*,
@@ -222,6 +224,27 @@ class TrustedDesktopCameraContract(unittest.TestCase):
         self.host.runner_gate.set()
         result=self.bridge.poll_camera_still(ticket["ticket_id"])
         self.assertNotEqual(result["status"],"READY")
+
+    def test_missing_cache_after_verified_hit_requires_new_authorization(self):
+        ticket=self.bridge.request_camera_still(self.payload())
+        for _ in range(150):
+            if self.host.ready: break
+            time.sleep(.01)
+        self.assertTrue(self.host.ready)
+        # The GUI must never substitute an unapproved artifact once
+        # the verified READY record becomes unavailable or evicted.
+        self.host.cache.lookup=lambda project_id,key: None
+        self.host.cache._job=lambda job_id: {"state":"READY"}
+        self.assertEqual(
+            self.bridge.poll_camera_still(ticket["ticket_id"])["status"],
+            "RECOVERY_REQUIRED")
+
+    def test_desktop_shutdown_rejects_new_render_requests(self):
+        ticket=self.bridge.request_camera_still(self.payload())
+        self.assertEqual(ticket["status"],"QUEUED")
+        self.bridge._close()
+        with self.assertRaises(PermissionError):
+            self.bridge.request_camera_still(self.payload())
 
     def test_media_tamper_does_not_escape_native_audit(self):
         ticket=self.bridge.request_camera_still(self.payload())
