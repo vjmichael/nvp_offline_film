@@ -6,6 +6,7 @@ import React,{useEffect,useMemo,useRef,useState} from 'react';
 const FORMAT='nvp.index_time05.editor_source_read.v1';
 import FilmTimeAssemblyPanel from './FilmTimeAssemblyPanel.jsx';
 import FilmTimePlaybackPanel from './FilmTimePlaybackPanel.jsx';
+import SynchronizedAssemblyReview from './SynchronizedAssemblyReview.jsx';
 import {filmTimeClock} from './filmTimeClock.js';
 export {filmTimeClock} from './filmTimeClock.js';
 
@@ -398,6 +399,15 @@ export default function FilmTimeIndexPanel({projectId,api,nativeBridge=null}){
             Source stamp checked, original bytes not SHA-reverified.
             No decoder launched, and no picture approved.</p>
         </section>}
+      {nativeReady && typeof native?.start_synchronized_av_review==='function' &&
+        typeof native?.poll_synchronized_av_review==='function' &&
+        typeof native?.get_synchronized_av_chunk==='function' &&
+        typeof native?.stop_synchronized_av_review==='function' &&
+        <SynchronizedAssemblyReview
+          key={'av:'+selected.edit_id+':'+selected.revision}
+          projectId={projectId} edit={selected} clips={clips}
+          native={native} onInspect={seekAt}/>
+      }
       {nativeReady && typeof native?.start_assembly_review==='function' &&
         typeof native?.poll_assembly_review==='function' &&
         typeof native?.get_assembly_review_frame==='function' &&
