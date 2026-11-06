@@ -206,6 +206,7 @@ export default function FilmTimePlaybackPanel({
            reply.image_data_url.length>MAX_IMAGE_DATA_URL)
           throw new Error('Source frame or PNG receipt disagreed with the frozen assembly.');
         setPicture(reply);
+        setSeekTick(entry.film_time_tick);
       }catch(e){
         if(live){setError(e.message);setPlaying(false);setPicture(null);}
       }
@@ -217,29 +218,39 @@ export default function FilmTimePlaybackPanel({
 
   useEffect(()=>{
     if(!playing||!picture||picture.index!==cursor||
-       !frames[cursor]||blank)return;
+       !frames[cursor])return;
     const entry=frames[cursor];
     const next=frames[cursor+1];
     if(!next&&!finished)return;
-    let rest=null;
-    const hold=toMilliseconds(
-      BigInt(entry.film_end_tick)-BigInt(entry.film_time_tick));
-    const timer=setTimeout(()=>{
-      if(next){
-        const gap=BigInt(next.film_time_tick)-BigInt(entry.film_end_tick);
-        if(gap>0n){
-          setBlank(true);
-          rest=setTimeout(()=>{setBlank(false);setCursor(cursor+1);},
-            toMilliseconds(gap));
+    let timer;
+    if(blank){
+      // A genuine [source_end,next_source_start) gap is black. It owns
+      // its own timer; switching to blank MUST NOT clear the only timer
+      // that advances to the next indexed original clip.
+      if(!next){setBlank(false);return;}
+      const gap=BigInt(next.film_time_tick)-BigInt(entry.film_end_tick);
+      timer=setTimeout(()=>{
+        setBlank(false);setCursor(cursor+1);
+      },toMilliseconds(gap));
+    }else{
+      const hold=toMilliseconds(
+        BigInt(entry.film_end_tick)-BigInt(entry.film_time_tick));
+      timer=setTimeout(()=>{
+        if(next){
+          const gap=BigInt(next.film_time_tick)-BigInt(entry.film_end_tick);
+          if(gap>0n){
+            setSeekTick(entry.film_end_tick);
+            setBlank(true);
+          }else{
+            setCursor(cursor+1);
+          }
         }else{
-          setCursor(cursor+1);
+          setPlaying(false);
+          setStatus('Review section ended. Continue from the next Film Time position.');
         }
-      }else{
-        setPlaying(false);
-        setStatus('Review section ended. Continue from the next Film Time position.');
-      }
-    },hold);
-    return ()=>{clearTimeout(timer);if(rest!==null)clearTimeout(rest);};
+      },hold);
+    }
+    return ()=>clearTimeout(timer);
   },[picture,playing,blank,cursor,frames,finished]);
 
   async function stop(){
@@ -284,7 +295,8 @@ export default function FilmTimePlaybackPanel({
   }
 
   const current=frames[cursor];
-  const canContinue=current && finished &&
+  const canContinue=current && finished && !playing &&
+    cursor===frames.length-1 &&
     BigInt(current.film_end_tick)<BigInt(edit.duration_tick);
   return <section className="card" aria-label="Non-destructive footage playback">
     <h3>Review your film assembly</h3>
@@ -324,8 +336,10 @@ export default function FilmTimePlaybackPanel({
       <button onClick={()=>cut(-1)}>Previous cut</button>
       <button onClick={()=>cut(1)}>Next cut</button>
       <button onClick={()=>navigate(5)}>Forward 5s</button>
-      <button onClick={()=>{setPlaying(false);onInspect?.(seekTick);}}>
-        Inspect playhead</button>
+      <button onClick={()=>{
+        movePlayhead(seekTick);
+        onInspect?.(seekTick);
+      }}>Inspect playhead</button>
     </div>
     <div className="actions" style={{display:'flex',flexWrap:'wrap',gap:'0.35rem'}}>
       <button disabled={pending} onClick={start}>
