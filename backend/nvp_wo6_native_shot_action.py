@@ -277,6 +277,11 @@ class NativeShotActionHost:
                     digest_file(self.worker) != spec["worker_sha256"]):
                 raise PermissionError("Native approved shot bytes/tool pin changed")
             _check_shot_source(self.index, spec)
+            if os.name=="nt" and not attest_windows_job_stopped(
+                    folder,task_id=task_id,
+                    spec_sha256=hashlib.sha256(raw).hexdigest(),
+                    owner=self.owner):
+                raise PermissionError("Native Windows Job Object already owns task")
             with (folder / "stdout.log").open("wb") as out, (
                     folder / "stderr.log").open("wb") as err:
                 worker = launch_contained(
