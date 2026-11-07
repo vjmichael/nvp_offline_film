@@ -85,6 +85,24 @@ class WO2OriginalTileAuthority(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.controller.read_original_texture_tile(ticket,self.request)
 
+    def test_repeated_tiles_reuse_native_session_verified_image(self):
+        from unittest.mock import patch
+        from backend.nvp_native_usd_texture import verified_texture
+        ticket=self._begin()
+        with patch(
+            "backend.nvp_native_usd_texture.verified_texture",
+            wraps=verified_texture) as checks:
+            first=self.controller.read_original_texture_tile(
+                ticket,{**self.request,"tile_x":0,"tile_y":0})
+            first_reads=checks.call_count
+            second=self.controller.read_original_texture_tile(
+                ticket,self.request)
+            self.assertEqual(checks.call_count,first_reads)
+            self.assertGreaterEqual(first_reads,1)
+        self.assertNotEqual(first["tile_sha256"],second["tile_sha256"])
+        self.controller.stop(ticket)
+        self.assertIsNone(self.controller._active)
+
     def test_imported_but_unbound_texture_cannot_be_streamed(self):
         ticket=self._begin()
         other=self.assets.publish(
