@@ -11,6 +11,11 @@ from backend.nvp_native_cinema_master_gate import (
 
 
 class NativeCinemaReadinessTests(unittest.TestCase):
+    # Borrow only the exact source builder and tiny deterministic PNG
+    # renderer, not the prior TestCase's obsolete inherited test methods.
+    create=fixture.NativeDataFirstOutputTests.create
+    _render=fixture.NativeDataFirstOutputTests._render
+
     def setUp(self):
         fixture.NativeDataFirstOutputTests.setUp(self)
         self.take_sha=fixture.NativeDataFirstOutputTests.create(self)
