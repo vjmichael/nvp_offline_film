@@ -135,7 +135,8 @@ def run_installed_data_av_smoke():
                 preview_material={
                     "base_color_rgb":[.25,.5,.75],
                     "roughness":.35,"metallic":.3})
-            scene.publish(pid,"smoke_color_world",prims=[
+            color_scene=OpenUSDSceneBridge(index)
+            color_scene.publish(pid,"smoke_color_world",prims=[
                 {"path":"/World/ColorActor","role":"actor",
                  "position":[0,0,0]},
                 {"path":"/World/ColorCamera","role":"camera",
