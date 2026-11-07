@@ -9,6 +9,7 @@ NOT a complete original film viewed in a WebView/physical cinema.
 from __future__ import annotations
 from hashlib import sha256
 import json
+from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import tempfile
@@ -28,6 +29,20 @@ from backend.nvp_wo4_pcm_master import CHANNEL_LAYOUTS
 FORMAT="nvp.wo5.installed_real_codec_sustained_throughput.v1"
 FRAME_SAMPLES=2000
 MAX_FRAMES_PER_BATCH=4
+MAX_DECODE_WORKERS=4
+
+def _native_codec_stage(label):
+    path=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+    if not path or type(label) is not str or len(label)>96:
+        return
+    target=Path(path)
+    if not target.is_absolute() or target.is_symlink() or not target.parent.is_dir():
+        return
+    with target.open("a",encoding="utf8") as log:
+        log.write("WO5_CODEC_STAGE="+label+"\\n")
+        log.flush()
+        os.fsync(log.fileno())
+
 
 def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                                  min_fps=24):
@@ -74,12 +89,22 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
         "original_30_minute_film_watched":False,
         "external_projection_passed":False,
     }
+    # Realtime 24fps is an actual release requirement; the bounded probe
+    # must not hide a native subprocess stall until the CI outer 180s kill.
+    max_wall_seconds=max(60.,min(120.,float(seconds)*3.))
+    deadline=time.monotonic()+max_wall_seconds
+    native_failure=None
     tracemalloc.start()
     decoded=0
     bytes_output=0
     start=time.monotonic()
     reel_index=0
+    _native_codec_stage("sustained_real_codec_probe_start")
     while time.monotonic()-start<seconds:
+        _native_codec_stage(f"native_mxf_batch_begin_frames_{decoded}")
+        if time.monotonic()>=deadline:
+            native_failure="SUSTAINED_PROBE_EXCEEDED_WALL_BUDGET"
+            break
         pic,snd,nframes=reels[reel_index]
         # The same real six-frame sample is recycled to probe sustained
         # decoder work; this IS NOT a varied original-film acceptance.
@@ -89,10 +114,10 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
             cancel=lambda:False
             run_supervised_codec(unwrap,["-f","0","-d",str(n),
                 "-b",str(16*1024*1024),str(pic),"p_"],
-                workdir=work,check_cancel=cancel,timeout=240)
+                workdir=work,check_cancel=cancel,timeout=12)
             run_supervised_codec(unwrap,["-f","0","-d",str(n),
                 str(snd),"snd"],workdir=work,
-                check_cancel=cancel,timeout=240)
+                check_cancel=cancel,timeout=12)
             with wave.open(str(work/"snd"),"rb") as wav:
                 channels=wav.getnchannels()
                 if (channels!=2 or wav.getsampwidth()!=3 or
@@ -102,17 +127,21 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                 audio=wav.readframes(n*FRAME_SAMPLES)
             if len(audio)!=n*FRAME_SAMPLES*channels*3:
                 raise RuntimeError("Native decoded PCM24 samples missing")
-            for frame in range(n):
+            # Every picture is independently decoded from the real MXF
+            # codestream. Four distinct pinned OpenJPEG worker processes can
+            # overlap on native Windows runners; each owns an OS Job Object.
+            # No frame cache, fabricated throughput or reduced picture count.
+            def decode_original_published_frame(frame):
                 j2c=work/f"p_{frame:06d}.j2c"
                 if j2c.is_symlink() or not j2c.is_file():
                     raise RuntimeError("Missing real published native MXF picture")
                 j2k=j2c.read_bytes()
                 inspect_j2k_header(j2k,profile)
-                out=f"review_{frame:06d}.ppm"
+                output=f"review_{frame:06d}.ppm"
                 run_supervised_codec(decode,
-                    ["-i",j2c.name,"-o",out],
-                    workdir=work,check_cancel=cancel,timeout=240)
-                pixels=_ppm_header(work/out,
+                    ["-i",j2c.name,"-o",output],
+                    workdir=work,check_cancel=cancel,timeout=12)
+                pixels=_ppm_header(work/output,
                     width=PROFILES[profile][0],
                     height=PROFILES[profile][1])
                 png,_=_display_png(pixels,profile)
@@ -122,28 +151,45 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                     CHANNEL_LAYOUTS["stereo"])
                 if len(stereo)!=FRAME_SAMPLES*2*2:
                     raise RuntimeError("Real sound monitor output lost samples")
-                bytes_output+=len(png)+len(stereo)
-                decoded+=1
+                return len(png)+len(stereo)
+            with ThreadPoolExecutor(
+                    max_workers=min(MAX_DECODE_WORKERS,n)) as pool:
+                for actual_bytes in pool.map(
+                        decode_original_published_frame,range(n)):
+                    bytes_output+=actual_bytes
+                    decoded+=1
+        _native_codec_stage(f"native_mxf_batch_verified_frames_{decoded}")
         reel_index=(reel_index+1)%len(reels)
     elapsed=time.monotonic()-start
+    complete=(elapsed>=seconds and native_failure is None)
     _,peak=tracemalloc.get_traced_memory()
     tracemalloc.stop()
     fps=decoded/elapsed
     report.update({
         "status":("THROUGHPUT_TARGET_MET_NOT_GUI_ACCEPTED" if
-                  fps>=min_fps else "THROUGHPUT_BELOW_TARGET"),
+                  complete and fps>=min_fps else
+                  "THROUGHPUT_INCOMPLETE_NO_ACCEPTANCE" if not complete else
+                  "THROUGHPUT_BELOW_TARGET"),
         "repeated_original_sample":True,
         "real_native_picture_and_pcm_windows":decoded,
         "real_codec_elapsed_seconds":round(elapsed,3),
         "picture_decode_frames_per_second":round(fps,3),
         "target_frames_per_second":min_fps,
-        "throughput_target_met":fps>=min_fps,
+        "throughput_target_met":bool(complete and fps>=min_fps),
+        "full_wall_window_measured":bool(complete),
+        "probe_wall_budget_seconds":max_wall_seconds,
+        "native_failure":native_failure,
+        "native_parallel_openjpeg_processes":MAX_DECODE_WORKERS,
+        "all_counted_pictures_independently_decoded":True,
+        "cache_hits_counted_as_codec_throughput":False,
         "decoded_review_bytes":bytes_output,
         "python_tracemalloc_peak_bytes":peak,
         "real_device_av_sync_verified":False,
         "installed_visible_webview_playback_verified":False,
         "production_film_accepted":False,
     })
+    _native_codec_stage(
+        f"throughput_{report['status']}_frames_{decoded}")
     return report
 
 def smoke_from_installed_bundle(bundle_root):
