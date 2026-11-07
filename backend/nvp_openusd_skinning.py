@@ -29,7 +29,7 @@ def _float(value):
 
 def normalize_skin(skin,joint_count):
     required={"points","faces","joint_indices","joint_weights","display_color"}
-    optional={"blend_shapes","preview_material","mesh_uvs"}
+    optional={"blend_shapes","preview_material","mesh_uvs","texture"}
     if type(skin) is not dict or not required<=set(skin) or not set(skin)<=required|optional:
         raise ValueError("Skin requires source topology, influence fields and typed optional appearance")
     points=skin["points"]
@@ -111,6 +111,24 @@ def normalize_skin(skin,joint_count):
             any(type(x) not in (int,float) or not math.isfinite(x) or
                 abs(x)>1024 for x in uv) for uv in authored_uv)):
         raise ValueError("Actor UV primvar must match original skinned vertices")
+    texture=skin.get("texture")
+    if texture is not None:
+        from backend.nvp_native_usd_texture import FORMAT as TEXTURE_FORMAT,PREFIX
+        if (authored_uv is None or type(texture) is not dict or
+            set(texture)!={"format","sha256","width","height",
+                "color_space","wrap","usd_asset_path","source_modified"} or
+            texture["format"]!=TEXTURE_FORMAT or
+            type(texture["sha256"]) is not str or
+            not re.fullmatch(r"[0-9a-f]{64}",texture["sha256"]) or
+            texture["usd_asset_path"]!=PREFIX+texture["sha256"] or
+            texture["color_space"]!="sRGB" or
+            texture["wrap"]!="repeat" or
+            texture["source_modified"] is not False or
+            type(texture["width"]) is not int or
+            type(texture["height"]) is not int or
+            not 1<=texture["width"]<=512 or
+            not 1<=texture["height"]<=512):
+            raise ValueError("Skinned PNG texture must reference a verified source blob")
     material=skin.get("preview_material",{"roughness":0.8,"metallic":0.05})
     if (type(material) is not dict or
         set(material)!={"roughness","metallic"} or
@@ -122,6 +140,7 @@ def normalize_skin(skin,joint_count):
             "blend_shapes":bound_shapes,
             "mesh_uvs":([[float(x) for x in uv] for uv in authored_uv]
                         if authored_uv is not None else None),
+            "texture":texture,
             "preview_material":{k:float(v) for k,v in material.items()}}
 
 
@@ -163,6 +182,21 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
     shader.CreateIdAttr("UsdPreviewSurface")
     shader.CreateInput("diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
         Gf.Vec3f(*bound["display_color"]))
+    if bound["texture"] is not None:
+        tex=UsdShade.Shader.Define(stage,material_path+"/Texture")
+        tex.CreateIdAttr("UsdUVTexture")
+        tex.CreateInput("file",Sdf.ValueTypeNames.Asset).Set(
+            Sdf.AssetPath(bound["texture"]["usd_asset_path"]))
+        tex.CreateInput("sourceColorSpace",Sdf.ValueTypeNames.Token).Set("sRGB")
+        tex.CreateInput("wrapS",Sdf.ValueTypeNames.Token).Set("repeat")
+        tex.CreateInput("wrapT",Sdf.ValueTypeNames.Token).Set("repeat")
+        st=UsdShade.Shader.Define(stage,material_path+"/Primvar")
+        st.CreateIdAttr("UsdPrimvarReader_float2")
+        st.CreateInput("varname",Sdf.ValueTypeNames.Token).Set("st")
+        tex.CreateInput("st",Sdf.ValueTypeNames.Float2).ConnectToSource(
+            st.CreateOutput("result",Sdf.ValueTypeNames.Float2))
+        shader.GetInput("diffuseColor").ConnectToSource(
+            tex.CreateOutput("rgb",Sdf.ValueTypeNames.Float3))
     shader.CreateInput("roughness",Sdf.ValueTypeNames.Float).Set(
         bound["preview_material"]["roughness"])
     shader.CreateInput("metallic",Sdf.ValueTypeNames.Float).Set(
@@ -192,6 +226,7 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         "source_vertex_count":len(bound["points"]),
         "source_face_count":len(bound["faces"]),
         "source_original_uvs_authored":bound["mesh_uvs"] is not None,
+        "source_original_png_texture_authored":bound["texture"] is not None,
         "skinning_method":"classicLinear",
         "geom_bind_transform":"identity",
         "max_influences":MAX_INFLUENCES,
