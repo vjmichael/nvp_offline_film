@@ -59,6 +59,34 @@ describe('WO2 Take-scoped native mip tile stream',()=>{
       });
   });
 
+  it('uses the distinct approved rig-layer IPC instead of mesh asset authority',async()=>{
+    const drawn=context();
+    vi.spyOn(HTMLCanvasElement.prototype,'getContext')
+      .mockReturnValue(drawn);
+    globalThis.Image=class{
+      width=2;height=2;
+      set src(value){queueMicrotask(()=>this.onload?.());}
+    };
+    const rig={actor_path:'/World/Actor',
+      skeleton_layer_sha256:'e'.repeat(64)};
+    const bridge={data_av_original_rig_texture_tile:vi.fn(async()=>nativeTile({
+      actor_path:rig.actor_path,
+      skeleton_layer_sha256:rig.skeleton_layer_sha256,
+    }))};
+    const result=await inspectOriginalTextureTiles({
+      native:bridge,sessionId:'s'.repeat(24),
+      rig,texture,takeSha256,
+    });
+    expect(result.source_rig_binding).toEqual(rig);
+    expect(bridge.data_av_original_rig_texture_tile)
+      .toHaveBeenCalledWith('s'.repeat(24),{
+        actor_path:'/World/Actor',
+        skeleton_layer_sha256:rig.skeleton_layer_sha256,
+        texture_sha256:texture.sha256,
+        mip_level:0,tile_x:0,tile_y:0,
+      });
+  });
+
   it('rejects forged original SHA, unbounded tile grid and cancellation',async()=>{
     const drawn=context();
     vi.spyOn(HTMLCanvasElement.prototype,'getContext')
