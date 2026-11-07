@@ -629,10 +629,13 @@ def main(argv=None):
                         help="Probe real installed licensed native picture MXF/J2K and mastered PCM")
     parser.add_argument("--smoke-visible-finished-av",action="store_true",
                         help="Verify all actual published DCP frames and sound play in visible installed WebView2")
+    parser.add_argument("--smoke-wo6-native-actions",action="store_true",
+                        help="Installed first-party WO6 native child/FilmIndex source-only acceptance")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_data_av,
-            args.smoke_finished_playback,args.smoke_visible_finished_av))>1:
+            args.smoke_finished_playback,args.smoke_visible_finished_av,
+            args.smoke_wo6_native_actions))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
@@ -647,6 +650,12 @@ def main(argv=None):
     if args.smoke_visible_finished_av:
         from tools.nvp_wo5_installed_visible import run_installed_visible_finished_smoke
         return run_installed_visible_finished_smoke(bundle_root())
+    if args.smoke_wo6_native_actions:
+        from tools.nvp_wo6_installed_action_smoke import run_wo6_installed_native_smoke
+        evidence=run_wo6_installed_native_smoke()
+        if evidence.get("status")!="INSTALLED_NATIVE_WORKER_SOURCES_VERIFIED_NO_FILM":
+            raise RuntimeError("Installed WO6 native source operations were not verified")
+        return 0
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
             "create" if args.smoke_create else "reopen")
