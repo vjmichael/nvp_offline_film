@@ -51,6 +51,12 @@ def author_parameter_layer(prim_roles, channels, *, native_schemas=False):
     _, Sdf, Usd, _ = _usd()
     layer = Sdf.Layer.CreateAnonymous("nvp_parameters.usda")
     stage = Usd.Stage.Open(layer)
+    # USD sublayer time samples are RESCALED to the composing root's
+    # timeCodesPerSecond. Default 24 tps would shift a 1-second key near
+    # source tick 24 instead of 7,056,000,000. Match the authoritative
+    # integer Film Time rate before authoring any animated property.
+    from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+    stage.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
     seen = set()
     descriptors = []
     for entry in channels:
