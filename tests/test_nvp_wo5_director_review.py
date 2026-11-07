@@ -92,7 +92,7 @@ class IntentCustodyTests(unittest.TestCase):
         broken[0]["expected_sound"]=""
         with self.assertRaises(ValueError):
             self.intent(shots=broken)
-        with self.assertRaises(PermissionError):
+        with self.assertRaises(ValueError):
             validate_director_shots(planned_shots(),100*FRAME_TICKS+1)
 
     def test_human_report_must_follow_exact_planned_shots(self):
