@@ -9,12 +9,12 @@ from backend.nvp_data_av_visual import visual_state
 from backend.nvp_openusd_time_state import OpenUSDTimeState
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
 
-from test_nvp_slate07_skinned_camera import RealCharacterAndLens
+import test_nvp_slate07_skinned_camera as fixture
 
 
 class RealNativeSkinnedWorld(unittest.TestCase):
     def setUp(self):
-        RealCharacterAndLens.setUp(self)
+        fixture.RealCharacterAndLens.setUp(self)
         self.state=OpenUSDTimeState(self.index)
 
     def snapshot(self,tick):
@@ -49,6 +49,28 @@ class RealNativeSkinnedWorld(unittest.TestCase):
             self.index.read_revision(self.pid,"world",1)["document_sha256"],
             self.original_scene_sha)
         self.assertFalse(view1["image_samples_rendered"])
+
+    def test_animated_usd_rig_without_bound_mesh_is_not_a_character_sphere(self):
+        # A real authored skeleton without source skin geometry must not be
+        # misrepresented as an actor body in the live Three.js viewport.
+        bare={k:v for k,v in self.rigs[0].items() if k!="skin"}
+        self.scene.publish(self.pid,"unbound_rig_scene",prims=[
+            {"path":"/World/Actor","role":"actor","position":[0,0,0]},
+            {"path":"/World/Camera","role":"camera","position":[0,0,8]},
+            {"path":"/World/Key","role":"light","position":[0,5,5]},
+        ],curves=[],skeletal_rigs=[bare])
+        snapshot=self.state.evaluate(
+            self.pid,"unbound_rig_scene",1,"acting",1,tick=T)
+        view=visual_state(self.index,self.pid,snapshot,
+                          scene_id="unbound_rig_scene",scene_revision=1)
+        actor=next(o for o in view["objects"] if o["path"]=="/World/Actor")
+        self.assertEqual(actor["shape"],"missing_rig_geometry")
+        self.assertTrue(actor["source_rigged_actor"])
+        self.assertFalse(actor["gizmo_only"])
+        self.assertEqual(actor["native_geometry_status"],
+                         "MISSING_BOUND_USD_MESH")
+        self.assertIsNone(actor["mesh_points"])
+        self.assertFalse(view["image_samples_rendered"])
 
     def test_live_skin_refuses_scene_rebind_and_missing_scope(self):
         snap=self.snapshot(T)
