@@ -209,7 +209,7 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                 "hardware_genlock":False,
                 "source_modified":False}
 
-    def _stop(self):
+    def _stop(self,*,require_complete=True):
         # Stop callback producers FIRST, then readers; never put a sentinel
         # into a queue while a native device can still enqueue original PCM.
         faults=[]
@@ -233,12 +233,14 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             if worker.is_alive():
                 faults.append(RuntimeError("Source PCM writer survived shutdown"))
         if faults:raise RuntimeError("Native original recording shutdown unproven") from faults[0]
-        if (any(self.errors) or
+        if require_complete and (
+            any(self.errors) or
             any(self.written[i]!=self.enqueued[i] for i in range(2))):
             raise RuntimeError("Independent microphone PCM loss or failed OS callback")
-        for i,path in enumerate(self.spools):
-            if path.stat().st_size!=self.written[i]*2 or self.written[i]<1:
-                raise RuntimeError("Independent original audio spool incomplete")
+        if require_complete:
+            for i,path in enumerate(self.spools):
+                if path.stat().st_size!=self.written[i]*2 or self.written[i]<1:
+                    raise RuntimeError("Independent original audio spool incomplete")
 
     def _spool_sha(self,path):
         digest=sha256()
@@ -356,7 +358,7 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             return {"status":self._state,
                     "take_created":self._state=="FROZEN"}
         self._state="CANCELLING"
-        try:self._stop()
+        try:self._stop(require_complete=False)
         except Exception:
             self._state="FAILED"
             raise
