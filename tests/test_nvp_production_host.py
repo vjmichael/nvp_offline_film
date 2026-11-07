@@ -5,6 +5,10 @@ that Lu's future packaged DLC host/installer already exposes the interface.
 """
 from hashlib import sha256
 from pathlib import Path
+import os
+import signal
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import time
 import unittest
@@ -75,6 +79,46 @@ class NativeProductionHostTests(unittest.TestCase):
             reopened.reconnect_read_only(
                 self.index,self.other,authorize=lambda _:False)
         self.assertFalse(self.host.journal.status(self.job)["cancel_requested"])
+
+    def test_supervisor_survives_actual_short_lived_ui_parent_exit(self):
+        # A short-lived GUI-like native process launches the background host
+        # and exits. A second independent host opens the existing journal.
+        script=(
+            "import os,sys;"
+            "from backend.nvp_production_host import NativeProductionHost;"
+            "host=NativeProductionHost(sys.argv[1]);"
+            "receipt=host.ensure_running(startup_seconds=15);"
+            "assert receipt['supervisor_running'];"
+            "print(receipt['pid'],flush=True);"
+            "os._exit(0)"
+        )
+        root=Path(__file__).resolve().parents[1]
+        parent=subprocess.run(
+            [sys.executable,"-c",script,str(self.host.root)],
+            cwd=str(root),capture_output=True,text=True,
+            stdin=subprocess.DEVNULL,timeout=24)
+        self.assertEqual(parent.returncode,0,parent.stderr[-600:])
+        pid=int(parent.stdout.strip().splitlines()[-1])
+        try:
+            reopened=NativeProductionHost(self.host.root)
+            deadline=time.monotonic()+10
+            while time.monotonic()<deadline:
+                if (reopened.is_running() and
+                        reopened.journal.status(self.job)["state"]=="VERIFY_COMPLETE"):
+                    break
+                time.sleep(.05)
+            self.assertTrue(reopened.is_running())
+            self.assertEqual(reopened.journal.status(self.job)["state"],
+                             "VERIFY_COMPLETE")
+            self.assertFalse(reopened.journal.status(self.job)["cancel_requested"])
+            self.assertEqual(reopened.reconnect_read_only(
+                self.index,self.pid,authorize=lambda _:True)["jobs"][0]["status"],
+                "VERIFY_COMPLETE")
+        finally:
+            # The test's detached supervisor belongs to this exact temporary
+            # job, not to any installed user service.
+            try:os.kill(pid,signal.SIGTERM)
+            except ProcessLookupError:pass
 
     def test_manual_lock_or_reopen_never_requests_worker_cancellation(self):
         self.host.ensure_running()
