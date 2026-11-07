@@ -487,7 +487,7 @@ class TrustedDesktopCameraBridge:
                     +"Frozen source SHA-256: "+scope["scene_sha256"]+"\\n"
                     +"Lighting, shadows, reflections, camera, UV and material "
                     +"decisions will be versioned. Original Takes and PNGs "
-                    +"will not be modified."))
+                    +"will not be modified. No FFmpeg is required."))
 
     def wo2_presentation_look_catalog(self,request):
         """Exact-scene approved decisions, never global model or API inputs."""
