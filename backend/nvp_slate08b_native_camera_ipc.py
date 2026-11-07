@@ -449,6 +449,58 @@ class TrustedDesktopCameraBridge:
             return {"format":"nvp.native.texture_mesh_catalog.v1",
                     "assets":result,"original_modified":False}
 
+    def wo2_propose_presentation_look(self,request):
+        """Generate an untrusted, non-persistent assistant-facing film look."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","scene_id","scene_revision","scene_sha256",
+                "intent"}:
+                raise PermissionError("WO2 proposals require exact USD scene scope")
+            from backend.nvp_wo2_presentation_look import (
+                OriginalSceneLook,propose_look)
+            source=OriginalSceneLook(self.index)._source(
+                request["project_id"],request["scene_id"],
+                request["scene_revision"],request["scene_sha256"])
+            return propose_look(request["intent"],source["data"]["prim_roles"])
+
+    def wo2_approve_presentation_look(self,request):
+        """OS-approved, durable presentation revision. No Take source edits."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","look_id","scene_id","scene_revision",
+                "scene_sha256","look","expected_revision"}:
+                raise PermissionError("WO2 look publication needs exact source binding")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).publish(
+                request["project_id"],request["look_id"],
+                scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                scene_sha256=request["scene_sha256"],
+                look=request["look"],
+                expected_revision=request["expected_revision"],
+                approve=lambda scope:self._ask(
+                    "Publish NEW non-destructive OpenUSD presentation look?\\n"
+                    +"Scene: "+scope["scene_id"]+" rev "
+                    +str(scope["scene_revision"])+"\\n"
+                    +"Frozen source SHA-256: "+scope["scene_sha256"]+"\\n"
+                    +"Lighting, shadows, reflections, camera, UV and material "
+                    +"decisions will be versioned. Original Takes and PNGs "
+                    +"will not be modified."))
+
+    def wo2_read_presentation_look(self,request):
+        """Read only a version pinned to the displayed OpenUSD source."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","look_id","revision","scene_sha256"}:
+                raise PermissionError("WO2 source-scoped presentation reader required")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).open(
+                request["project_id"],request["look_id"],
+                request["revision"],scene_sha256=request["scene_sha256"])
+
     def data_av_apply_original_texture(self,request):
         """Create a NEW immutable mesh revision from an approved texture SHA."""
         with self._lock:
