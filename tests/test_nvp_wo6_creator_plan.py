@@ -13,7 +13,7 @@ import unittest
 
 from backend.nvp_ai_read_host import NativeAiReadHost, TrustedReadScope
 from backend.nvp_film_index import FilmIndex
-from backend.nvp_openusd_take import FORMAT as USD_TAKE_FORMAT
+from backend.nvp_wo6_creator_plan import USD_TAKE_FORMAT
 from backend.nvp_studio import Studio
 from backend.nvp_wo6_creator_plan import FORMAT, plan_source_retake
 
