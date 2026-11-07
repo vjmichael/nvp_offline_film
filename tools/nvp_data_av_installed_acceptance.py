@@ -232,6 +232,17 @@ def run_installed_data_av_smoke():
             buffer=BytesIO()
             im.save(buffer,format="PNG")
             original_png=buffer.getvalue()
+            def original_pbr_png(rgb):
+                stream=BytesIO()
+                Image.new("RGB",(2,2),rgb).save(stream,format="PNG")
+                return stream.getvalue()
+            source_channels={
+                "roughness":original_pbr_png((90,90,90)),
+                "metallic":original_pbr_png((120,120,120)),
+                "emission":original_pbr_png((12,40,100)),
+                "normal":original_pbr_png((128,128,255)),
+                "opacity":original_pbr_png((255,255,255)),
+            }
             asset=OpenUSDAssetRegistry(index).publish(
                 pid,"smoke_original_texture_mesh",shape="mesh",size_m=2.,
                 points=[[-1.,-1.,0.],[1.,-1.,0.],
@@ -244,7 +255,8 @@ def run_installed_data_av_smoke():
                 material_slots=[{
                     "faces":[1],"base_color_rgb":[.2,.7,.9],
                     "roughness":.65,"metallic":.0}],
-                texture_png=original_png)
+                texture_png=original_png,
+                pbr_maps_png=source_channels)
             texture_doc=OpenUSDAssetRegistry(index).open(
                 pid,"smoke_original_texture_mesh",1)[0]["data"]
             from backend.nvp_native_usd_texture import verified_texture
@@ -257,7 +269,8 @@ def run_installed_data_av_smoke():
             temp_shader_path=None
             with resolved_materialx_probe(
                     index,pid,stage,[
-                        texture_doc["preview_material"]["texture"]
+                        texture_doc["preview_material"]["texture"],
+                        *texture_doc["preview_material"]["pbr_maps"].values(),
                     ]) as (probe,manifest):
                 node=UsdShade.Shader(probe.GetPrimAtPath(
                     "/Asset/Material/MtlxImage"))
