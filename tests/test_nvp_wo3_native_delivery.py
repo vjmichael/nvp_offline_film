@@ -14,6 +14,9 @@ import uuid
 
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
+from backend.nvp_openusd_scene import OpenUSDSceneBridge
+from backend.nvp_temporal_ledger import TemporalLedger,TICKS_PER_SECOND as T
+from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_wo3_j2k_audit import inspect_j2k_header
 from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,_ppm_xyz12
 from backend.nvp_wo3_mxf_native import _frame_receipts,FORMAT as MXF_FORMAT
@@ -55,12 +58,34 @@ class WO3OriginalCinemaAuthoring(unittest.TestCase):
         self.studio=Studio(root/"cinema.sqlite")
         self.pid=self.studio.create_project("WO3 Native DCP","")["id"]
         self.index=FilmIndex(self.studio)
-        # This synthetic FilmIndex Take is ONLY a structural-approval
-        # fixture; no output is presented as a theatrical master.
-        take=self.index.register_revision(
-            self.pid,"FrozenFixture","take",
-            {"format":"nvp.wo3.synthetic_test_take",
-             "frozen":True,"original_modified":False})
+        # A genuine pxr-authored scene and temporal ledger are frozen.
+        # Only the test MXF essence is synthetic; it cannot pass WO3-05.
+        OpenUSDSceneBridge(self.index).publish(
+            self.pid,"CinemaScene",
+            prims=[
+                {"path":"/World/Actor","role":"actor",
+                 "position":[0,0,0]},
+                {"path":"/World/Camera","role":"camera",
+                 "position":[0,0,5]},
+            ],curves=[],native_schemas=True)
+        self.index.register_revision(
+            self.pid,"EventSource","performance",
+            {"format":"nvp.wo3.test.event","source_modified":False})
+        TemporalLedger(self.index).publish(
+            self.pid,"CinemaEvents",[{
+                "event_id":"begin","event_kind":"action","subject_id":"Actor",
+                "start_tick":0,"end_tick":T,
+                "source_id":"EventSource","source_revision":1,
+                "payload":{"usd_prim_path":"/World/Actor","action":"present"},
+            }],duration_tick=2*T)
+        take=OpenUSDTakeCapture(
+            self.index,verify_creator_action=lambda event,scope:
+            event=="approved" and
+            scope["operation"]=="nvp.freeze.usd_temporal_take.v1"
+        ).freeze(self.pid,"FrozenFixture",
+                 scene_id="CinemaScene",scene_revision=1,
+                 timeline_id="CinemaEvents",timeline_revision=1,
+                 sample_ticks=[0,T],creator_event="approved")
         self.sha=take["document_sha256"]
         self.output=root/"exports";self.output.mkdir()
         self.pic=fake_track("picture",str(uuid.uuid4()),self.sha)
