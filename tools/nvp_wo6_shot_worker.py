@@ -18,6 +18,7 @@ from backend.nvp_studio import Studio
 from backend.nvp_wo6_native_shot_action import (
     FORMAT, RECEIPT, _check_shot_source,
 )
+from backend.nvp_wo6_native_take_action import _exact_source
 
 
 def main(argv=None):
@@ -71,6 +72,11 @@ def main(argv=None):
         tick=spec["start_tick"])
     if reopened["shot_document_sha256"] != created["document_sha256"]:
         raise RuntimeError("Native shot reopen digest mismatch")
+    # A concurrent revision after the shot commit must not be called a
+    # successful current-source change. Preserve the old immutable shot
+    # but return failure requiring explicit reconciliation.
+    _exact_source(index, spec["project_id"], spec["scene_id"],
+                  spec["scene_revision"], spec["scene_sha256"], "scene")
     receipt = {
         "format": RECEIPT, "task_id": spec["task_id"],
         "project_id": spec["project_id"], "shot_id": spec["shot_id"],
