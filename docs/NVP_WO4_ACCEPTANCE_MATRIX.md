@@ -50,8 +50,11 @@ accepted until the signed/native, external and physical receipts are present.
 | Gate | Implementation currently committed | Remains to accept |
 | --- | --- | --- |
 | Long-form PCM24 mastering | `nvp_wo4_pcm_stream.py` hashes original PCM file before/after consent and streams signed 24-bit samples to a new no-replace WAV; identity and rational gain have parity tests | Run current exact-head Windows/Linux native jobs; verify OS picker and installed desktop acceptance; RF64/reel partitioning for WAV tracks beyond 4 GiB |
-| Long-form sound MXF | `nvp_wo4_mxf_stream.py` reuses host-approved file-backed sound, wraps via pinned asdcplib with a same-volume hardlink, verifies native MXF metadata and full source WAV SHA before file-based publication | Complete real CineCert native unwrap CI and independent MXF checker, packaged binary transitive DLLs and legal notices, full feature-length capacity test |
+| Long-form sound MXF | `nvp_wo4_mxf_stream.py` reuses host-approved file-backed sound, stream-copies a private verified WAV into the pinned asdcplib worker (no shared source inode), verifies native MXF metadata and full source WAV SHA before file-based publication | Complete real CineCert native unwrap CI and independent MXF checker, packaged binary transitive DLLs and legal notices, full feature-length capacity test |
 | Long-form loudness | `nvp_wo4_loudness_stream.py` computes K-weighted window energies with bounded sample memory and one block per 100 ms; guards SHA and channel layout | Compare against accredited BS.1770 meter, measure 4×/higher intersample true peak with independent reference, agree target theatrical level |
 | Full feature-length picture/DCP | Still relies on in-memory J2K picture/MXF author | Implement bounded picture/MXF spooling and file-backed author; verify 2K and 4K sustained throughput, crash recovery, and independent DCI ingest |
 
 The first three are **implementation-only pending exact-head CI and installed/native acceptance**. Do not confuse safe disk-backed sound candidates with completed production theatrical mastering.
+
+
+**Codec workspace isolation checkpoint:** The genuine approved WAV is never hardlinked into the wrapper's work directory. Bounded-memory *copying* incurs scratch disk space but isolates the original from worker writes. Native hostile-worker regression tests must pass separately from a real CineCert unwrapping roundtrip. Even a fully passing test does not establish sandboxed process containment or independently certified DCI ingest.
