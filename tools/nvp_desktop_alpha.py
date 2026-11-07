@@ -481,6 +481,14 @@ def run_visible_window_smoke():
         if not result["passed"]:
             raise RuntimeError(
                 "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
+        # Emit independently sampled native Windows display-adapter evidence
+        # AFTER real installed WebView2 texture readback. Enumeration itself
+        # is not proof of dedicated hardware acceleration or calibration.
+        from backend.nvp_wo2_hardware_evidence import collect_windows_gpu_evidence
+        import json
+        result["native_windows_gpu_evidence"]=collect_windows_gpu_evidence()
+        print("NVP_WO2_HARDWARE_EVIDENCE="+json.dumps(
+            result["native_windows_gpu_evidence"],sort_keys=True),flush=True)
         return 0
     finally:
         try:
