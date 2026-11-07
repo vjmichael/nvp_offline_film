@@ -135,6 +135,56 @@ class SceneLinearEXRTests(unittest.TestCase):
         self.assertFalse(self.index.read_revision(
             self.pid,"SourceColorTake",1)["data"].get("master_approved",False))
 
+    def test_published_source_package_registers_native_receipt_and_reopens_for_readiness(self):
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+        from backend.nvp_native_cinema_master_gate import FORMAT as READY_FORMAT
+        package=Approved2DPackage(
+            self.index,native_creator_approval=lambda _:True,
+            render_png=NativeSourceRaster(self.index,self.pid).render_png)
+        name="AuthenticNativeSource"
+        receipt=package.export(
+            self.pid,"SourceColorTake",self.take["document_sha256"],
+            name,self.root,
+            listener_path="/World/Camera",
+            fps_num=24,fps_den=1,
+            linear_exr_grade=self.inputs,resumable=True)
+        record=self.index.read_revision(
+            self.pid,"NativePackage_"+name,1)
+        self.assertEqual(record["kind"],"presentation")
+        self.assertEqual(record["document_sha256"],
+                         receipt["native_presentation_receipt_sha256"])
+        self.assertEqual(record["data"]["manifest_sha256"],
+                         receipt["manifest_sha256"])
+        self.assertFalse(record["data"]["dcp_delivered"])
+        self.assertEqual(len(record["dependencies"]),2)
+        class Window:
+            def get_current_url(self):return "http://127.0.0.1:7777/"
+            def create_confirmation_dialog(self,title,message):return True
+            def create_file_dialog(self,dialog):
+                return [receipt["directory"]]
+        bridge=TrustedDesktopCameraBridge(
+            self.index,origin="http://127.0.0.1:7777")
+        bridge._attach_window(Window())
+        self.addCleanup(bridge._close)
+        with patch.dict(sys.modules,{"webview":SimpleNamespace(
+                FileDialog=SimpleNamespace(FOLDER=123))}):
+            check=bridge.data_av_cinema_readiness({
+                "project_id":self.pid,
+                "take_id":"SourceColorTake",
+                "take_document_sha256":self.take["document_sha256"],
+                "target":"SMPTE_2K_FLAT_24"})
+        self.assertEqual(check["format"],READY_FORMAT)
+        self.assertTrue(check["authenticated_approved_source_derivative"])
+        self.assertEqual(check["authenticated_native_presentation_sha256"],
+                         record["document_sha256"])
+        self.assertTrue(check["source_integrity_verified"])
+        self.assertFalse(check["dcp_delivered"])
+        self.assertIn("native_SMPTE_2K_XYZ_12bit_JPEG2000_encoder",
+                      check["required_master_color_and_delivery_capabilities"])
+
     def test_invalid_source_or_config_and_existing_destination_refused(self):
         path=self.root/"refuse.exr"
         with self.assertRaises(RuntimeError):
