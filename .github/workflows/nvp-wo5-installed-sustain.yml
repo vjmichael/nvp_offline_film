@@ -15,6 +15,11 @@ on:
       - backend/nvp_wo6_native_shot_action.py
       - backend/nvp_wo6_native_data_action.py
       - backend/nvp_wo6_kernel_attestation.py
+      - backend/nvp_wo6_desktop_bridge.py
+      - frontend/src/WO6CreatorActionsPanel.jsx
+      - frontend/src/WO6CreatorActionsPanel.test.jsx
+      - tests/test_nvp_wo6_desktop_bridge.py
+      - docs/NVP_WO6_AI_FIRST_FILM_ASSISTANT.md
       - backend/nvp_wo5_codec_binding.py
       - backend/_nvp_wo5_release_pin.py
       - tests/test_nvp_wo5_release_codecs.py
@@ -34,6 +39,11 @@ on:
       - backend/nvp_wo6_native_shot_action.py
       - backend/nvp_wo6_native_data_action.py
       - backend/nvp_wo6_kernel_attestation.py
+      - backend/nvp_wo6_desktop_bridge.py
+      - frontend/src/WO6CreatorActionsPanel.jsx
+      - frontend/src/WO6CreatorActionsPanel.test.jsx
+      - tests/test_nvp_wo6_desktop_bridge.py
+      - docs/NVP_WO6_AI_FIRST_FILM_ASSISTANT.md
       - backend/nvp_wo5_codec_binding.py
       - backend/_nvp_wo5_release_pin.py
       - tests/test_nvp_wo5_release_codecs.py
