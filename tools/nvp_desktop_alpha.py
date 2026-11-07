@@ -195,9 +195,14 @@ def create_trusted_camera_bridge(port):
     """Desktop-only pywebview IPC; never registered as an HTTP route."""
     from backend.nvp_api import studio
     from backend.nvp_film_index import FilmIndex
-    from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
-    return TrustedDesktopCameraBridge(
-        FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
+    from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+    from backend.nvp_wo5_codec_binding import desktop_finished_decoder_provider
+    # Original DataFirst A/V remains active; finished DCP decoding requires
+    # separately SHA-pinned native OpenJPEG/CineCert binaries installed by
+    # the trusted host. Ordinary browser/AI callers cannot supply paths.
+    return TrustedDesktopWO5Bridge(
+        FilmIndex(studio),origin="http://127.0.0.1:"+str(port),
+        finished_codec_provider=desktop_finished_decoder_provider(bundle_root()))
 
 
 def run_visible_window_smoke():
@@ -296,10 +301,10 @@ def run_visible_window_smoke():
     result={"passed":False}
     bridge=None
     try:
-        from backend.nvp_slate08b_native_camera_ipc import (
-            TrustedDesktopCameraBridge)
+        from backend.nvp_wo5_desktop_bridge import (
+            TrustedDesktopWO5Bridge)
         from backend.nvp_native_usd_texture import texture_transport
-        class InstalledWO2ProbeBridge(TrustedDesktopCameraBridge):
+        class InstalledWO2ProbeBridge(TrustedDesktopWO5Bridge):
             """Test-only native IPC: uses one exact ephemeral smoke asset."""
             def wo2_gpu_texture_probe(self):
                 self._native_window()
@@ -469,6 +474,57 @@ def run_visible_window_smoke():
                                 if not result["passed"]:
                                     raise RuntimeError(
                                         "Installed source PNG GPU readback timed out")
+                                # WO5 actual installed desktop: reuse the
+                                # same trusted window, project and real FilmIndex
+                                # to open the native director-review workspace.
+                                # No synthetic finished film/creator approval.
+                                result["passed"]=False
+                                clicked=window.evaluate_js(
+                                    "(()=>{const b=[...document.querySelectorAll('nav.tabs button')]"
+                                    ".find(x=>x.textContent.includes('Watch & review film'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                if clicked is not True:
+                                    raise RuntimeError(
+                                        "Installed WO5 film review tab unavailable")
+                                until=time.monotonic()+20
+                                while time.monotonic()<until:
+                                    present=window.evaluate_js(
+                                        "Boolean(document.querySelector("
+                                        "'[aria-label=\\\"Director film review\\\"]')"
+                                        " && document.body.textContent.includes("
+                                        "'Direct, preview and review the film'))")
+                                    if present:
+                                        break
+                                    time.sleep(.2)
+                                if not present:
+                                    raise RuntimeError(
+                                        "Installed WO5 director review component not mounted")
+                                window.evaluate_js(
+                                    "window.__nvpWO5Probe='PENDING';"
+                                    "window.pywebview.api.wo5_review_catalog('"+
+                                    project["id"]+"').then(x=>{"
+                                    "window.__nvpWO5Probe="
+                                    "x.format==='nvp.wo5.trusted_desktop_director_review.v1' && "
+                                    "x.status==='NATIVE_PROJECT_SCOPED_READ_ONLY' && "
+                                    "x.project_id==='"+project["id"]+"' && "
+                                    "x.host_native_only===true && "
+                                    "x.full_finished_dcp_playback_verified===false "
+                                    "?'PASSED':'FAILED';}).catch(()=>{"
+                                    "window.__nvpWO5Probe='FAILED';});")
+                                until=time.monotonic()+15
+                                while time.monotonic()<until:
+                                    result_state=window.evaluate_js(
+                                        "window.__nvpWO5Probe")
+                                    if result_state=="PASSED":
+                                        result["passed"]=True
+                                        break
+                                    if result_state=="FAILED":
+                                        raise RuntimeError(
+                                            "Installed WO5 JS-to-native FilmIndex catalog denied")
+                                    time.sleep(.2)
+                                if not result["passed"]:
+                                    raise RuntimeError(
+                                        "Installed WO5 review IPC timed out")
                                 break
                     time.sleep(.2)
                 if not result["passed"]:

@@ -16,6 +16,7 @@ import ResourceActivityPanel from './ResourceActivityPanel.jsx';
 import FilmCameraSourcePanel from './FilmCameraSourcePanel.jsx';
 import DataFirstAVPanel from './DataFirstAVPanel.jsx';
 import WorkspaceLock from './WorkspaceLock.jsx';
+import DirectorFilmReviewPanel from './DirectorFilmReviewPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -448,10 +449,12 @@ export default function App() {
           <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>16 · Make the film</button>
           <button className={tab === 'camera' ? 'active' : ''} onClick={() => setTab('camera')}>17 · Virtual camera</button>
           <button className={tab === 'data-av' ? 'active' : ''} onClick={() => setTab('data-av')}>18 · Native 3D sound</button>
+          <button className={tab === 'film-review' ? 'active' : ''} onClick={() => setTab('film-review')}>19 · Watch & review film</button>
           <button className={tab === 'color-guide' ? 'active' : ''} onClick={() => setTab('color-guide')}>Help · Color grading</button>
         </nav>
         {tab === 'camera' && <FilmCameraSourcePanel projectId={project.id} api={api}/>}
         {tab === 'data-av' && <DataFirstAVPanel projectId={project.id}/>}
+        {tab === 'film-review' && <DirectorFilmReviewPanel projectId={project.id}/>}
         {tab === 'develop' && <div className="columns">
           <section className="card">
             <h2>Develop your story</h2>

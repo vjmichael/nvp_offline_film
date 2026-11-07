@@ -689,8 +689,192 @@ These **specific patterned low-complexity synthetic source frames** are a short 
 
 **Production validation is categorically different from synthetic pipeline verification.** Native short samples and 2h/3h repeated-frame MXF/DCP GitHub CI only demonstrate that implementation paths run and structural output can be checked; they do **not** demonstrate that NVP makes the film the creator intended, or establish real-world scene/render/sound quality. It is forbidden to promote their green CI results to creative, production, or release acceptance.
 
-**WO4 disposition: IMPLEMENTED INCREMENT / PRODUCTION ACCEPTANCE OPEN / DEFERRED.** Stop spending effort to force synthetic feature-length load to substitute for the near-production film test. Keep all existing native CI evidence, but do not close WO4. Reopen WO4's deferred production-validation gates when a near-production NVP can author a **new original film of no more than 30 seconds (at 24fps, 720 frames maximum)** using authentic source-preserving scene/actor/camera/performance/audio/edit/master workflow, with varied original consecutive frames instead of repeated synthetic codestreams. This is a functional production test of whether the intended film actually emerges, not merely a collection of non-identical SHA hashes. Record the creator's intended shot/scene result, inspect actual picture+audio playback, source custody, timing, output and error recovery, and compare outcomes with creative intent. Preserve a fresh repeatable source-bound FilmIndex and Digital Take audit.
+**WO4 disposition: IMPLEMENTED INCREMENT / PRODUCTION ACCEPTANCE OPEN / DEFERRED.** Stop spending effort to force synthetic feature-length load to substitute for the near-production film test. Keep all existing native CI evidence, but do not close WO4. Reopen WO4's deferred production-validation gates when a near-production NVP can author a **new original film of no more than 30 MINUTES (at 24fps, 43,200 presentation frame slots maximum)** using authentic source-preserving scene/actor/camera/performance/audio/edit/master workflow, with varied original consecutive frames instead of repeated synthetic codestreams. This is a functional production test of whether the intended film actually emerges, not merely a collection of non-identical SHA hashes. Record the creator's intended shot/scene result, inspect actual picture+audio playback, source custody, timing, output and error recovery, and compare outcomes with creative intent. Preserve a fresh repeatable source-bound FilmIndex and Digital Take audit.
 
 **Still separate, deferred for later specialist/near-release acceptance:** physical installed Lu/NVP DLC and protected background host, calibrated picture/loudness/true peak and external DCI/SMPTE validator, projector/server ingest, feature-length diverse-original frame throughput on representative hardware, third-party exact licenses and SBOM (mandatory at installer freeze). No FFmpeg.
 
-**NEXT: WO5 Production Acceptance work order.** Change the prior "real 60-second throughput" initial creative proof to the creator's **at-most-30-second original film** first, with long-form performance as a later gate. Develop useful review/evidence/acceptance infrastructure now; physical theatrical tests, installed hardware proof, and full creative signoff cannot be fabricated or marked complete before NVP itself is near production-ready.
+**NEXT: WO5 Production Acceptance work order.** Change the prior "real 60-second throughput" initial creative proof to the creator's **at-most-30-minute original film** first, with long-form performance as a later gate. Develop useful review/evidence/acceptance infrastructure now; physical theatrical tests, installed hardware proof, and full creative signoff cannot be fabricated or marked complete before NVP itself is near production-ready.
+
+## WO5 — Original-film production acceptance (started 2026-11-07)
+
+**Official next work order after WO4 deferral:** WO5 Production Acceptance, originally defined as a 60-second real workload + installed Windows/projection receipts. Per creator, begin with an **original NVP-made film <=30 MINUTES at 24fps** to demonstrate whether the application actually creates the film as intended. Synthetic benchmarks are valid pipeline implementation evidence only; never treat their green checks as creative result evidence or WO4 release closure. WO4 remains **OPEN/DEFERRED** pending the near-production original-film proof, with extended diverse-feature/performance, installed hardware and external projector/color/audio/sound acceptance separately open.
+
+**WO5-01 implemented, CI submitted:** `backend/nvp_wo5_original_short.py` adds a read-only host-side audit bound to genuine FilmIndex + one CinemaDeliveryJournal (not a user-supplied acceptance JSON), exact frozen USD Take and creator decision SHA, indexed source-linked SMPTE DCP receipt, original XYZ12/PCM/J2K/MXF re-verification, existing 24fps 24–720 frame sample-only continuity (NOT YET THE 30-MINUTE MULTI-REEL PROOF) and intentionally varied frame SHA receipts. Explicitly rejects the 3-frame repeated synthetic full-duration stress as original-film proof and refuses source or process metadata without real durable native provenance. Green returns **ELIGIBLE_FOR_LATER_CREATIVE_REVIEW_NOT_ACCEPTED**, with `production_acceptance=False`, `wo4_production_accepted=False` and `wo5_production_accepted=False`. Source identity uniqueness is a pilot filter and NEVER proves original motion, acting, storytelling or audio/visual intent. Tests `test_nvp_wo5_original_short.py` and four-platform `nvp-wo5-original-short.yml` exercise denial/contract boundaries without rendering a film. Actual CI pass/fail must be inspected before claiming native acceptance.
+
+**WO5-02 protocol documented:** `docs/NVP_WO5_PRODUCTION_ACCEPTANCE.md` defines creator intent vs observed film, original short production, physically installed app, cinema specialist, true varied 60s/2h/3h performance and release SBOM/license gates. Outstanding WO5-03+ tasks needing near-production NVP, physical installation, calibrated hardware or specialist testing are DEFERRED, **not** marked complete. We proceed with the non-deferred native evidence/acceptance infrastructure while preserving the original source-immutable, all native, no-FFmpeg architecture.
+
+## CREATOR'S APPROVED NVP FINAL DESTINATION — 2026-11-07
+
+**30-MINUTE CORRECTION:** All earlier references in the WO4/WO5 original-film
+acceptance plan to a "30-second" production proof were based on a mistaken
+understanding. The actual intended near-production acceptance film is
+**a genuinely NVP-authored original of no more than 30 MINUTES**. That
+is a real workflow/creative-intent test with varied original pictures,
+authored actions, camera, scene, sound, actual editing, output and human
+inspection — not a synthetic benchmark. The existing
+`backend/nvp_wo5_original_short.py` is **still limited to <=720
+frames/one reel** and its tests are only narrow engineering admission.
+It must be redesigned for creator-approved multi-reel, full-source
+FilmIndex continuity and bounded checks before the authentic 30-minute
+test can be run or accepted. **No code was changed by this documentation.**
+
+**STANDARD THEATRICAL DCP EXPORT TARGET:** **SMPTE DCP Bv2.1
+Application Profile as described in SMPTE RDD 52:2020**, including all
+applicable underlying SMPTE standard constraints (especially ST 429-2).
+RDD 52 is a Registered Disclosure Document, not itself a SMPTE Standard;
+Bv2.1 is a tested interoperability application profile. Native packages
+must verify MCA sound labeling, applicable CPL markers/application metadata,
+timed text/accessibility where included, compliant picture/sound essence,
+MXF and SMPTE XML, and security/KDM when relevant. External validators,
+reference theater playback and picture/sound calibration are acceptance
+gates. Currently implemented SMPTE-style structural DCP is **NOT YET
+demonstrated Bv2.1 conformant**; never call NVP DCI-certified on that basis.
+Use current DCI DCSS 1.5.1 (approved Oct 20, 2026) and subsequent revisions
+as context rather than outdated 1.5.0 claim.
+
+**EXCEEDING THE THEATRICAL MINIMUM:** NVP's higher-fidelity creative
+scene-linear/OpenUSD/Float32/EXR/advanced-HDR/audio capabilities and
+*non-DCP delivery profiles* may legitimately go beyond DCI's theatrical
+interchange bit depth/resolution/rate limits. Never widen or change the
+actual Bv2.1 DCP profile with arbitrary nonstandard extensions. Keep
+source Takes authoritative and run each export through its own QC.
+
+**EQUALLY IMPORTANT PRODUCT END STATE:** reliable end-to-end native
+filmmaking workflows, clean non-CLI GUI accessible to novices but
+controllable by professionals, seamless scene/Take/editorial/color/audio/
+delivery experience, and a **NVP-aware AI execution layer** with semantic
+capability discovery, scoped native tool execution, human creative approval,
+reliable progress/receipts and safe crash/cancel/recover. Model-generated
+language is not tool execution or evidence of a finished film. The precise
+future Lu DLC/IPC ABI is still deferred; do not block NVP product capabilities
+or force premature coupling to it. All active pipelines remain data-first,
+source-immutable and **FFmpeg-free**.
+
+Canonical full decision:
+[docs/NVP_THEATRICAL_BV21_AND_PRODUCT_ENDSTATE.md](NVP_THEATRICAL_BV21_AND_PRODUCT_ENDSTATE.md);
+[docs/NVP_WO5_PRODUCTION_ACCEPTANCE.md](NVP_WO5_PRODUCTION_ACCEPTANCE.md).
+Recorded as target and implementation mismatch, **not a completed task or
+passed conformance claim**.
+
+### WO5 30-minute multi-reel audit and creator review implementation — 2026-11-07
+
+**WO5-01 native implementation advanced:** Added
+`backend/nvp_wo5_original_feature.py` extending the earlier 30-second
+sample-only feature proof to an indexed native multi-reel FilmIndex/DCP
+readiness audit for a genuine original film of **up to 30 MINUTES**,
+43,200 ordered frames at 24fps. It reuses `FeatureJournal`'s complete
+picture XYZ12/J2K, PCM24, native picture/sound MXF and published DCP
+integrity rechecks, validates frozen FilmIndex feature assembly and exact
+continuous Film Time, per-reel original OpenUSD Take identities, indexed
+source DCP receipts, creator-approved picture SHA order and native
+source/encoded frame diversity using bounded SQLite row cursors.
+The return is ALWAYS
+`SOURCE_CUSTODY_READY_FOR_HUMAN_FILM_REVIEW_NOT_ACCEPTED` — no
+claim of director intention fulfilled, actual feature rendering, installed
+app, SMPTE DCP Bv2.1, projector compliance or WO4/WO5 completion.
+
+**WO5-01 CI evidence:** Four Windows/Linux × Python 3.11/3.13
+native tests **ALL PASS** in exact source head workflow
+[42401400107](https://github.com/vjmichael/nvp_offline_film/actions/runs/42401400107).
+The 43,200-frame tests exercise deterministic SHA **admission-contract
+fixtures** and bad-input denial. They do **not** encode or play back a
+30-minute original film, test 43,200 distinct natural/author-provided
+movie frames, prove independent essence decode, or assess actual
+creative success. Older 30-second one-reel inspector remains a
+deliberately limited sample, not the corrected acceptance target.
+
+**WO5-02 native implementation added; new exact-head CI pending:**
+`backend/nvp_wo5_director_review.py` freezes creator-authored shot
+intent against the actual FilmIndex edit/assembly before review, with
+bounded full-coverage Film Time, expected action/camera/sound and a
+native creator approval callback. Its follow-up `record_director_review`
+requires current WO5-01 indexed-feature evidence before recording the
+creator's specific observed action/camera/sound per shot, whether full
+picture/sound was watched/heard, and revision-needed judgments. FilmIndex
+retains immutable revision-level source relationships and separates
+human-reported observations from any independent production, theatrical
+or AI-generated approval. Added
+`tests/test_nvp_wo5_director_review.py` and native Win/Linux CI.
+Installed GUI authentication/real film human review remain **OPEN**.
+
+**Outstanding acceptance and WO5 continuation:** 
+(1) independent genuine multi-reel original-film source+essence E2E,
+(2) source-consistent interactive installed GUI and real creator-signed
+review workflow, (3) native crash/cancellation/reconnect full application
+exercise, (4) independent SMPTE Bv2.1 DCP verification and cinema ingest,
+(5) actual 30-minute original creator judgment, (6) longer-feature
+performance proof, and (7) release notices/SBOM and installed packaging
+when due. WO4 remains **OPEN/DEFERRED**. No FFmpeg, source mutation
+or fabricated acceptance.
+
+### WO5 desktop review and production-scale tiers — 2026-11-07
+
+**Creator clarification:** A real original film of up to 30 minutes is only the initial *does NVP work?* pilot. The principal feature-film test is a genuinely produced **60–90 minute** original (86,400–129,600 frames at 24fps). The extended epic test is **at least 3 hours** (259,200+ frames at 24fps), with distinctive original picture, story, actors/camera, editing, sound, realistic sustained performance and recovery. Repeated-source synthetic DCP packaging is not either creative test. WO4 acceptance is deferred pending original-film evidence and remains OPEN.
+
+**WO5 native desktop work committed (not yet installed-accepted):** The existing Windows WebView2 entry now uses TrustedDesktopWO5Bridge, a subclass retaining all original data-first source camera and spatial PCM functions. Native-only wo5_review_catalog/read_intent/save_intent/inspect_feature/save_observations perform scoped FilmIndex/journal reads and real OS-dialog-confirmed creator writes; no FastAPI write route, fabricated approval or separate supervisor. App.jsx now has **19 · Watch & review film**, whose DirectorFilmReviewPanel allows shot-by-shot intended action/camera/sound authoring, native immutable approval, real indexed feature custody review, approved reel Take audition and explicit creator-only observed-results recording. Native source playback is connected by reusing the real OpenUSD world and spatial PCM DataFirstAVPanel at the selected Take and approved source sample; the panel fails closed if the Take is absent.
+
+**Important open playback difference:** Real original **Take** A/V playback is not yet continuous, independently decoded full **finished SMPTE DCP** playback with final color, cuts and soundtrack. The full movie player, Win/Linux installed real OS-device/source review, creator's genuine original films, SMPTE DCP Bv2.1 compliance and 60–90min/3h acceptance remain OPEN. Unit tests and CI cannot stand in for the physical GUI or full feature film.
+
+**Verification:** New six-job Win/Linux Python+React workflow nvp-wo5-desktop-review.yml submitted, with native desktop permission tests and exact Take/time frontend controls. See docs/NVP_WO5_DESKTOP_DIRECTOR_WORKFLOW.md for scope/evidence. No FFmpeg; no source Take mutation.
+
+### WO5 final picture/sound DCP playback / coding and genuine reel test (2026-11-07)
+
+**Implemented source code in draft PR #91:** NVP WebView2
+FinishedFilmPlaybackPanel obtains native OS-granted project/feature
+view permission from the same original TrustedDesktopWO5Bridge and
+supervised OpenJPEG/asdcplib codec process system. It reads
+SHA-audited **published DCP picture MXF and mastered sound MXF**,
+decodes exact real 24fps XYZ12 picture/48kHz PCM24 at the selected
+global Film Time (including across indexed reel cuts), presents bounded
+uncalibrated sRGB PNG to the screen and original-master-derived 48kHz
+stereo monitoring via one WebAudio hardware clock. Exact seek,
+buffered playback, stop/revoke and fail-closed handling of missing
+frames, audio deadline misses and device underflow implemented. Does
+NOT use original Take source preview as a fake finished film and
+does NOT alter any original or derived asset.
+
+**Real codec evidence:** Native six-frame/two-reel SMPTE DCP
+picture+sound encode/wrap/final publish/unwrap/decode test passed on
+GitHub [42408366415](https://github.com/vjmichael/nvp_offline_film/actions/runs/42408366415),
+including distinct 2K frames/PCM across reel edge frame 2->3 and
+exact 48k sound sample mapping. Linux/Windows React UI jobs in this
+run passed. Mock-unit tests failed only on a synthetic undersized
+J2K fixture; fixed on a later commit, exact-head CI pending.
+
+**Still OPEN (WO5 not production-ready):** measured sustained actual
+24fps without picture/audio underrun, native installed NSIS executable
+WebView2 playback, legally bundled/pinned native decoder tools and
+notices/SBOM, real sound-device drift and full channel mapping,
+real 30-minute original pilot, 60-90-minute original feature, >=3h
+original epic and independent cinema-calibrated SMPTE DCP Bv2.1
+validation/projector ingest. The release codec pin is intentionally
+blank until a real installer build produces the vetted manifest;
+unconfigured player fails closed. Three native subprocesses per
+frame need optimization before assuming full realtime performance.
+Previous visible WebView2 smoke failed OpenUSD MaterialX scalar map
+verification; the exact-authorized-PBR-connection fix was committed
+and native verification is pending. WO4 remains deferred/open,
+and no production acceptance flag has been set.
+
+### WO5 published-MXF player verified technical contract — exact CI 2026-11-07
+
+**Source-code player/GUI integration verified on six platform-matrix
+checks plus the genuine Linux codec/essence acceptance, 7/7 success:**
+[42409121482](https://github.com/vjmichael/nvp_offline_film/actions/runs/42409121482).
+True two-reel SMPTE DCP package, picture J2K and actual final PCM24
+sound native decode passed across global frame 2->3 and native
+multi-frame 4-maximum batch requests clipped at the reel boundary.
+24fps/48k contiguous sample indices and exact native J2K source SHA,
+OS-scoped permission, modified MXF refusal, bounded source preview,
+real WebAudio scheduling and skipped-frame/no-audio-deadline fail
+closed tests passed on applicable platforms.
+
+**Status:** technical native finished-DCP decoder, batching, and
+desktop review UI code: IMPLEMENTED + REGRESSION PASS. Continuous
+hardware playback in the installed app, real authentic 30-minute
+original, 60-90-minute feature, >=3h epic, legal codec bundle
+manifest, true calibrated multichannel cinema playback, and SMPTE
+DCP Bv2.1 expert/projection review: **OPEN**, not production accepted.
+Old preexisting Native MaterialX source scalar failure patched with
+strict exact-map source verification; installed WebView2 reenactment
+remains a separate pending gate. WO4 deferred/open.
