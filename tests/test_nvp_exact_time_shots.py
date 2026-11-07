@@ -80,19 +80,19 @@ class ExactTimeCameraSequenceTests(unittest.TestCase):
                 shots=self.shots(),duration_tick="1.23",
                 expected_revision=0)
 
-    def test_persisted_camera_events_fail_closed_on_bad_pattern_or_end(self):
+    def test_persisted_camera_events_fail_closed_on_bad_pattern_or_subject(self):
         # Bypass the authoring validator to exercise the persisted-data
         # reader, as a migration or damaged ledger may supply old events.
         editor=ExactTimeShotSequence(self.index)
-        for name,pattern,end,duration in (
-            ("BadPatternCamera","legacy_frame_proxy",T,2*T),
-            ("OutOfRangeCamera","single",2*T,T),
+        for name,pattern,subject in (
+            ("BadPatternCamera","legacy_frame_proxy","Camera"),
+            ("WrongSubjectCamera","single","Actor"),
         ):
             with self.subTest(name=name):
                 TemporalLedger(self.index).publish(
                     self.pid,name,[{
                         "event_id":"Shot001","event_kind":"camera",
-                        "subject_id":"Camera","start_tick":0,"end_tick":end,
+                        "subject_id":subject,"start_tick":0,"end_tick":T,
                         "source_id":"spatial_world","source_revision":1,
                         "payload":{
                             "format":"nvp.exact_time.usd_camera_shots.v1",
@@ -101,7 +101,7 @@ class ExactTimeCameraSequenceTests(unittest.TestCase):
                             "world_duplicated":False,
                             "picture_frames_recorded":False,
                         },
-                    }],duration_tick=duration,expected_revision=0)
+                    }],duration_tick=2*T,expected_revision=0)
                 with self.assertRaises(RuntimeError):
                     editor.read(self.pid,name,1)
 
