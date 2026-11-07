@@ -216,6 +216,27 @@ class OriginalSceneLook:
                 "source_scene_sha256":scene_sha256,
                 "original_modified":False,"ffmpeg_used":False}
 
+    def catalog(self,pid,*,scene_id,scene_revision,scene_sha256):
+        """Show only approved presentation revisions of this exact USD scene."""
+        self._source(pid,scene_id,scene_revision,scene_sha256)
+        options=[]
+        for row in self.index.list_objects(pid,kind="presentation")[:128]:
+            rec=self.index.read_revision(pid,row["object_id"])
+            data=rec["data"]
+            if (data.get("format")==FORMAT and
+                data.get("scene_id")==scene_id and
+                data.get("scene_revision")==scene_revision and
+                data.get("scene_document_sha256")==scene_sha256 and
+                data.get("original_modified") is False):
+                options.append({
+                    "look_id":row["object_id"],
+                    "revision":rec["revision"],
+                    "document_sha256":rec["document_sha256"],
+                })
+        return {"format":FORMAT,"scene_sha256":scene_sha256,
+                "looks":options,
+                "original_modified":False}
+
     def open(self,pid,look_id,revision,*,scene_sha256):
         _sha(scene_sha256)
         record=self.index.read_revision(pid,look_id,revision)
