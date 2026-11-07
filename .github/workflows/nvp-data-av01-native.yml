@@ -207,8 +207,16 @@ jobs:
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
           if ($bundled.Count -ne 0) { throw 'Legacy FFmpeg was accidentally bundled into native data AV' }
-          & 'dist/NVP/NVP.exe' '--smoke-data-av'
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged native USD+PCM source acceptance failed' }
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'nvp-packaged-data-av-traceback.txt'
+          $packaged=Start-Process -FilePath (Resolve-Path 'dist/NVP/NVP.exe').Path -ArgumentList '--smoke-data-av' -Wait -PassThru
+          if (Test-Path $env:NVP_NATIVE_SMOKE_DIAGNOSTICS) {
+            Get-Content -LiteralPath $env:NVP_NATIVE_SMOKE_DIAGNOSTICS
+          } else {
+            throw "Packaged NVP Python entry did not start; exit $($packaged.ExitCode)"
+          }
+          if ($packaged.ExitCode -ne 0) {
+            throw "Packaged native USD+PCM source acceptance failed: $($packaged.ExitCode)"
+          }
       - name: Build dedicated single-click NSIS installed candidate
         shell: pwsh
         run: |
@@ -235,20 +243,28 @@ jobs:
             throw 'Installed NVP executable differs from built native source'
           }
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'nvp-installed-av-traceback.txt'
-          & $installed '--smoke-data-av'
-          if ($LASTEXITCODE -ne 0) {
-            if (Test-Path $env:NVP_NATIVE_SMOKE_DIAGNOSTICS) {
-              Get-Content $env:NVP_NATIVE_SMOKE_DIAGNOSTICS
-            }
-            throw 'Installed native Digital Take and sound playback failed'
+          # PyInstaller --windowed is a Windows GUI subsystem executable:
+          # PowerShell's & operator can return before GUI child exits and
+          # LASTEXITCODE may belong to an unrelated prior console tool.
+          # Wait for the actual process and inspect its OWN ExitCode.
+          $smoke=Start-Process -FilePath $installed -ArgumentList '--smoke-data-av' -Wait -PassThru
+          if (Test-Path $env:NVP_NATIVE_SMOKE_DIAGNOSTICS) {
+            Get-Content -LiteralPath $env:NVP_NATIVE_SMOKE_DIAGNOSTICS
+          } else {
+            throw "Installed NVP Python entry never created startup trace; process exit $($smoke.ExitCode)"
+          }
+          if ($smoke.ExitCode -ne 0) {
+            throw "Installed native Take/audio smoke exited $($smoke.ExitCode)"
           }
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'nvp-installed-webview-traceback.txt'
-          & $installed '--smoke-window'
-          if ($LASTEXITCODE -ne 0) {
-            if (Test-Path $env:NVP_NATIVE_SMOKE_DIAGNOSTICS) {
-              Get-Content $env:NVP_NATIVE_SMOKE_DIAGNOSTICS
-            }
-            throw 'Installed WebView2 data-first sound UI failed'
+          $gui=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -Wait -PassThru
+          if (Test-Path $env:NVP_NATIVE_SMOKE_DIAGNOSTICS) {
+            Get-Content -LiteralPath $env:NVP_NATIVE_SMOKE_DIAGNOSTICS
+          } else {
+            throw "Installed WebView2 smoke lacked native entry trace; process exit $($gui.ExitCode)"
+          }
+          if ($gui.ExitCode -ne 0) {
+            throw "Installed WebView2 data-first UI exited $($gui.ExitCode)"
           }
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
