@@ -17,7 +17,8 @@ MAX_MESH_TRIANGLES_TOTAL=8192
 
 
 def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
-                 scene_id=None,scene_revision=None):
+                 scene_id=None,scene_revision=None,
+                 include_texture_transport=True):
     if not isinstance(index,FilmIndex):
         raise TypeError("Actual FilmIndex is required for source geometry")
     if (type(scene_snapshot) is not dict or
@@ -57,7 +58,8 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             shape=source["data"]["shape"]
             size=source["data"]["size_m"]
             asset_material=source["data"].get("preview_material")
-            if asset_material is not None and "texture" in asset_material:
+            if (include_texture_transport and asset_material is not None
+                    and "texture" in asset_material):
                 from backend.nvp_native_usd_texture import texture_transport
                 asset_material={**asset_material,
                     "texture_transport":texture_transport(
