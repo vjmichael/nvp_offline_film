@@ -225,7 +225,7 @@ def publish_dcp_candidate(index:FilmIndex,pid,*,take_id,take_revision,
                 "original_data_modified":False,
                 "ffmpeg_used":False,
             },dependencies=[{
-                "object_id":take_id,"revision":take_revision,"role":"take"}])
+                "object_id":take_id,"revision":take_revision,"role":"source_take"}])
         return {
             "format":FORMAT,"status":"STRUCTURAL_DCP_CANDIDATE_PUBLISHED",
             "destination":str(target),
