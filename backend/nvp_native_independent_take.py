@@ -306,8 +306,20 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                     "clock_evidence":{"object_id":evidence_id,
                                       "document_sha256":evidence["document_sha256"]},
                 })
+            def approve_clock_bound_take(event,scope):
+                evidence_scope={
+                    **scope,
+                    "independent_clock_evidence_sha256":evidence["document_sha256"],
+                    "independent_clock_drift_ppm":[
+                        model["measured_drift_ppm"] for model in models],
+                    "independent_adc_max_residual_ns":[
+                        model["max_adc_residual_ns"] for model in models],
+                    "independent_original_pcm_unmodified":True,
+                    "independent_hardware_genlock":False,
+                }
+                return self.approve_freeze(event,evidence_scope)
             saved=NativeSceneSoundCapture(
-                self.index,approve_take=self.approve_freeze).capture(
+                self.index,approve_take=approve_clock_bound_take).capture(
                 self.project_id,self.take_id,
                 scene_id=self.scene_id,scene_revision=self.scene_revision,
                 camera_timeline_id=self.camera_id,
