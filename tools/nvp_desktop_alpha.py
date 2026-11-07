@@ -195,8 +195,10 @@ def create_trusted_camera_bridge(port):
     """Desktop-only pywebview IPC; never registered as an HTTP route."""
     from backend.nvp_api import studio
     from backend.nvp_film_index import FilmIndex
-    from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
-    return TrustedDesktopCameraBridge(
+    from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+    # Retains the established trusted camera and OpenUSD A/V methods; WO5
+    # adds only native-window-scoped intent/review functions, never HTTP.
+    return TrustedDesktopWO5Bridge(
         FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
 
 
