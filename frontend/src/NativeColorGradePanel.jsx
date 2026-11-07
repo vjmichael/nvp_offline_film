@@ -302,6 +302,9 @@ export default function NativeColorGradePanel({project,api,action,busy}){
          result.target!==cinemaTarget||
          result.source_take_sha256!==take.take_document_sha256||
          result.source_integrity_verified!==true||
+         result.authenticated_approved_source_derivative!==true||
+         !/^[0-9a-f]{64}$/.test(
+            result.authenticated_native_presentation_sha256||'')||
          result.dcp_delivered!==false||
          result.hdr10_master_approved!==false||
          result.source_original_modified!==false||
