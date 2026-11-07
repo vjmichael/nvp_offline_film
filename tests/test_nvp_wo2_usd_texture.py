@@ -169,6 +169,28 @@ class WO2NativeTextureTests(unittest.TestCase):
                     self.index,self.pid,Path("relative.png"),
                     approve=lambda _:True)
 
+    def test_full_size_png_retains_original_sha_with_derived_viewport_lod(self):
+        from hashlib import sha256
+        from base64 import b64decode
+        image=Image.new("RGB",(1024,512),(135,60,205))
+        buffer=BytesIO()
+        image.save(buffer,format="PNG")
+        original=buffer.getvalue()
+        descriptor=publish_texture(self.index,self.pid,original)
+        self.assertEqual((descriptor["width"],descriptor["height"]),
+                         (1024,512))
+        packet=texture_transport(self.index,self.pid,descriptor)
+        self.assertTrue(packet["derived_preview"])
+        self.assertEqual((packet["width"],packet["height"]),(512,256))
+        self.assertEqual((packet["original_width"],packet["original_height"]),
+                         (1024,512))
+        preview=b64decode(packet["png_base64"])
+        self.assertEqual(packet["preview_sha256"],sha256(preview).hexdigest())
+        self.assertNotEqual(packet["preview_sha256"],descriptor["sha256"])
+        self.assertEqual(verified_texture(
+            self.index,self.pid,descriptor)[0],original)
+        self.assertEqual(descriptor["sha256"],sha256(original).hexdigest())
+
     def test_reject_invalid_png_or_unbound_texture_mesh(self):
         for bad in (b"not a png",b"",b"\x89PNG\r\n\x1a\ncorrupt"):
             with self.subTest(bad=bad):
