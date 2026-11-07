@@ -145,10 +145,12 @@ class FrozenSceneAV:
                         for o in at_end["objects"]}
         axis_a=right_axis(orientations_a[self.listener_path])
         axis_b=right_axis(orientations_b[self.listener_path])
-        # Coarse, SHA-verified original USD solids; no simulated room mix.
+        # Independently reproject source-verified real USD geometry at both
+        # endpoints. Merely moving an old obstacle's center is incorrect
+        # for rotating mesh/cube triangles and can invent fake occlusion.
+        # Never flatten or cache a full-film environment.
         obstacles=verified_occluders(self.index,self.project_id,at_start)
-        obstacles_end=[{**ob,"center":positions_b.get(ob["path"],ob["center"])}
-                       for ob in obstacles]
+        obstacles_end=verified_occluders(self.index,self.project_id,at_end)
         if self.listener_path not in positions_a:
             raise RuntimeError("Virtual listener no longer exists")
         page=self.timeline.events_in(
