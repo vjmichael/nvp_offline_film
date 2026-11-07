@@ -58,3 +58,12 @@ The first three are **implementation-only pending exact-head CI and installed/na
 
 
 **Codec workspace isolation checkpoint:** The genuine approved WAV is never hardlinked into the wrapper's work directory. Bounded-memory *copying* incurs scratch disk space but isolates the original from worker writes. Native hostile-worker regression tests must pass separately from a real CineCert unwrapping roundtrip. Even a fully passing test does not establish sandboxed process containment or independently certified DCI ingest.
+
+
+## WO4-LF03 manual workspace lock (decision 2026-11-07)
+
+**Implemented UI:** global manual **Lock NVP** action, app-local full-window inert modal, intentional **Home · Open NVP** or slide-to-open unlock. It does not automatically time out, lock the OS, terminate native work or grant any job cancellation permission. Only a convenience/accidental-interaction lock; not security/authentication. Screen state survives accidental page refresh in the same webview session.
+
+**Verification:** Native Linux Ubuntu 24.04 frontend Vitest + Vite bundle job in run `42354746851` succeeded; native Windows 2025 job had not completed when last inspected. Real installed desktop/OS lock integration acceptance remains OPEN.
+
+**Separate capabilities not implemented yet:** a single genuinely out-of-process durable production supervisor, SQLite journal, process ownership and crash recovery; explicit optional host-vetted Windows/Linux OS session-lock button; production-aware sleep policy and sustained AFK full-film encoding acceptance. These must be tested without conflating the UI convenience lock with a security boundary. See `docs/NVP_PRODUCTION_SUPERVISOR_AND_LOCK.md`.
