@@ -482,11 +482,11 @@ class TrustedDesktopCameraBridge:
             png=self.index.get_blob(pid,digest)
             width,height,_=decode_png(png)
             if not self._ask(
-                "Publish NEW immutable mesh material revision?\\n"+
-                "Source mesh: "+aid+" revision "+str(revision)+"\\n"+
-                "Original mesh SHA-256: "+old["document_sha256"]+"\\n"+
-                "Frozen image SHA-256: "+digest+"\\n"+
-                "Texture: "+str(width)+" x "+str(height)+"\\n"+
+                "Publish NEW immutable mesh material revision?\n"+
+                "Source mesh: "+aid+" revision "+str(revision)+"\n"+
+                "Original mesh SHA-256: "+old["document_sha256"]+"\n"+
+                "Frozen image SHA-256: "+digest+"\n"+
+                "Texture: "+str(width)+" x "+str(height)+"\n"+
                 "Existing scene, character and Digital Take revisions remain unchanged."):
                 return {"format":"nvp.native.texture_mesh_revision.v1",
                         "status":"DENIED","original_modified":False}
@@ -525,12 +525,12 @@ class TrustedDesktopCameraBridge:
             from backend.nvp_native_usd_texture import import_native_selected_png
             def approve(scope):
                 return self._ask(
-                    "Import a frozen original PNG texture?\\n"+
-                    "SHA-256: "+scope["sha256"]+"\\n"+
+                    "Import a frozen original PNG texture?\n"+
+                    "SHA-256: "+scope["sha256"]+"\n"+
                     "Dimensions: "+str(scope["width"])+" x "+
-                        str(scope["height"])+"\\n"+
-                    "Bytes: "+str(scope["size_bytes"])+"\\n"+
-                    "NVP will store immutable source bytes in this project.\\n"+
+                        str(scope["height"])+"\n"+
+                    "Bytes: "+str(scope["size_bytes"])+"\n"+
+                    "NVP will store immutable source bytes in this project.\n"+
                     "No existing scene, rig, Digital Take or presentation changes.")
             result=import_native_selected_png(
                 self.index,project_id,chosen[0],approve=approve)
