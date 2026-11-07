@@ -127,9 +127,16 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null,initialTak
         throw Error('Native film data inventory is not verified');
       setTakes(result.takes);
       const requested=result.takes.find(x=>x.take_id===initialTakeId);
-      setTakeId(requested?.take_id||result.takes[0]?.take_id||'');
-      if(requested&&Number.isSafeInteger(initialSourceSample)&&initialSourceSample>=0)
-        setSourceSample(String(initialSourceSample));
+      if(initialTakeId&&!requested){
+        // WO5 source preview may NOT silently switch the director to
+        // a different Take while displaying another reel's custody.
+        setTakeId('');
+        setError('The exact approved original Take is missing from the native project catalog.');
+      }else{
+        setTakeId(requested?.take_id||result.takes[0]?.take_id||'');
+        if(requested&&Number.isSafeInteger(initialSourceSample)&&initialSourceSample>=0)
+          setSourceSample(String(initialSourceSample));
+      }
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
   },[native,projectId,initialTakeId,initialSourceSample]);
