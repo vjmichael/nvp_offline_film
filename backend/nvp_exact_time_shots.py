@@ -181,6 +181,31 @@ class ExactTimeShotSequence:
                 "soundtrack_flattened":False,
                 "digital_take_frozen":False}
 
+    def camera_at_tick(self,project_id,timeline_id,revision,tick):
+        """Resolve one exact Film Time instant without FPS rounding or proxy frames.
+
+        Intervals are half-open [start,end). An intentional gap returns
+        a typed GAP result, not the preceding camera or an invented shot.
+        """
+        plan=self.read(project_id,timeline_id,revision)
+        instant=_tick(tick,"camera lookup Film Time")
+        if instant>=int(plan["duration_tick"]):
+            raise ValueError("Camera lookup must precede sequence end")
+        for shot in plan["shots"]:
+            if int(shot["start_tick"])<=instant<int(shot["end_tick"]):
+                return {"status":"CAMERA","tick":str(instant),
+                        "timeline_id":timeline_id,"revision":revision,
+                        "document_sha256":plan["document_sha256"],
+                        "scene_document_sha256":plan["scene_document_sha256"],
+                        "shot_id":shot["shot_id"],
+                        "camera_path":shot["camera_path"],
+                        "pattern":shot["pattern"]}
+        return {"status":"GAP","tick":str(instant),
+                "timeline_id":timeline_id,"revision":revision,
+                "document_sha256":plan["document_sha256"],
+                "scene_document_sha256":plan["scene_document_sha256"],
+                "shot_id":None,"camera_path":None,"pattern":None}
+
     def checkpoints(self,project_id,timeline_id,revision):
         plan=self.read(project_id,timeline_id,revision)
         points={0}
