@@ -16,13 +16,21 @@ MAX_MESH_POINTS_TOTAL=4096
 MAX_MESH_TRIANGLES_TOTAL=8192
 
 
-def visual_state(index:FilmIndex,project_id,scene_snapshot):
+def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
+                 scene_id=None,scene_revision=None):
     if not isinstance(index,FilmIndex):
         raise TypeError("Actual FilmIndex is required for source geometry")
     if (type(scene_snapshot) is not dict or
         not isinstance(scene_snapshot.get("objects"),list) or
         len(scene_snapshot["objects"])>MAX_OBJECTS):
         raise ValueError("Invalid bounded USD world-state snapshot")
+    if (scene_id is None)!=(scene_revision is None):
+        raise ValueError("Live skin requires both scene identity and exact revision")
+    skins={}
+    if scene_id is not None:
+        from backend.nvp_data_av_skinning import verified_live_skins
+        skins=verified_live_skins(index,project_id,scene_snapshot,
+            scene_id=scene_id,scene_revision=scene_revision)
     visual=[]
     mesh_points_total=0
     mesh_triangles_total=0
@@ -34,6 +42,9 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot):
         mesh_points=None
         mesh_triangles=None
         binding=obj.get("asset")
+        skin=skins.get(obj["path"])
+        if skin is not None and binding is not None:
+            raise RuntimeError("Ambiguous original actor mesh and reusable asset")
         if binding is not None:
             source,_layer=assets.open(
                 project_id,binding["asset_id"],
@@ -53,6 +64,16 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot):
                 if (mesh_points_total>MAX_MESH_POINTS_TOTAL or
                         mesh_triangles_total>MAX_MESH_TRIANGLES_TOTAL):
                     raise RuntimeError("Live original USD mesh budget exceeded")
+        if skin is not None:
+            shape=skin["shape"]
+            size=skin["size_m"]
+            mesh_points=skin["mesh_points"]
+            mesh_triangles=skin["mesh_triangles"]
+            mesh_points_total+=len(mesh_points)
+            mesh_triangles_total+=len(mesh_triangles)
+            if (mesh_points_total>MAX_MESH_POINTS_TOTAL or
+                    mesh_triangles_total>MAX_MESH_TRIANGLES_TOTAL):
+                raise RuntimeError("Live source character mesh budget exceeded")
         matrix=obj["world_matrix"]
         if (type(matrix) is not list or len(matrix)!=4 or
             any(type(row) is not list or len(row)!=4 for row in matrix)):
@@ -63,10 +84,15 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot):
             "world_matrix":matrix,
             "world_translation":obj["world_translation"],
             "geometry_asset_sha256":(
-                binding["asset_document_sha256"] if binding else None),
-            "gizmo_only":binding is None,
+                binding["asset_document_sha256"] if binding else
+                skin["geometry_asset_sha256"] if skin else None),
+            "gizmo_only":binding is None and skin is None,
             "mesh_points":mesh_points,
             "mesh_triangles":mesh_triangles,
+            "source_skinning":bool(skin),
+            "source_skinning_tick":skin["source_skinning_tick"] if skin else None,
+            "source_color_rgb":skin["source_color_rgb"] if skin else None,
+            "facial_animation_evaluated":False,
         })
     return {"format":FORMAT,
             "time_tick":str(scene_snapshot["time_tick"]),

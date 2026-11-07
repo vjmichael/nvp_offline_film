@@ -168,7 +168,10 @@ class TrustedDataAVController:
             source=state["session"]
             snapshot=source.snapshot(tick)
             from backend.nvp_data_av_visual import visual_state
-            visual=visual_state(self.index,state["pid"],snapshot)
+            visual=visual_state(
+                self.index,state["pid"],snapshot,
+                scene_id=source.data["scene_id"],
+                scene_revision=source.data["scene_revision"])
             overlay=spatial_audio_at(
                 self.index,state["pid"],
                 source.data["scene_id"],source.data["scene_revision"],

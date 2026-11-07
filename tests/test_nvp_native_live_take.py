@@ -28,6 +28,14 @@ class FakeCaptureDevice:
     def close(self):self.closed=True
 
 
+class StopFlushCaptureDevice(FakeCaptureDevice):
+    def stop(self):
+        # Some real capture APIs flush their last device callback during
+        # stop. It is still original PCM and must reach the source ledger.
+        self.emit(128)
+        super().stop()
+
+
 class LiveTakeMicTests(unittest.TestCase):
     def setUp(self):
         fixture.NativeDigitalTakeAudioTests.setUp(self)
@@ -70,6 +78,18 @@ class LiveTakeMicTests(unittest.TestCase):
         result=engine.audio_window(0,512)
         self.assertIn("MicSpeech001",result["audible_event_ids"])
         self.assertFalse(result["source_modified"])
+
+    def test_native_stop_flush_is_included_in_frozen_sample_source(self):
+        self.device=StopFlushCaptureDevice()
+        mic=self.session()
+        self.assertEqual(mic.begin()["status"],"RECORDING")
+        saved=mic.finish()
+        self.assertEqual(saved["actual_recorded_samples"],4128)
+        self.assertEqual(saved["actual_audio_end_tick"],str(4128*(T//48000)))
+        self.assertEqual(self.index.read_revision(
+            self.pid,"MicSignal001",1)["data"]["sample_count"],4128)
+        self.assertEqual(saved["picture_frames_generated"],False)
+        self.assertTrue(self.device.closed)
 
     def test_cancel_cannot_create_a_live_take(self):
         mic=self.session()
