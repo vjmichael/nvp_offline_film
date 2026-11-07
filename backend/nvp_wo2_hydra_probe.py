@@ -46,7 +46,7 @@ def _original_texture_descriptors(index,pid,scene):
 def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                            camera_path,renderer="Embree",width=256,
                            timeout_seconds=90,require_gpu=False,
-                           native_take=None):
+                           native_take=None,look_ref=None):
     if not isinstance(index,FilmIndex):
         raise TypeError("Original FilmIndex required")
     _require_pid(pid)
@@ -72,6 +72,22 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
         _id(native_take["take_id"],"frozen source comparison Take")
         _sha(native_take["take_sha256"])
     record,stage=OpenUSDSceneBridge(index).open(pid,scene_id,scene_revision)
+    look_evidence=None
+    if look_ref is not None:
+        if (native_take is not None or type(look_ref) is not dict or
+            set(look_ref)!={"look_id","revision","document_sha256"}):
+            raise ValueError(
+                "Derived look Hydra must not be compared with an ungraded CPU source")
+        _id(look_ref["look_id"],"source-bound look")
+        _sha(look_ref["document_sha256"])
+        from backend.nvp_wo2_presentation_look import OriginalSceneLook
+        look=OriginalSceneLook(index).open(
+            pid,look_ref["look_id"],look_ref["revision"],
+            scene_sha256=record["document_sha256"])
+        if look["look_document_sha256"]!=look_ref["document_sha256"]:
+            raise PermissionError("Derived Hydra look changed since creator approval")
+        from backend.nvp_wo2_derived_usd_look import derived_look_stage
+        stage,look_evidence=derived_look_stage(stage,record,look["look"])
     if record["data"]["prim_roles"].get(camera_path)!="camera":
         raise PermissionError("Hydra probe requires an original USD camera")
     descriptors=_original_texture_descriptors(index,pid,record)
@@ -84,6 +100,9 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
         "physical_display_calibrated":False,
         "physical_gpu_accepted":False,
         "real_independent_frame_rendered":False,
+        "source_bound_presentation_sha256":(
+            look_ref["document_sha256"] if look_ref is not None else None),
+        "derived_look_scope":look_evidence,
         "approved_texture_sha256":sorted(
             d["sha256"] for d in descriptors),
     }
