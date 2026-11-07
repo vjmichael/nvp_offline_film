@@ -154,6 +154,36 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
         with self.assertRaises(KeyError):
             self._publish()
 
+    def test_skinned_quad_facevarying_seams_trianguled_without_replacement(self):
+        from pxr import UsdGeom
+        from backend.nvp_openusd_time_state import OpenUSDTimeState
+        uv=[]
+        for i,face in enumerate(self.skin["faces"]):
+            uv.append([[float(i)/10.,float(j)/10.]
+                       for j in range(len(face))])
+        self.rig["skin"]["face_uvs"]=uv
+        self._publish()
+        _,stage=self.scene.open(self.pid,"face_world",1)
+        mesh=UsdGeom.Mesh(
+            stage.GetPrimAtPath("/World/Actor/Rig/CharacterMesh"))
+        st=UsdGeom.PrimvarsAPI(mesh).GetPrimvar("st")
+        self.assertEqual(st.GetInterpolation(),"faceVarying")
+        snap=OpenUSDTimeState(self.index).evaluate(
+            self.pid,"face_world",1,"acting",1,tick=T)
+        state=visual_state(self.index,self.pid,snap,
+            scene_id="face_world",scene_revision=1)
+        actor=next(x for x in state["objects"]
+                   if x["path"]=="/World/Actor")
+        self.assertEqual(actor["shape"],"skinned_mesh")
+        self.assertIsNone(actor["mesh_uvs"])
+        self.assertEqual(len(actor["mesh_face_uvs"]),
+                         len(actor["mesh_triangles"]))
+        self.assertEqual(actor["mesh_face_uvs"][0],
+                         [uv[0][0],uv[0][1],uv[0][2]])
+        self.assertEqual(actor["mesh_face_uvs"][1],
+                         [uv[0][0],uv[0][2],uv[0][3]])
+        self.assertFalse(state["source_modified"])
+
     def test_reject_rig_uvs_that_do_not_match_original_vertices(self):
         self.rig["skin"]["mesh_uvs"]=[[0.,0.]]
         with self.assertRaises(ValueError):
