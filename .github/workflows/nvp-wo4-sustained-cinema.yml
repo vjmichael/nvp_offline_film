@@ -63,6 +63,7 @@ jobs:
           NVP_NATIVE_ASDCP_WRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-wrap
           NVP_NATIVE_ASDCP_INFO: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-info
           PYTHONUNBUFFERED: '1'
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python -m compileall -q tests/nvp_wo4_sustained_ci.py
           python tests/nvp_wo4_sustained_ci.py \
