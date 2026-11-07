@@ -85,14 +85,17 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
   },[project.id,api]);
 
   useEffect(()=>{
+    // Invalidate any pending publication belonging to the previous scene.
+    draftEpoch.current++;
     setCameraPath(source?.cameras?.[0]?.path||'');
     setShots([]);setRevision(0);setTimelineSha('');setExactDuration(null);setTickMode(false);setNotice('');
     if(!source)return;
     let active=true;
+    const loadingEpoch=draftEpoch.current;
     api('/projects/'+encodeURIComponent(project.id)+
         '/film/native-time-shots/'+encodeURIComponent(timelineId))
       .then(x=>{
-        if(!active)return;
+        if(!active||draftEpoch.current!==loadingEpoch)return;
         if(x?.format!=='nvp.exact_time.usd_camera_shots.v1'||
            x.scene_id!==source.scene_id||
            x.scene_document_sha256!==source.document_sha256||
