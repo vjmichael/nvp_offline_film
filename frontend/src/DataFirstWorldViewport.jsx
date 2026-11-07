@@ -90,6 +90,44 @@ export function validateMeshData(item){
   return {pts,faces,uv:uv||null,faceUV:faceUV||null};
 }
 
+export function validateMaterialSlots(item){
+  const slots=item.source_material_slots;
+  if(slots==null)return null;
+  if(item.shape!=='mesh'||!Array.isArray(item.mesh_triangles)||
+     !Array.isArray(slots)||slots.length<1||slots.length>8)
+    throw Error('Invalid frozen USD face material subset scope');
+  const faces=item.mesh_triangles.length;
+  const occupied=new Set();
+  for(let i=0;i<slots.length;i++){
+    const spec=slots[i];
+    if(spec?.format!=='nvp.original.usd_material_subsets.v1'||
+       spec.source_modified!==false||
+       spec.material_path!=='/Asset/Materials/Slot'+i||
+       spec.subset_path!=='/Asset/Geometry/MaterialSlot'+i||
+       !Array.isArray(spec.faces)||spec.faces.length===0||
+       !spec.faces.every(n=>Number.isInteger(n)&&n>=0&&n<faces)||
+       !Array.isArray(spec.base_color_rgb)||
+       spec.base_color_rgb.length!==3||
+       !spec.base_color_rgb.every(v=>typeof v==='number'&&
+         Number.isFinite(v)&&v>=0&&v<=1)||
+       ![spec.roughness,spec.metallic].every(v=>typeof v==='number'&&
+         Number.isFinite(v)&&v>=0&&v<=1))
+      throw Error('Malformed original USD subset source');
+    for(const face of spec.faces){
+      if(occupied.has(face))throw Error('Overlapping original USD face materials');
+      occupied.add(face);
+    }
+  }
+  return slots;
+}
+
+function disposeMeshMaterial(material){
+  for(const entry of Array.isArray(material)?material:[material]){
+    if(entry?.map)entry.map.dispose();
+    entry?.dispose();
+  }
+}
+
 function shapeFor(item){
   if(!Number.isFinite(item.size_m)||item.size_m<=0||item.size_m>10000)
     throw Error('Untrusted USD 3D geometry scale');
@@ -282,8 +320,7 @@ export default function DataFirstWorldViewport({
       if(controls)controls.dispose();
       for(const mesh of meshes.values()){
         if(mesh.geometry)mesh.geometry.dispose();
-        if(mesh.material?.map)mesh.material.map.dispose();
-        if(mesh.material)mesh.material.dispose();
+        disposeMeshMaterial(mesh.material);
       }
       if(renderer){
         if(env.current?.detachDeviceHandlers)env.current.detachDeviceHandlers();
@@ -324,8 +361,7 @@ export default function DataFirstWorldViewport({
       if(mesh&&mesh.userData.sourceGeometry!==fingerprint){
         state.world.remove(mesh);
         mesh.geometry.dispose();
-        if(mesh.material.map)mesh.material.map.dispose();
-        mesh.material.dispose();
+        disposeMeshMaterial(mesh.material);
         state.meshes.delete(obj.path);mesh=null;
       }
       if(!mesh){
@@ -370,7 +406,24 @@ export default function DataFirstWorldViewport({
             material.map=tex;
             material.needsUpdate=true;
           }
-          mesh=new THREE.Mesh(geometry,material);
+          const slots=validateMaterialSlots(obj);
+          let materialSet=material;
+          if(slots){
+            const others=slots.map(slot=>new THREE.MeshStandardMaterial({
+              color:new THREE.Color().setRGB(...slot.base_color_rgb),
+              roughness:slot.roughness,metalness:slot.metallic,
+              side:THREE.DoubleSide,
+            }));
+            const faceMaterial=new Array(obj.mesh_triangles.length).fill(0);
+            slots.forEach((slot,slotIndex)=>slot.faces.forEach(face=>{
+              faceMaterial[face]=slotIndex+1;
+            }));
+            geometry.clearGroups();
+            faceMaterial.forEach((index,faceIndex)=>
+              geometry.addGroup(faceIndex*3,3,index));
+            materialSet=[material,...others];
+          }
+          mesh=new THREE.Mesh(geometry,materialSet);
           mesh.matrixAutoUpdate=false;
           mesh.userData.sourceGeometry=fingerprint;
           state.world.add(mesh);
@@ -390,9 +443,11 @@ export default function DataFirstWorldViewport({
           incoming.delete(obj.path);
           continue;
         }
-        mesh.material.color.setRGB(...surface.base_color_rgb);
-        mesh.material.roughness=surface.roughness;
-        mesh.material.metalness=surface.metallic;
+        const base=Array.isArray(mesh.material)?
+          mesh.material[0]:mesh.material;
+        base.color.setRGB(...surface.base_color_rgb);
+        base.roughness=surface.roughness;
+        base.metalness=surface.metallic;
       }
       if(obj.shape==='skinned_mesh'){
         try{
@@ -405,8 +460,12 @@ export default function DataFirstWorldViewport({
       }
       mesh.matrix.copy(usdMatrix(obj.world_matrix));
       mesh.matrixWorldNeedsUpdate=true;
-      mesh.material.emissive.setHex(obj.path===listenerPath?0x065f46:0);
-      mesh.material.needsUpdate=true;
+      const allMaterials=Array.isArray(mesh.material)?
+        mesh.material:[mesh.material];
+      for(const current of allMaterials){
+        current.emissive.setHex(obj.path===listenerPath?0x065f46:0);
+        current.needsUpdate=true;
+      }
     }
     for(const [path,mesh] of state.meshes){
       if(!incoming.has(path)){
