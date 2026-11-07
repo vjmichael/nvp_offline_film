@@ -9,9 +9,10 @@ certification.
 ## Current external technical baseline
 
 - [DCI Digital Cinema System Specification (DCSS)](https://www.dcimovies.com/dci-specification/):
-  version **1.5.0**, published/approved 2026-01-29. Refer to the current
-  definitive DCI HTML specification when making final release claims; don't
-  freeze a 2025 version as if it were current in 2026.
+  version **1.5.1**, approved 2026-10-20 (supersedes v1.5.0 from
+  2026-01-29). The DCI CTP is **v1.6.0** as of 2026-10-20.
+  Recheck the definitive DCI HTML version and test plan at release; do not
+  mistake DCI equipment testing for a DCP authoring-software certificate.
 - NVP outputs SMPTE-style picture/sound MXF, CPL, PKL, ASSETMAP and VOLINDEX,
   with DCP structure/UUID/SHA-1 PKL interchange checks and separate stronger
   source-custody SHA-256. This alone is **structural** evidence.
@@ -22,6 +23,43 @@ certification.
   media blocks, security, image and sound behavior, and interoperability.
   Validating one independently produced DCP is not a blanket DCI certificate
   for the entire NVP editor or for cinema hardware.
+
+## Creator's final theatrical packaging target — SMPTE DCP Bv2.1
+
+**Recorded 2026-11-07; targeted, NOT achieved.** NVP's default professional
+theatrical export shall conform to the **SMPTE DCP Bv2.1 Application Profile
+(SMPTE RDD 52:2020)** and all applicable underlying SMPTE DCP standards,
+particularly SMPTE ST 429-2 DCP operational constraints and required
+referenced technical standards. RDD 52 is a Registered Disclosure Document
+describing interoperability constraints; it is **not itself a SMPTE Standard**
+and not a license to create incompatible "enhanced DCP" extensions.
+
+The DCP export needs correct picture/PCM essence, validated MXF/CPL/PKL/
+AssetMap, **MCA audio labels**, CPL markers/application-profile metadata,
+correct language/timed-text/captions/accessibility where applicable,
+separately tested encrypted/KDM options when required, and independent
+Bv2.1/reference-theater playback. Existing WO3/WO4 structural SMPTE-style
+packages and native synthetic CI do **not** prove Bv2.1 conformance. A
+standalone second validator plus professional ingest and calibrated
+picture/sound tests remain release gates.
+
+**Higher-fidelity production is still encouraged** in NVP's authoritative
+data-first OpenUSD/scene-linear source, image/audio working formats and
+*separate* non-DCP exports (e.g., higher bit depth, resolution, HDR, precision
+and frame rate where supported). Every output has its own honest validated
+format profile. This does NOT widen the allowable Bv2.1 DCP envelope.
+
+**Additional product end goals:** smooth fully integrated film-workflow
+pipeline, novice-friendly yet advanced-capable installed GUI, and
+model-independent AI execution that genuinely understands NVP's native
+tools, FilmIndex, authorized worker roles, source integrity and receipt
+states. AI-generated text and synthetic benchmarks are never execution or
+artistic acceptance. The creator's initial authentic film test is now
+**up to 30 MINUTES** (not 30 seconds); WO5's existing 30-second/one-reel
+read-only gate requires a separately tracked correction before real testing.
+
+Full decision and sources:
+[NVP Bv2.1 theatrical and product end state](NVP_THEATRICAL_BV21_AND_PRODUCT_ENDSTATE.md).
 
 ## NVP-owned export gates (engineering)
 
