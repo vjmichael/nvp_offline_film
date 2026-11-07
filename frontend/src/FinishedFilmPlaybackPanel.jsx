@@ -180,6 +180,13 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
       if(start>=session.frame_count)throw Error('Seek beyond finished film duration');
       ctx=new Audio({sampleRate:RATE});
       await ctx.resume();
+      // Observe actual WebAudio graph samples during playback, in addition
+      // to verifying native PCM receipts and scheduled source windows.
+      const analyser=ctx.createAnalyser();
+      analyser.fftSize=2048;
+      analyser.smoothingTimeConstant=0;
+      analyser.connect(ctx.destination);
+      const audioProbe=new Float32Array(analyser.fftSize);
       const c={
         generation:gen,active:true,native,
         ticket:session.session_id,context:ctx,
@@ -187,6 +194,8 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
         started:false,anchor:0,nextSchedule:start,
         displayed:start-1,animation:null,lastFrame:session.frame_count-1,
         painted:0,soundQueued:0,paintedFirst:null,paintedLast:null,
+        analyser,audioProbe,nonSilentAudioCallbacks:0,
+        maximumPictureAudioOffsetMs:0,
       };
       ref.current=c;
       setInfo(session);setPlaying(true);
@@ -211,7 +220,12 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
           clip.getChannelData(1).set(item.audio[1]);
           const node=ctx.createBufferSource();
           node.buffer=clip;
-          node.connect(ctx.destination);
+          node.connect(c.analyser);
+          node.onended=()=>{
+            const n=c.scheduled.indexOf(node);
+            if(n>=0)c.scheduled.splice(n,1);
+            try{node.disconnect();}catch{}
+          };
           node.start(requireAheadOfAudioClock(
             c.anchor+(c.nextSchedule-c.first)/FPS,ctx.currentTime));
           c.scheduled.push(node);
@@ -228,6 +242,9 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
           void stop(true);setPlaying(false);return;
         }
         if(c.started){
+          c.analyser.getFloatTimeDomainData(c.audioProbe);
+          if(c.audioProbe.some(value=>Math.abs(value)>0.00002))
+            c.nonSilentAudioCallbacks++;
           const elapsed=ctx.currentTime-c.anchor;
           if(elapsed>=0){
             const frame=c.first+Math.floor(elapsed*FPS);
@@ -248,6 +265,8 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
                 first:c.first,last:c.lastFrame,
                 canvasFramesDrawn:c.painted,
                 masteredPcmWindowsQueued:c.soundQueued,
+                webAudioNonSilentRenderCallbacks:c.nonSilentAudioCallbacks,
+                maxPictureAudioOffsetMs:c.maximumPictureAudioOffsetMs,
                 audioContextElapsedSeconds:Math.max(0,ctx.currentTime-c.anchor),
                 continuousCanvasTimeline:true,
                 audibleSpeakersIndependentlyVerified:false,
@@ -291,6 +310,9 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
                 void stop(true);setPlaying(false);return;
               }
               c.painted++;
+              c.maximumPictureAudioOffsetMs=Math.max(
+                c.maximumPictureAudioOffsetMs,
+                Math.abs(elapsed-(frame-c.first)/FPS)*1000);
               c.paintedFirst??=frame;
               c.paintedLast=frame;
               c.displayed=frame;
@@ -370,7 +392,10 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
       data-nvp-film-av-receipt={JSON.stringify(presentationReceipt)}>
       WebView2 presentation timeline: {presentationReceipt.canvasFramesDrawn}
       {' '}real canvas frames, {presentationReceipt.masteredPcmWindowsQueued}
-      {' '}mastered-audio clock windows queued. This does not prove audible speakers,
+      {' '}mastered-audio clock windows queued; Web Audio produced non-silent samples
+      in {presentationReceipt.webAudioNonSilentRenderCallbacks} callback(s),
+      maximum picture/audio-clock phase {presentationReceipt.maxPictureAudioOffsetMs.toFixed(1)} ms.
+      This does not prove audible speakers,
       director approval or theatrical compliance.
     </output>}
     <canvas ref={canvas} width={512} height={270} role="img"
