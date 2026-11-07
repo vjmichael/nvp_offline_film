@@ -944,3 +944,33 @@ New \`backend/nvp_wo6_tool_readiness.py\` checks current on-disk SHA pins for na
 The preview traverses known original-scene → Take → edit → master → presentation FilmIndex dependencies, scaled-editorial bindings and sparse temporal references with bounded SQL reads, exact source SHA and explicit truncation. It discloses **unindexed FeatureJournal/historical output uncertainty**, old-vs-current source heads, and distinct human approvals and native supervisor/resource grants. Optional WO4 `plan_feature` is an estimate only; native tool/GPU/disk admit, actual render/mix, creator intent approval and release DCP remain separate. No worker is run and original source+derived bytes are unchanged. `tests/test_nvp_wo6_impact_preview.py` covers the full graph, normalized event edges, approved-vs-proposed Bible canon, scene binding, stale/changed SHA, cross-project deny, preview-only capacity, truncated graph, and native authorizer denial; Windows/Linux 3.11/3.13 submitted. Design/spec: `docs/NVP_WO6_PRODUCTION_BIBLE_IMPACT.md`.
 
 **Remaining:** native exact-head verification and any failure repair; WO6-05 genuinely creator-confirmed native execution (not AI self-authorization); WO6-06 durable worker receipts; WO6-07 installed app/model-in-loop director acceptance. WO5 sustained installed final A/V, original 30m finished film, genuine feature/epic and Bv2.1 theater acceptance remain open.
+
+### WO6-05 — first host-owned creator-approved native Take operation (2026-11-07)
+
+**IMPLEMENTED IN DRAFT PR #93; exact-head Windows/Linux CI not yet accepted.**
+Added `backend/nvp_wo6_native_take_action.py`, `tools/nvp_wo6_take_worker.py`
+and real OpenUSD native test `tests/test_nvp_wo6_native_take_action.py`.
+This is a host-only first-party `nvp.film.create_frozen_take.v1` operation:
+a project+actor+turn scope, human creator decision, separate native host
+permission, exact scene+temporal SHA/revisions, selected bounded Film Time
+checkpoints, fresh WO6-04 source-impact digest, and a **new** Take ID are
+required. Existing source retirement/staleness checks and approved Bible SHA
+are honored where explicitly selected. No unbounded model tool execution.
+
+An exact immutable task is committed via existing `ApprovedTaskBindings` and
+`TaskLedger`; native Python/worker source SHA pins, 4 GiB default bounded
+resource reservation, existing OS containment, cancellation/policy refresh,
+independent `OpenUSDTakeCapture.verify_take` and durable output receipt all
+gate success. Cancelled/revoked/stale operations do not auto-create new
+Takes. A crash after a source commit is an **INTERRUPTED, reconciliation
+required** receipt rather than an invented rollback or a blind retry. The
+older frozen Takes, edit revisions, source assets and DCP deliveries are
+immutable. The AI read-only catalog does not advertise this operation.
+
+**Still OPEN:** exact-head Linux/Windows 3.11/3.13 proof and failure repair;
+tested source-commit crash/restart reconciliation and installed director UI;
+concrete native actor/camera/edit/sound/color/master/DCP worker operations;
+WO6-06 reliable progress/cancellation/recovery report; WO6-07 model-in-loop
+installed NVP filmmaker acceptance. WO5 real installed sustained picture+
+mastered audio, 30-minute finished original, 60–90-minute feature, >=3-hour
+epic and independent DCP Bv2.1 theatrical validation remain separate gates.
