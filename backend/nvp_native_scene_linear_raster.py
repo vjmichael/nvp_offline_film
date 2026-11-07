@@ -407,7 +407,9 @@ class NativeSceneLinearRaster:
                     if _draw_triangle(
                         color,depth,verts,original_points,
                         face_surfaces.get(face_index,surface),
-                        lights,eye,np,texture=texture,
+                        lights,eye,np,
+                        texture=(texture if face_index not in face_surfaces
+                                 else None),
                         uv_face=(face_uvs[face_index] if face_uvs is not None
                                  else [uvs[i] for i in face]
                                  if texture is not None else None)):
