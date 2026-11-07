@@ -260,6 +260,11 @@ class NativeTakeActionHost:
                     hashlib.sha256(canonical_bytes(spec)).hexdigest()):
                 raise PermissionError("Native worker/source task pin changed")
             _preflight(self.index, spec)
+            if os.name=="nt" and not attest_windows_job_stopped(
+                    folder,task_id=task_id,
+                    spec_sha256=hashlib.sha256(canonical_bytes(spec)).hexdigest(),
+                    owner=self.owner):
+                raise PermissionError("Native Windows Job Object already owns task")
             self.ledger.update(task_id, "preparing_scene",
                                "Creator and host grants verified; checking native source")
             command = (
