@@ -1,0 +1,72 @@
+name: NVP WO5 Trusted Desktop Director Review (NO FFMPEG)
+on:
+  push:
+    branches: [nvp/wo5-production-proof-20261107]
+    paths:
+      - backend/nvp_wo5_original_feature.py
+      - backend/nvp_wo5_director_review.py
+      - backend/nvp_wo5_desktop_bridge.py
+      - tools/nvp_desktop_alpha.py
+      - tests/test_nvp_wo5_desktop_bridge.py
+      - frontend/src/App.jsx
+      - frontend/src/DataFirstAVPanel.jsx
+      - frontend/src/DirectorFilmReviewPanel.jsx
+      - frontend/src/DirectorFilmReviewPanel.test.jsx
+      - .github/workflows/nvp-wo5-desktop-review.yml
+  pull_request:
+    paths:
+      - backend/nvp_wo5_original_feature.py
+      - backend/nvp_wo5_director_review.py
+      - backend/nvp_wo5_desktop_bridge.py
+      - tools/nvp_desktop_alpha.py
+      - tests/test_nvp_wo5_desktop_bridge.py
+      - frontend/src/App.jsx
+      - frontend/src/DataFirstAVPanel.jsx
+      - frontend/src/DirectorFilmReviewPanel.jsx
+      - frontend/src/DirectorFilmReviewPanel.test.jsx
+      - .github/workflows/nvp-wo5-desktop-review.yml
+permissions:
+  contents: read
+jobs:
+  real-native-approval-boundary:
+    name: NVP native desktop review OS scope / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install pinned native OpenUSD
+        run: python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Compile native trusted review and actual desktop bridge
+        run: python -m compileall -q backend/nvp_wo5_original_feature.py backend/nvp_wo5_director_review.py backend/nvp_wo5_desktop_bridge.py tools/nvp_desktop_alpha.py tests/test_nvp_wo5_desktop_bridge.py
+      - name: Verify native OS approval source identity and denied browser writes
+        run: python -m unittest discover -s tests -p test_nvp_wo5_desktop_bridge.py -v
+  installed-webview-source-controls:
+    name: NVP actual desktop source-review React / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install desktop React dependencies
+        run: npm install --no-audit --no-fund
+      - name: Native-only director UI, actual source A/V control and denial
+        run: npm run test:ui -- src/DirectorFilmReviewPanel.test.jsx src/DataFirstAVPanel.test.jsx
+      - name: Build actual installed WebView UI
+        run: npm run build
