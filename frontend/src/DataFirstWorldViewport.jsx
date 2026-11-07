@@ -255,14 +255,24 @@ export default function DataFirstWorldViewport({
             (obj.semantic_role==='camera'?0x38bdf8:
              obj.semantic_role==='actor'?0xc084fc:0xf59e0b):
             0x94a3b8;
-          const originalSkinColor=obj.shape==='skinned_mesh'?
-            new THREE.Color().setRGB(...obj.source_color_rgb):color;
+          const surface=obj.source_material;
+          if(surface&&(
+            surface.original_source_modified!==false||
+            !Array.isArray(surface.base_color_rgb)||
+            surface.base_color_rgb.length!==3||
+            surface.base_color_rgb.some(v=>typeof v!=='number'||
+              !Number.isFinite(v)||v<0||v>1)||
+            !Number.isFinite(surface.roughness)||
+            !Number.isFinite(surface.metallic)||
+            surface.roughness<0||surface.roughness>1||
+            surface.metallic<0||surface.metallic>1))
+            throw Error('Original USD material has invalid source provenance');
+          const surfaceColor=surface?
+            new THREE.Color().setRGB(...surface.base_color_rgb):color;
           const material=new THREE.MeshStandardMaterial({
-            color:originalSkinColor,
-            roughness:obj.shape==='skinned_mesh'?
-              obj.source_material.roughness:.8,
-            metalness:obj.shape==='skinned_mesh'?
-              obj.source_material.metallic:.05,
+            color:surfaceColor,
+            roughness:surface?surface.roughness:.8,
+            metalness:surface?surface.metallic:.05,
             side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
               THREE.DoubleSide:THREE.FrontSide});
           mesh=new THREE.Mesh(geometry,material);
@@ -272,12 +282,26 @@ export default function DataFirstWorldViewport({
           state.meshes.set(obj.path,mesh);
         }catch{incoming.delete(obj.path);continue;}
       }
+      if(obj.source_material){
+        const surface=obj.source_material;
+        if(surface.original_source_modified!==false||
+           !Array.isArray(surface.base_color_rgb)||
+           surface.base_color_rgb.length!==3||
+           surface.base_color_rgb.some(v=>!Number.isFinite(v)||v<0||v>1)||
+           !Number.isFinite(surface.roughness)||
+           !Number.isFinite(surface.metallic)||
+           surface.roughness<0||surface.roughness>1||
+           surface.metallic<0||surface.metallic>1){
+          incoming.delete(obj.path);
+          continue;
+        }
+        mesh.material.color.setRGB(...surface.base_color_rgb);
+        mesh.material.roughness=surface.roughness;
+        mesh.material.metalness=surface.metallic;
+      }
       if(obj.shape==='skinned_mesh'){
         try{
           updateSkinnedGeometry(mesh.geometry,obj);
-          mesh.material.color.setRGB(...obj.source_material.base_color_rgb);
-          mesh.material.roughness=obj.source_material.roughness;
-          mesh.material.metalness=obj.source_material.metallic;
         }catch{
           // Malformed/late pose must never leave stale actor geometry visible.
           incoming.delete(obj.path);
