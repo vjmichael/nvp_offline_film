@@ -106,7 +106,7 @@ def _terminate_tree(proc,job=None):
 
 
 def run_supervised_codec(codec,argv,*,workdir,check_cancel,
-                         timeout=3600,after_start=None):
+                         timeout=3600,after_start=None,read_stdout=False):
     if not isinstance(codec,ApprovedCodecBinary):
         raise PermissionError("Native SHA-reviewed executable required")
     if (type(argv) not in (tuple,list) or not 1<=len(argv)<=MAX_ARGS or
@@ -159,7 +159,8 @@ def run_supervised_codec(codec,argv,*,workdir,check_cancel,
             stdout_head=stdout.read(MAX_LOG_BYTES)
             stderr_head=stderr.read(MAX_LOG_BYTES)
             codec.check()
-            return {"status":"NATIVE_PROCESS_EXITED_ZERO",
+            return {**({"stdout":stdout_head[:65536]} if read_stdout else {}),
+                    "status":"NATIVE_PROCESS_EXITED_ZERO",
                     "codec_sha256":codec.sha256,
                     "exit_code":0,
                     "stdout_prefix_sha256":sha256(stdout_head).hexdigest(),
