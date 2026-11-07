@@ -26,6 +26,21 @@ from tools.nvp_wo5_visible_finished_fixture import (
     InstalledPublishedDCPFixture, CI_FORMAT, CI_FEATURE)
 from tools.nvp_desktop_alpha import create_app, serve
 
+
+def _native_stage(label):
+    """Persist progress even if the installed GUI is killed by CI timeout."""
+    path=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+    if not path or not isinstance(label,str) or len(label)>90:
+        return
+    target=Path(path)
+    if (not target.is_absolute() or target.is_symlink() or
+            not target.parent.is_dir()):
+        return
+    with target.open("a",encoding="utf8") as stream:
+        stream.write("WO5_VISIBLE_STAGE="+label+"\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
 class InstalledRealFinishedCIHost(TrustedDesktopWO5Bridge):
     """Test-only subclass: normal installed NVP does NOT expose descriptor."""
 
@@ -165,11 +180,17 @@ def run_installed_visible_finished_smoke(bundle_root):
     }
     fixture=None;bridge=None;server=None;worker=None;sock=None
     try:
+        _native_stage("fixture_initializing")
         fixture=InstalledPublishedDCPFixture(
-            Path(folder),provider,max_frames=720)
+            Path(folder),provider,max_frames=720,
+            progress=lambda reel,local,count,total:_native_stage(
+                f"fixture_real_mxf_reel_{reel}_offset_{local}_count_{count}_total_{total}"))
+        _native_stage("fixture_predecode_start")
         rehearsal=fixture.prepare()
+        _native_stage("fixture_predecode_complete")
         result["native_fixture"]=rehearsal
         result["real_published_dcp_picture_sound"]=True
+        _native_stage("native_app_create")
         app=create_app()
         from backend.nvp_api import studio
         project=studio.create_project(
@@ -185,6 +206,7 @@ def run_installed_visible_finished_smoke(bundle_root):
             width=1280,height=800,min_size=(960,600),
             js_api=bridge)
         bridge._attach_window(window)
+        _native_stage("webview2_window_created")
         ready=Event()
         window.events.loaded += lambda:ready.set()
         progress={"painted_positions":[],"states":[]}
@@ -204,6 +226,7 @@ def run_installed_visible_finished_smoke(bundle_root):
                     time.sleep(.15)
                 if not mounted:
                     raise RuntimeError("Actual finished film React panel not mounted in installed WebView2")
+                _native_stage("react_finished_player_mounted")
                 result["real_react_finished_player_mounted"]=True
                 until=time.monotonic()+30
                 clicked=False
@@ -215,6 +238,7 @@ def run_installed_visible_finished_smoke(bundle_root):
                     time.sleep(.15)
                 if not clicked:
                     raise RuntimeError("Installed real film player not enabled after native codec admission")
+                _native_stage("real_os_mouse_play_clicked")
                 result["real_player_button_invoked_in_visible_window"]=True
                 result["os_native_mouse_user_gesture_not_programmatic_dom_click"]=True
                 # NVP's actual WebAudio clock drives all presented film
@@ -253,6 +277,7 @@ def run_installed_visible_finished_smoke(bundle_root):
                     time.sleep(.12)
                 else:
                     raise RuntimeError("Visible installed final movie failed to complete before deadline: "+state)
+                _native_stage("native_web_audio_canvas_receipt_created")
                 receipt=result["presentation_receipt"]
                 if (receipt["canvasFramesDrawn"]!=fixture.total or
                     receipt["masteredPcmWindowsQueued"]!=fixture.total or
@@ -286,12 +311,15 @@ def run_installed_visible_finished_smoke(bundle_root):
                     "independently_observed_physical_cinema_av":False,
                 })
             except Exception as error:
+                _native_stage("visible_playback_failed")
                 result["status"]="FAILED_VISIBLE_INSTALLED_AV"
                 result["failure"]=str(error)
             finally:
                 try:window.destroy()
                 except Exception:pass
+        _native_stage("webview2_message_loop_start")
         webview.start(func=inspect,gui="edgechromium",debug=False)
+        _native_stage("webview2_message_loop_returned")
         result["observed_states"]=progress["states"]
         result["position_sample_count"]=len(progress["painted_positions"])
     finally:
@@ -318,6 +346,7 @@ def run_installed_visible_finished_smoke(bundle_root):
             print("NVP_WO5_VISIBLE_INSTALLED_AV_EVIDENCE="+report,flush=True)
         if target:
             target.write_text(report,encoding="utf8")
+        _native_stage("visible_smoke_report_written")
     if result["status"]!="VISIBLE_INSTALLED_PUBLISHED_DCP_CANVAS_AUDIO_CLOCK_PASSED":
         raise RuntimeError(result.get("failure","Native visible NVP.exe film playback was not proven"))
     return 0
