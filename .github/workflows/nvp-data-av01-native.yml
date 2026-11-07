@@ -23,6 +23,9 @@ on:
       - 'frontend/src/DataFirstWorldViewport.jsx'
       - 'tests/test_nvp_native_live_take.py'
       - 'backend/nvp_legacy_quarantine.py'
+      - 'backend/nvp_slate_edit_assembly.py'
+      - 'tests/test_nvp_digital_slate_branches_native.py'
+      - 'tests/test_nvp_legacy_camera_retirement.py'
       - 'backend/nvp_api.py'
       - 'tests/test_nvp_native_avi_delivery.py'
       - 'tests/test_nvp_legacy_quarantine.py'
@@ -89,6 +92,7 @@ jobs:
           python -m compileall -q backend/nvp_data_av_source.py backend/nvp_data_av_scene.py backend/nvp_data_av_usd.py backend/nvp_data_av_desktop.py backend/nvp_slate08b_native_camera_ipc.py tools/nvp_desktop_alpha.py tools/nvp_data_av_installed_acceptance.py tests/test_nvp_data_av_native.py
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_exact_time_shots.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_digital_slate_branches_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_data_first_filming.py' -v
           python -m unittest discover -s tests -p 'test_nvp_imported_audio.py' -v
           python -m unittest discover -s tests -p 'test_nvp_final_2d_native.py' -v
