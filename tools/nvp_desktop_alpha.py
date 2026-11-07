@@ -573,9 +573,12 @@ def main(argv=None):
                         help="Launch a real native Windows WebView2 and verify page loaded")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
+    parser.add_argument("--smoke-finished-playback",action="store_true",
+                        help="Probe real installed licensed native picture MXF/J2K and mastered PCM")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
-            args.smoke_window,args.smoke_data_av))>1:
+            args.smoke_window,args.smoke_data_av,
+            args.smoke_finished_playback))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
@@ -584,6 +587,9 @@ def main(argv=None):
     if args.smoke_data_av:
         from tools.nvp_data_av_installed_acceptance import run_installed_data_av_smoke
         return run_installed_data_av_smoke()
+    if args.smoke_finished_playback:
+        from tools.nvp_wo5_installed_sustain import smoke_from_installed_bundle
+        return smoke_from_installed_bundle(bundle_root())
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
             "create" if args.smoke_create else "reopen")
@@ -619,7 +625,7 @@ if __name__=="__main__":
     diagnostic=None
     smoke=any(flag in sys.argv for flag in (
         "--smoke","--smoke-create","--smoke-reopen",
-        "--smoke-window","--smoke-data-av"))
+        "--smoke-window","--smoke-data-av","--smoke-finished-playback"))
     if smoke:
         report=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
         if report:
