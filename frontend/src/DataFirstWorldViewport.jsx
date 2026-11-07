@@ -108,6 +108,11 @@ export default function DataFirstWorldViewport({
   const cameraPath=cameraObjects.some(o=>o.path===selectedCamera)?
     selectedCamera:cameraObjects[0]?.path||'';
   const bounded=Array.isArray(objects)?objects.slice(0,64):[];
+  const missingRigGeometry=bounded.filter(o=>o?.source_rigged_actor===true&&
+    o.native_geometry_status!=='VERIFIED_SKINNED');
+  const staleRigPoses=bounded.filter(o=>o?.shape==='skinned_mesh'&&
+    o.source_skinning_tick!==String(tick));
+
 
   useEffect(()=>{
     if(!holder.current)return;
@@ -207,6 +212,11 @@ export default function DataFirstWorldViewport({
     const incoming=new Set();
     for(const obj of bounded){
       if(typeof obj.path!=='string'||!validMatrix(obj.world_matrix))continue;
+      // Explicitly report unmeshed authored rigs in source inspection, but
+      // do not create a fake sphere/cone body for any captured rigged actor.
+      if(obj.shape==='missing_rig_geometry')continue;
+      if(obj.source_rigged_actor===true&&obj.shape!=='skinned_mesh')
+        continue;
       if(obj.shape==='skinned_mesh'){
         // Never display a pose from a previous Film Time sample as current.
         // A source update is allowed only for the requested exact tick.
@@ -269,7 +279,7 @@ export default function DataFirstWorldViewport({
       }
     }
     state.requestRender();
-  },[objects,listenerPath]);
+  },[objects,listenerPath,tick]);
 
 
   useEffect(()=>{
@@ -327,11 +337,21 @@ export default function DataFirstWorldViewport({
       overflow:'hidden',background:'#121a2a'}}/>
     {disabled&&<p role="status">3D hardware context lost or unavailable.
       The original scene data remains inspectable below.</p>}
+    {missingRigGeometry.length>0&&
+      <p role="alert">Original USD rigged actors without bound skinned meshes:
+        {missingRigGeometry.map(o=>' '+o.path).join(', ')}.
+        Their motion remains source data; no substitute character geometry
+        was fabricated. Bind original UsdSkel character geometry to display.</p>}
+    {staleRigPoses.length>0&&
+      <p role="alert">Stale skinned-actor samples were not displayed for
+        this Film Time: {staleRigPoses.map(o=>o.path).join(', ')}.</p>}
     <ul>
       {bounded.map(item=><li key={item.path}>
         <strong>{item.path}</strong> ·
-        {item.gizmo_only?'scene-location gizmo':
-          'verified authored USD '+item.shape+' ('+item.size_m+' m)'} ·
+        {item.shape==='missing_rig_geometry'
+          ?'Rigged actor: original USD mesh not bound (not displayed)'
+          : item.gizmo_only?'unbound scene marker':
+            'verified authored USD '+item.shape+' ('+item.size_m+' m)'} ·
         {(item.world_translation||[]).map(n=>Number(n).toFixed(2)).join(', ')} m
       </li>)}
     </ul>
