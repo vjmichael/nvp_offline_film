@@ -132,6 +132,8 @@ class TrustedDesktopCameraBridge:
         self._futures = {}
         self._host = None
         self._data_av_controller = None
+        self._live_sound_session = None
+        self._live_sound_ticket = None
         self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
@@ -551,6 +553,112 @@ class TrustedDesktopCameraBridge:
         return {**result,"picture_audio_package":package["directory"],
                 "original_modified":False,"master_approved":False}
 
+
+    def data_av_live_catalog(self,project_id):
+        """Only verified exact-time source camera timelines can be filmed."""
+        self._native_window()
+        _require_pid(project_id)
+        from backend.nvp_exact_time_shots import ExactTimeShotSequence
+        from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        choices=[]
+        for row in self.index.list_objects(project_id,kind="temporal")[:128]:
+            try:
+                record=self.index.read_revision(project_id,row["object_id"])
+                plan=ExactTimeShotSequence(self.index).read(
+                    project_id,row["object_id"],record["revision"])
+                scene,_=OpenUSDSceneBridge(self.index).open(
+                    project_id,plan["scene_id"],plan["scene_revision"])
+            except (RuntimeError,ValueError,KeyError):
+                continue
+            sources=sorted(p for p,role in scene["data"]["prim_roles"].items()
+                           if role in ("actor","anchor"))
+            if sources:
+                choices.append({
+                    "scene_id":plan["scene_id"],
+                    "scene_revision":plan["scene_revision"],
+                    "scene_document_sha256":plan["scene_document_sha256"],
+                    "camera_timeline_id":plan["timeline_id"],
+                    "camera_timeline_revision":plan["revision"],
+                    "camera_timeline_document_sha256":plan["document_sha256"],
+                    "duration_tick":plan["duration_tick"],
+                    "emitters":sources[:64],
+                })
+        return {"format":"nvp.data_av.live_camera_catalog.v1",
+                "status":"AVAILABLE","camera_timelines":choices,
+                "ffmpeg_used":False}
+
+    def data_av_live_begin(self,request):
+        """Start a real OS microphone; no browser-provided executable/path."""
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","take_id","scene_id","scene_revision",
+                "camera_timeline_id","camera_timeline_revision",
+                "sound_timeline_id","source_id","emitter_path",
+                "event_id","subject_id"}:
+            raise ValueError("Native microphone capture requires exact identity")
+        from backend.nvp_native_live_take import NativeLiveSoundSession
+        with self._lock:
+            if self._live_sound_session is not None:
+                raise RuntimeError("Native microphone capture already in progress")
+            def start(scope):
+                return self._ask(
+                    "START real microphone capture into ORIGINAL Digital Take?\n"
+                    f"Take: {scope['take_id']}\n"
+                    f"Scene SHA-256: {scope['scene_sha256']}\n"
+                    f"Camera Film Time SHA-256: {scope['camera_timeline_sha256']}\n"
+                    f"Source emitter: {scope['emitter_path']}\n"
+                    f"At most {scope['max_samples']//48000} seconds at 48 kHz.\n"
+                    "This records original source PCM only. No picture movie,\n"
+                    "FFmpeg, flattened soundtrack, or master is produced.")
+            def freeze(event,scope):
+                return self._ask(
+                    "FREEZE this exact 3D scene and recorded original sound?\n"
+                    f"Take: {scope['take_id']}\n"
+                    f"Scene SHA-256: {scope['scene_document_sha256']}\n"
+                    f"Events SHA-256: {scope['timeline_document_sha256']}\n"
+                    "This seals an immutable Digital Take, not a movie export.")
+            session=NativeLiveSoundSession(
+                self.index,project_id=request["project_id"],
+                take_id=request["take_id"],scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                camera_timeline_id=request["camera_timeline_id"],
+                camera_timeline_revision=request["camera_timeline_revision"],
+                sound_timeline_id=request["sound_timeline_id"],
+                source_id=request["source_id"],
+                emitter_path=request["emitter_path"],
+                event_id=request["event_id"],
+                subject_id=request["subject_id"],
+                native_approve_start=start,native_approve_freeze=freeze)
+            started=session.begin()
+            ticket=secrets.token_urlsafe(32)
+            self._live_sound_session=session
+            self._live_sound_ticket=ticket
+            return {**started,"session_id":ticket}
+
+    def data_av_live_status(self,session_id):
+        self._native_window()
+        with self._lock:
+            if (type(session_id) is not str or
+                    session_id!=self._live_sound_ticket or
+                    self._live_sound_session is None):
+                raise PermissionError("Unrecognized native recording session")
+            return self._live_sound_session.status
+
+    def data_av_live_finish(self,session_id,freeze):
+        self._native_window()
+        with self._lock:
+            if (type(session_id) is not str or
+                    session_id!=self._live_sound_ticket or
+                    self._live_sound_session is None or
+                    type(freeze) is not bool):
+                raise PermissionError("Unknown live source capture or action")
+            session=self._live_sound_session
+            try:
+                return session.finish() if freeze else session.cancel()
+            finally:
+                self._live_sound_session=None
+                self._live_sound_ticket=None
+
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
 
@@ -564,6 +672,10 @@ class TrustedDesktopCameraBridge:
             self._closing=True
             if self._data_av_controller is not None:
                 self._data_av_controller.close()
+            if self._live_sound_session is not None:
+                self._live_sound_session.cancel()
+                self._live_sound_session=None
+                self._live_sound_ticket=None
             host=self._host
             tickets=list(self._tickets.values())
         if host is not None:
