@@ -178,6 +178,7 @@ class NativeTakeActionHost:
             "screenplay_revision": screenplay_revision,
             "expected_bible_digest": expected_bible_digest,
             "preview_sha256": expected_preview_sha256,
+            "ram_mb": ram_mb,
         }
         _preflight(self.index, spec)
         creative = {
@@ -306,8 +307,6 @@ class NativeTakeActionHost:
                 if state and state["state"] == "ACTIVE":
                     # A worker can crash after the immutable FilmIndex commit.
                     # NEVER retry automatically or claim a rollback.
-                    spec = self.binding.verified_spec(
-                        task_id, owner_key=self.owner) if False else None
                     self.ledger.finish(
                         task_id, "INTERRUPTED",
                         "Worker stopped; source Take commit may require reconciliation")
