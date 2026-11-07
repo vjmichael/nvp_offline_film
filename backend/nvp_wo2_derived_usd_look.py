@@ -128,15 +128,21 @@ def derived_look_stage(stage,scene_record,look):
                     raise RuntimeError("Original MaterialX UV graph disconnected")
                 mtx=UsdShade.Shader.Define(
                     derived,base+"/WO2MtlxTransform_"+channel)
-                mtx.CreateIdAttr("ND_UsdTransform2d")
-                mtx.CreateInput("in",Sdf.ValueTypeNames.Float2).ConnectToSource(
+                # MaterialX has ND_place2d_vector2, not the fictional
+                # ND_UsdTransform2d. Place2D divides by scale and
+                # subtracts offset, so invert these to preserve the same
+                # source UV mapping as USD's scale/rotation/translation.
+                mtx.CreateIdAttr("ND_place2d_vector2")
+                mtx.CreateInput("texcoord",Sdf.ValueTypeNames.Float2).ConnectToSource(
                     m_source[0],m_source[1])
+                mtx.CreateInput("pivot",Sdf.ValueTypeNames.Float2).Set(
+                    Gf.Vec2f(0.,0.))
                 mtx.CreateInput("scale",Sdf.ValueTypeNames.Float2).Set(
-                    Gf.Vec2f(*transform["repeat"]))
-                mtx.CreateInput("rotation",Sdf.ValueTypeNames.Float).Set(
+                    Gf.Vec2f(*(1./x for x in transform["repeat"])))
+                mtx.CreateInput("rotate",Sdf.ValueTypeNames.Float).Set(
                     transform["rotation_deg"])
-                mtx.CreateInput("translation",Sdf.ValueTypeNames.Float2).Set(
-                    Gf.Vec2f(*transform["offset"]))
+                mtx.CreateInput("offset",Sdf.ValueTypeNames.Float2).Set(
+                    Gf.Vec2f(*(-x for x in transform["offset"])))
                 m_st.ConnectToSource(
                     mtx.CreateOutput("out",Sdf.ValueTypeNames.Float2))
                 found.add(channel)
