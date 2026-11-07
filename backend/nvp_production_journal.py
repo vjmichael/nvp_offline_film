@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 from uuid import uuid4
 
 from backend.nvp_film_index import FilmIndex
@@ -69,9 +70,12 @@ class ProductionJournal:
         root = Path(state_root)
         if not root.is_absolute() or root.is_symlink():
             raise PermissionError("Trusted absolute production state root required")
-        root.mkdir(parents=True, exist_ok=True)
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
         if not root.is_dir():
             raise PermissionError("Native production state root missing")
+        if os.name != "nt" and (
+                stat.S_IMODE(root.stat().st_mode) & 0o077):
+            raise PermissionError("Native production journal root must be owner-private")
         self.root = root.resolve(strict=True)
         if self.root != root.resolve():
             raise PermissionError("Production root was redirected")
@@ -265,11 +269,44 @@ class ProductionJournal:
                 "assembly_sha256":job["assembly_sha256"],
                 "cancel_requested":bool(job["cancel_requested"]),
                 "owner_pid":job["owner_pid"],
+                "updated_at":job["updated_at"],
                 "segments":segments,
                 "verified_segments":sum(x["state"]=="VERIFIED" for x in segments),
                 "total_segments":len(segments),
                 "production_dcp_accepted":False
             }
+
+    def events(self, job_id, *, limit=200):
+        if type(limit) is not int or not 1<=limit<=1000:
+            raise ValueError("Bounded production event history required")
+        with self._tx() as db:
+            exists=db.execute("SELECT 1 FROM production_jobs WHERE job_id=?",
+                              (job_id,)).fetchone()
+            if exists is None:
+                raise KeyError("Production job not found")
+            rows=db.execute("""SELECT id,event_kind,detail,recorded_at
+                    FROM production_events WHERE job_id=?
+                    ORDER BY id DESC LIMIT ?""",(job_id,limit)).fetchall()
+            return [dict(row) for row in reversed(rows)]
+
+    def heartbeat(self, owner_token, job_id, position):
+        """Active native owner refreshes liveness without changing job state."""
+        with self._tx() as db:
+            row=db.execute("""SELECT s.owner_token AS segment_owner,
+                   s.state AS segment_state,j.owner_token AS job_owner,
+                   j.state AS job_state,j.cancel_requested
+                FROM production_segments s JOIN production_jobs j
+                ON s.job_id=j.job_id WHERE s.job_id=? AND s.position=?""",
+                (job_id,position)).fetchone()
+            if (row is None or row["segment_owner"]!=owner_token or
+                    row["job_owner"]!=owner_token or
+                    row["segment_state"]!="RUNNING" or
+                    row["job_state"]!="RUNNING"):
+                raise PermissionError("Stale/native-unowned worker heartbeat")
+            db.execute("UPDATE production_jobs SET updated_at=? WHERE job_id=?",
+                       (_now(),job_id))
+            return {"job_id":job_id,
+                    "cancel_requested":bool(row["cancel_requested"])}
 
     def list_jobs(self, project_id=None):
         if project_id is not None and not PROJECT_RE.fullmatch(project_id):
