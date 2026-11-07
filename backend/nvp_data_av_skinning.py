@@ -62,7 +62,8 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
                 "geometry_asset_sha256":None,
                 "source_skinning":False,
                 "source_skinning_tick":str(tick),
-                "source_color_rgb":None,
+                "source_color_rgb":None,"source_material":None,
+                "original_blend_shape_count":0,
                 "reason":"Rigged original USD actor has no bound UsdSkel mesh",
                 "facial_animation_evaluated":False,
             }
@@ -115,6 +116,11 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
         color=[float(x) for x in colors[0]]
         if any(not math.isfinite(x) or not 0<=x<=1 for x in color):
             raise RuntimeError("Original USD actor has untrusted display color")
+        material=pose["source_preview_material"]
+        if (any(abs(x-y)>1e-5 for x,y in
+                zip(material["base_color_rgb"],color)) or
+            material["original_source_modified"] is not False):
+            raise RuntimeError("Source USD material and mesh color provenance disagree")
         size=max(0.01,max(abs(value) for point in points for value in point))
         result[path]={
             "shape":"skinned_mesh",
@@ -124,8 +130,10 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
             "geometry_asset_sha256":layer_sha,
             "source_skinning":True,
             "source_skinning_tick":str(tick),
-            "source_color_rgb":color,
+            "source_color_rgb":material["base_color_rgb"],
+            "source_material":material,
             "bound_usd_joint_count":pose["joint_count"],
-            "facial_animation_evaluated":False,
+            "facial_animation_evaluated":pose["facial_deformation_evaluated"],
+            "original_blend_shape_count":pose["original_blend_shape_count"],
         }
     return result
