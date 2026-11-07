@@ -433,3 +433,8 @@ Added `backend/nvp_wo3_project_recovery.py` to retrieve historical presentation 
 **Current observed CI:** native WO3 run `42349957081` at prior commit `b526cfd8` completed SUCCESS; previous run `42349929367` also completed SUCCESS. The present FilmIndex adapter commit still requires a fresh exact-head run; do not infer its pass from earlier heads.
 
 **Remaining:** crash-kill injected at real staging/fsync/publish/database boundaries and restart reconciliation across processes; real installed Windows host/UI admission and packaging; standards-sourced SMPTE XML-schema validator and separate vendor DCP checker; varying multi-frame full 4K MXF and independent pixel/rate evidence; physical projection in WO5. Reconciliation identifies inconsistencies but never automatically deletes or repairs user packages.
+
+
+### WO3 abrupt process termination at publish boundary (2026-11-07)
+
+`tests/test_nvp_wo3_crash_publish_process.py` now executes the real OS-specific `atomic_publish_directory` primitive in a separate native Python process and forces `os._exit(91)` immediately after publication. Parent inspection verifies the complete published directory and bytes survive the child process's abrupt exit; a separate conflicting existing destination exercise confirms the creator's previous files are not replaced and staged bytes remain. Included in native Windows/Linux Python 3.11/3.13 CI. This tests a **real process exit** rather than only exception-based cleanup. It does **not** simulate kill during each write/fsync, actual power loss, or source FilmIndex database commit failure, and does not constitute installed-app acceptance. Those gates remain outstanding. No FFmpeg used.
