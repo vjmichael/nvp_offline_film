@@ -281,7 +281,9 @@ class NativeFilmDecisionHost:
                 proc = launch_contained(
                     [str(self.python),str(self.worker),"--spec",str(path),
                      "--studio-db",str(self.index.studio.db_path),
-                     "--expected-sha",hashlib.sha256(raw).hexdigest()],
+                     "--expected-sha",hashlib.sha256(raw).hexdigest(),
+                     "--ledger-db",str(self.ledger.db_path),
+                     "--owner-key",self.owner],
                     cwd=str(folder),stdout=out,stderr=err,memory_mb=spec["ram_mb"])
                 self.ledger.update(task,"building_scene",
                                    "Contained native Film Time or color decision writer")
