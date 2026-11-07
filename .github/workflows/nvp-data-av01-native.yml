@@ -50,6 +50,7 @@ on:
       - 'backend/nvp_native_avi_delivery.py'
       - 'tests/test_nvp_source_linear_aces_scene.py'
       - 'tests/test_nvp_native_usd_material_fidelity.py'
+      - 'tests/test_nvp_native_usd_uv_texture.py'
       - 'tests/test_nvp_native_aces2_package.py'
       - 'frontend/src/NativeColorGradePanel.test.jsx'
       - 'tests/test_nvp_native_aces_color.py'
@@ -148,6 +149,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_native_aces_color.py' -v
           python -m unittest discover -s tests -p 'test_nvp_source_linear_aces_scene.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_usd_material_fidelity.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_native_usd_uv_texture.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_acescg_exr.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_export_recovery.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_cinema_master_gate.py' -v
