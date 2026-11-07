@@ -35,6 +35,40 @@ class WO2NativeTextureTests(unittest.TestCase):
                               "roughness":.45,"metallic":.1},
             texture_png=texture)
 
+    def test_native_png_mip_tiles_stay_bounded_and_sha_derived(self):
+        from hashlib import sha256
+        from base64 import b64decode
+        from backend.nvp_native_usd_texture import texture_tile_transport
+        photo=Image.new("RGB",(512,257),(25,75,225))
+        data=BytesIO()
+        photo.save(data,format="PNG")
+        original=data.getvalue()
+        desc=publish_texture(self.index,self.pid,original)
+        tile=texture_tile_transport(
+            self.index,self.pid,desc,mip_level=0,tile_x=1,tile_y=1)
+        self.assertEqual((tile["tile_width"],tile["tile_height"]),(256,1))
+        self.assertEqual((tile["tile_columns"],tile["tile_rows"]),(2,2))
+        bytes_=b64decode(tile["png_base64"])
+        self.assertEqual(tile["tile_sha256"],sha256(bytes_).hexdigest())
+        self.assertEqual((Image.open(BytesIO(bytes_)).size),(256,1))
+        half=texture_tile_transport(
+            self.index,self.pid,desc,mip_level=1,tile_x=0,tile_y=0)
+        self.assertEqual((half["level_width"],half["level_height"]),
+                         (256,129))
+        self.assertTrue(half["derived_preview_only"])
+        self.assertEqual(verified_texture(self.index,self.pid,desc)[0],
+                         original)
+        for request in (
+            {"mip_level":0,"tile_x":2,"tile_y":0},
+            {"mip_level":0,"tile_x":0,"tile_y":2},
+            {"mip_level":4,"tile_x":0,"tile_y":0},
+            {"mip_level":0,"tile_x":-1,"tile_y":0},
+        ):
+            with self.subTest(request=request):
+                with self.assertRaises(ValueError):
+                    texture_tile_transport(
+                        self.index,self.pid,desc,**request)
+
     def test_disposable_materialx_resolver_keeps_original_usd_frozen(self):
         from pathlib import Path
         from backend.nvp_wo2_materialx_resolver import resolved_materialx_probe
