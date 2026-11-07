@@ -248,6 +248,28 @@ def run_installed_data_av_smoke():
             texture_doc=OpenUSDAssetRegistry(index).open(
                 pid,"smoke_original_texture_mesh",1)[0]["data"]
             from backend.nvp_native_usd_texture import verified_texture
+            from backend.nvp_wo2_materialx_resolver import resolved_materialx_probe
+            from pxr import Usd,UsdShade
+            _,original_usd_layer=OpenUSDAssetRegistry(index).open(
+                pid,"smoke_original_texture_mesh",1)
+            stage=Usd.Stage.Open(original_usd_layer)
+            before_stage=stage.GetRootLayer().ExportToString()
+            temp_shader_path=None
+            with resolved_materialx_probe(
+                    index,pid,stage,[
+                        texture_doc["preview_material"]["texture"]
+                    ]) as (probe,manifest):
+                node=UsdShade.Shader(probe.GetPrimAtPath(
+                    "/Asset/Material/MtlxImage"))
+                temp_shader_path=Path(
+                    node.GetInput("file").GetAttr().Get().path)
+                if (not temp_shader_path.is_file() or
+                    temp_shader_path.read_bytes()!=original_png or
+                    manifest["independent_hydra_render_accepted"]):
+                    raise RuntimeError("Installed MaterialX scope invalid")
+            if (temp_shader_path.exists() or
+                stage.GetRootLayer().ExportToString()!=before_stage):
+                raise RuntimeError("Native MaterialX probe changed original USD")
             if len(texture_doc.get("material_slots",[]))!=1:
                 raise RuntimeError("Installed USD multi-material subset absent")
             if verified_texture(index,pid,texture_doc[
