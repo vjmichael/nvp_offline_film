@@ -417,9 +417,9 @@ class OpenUSDAssetRegistry:
                 inp=shader.GetInput(source)
                 if not inp:
                     raise RuntimeError("Original material shader input missing")
-                actual=inp.GetAttr().Get() if (
-                    key=="base_color_rgb" and "texture" in original_material
-                    ) else inp.Get()
+                # Source-authored fallback remains on the USD attribute
+                # when a PBR image supplies this input's live value.
+                actual=inp.GetAttr().Get()
                 expected=original_material[key]
                 actuals=(list(actual) if key=="base_color_rgb" else [actual])
                 expecteds=(expected if key=="base_color_rgb" else [expected])
