@@ -127,7 +127,8 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
       data_av_audio_window:vi.fn(),data_av_stop:vi.fn(),
     };
     render(<DataFirstAVPanel projectId={pid} nativeBridge={bridge}/>);
-    expect(await screen.findByText(/FailedTake/)).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent)
+      .toMatch(/FailedTake/);
     fireEvent.click(screen.getByText('Approve recovery of original sound only'));
     await waitFor(()=>expect(
       bridge.data_av_live_recover_original).toHaveBeenCalledWith({
@@ -137,6 +138,48 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
       }));
     expect(await screen.findByText(/No Take created/)).toBeTruthy();
     expect(screen.queryByText('FailedTake')).toBeNull();
+  });
+
+  it('picks two distinct native input endpoints with source-only ADC clock correction',async()=>{
+    const bridge={
+      data_av_catalog:vi.fn(async()=>({
+        format:'nvp.data_av.native_session.v1',status:'AVAILABLE',
+        ffmpeg_runtime_required:false,takes:[],
+      })),
+      data_av_live_catalog:vi.fn(async()=>({
+        format:'nvp.data_av.live_camera_catalog.v1',status:'AVAILABLE',
+        camera_timelines:[{
+          scene_id:'world',scene_revision:1,
+          camera_timeline_id:'LongCamera',camera_timeline_revision:1,
+          emitters:['/World/Actor','/World/SecondActor'],
+        }],
+        independent_audio_inputs:[
+          {device_id:4,name:'Native USB Input A',host_api:'WASAPI',max_input_channels:1},
+          {device_id:7,name:'Native USB Input B',host_api:'WASAPI',max_input_channels:1},
+        ],
+        unapproved_capture_recovery:[],
+      })),
+      data_av_live_begin:vi.fn(async()=>({
+        format:'nvp.data_av.live_mic_take.v1',status:'DENIED',
+        output_is_original_source:true,flattened_soundtrack:false,
+      })),
+    };
+    render(<DataFirstAVPanel projectId={pid} nativeBridge={bridge}/>);
+    const toggle=await screen.findByLabelText(
+      'Record two original mono sources from independent audio devices');
+    fireEvent.click(toggle);
+    expect(screen.getByLabelText('First independent audio capture device').value)
+      .toBe('4');
+    expect(screen.getByLabelText('Second independent audio capture device').value)
+      .toBe('7');
+    fireEvent.click(screen.getByText('Approve native microphone recording'));
+    await waitFor(()=>expect(bridge.data_av_live_begin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        independent_device_ids:[4,7],
+        emitter_path:'/World/Actor',
+        second_emitter_path:'/World/SecondActor',
+      })));
+    expect(screen.getByText(/not genlock/)).toBeTruthy();
   });
 
   it('fails closed when native catalog demands an FFmpeg runtime',async()=>{

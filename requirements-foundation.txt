@@ -6,6 +6,10 @@ pydantic>=2,<3
 # DA-05: independently licensed standalone MP3/FLAC/WAV/Ogg decoder.
 # Bundled in the one-installer native runtime; no FFmpeg/libav dependency.
 miniaudio>=1.71,<2
+# DA-02E: MIT-licensed PortAudio native ADC timestamps for independent
+# sound-device drift detection. Linux requires OS libportaudio2; Windows
+# installer includes the wheel-provided PortAudio binary.
+sounddevice==0.5.6
 # DA-05: HPND-licensed native CPU PNG raster for limited OpenUSD geometry.
 Pillow>=11.0,<13
 

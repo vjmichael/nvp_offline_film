@@ -189,30 +189,69 @@ class FrozenSceneAV:
                 (event["start_tick"]+TICKS_PER_SAMPLE-1)//TICKS_PER_SAMPLE)
             last_active=min(first_sample+count,
                 (event["end_tick"]+TICKS_PER_SAMPLE-1)//TICKS_PER_SAMPLE)
-            # Source duration may be shorter than the authored event.
-            first_local=(first_active*TICKS_PER_SAMPLE-event["start_tick"])
-            first_src=max(0,first_local//TICKS_PER_SAMPLE)
-            last_active=min(last_active,first_active+
-                            max(0,source_count-first_src))
+            original_sync=event["payload"].get("source_sync")
+            if original_sync is not None:
+                from backend.nvp_independent_device_sync import (
+                    verified_source_map,interpolated_window,FORMAT as CLOCK_FORMAT)
+                verified_source_map(
+                    original_sync,source_sample_count=source_count,
+                    event_start=event["start_tick"],event_end=event["end_tick"])
+                clock_proof=self.index.read_revision(
+                    self.project_id,event["payload"]["clock_evidence_id"],1)
+                if (clock_proof["document_sha256"]!=
+                      event["payload"]["clock_evidence_sha256"] or
+                    clock_proof["kind"]!="audio" or
+                    clock_proof["data"].get("format")!=CLOCK_FORMAT or
+                    original_sync not in clock_proof["data"]["sample_maps"]):
+                    raise RuntimeError("Original independent clock timing proof changed")
+                first_src=0
+            else:
+                # Legacy shared-clock sources keep their original sample
+                # timing and are not retrospectively reinterpreted.
+                first_local=(first_active*TICKS_PER_SAMPLE-event["start_tick"])
+                first_src=max(0,first_local//TICKS_PER_SAMPLE)
+                last_active=min(last_active,first_active+
+                                max(0,source_count-first_src))
             n=last_active-first_active
             if n<=0:
                 continue
-            raw=self.sound.read(
-                self.project_id,event["source_id"],
-                event["source_revision"],first_src,n)
-            samples=struct.unpack("<"+str(n)+"h",raw)
+            if original_sync is None:
+                raw=self.sound.read(
+                    self.project_id,event["source_id"],
+                    event["source_revision"],first_src,n)
+                samples=struct.unpack("<"+str(n)+"h",raw)
+            else:
+                def read_native(offset,length):
+                    return self.sound.read(
+                        self.project_id,event["source_id"],
+                        event["source_revision"],offset,length)
+                samples=interpolated_window(
+                    read_native,source_count,original_sync,
+                    first_active*TICKS_PER_SAMPLE,n,
+                    ticks_per_output_sample=TICKS_PER_SAMPLE)
             binaural=None
             if self.measured_binaural is not None:
                 profile=self.measured_binaural
-                history_count=min(profile.tap_count-1,first_src)
+                history_count=min(
+                    profile.tap_count-1,
+                    first_src if original_sync is None else
+                    max(0,first_active-
+                        (event["start_tick"]+TICKS_PER_SAMPLE-1)//TICKS_PER_SAMPLE))
                 history=()
                 if history_count:
-                    previous=self.sound.read(
-                        self.project_id,event["source_id"],
-                        event["source_revision"],first_src-history_count,
-                        history_count)
-                    history=struct.unpack(
-                        "<"+str(history_count)+"h",previous)
+                    if original_sync is None:
+                        previous=self.sound.read(
+                            self.project_id,event["source_id"],
+                            event["source_revision"],first_src-history_count,
+                            history_count)
+                        history=struct.unpack(
+                            "<"+str(history_count)+"h",previous)
+                    else:
+                        history=tuple(interpolated_window(
+                            read_native,source_count,original_sync,
+                            (first_active-history_count)*TICKS_PER_SAMPLE,
+                            history_count,
+                            ticks_per_output_sample=TICKS_PER_SAMPLE))
                 center_emitter=[
                     (positions_a[path][j]+positions_b[path][j])*.5
                     for j in range(3)]
