@@ -164,3 +164,56 @@ def import_native_selected_png(index: FilmIndex, project_id, selected_path, *,
     return {"status":"ORIGINAL_TEXTURE_IMPORTED",
             "texture":descriptor,"original_modified":False,
             "ffmpeg_used":False}
+
+
+TILE_EDGE=256
+MAX_MIP_LEVEL=3
+
+
+def texture_tile_transport(index: FilmIndex, project_id, descriptor, *,
+                           mip_level, tile_x, tile_y):
+    """Seek one bounded tile from an original SHA-checked PNG, never the path.
+
+    Only native authenticated callers may invoke this. UI can request one
+    tile at a time; the original is always retained at full resolution.
+    All mip/tiles are disposable derived display representations.
+    """
+    if (type(mip_level) is not int or
+        not 0<=mip_level<=MAX_MIP_LEVEL or
+        type(tile_x) is not int or type(tile_y) is not int or
+        tile_x<0 or tile_y<0):
+        raise ValueError("Texture tile must have bounded integral coordinates")
+    _,(width,height,rgba)=verified_texture(index,project_id,descriptor)
+    from PIL import Image
+    source=Image.frombytes("RGBA",(width,height),rgba).convert("RGB")
+    level_width=max(1,(width+2**mip_level-1)//(2**mip_level))
+    level_height=max(1,(height+2**mip_level-1)//(2**mip_level))
+    if mip_level:
+        source=source.resize(
+            (level_width,level_height),Image.Resampling.LANCZOS)
+    columns=(level_width+TILE_EDGE-1)//TILE_EDGE
+    rows=(level_height+TILE_EDGE-1)//TILE_EDGE
+    if tile_x>=columns or tile_y>=rows:
+        raise ValueError("Requested original PNG tile is out of range")
+    left=tile_x*TILE_EDGE
+    top=tile_y*TILE_EDGE
+    tile=source.crop((left,top,min(left+TILE_EDGE,level_width),
+                      min(top+TILE_EDGE,level_height)))
+    encoded=BytesIO()
+    tile.save(encoded,format="PNG",optimize=False)
+    bytes_=encoded.getvalue()
+    if len(bytes_)>MAX_SOURCE_BYTES:
+        raise RuntimeError("Derived source tile exceeds bounded transport")
+    return {
+        "format":"nvp.original.usd_texture_tile.v1",
+        "source_sha256":descriptor["sha256"],
+        "source_width":width,"source_height":height,
+        "mip_level":mip_level,
+        "level_width":level_width,"level_height":level_height,
+        "tile_x":tile_x,"tile_y":tile_y,
+        "tile_columns":columns,"tile_rows":rows,
+        "tile_width":tile.width,"tile_height":tile.height,
+        "tile_sha256":sha256(bytes_).hexdigest(),
+        "png_base64":base64.b64encode(bytes_).decode("ascii"),
+        "derived_preview_only":True,"source_modified":False,
+    }
