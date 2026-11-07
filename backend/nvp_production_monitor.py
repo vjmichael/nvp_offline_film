@@ -28,7 +28,10 @@ class ProductionMonitor:
     def _project(self, project_id):
         # Studio's native project lookup is the actual scope boundary;
         # accepting a user-supplied string alone is not authentication.
-        self.index.studio.get_project(project_id)
+        try:
+            self.index.studio.get_project(project_id)
+        except (KeyError,ValueError,TypeError) as exc:
+            raise PermissionError("Project production monitor access denied") from exc
         scope={"operation":"nvp.supervisor.read_project_job_status.v1",
                "project_id":project_id}
         if self.authorize(deepcopy(scope)) is not True:
