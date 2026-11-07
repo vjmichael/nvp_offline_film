@@ -32,6 +32,8 @@ ENTRYPOINTS=(
     "backend/nvp_data_first_filming.py",
     "backend/nvp_native_live_take.py",
     "backend/nvp_native_stereo_take.py",
+    "backend/nvp_native_independent_take.py",
+    "backend/nvp_independent_device_sync.py",
     "backend/nvp_capture_recovery.py",
     "backend/nvp_native_hrir.py",
     "backend/nvp_data_av_skinning.py",
