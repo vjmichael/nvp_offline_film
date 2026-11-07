@@ -83,6 +83,15 @@ def assess_unmastered_source_package(package,*,target="SMPTE_2K_FLAT_24",
         len(pictures)!=doc.get("output_picture_count")):
         raise RuntimeError("Source picture manifest is incomplete")
     source_format=("exr" if doc["format"]==FORMAT_EXR else "png")
+    if source_format=="exr":
+        if (doc.get("picture_format")!="exr" or
+            doc.get("pixel_bit_depth")!=32 or
+            doc.get("linear_exr_grade") is None or
+            doc.get("color_pipeline")!=
+                "ocio_scene_linear_acescg_exr32_unmastered"):
+            raise RuntimeError("Original ACEScg EXR output lacks source color provenance")
+    elif doc.get("pixel_bit_depth",8) not in (8,16):
+        raise RuntimeError("Only explicitly approved PNG8/PNG16 picture accepted")
     if doc.get("picture_format",source_format)!=source_format:
         raise RuntimeError("Source picture manifest format differs from originals")
     fps=[doc.get("fps_num"),doc.get("fps_den")]
@@ -104,10 +113,10 @@ def assess_unmastered_source_package(package,*,target="SMPTE_2K_FLAT_24",
             row.get("source_tick")!=str(
                 tick_from_frame(i,fps[0],fps[1])) or
             not re.fullmatch("[0-9a-f]{64}",row.get("sha256","")) or
-            row.get("camera_path") not in (None,*[
-                value["camera_path"] for value in pictures
-                if isinstance(value,dict) and
-                    type(value.get("camera_path")) is str])):
+            (row.get("camera_path") is not None and (
+                type(row["camera_path"]) is not str or
+                not row["camera_path"].startswith("/World/") or
+                len(row["camera_path"])>240))):
             raise RuntimeError("Original data-first picture source identity invalid")
         original=folder_pictures/name
         if (original.is_symlink() or not original.is_file() or
