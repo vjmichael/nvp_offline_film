@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import DataFirstWorldViewport from './DataFirstWorldViewport.jsx';
+import {runGPUSourceTextureReference} from './NativeTextureGPUReference.js';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -45,6 +46,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [textureMeshes,setTextureMeshes]=useState([]);
   const [textureMeshId,setTextureMeshId]=useState('');
   const [textureApplying,setTextureApplying]=useState(false);
+  const [installedGPUReceipt,setInstalledGPUReceipt]=useState(null);
   const [presentationId,setPresentationId]=useState('NativeFilm001');
   const [aviReceipt,setAviReceipt]=useState(null);
   const [gradeChoices,setGradeChoices]=useState([]);
@@ -508,6 +510,24 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     finally{setTextureApplying(false);}
   }
 
+  async function runInstalledOriginalGPUProbe(){
+    if(!native||typeof native.wo2_gpu_texture_probe!=='function')return;
+    setInstalledGPUReceipt(null);
+    try{
+      const response=await native.wo2_gpu_texture_probe();
+      if(response?.format!=='nvp.wo2.installed_texture_probe.v1'||
+         response.status!=='READY'||
+         response.texture?.format!=='nvp.original.usd_texture_png.v1'||
+         response.source_modified!==false)
+        throw Error('Installed native original PNG probe was not approved');
+      const result=await runGPUSourceTextureReference(response.texture);
+      setInstalledGPUReceipt(result);
+    }catch(e){
+      setInstalledGPUReceipt({passed:false,actual_gpu_readback:false,
+        reason:String(e.message)});
+    }
+  }
+
   async function importOriginalTexture(){
     if(!native||typeof native.data_av_import_original_texture!=='function'||
        textureImporting)return;
@@ -647,6 +667,24 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       native audio permission and the OS sound device.</p>}
     {error&&<p role="alert">{error}</p>}
     {note&&<p role="status">{note}</p>}
+    {typeof native?.wo2_gpu_texture_probe==='function'&&
+      <section className="card" aria-label="Installed native GPU texture acceptance">
+        <button onClick={runInstalledOriginalGPUProbe}>
+          Run installed original PNG GPU comparison</button>
+        {installedGPUReceipt&&<p role={installedGPUReceipt.passed?'status':'alert'}>
+          {installedGPUReceipt.passed?
+            'WO2 installed source GPU texel comparison PASSED':
+            'WO2 installed source GPU texel comparison FAILED'}
+          {installedGPUReceipt.actual_gpu_readback?
+            ' · actual WebGL pixel readback':
+            ' · no accepted WebGL readback'}
+          {typeof installedGPUReceipt.max_channel_error==='number'&&
+            ' · maximum channel error '+installedGPUReceipt.max_channel_error}
+          {installedGPUReceipt.reason&&' · '+installedGPUReceipt.reason}
+          . Hardware acceleration and physical color calibration remain
+          independent acceptance gates.
+        </p>}
+      </section>}
     <section className="card" aria-label="Original USD texture import">
       <h3>Import an original 3D material texture</h3>
       <p className="fineprint">Select a PNG in the native OS picker.
