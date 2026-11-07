@@ -937,6 +937,15 @@ export default function DataFirstWorldViewport({
             <option value="trilinear">Mipmapped (recommended)</option>
           </select>
         </label>
+        <label>Detail at camera angles
+          <select aria-label="WO2 anisotropic filtering"
+            value={activeLook.textures.anisotropy}
+            onChange={e=>changeLook(x=>{
+              x.textures.anisotropy=Number(e.target.value);})}>
+            {[1,2,4,8,16].map(n=><option key={n} value={n}>
+              {n}× anisotropic</option>)}
+          </select>
+        </label>
       </div>
       <div className="actions">
         <label>Character or prop material
@@ -985,6 +994,75 @@ export default function DataFirstWorldViewport({
               delete x.materials[selectedMaterial];})}>
               Reset material presentation
             </button>
+            {(()=>{
+              const source=bounded.find(o=>o.path===selectedMaterial);
+              const channels=[
+                ...(source?.source_material?.texture?['base_color']:[]),
+                ...Object.keys(source?.source_material?.pbr_maps||{}),
+              ];
+              const current=channels.includes(selectedUvChannel)?
+                selectedUvChannel:channels[0];
+              if(!current)return <p>No verified original PNG
+                channels are attached to this actor yet.</p>;
+              const uv=textureChannelLook(activeLook,selectedMaterial,current);
+              const changeUv=(key,value)=>{
+                changeLook(x=>{
+                  const transforms=x.textures.transforms;
+                  const assigned=transforms[selectedMaterial]||{};
+                  assigned[current]={...uv,[key]:value};
+                  transforms[selectedMaterial]=assigned;
+                });
+              };
+              return <>
+                <label>Original texture channel
+                  <select aria-label="WO2 source UV channel"
+                    value={current}
+                    onChange={e=>setSelectedUvChannel(e.target.value)}>
+                    {channels.map(name=><option value={name}
+                      key={name}>{name.replace('_',' ')}</option>)}
+                  </select>
+                </label>
+                <label>Tile horizontally
+                  <input type="number" min=".01" max="64" step=".1"
+                    aria-label="WO2 UV repeat U" value={uv.repeat[0]}
+                    onChange={e=>changeUv('repeat',[
+                      Number(e.target.value),uv.repeat[1]])}/>
+                </label>
+                <label>Tile vertically
+                  <input type="number" min=".01" max="64" step=".1"
+                    aria-label="WO2 UV repeat V" value={uv.repeat[1]}
+                    onChange={e=>changeUv('repeat',[
+                      uv.repeat[0],Number(e.target.value)])}/>
+                </label>
+                <label>Texture offset horizontal
+                  <input type="number" min="-64" max="64" step=".05"
+                    aria-label="WO2 UV offset U" value={uv.offset[0]}
+                    onChange={e=>changeUv('offset',[
+                      Number(e.target.value),uv.offset[1]])}/>
+                </label>
+                <label>Texture offset vertical
+                  <input type="number" min="-64" max="64" step=".05"
+                    aria-label="WO2 UV offset V" value={uv.offset[1]}
+                    onChange={e=>changeUv('offset',[
+                      uv.offset[0],Number(e.target.value)])}/>
+                </label>
+                <label>Texture rotation (degrees)
+                  <input type="range" min="-360" max="360" step="1"
+                    aria-label="WO2 UV rotation" value={uv.rotation_deg}
+                    onChange={e=>changeUv('rotation_deg',
+                      Number(e.target.value))}/>
+                  {uv.rotation_deg}°
+                </label>
+                <button type="button" onClick={()=>changeLook(x=>{
+                  const assigned=x.textures.transforms[selectedMaterial];
+                  if(assigned){
+                    delete assigned[current];
+                    if(!Object.keys(assigned).length)
+                      delete x.textures.transforms[selectedMaterial];
+                  }
+                })}>Reset this channel's UV presentation</button>
+              </>;
+            })()}
           </>;
         })()}
       </div>
