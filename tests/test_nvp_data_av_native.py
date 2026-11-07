@@ -201,6 +201,46 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
         self.assertEqual(bridge.data_av_stop(grant["session_id"])[
             "status"],"STOPPED")
 
+    def test_creator_measured_binaural_audition_scopes_original_ir_sha(self):
+        from backend.nvp_native_hrir import NativeMeasuredBinauralIR
+        impulses=[
+            {"azimuth_deg":-90,"left":[.8,0.], "right":[.1,0.]},
+            {"azimuth_deg":90,"left":[.1,0.], "right":[.8,0.]},
+        ]
+        ir=NativeMeasuredBinauralIR.publish(
+            self.index,self.pid,"OriginalMeasuredHead",
+            measurement_kind="anechoic_hrir",
+            measured_source_label="Synthetic test original sample source",
+            license_notice="Unit test fixture, unrestricted synthetic data",
+            responses=impulses,native_creator_approval=lambda _:True)
+        bridge=TrustedDesktopCameraBridge(
+            self.index,origin="http://127.0.0.1:7777")
+        self.addCleanup(bridge._close)
+        window=Window()
+        bridge._attach_window(window)
+        profiles=bridge.data_av_binaural_catalog(self.pid)
+        self.assertEqual(len(profiles["profiles"]),1)
+        ref={"source_id":"OriginalMeasuredHead",
+             "source_document_sha256":ir["document_sha256"]}
+        base={"project_id":self.pid,"take_id":"frozen_audio_take",
+              "take_document_sha256":self.sha,
+              "listener_path":"/World/ListenerLeft",
+              "first_sample":0,"direction":"forward",
+              "measured_binaural":ref}
+        grant=bridge.data_av_begin(base)
+        self.assertEqual(grant["status"],"READY")
+        self.assertEqual(grant["binaural_profile_sha256"],
+                         ir["document_sha256"])
+        self.assertIn(ir["document_sha256"],window.questions[-1][1])
+        audio=bridge.data_av_audio_window(grant["session_id"],0,512)
+        self.assertEqual(audio["binaural_profile_sha256"],
+                         ir["document_sha256"])
+        self.assertFalse(audio["native_binaural_calibration_accepted"])
+        bridge.data_av_stop(grant["session_id"])
+        with self.assertRaises(RuntimeError):
+            bridge.data_av_begin({**base,"measured_binaural":{
+                **ref,"source_document_sha256":"f"*64}})
+
     def test_original_audio_chunk_tampering_fails_closed(self):
         chunk=self.index.read_revision(self.pid,"mic_signal",1)[
             "data"]["chunks"][0]["blob_sha256"]
