@@ -144,8 +144,11 @@ jobs:
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
           if ($bundled.Count -ne 0) { throw 'Legacy FFmpeg was accidentally bundled into native data AV' }
-          & 'dist/NVP/NVP.exe' '--smoke-data-av'
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged native USD+PCM source acceptance failed' }
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-packaged-data-av-failure.txt'
+          Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
+          $packaged=Start-Process -FilePath (Resolve-Path 'dist/NVP/NVP.exe').Path -ArgumentList '--smoke-data-av' -Wait -PassThru
+          if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output }
+          if ($packaged.ExitCode -ne 0) { throw "Packaged native USD+PCM source acceptance failed (exit $($packaged.ExitCode))" }
       - name: Build dedicated single-click NSIS installed candidate
         shell: pwsh
         run: |
@@ -173,14 +176,14 @@ jobs:
           }
           $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-installed-data-av-failure.txt'
           Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
-          & $installed '--smoke-data-av'
-          $smokeExit=$LASTEXITCODE
+          $smoke=Start-Process -FilePath $installed -ArgumentList '--smoke-data-av' -Wait -PassThru
+          $smokeExit=$smoke.ExitCode
           if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
             Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output
           }
           if ($smokeExit -ne 0) { throw "Installed native Digital Take and sound playback failed (exit $smokeExit)" }
-          & $installed '--smoke-window'
-          if ($LASTEXITCODE -ne 0) { throw 'Installed WebView2 data-first sound UI failed' }
+          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -Wait -PassThru
+          if ($window.ExitCode -ne 0) { throw "Installed WebView2 data-first sound UI failed (exit $($window.ExitCode))" }
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
           $result=Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait -PassThru
