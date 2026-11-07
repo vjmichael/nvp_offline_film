@@ -34,6 +34,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
     visual=[]
     mesh_points_total=0
     mesh_triangles_total=0
+    texture_bytes_total=0
     assets=OpenUSDAssetRegistry(index)
     for obj in scene_snapshot["objects"]:
         role=obj["semantic_role"]
@@ -41,6 +42,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
         size=0.4
         mesh_points=None
         mesh_triangles=None
+        mesh_uvs=None
         binding=obj.get("asset")
         skin=skins.get(obj["path"])
         asset_material=None
@@ -56,6 +58,23 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             shape=source["data"]["shape"]
             size=source["data"]["size_m"]
             asset_material=source["data"].get("preview_material")
+            original_texture=source["data"].get("preview_texture")
+            if original_texture is not None:
+                import base64
+                original_bytes=index.get_blob(
+                    project_id,original_texture["blob_sha256"])
+                texture_bytes_total+=len(original_bytes)
+                if texture_bytes_total>2*1024*1024:
+                    raise RuntimeError("Source texture image preview budget exceeded")
+                asset_material={
+                    **asset_material,
+                    "source_texture":{
+                        **original_texture,
+                        "png_base64":base64.b64encode(
+                            original_bytes).decode("ascii"),
+                    },
+                }
+                mesh_uvs=source["data"]["uvs"]
             if shape not in ("cube","sphere","mesh"):
                 raise RuntimeError("Unsupported original OpenUSD geometry")
             if shape=="mesh":
@@ -94,6 +113,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             "gizmo_only":binding is None and skin is None,
             "mesh_points":mesh_points,
             "mesh_triangles":mesh_triangles,
+            "mesh_uvs":mesh_uvs,
             "source_skinning":shape=="skinned_mesh",
             "source_rigged_actor":skin is not None,
             "source_skinning_tick":skin["source_skinning_tick"] if skin else None,
