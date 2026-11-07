@@ -254,7 +254,7 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
     expect(screen.getByText('Authored OpenUSD geometry preview')).toBeTruthy();
     fireEvent.click(container.querySelector('.nvp-slate-assembly-card'));
     expect(screen.getByAltText(/Authored OpenUSD camera and geometry preview/)).toBeTruthy();
-    expect(screen.getByText(/weighted body skinning is shown when sourced/)).toBeTruthy();
+    expect(screen.getByText(/supported weighted skinning/)).toBeTruthy();
     expect(screen.getByText(/no final master approval/)).toBeTruthy();
   });
 
