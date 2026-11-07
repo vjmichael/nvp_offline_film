@@ -5,6 +5,8 @@ on:
     paths:
       - tools/nvp_wo5_release_codecs.py
       - tools/nvp_wo5_installed_sustain.py
+      - backend/nvp_wo5_finished_playback.py
+      - docs/NVP_WO5_PRODUCTION_ACCEPTANCE.md
       - tools/nvp_wo5_visible_finished_fixture.py
       - tools/nvp_wo5_installed_visible.py
       - frontend/src/App.jsx
@@ -20,6 +22,7 @@ on:
       - frontend/src/WO6CreatorActionsPanel.test.jsx
       - tests/test_nvp_wo6_desktop_bridge.py
       - docs/NVP_WO6_AI_FIRST_FILM_ASSISTANT.md
+      - docs/NVP_DATA_ALL_TASK_LEDGER.md
       - backend/nvp_wo5_codec_binding.py
       - backend/_nvp_wo5_release_pin.py
       - tests/test_nvp_wo5_release_codecs.py
@@ -29,6 +32,8 @@ on:
     paths:
       - tools/nvp_wo5_release_codecs.py
       - tools/nvp_wo5_installed_sustain.py
+      - backend/nvp_wo5_finished_playback.py
+      - docs/NVP_WO5_PRODUCTION_ACCEPTANCE.md
       - tools/nvp_wo5_visible_finished_fixture.py
       - tools/nvp_wo5_installed_visible.py
       - frontend/src/App.jsx
@@ -44,6 +49,7 @@ on:
       - frontend/src/WO6CreatorActionsPanel.test.jsx
       - tests/test_nvp_wo6_desktop_bridge.py
       - docs/NVP_WO6_AI_FIRST_FILM_ASSISTANT.md
+      - docs/NVP_DATA_ALL_TASK_LEDGER.md
       - backend/nvp_wo5_codec_binding.py
       - backend/_nvp_wo5_release_pin.py
       - tests/test_nvp_wo5_release_codecs.py
