@@ -57,6 +57,11 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             shape=source["data"]["shape"]
             size=source["data"]["size_m"]
             asset_material=source["data"].get("preview_material")
+            if asset_material is not None and "texture" in asset_material:
+                from backend.nvp_native_usd_texture import texture_transport
+                asset_material={**asset_material,
+                    "texture_transport":texture_transport(
+                        index,project_id,asset_material["texture"])}
             if shape not in ("cube","sphere","mesh"):
                 raise RuntimeError("Unsupported original OpenUSD geometry")
             if shape=="mesh":
