@@ -135,7 +135,8 @@ class NativeAiReadHost:
             _FEATURE_SOURCE: {"capability_id", "project_id", "feature_id"},
             _SCENE_CREW: {"capability_id", "project_id", "take_id",
                           "take_revision", "tick", "source_revision",
-                          "screenplay_scene_id", "max_prims", "max_events"},
+                          "screenplay_scene_id", "max_prims", "max_events",
+                          "shot_sequence_id", "shot_sequence_revision"},
             _TOOL_PREFLIGHT: {"capability_id", "project_id"},
         }[capability]
         if set(request) - expected:
@@ -178,6 +179,8 @@ class NativeAiReadHost:
                 request["take_id"], request["take_revision"], request["tick"],
                 source_revision=request.get("source_revision"),
                 screenplay_scene_id=request.get("screenplay_scene_id"),
+                shot_sequence_id=request.get("shot_sequence_id"),
+                shot_sequence_revision=request.get("shot_sequence_revision"),
                 max_prims=request.get("max_prims", 32),
                 max_events=request.get("max_events", 24),
             )
