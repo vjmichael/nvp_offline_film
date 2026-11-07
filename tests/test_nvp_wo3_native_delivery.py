@@ -146,7 +146,7 @@ class WO3OriginalCinemaAuthoring(unittest.TestCase):
             ApprovedCodecBinary(
                 false_binary,sha256="0"*64,
                 product="OpenJPEG-opj_compress")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(PermissionError):
             _frame_receipts([{
                 "format":"nvp.wo3.native_openjpeg_frame.v1",
                 "codestream":synthetic_header(),
