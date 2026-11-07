@@ -18,6 +18,7 @@ import DataFirstAVPanel from './DataFirstAVPanel.jsx';
 import WorkspaceLock from './WorkspaceLock.jsx';
 import DirectorFilmReviewPanel from './DirectorFilmReviewPanel.jsx';
 import FinishedFilmPlaybackPanel from './FinishedFilmPlaybackPanel.jsx';
+import WO6CreatorActionsPanel from './WO6CreatorActionsPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -451,11 +452,13 @@ function MainApp() {
           <button className={tab === 'camera' ? 'active' : ''} onClick={() => setTab('camera')}>17 · Virtual camera</button>
           <button className={tab === 'data-av' ? 'active' : ''} onClick={() => setTab('data-av')}>18 · Native 3D sound</button>
           <button className={tab === 'film-review' ? 'active' : ''} onClick={() => setTab('film-review')}>19 · Watch & review film</button>
+          <button className={tab === 'creator-native' ? 'active' : ''} onClick={() => setTab('creator-native')}>20 · Native director approvals</button>
           <button className={tab === 'color-guide' ? 'active' : ''} onClick={() => setTab('color-guide')}>Help · Color grading</button>
         </nav>
         {tab === 'camera' && <FilmCameraSourcePanel projectId={project.id} api={api}/>}
         {tab === 'data-av' && <DataFirstAVPanel projectId={project.id}/>}
         {tab === 'film-review' && <DirectorFilmReviewPanel projectId={project.id}/>}
+        {tab === 'creator-native' && <WO6CreatorActionsPanel projectId={project.id}/>}
         {tab === 'develop' && <div className="columns">
           <section className="card">
             <h2>Develop your story</h2>
