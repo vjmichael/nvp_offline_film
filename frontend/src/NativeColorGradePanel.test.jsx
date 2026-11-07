@@ -94,7 +94,7 @@ describe('DA-06D creator-approved OpenUSD source color in ACES2',()=>{
     expect(await screen.findByText(/exact non-negative Film Time tick/))
       .toBeTruthy();
     expect(bridge.data_av_native_aces_review).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText('Exposure (stops)'),
+    fireEvent.change(screen.getByLabelText(/^Exposure \(stops\):/),
       {target:{value:'.75'}});
     expect(screen.getByText('Review verified ACES2 source color').disabled)
       .toBe(true);
