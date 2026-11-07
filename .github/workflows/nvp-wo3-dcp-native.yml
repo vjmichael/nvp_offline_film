@@ -12,6 +12,9 @@ on:
       - backend/nvp_wo3_dcp_package.py
       - backend/nvp_wo3_export_recovery.py
       - backend/nvp_wo3_atomic_publish.py
+      - backend/nvp_wo3_codec_bundle_provenance.py
+      - tests/test_nvp_wo3_codec_bundle_provenance.py
+      - tests/test_nvp_wo3_real_variable_quality.py
       - tests/test_nvp_wo3_atomic_publish.py
       - tests/test_nvp_wo3_export_recovery.py
       - tests/test_nvp_wo3_native_delivery.py
@@ -28,6 +31,9 @@ on:
       - backend/nvp_wo3_dcp_package.py
       - backend/nvp_wo3_export_recovery.py
       - backend/nvp_wo3_atomic_publish.py
+      - backend/nvp_wo3_codec_bundle_provenance.py
+      - tests/test_nvp_wo3_codec_bundle_provenance.py
+      - tests/test_nvp_wo3_real_variable_quality.py
       - tests/test_nvp_wo3_atomic_publish.py
       - tests/test_nvp_wo3_export_recovery.py
       - tests/test_nvp_wo3_native_delivery.py
@@ -56,11 +62,13 @@ jobs:
       - name: Install official OpenUSD for real frozen Take verification
         run: python -m pip install "usd-core==26.11"
       - name: Compile independent DCP inspector
-        run: python -m compileall -q backend/nvp_wo3_dcp_structure.py backend/nvp_wo3_j2k_audit.py backend/nvp_wo3_native_codecs.py backend/nvp_wo3_mxf_native.py backend/nvp_wo3_dcp_package.py backend/nvp_wo3_independent_essence.py backend/nvp_wo3_export_recovery.py backend/nvp_wo3_atomic_publish.py tests/test_nvp_wo3_atomic_publish.py tests/test_nvp_wo3_export_recovery.py tests/test_nvp_wo3_dcp_structure.py tests/test_nvp_wo3_native_delivery.py
+        run: python -m compileall -q backend/nvp_wo3_dcp_structure.py backend/nvp_wo3_j2k_audit.py backend/nvp_wo3_native_codecs.py backend/nvp_wo3_mxf_native.py backend/nvp_wo3_dcp_package.py backend/nvp_wo3_independent_essence.py backend/nvp_wo3_export_recovery.py backend/nvp_wo3_atomic_publish.py backend/nvp_wo3_codec_bundle_provenance.py tests/test_nvp_wo3_codec_bundle_provenance.py tests/test_nvp_wo3_atomic_publish.py tests/test_nvp_wo3_export_recovery.py tests/test_nvp_wo3_dcp_structure.py tests/test_nvp_wo3_native_delivery.py
       - name: Verify SMPTE ASSETMAP PKL CPL hashes and no fake MXF acceptance
         run: python -m unittest discover -s tests -p test_nvp_wo3_dcp_structure.py -v
       - name: Verify approved DCI J2K/MXF/package and immutable Take admission
         run: python -m unittest discover -s tests -p test_nvp_wo3_native_delivery.py -v
+      - name: Verify strict native codec and license-notice provenance manifests
+        run: python -m unittest discover -s tests -p test_nvp_wo3_codec_bundle_provenance.py -v
       - name: Verify atomic no-replace publish and live destination collision
         run: python -m unittest discover -s tests -p test_nvp_wo3_atomic_publish.py -v
       - name: Verify restart/export reconciliation never overwrites originals
@@ -89,10 +97,16 @@ jobs:
           sudo apt-get install -y libopenjp2-tools
           command -v opj_compress
           opj_compress -h | head -25
+      - name: Encode and decode variable 2K Scope chromatic source, record numerical errors
+        env:
+          NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+          NVP_NATIVE_OPENJPEG_DECODE: /usr/bin/opj_decompress
+        run: python -m unittest discover -s tests -p test_nvp_wo3_real_variable_quality.py -v
       - name: Encode actual 1998x1080 XYZ12 cinema J2K (not fake frames)
         env:
           NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
           NVP_NATIVE_OPENJPEG_4K: '1'
+          NVP_NATIVE_OPENJPEG_DECODE: /usr/bin/opj_decompress
         run: python -m unittest discover -s tests -p test_nvp_wo3_real_openjpeg.py -v
 
   wo3-real-smpte-mxf-roundtrip:
