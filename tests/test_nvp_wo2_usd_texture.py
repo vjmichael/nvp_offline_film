@@ -132,6 +132,40 @@ class WO2NativeTextureTests(fixture.NativeUSD02Integration):
         self.assertEqual(old_again.tobytes(),image.tobytes())
 
 
+    def test_trusted_native_picker_approval_and_symlink_refusal(self):
+        import tempfile
+        from pathlib import Path
+        from backend.nvp_native_usd_texture import import_native_selected_png
+        with tempfile.TemporaryDirectory() as tmp:
+            original=Path(tmp)/"original.png"
+            original.write_bytes(self._png())
+            approvals=[]
+            result=import_native_selected_png(
+                self.index,self.pid,original,
+                approve=lambda scope:(approvals.append(scope) or True))
+            self.assertEqual(result["status"],"ORIGINAL_TEXTURE_IMPORTED")
+            self.assertEqual(result["texture"]["sha256"],
+                             approvals[0]["sha256"])
+            self.assertEqual(verified_texture(
+                self.index,self.pid,result["texture"])[0],
+                original.read_bytes())
+            denied=import_native_selected_png(
+                self.index,self.pid,original,approve=lambda _:False)
+            self.assertEqual(denied["status"],"DENIED")
+            link=Path(tmp)/"untrusted.png"
+            try:
+                link.symlink_to(original)
+            except (OSError,NotImplementedError):
+                pass
+            else:
+                with self.assertRaises(PermissionError):
+                    import_native_selected_png(
+                        self.index,self.pid,link,approve=lambda _:True)
+            with self.assertRaises(PermissionError):
+                import_native_selected_png(
+                    self.index,self.pid,Path("relative.png"),
+                    approve=lambda _:True)
+
     def test_reject_invalid_png_or_unbound_texture_mesh(self):
         for bad in (b"not a png",b"",b"\x89PNG\r\n\x1a\ncorrupt"):
             with self.subTest(bad=bad):
