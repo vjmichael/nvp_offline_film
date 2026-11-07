@@ -210,6 +210,37 @@ class ExactTimeCameraSequenceTests(unittest.TestCase):
         self.assertEqual(editor.read(self.pid,"ExactCameraEdits",2)[
             "shots"][1]["shot_id"],"Shot002")
 
+    def test_insert_shot_in_gap_preserves_source_history_and_cas(self):
+        first=self.publish()
+        editor=ExactTimeShotSequence(self.index)
+        inserted={"shot_id":"Shot003","camera_path":"/World/ListenerLeft",
+                  "pattern":"reaction","start_tick":str(T+1),
+                  "end_tick":str(T+2)}
+        second=editor.insert_shot(self.pid,"ExactCameraEdits",1,inserted)
+        self.assertEqual(second["revision"],2)
+        self.assertEqual([s["shot_id"] for s in second["shots"]],
+                         ["Shot001","Shot003","Shot002"])
+        self.assertEqual(editor.camera_at_tick(
+            self.pid,"ExactCameraEdits",2,str(T+1))["shot_id"],"Shot003")
+        self.assertEqual(editor.camera_at_tick(
+            self.pid,"ExactCameraEdits",1,str(T+1))["status"],"GAP")
+        self.assertEqual(editor.read(self.pid,"ExactCameraEdits",1)[
+            "document_sha256"],first["document_sha256"])
+        self.assertEqual(second["scene_document_sha256"],
+                         first["scene_document_sha256"])
+        with self.assertRaises(Exception):
+            editor.insert_shot(self.pid,"ExactCameraEdits",1,inserted)
+        with self.assertRaises(ValueError):
+            editor.insert_shot(self.pid,"ExactCameraEdits",2,inserted)
+        with self.assertRaises(ValueError):
+            editor.insert_shot(self.pid,"ExactCameraEdits",2,{
+                **inserted,"shot_id":"Shot004","start_frame":24})
+        with self.assertRaises(ValueError):
+            editor.insert_shot(self.pid,"ExactCameraEdits",2,{
+                **inserted,"shot_id":"Shot004","start_tick":str(T-1)})
+        self.assertEqual(editor.read(self.pid,"ExactCameraEdits",2)[
+            "document_sha256"],second["document_sha256"])
+
     def test_os_authorization_controls_exact_scene_and_timeline_take_freeze(self):
         saved=self.publish()
         bridge=TrustedDesktopCameraBridge(
