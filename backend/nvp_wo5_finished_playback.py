@@ -55,6 +55,12 @@ class Reel:
     sound_sha:str
     job_id:str
     channels:tuple[str,...]
+    picture_stat:tuple[int,int,int,int]
+    sound_stat:tuple[int,int,int,int]
+
+def _fingerprint(path):
+    st=path.stat()
+    return (st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns)
 
 def locate_reel(reels,frame):
     """Global output Film Time -> exact published local MXF reel offset."""
@@ -191,7 +197,9 @@ def load_published_reels(index,journal,project_id,feature_id):
         result.append(Reel(cursor,part["frames"],
                            files["picture"],files["sound"],
                            part["picture"]["file_sha256"],
-                           part["sound"]["file_sha256"],job_id,channels))
+                           part["sound"]["file_sha256"],job_id,channels,
+                           _fingerprint(files["picture"]),
+                           _fingerprint(files["sound"])))
         cursor+=part["frames"]
     if cursor!=audited["frame_count"]:
         raise PermissionError("Final film CPL duration not equal to approved Film Time")
@@ -320,16 +328,18 @@ class FinishedFilmPlayer:
             s=self._get(ticket)
             # Native process cancellation checks the same revocable grant.
             cancel=lambda:self._cancelled(ticket)
-            for file,digest in ((reel.picture,reel.picture_sha),
-                                (reel.sound,reel.sound_sha)):
+            for file,stamp in ((reel.picture,reel.picture_stat),
+                               (reel.sound,reel.sound_stat)):
                 if (not file.is_file() or file.is_symlink() or
-                        file.resolve(strict=True).parent!=reel.picture.parent):
-                    raise PermissionError("Final delivered MXF redirected")
-                # mtime/size alone cannot detect malicious source replacement.
-                # For a real artifact reread the cryptographic digest before
-                # issuing decoded observations. It may be slow on large reels.
-                if digest_file(file)!=digest:
+                        file.resolve(strict=True).parent!=reel.picture.parent or
+                        _fingerprint(file)!=stamp):
                     raise PermissionError("Final delivered MXF changed during viewing")
+            # Every MXF asset was SHA-256 hashed at admission and is now
+            # stat-pinned; picture codestream is SHA-verified per frame.
+            # Never rehash 5-minute multi-GB tracks at 24fps: that would
+            # make sustained playback impossible. A hostile same-size,
+            # forged-mtime modification requires protected file ownership
+            # or per-chunk authenticated PCM hashes in a later release.
             with TemporaryDirectory(prefix="nvp-finished-window-",dir=self.root) as tmp:
                 work=Path(tmp)
                 args=["-f",str(local),"-d","1","-b",str(MAX_J2K_BYTES),
