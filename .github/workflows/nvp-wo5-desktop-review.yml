@@ -27,6 +27,9 @@ on:
       - frontend/src/DirectorFilmReviewPanel.test.jsx
       - frontend/src/WO5NativeSourcePlayback.test.jsx
       - .github/workflows/nvp-wo5-desktop-review.yml
+concurrency:
+  group: nvp-wo5-desktop-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
