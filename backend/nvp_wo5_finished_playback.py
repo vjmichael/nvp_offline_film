@@ -13,6 +13,7 @@ may buffer; it must not silently skip a frame or present unplayed footage as
 a watched movie.
 """
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 import base64
 from bisect import bisect_right
 from dataclasses import dataclass
@@ -440,9 +441,13 @@ class FinishedFilmPlayer:
                 bytes_per_picture_sound=SAMPLES_PER_FRAME*3*len(reel.channels)
                 if len(pcm)!=count*bytes_per_picture_sound:
                     raise PermissionError("Published PCM batch omitted samples")
-                results=[]
-                for n in range(count):
-                    self._get(ticket)
+                # The published J2K codestreams and PCM window have already
+                # been independently SHA-verified. Separate read-only native
+                # OpenJPEG workers can decode at most four different pictures
+                # concurrently; output order remains exact Film Time order.
+                # Each codec subprocess still owns its own supervised
+                # Windows Job Object/Linux process group and cancellation.
+                def decode_one_published_picture(n):
                     local_frame=local+n
                     file=work/("p_"+f"{local_frame:06d}"+".j2c")
                     if (file.is_symlink() or not file.is_file() or
@@ -464,7 +469,7 @@ class FinishedFilmPlayer:
                         n*bytes_per_picture_sound:
                         (n+1)*bytes_per_picture_sound],reel.channels)
                     frame_index=first_frame+n
-                    results.append({
+                    result={
                         "format":FORMAT,
                         "status":"DECODED_PUBLISHED_FINAL_FRAME",
                         "frame_index":frame_index,
@@ -482,9 +487,13 @@ class FinishedFilmPlayer:
                         "original_multichannel_master_preserved":True,
                         "finished_film_complete_viewing_verified":False,
                         "production_accepted":False,
-                    })
+                    }
                     file.unlink()
                     (work/dest).unlink()
+                    return result
+                with ThreadPoolExecutor(max_workers=min(4,count)) as pool:
+                    results=list(pool.map(
+                        decode_one_published_picture,range(count)))
                 self._get(ticket)
                 return {
                     "format":FORMAT,
