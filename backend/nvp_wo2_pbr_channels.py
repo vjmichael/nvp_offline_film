@@ -32,7 +32,7 @@ def verify_pbr_maps(index,pid,maps):
 def author_pbr_maps(stage,material_path,preview,openpbr,maps):
     """Produce actual typed UsdUVTexture and bounded MaterialX shader nodes."""
     if not maps:return
-    from pxr import Sdf,UsdShade
+    from pxr import Gf,Sdf,UsdShade
     for key,desc in maps.items():
         suffix=key.capitalize()
         path=material_path+"/Map_"+suffix
@@ -49,16 +49,24 @@ def author_pbr_maps(stage,material_path,preview,openpbr,maps):
         uv.CreateInput("varname",Sdf.ValueTypeNames.Token).Set("st")
         shader.CreateInput("st",Sdf.ValueTypeNames.Float2).ConnectToSource(
             uv.CreateOutput("result",Sdf.ValueTypeNames.Float2))
+        if key=="normal":
+            shader.CreateInput("scale",Sdf.ValueTypeNames.Float4).Set(
+                Gf.Vec4f(2,2,2,1))
+            shader.CreateInput("bias",Sdf.ValueTypeNames.Float4).Set(
+                Gf.Vec4f(-1,-1,-1,0))
         output=("r" if key in ("roughness","metallic") else "rgb")
         typ=(Sdf.ValueTypeNames.Float if output=="r" else
              Sdf.ValueTypeNames.Float3)
+        preview_type=(
+            Sdf.ValueTypeNames.Normal3f if key=="normal" else
+            Sdf.ValueTypeNames.Color3f if key=="emission" else typ)
         preview_input={
             "roughness":"roughness",
             "metallic":"metallic",
             "emission":"emissiveColor",
             "normal":"normal",
         }[key]
-        preview.CreateInput(preview_input,typ).ConnectToSource(
+        preview.CreateInput(preview_input,preview_type).ConnectToSource(
             shader.CreateOutput(output,typ))
         mtlx=UsdShade.Shader.Define(stage,material_path+"/MtlxMap_"+suffix)
         mtlx.CreateIdAttr(
@@ -97,6 +105,9 @@ def author_pbr_maps(stage,material_path,preview,openpbr,maps):
                 "emission":"emission_color",
             }[key]
             openpbr.CreateInput(target,out_type).ConnectToSource(out)
+            if key=="emission":
+                openpbr.CreateInput(
+                    "emission_luminance",Sdf.ValueTypeNames.Float).Set(1.)
 
 def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
     if not maps:return
@@ -118,6 +129,12 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
         for axis in ("wrapS","wrapT"):
             if shader.GetInput(axis).GetAttr().Get()!="repeat":
                 raise RuntimeError("Original PBR map wrapping changed")
+        if key=="normal":
+            scale=shader.GetInput("scale").GetAttr().Get()
+            bias=shader.GetInput("bias").GetAttr().Get()
+            if (list(scale)!=[2.,2.,2.,1.] or
+                list(bias)!=[-1.,-1.,-1.,0.]):
+                raise RuntimeError("Original tangent normal conversion changed")
         mtlx=UsdShade.Shader(stage.GetPrimAtPath(
             material_path+"/MtlxMap_"+suffix))
         expected_id=("ND_image_float" if key in ("roughness","metallic")
@@ -151,6 +168,10 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
                 material_path+"/MtlxNormalMap"):
                 raise RuntimeError("Original OpenPBR normal input rewired")
         else:
+            if key=="emission" and (
+                float(openpbr.GetInput(
+                    "emission_luminance").GetAttr().Get())!=1.):
+                raise RuntimeError("Original OpenPBR emission disabled")
             input_name={"roughness":"specular_roughness",
                         "metallic":"base_metalness",
                         "emission":"emission_color"}[key]
