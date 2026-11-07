@@ -61,6 +61,9 @@ class TrustedDataAVController:
                 result.append({
                     "take_id":row["object_id"],
                     "take_document_sha256":rec["document_sha256"],
+                    "scene_id":data["scene_id"],
+                    "scene_revision":data["scene_revision"],
+                    "scene_document_sha256":scene["document_sha256"],
                     "duration_tick":str(data["duration_tick"]),
                     "listeners":sorted(choices)[:64],
                     "source_cameras":cameras[:64],
