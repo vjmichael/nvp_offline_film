@@ -268,7 +268,7 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
             (w2,uv_face[2],z2)))/inv_safe
         tex_h,tex_w=texture.shape[:2]
         xx=np.floor(np.mod(u,1.)*tex_w).astype(np.int64)
-        yy=np.floor((1.-np.mod(v,1.))*tex_h).astype(np.int64)%tex_h
+        yy=(tex_h-1)-np.floor(np.mod(v,1.)*tex_h).astype(np.int64)
         sample=texture[yy,xx,:3]
         # Approximate source-light response, not full Hydra equivalence.
         out[visible]=np.asarray(shade,dtype=np.float32)*sample[visible]
