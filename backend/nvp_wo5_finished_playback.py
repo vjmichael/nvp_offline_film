@@ -65,7 +65,7 @@ def _fingerprint(path):
 def locate_reel(reels,frame):
     """Global output Film Time -> exact published local MXF reel offset."""
     if (type(frame) is not int or frame < 0 or
-            not reels or type(reels) not tuple):
+            not reels or type(reels) is not tuple):
         raise ValueError("Exact nonnegative finished-film frame required")
     starts=[r.first for r in reels]
     index=bisect_right(starts,frame)-1
