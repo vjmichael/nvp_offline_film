@@ -652,7 +652,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <p className="fineprint">Select a PNG in the native OS picker.
         The source is SHA-verified and stored unchanged; existing actors,
         scenes and frozen Takes are not altered. Transparent images and
-        images over 512 × 512 are not yet supported.</p>
+        source images over 2048 × 2048 or 8 MiB are not supported.
+        Live GPU display uses an immutable-source-verified, derived 512-pixel
+        preview for larger images; the originals remain full resolution.</p>
       <button disabled={!native||textureImporting||
         typeof native.data_av_import_original_texture!=='function'}
         onClick={importOriginalTexture}>
