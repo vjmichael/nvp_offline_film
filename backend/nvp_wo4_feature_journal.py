@@ -331,6 +331,43 @@ class FeatureJournal(CinemaDeliveryJournal):
             db.execute("""UPDATE production_features SET state='REVIEW_REQUIRED',
                 owner=NULL,updated_at=? WHERE feature_id=?""",(_now(),feature_id))
 
+    def request_feature_cancel(self,feature_id,authorize):
+        if not callable(authorize):
+            raise PermissionError("Native host cancellation approval required")
+        f=self.feature(feature_id)
+        if f["state"] not in ("QUEUED","STAGING"):
+            raise PermissionError("Published multi-reel feature cannot be cancelled")
+        scope={"operation":"nvp.supervisor.cancel_feature_dcp.v1",
+               "feature_id":feature_id,
+               "manifest_sha256":f["manifest_sha256"]}
+        if authorize(deepcopy(scope)) is not True:
+            return {"status":"DENIED","feature_id":feature_id}
+        with self._tx() as db:
+            row=db.execute("""SELECT state,manifest_sha256
+                 FROM production_features WHERE feature_id=?""",
+                 (feature_id,)).fetchone()
+            if (row is None or row["state"]!=f["state"] or
+                    row["manifest_sha256"]!=f["manifest_sha256"]):
+                raise PermissionError("Multi-reel job changed during cancellation")
+            db.execute("""UPDATE production_features SET
+                cancel_requested=1,updated_at=? WHERE feature_id=?""",
+                (_now(),feature_id))
+        return {"status":"CANCEL_REQUESTED","feature_id":feature_id}
+
+    def finalize_feature_cancel(self,feature_id,owner):
+        with self._tx() as db:
+            row=db.execute("""SELECT state,owner,cancel_requested
+                FROM production_features WHERE feature_id=?""",
+                (feature_id,)).fetchone()
+            if (row is None or not row["cancel_requested"] or
+                    row["state"] not in ("QUEUED","STAGING") or
+                    (row["owner"] not in (None,owner))):
+                raise PermissionError("Only authorized uncommitted feature can stop")
+            db.execute("""UPDATE production_features SET
+                state='CANCELLED',owner=NULL,updated_at=? WHERE feature_id=?""",
+                (_now(),feature_id))
+        return {"status":"CANCELLED","feature_id":feature_id}
+
     def reconcile_features(self):
         reports=[]
         with self._read() as db:
