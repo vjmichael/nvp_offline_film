@@ -216,19 +216,42 @@ class NativeSceneLinearRaster:
             raise TypeError("Trusted original FilmIndex required")
         self.index=index
 
-    def render(self,project_id,take_id,take_sha256,*,tick,camera_path):
+    def render(self,project_id,take_id,take_sha256,*,tick,camera_path,
+               source_session=None,source_snapshot=None):
         _require_pid(project_id);_id(take_id,"original USD Take");_sha(take_sha256)
         _int(tick,"original scene Film Time")
         if type(camera_path) is not str or not camera_path.startswith("/World/"):
             raise ValueError("A source-authored USD camera is required")
         import numpy as np
-        source=FrozenSceneAV(
-            self.index,project_id,take_id,
-            expected_take_sha256=take_sha256,listener_path=camera_path)
+        owns_session=source_session is None
+        if owns_session:
+            if source_snapshot is not None:
+                raise PermissionError("External pixel snapshots cannot authorize ACES color")
+            source=FrozenSceneAV(
+                self.index,project_id,take_id,
+                expected_take_sha256=take_sha256,listener_path=camera_path)
+        else:
+            source=source_session
+            if (not isinstance(source,FrozenSceneAV) or
+                source.index is not self.index or
+                source.project_id!=project_id or
+                source.take_id!=take_id or
+                source.take["document_sha256"]!=take_sha256 or
+                source.listener_path!=camera_path or
+                not isinstance(source_snapshot,dict)):
+                raise PermissionError("Only trusted native Take session may reuse USD frame")
         try:
             if tick>=source.duration:
                 raise ValueError("Color review tick is outside frozen Take")
-            snapshot=source.snapshot(tick)
+            if owns_session:
+                snapshot=source.snapshot(tick)
+            else:
+                source._current_take()
+                snapshot=source_snapshot
+                if (snapshot.get("time_tick")!=tick or
+                    type(snapshot.get("snapshot_sha256")) is not str or
+                    len(snapshot["snapshot_sha256"])!=64):
+                    raise RuntimeError("Trusted scene-linear Film Time state is stale")
             original=source.data
             if (snapshot["scene_document_sha256"]!=original["scene_document_sha256"] or
                 snapshot["timeline_document_sha256"]!=original["timeline_document_sha256"]):
@@ -304,4 +327,5 @@ class NativeSceneLinearRaster:
                 raise RuntimeError("Original Digital Take changed during projection")
             return color,receipt
         finally:
-            source.close()
+            if owns_session:
+                source.close()
