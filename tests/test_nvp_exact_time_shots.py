@@ -144,6 +144,26 @@ class ExactTimeCameraSequenceTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError):
                         editor.read(self.pid,name,1)
 
+    def test_camera_at_tick_preserves_half_open_boundaries_and_gaps(self):
+        saved=self.publish()
+        editor=ExactTimeShotSequence(self.index)
+        def at(tick):
+            return editor.camera_at_tick(self.pid,"ExactCameraEdits",1,str(tick))
+        self.assertEqual(at(0)["shot_id"],"Shot001")
+        self.assertEqual(at(T-1)["status"],"CAMERA")
+        self.assertEqual(at(T)["status"],"GAP")
+        self.assertIsNone(at(T)["camera_path"])
+        self.assertEqual(at(T+T//4)["shot_id"],"Shot002")
+        self.assertEqual(at(2*T)["status"],"GAP")
+        self.assertEqual(at(3*T-1)["status"],"GAP")
+        self.assertEqual(at(1)["tick"],"1")
+        self.assertEqual(at(1)["document_sha256"],saved["document_sha256"])
+        for bad in (3*T,-1):
+            with self.assertRaises(ValueError):
+                at(bad)
+        with self.assertRaises(ValueError):
+            editor.camera_at_tick(self.pid,"ExactCameraEdits",1,1.0)
+
     def test_os_authorization_controls_exact_scene_and_timeline_take_freeze(self):
         saved=self.publish()
         bridge=TrustedDesktopCameraBridge(
