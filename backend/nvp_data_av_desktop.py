@@ -68,16 +68,27 @@ class TrustedDataAVController:
 
     def begin(self,request):
         self._guard()
-        if (type(request) is not dict or set(request)!={
-            "project_id","take_id","take_document_sha256",
-            "listener_path","first_sample","direction"}):
-            raise ValueError("Exact source identity and listener required")
+        keys={"project_id","take_id","take_document_sha256",
+              "listener_path","first_sample","direction"}
+        if type(request) is not dict or set(request) not in (
+                keys,keys|{"measured_binaural"}):
+            raise ValueError("Exact source identity/listener/acoustic profile required")
         pid=request["project_id"];_require_pid(pid)
         take=request["take_id"];_id(take,"source Digital Take")
         sha=request["take_document_sha256"];_sha(sha)
         listener=request["listener_path"]
         start=request["first_sample"]
         direction=request["direction"]
+        original_ir=None
+        profile=request.get("measured_binaural")
+        if profile is not None:
+            if type(profile) is not dict or set(profile)!={
+                    "source_id","source_document_sha256"}:
+                raise ValueError("Measured original IR needs exact source SHA")
+            from backend.nvp_native_hrir import NativeMeasuredBinauralIR
+            original_ir=NativeMeasuredBinauralIR(
+                self.index,pid,profile["source_id"],
+                profile["source_document_sha256"])
         if direction not in ("forward","reverse"):
             raise ValueError("Unknown native source playback direction")
         if type(start) is not int or start<0:
@@ -104,6 +115,9 @@ class TrustedDataAVController:
                 "Take: "+take+"\n"+
                 "SHA-256: "+sha+"\n"+
                 "Listener: "+str(listener)+"\n"+
+                ("Native measured impulse SHA: "+original_ir.source_sha+"\n"
+                 if original_ir is not None else
+                 "Spatial mode: bounded dry native stereo\n")+
                 "First source sample: "+str(start)+" (48 kHz)\n"+
                 "Direction: "+direction+"\n"+
                 "Up to four hours. Output: bounded temporary device buffers.\n"+
@@ -116,7 +130,8 @@ class TrustedDataAVController:
                 raise RuntimeError("Take changed while native consent was displayed")
             session=FrozenSceneAV(
                 self.index,pid,take,
-                expected_take_sha256=sha,listener_path=listener)
+                expected_take_sha256=sha,listener_path=listener,
+                measured_binaural=original_ir)
             ticket=secrets.token_urlsafe(32)
             self._active={
                 "id":ticket,"session":session,"pid":pid,
@@ -131,6 +146,9 @@ class TrustedDataAVController:
                     "approved_first_sample":approved_first,
                     "last_sample_exclusive":approved_last,
                     "sample_rate":RATE,
+                    "binaural_profile_sha256":(
+                        original_ir.source_sha if original_ir else None),
+                    "native_binaural_calibration_accepted":False,
                     "ffmpeg_runtime_required":False,
                     "original_modified":False,"master_approved":False}
 

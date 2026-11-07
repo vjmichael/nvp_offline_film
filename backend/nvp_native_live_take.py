@@ -13,13 +13,16 @@ for isolated tests, never through the pywebview bridge.
 from __future__ import annotations
 
 import array
+from hashlib import sha256
 import os
 from pathlib import Path
 import queue
+import shutil
 import sys
 import tempfile
 import threading
 
+from backend.nvp_capture_recovery import OriginalCaptureJournal
 from backend.nvp_data_first_filming import NativeSceneSoundCapture
 from backend.nvp_exact_time_shots import ExactTimeShotSequence
 from backend.nvp_film_index import FilmIndex,_id,_require_pid
@@ -95,6 +98,11 @@ class NativeLiveSoundSession:
         self._error=None
         self._total_queued=0
         self._lock=threading.Lock()
+        # This is trusted host storage beside the existing project DB,
+        # never a browser/model-supplied recovery path. Interrupted PCM
+        # remains unapproved and inspectable after process loss.
+        self._journal=OriginalCaptureJournal(
+            index.studio.db_path.parent/"native-original-capture-recovery")
 
     def _prim_roles(self):
         from backend.nvp_openusd_scene import OpenUSDSceneBridge
@@ -165,8 +173,15 @@ class NativeLiveSoundSession:
         if self.approve_start(dict(scope)) is not True:
             self._state="DENIED"
             raise PermissionError("Native microphone capture was not approved")
-        self._tmp=tempfile.TemporaryDirectory(prefix="nvp-live-original-")
-        self._spool=Path(self._tmp.name)/"recording.pcm"
+        self._tmp=Path(tempfile.mkdtemp(
+            prefix="nvp-live-original-",dir=str(self._journal.root)))
+        self._spool=self._tmp/"recording.pcm"
+        try:self._journal.begin(self._tmp,scope)
+        except Exception:
+            shutil.rmtree(self._tmp)
+            self._tmp=None
+            self._state="FAILED"
+            raise
         self._worker=threading.Thread(
             target=self._writer,name="NVP trusted PCM spool",daemon=True)
         self._worker.start()
@@ -201,6 +216,17 @@ class NativeLiveSoundSession:
             raise RuntimeError("Original recording cannot be frozen") from self._error
         if self._count<1 or self._count!=self._total_queued:
             raise RuntimeError("Recorded microphone samples are incomplete")
+        # The worker has closed and fsynced the source bytes. This is only
+        # evidence of a durable sound signal, never Take approval.
+        self._journal.update(
+            self._tmp,phase="DRAINED",recorded_samples=self._count,
+            pcm_sha256=self._source_checksum())
+
+    def _source_checksum(self):
+        h=sha256()
+        with self._spool.open("rb") as source:
+            while data:=source.read(CHUNK_BYTES):h.update(data)
+        return h.hexdigest()
 
     def _chunks(self):
         with self._spool.open("rb") as source:
@@ -231,6 +257,9 @@ class NativeLiveSoundSession:
                     "start_tick":0,"end_tick":end,
                     "gain":1.0,"pcm_chunks":self._chunks(),
                 }])
+            self._journal.update(
+                self._tmp,phase="FROZEN",recorded_samples=self._count,
+                take_sha256=receipt["take_document_sha256"])
             self._state="FROZEN"
             return {**receipt,"status":"FROZEN_ORIGINAL_LIVE_TAKE",
                     "actual_recorded_samples":self._count,
@@ -252,7 +281,20 @@ class NativeLiveSoundSession:
             self._state="RECOVERY_REQUIRED"
             raise RuntimeError("Cannot remove live source spool while writer remains active")
         if self._tmp is not None:
-            self._tmp.cleanup()
+            if self._state in ("FAILED","RECOVERY_REQUIRED"):
+                # Do not destroy original partial audio on a process or
+                # freeze failure. The journal never marks it as a Take.
+                try:self._journal.update(self._tmp,
+                    phase="FAILED_UNAPPROVED",recorded_samples=self._count)
+                except (OSError,RuntimeError,ValueError):
+                    pass  # Preserve the spool even if its receipt is corrupt.
+                return
+            if self._state=="CANCELLING":
+                self._journal.update(self._tmp,phase="CANCELLED",
+                                     recorded_samples=self._count)
+            elif self._state!="FROZEN":
+                raise RuntimeError("Cannot discard unapproved original PCM")
+            shutil.rmtree(self._tmp)
             self._tmp=None
 
     def cancel(self):

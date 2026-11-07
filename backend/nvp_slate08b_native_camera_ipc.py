@@ -460,6 +460,35 @@ class TrustedDesktopCameraBridge:
     def data_av_catalog(self,project_id):
         return self._data_av().catalog(project_id)
 
+    def data_av_binaural_catalog(self,project_id):
+        """List only real source-bound IR profiles; never invent measurements."""
+        self._native_window()
+        _require_pid(project_id)
+        from backend.nvp_native_hrir import NativeMeasuredBinauralIR
+        profiles=[]
+        for row in self.index.list_objects(project_id,kind="audio")[:128]:
+            try:
+                record=self.index.read_revision(
+                    project_id,row["object_id"],1)
+                if record["data"].get("format")!=(
+                        "nvp.data_av.source_binaural_ir.v1"):
+                    continue
+                verified=NativeMeasuredBinauralIR(
+                    self.index,project_id,row["object_id"],
+                    record["document_sha256"])
+                profiles.append({
+                    "source_id":verified.source_id,
+                    "source_document_sha256":verified.source_sha,
+                    "measurement_kind":verified.kind,
+                    "measured_source_label":record["data"]["measured_source_label"],
+                    "calibrated":False,
+                })
+            except (RuntimeError,ValueError,KeyError):
+                continue
+        return {"format":"nvp.data_av.binaural_ir_catalog.v1",
+                "status":"AVAILABLE","profiles":profiles,
+                "ffmpeg_used":False,"cinema_calibration_accepted":False}
+
     def data_av_begin(self,request):
         return self._data_av().begin(request)
 
@@ -613,20 +642,60 @@ class TrustedDesktopCameraBridge:
                     "duration_tick":plan["duration_tick"],
                     "emitters":sources[:64],
                 })
+        from backend.nvp_capture_recovery import OriginalCaptureJournal
+        recovery=OriginalCaptureJournal(
+            self.index.studio.db_path.parent/"native-original-capture-recovery")
+        unapproved=recovery.catalog(project_id)
         return {"format":"nvp.data_av.live_camera_catalog.v1",
                 "status":"AVAILABLE","camera_timelines":choices,
+                "unapproved_capture_recovery":unapproved["items"],
+                "recovery_automatic_freeze":False,
                 "ffmpeg_used":False}
+
+    def data_av_live_recover_original(self,request):
+        """Consent-gated recovery of a durable mono source, never a Take."""
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","capture_reference","new_source_id"}:
+            raise ValueError("Original microphone salvage requires exact source scope")
+        from backend.nvp_capture_recovery import OriginalCaptureJournal
+        with self._lock:
+            if self._live_sound_session is not None:
+                raise RuntimeError("Stop live recording before reconciling captured signal")
+            journal=OriginalCaptureJournal(
+                self.index.studio.db_path.parent/"native-original-capture-recovery")
+            return journal.salvage_original_mono_source(
+                self.index,request["project_id"],
+                request["capture_reference"],request["new_source_id"],
+                native_creator_approval=lambda scope:self._ask(
+                    "RECOVER verified original microphone PCM as UNATTACHED sound source?\n"
+                    f"Recovery reference: {scope['capture_reference']}\n"
+                    f"New source: {scope['new_source_id']}\n"
+                    f"Original PCM SHA-256: {scope['pcm_sha256']}\n"
+                    f"Recorded samples: {scope['recorded_samples']}\n"
+                    "This does NOT freeze a Digital Take or create a soundtrack. "
+                    "The original staged recording remains separately preserved."))
 
     def data_av_live_begin(self,request):
         """Start a real OS microphone; no browser-provided executable/path."""
         self._native_window()
-        if type(request) is not dict or set(request)!={
-                "project_id","take_id","scene_id","scene_revision",
-                "camera_timeline_id","camera_timeline_revision",
-                "sound_timeline_id","source_id","emitter_path",
-                "event_id","subject_id"}:
-            raise ValueError("Native microphone capture requires exact identity")
+        mono={
+            "project_id","take_id","scene_id","scene_revision",
+            "camera_timeline_id","camera_timeline_revision",
+            "sound_timeline_id","source_id","emitter_path",
+            "event_id","subject_id"}
+        dual=mono|{"second_source_id","second_emitter_path",
+                   "second_event_id","second_subject_id"}
+        if type(request) is not dict or set(request) not in (mono,dual):
+            raise ValueError("Native microphone source identity/sync scope invalid")
         from backend.nvp_native_live_take import NativeLiveSoundSession
+        if set(request)==dual:
+            from backend.nvp_native_stereo_take import NativeStereoOriginalSession
+            recorder_class=NativeStereoOriginalSession
+            extra={k:request[k] for k in dual-mono}
+        else:
+            recorder_class=NativeLiveSoundSession
+            extra={}
         with self._lock:
             if self._live_sound_session is not None:
                 raise RuntimeError("Native microphone capture already in progress")
@@ -638,7 +707,9 @@ class TrustedDesktopCameraBridge:
                     f"Camera Film Time SHA-256: {scope['camera_timeline_sha256']}\n"
                     f"Source emitter: {scope['emitter_path']}\n"
                     f"At most {scope['max_samples']//48000} seconds at 48 kHz.\n"
-                    "This records original source PCM only. No picture movie,\n"
+                    + ("Two synchronized original mono sources on one shared-clock stereo audio interface.\n"
+                       if extra else "One original mono audio source.\n")
+                    + "This records original source PCM only. No picture movie,\n"
                     "FFmpeg, flattened soundtrack, or master is produced.")
             def freeze(event,scope):
                 return self._ask(
@@ -647,7 +718,7 @@ class TrustedDesktopCameraBridge:
                     f"Scene SHA-256: {scope['scene_document_sha256']}\n"
                     f"Events SHA-256: {scope['timeline_document_sha256']}\n"
                     "This seals an immutable Digital Take, not a movie export.")
-            session=NativeLiveSoundSession(
+            session=recorder_class(
                 self.index,project_id=request["project_id"],
                 take_id=request["take_id"],scene_id=request["scene_id"],
                 scene_revision=request["scene_revision"],
@@ -658,7 +729,8 @@ class TrustedDesktopCameraBridge:
                 emitter_path=request["emitter_path"],
                 event_id=request["event_id"],
                 subject_id=request["subject_id"],
-                native_approve_start=start,native_approve_freeze=freeze)
+                native_approve_start=start,native_approve_freeze=freeze,
+                **extra)
             started=session.begin()
             ticket=secrets.token_urlsafe(32)
             self._live_sound_session=session

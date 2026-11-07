@@ -25,14 +25,26 @@ export function validateMeshData(item){
        new Set(f).size===3&&f.every(i=>
          Number.isInteger(i)&&i>=0&&i<pts.length)))
     throw Error('Untrusted frozen USD triangle topology or dynamic pose');
-  if(item.shape==='skinned_mesh'&&(
-      item.source_skinning!==true||
-      !/^(0|[1-9][0-9]*)$/.test(item.source_skinning_tick||'')||
-      !Array.isArray(item.source_color_rgb)||
-      item.source_color_rgb.length!==3||
-      !item.source_color_rgb.every(v=>
-        typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)))
-    throw Error('Skinned actor pose is not bound to original USD source');
+  if(item.shape==='skinned_mesh'){
+    const mat=item.source_material;
+    if(item.source_skinning!==true||
+       !/^(0|[1-9][0-9]*)$/.test(item.source_skinning_tick||'')||
+       !Array.isArray(item.source_color_rgb)||
+       item.source_color_rgb.length!==3||
+       !item.source_color_rgb.every(v=>
+         typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)||
+       !mat||!['nvp.original_usd_preview_surface.v1',
+                 'nvp.original_usd_displaycolor_preview.v1'].includes(
+                   mat.format)||
+       mat.original_source_modified!==false||
+       !Array.isArray(mat.base_color_rgb)||mat.base_color_rgb.length!==3||
+       mat.base_color_rgb.some((v,i)=>
+         typeof v!=='number'||!Number.isFinite(v)||
+         Math.abs(v-item.source_color_rgb[i])>1e-5)||
+       ![mat.roughness,mat.metallic].every(v=>
+         typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1))
+      throw Error('Skinned actor pose/material not bound to original USD source');
+  }
   return {pts,faces};
 }
 
@@ -108,6 +120,11 @@ export default function DataFirstWorldViewport({
   const cameraPath=cameraObjects.some(o=>o.path===selectedCamera)?
     selectedCamera:cameraObjects[0]?.path||'';
   const bounded=Array.isArray(objects)?objects.slice(0,64):[];
+  const missingRigGeometry=bounded.filter(o=>o?.source_rigged_actor===true&&
+    o.native_geometry_status!=='VERIFIED_SKINNED');
+  const staleRigPoses=bounded.filter(o=>o?.shape==='skinned_mesh'&&
+    o.source_skinning_tick!==String(tick));
+
 
   useEffect(()=>{
     if(!holder.current)return;
@@ -207,6 +224,11 @@ export default function DataFirstWorldViewport({
     const incoming=new Set();
     for(const obj of bounded){
       if(typeof obj.path!=='string'||!validMatrix(obj.world_matrix))continue;
+      // Explicitly report unmeshed authored rigs in source inspection, but
+      // do not create a fake sphere/cone body for any captured rigged actor.
+      if(obj.shape==='missing_rig_geometry')continue;
+      if(obj.source_rigged_actor===true&&obj.shape!=='skinned_mesh')
+        continue;
       if(obj.shape==='skinned_mesh'){
         // Never display a pose from a previous Film Time sample as current.
         // A source update is allowed only for the requested exact tick.
@@ -236,7 +258,11 @@ export default function DataFirstWorldViewport({
           const originalSkinColor=obj.shape==='skinned_mesh'?
             new THREE.Color().setRGB(...obj.source_color_rgb):color;
           const material=new THREE.MeshStandardMaterial({
-            color:originalSkinColor,roughness:.8,metalness:.05,
+            color:originalSkinColor,
+            roughness:obj.shape==='skinned_mesh'?
+              obj.source_material.roughness:.8,
+            metalness:obj.shape==='skinned_mesh'?
+              obj.source_material.metallic:.05,
             side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
               THREE.DoubleSide:THREE.FrontSide});
           mesh=new THREE.Mesh(geometry,material);
@@ -249,7 +275,9 @@ export default function DataFirstWorldViewport({
       if(obj.shape==='skinned_mesh'){
         try{
           updateSkinnedGeometry(mesh.geometry,obj);
-          mesh.material.color.setRGB(...obj.source_color_rgb);
+          mesh.material.color.setRGB(...obj.source_material.base_color_rgb);
+          mesh.material.roughness=obj.source_material.roughness;
+          mesh.material.metalness=obj.source_material.metallic;
         }catch{
           // Malformed/late pose must never leave stale actor geometry visible.
           incoming.delete(obj.path);
@@ -269,7 +297,7 @@ export default function DataFirstWorldViewport({
       }
     }
     state.requestRender();
-  },[objects,listenerPath]);
+  },[objects,listenerPath,tick]);
 
 
   useEffect(()=>{
@@ -327,18 +355,33 @@ export default function DataFirstWorldViewport({
       overflow:'hidden',background:'#121a2a'}}/>
     {disabled&&<p role="status">3D hardware context lost or unavailable.
       The original scene data remains inspectable below.</p>}
+    {missingRigGeometry.length>0&&
+      <p role="alert">Original USD rigged actors without bound skinned meshes:
+        {missingRigGeometry.map(o=>' '+o.path).join(', ')}.
+        Their motion remains source data; no substitute character geometry
+        was fabricated. Bind original UsdSkel character geometry to display.</p>}
+    {staleRigPoses.length>0&&
+      <p role="alert">Stale skinned-actor samples were not displayed for
+        this Film Time: {staleRigPoses.map(o=>o.path).join(', ')}.</p>}
     <ul>
       {bounded.map(item=><li key={item.path}>
         <strong>{item.path}</strong> ·
-        {item.gizmo_only?'scene-location gizmo':
-          'verified authored USD '+item.shape+' ('+item.size_m+' m)'} ·
+        {item.shape==='missing_rig_geometry'
+          ?'Rigged actor: original USD mesh not bound (not displayed)'
+          : item.gizmo_only?'unbound scene marker':
+            'verified authored USD '+item.shape+' ('+item.size_m+' m)'} ·
+        {item.shape==='skinned_mesh'&&
+          (item.facial_animation_evaluated?
+            ' facial USD blendshapes active ·':' source skeletal pose ·')}
         {(item.world_translation||[]).map(n=>Number(n).toFixed(2)).join(', ')} m
       </li>)}
     </ul>
     <p className="fineprint">This WebGL scene uses validated native
       OpenUSD transforms and source-verified procedural/triangle geometry.
-      Original USD-skinned actor motion is a bounded live GPU derivative.
-      Facial blend shapes, texture/material fidelity, Hydra parity,
-      cinema lighting and installed GPU acceptance still require verification.</p>
+      Original USD-skinned actor motion, bounded facial blend shapes and
+      USD PreviewSurface parameters are live GPU derivatives. Older immutable
+      Takes still display their actual original USD mesh/displayColor rather
+      than a fake avatar. Texture networks, advanced materials, Hydra parity,
+      calibrated lighting and installed GPU acceptance remain unverified.</p>
   </section>;
 }

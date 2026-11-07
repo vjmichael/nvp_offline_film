@@ -30,6 +30,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [takes,setTakes]=useState([]);
   const [takeId,setTakeId]=useState('');
   const [listener,setListener]=useState('');
+  const [binauralProfiles,setBinauralProfiles]=useState([]);
+  const [binauralChoice,setBinauralChoice]=useState('');
   const [sourceSample,setSourceSample]=useState('0');
   const [playing,setPlaying]=useState(false);
   const [error,setError]=useState('');
@@ -44,8 +46,15 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [gradeChoice,setGradeChoice]=useState('');
   const [exporting,setExporting]=useState(false);
   const [cameraPlans,setCameraPlans]=useState([]);
+  const [unapprovedCaptures,setUnapprovedCaptures]=useState([]);
+  const [recoveryRef,setRecoveryRef]=useState('');
+  const [recoveredSourceId,setRecoveredSourceId]=useState('RecoveredSound001');
+  const [recoverBusy,setRecoverBusy]=useState(false);
+  const [recoverReceipt,setRecoverReceipt]=useState(null);
   const [cameraPlanIndex,setCameraPlanIndex]=useState('0');
   const [liveEmitter,setLiveEmitter]=useState('');
+  const [secondLiveEmitter,setSecondLiveEmitter]=useState('');
+  const [sharedStereo,setSharedStereo]=useState(false);
   const [newLiveTake,setNewLiveTake]=useState('LiveTake001');
   const [liveTicket,setLiveTicket]=useState(null);
   const [liveBusy,setLiveBusy]=useState(false);
@@ -91,6 +100,24 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
 
   useEffect(()=>{
     if(!native||!projectId||
+       typeof native.data_av_binaural_catalog!=='function'){
+      setBinauralProfiles([]);setBinauralChoice('');return;
+    }
+    let active=true;
+    Promise.resolve(native.data_av_binaural_catalog(projectId)).then(doc=>{
+      if(!active)return;
+      if(doc?.format!=='nvp.data_av.binaural_ir_catalog.v1'||
+         doc.status!=='AVAILABLE'||doc.ffmpeg_used!==false||
+         !Array.isArray(doc.profiles))
+        throw Error('Native measured binaural source catalog is invalid');
+      setBinauralProfiles(doc.profiles);
+      setBinauralChoice('');
+    }).catch(err=>{if(active)setError(err.message);});
+    return ()=>{active=false;};
+  },[native,projectId]);
+
+  useEffect(()=>{
+    if(!native||!projectId||
        typeof native.data_av_live_catalog!=='function')return;
     let live=true;
     Promise.resolve(native.data_av_live_catalog(projectId)).then(result=>{
@@ -99,6 +126,11 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          result.status!=='AVAILABLE'||!Array.isArray(result.camera_timelines))
         throw Error('Live source camera catalog is unverified');
       setCameraPlans(result.camera_timelines);
+      const unapproved=Array.isArray(result.unapproved_capture_recovery)?
+        result.unapproved_capture_recovery.slice(0,128):[];
+      setUnapprovedCaptures(unapproved);
+      setRecoveryRef(unapproved.find(x=>x.recoverable_sealed_mono===true)
+        ?.capture_reference||'');
       setCameraPlanIndex('0');
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
@@ -127,10 +159,50 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const livePlan=cameraPlans[Number(cameraPlanIndex)];
   useEffect(()=>{
     setLiveEmitter(livePlan?.emitters?.[0]||'');
+    setSecondLiveEmitter(livePlan?.emitters?.[1]||'');
   },[cameraPlanIndex,cameraPlans]);
+
+  async function recoverOriginalMono(){
+    if(!native||typeof native.data_av_live_recover_original!=='function'||
+       recoverBusy||liveBusy||liveTicket||!recoveryRef)return;
+    const target=unapprovedCaptures.find(x=>x.capture_reference===recoveryRef&&
+      x.recoverable_sealed_mono===true);
+    if(!target)return;
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,60}$/.test(recoveredSourceId)){
+      setError('Choose a unique original mono audio source identity.');return;
+    }
+    setRecoverBusy(true);setRecoverReceipt(null);setError('');
+    try{
+      const recovered=await native.data_av_live_recover_original({
+        project_id:projectId,capture_reference:recoveryRef,
+        new_source_id:recoveredSourceId,
+      });
+      if(recovered?.format!=='nvp.data_av.capture_recovery.v1'||
+         recovered.status!=='RECOVERED_UNATTACHED_ORIGINAL_MONO'||
+         recovered.source_id!==recoveredSourceId||
+         recovered.created_frozen_take!==false||
+         recovered.original_source_modified!==false)
+        throw Error('Unattached original microphone source recovery not verified');
+      setRecoverReceipt(recovered);
+      const updated=await native.data_av_live_catalog(projectId);
+      if(updated?.status==='AVAILABLE'&&
+         Array.isArray(updated.unapproved_capture_recovery)){
+        const entries=updated.unapproved_capture_recovery;
+        setUnapprovedCaptures(entries);
+        setRecoveryRef(entries.find(x=>x.recoverable_sealed_mono===true)
+          ?.capture_reference||'');
+      }
+      setNote('Original PCM recovered as a standalone source. No Digital Take was frozen.');
+    }catch(e){setError(e.message);}
+    finally{setRecoverBusy(false);}
+  }
 
   async function beginLiveCapture(){
     if(!native||!livePlan||liveTicket||liveBusy||playing||exporting)return;
+    if(sharedStereo&&(!secondLiveEmitter||secondLiveEmitter===liveEmitter)){
+      setError('Two distinct authored 3D emitters are required for shared-clock stereo.');
+      return;
+    }
     if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,60}$/.test(newLiveTake)){
       setError('Choose a unique native Take ID with letters and digits.');return;
     }
@@ -146,6 +218,12 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         emitter_path:liveEmitter,
         event_id:newLiveTake+'.Speech',
         subject_id:liveEmitter.split('/').pop(),
+        ...(sharedStereo?{
+          second_source_id:newLiveTake+'.Mic2',
+          second_emitter_path:secondLiveEmitter,
+          second_event_id:newLiveTake+'.Speech2',
+          second_subject_id:secondLiveEmitter.split('/').pop(),
+        }:{}),
       });
       if(result?.format!=='nvp.data_av.live_mic_take.v1'||
          result.status!=='RECORDING'||
@@ -171,6 +249,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
            result.original_scene_modified!==false||
            result.audio_mix_flattened!==false)
           throw Error('Native captured source was not immutably frozen');
+        if(sharedStereo&&(result.native_input_channels!==2||
+            result.shared_capture_clock!==true||
+            result.original_mono_source_count!==2))
+          throw Error('Native source channel alignment was not verified');
         setLiveReceipt(result);
         const updated=await native.data_av_catalog(projectId);
         if(updated?.format===FORMAT&&Array.isArray(updated.takes)){
@@ -387,6 +469,14 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         project_id:projectId,take_id:item.take_id,
         take_document_sha256:item.take_document_sha256,
         listener_path:listener,first_sample:first,direction,
+        ...(binauralChoice?{
+          measured_binaural:(()=>{
+            const original=binauralProfiles.find(x=>x.source_id===binauralChoice);
+            if(!original)throw Error('Selected measured IR source disappeared');
+            return {source_id:original.source_id,
+              source_document_sha256:original.source_document_sha256};
+          })(),
+        }:{}),
       });
       if(reply?.status==='DENIED'){setNote('Native audition was not approved.');return;}
       if(reply?.format!==FORMAT||reply.status!=='READY'||
@@ -394,6 +484,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          reply.take_document_sha256!==item.take_document_sha256||
          reply.listener_path!==listener||
          reply.direction!==direction||
+         (binauralChoice&&reply.binaural_profile_sha256!==
+           binauralProfiles.find(x=>x.source_id===binauralChoice)
+             ?.source_document_sha256)||
          !Number.isSafeInteger(reply.approved_first_sample)||
          !Number.isSafeInteger(reply.last_sample_exclusive))
         throw Error('Native Digital Take approval was not source-bound');
@@ -470,6 +563,20 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         {(item?.listeners||[]).map(p=><option key={p} value={p}>{p}</option>)}
       </select>
     </label>
+    <label>Measured original binaural response
+      <select aria-label="Native measured binaural IR profile"
+        disabled={playing} value={binauralChoice}
+        onChange={e=>setBinauralChoice(e.target.value)}>
+        <option value="">Dry spatial stereo (no HRIR)</option>
+        {binauralProfiles.map(p=><option key={p.source_id}
+          value={p.source_id}>
+          {p.source_id} · {p.measurement_kind}
+        </option>)}
+      </select>
+    </label>
+    {binauralChoice&&<p className="fineprint">Selected source-measured
+      head/room impulses require independent headphone and device
+      calibration. Creator consent will show the original IR SHA.</p>}
     <label>48-kHz source sample position
       <input aria-label="Native source sample seek" value={sourceSample}
         disabled={playing} onChange={e=>setSourceSample(e.target.value)}
@@ -516,6 +623,47 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         approval. Recorded mono PCM goes into a bounded on-disk original
         source; a second confirmation freezes its exact Film Time with
         the original 3D scene. No movie frames or flattened soundtrack.</p>
+      {unapprovedCaptures.length>0&&
+        <p role="alert">Unapproved original microphone capture evidence:
+          {unapprovedCaptures.map(x=>' '+(x.take_id||x.capture_reference)+
+            ' ('+x.phase+')').join(', ')}.
+          These files were not frozen as Digital Takes. NVP preserves them
+          for trusted host reconciliation after a crash; it never approves
+          incomplete audio or deletes it automatically.</p>}
+      {unapprovedCaptures.some(x=>x.recoverable_sealed_mono===true)&&
+        <section aria-label="Original microphone source recovery">
+          <p>Only durable, checksum-sealed original mono PCM can be
+            recovered. Native OS confirmation is required. This creates an
+            unattached source, <strong>not</strong> a Digital Take.</p>
+          <label>Recoverable original capture
+            <select aria-label="Recoverable original microphone capture"
+              disabled={recoverBusy||!!liveTicket}
+              value={recoveryRef} onChange={e=>setRecoveryRef(e.target.value)}>
+              {unapprovedCaptures.filter(x=>x.recoverable_sealed_mono===true)
+                .map(x=><option key={x.capture_reference}
+                  value={x.capture_reference}>
+                  {x.take_id} · {x.durable_sample_count} samples
+                </option>)}
+            </select>
+          </label>
+          <label>New unattached original audio source identity
+            <input aria-label="Recovered original audio source identity"
+              maxLength={61} value={recoveredSourceId}
+              disabled={recoverBusy||!!liveTicket}
+              onChange={e=>setRecoveredSourceId(e.target.value)}/>
+          </label>
+          <button disabled={!recoveryRef||recoverBusy||!!liveTicket||
+              typeof native?.data_av_live_recover_original!=='function'}
+            onClick={recoverOriginalMono}>
+            {recoverBusy?'Reconciling original PCM…':
+              'Approve recovery of original sound only'}
+          </button>
+          {recoverReceipt&&<p role="status">
+            Recovered original source {recoverReceipt.source_id}, SHA
+            {recoverReceipt.source_document_sha256.slice(0,16)}…
+            No Take created.
+          </p>}
+        </section>}
       <label>Exact-time 3D camera timeline
         <select aria-label="Native live camera timeline"
           value={cameraPlanIndex} disabled={!!liveTicket||liveBusy}
@@ -532,6 +680,23 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
           {(livePlan?.emitters||[]).map(p=><option key={p} value={p}>{p}</option>)}
         </select>
       </label>
+      <label>
+        <input type="checkbox" aria-label="Record two independent mono sources on one stereo input"
+          checked={sharedStereo} disabled={!!liveTicket||liveBusy}
+          onChange={e=>setSharedStereo(e.target.checked)}/>
+        Two original mono sources from one shared-clock stereo input
+      </label>
+      {sharedStereo&&<label>Second authored source emitter
+        <select aria-label="Second original source emitter"
+          value={secondLiveEmitter} disabled={!!liveTicket||liveBusy}
+          onChange={e=>setSecondLiveEmitter(e.target.value)}>
+          {(livePlan?.emitters||[]).filter(p=>p!==liveEmitter)
+            .map(p=><option key={p} value={p}>{p}</option>)}
+        </select>
+      </label>}
+      {sharedStereo&&<p className="fineprint">Both source channels are independently
+        preserved with the same capture-device sample clock. Separate USB
+        microphones or unrelated audio devices are not synchronized.</p>}
       <label>New immutable Digital Take identity
         <input aria-label="New live Digital Take name" value={newLiveTake}
           disabled={!!liveTicket||liveBusy} maxLength={61}
@@ -539,7 +704,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       </label>
       <div className="actions">
         <button onClick={beginLiveCapture}
-          disabled={!livePlan||!liveEmitter||!!liveTicket||liveBusy||playing||exporting||
+          disabled={!livePlan||!liveEmitter||
+            (sharedStereo&&(!secondLiveEmitter||secondLiveEmitter===liveEmitter))||
+            !!liveTicket||liveBusy||playing||exporting||
             typeof native?.data_av_live_begin!=='function'}>
           Approve native microphone recording
         </button>
@@ -552,7 +719,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         not been frozen. Closing this window cancels capture.</p>}
       {liveReceipt&&<p role="status">Frozen Take {liveReceipt.take_id} ·
         original source SHA <code>{liveReceipt.take_document_sha256.slice(0,16)}…</code> ·
-        {liveReceipt.actual_recorded_samples} captured samples.</p>}
+        {liveReceipt.actual_recorded_samples} captured frames ·
+        {liveReceipt.original_mono_source_count||1} original mono source(s).</p>}
     </section>
     <section className="card" aria-label="Creator-approved FFmpeg-free 2D film delivery">
       <h3>Render a 2D version from the frozen 3D world</h3>

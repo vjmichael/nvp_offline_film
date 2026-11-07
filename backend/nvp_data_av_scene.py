@@ -52,7 +52,7 @@ def _pan(emitter,listener,gain):
 
 class FrozenSceneAV:
     def __init__(self,index:FilmIndex,project_id,take_id, *,
-                 expected_take_sha256,listener_path):
+                 expected_take_sha256,listener_path,measured_binaural=None):
         if not isinstance(index,FilmIndex):
             raise TypeError("Native FilmIndex is required")
         _require_pid(project_id)
@@ -61,6 +61,13 @@ class FrozenSceneAV:
         self.index=index
         self.project_id=project_id
         self.take_id=take_id
+        if measured_binaural is not None:
+            from backend.nvp_native_hrir import NativeMeasuredBinauralIR
+            if (not isinstance(measured_binaural,NativeMeasuredBinauralIR) or
+                measured_binaural.index is not index or
+                measured_binaural.pid!=project_id):
+                raise PermissionError("Measured binaural profile is not source/host bound")
+        self.measured_binaural=measured_binaural
         self.take=index.read_revision(project_id,take_id,1)
         if (self.take["kind"]!="take" or
             self.take["document_sha256"]!=expected_take_sha256 or
@@ -194,6 +201,29 @@ class FrozenSceneAV:
                 self.project_id,event["source_id"],
                 event["source_revision"],first_src,n)
             samples=struct.unpack("<"+str(n)+"h",raw)
+            binaural=None
+            if self.measured_binaural is not None:
+                profile=self.measured_binaural
+                history_count=min(profile.tap_count-1,first_src)
+                history=()
+                if history_count:
+                    previous=self.sound.read(
+                        self.project_id,event["source_id"],
+                        event["source_revision"],first_src-history_count,
+                        history_count)
+                    history=struct.unpack(
+                        "<"+str(history_count)+"h",previous)
+                center_emitter=[
+                    (positions_a[path][j]+positions_b[path][j])*.5
+                    for j in range(3)]
+                center_listener=[
+                    (positions_a[self.listener_path][j]+
+                     positions_b[self.listener_path][j])*.5
+                    for j in range(3)]
+                measured=profile.response_at(
+                    center_emitter,center_listener,
+                    orientations_a[self.listener_path])
+                binaural=profile.convolve(samples,history,measured)
             obstruction_start=obstruction_gain(
                 positions_a[path],positions_a[self.listener_path],obstacles,
                 source_path=path,listener_path=self.listener_path)
@@ -214,10 +244,20 @@ class FrozenSceneAV:
                                      for j in range(3))
                 obstruction=obstruction_start+(
                     obstruction_end-obstruction_start)*fraction
-                l,r=spatial_gains(emitter,listener,listener_right,
-                                  gain,obstruction)
-                left[cursor]+=val*l
-                right[cursor]+=val*r
+                if binaural is None:
+                    l,r=spatial_gains(emitter,listener,listener_right,
+                                      gain,obstruction)
+                    left[cursor]+=val*l
+                    right[cursor]+=val*r
+                else:
+                    # The original measured two-ear impulse already owns
+                    # HRTF direction/panning; applying equal-power pan
+                    # again would double-color the physical response.
+                    separation=math.dist(emitter,listener)
+                    attenuation=1./(1.+max(0.,separation-1.))
+                    level=attenuation*float(gain)*obstruction
+                    left[cursor]+=binaural[0][i]*level
+                    right[cursor]+=binaural[1][i]*level
         pcm=bytearray(count*4)
         for i in range(count):
             l=max(-32768,min(32767,round(left[i])))
@@ -226,6 +266,13 @@ class FrozenSceneAV:
         bytes_out=bytes(pcm)
         return {
             "format":FORMAT,"status":"READY",
+            "binaural_profile_sha256":(
+                self.measured_binaural.source_sha
+                if self.measured_binaural is not None else None),
+            "binaural_profile_kind":(
+                self.measured_binaural.kind
+                if self.measured_binaural is not None else None),
+            "native_binaural_calibration_accepted":False,
             "take_id":self.take_id,
             "take_document_sha256":self.take["document_sha256"],
             "scene_document_sha256":self.data["scene_document_sha256"],

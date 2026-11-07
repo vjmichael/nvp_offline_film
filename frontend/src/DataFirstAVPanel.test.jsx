@@ -53,6 +53,92 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
     }finally{window.AudioContext=original;}
   });
 
+  it('selects two original emitters on one native stereo capture clock',async()=>{
+    const bridge={
+      data_av_catalog:vi.fn(async()=>({
+        format:'nvp.data_av.native_session.v1',status:'AVAILABLE',
+        ffmpeg_runtime_required:false,takes:[],
+      })),
+      data_av_live_catalog:vi.fn(async()=>({
+        format:'nvp.data_av.live_camera_catalog.v1',status:'AVAILABLE',
+        camera_timelines:[{
+          scene_id:'world',scene_revision:1,
+          camera_timeline_id:'real_camera',camera_timeline_revision:1,
+          emitters:['/World/Actor','/World/SecondActor'],
+        }],
+        unapproved_capture_recovery:[{
+          take_id:'Interrupted001',phase:'FAILED_UNAPPROVED',
+        }],
+      })),
+      data_av_live_begin:vi.fn(async()=>({
+        format:'nvp.data_av.live_mic_take.v1',
+        status:'DENIED',output_is_original_source:true,
+        flattened_soundtrack:false,
+      })),
+      data_av_audio_window:vi.fn(),data_av_stop:vi.fn(),
+    };
+    render(<DataFirstAVPanel projectId={pid} nativeBridge={bridge}/>);
+    expect(await screen.findByText(/Interrupted001/)).toBeTruthy();
+    const toggle=screen.getByLabelText(
+      'Record two independent mono sources on one stereo input');
+    fireEvent.click(toggle);
+    expect(screen.getByLabelText('Second original source emitter').value)
+      .toBe('/World/SecondActor');
+    fireEvent.click(screen.getByText('Approve native microphone recording'));
+    await waitFor(()=>expect(bridge.data_av_live_begin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_id:pid,scene_id:'world',
+        emitter_path:'/World/Actor',
+        second_emitter_path:'/World/SecondActor',
+        second_source_id:'LiveTake001.Mic2',
+      })));
+  });
+
+  it('creator-approves sealed original mono recovery but never marks a new Take',async()=>{
+    const record={
+      format:'nvp.data_av.capture_recovery.v1',
+      status:'RECOVERED_UNATTACHED_ORIGINAL_MONO',
+      source_id:'RecoveredSound001',
+      source_document_sha256:'c'.repeat(64),
+      created_frozen_take:false,original_source_modified:false,
+    };
+    const catalog=vi.fn()
+      .mockResolvedValueOnce({
+        format:'nvp.data_av.live_camera_catalog.v1',
+        status:'AVAILABLE',camera_timelines:[],
+        unapproved_capture_recovery:[{
+          capture_reference:'nvp-live-original-aabbccddeeff',
+          take_id:'FailedTake',durable_sample_count:4000,
+          phase:'DRAINED',recoverable_sealed_mono:true,
+        }],
+      })
+      .mockResolvedValueOnce({
+        format:'nvp.data_av.live_camera_catalog.v1',
+        status:'AVAILABLE',camera_timelines:[],
+        unapproved_capture_recovery:[],
+      });
+    const bridge={
+      data_av_catalog:vi.fn(async()=>({
+        format:'nvp.data_av.native_session.v1',status:'AVAILABLE',
+        ffmpeg_runtime_required:false,takes:[],
+      })),
+      data_av_live_catalog:catalog,
+      data_av_live_recover_original:vi.fn(async()=>record),
+      data_av_audio_window:vi.fn(),data_av_stop:vi.fn(),
+    };
+    render(<DataFirstAVPanel projectId={pid} nativeBridge={bridge}/>);
+    expect(await screen.findByText(/FailedTake/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Approve recovery of original sound only'));
+    await waitFor(()=>expect(
+      bridge.data_av_live_recover_original).toHaveBeenCalledWith({
+        project_id:pid,
+        capture_reference:'nvp-live-original-aabbccddeeff',
+        new_source_id:'RecoveredSound001',
+      }));
+    expect(await screen.findByText(/No Take created/)).toBeTruthy();
+    expect(screen.queryByText('FailedTake')).toBeNull();
+  });
+
   it('fails closed when native catalog demands an FFmpeg runtime',async()=>{
     const bridge={
       data_av_catalog:vi.fn(async()=>({

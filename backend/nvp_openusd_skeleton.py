@@ -49,13 +49,26 @@ def validate_rigs(roles, rigs):
         for i,j in enumerate(joints):
             if "/" in j and j.rsplit("/",1)[0] not in joints[:i]:
                 raise ValueError("Skeleton must define each parent before its children")
+        skin=None
+        if "skin" in rig:
+            from backend.nvp_openusd_skinning import normalize_skin
+            skin=normalize_skin(rig["skin"],len(joints))
+        shapes=[s["name"] for s in skin["blend_shapes"]] if skin else []
         samples=rig["samples"]
         if type(samples) is not list or not 2<=len(samples)<=MAX_KEYS:
             raise ValueError("Native joint animation needs bounded time keys")
         previous=-1
         for entry in samples:
-            if type(entry) is not dict or set(entry)!={"tick","translations"}:
-                raise ValueError("Unsupported joint key schema")
+            keys={"tick","translations"}|({"face_weights"} if shapes else set())
+            if type(entry) is not dict or set(entry)!=keys:
+                raise ValueError("Unsupported joint/facial source key schema")
+            if shapes:
+                weights=entry["face_weights"]
+                if (type(weights) is not dict or set(weights)!=set(shapes) or
+                    any(type(v) not in (int,float) or
+                        not math.isfinite(v) or not 0<=v<=1
+                        for v in weights.values())):
+                    raise ValueError("Source facial weights must match original USD shapes")
             tick=_int(entry["tick"],"joint sample time",maximum=MAX_USD_EXACT_TICK)
             if tick<=previous:
                 raise ValueError("Joint time keys must strictly increase")
@@ -67,15 +80,16 @@ def validate_rigs(roles, rigs):
                 _vector(position)
         descriptor={"path":path,"joints":list(joints),
                     "sample_count":len(samples)}
-        if "skin" in rig:
-            from backend.nvp_openusd_skinning import normalize_skin,SKIN_MESH_SUFFIX
-            skin=normalize_skin(rig["skin"],len(joints))
+        if skin is not None:
+            from backend.nvp_openusd_skinning import SKIN_MESH_SUFFIX
             descriptor.update({
                 "skin_mesh_path":path+SKIN_MESH_SUFFIX,
                 "skin_vertex_count":len(skin["points"]),
                 "skin_face_count":len(skin["faces"]),
                 "skin_weighted":True,
-                "facial_animation_rendered":False,
+                "facial_shape_names":shapes,
+                "facial_animation_rendered":bool(shapes),
+                "source_preview_material":True,
             })
         result.append(descriptor)
     return result
@@ -122,6 +136,10 @@ def author_skeleton_layer(roles, rigs):
                 rig["skin"],len(rig["joints"]))
             if source["mesh_path"]!=rig["path"]+"/Rig/CharacterMesh":
                 raise RuntimeError("Author did not preserve canonical skeleton mesh path")
+            if source["facial_shape_names"]:
+                if not animation.GetBlendShapesAttr().Set(
+                        Vt.TokenArray(source["facial_shape_names"])):
+                    raise RuntimeError("Cannot author original USD facial shape order")
         for sample in rig["samples"]:
             matrices=[]
             for point in sample["translations"]:
@@ -132,6 +150,13 @@ def author_skeleton_layer(roles, rigs):
                 Vt.Matrix4dArray(matrices),
                 Usd.TimeCode(float(sample["tick"]))):
                 raise RuntimeError("Native skeleton transform sample failed")
+            if "face_weights" in sample:
+                names=source["facial_shape_names"]
+                weights=Vt.FloatArray([float(sample["face_weights"][name])
+                                       for name in names])
+                if not animation.GetBlendShapeWeightsAttr().Set(
+                        weights,Usd.TimeCode(float(sample["tick"]))):
+                    raise RuntimeError("Cannot author original USD facial animation")
     return layer,descriptors
 
 
