@@ -25,9 +25,9 @@ class Window:
         return [str(self.path)]
 
 
-class TrustedWO2DesktopTextureTests(fixture.NativeUSD02Integration):
+class TrustedWO2DesktopTextureTests(unittest.TestCase):
     def setUp(self):
-        super().setUp()
+        fixture.NativeUSD02Integration.setUp(self)
         with tempfile.TemporaryDirectory() as tmp:
             image=Image.new("RGB",(2,2),(20,120,240))
             buffer=BytesIO()
