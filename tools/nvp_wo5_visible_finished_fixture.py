@@ -42,9 +42,12 @@ MAX_UNWRAP_FRAMES=24
 class InstalledPublishedDCPFixture:
     """Bounded native rehearsal cache: every frame read from final MXF."""
 
-    def __init__(self,root,codec_provider,*,max_frames=720):
+    def __init__(self,root,codec_provider,*,max_frames=720,progress=None):
         if not callable(codec_provider):
             raise RuntimeError("Release-pinned installed decoder not available")
+        if progress is not None and not callable(progress):
+            raise TypeError("Native progress observer must be host-supplied")
+        self.progress=progress
         self.unwrap,self.decode=codec_provider()
         self.root=Path(root)
         if not self.root.is_absolute() or self.root.is_symlink():
@@ -109,6 +112,8 @@ class InstalledPublishedDCPFixture:
             self._checked_asset(reel)
             for local in range(0,reel["frames"],MAX_UNWRAP_FRAMES):
                 count=min(MAX_UNWRAP_FRAMES,reel["frames"]-local)
+                if self.progress is not None:
+                    self.progress(ri,local,count,self.total)
                 with TemporaryDirectory(prefix="nvp-real-visible-mxf-") as temp:
                     work=Path(temp)
                     run_supervised_codec(self.unwrap,
