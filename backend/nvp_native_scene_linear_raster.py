@@ -223,6 +223,60 @@ def _shade(points,surface,lights,eye):
     return tuple(out)
 
 
+def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np):
+    """Evaluate bounded GGX/Schlick with the actual per-pixel source color.
+
+    Avoid applying the sRGB base map to the *completed lighting result*:
+    that incorrectly tints dielectric specular. This remains a source-only,
+    face-normal preview, NOT a physically calibrated Hydra renderer.
+    """
+    tint,roughness,metallic,_=surface
+    color=np.asarray(sampled_rgb,dtype=np.float64)*np.asarray(
+        tint,dtype=np.float64)
+    a,b,c=points
+    u=tuple(b[i]-a[i] for i in range(3))
+    v=tuple(c[i]-a[i] for i in range(3))
+    n=_unit((u[1]*v[2]-u[2]*v[1],
+             u[2]*v[0]-u[0]*v[2],
+             u[0]*v[1]-u[1]*v[0]))
+    center=tuple((a[i]+b[i]+c[i])/3 for i in range(3))
+    view=_unit(tuple(eye[i]-center[i] for i in range(3)))
+    if n is None or view is None:
+        raise RuntimeError("Degenerate USD source texture triangle")
+    if _dot(n,view)<0:n=tuple(-x for x in n)
+    nv=max(0.,_dot(n,view))
+    out=AMBIENT_REVIEW*color*(1.-metallic)
+    f0=.04*(1.-metallic)+metallic*color
+    alpha=max(.04,roughness*roughness)
+    alpha2=alpha*alpha
+    k=(roughness+1.)**2/8.
+    ggx_view=nv/(nv*(1.-k)+k+1e-8)
+    for light_position,intensity in lights:
+        d=tuple(light_position[i]-center[i] for i in range(3))
+        dsq=_dot(d,d)
+        light=_unit(d)
+        if light is None:continue
+        nl=max(0.,_dot(n,light))
+        if nl<=0 or nv<=0:continue
+        h=_unit(tuple(light[i]+view[i] for i in range(3)))
+        if h is None:continue
+        nh=max(0.,_dot(n,h))
+        vh=max(0.,_dot(view,h))
+        denom=nh*nh*(alpha2-1.)+1.
+        distribution=alpha2/(math.pi*denom*denom+1e-8)
+        ggx_light=nl/(nl*(1.-k)+k+1e-8)
+        geometry=ggx_view*ggx_light
+        fresnel=f0+(1.-f0)*(1.-vh)**5
+        strength=intensity/LIGHT_REFERENCE/(1.+dsq)
+        diffuse=color*(1.-metallic)*(1.-fresnel)/math.pi
+        specular=(distribution*geometry*fresnel/
+                  max(1e-6,4.*nv*nl))
+        out=out+strength*nl*(diffuse+specular)
+    if not np.all(np.isfinite(out)) or np.any(out<0):
+        raise RuntimeError("Invalid source USD textured microfacet shading")
+    return out.astype(np.float32)
+
+
 def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
                    texture=None,uv_face=None):
     a,b,c=tri
@@ -270,8 +324,11 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
         xx=np.floor(np.mod(u,1.)*tex_w).astype(np.int64)
         yy=(tex_h-1)-np.floor(np.mod(v,1.)*tex_h).astype(np.int64)
         sample=texture[yy,xx,:3]
-        # Approximate source-light response, not full Hydra equivalence.
-        out[visible]=np.asarray(shade,dtype=np.float32)*sample[visible]
+        # Per-pixel sRGB-linear texel enters source base reflectance before
+        # GGX/Schlick lighting. The HDR light/spectral model remains preview.
+        lit=_shade_texture_texels(
+            world_points,surface,lights,eye,sample,np)
+        out[visible]=lit[visible]
     return True
 
 
