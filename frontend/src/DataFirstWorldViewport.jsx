@@ -19,10 +19,18 @@ export function validateSourceTexture(surface,item){
      descriptor.source_modified!==false||packet.source_modified!==false||
      !/^[0-9a-f]{64}$/.test(descriptor.sha256||'')||
      packet.sha256!==descriptor.sha256||
-     descriptor.width!==packet.width||descriptor.height!==packet.height||
+     descriptor.width!==packet.original_width||
+     descriptor.height!==packet.original_height||
      !Number.isInteger(packet.width)||!Number.isInteger(packet.height)||
      packet.width<1||packet.height<1||
      packet.width>512||packet.height>512||
+     !Number.isInteger(descriptor.width)||descriptor.width>2048||
+     !Number.isInteger(descriptor.height)||descriptor.height>2048||
+     (packet.derived_preview!==true&&packet.derived_preview!==false)||
+     !/^[0-9a-f]{64}$/.test(packet.preview_sha256||'')||
+     (packet.derived_preview===false&&
+       (packet.width!==descriptor.width||packet.height!==descriptor.height||
+        packet.preview_sha256!==descriptor.sha256))||
      descriptor.color_space!=='sRGB'||packet.color_space!=='sRGB'||
      descriptor.wrap!=='repeat'||packet.wrap!=='repeat'||
      typeof packet.png_base64!=='string'||packet.png_base64.length>2800000||
