@@ -205,6 +205,39 @@ class DurableCinemaDeliveryTests(unittest.TestCase):
         self.assertTrue(Path(published["destination"]).is_dir())
         self.assertEqual(self.journal.status(job)["state"],"REVIEW_REQUIRED")
 
+    def test_published_package_does_not_hide_later_source_frame_tampering(self):
+        job=self.finish_picture()
+        self.attach(job)
+        self.run_sound_mock()
+        self.assertEqual(self.run_package()["status"],"PUBLISHED_PENDING_INDEX")
+        original=Path(self.f.files[1])
+        original.write_bytes(bytes(original.stat().st_size))
+        with self.assertRaises(PermissionError):
+            self.journal.commit_filmindex(job)
+        self.assertEqual(self.journal.delivery(job)["phase"],
+                         "PUBLISHED_PENDING_INDEX")
+        folder=self.output/("DCP_"+self.journal.delivery(job)["cpl_uuid"])
+        self.assertTrue(folder.is_dir())
+        self.assertEqual(inspect_dcp_structure(folder)["status"],
+                         "STRUCTURE_AND_SHA_VERIFIED")
+        record_id="WO3DCP_"+self.journal.delivery(job)["cpl_uuid"].replace("-","")
+        self.assertEqual(self.f.f.index.history(self.f.f.pid,record_id),[])
+
+    def test_published_package_does_not_hide_approved_wav_tampering(self):
+        job=self.finish_picture()
+        self.attach(job)
+        self.run_sound_mock()
+        self.assertEqual(self.run_package()["status"],"PUBLISHED_PENDING_INDEX")
+        wav=Path(self.wav["destination"])
+        original=wav.read_bytes()
+        wav.write_bytes(original[:-3]+b"\x00\x00\x00")
+        with self.assertRaises(PermissionError):
+            self.journal.commit_filmindex(job)
+        self.assertEqual(self.journal.delivery(job)["phase"],
+                         "PUBLISHED_PENDING_INDEX")
+        self.assertTrue((self.output/(
+            "DCP_"+self.journal.delivery(job)["cpl_uuid"])).exists())
+
     def test_post_filmindex_pre_journal_crash_retries_without_duplicate_revision(self):
         job=self.finish_picture()
         self.attach(job)
