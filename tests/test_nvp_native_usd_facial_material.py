@@ -132,6 +132,15 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
         self.assertEqual(shader.GetIdAttr().Get(),"UsdUVTexture")
         self.assertEqual(str(shader.GetInput("file").Get().path),
                          texture["usd_asset_path"])
+        mtlx=UsdShade.Shader(stage.GetPrimAtPath(
+            "/World/Actor/Rig/Material/OpenPBR"))
+        image=UsdShade.Shader(stage.GetPrimAtPath(
+            "/World/Actor/Rig/Material/MtlxImage"))
+        self.assertEqual(image.GetIdAttr().Get(),"ND_image_color3")
+        self.assertEqual(mtlx.GetIdAttr().Get(),
+                         "ND_open_pbr_surface_surfaceshader")
+        self.assertEqual(str(image.GetInput("file").GetAttr().Get().path),
+                         texture["usd_asset_path"])
         snapshot=OpenUSDTimeState(self.index).evaluate(
             self.pid,"face_world",1,"acting",1,tick=T)
         live=visual_state(self.index,self.pid,snapshot,
