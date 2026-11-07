@@ -11,7 +11,7 @@ import unittest
 
 from backend.nvp_wo3_dcp_structure import inspect_dcp_structure
 from backend.nvp_wo4_multireel import publish_multireel_dcp
-from backend.nvp_wo4_resource_budget import plan_feature,admit_disk
+from backend.nvp_wo4_resource_budget import plan_feature,admit_disk,require_stage_space
 from backend.nvp_production_journal import TICKS_PER_SECOND
 
 
@@ -37,6 +37,17 @@ class FeatureResourcePlannerTest(unittest.TestCase):
                          [3601,3600])
         self.assertEqual(result["reels"][0]["end_tick"],
                          result["reels"][1]["start_tick"])
+
+    def test_stage_admission_refuses_low_disk_before_writing_files(self):
+        with TemporaryDirectory() as temp:
+            root=Path(temp).resolve()
+            with self.assertRaises(OSError):
+                require_stage_space(root,500*1024*1024,
+                                    available_bytes=100*1024*1024)
+            accepted=require_stage_space(root,500*1024*1024,
+                                    available_bytes=700*1024*1024)
+            self.assertEqual(accepted["status"],"ADMITTED")
+            self.assertFalse(accepted["quota_enforced_by_os"])
 
     def test_bounded_raster_and_low_disk_refusal(self):
         with TemporaryDirectory() as temp:
