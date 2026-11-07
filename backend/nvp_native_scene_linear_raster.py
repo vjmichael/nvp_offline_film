@@ -466,12 +466,12 @@ class NativeSceneLinearRaster:
                 surface=_surface(obj)
                 face_surfaces={}
                 for slot in obj.get("source_material_slots") or []:
-                    color=_array3(slot["base_color_rgb"])
+                    slot_color=_array3(slot["base_color_rgb"])
                     for face_number in slot["faces"]:
                         if face_number in face_surfaces:
                             raise RuntimeError("USD surface subset face overlap")
                         face_surfaces[face_number]=(
-                            color,float(slot["roughness"]),
+                            slot_color,float(slot["roughness"]),
                             float(slot["metallic"]),False)
                 texture=None
                 uvs=obj.get("mesh_uvs")
