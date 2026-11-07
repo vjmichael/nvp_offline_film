@@ -41,7 +41,7 @@ class OriginalShortReadinessTest(unittest.TestCase):
 
     def test_missing_tampered_unverified_or_unordered_receipts_rejected(self):
         for field,value in [
-            ("position",0),("source_sha256","0"*64),
+            ("position",0),("source_sha256","INVALID"),
             ("j2k_sha256",None),("segment_state","PENDING")
         ]:
             items = receipts(48)
