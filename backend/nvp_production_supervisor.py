@@ -222,6 +222,13 @@ class ProductionSupervisor:
                 wrap,info,frames_dir=frames,stage_dir=stage,
                 frame_count=reel["frame_count"],profile=reel["profile"],
                 asset_uuid=reel["picture_uuid"],check_cancel=check)
+            # The codec sees only derived J2K files, but those checkpoints
+            # may not be rewritten by the external wrapper either.
+            for index,item in enumerate(rows):
+                if verify_frame_file(
+                        frames/f"{index:06d}.j2c",item["file_sha256"],
+                        reel["profile"])!=item["file_bytes"]:
+                    raise PermissionError("CineCert modified an approved J2K checkpoint")
             if check():
                 raise WorkerCancelled("Explicit cancellation before MXF checkpoint")
             target=root/"picture.mxf"
