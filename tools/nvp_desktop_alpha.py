@@ -227,6 +227,17 @@ def run_visible_window_smoke():
                       (255,0,0),(0,0,255)])
         image_buffer=BytesIO()
         tile.save(image_buffer,format="PNG")
+        def encode_source_map(rgb):
+            item=BytesIO()
+            Image.new("RGB",(2,2),rgb).save(item,format="PNG")
+            return item.getvalue()
+        source_material_maps={
+            "roughness":encode_source_map((80,80,80)),
+            "metallic":encode_source_map((200,200,200)),
+            "emission":encode_source_map((12,50,80)),
+            "normal":encode_source_map((128,128,255)),
+            "opacity":encode_source_map((255,255,255)),
+        }
         OpenUSDAssetRegistry(smoke_index).publish(
             project["id"],"smoke_gpu_original_mesh",
             shape="mesh",size_m=2.,
@@ -235,7 +246,8 @@ def run_visible_window_smoke():
             mesh_uvs=[[0,0],[1,0],[1,1],[0,1]],
             preview_material={"base_color_rgb":[1.,1.,1.],
                               "roughness":.5,"metallic":0.},
-            texture_png=image_buffer.getvalue())
+            texture_png=image_buffer.getvalue(),
+            pbr_maps_png=source_material_maps)
         OpenUSDSceneBridge(smoke_index).publish(
             project["id"],"smoke_scene",
             prims=[
