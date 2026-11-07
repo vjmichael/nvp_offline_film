@@ -646,8 +646,18 @@ class TrustedDesktopCameraBridge:
         recovery=OriginalCaptureJournal(
             self.index.studio.db_path.parent/"native-original-capture-recovery")
         unapproved=recovery.catalog(project_id)
+        # Optional Windows/Linux PortAudio interface discovery. A machine
+        # without PortAudio or real audio hardware retains existing filming.
+        try:
+            from backend.nvp_native_independent_take import native_input_devices
+            independent=native_input_devices()
+        except (ImportError,OSError,RuntimeError):
+            independent=[]
         return {"format":"nvp.data_av.live_camera_catalog.v1",
                 "status":"AVAILABLE","camera_timelines":choices,
+                "independent_audio_inputs":independent,
+                "independent_audio_available":len(independent)>=2,
+                "independent_clock_hardware_accepted":False,
                 "unapproved_capture_recovery":unapproved["items"],
                 "recovery_automatic_freeze":False,
                 "ffmpeg_used":False}
@@ -686,10 +696,16 @@ class TrustedDesktopCameraBridge:
             "event_id","subject_id"}
         dual=mono|{"second_source_id","second_emitter_path",
                    "second_event_id","second_subject_id"}
-        if type(request) is not dict or set(request) not in (mono,dual):
+        separate=dual|{"independent_device_ids"}
+        if type(request) is not dict or set(request) not in (
+                mono,dual,separate):
             raise ValueError("Native microphone source identity/sync scope invalid")
         from backend.nvp_native_live_take import NativeLiveSoundSession
-        if set(request)==dual:
+        if set(request)==separate:
+            from backend.nvp_native_independent_take import IndependentNativeSoundSession
+            recorder_class=IndependentNativeSoundSession
+            extra={k:request[k] for k in separate-mono}
+        elif set(request)==dual:
             from backend.nvp_native_stereo_take import NativeStereoOriginalSession
             recorder_class=NativeStereoOriginalSession
             extra={k:request[k] for k in dual-mono}
@@ -707,8 +723,13 @@ class TrustedDesktopCameraBridge:
                     f"Camera Film Time SHA-256: {scope['camera_timeline_sha256']}\n"
                     f"Source emitter: {scope['emitter_path']}\n"
                     f"At most {scope['max_samples']//48000} seconds at 48 kHz.\n"
-                    + ("Two synchronized original mono sources on one shared-clock stereo audio interface.\n"
-                       if extra else "One original mono audio source.\n")
+                    + (("Two physically independent original 48-kHz mono devices.\n"
+                        "Native ADC timestamps + drift correction must pass; "
+                        "original PCM is never retimed.\n"
+                        f"Device IDs: {scope['independent_device_ids']}\n")
+                        if "independent_device_ids" in scope else
+                        ("Two original mono sources on one shared-clock stereo interface.\n"
+                         if extra else "One original mono audio source.\n"))
                     + "This records original source PCM only. No picture movie,\n"
                     "FFmpeg, flattened soundtrack, or master is produced.")
             def freeze(event,scope):
