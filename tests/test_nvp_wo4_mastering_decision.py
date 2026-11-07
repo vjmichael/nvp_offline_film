@@ -1,6 +1,7 @@
 """WO4-04/05 real FilmIndex source-custody and delivery denial tests."""
 from hashlib import sha256
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from test_nvp_wo3_native_delivery import WO3OriginalCinemaAuthoring
 from backend.nvp_wo4_pcm_master import master_pcm24_candidate
@@ -58,6 +59,37 @@ class WO4SourceCustody(unittest.TestCase):
         self.assertNotIn("ApprovedCinemaMaster", [
             r["object_id"] for r in self.f.index.list_objects(self.f.pid,
                                                                kind="presentation")])
+
+    def test_successful_bridge_passes_exact_master_bytes_to_native_interfaces(self):
+        self.authorize()
+        frames_seen=[]
+        with patch("backend.nvp_wo4_master_delivery.encode_xyz12_frame",
+                   side_effect=lambda _encoder,xyz,**opts:(
+                       frames_seen.append(xyz) or
+                       {"codestream_sha256":"1"*64})) as encoded, \
+             patch("backend.nvp_wo4_master_delivery.wrap_cinema_picture",
+                   return_value={"sha256":"2"*64}) as wrapped_picture, \
+             patch("backend.nvp_wo4_master_delivery.wrap_cinema_pcm",
+                   return_value={"sha256":"3"*64}) as wrapped_audio, \
+             patch("backend.nvp_wo4_master_delivery.publish_dcp_candidate",
+                   return_value={"status":"STRUCTURAL_DCP_CANDIDATE_PUBLISHED"}) as package:
+            output=publish_mastered_dcp(
+                self.f.index,self.f.pid,take_id="FrozenFixture",
+                take_revision=1,take_sha256=self.f.sha,
+                mastering_decision_id="ApprovedCinemaMaster",
+                pictures=[self.picture]*3,sound=self.sound,
+                encoder=None,wrapper=None,info=None,
+                output_root=self.f.output,title="Verified Film",
+                approve_package=lambda _:True)
+        self.assertEqual(frames_seen,[self.picture["xyz12"]]*3)
+        self.assertEqual(encoded.call_count,3)
+        self.assertEqual(wrapped_audio.call_args.kwargs["wav_bytes"]
+                         if "wav_bytes" in wrapped_audio.call_args.kwargs
+                         else wrapped_audio.call_args.args[2],
+                         self.sound["wav_bytes"])
+        self.assertTrue(package.called)
+        self.assertEqual(output["picture_codestream_sha256"],["1"*64]*3)
+        self.assertFalse(output["production_master_accepted"])
 
     def test_delivery_requires_authorized_decision_and_pcm_sha(self):
         base=dict(index=self.f.index,pid=self.f.pid,
