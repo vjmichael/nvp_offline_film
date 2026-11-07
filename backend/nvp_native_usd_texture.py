@@ -170,20 +170,18 @@ TILE_EDGE=256
 MAX_MIP_LEVEL=3
 
 
-def texture_tile_transport(index: FilmIndex, project_id, descriptor, *,
-                           mip_level, tile_x, tile_y):
-    """Seek one bounded tile from an original SHA-checked PNG, never the path.
-
-    Only native authenticated callers may invoke this. UI can request one
-    tile at a time; the original is always retained at full resolution.
-    All mip/tiles are disposable derived display representations.
-    """
+def _tile_from_verified(descriptor,decoded,*,mip_level,tile_x,tile_y):
+    """Encode a bounded tile from bytes verified in this native session."""
     if (type(mip_level) is not int or
         not 0<=mip_level<=MAX_MIP_LEVEL or
         type(tile_x) is not int or type(tile_y) is not int or
         tile_x<0 or tile_y<0):
         raise ValueError("Texture tile must have bounded integral coordinates")
-    _,(width,height,rgba)=verified_texture(index,project_id,descriptor)
+    width,height,rgba=decoded
+    if (type(width) is not int or type(height) is not int or
+        not 1<=width<=MAX_EDGE or not 1<=height<=MAX_EDGE or
+        type(rgba) is not bytes or len(rgba)!=width*height*4):
+        raise RuntimeError("Decoded original texture cache is not valid")
     from PIL import Image
     source=Image.frombytes("RGBA",(width,height),rgba).convert("RGB")
     level_width=max(1,(width+2**mip_level-1)//(2**mip_level))
@@ -217,3 +215,16 @@ def texture_tile_transport(index: FilmIndex, project_id, descriptor, *,
         "png_base64":base64.b64encode(bytes_).decode("ascii"),
         "derived_preview_only":True,"source_modified":False,
     }
+
+
+def texture_tile_transport(index: FilmIndex, project_id, descriptor, *,
+                           mip_level, tile_x, tile_y):
+    """Stateless verified tile path for tests and independent native callers.
+
+    The live Take controller uses one session-scoped decoded source cache
+    to avoid re-decoding a 2K PNG for every one of up to 64 tiles.
+    """
+    _,decoded=verified_texture(index,project_id,descriptor)
+    return _tile_from_verified(
+        descriptor,decoded,mip_level=mip_level,
+        tile_x=tile_x,tile_y=tile_y)
