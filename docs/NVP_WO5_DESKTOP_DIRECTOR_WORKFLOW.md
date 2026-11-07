@@ -123,3 +123,59 @@ film as already created.
    release-time licensed third-party notices/SBOM.
 
 WO4 remains open/deferred. WO5 does not claim production or cinema acceptance.
+
+## WO5-04 actual published finished picture + mastered sound (2026-11-07)
+
+**SOURCE IMPLEMENTED; uninterrupted installed-app playback remains OPEN.**
+
+The director review now distinguishes original OpenUSD Take audition from final
+published SMPTE DCP viewing. The new native finished-film player decodes the
+published picture MXF's real JPEG2000 XYZ12 picture and the published sound
+MXF's actual 48kHz PCM24 audio using verified native CineCert asdcplib and
+OpenJPEG. It reopens indexed FilmIndex and FeatureJournal identities; checks
+the finalized multi-reel CPL/PKL/AssetMap, MXF SHA at admission and exact
+per-frame J2K SHA, source time, and original Take approval. The delivered
+picture generates a bounded uncalibrated sRGB *screen review* image. The actual
+mastered stereo/5.1/7.1 PCM24 is downmixed temporarily to 48kHz stereo for
+Web Audio monitoring; the original sound track is preserved. One WebAudio
+device clock synchronizes sound samples and display frames across reel
+boundaries. The viewer supports exact output frame seek, native OS consent,
+stop/revoke, 16-frame bounded buffering, and fail-closed on slow decode,
+late audio cues, missing/skipped displayed frames or incomplete presentation.
+
+The first genuine native OpenJPEG/CineCert two-reel test PASSED in
+[GitHub run 42408366415](https://github.com/vjmichael/nvp_offline_film/actions/runs/42408366415):
+six distinct 2K picture samples with real mastered PCM24, SMPTE multi-reel
+packaging, independently decoded published frame 2 and frame 3 on opposite
+sides of the reel boundary, exact 48k sample offsets and nonmutation.
+Both Windows and Linux React player checks in that run also passed.
+Native Python unit checks failed due to an undersized synthetic placeholder
+codestream in the test fixture, corrected on a newer commit (new CI pending).
+This proof is real native essence **but NOT 24fps real-time performance**,
+a fully rendered original 30-minute film, or a theater ingest.
+
+**IMPORTANT installed release limitation:** The normal packaged desktop
+does not yet include an approved legally noticed OpenJPEG/asdcplib decode
+bundle. The native player is deliberately disabled without a trusted
+build-time pinned binary/notice manifest. A developer test can pass exact
+host-side codec paths and SHA pins through an explicitly opted-in native
+environment, never browser UI or AI self-authorization. Native decode
+currently runs external supervised picture unwrap + OpenJPEG decompress +
+sound unwrap for each 24fps frame; sustained 24fps throughput is not
+yet demonstrated and may require an optimized persistent codec worker.
+
+**Remaining before closing WO5:** verified real installed Windows NSIS
+playback, decoder installer/license packaging, optimized uninterrupted 24fps
+picture plus actual mastered 48k sound and device drift, real cuts/seek
+and cancellation/reopen under sustained load, a 30-minute original workflow
+pilot, a real 60-90 minute original feature and 3h+ epic, independently
+calibrated cinema picture/real surround sound and SMPTE DCP Bv2.1 validation.
+The previous Windows visible WebView2 smoke failed in a source-material
+MaterialX scalar verification path. A narrow source-verified PBR connection
+fix was committed; its exact-head native results are still pending.
+
+Backend: backend/nvp_wo5_finished_playback.py, codec admission in
+backend/nvp_wo5_codec_binding.py, frontend controls in
+frontend/src/FinishedFilmPlaybackPanel.jsx and actual native WebView2
+bridge in backend/nvp_wo5_desktop_bridge.py. No FFmpeg or original Take writes.
+WO4 deferred/open; WO5 production acceptance remains FALSE.
