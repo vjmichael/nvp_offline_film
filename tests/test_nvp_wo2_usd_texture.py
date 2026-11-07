@@ -35,6 +35,41 @@ class WO2NativeTextureTests(unittest.TestCase):
                               "roughness":.45,"metallic":.1},
             texture_png=texture)
 
+    def test_disposable_materialx_resolver_keeps_original_usd_frozen(self):
+        from pathlib import Path
+        from backend.nvp_wo2_materialx_resolver import resolved_materialx_probe
+        original_png=self._png()
+        asset=self._mesh(texture=original_png)
+        rec,layer=self.assets.open(self.pid,"textured_mesh",1)
+        original=Usd.Stage.Open(layer)
+        before=original.GetRootLayer().ExportToString()
+        descriptor=rec["data"]["preview_material"]["texture"]
+        transient_path=None
+        with resolved_materialx_probe(
+                self.index,self.pid,original,[descriptor]) as (stage,evidence):
+            self.assertFalse(evidence["original_layer_mutated"])
+            self.assertFalse(evidence["independent_hydra_render_accepted"])
+            node=UsdShade.Shader(stage.GetPrimAtPath(
+                "/Asset/Material/MtlxImage"))
+            transient_path=Path(node.GetInput("file").GetAttr().Get().path)
+            self.assertTrue(transient_path.is_file())
+            self.assertEqual(transient_path.read_bytes(),original_png)
+            source=UsdShade.Shader(original.GetPrimAtPath(
+                "/Asset/Material/MtlxImage"))
+            self.assertEqual(str(source.GetInput("file").GetAttr().Get().path),
+                             descriptor["usd_asset_path"])
+        self.assertFalse(transient_path.exists())
+        self.assertEqual(original.GetRootLayer().ExportToString(),before)
+        self.assertEqual(self.index.read_revision(
+            self.pid,"textured_mesh",1)["document_sha256"],
+            asset["document_sha256"])
+        with self.assertRaises((KeyError,RuntimeError)):
+            resolved_materialx_probe(
+                self.index,self.pid,original,[
+                    {**descriptor,"sha256":"0"*64,
+                     "usd_asset_path":"nvp-blob://texture/"+"0"*64}
+                ]).__enter__()
+
     def test_stable_blob_and_genuine_usd_texture_connections(self):
         png=self._png()
         self._mesh(texture=png)
