@@ -489,6 +489,20 @@ class TrustedDesktopCameraBridge:
                     +"decisions will be versioned. Original Takes and PNGs "
                     +"will not be modified."))
 
+    def wo2_presentation_look_catalog(self,request):
+        """Exact-scene approved decisions, never global model or API inputs."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","scene_id","scene_revision","scene_sha256"}:
+                raise PermissionError("WO2 presentation list needs original source")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).catalog(
+                request["project_id"],
+                scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                scene_sha256=request["scene_sha256"])
+
     def wo2_read_presentation_look(self,request):
         """Read only a version pinned to the displayed OpenUSD source."""
         with self._lock:
