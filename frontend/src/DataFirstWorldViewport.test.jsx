@@ -137,3 +137,33 @@ describe('WO2 authentic face-varying USD UV seams',()=>{
       ]})).toThrow(/face-varying/);
   });
 });
+
+describe('WO2 animated face-varying rig seam stability',()=>{
+  const faceUV=[
+    [[0,0],[1,0],[1,1]],
+    [[.5,0],[.5,1],[0,1]],
+  ];
+  const original={
+    ...actor,mesh_uvs:null,mesh_face_uvs:faceUV,
+  };
+  it('updates deformed vertices while preserving original face UVs',()=>{
+    const parsed=validateMeshData(original);
+    expect(parsed.faceUV).toEqual(faceUV);
+    const g=new THREE.BufferGeometry();
+    const expanded=original.mesh_triangles.flatMap(face=>
+      face.flatMap(i=>original.mesh_points[i]));
+    g.setAttribute('position',new THREE.Float32BufferAttribute(expanded,3));
+    g.setAttribute('uv',new THREE.Float32BufferAttribute(faceUV.flat(2),2));
+    const moving={...original,mesh_points:original.mesh_points.map(
+      (p,i)=>i===1?[1.5,0,0]:p)};
+    updateSkinnedGeometry(g,moving);
+    expect(g.getAttribute('position').getX(1)).toBe(1.5);
+    expect(g.getAttribute('uv').getX(3)).toBe(.5);
+    expect(()=>updateSkinnedGeometry(g,{
+      ...moving,mesh_face_uvs:[
+        [[0,0],[1,0],[1,1]],[[.25,0],[.5,1],[0,1]],
+      ],
+    })).toThrow(/UV seams changed/);
+    g.dispose();
+  });
+});
