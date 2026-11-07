@@ -19,6 +19,7 @@ from backend.nvp_wo6_native_take_action import NativeTakeActionHost, RECEIPT_FOR
 from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_resource_supervisor import NativeCancelRequested
 from backend.nvp_worker_host_lease import WorkerHostLease
+from backend.nvp_wo6_worker_admission import verify_admitted_worker
 
 
 class WO6NativeDurability(unittest.TestCase):
@@ -172,6 +173,25 @@ class WO6NativeDurability(unittest.TestCase):
         self.assertEqual(
             status["latest_reconciliation"]["evidence_status"],
             "VERIFIED_COMMIT_AND_RECEIPT_NOT_RELEASE_APPROVED")
+
+    def test_worker_rejects_queued_wrong_owner_and_durable_cancel(self):
+        task=self._queued()
+        row,spec=self.host.recovery._approved_spec(task)
+        with self.assertRaises(PermissionError):
+            verify_admitted_worker(
+                spec,ledger_db=self.ledger.db_path,owner_key=self.host.owner)
+        self.host.binding.claim_next(owner_key=self.host.owner)
+        verify_admitted_worker(
+            spec,ledger_db=self.ledger.db_path,owner_key=self.host.owner)
+        with self.assertRaises(PermissionError):
+            verify_admitted_worker(
+                spec,ledger_db=self.ledger.db_path,owner_key="other_worker")
+        self.host.recovery.request_cancel(
+            self.scope,task,authorize_cancel=lambda *_:True,
+            reason="Cancel before contained worker launches")
+        with self.assertRaises(PermissionError):
+            verify_admitted_worker(
+                spec,ledger_db=self.ledger.db_path,owner_key=self.host.owner)
 
     def test_late_cancellation_atomically_fences_verified_success(self):
         task = self._queued()
