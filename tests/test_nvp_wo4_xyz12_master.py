@@ -40,6 +40,21 @@ class XYZ12Tests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.encode(pixels([rgb]))
 
+    def test_explicit_cinema_white_bradford_has_different_verified_intent(self):
+        original=pixels([(1.,1.,1.)])
+        d65=self.encode(original)
+        cinema=self.encode(original,output_white_intent="DCI_REFERENCE_BRADFORD")
+        self.assertNotEqual(d65["xyz12_sha256"],cinema["xyz12_sha256"])
+        self.assertEqual(cinema["chromatic_adaptation"],
+                         "BRADFORD_D65_TO_DCI_REFERENCE")
+        self.assertEqual(cinema["target_white_xy"],[0.314,0.351])
+        values=[int.from_bytes(cinema["xyz12"][i:i+2],"big")
+                for i in range(0,6,2)]
+        self.assertTrue(3700<values[0]<3950)
+        self.assertTrue(3950<values[1]<3970)
+        self.assertTrue(3800<values[2]<4000)
+        self.assertFalse(cinema["independently_calibrated"])
+
     def test_source_hash_and_creator_approval_enforced(self):
         data=pixels([(.1,.2,.3)])
         with self.assertRaises(PermissionError):
