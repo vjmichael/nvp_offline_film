@@ -650,7 +650,7 @@ class TrustedDesktopCameraBridge:
                     f"At most {scope['max_samples']//48000} seconds at 48 kHz.\n"
                     + ("Two synchronized original mono sources on one shared-clock stereo audio interface.\n"
                        if extra else "One original mono audio source.\n")
-                    "This records original source PCM only. No picture movie,\n"
+                    + "This records original source PCM only. No picture movie,\n"
                     "FFmpeg, flattened soundtrack, or master is produced.")
             def freeze(event,scope):
                 return self._ask(
