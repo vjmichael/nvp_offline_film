@@ -158,6 +158,45 @@ def _surface(obj):
     return color,float(r),float(m),False
 
 
+def _source_texture_pixels(obj,np):
+    """Only project-verified original image bytes, never an external path."""
+    material=obj.get("source_material")
+    if type(material) is not dict:
+        return None
+    texture=material.get("source_texture")
+    if texture is None:
+        return None
+    if (obj["shape"]!="mesh" or
+        type(texture) is not dict or
+        texture.get("format")!="nvp.original_png_rgb8_uv_texture.v1" or
+        texture.get("source_encoding")!="sRGB" or
+        texture.get("original_source_modified") is not False or
+        type(texture.get("png_base64")) is not str or
+        len(texture["png_base64"])>400000):
+        raise RuntimeError("Native scene-linear texture source authority invalid")
+    from io import BytesIO
+    import base64
+    from PIL import Image
+    try:
+        payload=base64.b64decode(texture["png_base64"],validate=True)
+    except (ValueError,base64.binascii.Error) as exc:
+        raise RuntimeError("Original USD texture PNG payload corrupted") from exc
+    if sha256(payload).hexdigest()!=texture.get("blob_sha256"):
+        raise RuntimeError("Frozen USD texture SHA-256 mismatch")
+    with Image.open(BytesIO(payload)) as native:
+        if (native.format!="PNG" or native.mode!="RGB" or
+            native.width!=texture.get("width") or
+            native.height!=texture.get("height") or
+            not 1<=native.width<=256 or
+            not 1<=native.height<=256):
+            raise RuntimeError("Untrusted source texture encoding")
+        srgb=np.asarray(native,dtype=np.float32)/255.
+    # NVP authored RGB8 original is explicitly sRGB encoded; decode
+    # sRGB EOTF before ANY scene-linear pixel shading.
+    return np.where(srgb<=.04045,srgb/12.92,
+                    ((srgb+.055)/1.055)**2.4).astype(np.float32)
+
+
 def _dot(a,b):
     return sum(x*y for x,y in zip(a,b))
 
@@ -223,7 +262,8 @@ def _shade(points,surface,lights,eye):
     return tuple(out)
 
 
-def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np):
+def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
+                   uv_coords=None,texture=None):
     a,b,c=tri
     x0,y0,z0=a;x1,y1,z1=b;x2,y2,z2=c
     if (not all(math.isfinite(v) for v in (
@@ -253,7 +293,36 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np):
     if not np.any(visible):return False
     crop[visible]=zz[visible]
     out=buffer[lo_y:hi_y+1,lo_x:hi_x+1,:3]
-    out[visible]=shade
+    if texture is None:
+        out[visible]=shade
+    else:
+        if uv_coords is None or len(uv_coords)!=3:
+            raise RuntimeError("Bound original USD texture has no vertex UV")
+        # Perspective-correct barycentrics interpolate authored vertex UV.
+        # Procedural source mesh and immutable image remain unchanged.
+        zweights=np.stack((w0/z0,w1/z1,w2/z2),axis=-1)
+        uv=np.divide(zweights,np.maximum(inv,1e-12)[:,:,None])
+        uv_u=sum(uv[:,:,i]*uv_coords[i][0] for i in range(3))
+        uv_v=sum(uv[:,:,i]*uv_coords[i][1] for i in range(3))
+        x=np.clip(uv_u*(texture.shape[1]-1),0,texture.shape[1]-1)
+        y=np.clip((1.-uv_v)*(texture.shape[0]-1),0,texture.shape[0]-1)
+        x0=np.floor(x).astype(np.int32);y0=np.floor(y).astype(np.int32)
+        x1=np.minimum(x0+1,texture.shape[1]-1)
+        y1=np.minimum(y0+1,texture.shape[0]-1)
+        dx=(x-x0)[:,:,None];dy=(y-y0)[:,:,None]
+        linear=((1.-dx)*(1.-dy)*texture[y0,x0]+
+                dx*(1.-dy)*texture[y0,x1]+
+                (1.-dx)*dy*texture[y1,x0]+
+                dx*dy*texture[y1,x1])
+        # Bounded two-endpoint microfacet approximation: constant
+        # roughness/metal, true authored diffuse base and linear texels.
+        # This is NOT validated Hydra shader/light transport parity.
+        black=_shade(world_points,((0.,0.,0.),*surface[1:]),lights,eye)
+        white=_shade(world_points,((1.,1.,1.),*surface[1:]),lights,eye)
+        shaded=(np.array(black)[None,None,:]+
+                linear*np.array(surface[0])[None,None,:]*
+                (np.array(white)-np.array(black))[None,None,:])
+        out[visible]=shaded[visible]
     return True
 
 
@@ -320,6 +389,7 @@ class NativeSceneLinearRaster:
             rasterized=0
             default_materials=0
             actor_shapes=0
+            source_textured_meshes=0
             for obj in visual["objects"]:
                 if obj["semantic_role"] in ("light","camera"):continue
                 if obj["shape"] in ("gizmo","missing_rig_geometry"):
@@ -332,6 +402,16 @@ class NativeSceneLinearRaster:
                 if polygons>MAX_TRIANGLES:
                     raise RuntimeError("Source-authoritative color triangle budget exceeded")
                 surface=_surface(obj)
+                tex=_source_texture_pixels(obj,np)
+                uvs=obj.get("mesh_uvs")
+                if (tex is not None and
+                    (type(uvs) is not list or len(uvs)!=len(raw) or
+                     any(type(pair) is not list or len(pair)!=2 or
+                         any(type(v) not in (int,float) or
+                             not math.isfinite(v) for v in pair)
+                         for pair in uvs))):
+                    raise RuntimeError("Source USD texture UV topology untrusted")
+                source_textured_meshes+=int(tex is not None)
                 default_materials+=int(surface[3])
                 actor_shapes+=int(obj["shape"]=="skinned_mesh")
                 transformed=[_array3(_apply(obj["world_matrix"],p)) for p in raw]
@@ -350,7 +430,9 @@ class NativeSceneLinearRaster:
                     original_points=[transformed[i] for i in face]
                     if _draw_triangle(
                         color,depth,verts,original_points,
-                        surface,lights,eye,np):
+                        surface,lights,eye,np,
+                        uv_coords=[uvs[k] for k in face] if tex is not None else None,
+                        texture=tex):
                         rasterized+=1
             receipt={
                 "format":FORMAT,"time_tick":str(tick),
@@ -365,6 +447,8 @@ class NativeSceneLinearRaster:
                 "actual_usd_skinned_actors":actor_shapes,
                 "original_usd_sphere_lights":len(lights),
                 "neutral_default_material_count":default_materials,
+                "verified_original_uv_textured_mesh_count":source_textured_meshes,
+                "usd_uv_bilinear_linear_srgb_preview_calibrated":False,
                 "usd_roughness_metallic_microfacet_evaluated":True,
                 "ggx_microfacet_preview_calibrated":False,
                 "source_working_space":"Linear Rec.709 (sRGB)",
