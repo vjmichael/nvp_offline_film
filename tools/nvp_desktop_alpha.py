@@ -441,8 +441,12 @@ def main(argv=None):
     if args.smoke_window:
         return run_visible_window_smoke()
     if args.smoke_data_av:
+        _smoke_checkpoint("before_native_acceptance_import")
         from tools.nvp_data_av_installed_acceptance import run_installed_data_av_smoke
-        return run_installed_data_av_smoke()
+        _smoke_checkpoint("after_native_acceptance_import")
+        result = run_installed_data_av_smoke()
+        _smoke_checkpoint("after_native_acceptance_run")
+        return result
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
             "create" if args.smoke_create else "reopen")
@@ -469,9 +473,29 @@ def main(argv=None):
             sock.close()
 
 
+def _smoke_checkpoint(stage):
+    """Durable stage receipt for native crashes that bypass Python exceptions.
+
+    Only enabled for explicitly requested CI diagnostics. Never records user
+    paths, source audio, project data, or environment secrets.
+    """
+    diagnostic = os.environ.get("NVP_SMOKE_DIAGNOSTIC_PATH")
+    if not diagnostic:
+        return
+    path = Path(diagnostic)
+    if path.is_symlink():
+        raise RuntimeError("Refusing symlink diagnostic target")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write("NVP_SMOKE_STAGE " + stage + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
 def installed_smoke_entry():
     """Report packaged --windowed smoke exceptions through an opt-in CI file."""
     try:
+        _smoke_checkpoint("entry")
         return main()
     except Exception:
         import traceback
@@ -481,7 +505,8 @@ def installed_smoke_entry():
             if path.is_symlink():
                 raise RuntimeError("Refusing symlink diagnostic target")
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(traceback.format_exc(), encoding="utf-8")
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(traceback.format_exc())
         raise
 
 
