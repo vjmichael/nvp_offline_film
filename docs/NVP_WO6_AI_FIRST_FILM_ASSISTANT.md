@@ -19,7 +19,7 @@ A director requesting a different Take from the final DCP must preserve: `publis
 | **WO6-02** | Native FeatureJournal-backed origin resolver: reruns WO5's full indexed DCP/Take/PCM/J2K source audit, reports original per-reel Take/scene/temporal SHA and Film Time; host-injected only, read-only. Missing/retired/altered sources are refused. | **IMPLEMENTED, CI verdict pending; genuine 30m film still open.** |
 | **WO6-03** | Trusted-host scene/actor/camera/sound/shot/script/accepted-canon context from reopened frozen Takes, exact Film Time, bounded SHA provenance and omissions; native installed binary/license pin preflight. Full model/runtime readiness and installed app integration are later gates. | **IMPLEMENTED, exact-head native CI verdict pending.** |
 | **WO6-04** | Read-only SHA-pinned source-to-Take/edit/master/DCP impact graph, exact accepted Production Bible digest and typed fact continuity, separate director grants, optional 2K/4K 2/6/8ch capacity estimate, source-race/truncation refusal. | **IMPLEMENTED; exact-head CI verdict pending; installed creator UI remains WO6-07.** |
-| **WO6-05** | Native creator-confirmed action bridge and model-independent proposals: concrete first-party tool execution through existing durable supervisor, no AI self-approval and no arbitrary filesystem/network authority. | **OPEN; human consent required.** |
+| **WO6-05** | Native creator-confirmed action bridge: exact original scene+timeline -> NEW immutable OpenUSD Take through durable approved task queue, contained worker and separate creator/host checks. Other editing/audio/delivery native actions remain pending. | **INITIAL OPERATION IMPLEMENTED; native CI/installed acceptance OPEN.** |
 | **WO6-06** | Unified read-only receipts for worker progress, cancellation, crash/restart reconciliation, source-vs-derivative status and filmmaker-facing errors; never fabricate finished-film evidence. | **OPEN.** |
 | **WO6-07** | End-to-end novice-and-professional desktop/installed AI-assisted scene/Take/edit/sound/render/review workflow with actual local model tests, camera/actor direction and performance/film-quality review. | **OPEN; depends on previous gates and real film assets.** |
 
@@ -144,3 +144,60 @@ will require later first-party native acceptance.
 ## WO6-04 implemented — 2026-11-07
 
 **WO6-04 Production Bible impact design:** `docs/NVP_WO6_PRODUCTION_BIBLE_IMPACT.md` defines how the existing approved Story Bible, StoryTimeline, SceneMind, screenplay, OpenUSD, FilmIndex and FeatureJournal are composed into one **read-time authority** without introducing an AI-maintained Bible store. The original `backend/nvp_bible/` casting/optical/environment JSONs remain historical references, not automatically approved live state. Native `nvp.film.preview_source_impact.v1` includes bounded known FilmIndex effects, approved-canon SHA and scene/fact links, distinct unknown/unindexed outputs, strict per-turn authorization, separate director approval requirements and optional WO4 resource estimates. It never writes a scene or Take, starts a worker, or approves a film. Implementation/tests committed; exact-head Windows/Linux CI awaiting results. Full installed model UI integration remains later.
+
+## WO6-05 first native approved operation — new immutable OpenUSD Take (2026-11-07)
+
+**Implementation committed; exact-head Windows/Linux native CI verdict pending.** The new
+`backend/nvp_wo6_native_take_action.py` and `tools/nvp_wo6_take_worker.py`
+add a **native desktop-host-only** operation. This is deliberately absent from
+`NativeAiReadHost.catalog` and cannot be invoked through its model read
+dispatcher. No new HTTP endpoint or model-tool executor was added.
+
+A trusted host constructs an authenticated actor/project/turn scope. The
+director selects the original SHA-verified OpenUSD scene and authored temporal
+ledger, new unique Take ID, bounded ordered checkpoint ticks, and exact WO6-04
+impact preview SHA. Before staging, the bridge reopens current non-retired
+originals, verifies underlying native scene+timed event source data, checks
+that the requested Take does not exist, and re-evaluates the preview and its
+accepted Production Bible digest when selected. Stale SHA, retired source,
+historical source, truncated indexed impact or an existing Take ID fails.
+
+Two **separate, host-injected, currently checked** policies are required:
+`confirm_creator(creator_decision_id, creative_scope)` for actual human
+creative confirmation and `authorize_native(scope, exact_spec_sha, spec)`
+for per-turn first-party worker authorization. Both must literally return
+True; the immutable `ApprovedTaskBindings` validates them at enqueue,
+before resource admission, during worker execution and again before acceptance.
+The model cannot fabricate either policy callback or gain execution power by
+receiving a read-only preview. A creator may refuse either gate.
+
+The approved task is sealed into the existing FULL-sync `TaskLedger`.
+The host pins its Python binary and its native worker source SHA, admits bounded
+RAM under the existing resource guard, launches via existing Linux
+process-group containment or Windows Job Object and monitors OS pressure,
+timeouts and current permission. The worker independently verifies exact
+source/revision/preview SHA and calls the existing first-party
+`OpenUSDTakeCapture.freeze` to commit an entirely new immutable Take, then
+reopens the actual USD and temporal sources to check its sample digest.
+A SHA-cited receipt is independently checked again by the host before the
+durable task can be marked SUCCEEDED. Historical Takes and DCP packages are
+not rewritten; this action creates no rendered frames, soundtrack master,
+edited reel or final film.
+
+If the worker crashes after the FilmIndex commit, the queue must **not**
+blindly retry or claim an atomic rollback: it marks the affected task
+INTERRUPTED for source/worker reconciliation under WO6-06. This limited
+implementation does not yet provide a full installed UI, durable restart
+reconciliation, or all proposed native actor/camera/sound/color/edit/DCP
+operations. Creator creative review and final film acceptance remain separate.
+
+Native contract tests: `tests/test_nvp_wo6_native_take_action.py` executes
+a real OpenUSD source worker and verifies a genuinely reopened new Take
+while preserving an old frozen Take; it additionally checks denied human
+approval, denied/revoked native authority, forged and stale SHA, source
+revision race, explicit absence of model-exposed execution and no
+preworker mutation. Windows and Linux, Python 3.11 and 3.13, through
+`.github/workflows/nvp-wo6-creator-ai.yml`; CI results are not yet
+accepted. Windows protected worker launch additionally installs pywin32.
+WO6-06/07, WO5 actual sustained installed A/V, original 30-minute
+rendered film and Bv2.1 independent cinema gates remain OPEN.
