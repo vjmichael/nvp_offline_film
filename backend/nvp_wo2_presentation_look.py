@@ -259,7 +259,9 @@ class OriginalSceneLook:
                                     scene_sha256,look,rationale):
         """Validate an external model suggestion; never save or execute it."""
         if (type(rationale) is not str or not 1<=len(rationale)<=1200 or
-            any(ord(c)<32 and c not in "\\n\\t" for c in rationale)):
+            any(ord(c)<32 and c not in "\n\t" for c in rationale) or
+            any(token in rationale.lower() for token in (
+                r"\x00", r"\u0000", r"\0"))):
             raise ValueError("Assistant reasoning must be bounded plain text")
         source=self._source(pid,scene_id,scene_revision,scene_sha256)
         checked=validate_look(look,source["data"]["prim_roles"])
