@@ -94,6 +94,20 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
             any(type(n) is not int or not 3<=n<=8 for n in faces) or
             sum(faces)!=len(indices)):
             raise RuntimeError("Original USD skinned geometry topology is invalid")
+        # Preserve original UsdSkel mesh UVs when genuinely authored.
+        # Neither NVP nor Three.js may infer texture coordinates from pose.
+        st=UsdGeom.PrimvarsAPI(geometry).GetPrimvar("st")
+        source_uvs=None
+        if st:
+            if st.GetInterpolation()!="vertex":
+                raise RuntimeError("Original rig UV primvar is not vertex-scoped")
+            vals=st.Get()
+            if vals is None or len(vals)!=points_count:
+                raise RuntimeError("Original rig UV count differs from skin topology")
+            source_uvs=[[float(u),float(v)] for u,v in vals]
+            if any(not math.isfinite(q) or abs(q)>1024
+                   for uv in source_uvs for q in uv):
+                raise RuntimeError("Original rig UV data is not finite")
         groups=[]
         offset=0
         for count in faces:
@@ -132,6 +146,7 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
             "size_m":size,
             "mesh_points":points,
             "mesh_triangles":groups,
+            "mesh_uvs":source_uvs,
             "geometry_asset_sha256":layer_sha,
             "source_skinning":True,
             "source_skinning_tick":str(tick),
