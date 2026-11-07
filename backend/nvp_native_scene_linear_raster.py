@@ -353,6 +353,15 @@ class NativeSceneLinearRaster:
                 if polygons>MAX_TRIANGLES:
                     raise RuntimeError("Source-authoritative color triangle budget exceeded")
                 surface=_surface(obj)
+                face_surfaces={}
+                for slot in obj.get("source_material_slots") or []:
+                    color=_array3(slot["base_color_rgb"])
+                    for face_number in slot["faces"]:
+                        if face_number in face_surfaces:
+                            raise RuntimeError("USD surface subset face overlap")
+                        face_surfaces[face_number]=(
+                            color,float(slot["roughness"]),
+                            float(slot["metallic"]),False)
                 texture=None
                 uvs=obj.get("mesh_uvs")
                 face_uvs=obj.get("mesh_face_uvs")
@@ -397,7 +406,8 @@ class NativeSceneLinearRaster:
                     original_points=[transformed[i] for i in face]
                     if _draw_triangle(
                         color,depth,verts,original_points,
-                        surface,lights,eye,np,texture=texture,
+                        face_surfaces.get(face_index,surface),
+                        lights,eye,np,texture=texture,
                         uv_face=(face_uvs[face_index] if face_uvs is not None
                                  else [uvs[i] for i in face]
                                  if texture is not None else None)):
