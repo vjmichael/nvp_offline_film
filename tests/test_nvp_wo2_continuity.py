@@ -48,5 +48,42 @@ class WO2ContinuityAcceptance(unittest.TestCase):
                 source_sha256=SOURCE,duration_seconds=1)
 
 
+class WO2RealUSDContinuity(unittest.TestCase):
+    def setUp(self):
+        import test_nvp_openusd_reusable_assets as fixture
+        fixture.NativeUSD02Integration.setUp(self)
+        self.scene.publish(
+            self.pid,"continuity_scene",prims=[
+                {"path":"/World/Actor","role":"actor","position":[0,0,0]},
+                {"path":"/World/Camera","role":"camera","position":[0,0,5]},
+                {"path":"/World/Light","role":"light","position":[1,2,3]},
+            ],curves=[],native_schemas=True,asset_bindings=[{
+                "path":"/World/Actor","asset_id":"body_geometry",
+                "asset_revision":1}])
+        self.take=self.takes.freeze(
+            self.pid,"continuity_take",scene_id="continuity_scene",
+            scene_revision=1,timeline_id="event_timeline",
+            timeline_revision=1,sample_ticks=[0],
+            creator_event="director_confirms")
+
+    def test_one_real_native_usd_raster_has_independent_source_receipt(self):
+        from backend.nvp_wo2_continuity import measure_native_frozen_take
+        report=measure_native_frozen_take(
+            self.index,self.pid,"continuity_take",
+            self.take["document_sha256"],"/World/Camera",
+            duration_seconds=1,sample_hz=1)
+        self.assertEqual(report["status"],"COMPLETE")
+        self.assertEqual(report["processed_frames"],1)
+        self.assertTrue(report["real_source_rendering_proven"])
+        self.assertTrue(report["source_immutable_take_reopened"])
+        self.assertFalse(report["gpu_hardware_verified"])
+        self.assertFalse(report["physical_display_calibrated"])
+        with self.assertRaises(RuntimeError):
+            measure_native_frozen_take(
+                self.index,self.pid,"continuity_take",
+                self.take["document_sha256"],"/World/Camera",
+                duration_seconds=60,sample_hz=1)
+
+
 if __name__=="__main__":
     unittest.main()
