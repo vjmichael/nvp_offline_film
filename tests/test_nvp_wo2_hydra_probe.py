@@ -90,5 +90,78 @@ class WO2IndependentHydraGate(unittest.TestCase):
                 renderer="Embree",require_gpu=True)
 
 
+
+class WO2IndependentFiveChannelHydra(unittest.TestCase):
+    def setUp(self):
+        fixture.NativeUSD02Integration.setUp(self)
+
+    @unittest.skipUnless(shutil.which("usdrecord"),
+                         "Independent Hydra usdrecord is not installed")
+    def test_real_five_channel_hydra_frame_and_same_take_cpu_pixels(self):
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_exact_time_shots import ExactTimeShotSequence
+        from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
+        def png(color):
+            source=BytesIO()
+            Image.new("RGB",(2,2),color).save(source,format="PNG")
+            return source.getvalue()
+        self.assets.publish(
+            self.pid,"hydra_pbr_actor",shape="mesh",size_m=2.,
+            points=[[-1.,-1.,0.],[1.,-1.,0.],
+                    [1.,1.,0.],[-1.,1.,0.]],
+            triangles=[[0,1,2],[0,2,3]],
+            mesh_uvs=[[0,0],[1,0],[1,1],[0,1]],
+            preview_material={"base_color_rgb":[1.,1.,1.],
+                              "roughness":.45,"metallic":.0},
+            texture_png=png((160,130,100)),
+            pbr_maps_png={
+                "roughness":png((100,100,100)),
+                "metallic":png((80,80,80)),
+                "emission":png((20,20,50)),
+                "normal":png((128,128,255)),
+                "opacity":png((255,255,255)),
+            })
+        self.scene.publish(self.pid,"hydra_pbr_scene",
+            prims=[
+                {"path":"/World/Actor","role":"actor","position":[0,0,0]},
+                {"path":"/World/Camera","role":"camera","position":[0,0,5]},
+                {"path":"/World/Light","role":"light","position":[1,2,3]},
+            ],curves=[],native_schemas=True,asset_bindings=[{
+                "path":"/World/Actor",
+                "asset_id":"hydra_pbr_actor","asset_revision":1}])
+        ExactTimeShotSequence(self.index).publish(
+            self.pid,"hydra_pbr_timeline",
+            scene_id="hydra_pbr_scene",scene_revision=1,
+            duration_tick=str(T),
+            shots=[{"shot_id":"hydra_reference",
+                    "camera_path":"/World/Camera",
+                    "start_tick":"0","end_tick":str(T),
+                    "pattern":"continuous"}])
+        take=self.takes.freeze(
+            self.pid,"hydra_pbr_take",
+            scene_id="hydra_pbr_scene",scene_revision=1,
+            timeline_id="hydra_pbr_timeline",timeline_revision=1,
+            sample_ticks=[0],creator_event="director_confirms")
+        result=capture_hydra_evidence(
+            self.index,self.pid,"hydra_pbr_scene",1,
+            camera_path="/World/Camera",renderer="Embree",width=640,
+            require_gpu=False,timeout_seconds=120,
+            native_take={"take_id":"hydra_pbr_take",
+                         "take_sha256":take["document_sha256"],
+                         "tick":0})
+        self.assertEqual(result["status"],"HYDRA_FRAME_RENDERED",result)
+        self.assertTrue(result["real_independent_frame_rendered"])
+        comparison=result.get("comparison")
+        self.assertIsNotNone(comparison)
+        self.assertEqual(comparison["format"],
+                         "nvp.wo2.independent_renderer_image_comparison.v1")
+        self.assertEqual(comparison["source_scene_sha256"],
+                         result["scene_document_sha256"])
+        self.assertFalse(comparison["scene_linear_hydra_parity_proven"])
+        self.assertFalse(comparison["physical_display_calibrated"])
+        print("WO2_FIVE_CHANNEL_HYDRA_COMPARISON:",comparison,flush=True)
+
+
 if __name__=="__main__":
     unittest.main()
