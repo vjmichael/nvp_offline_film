@@ -166,6 +166,9 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
         if(first<previousEnd||last<=first)
           throw Error('Camera observations must be ordered, non-overlapping and positive.');
         if(identities.has(shot.shot_id))throw Error('Duplicate camera shot identity.');
+        if(!(source.cameras||[]).some(c=>c.path===shot.camera_path))
+          throw Error('Camera observation refers to a camera absent from the source scene.');
+        if(!SHAPES.includes(shot.pattern))throw Error('Unsupported camera coverage pattern.');
         identities.add(shot.shot_id);
         previousEnd=last;
       }
@@ -273,9 +276,9 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
       <button disabled={busy||!source} onClick={appendShot}>Add timed camera observation</button>
       {tickMode?<label>Film Time duration limit (exact ticks)
         <input aria-label="Film Time duration limit ticks" value={durationTick}
-          onChange={e=>setDurationTick(e.target.value)}/></label>:
+          onChange={e=>{setDurationTick(e.target.value);setTimelineSha('');}}/></label>:
         <label>Film Time duration limit (seconds)
-          <input value={duration} onChange={e=>setDuration(e.target.value)}/></label>}
+          <input value={duration} onChange={e=>{setDuration(e.target.value);setTimelineSha('');}}/></label>}
       <div className="actions">
         <button disabled={busy||!shots.length||!source||(!tickMode&&exactDuration!==null)} onClick={save}>
           Save immutable timing revision</button>
