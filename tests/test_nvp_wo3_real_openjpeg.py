@@ -49,5 +49,26 @@ class WO3RealOpenJPEG2K(unittest.TestCase):
         },flush=True)
 
 
+    @unittest.skipUnless(os.environ.get("NVP_NATIVE_OPENJPEG_4K"),
+                         "Native 4K cinema encoding not requested")
+    def test_real_4096x2160_xyz12_cinema4k_codestream(self):
+        executable=Path(os.environ["NVP_NATIVE_OPENJPEG"]).resolve(strict=True)
+        native=ApprovedCodecBinary(
+            executable,sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
+            product="OpenJPEG-opj_compress")
+        raw=b"\x08\x00\x08\x00\x08\x00"*(4096*2160)
+        result=encode_xyz12_frame(
+            native,raw,profile="4K_FULL_24",
+            source_presentation_sha256="b"*64,creator_approved=True)
+        self.assertEqual(inspect_j2k_header(result["codestream"],
+                                             "4K_FULL_24")["rsiz"],4)
+        self.assertFalse(result["dci_certified"])
+        print("WO3_REAL_NATIVE_OPENJPEG_4K:",{
+            "bytes":len(result["codestream"]),
+            "sha256":result["codestream_sha256"],
+            "verified_full_decoder":False,
+        },flush=True)
+
+
 if __name__=="__main__":
     unittest.main()
