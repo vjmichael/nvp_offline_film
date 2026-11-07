@@ -15,6 +15,7 @@ import NativeColorGradePanel from './NativeColorGradePanel.jsx';
 import ResourceActivityPanel from './ResourceActivityPanel.jsx';
 import FilmCameraSourcePanel from './FilmCameraSourcePanel.jsx';
 import DataFirstAVPanel from './DataFirstAVPanel.jsx';
+import WorkspaceLock from './WorkspaceLock.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -33,7 +34,20 @@ async function api(path, method = 'GET', data) {
   return response.json();
 }
 
+// Session-local convenience lock, persisted only for accidental refresh.
+// Not a credential and not a supervisor authorization boundary.
+function readManualWorkspaceLock(){
+  try{return window.sessionStorage.getItem('nvp.workspace.manual_lock')==='locked';}
+  catch{return false;}
+}
+
 export default function App() {
+  const [workspaceLocked,setWorkspaceLocked]=useState(readManualWorkspaceLock);
+  useEffect(()=>{
+    try{window.sessionStorage.setItem('nvp.workspace.manual_lock',
+        workspaceLocked?'locked':'open');}
+    catch{/* a disabled storage API must never prevent manual unlock */}
+  },[workspaceLocked]);
   const [health, setHealth] = useState(null);
   const [projects, setProjects] = useState([]);
   const [project, setProject] = useState(null);
@@ -371,7 +385,10 @@ export default function App() {
   const current = project?.scenes.find((scene) => scene.id === selectedScene);
   const unsaved = project && script !== project.screenplay;
 
-  return <div className="layout">
+  return <>
+    <div className="layout"
+         aria-hidden={workspaceLocked ? true : undefined}
+         inert={workspaceLocked ? '' : undefined}>
     <aside>
       <div className="brand">NVP<span>✦</span></div>
       <p className="muted">A movie starts with you.</p>
@@ -382,7 +399,15 @@ export default function App() {
       <div className="sidebar-bottom">● Offline-first planning<br/><span className="muted">No cloud account required</span></div>
     </aside>
     <main>
-      <header><span>YOUR PERSONAL FILM STUDIO</span><span>{health ? 'Planning tools ready' : 'Server disconnected'}</span></header>
+      <header>
+        <span>YOUR PERSONAL FILM STUDIO</span>
+        <span>{health ? 'Planning tools ready' : 'Server disconnected'}</span>
+        <button type="button" className="nvp-manual-lock-action"
+                aria-label="Lock NVP workspace"
+                onClick={()=>setWorkspaceLocked(true)}>
+          Lock NVP
+        </button>
+      </header>
       {error && <p role="alert" className="alert">{error}</p>}
       {notice && <p role="status" className="notice">{notice}</p>}
       {!project ? <div className="page introduction">
@@ -705,5 +730,8 @@ export default function App() {
         </section>}
       </div>}
     </main>
-  </div>;
+  </div>
+  <WorkspaceLock locked={workspaceLocked}
+                 onUnlock={()=>setWorkspaceLocked(false)}/>
+  </>;
 }
