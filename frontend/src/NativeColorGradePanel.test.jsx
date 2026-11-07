@@ -182,8 +182,8 @@ describe('DA-06D creator-approved OpenUSD source color in ACES2',()=>{
         take_document_sha256:takeSHA,
         target:'SMPTE_2K_FLAT_24',
       }));
-    expect(await screen.findByText(
-      /not an approved cinema or HDR master/)).toBeTruthy();
+    expect(await screen.findByText((_,node)=>node?.tagName==='P' &&
+        node.textContent?.includes('not an approved cinema or HDR master'))).toBeTruthy();
     expect(screen.getByText(/JPEG2000 encoder/)).toBeTruthy();
   });
 
