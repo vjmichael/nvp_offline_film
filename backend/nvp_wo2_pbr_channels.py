@@ -164,7 +164,7 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
                 raise RuntimeError("Original tangent normal conversion changed")
         mtlx=UsdShade.Shader(stage.GetPrimAtPath(
             material_path+"/MtlxMap_"+suffix))
-        expected_id=("ND_image_float" if key in ("roughness","metallic")
+        expected_id=("ND_image_float" if key in ("roughness","metallic","opacity")
                      else "ND_image_color3")
         if (not mtlx or mtlx.GetIdAttr().Get()!=expected_id or
             str(mtlx.GetInput("file").GetAttr().Get().path)!=
