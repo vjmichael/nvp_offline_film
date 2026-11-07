@@ -12,6 +12,7 @@ if __name__=="__main__" and not __package__:
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 from backend.nvp_approved_tasks import canonical_bytes
+from backend.nvp_wo6_worker_admission import verify_admitted_worker
 from backend.nvp_exact_time_shots import ExactTimeShotSequence
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_native_color_decisions import NativeColorDecisions
@@ -26,6 +27,8 @@ def main(argv=None):
     parser.add_argument("--spec",required=True)
     parser.add_argument("--studio-db",required=True)
     parser.add_argument("--expected-sha",required=True)
+    parser.add_argument("--ledger-db", required=True)
+    parser.add_argument("--owner-key", required=True)
     options=parser.parse_args(argv)
     path=Path(options.spec)
     database=Path(options.studio_db)
@@ -39,6 +42,7 @@ def main(argv=None):
     if (canonical_bytes(doc)!=raw or doc.get("format")!=FORMAT or
             doc.get("operation")!=OPERATION or doc.get("kind")!="compositing"):
         raise PermissionError("Not a sealed native decision operation")
+    verify_admitted_worker(doc, ledger_db=options.ledger_db, owner_key=options.owner_key)
     index=FilmIndex(Studio(database))
     _preflight(index,doc)
     if doc["decision_kind"]=="color":
