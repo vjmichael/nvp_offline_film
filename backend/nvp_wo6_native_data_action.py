@@ -290,6 +290,11 @@ class NativeFilmDecisionHost:
                     digest_file(self.worker)!=spec["worker_sha256"]):
                 raise PermissionError("Approved native operation binary/spec was modified")
             _preflight(self.index,spec)
+            if os.name=="nt" and not attest_windows_job_stopped(
+                    folder,task_id=task,
+                    spec_sha256=hashlib.sha256(raw).hexdigest(),
+                    owner=self.owner):
+                raise PermissionError("Native Windows Job Object already owns task")
             with (folder/"stdout.log").open("wb") as out, (
                     folder/"stderr.log").open("wb") as err:
                 proc = launch_contained(
