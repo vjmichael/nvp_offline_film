@@ -31,6 +31,8 @@ ENTRYPOINTS=(
     "backend/nvp_native_cpu_raster.py",
     "backend/nvp_data_first_filming.py",
     "backend/nvp_native_live_take.py",
+    "backend/nvp_native_spatial_acoustics.py",
+    "backend/nvp_native_color_eval.py",
     "backend/nvp_native_color_decisions.py",
     "backend/nvp_imported_audio.py",
     "backend/nvp_legacy_quarantine.py",
