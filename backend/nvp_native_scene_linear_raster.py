@@ -344,9 +344,9 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
     crop=depth[lo_y:hi_y+1,lo_x:hi_x+1]
     visible=inside&(zz<crop)
     if not np.any(visible):return False
-    crop[visible]=zz[visible]
     out=buffer[lo_y:hi_y+1,lo_x:hi_x+1,:3]
     if texture is None and not pbr_maps:
+        crop[visible]=zz[visible]
         out[visible]=shade
     else:
         if uv_face is None or len(uv_face)!=3:
@@ -367,6 +367,10 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
                 else np.ones((*u.shape,3),dtype=np.float32))
         maps=pbr_maps or {}
         decoded={key:sample_map(img) for key,img in maps.items()}
+        if "opacity" in decoded:
+            visible=visible&(decoded["opacity"][...,0]>=.5)
+            if not np.any(visible):return False
+        crop[visible]=zz[visible]
         # Per-pixel sRGB-linear texel enters source base reflectance before
         # GGX/Schlick lighting. The HDR light/spectral model remains preview.
         lit=_shade_texture_texels(
