@@ -64,6 +64,14 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             size=source["data"]["size_m"]
             asset_material=source["data"].get("preview_material")
             if (include_texture_transport and asset_material is not None
+                    and asset_material.get("pbr_maps")):
+                from backend.nvp_native_usd_texture import texture_transport
+                asset_material={**asset_material,
+                    "pbr_map_transports":{
+                        channel:texture_transport(index,project_id,descriptor)
+                        for channel,descriptor in
+                        asset_material["pbr_maps"].items()}}
+            if (include_texture_transport and asset_material is not None
                     and "texture" in asset_material):
                 from backend.nvp_native_usd_texture import texture_transport
                 asset_material={**asset_material,
@@ -101,9 +109,12 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             any(type(row) is not list or len(row)!=4 for row in matrix)):
             raise RuntimeError("Invalid native USD object transform")
         source_surface=(skin.get("source_material") if skin else asset_material)
-        if source_surface is not None and "texture_transport" in source_surface:
-            packet=source_surface["texture_transport"]
-            texture_transport_bytes+=len(packet["png_base64"])
+        if source_surface is not None:
+            packets=([source_surface["texture_transport"]]
+                     if "texture_transport" in source_surface else [])
+            packets.extend(source_surface.get("pbr_map_transports",{}).values())
+            texture_transport_bytes+=sum(
+                len(packet["png_base64"]) for packet in packets)
             if texture_transport_bytes>MAX_LIVE_TEXTURE_TRANSPORT_BYTES:
                 raise RuntimeError("Live source texture transfer exceeds bounded 8 MiB frame")
         visual.append({
