@@ -29,7 +29,7 @@ def _float(value):
 
 def normalize_skin(skin,joint_count):
     required={"points","faces","joint_indices","joint_weights","display_color"}
-    optional={"blend_shapes","preview_material","mesh_uvs","texture"}
+    optional={"blend_shapes","preview_material","mesh_uvs","face_uvs","texture"}
     if type(skin) is not dict or not required<=set(skin) or not set(skin)<=required|optional:
         raise ValueError("Skin requires source topology, influence fields and typed optional appearance")
     points=skin["points"]
@@ -111,10 +111,23 @@ def normalize_skin(skin,joint_count):
             any(type(x) not in (int,float) or not math.isfinite(x) or
                 abs(x)>1024 for x in uv) for uv in authored_uv)):
         raise ValueError("Actor UV primvar must match original skinned vertices")
+    face_uvs=skin.get("face_uvs")
+    if authored_uv is not None and face_uvs is not None:
+        raise ValueError("Original skinned st interpolation ambiguous")
+    if face_uvs is not None and (
+        type(face_uvs) is not list or len(face_uvs)!=len(polygons) or
+        any(type(face) is not list or len(face)!=len(polygons[i]) or
+            any(type(uv) is not list or len(uv)!=2 or
+                any(type(v) not in (int,float) or
+                    not math.isfinite(v) or abs(v)>1024
+                    for v in uv) for uv in face)
+            for i,face in enumerate(face_uvs))):
+        raise ValueError("Skinned face-varying UVs must match original polygons")
     texture=skin.get("texture")
     if texture is not None:
         from backend.nvp_native_usd_texture import FORMAT as TEXTURE_FORMAT,PREFIX
-        if (authored_uv is None or type(texture) is not dict or
+        if ((authored_uv is None and face_uvs is None) or
+            type(texture) is not dict or
             set(texture)!={"format","sha256","width","height",
                 "color_space","wrap","usd_asset_path","source_modified"} or
             texture["format"]!=TEXTURE_FORMAT or
@@ -140,6 +153,9 @@ def normalize_skin(skin,joint_count):
             "blend_shapes":bound_shapes,
             "mesh_uvs":([[float(x) for x in uv] for uv in authored_uv]
                         if authored_uv is not None else None),
+            "face_uvs":([[[float(x) for x in uv] for uv in face]
+                          for face in face_uvs]
+                         if face_uvs is not None else None),
             "texture":texture,
             "preview_material":{k:float(v) for k,v in material.items()}}
 
@@ -158,6 +174,11 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         st=UsdGeom.PrimvarsAPI(mesh).CreatePrimvar(
             "st",Sdf.ValueTypeNames.TexCoord2fArray,"vertex")
         st.Set(Vt.Vec2fArray([Gf.Vec2f(*uv) for uv in bound["mesh_uvs"]]))
+    elif bound["face_uvs"] is not None:
+        st=UsdGeom.PrimvarsAPI(mesh).CreatePrimvar(
+            "st",Sdf.ValueTypeNames.TexCoord2fArray,"faceVarying")
+        st.Set(Vt.Vec2fArray([Gf.Vec2f(*uv)
+                              for face in bound["face_uvs"] for uv in face]))
     mesh.GetDisplayColorPrimvar().Set(Vt.Vec3fArray(
         [Gf.Vec3f(*bound["display_color"])]))
     binding=UsdSkel.BindingAPI.Apply(mesh.GetPrim())
@@ -225,7 +246,8 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         "mesh_path":actor_path+SKIN_MESH_SUFFIX,
         "source_vertex_count":len(bound["points"]),
         "source_face_count":len(bound["faces"]),
-        "source_original_uvs_authored":bound["mesh_uvs"] is not None,
+        "source_original_uvs_authored":(bound["mesh_uvs"] is not None or
+                                      bound["face_uvs"] is not None),
         "source_original_png_texture_authored":bound["texture"] is not None,
         "skinning_method":"classicLinear",
         "geom_bind_transform":"identity",
