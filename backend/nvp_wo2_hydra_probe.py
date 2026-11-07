@@ -45,7 +45,8 @@ def _original_texture_descriptors(index,pid,scene):
 
 def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                            camera_path,renderer="Storm",width=256,
-                           timeout_seconds=90,require_gpu=False):
+                           timeout_seconds=90,require_gpu=False,
+                           native_take=None):
     if not isinstance(index,FilmIndex):
         raise TypeError("Original FilmIndex required")
     _require_pid(pid)
@@ -59,6 +60,14 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
         not camera_path.startswith("/World/") or
         len(camera_path)>256):
         raise ValueError("Unsafe independent renderer acceptance request")
+    if native_take is not None:
+        if (type(native_take) is not dict or
+            set(native_take)!={"take_id","take_sha256","tick"} or
+            type(native_take["tick"]) is not int or
+            native_take["tick"]!=0):
+            raise ValueError("Independent paired source comparison requires exact original tick zero")
+        _id(native_take["take_id"],"frozen source comparison Take")
+        _sha(native_take["take_sha256"])
     record,stage=OpenUSDSceneBridge(index).open(pid,scene_id,scene_revision)
     if record["data"]["prim_roles"].get(camera_path)!="camera":
         raise PermissionError("Hydra probe requires an original USD camera")
@@ -124,7 +133,50 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                     result.load()
                     w,h=result.size
                     rgb=result.convert("RGB").tobytes()
+                comparison=None
+                if native_take is not None:
+                    from backend.nvp_native_scene_linear_raster import (
+                        NativeSceneLinearRaster)
+                    import numpy as np
+                    native,source_receipt=NativeSceneLinearRaster(index).render(
+                        pid,native_take["take_id"],
+                        native_take["take_sha256"],
+                        tick=0,camera_path=camera_path)
+                    if source_receipt["scene_document_sha256"]!=(
+                            record["document_sha256"]):
+                        raise PermissionError(
+                            "Independent Hydra frame source differs from original frozen Take")
+                    if (native.shape[0]!=h or native.shape[1]!=w or
+                        native.shape[-1]<3):
+                        comparison={
+                            "status":"DIMENSIONS_DIFFER",
+                            "native_height":int(native.shape[0]),
+                            "native_width":int(native.shape[1]),
+                            "hydra_height":h,"hydra_width":w,
+                            "scene_linear_hydra_parity_proven":False,
+                        }
+                    else:
+                        from backend.nvp_wo2_renderer_comparison import (
+                            compare_rendered_rgb)
+                        linear=np.clip(native[:,:,:3],0.,1.)
+                        srgb=np.where(
+                            linear<=.0031308,12.92*linear,
+                            1.055*np.power(linear,1./2.4)-.055)
+                        native_bytes=np.rint(np.clip(
+                            srgb*255.,0.,255.)).astype(np.uint8).tobytes()
+                        import json
+                        comparison=compare_rendered_rgb(
+                            native_rgb=native_bytes,
+                            independent_rgb=rgb,width=w,height=h,
+                            source_scene_sha256=record["document_sha256"],
+                            native_receipt_sha256=sha256(
+                                json.dumps(source_receipt,sort_keys=True,
+                                    separators=(",",":")).encode()).hexdigest(),
+                            independent_receipt_sha256=sha256(
+                                (str(renderer)+str(width)+camera_path+
+                                 sha256(rgb).hexdigest()).encode()).hexdigest())
                 return {**base,
+                    "comparison":comparison,
                     "status":"HYDRA_FRAME_RENDERED",
                     "real_independent_frame_rendered":True,
                     "requested_gpu":bool(require_gpu),
