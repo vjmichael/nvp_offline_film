@@ -22,6 +22,8 @@ class QuarantineTests(unittest.TestCase):
             with self.subTest(method=method,path=path):
                 self.assertTrue(quarantined(path,method))
         self.assertFalse(quarantined(base+"/sequence/history","GET"))
+        self.assertFalse(quarantined(base+"/sequence","GET"))
+        self.assertFalse(quarantined(base+"/rig-motion","GET"))
         self.assertFalse(quarantined(base+"/rig-motion/history","GET"))
         self.assertFalse(quarantined("/api/projects/Film001/film/native-color/Grade001","POST"))
         self.assertFalse(quarantined("/api/projects/Film001/film/native-time-shots/Timeline001","GET"))
