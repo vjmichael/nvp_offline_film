@@ -29,14 +29,14 @@ function decodedStereo(base64,count){
   return [left,right];
 }
 
-export default function DataFirstAVPanel({projectId,nativeBridge=null}){
+export default function DataFirstAVPanel({projectId,nativeBridge=null,initialTakeId='',initialSourceSample=0}){
   const [native,setNative]=useState(nativeBridge);
   const [takes,setTakes]=useState([]);
   const [takeId,setTakeId]=useState('');
   const [listener,setListener]=useState('');
   const [binauralProfiles,setBinauralProfiles]=useState([]);
   const [binauralChoice,setBinauralChoice]=useState('');
-  const [sourceSample,setSourceSample]=useState('0');
+  const [sourceSample,setSourceSample]=useState(String(initialSourceSample));
   const [playing,setPlaying]=useState(false);
   const [error,setError]=useState('');
   const [note,setNote]=useState('');
@@ -126,10 +126,13 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          result.ffmpeg_runtime_required!==false||!Array.isArray(result.takes))
         throw Error('Native film data inventory is not verified');
       setTakes(result.takes);
-      setTakeId(result.takes[0]?.take_id||'');
+      const requested=result.takes.find(x=>x.take_id===initialTakeId);
+      setTakeId(requested?.take_id||result.takes[0]?.take_id||'');
+      if(requested&&Number.isSafeInteger(initialSourceSample)&&initialSourceSample>=0)
+        setSourceSample(String(initialSourceSample));
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
-  },[native,projectId]);
+  },[native,projectId,initialTakeId,initialSourceSample]);
 
   useEffect(()=>{
     setListener(item?.listeners?.[0]||'');
