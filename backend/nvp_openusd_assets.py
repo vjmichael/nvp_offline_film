@@ -26,7 +26,8 @@ class OpenUSDAssetRegistry:
         self.index = index
 
     def publish(self, project_id, asset_id, *, shape, size_m,
-                expected_revision=0, points=None, triangles=None):
+                expected_revision=0, points=None, triangles=None,
+                preview_material=None):
         _require_pid(project_id)
         _id(asset_id, "reusable asset ID")
         if shape not in KINDS:
@@ -54,6 +55,30 @@ class OpenUSDAssetRegistry:
                 raise ValueError("Mesh needs nondegenerate triangle indices")
         elif points is not None or triangles is not None:
             raise ValueError("Procedural cube/sphere does not accept mesh data")
+        authored_material=None
+        if preview_material is not None:
+            if (type(preview_material) is not dict or
+                set(preview_material)!={
+                    "base_color_rgb","roughness","metallic"}):
+                raise ValueError("Only typed source USD surface parameters allowed")
+            rgb=preview_material["base_color_rgb"]
+            if (type(rgb) is not list or len(rgb)!=3 or
+                any(type(v) not in (int,float) or not math.isfinite(v) or
+                    not 0<=v<=1 for v in rgb)):
+                raise ValueError("Asset source color must be finite RGB reflectance")
+            controls={}
+            for key in ("roughness","metallic"):
+                v=preview_material[key]
+                if type(v) not in (int,float) or not math.isfinite(v) or (
+                        not 0<=v<=1):
+                    raise ValueError("Original USD material parameter invalid: "+key)
+                controls[key]=float(v)
+            authored_material={"format":"nvp.original_usd_preview_surface.v1",
+                "base_color_rgb":[float(x) for x in rgb],
+                **controls,"material_path":"/Asset/Material",
+                "roughness_metallic_authored":True,
+                "texture_images_loaded":False,
+                "original_source_modified":False}
         Gf, Sdf, Usd, UsdGeom = _usd()
         layer = Sdf.Layer.CreateAnonymous("nvp_asset.usda")
         stage = Usd.Stage.Open(layer)
@@ -73,6 +98,23 @@ class OpenUSDAssetRegistry:
                 v for triangle in triangles for v in triangle])
             obj.CreateSubdivisionSchemeAttr().Set("none")
             obj.CreateDoubleSidedAttr().Set(True)
+        if authored_material is not None:
+            from pxr import UsdShade
+            material=UsdShade.Material.Define(stage,"/Asset/Material")
+            shader=UsdShade.Shader.Define(
+                stage,"/Asset/Material/PreviewSurface")
+            shader.CreateIdAttr("UsdPreviewSurface")
+            shader.CreateInput("diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
+                Gf.Vec3f(*authored_material["base_color_rgb"]))
+            for name in ("roughness","metallic"):
+                shader.CreateInput(name,Sdf.ValueTypeNames.Float).Set(
+                    authored_material[name])
+            shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
+            material.CreateSurfaceOutput().ConnectToSource(
+                shader.ConnectableAPI(),"surface")
+            if not UsdShade.MaterialBindingAPI.Apply(
+                    obj.GetPrim()).Bind(material):
+                raise RuntimeError("Cannot bind real original USD PreviewSurface")
         payload = layer.ExportToString().encode("utf-8")
         if not 0 < len(payload) <= MAX_USD_LAYER_BYTES:
             raise RuntimeError("NVP-owned asset exceeds bounded USD layer size")
@@ -83,6 +125,8 @@ class OpenUSDAssetRegistry:
             "layer_sha256": blob_sha, "root_prim": "/Asset",
             "external_references": False,
         }
+        if authored_material is not None:
+            document["preview_material"]=authored_material
         if shape=="mesh":
             # Keep canonical, bounded source topology alongside the verified
             # original USD layer for the ephemeral native WebGL renderer.
@@ -153,4 +197,35 @@ class OpenUSDAssetRegistry:
             if not math.isclose(float(observed),float(size),
                                 rel_tol=0,abs_tol=1e-7):
                 raise RuntimeError("USD asset dimensions disagree with FilmIndex")
+        original_material=doc.get("preview_material")
+        if original_material is not None:
+            if (type(original_material) is not dict or
+                original_material.get("format")!=
+                    "nvp.original_usd_preview_surface.v1" or
+                original_material.get("material_path")!="/Asset/Material" or
+                original_material.get("original_source_modified") is not False or
+                original_material.get("texture_images_loaded") is not False):
+                raise RuntimeError("Original USD preview material scope invalid")
+            from pxr import UsdShade
+            binding=UsdShade.MaterialBindingAPI(geometry)
+            bound,_=binding.ComputeBoundMaterial()
+            if not bound or str(bound.GetPath())!="/Asset/Material":
+                raise RuntimeError("USD asset material binding changed")
+            shader=UsdShade.Shader(
+                stage.GetPrimAtPath("/Asset/Material/PreviewSurface"))
+            if not shader or shader.GetIdAttr().Get()!="UsdPreviewSurface":
+                raise RuntimeError("USD asset surface shader changed")
+            for key in ("roughness","metallic","base_color_rgb"):
+                source=("diffuseColor" if key=="base_color_rgb" else key)
+                inp=shader.GetInput(source)
+                if not inp:
+                    raise RuntimeError("Original material shader input missing")
+                actual=inp.Get()
+                expected=original_material[key]
+                actuals=(list(actual) if key=="base_color_rgb" else [actual])
+                expecteds=(expected if key=="base_color_rgb" else [expected])
+                if any(not math.isclose(float(v),float(e),
+                        rel_tol=1e-5,abs_tol=1e-5)
+                    for v,e in zip(actuals,expecteds)):
+                    raise RuntimeError("Original USD material differs from frozen manifest")
         return record, layer

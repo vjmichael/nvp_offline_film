@@ -34,6 +34,11 @@ export default function NativeColorGradePanel({project,api,action,busy}){
   const [outputFps,setOutputFps]=useState('24');
   const [outputCamera,setOutputCamera]=useState('');
   const [packageReceipt,setPackageReceipt]=useState(null);
+  const [exrPresentationId,setExrPresentationId]=useState('ACEScgScene001');
+  const [exrReceipt,setExrReceipt]=useState(null);
+  const [cinemaTarget,setCinemaTarget]=useState('SMPTE_2K_FLAT_24');
+  const [cinemaReceipt,setCinemaReceipt]=useState(null);
+  const [cinemaBusy,setCinemaBusy]=useState(false);
   const take=takes.find(t=>t.take_id===takeId);
 
   useEffect(()=>{
@@ -80,6 +85,7 @@ export default function NativeColorGradePanel({project,api,action,busy}){
     setRevision(0);setParams(DEFAULTS);
     setSavedDirty(false);setPreview(null);setReviewTick('0');
     setPackageReceipt(null);
+    setExrReceipt(null);
     setMessage('');
   },[takeId,gradeId]);
 
@@ -230,6 +236,86 @@ export default function NativeColorGradePanel({project,api,action,busy}){
     finally{setExportBusy(false);}
   }
 
+  async function publishSourceLinearEXR(){
+    if(!take||!acesPolicy||!native||exportBusy||reviewBusy||
+       busy||!revision||savedDirty||!outputCamera)return;
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,60}$/.test(exrPresentationId)){
+      setError('Choose a new, unique ACEScg source package ID.');return;
+    }
+    setExportBusy(true);setError('');setMessage('');setExrReceipt(null);
+    try{
+      const saved=await api('/projects/'+encodeURIComponent(project.id)+
+        '/film/native-color/'+encodeURIComponent(gradeId));
+      if(saved?.format!=='nvp.data_first.color_decision.v1'||
+         saved.take_sha256!==take.take_document_sha256||
+         saved.revision!==revision||
+         saved.source_modified!==false||saved.ffmpeg_used!==false)
+        throw Error('Only the original saved source color grade can be exported');
+      const exported=await native.data_av_export_native_acescg_exr({
+        project_id:project.id,take_id:take.take_id,
+        take_document_sha256:take.take_document_sha256,
+        presentation_id:exrPresentationId,listener_path:outputCamera,
+        fps_num:Number(outputFps),fps_den:1,
+        linear_exr_grade:{
+          grade_id:gradeId,revision,
+          document_sha256:saved.document_sha256,
+          config_sha256:acesPolicy.configuration_sha256,
+        },
+      });
+      if(exported?.status==='CANCELLED'){
+        setMessage('Native ACEScg source output selection cancelled.');return;
+      }
+      if(exported?.format!==
+           'nvp.native_ocio.approved_acescg_exr32_package.v1'||
+         exported.status!=='UNMASTERED_SOURCE_ACESCG_EXR32_PCM_PACKAGE'||
+         exported.take_sha256!==take.take_document_sha256||
+         exported.color_grade_sha256!==saved.document_sha256||
+         exported.color_pipeline!=='ocio_scene_linear_acescg_exr32_unmastered'||
+         exported.picture_format!=='exr'||
+         exported.pixel_bit_depth!==32||
+         exported.ffmpeg_used!==false||
+         exported.original_modified!==false||
+         exported.master_approved!==false)
+        throw Error('Native ACEScg EXR32/PCM receipt did not verify');
+      setExrReceipt(exported);
+      setMessage('Source-linear ACEScg RGB32/PCM derivative saved. '+
+        'This is NOT a DCP or calibrated display master.');
+    }catch(e){setError(e.message);}
+    finally{setExportBusy(false);}
+  }
+
+  async function inspectCinemaReadiness(){
+    if(!take||!native||cinemaBusy||exportBusy||busy||
+       typeof native.data_av_cinema_readiness!=='function')return;
+    setCinemaBusy(true);setCinemaReceipt(null);setError('');setMessage('');
+    try{
+      const result=await native.data_av_cinema_readiness({
+        project_id:project.id,take_id:take.take_id,
+        take_document_sha256:take.take_document_sha256,
+        target:cinemaTarget,
+      });
+      if(result.status==='CANCELLED'){
+        setMessage('Native cinema package inspection cancelled.');return;
+      }
+      if(result.format!=='nvp.native_data_first.cinema_preflight.v1'||
+         result.status!=='NO_CINEMA_OR_HDR_MASTER_AUTHORIZED'||
+         result.target!==cinemaTarget||
+         result.source_take_sha256!==take.take_document_sha256||
+         result.source_integrity_verified!==true||
+         result.authenticated_approved_source_derivative!==true||
+         !/^[0-9a-f]{64}$/.test(
+            result.authenticated_native_presentation_sha256||'')||
+         result.dcp_delivered!==false||
+         result.hdr10_master_approved!==false||
+         result.source_original_modified!==false||
+         result.ffmpeg_used!==false||
+         !Array.isArray(result.required_master_color_and_delivery_capabilities))
+        throw Error('Native cinema/master readiness could not verify original source');
+      setCinemaReceipt(result);
+    }catch(e){setError(e.message);}
+    finally{setCinemaBusy(false);}
+  }
+
   return <section className="card" aria-label="Native data-first color decisions">
     <h2>Color and lighting presentation decisions</h2>
     <p className="fineprint">Set presentation intent for an original 3D
@@ -340,11 +426,68 @@ export default function NativeColorGradePanel({project,api,action,busy}){
         The original scene, Takes, grades and recordings are unchanged.
       </p>}
     </fieldset>
+    <fieldset disabled={!take||busy||exportBusy||reviewBusy||!native||
+        !acesPolicy||!revision||savedDirty}>
+      <legend>ACEScg scene-linear floating-point source interchange</legend>
+      <p className="fineprint">Publish a separate 32-bit floating-point
+        OpenEXR sequence in ACEScg, with exact original Film Time, color
+        decision, OCIO configuration and source snapshot SHA receipts.
+        Native PCM is supplied separately. This preserves linear
+        highlight data for further finishing; it is not HDR10, DCP or
+        a display-calibrated cinema master.</p>
+      <label>New ACEScg output identity
+        <input aria-label="Native ACEScg EXR source package identity"
+          value={exrPresentationId} maxLength={61}
+          onChange={e=>setExrPresentationId(e.target.value)}/>
+      </label>
+      <button disabled={!outputCamera||exportBusy||
+          typeof native?.data_av_export_native_acescg_exr!=='function'}
+        onClick={publishSourceLinearEXR}>
+        {exportBusy?'Rendering verified ACEScg EXR…':
+          'Approve source-linear OpenEXR and PCM package'}
+      </button>
+      {exrReceipt&&<p role="status">Verified new ACEScg EXR32 package:
+        {exrReceipt.directory}. Manifest SHA
+        {exrReceipt.manifest_sha256?.slice(0,16)}…
+        No frozen Take, source file or color decision was modified.
+      </p>}
+    </fieldset>
+    <fieldset disabled={!take||cinemaBusy||exportBusy||busy||
+        typeof native?.data_av_cinema_readiness!=='function'}>
+      <legend>Independent cinema and HDR readiness review</legend>
+      <p className="fineprint">Select an actual derived source package
+        with the native OS folder picker. NVP audits every original
+        picture and PCM SHA and explains what is still required.
+        It will not label an uncalibrated PNG/EXR folder as a DCP.</p>
+      <label>Requested delivery profile
+        <select aria-label="Native cinema/HDR delivery target"
+          value={cinemaTarget} onChange={e=>{
+            setCinemaTarget(e.target.value);setCinemaReceipt(null);
+          }}>
+          <option value="SMPTE_2K_FLAT_24">SMPTE 2K Flat 24 fps</option>
+          <option value="SMPTE_2K_SCOPE_24">SMPTE 2K Scope 24 fps</option>
+          <option value="HDR10_REC2100_PQ">HDR10 Rec.2100 PQ</option>
+        </select>
+      </label>
+      <button onClick={inspectCinemaReadiness}>
+        {cinemaBusy?'Checking original picture/audio integrity…':
+          'Inspect cinema/HDR readiness'}
+      </button>
+      {cinemaReceipt&&<div role="status">
+        <p>Original derived picture/audio checksums verified.
+          This output is <strong>not</strong> an approved cinema or HDR master.</p>
+        <p>Unmet native and physical delivery requirements:</p>
+        <ul>{cinemaReceipt.required_master_color_and_delivery_capabilities
+          .map(entry=><li key={entry}>{entry.replaceAll('_',' ')}</li>)}
+        </ul>
+      </div>}
+    </fieldset>
     {message&&<p role="status">{message}</p>}
     {error&&<p role="alert">{error}</p>}
-    <p className="fineprint">No FFmpeg, EXR decoder, flattened
-      frames, proxy or color grade is written to the original.
-      Applying and measuring the chosen grade in final output is
-      a separate acceptance requirement.</p>
+    <p className="fineprint">No FFmpeg, intermediate picture,
+      flattened sound or color decision is written to the frozen original.
+      Verified OpenEXR and PNG16 output are separate, explicitly authorized
+      derivatives. Physical display and theatrical mastering acceptance
+      are separate, required gates.</p>
   </section>;
 }

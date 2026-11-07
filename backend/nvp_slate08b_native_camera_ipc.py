@@ -691,7 +691,7 @@ class TrustedDesktopCameraBridge:
                 pid,take,sha,presentation,parent,
                 listener_path=listener,
                 fps_num=request["fps_num"],fps_den=request["fps_den"],
-                aces_color_grade=color)
+                aces_color_grade=color,resumable=True)
         if (result["color_pipeline"]!=
                 "ocio_aces2_scene_linear_png16_unmastered" or
             result["pixel_bit_depth"]!=16):
@@ -699,6 +699,178 @@ class TrustedDesktopCameraBridge:
         return {**result,
                 "format":"nvp.native_ocio.approved_source_png16_package.v1",
                 "status":"UNMASTERED_ACES2_PNG16_AUDIO_PACKAGE",
+                "original_modified":False,"master_approved":False}
+
+    def data_av_cinema_readiness(self,request):
+        """Read-only native folder inspection: never make fake DCP deliveries.
+
+        The browser never specifies an OS path, validator binary, mastering
+        grant, codec executable or output directory. The native OS folder
+        selector gives access to one producer-owned derived package only.
+        """
+        self._native_window()
+        fields={"project_id","take_id","take_document_sha256","target"}
+        if type(request) is not dict or set(request)!=fields:
+            raise ValueError("Native cinema/HDR readiness requires exact source")
+        from webview import FileDialog
+        from backend.nvp_native_cinema_master_gate import (
+            assess_unmastered_source_package,TARGETS)
+        pid=request["project_id"];take=request["take_id"]
+        sha=request["take_document_sha256"]
+        _require_pid(pid);_id(take,"frozen original Digital Take");_sha(sha)
+        if request["target"] not in TARGETS:
+            raise ValueError("No verified native output target")
+        source=self.index.read_revision(pid,take,1)
+        if (source["kind"]!="take" or
+            source["document_sha256"]!=sha or
+            source["data"].get("frozen") is not True):
+            raise RuntimeError("Cinema readiness original Take is not frozen")
+        win=self._native_window()
+        if not callable(getattr(win,"create_file_dialog",None)):
+            raise PermissionError("Native folder selection for source inspection unavailable")
+        selected=win.create_file_dialog(FileDialog.FOLDER)
+        if not selected:
+            return {"format":"nvp.native_data_first.cinema_preflight.v1",
+                    "status":"CANCELLED","dcp_delivered":False,
+                    "source_original_modified":False,"ffmpeg_used":False}
+        if type(selected) not in (tuple,list) or len(selected)!=1:
+            raise PermissionError("Select exactly one native original-derived package")
+        path=Path(selected[0])
+        if path.is_symlink() or not path.is_dir():
+            raise PermissionError("Unsafe source-derived color package folder")
+        # The OS folder selection alone is not production provenance:
+        # require exact immutable FilmIndex producer receipt from the
+        # original approved color export, including original Take/grade.
+        name=path.name
+        if not name.startswith("NVP2D_"):
+            raise PermissionError("Native DCP review needs NVP-approved source derivative")
+        presentation_id=name[len("NVP2D_"):]
+        _id(presentation_id,"NVP-approved original source presentation")
+        proof=self.index.read_revision(
+            pid,"NativePackage_"+presentation_id,1)
+        manifest=path/"manifest.json"
+        if (manifest.is_symlink() or not manifest.is_file() or
+            manifest.stat().st_size>16*1024*1024):
+            raise RuntimeError("No authentic native produced color manifest")
+        digest=sha256(manifest.read_bytes()).hexdigest()
+        data=proof["data"]
+        if (proof["kind"]!="presentation" or
+            data.get("format")!="nvp.data_first.native_color_package.v1" or
+            data.get("manifest_sha256")!=digest or
+            data.get("output_directory_name")!=name or
+            data.get("source_take_id")!=take or
+            data.get("source_take_sha256")!=sha or
+            data.get("original_data_modified") is not False or
+            data.get("ffmpeg_used") is not False or
+            data.get("dcp_delivered") is not False or
+            {"object_id":take,"revision":1,"role":"source_take"}
+                not in proof["dependencies"] or
+            len(proof["dependencies"])!=2):
+            raise RuntimeError("Selected package lacks original native publisher authority")
+        original_grade=self.index.read_revision(
+            pid,data["color_grade_id"],data["color_grade_revision"])
+        if (original_grade["document_sha256"]!=data["color_grade_sha256"] or
+            {"object_id":data["color_grade_id"],
+             "revision":data["color_grade_revision"],"role":"style"}
+                not in proof["dependencies"]):
+            raise RuntimeError("Original NVP color decision receipt changed")
+        receipt=assess_unmastered_source_package(
+            path,target=request["target"],expected_take_sha256=sha)
+        if receipt["dcp_delivered"] is not False:
+            raise RuntimeError("Unvalidated theatrical package is forbidden")
+        return {**receipt,
+                "authenticated_native_presentation_sha256":
+                    proof["document_sha256"],
+                "authenticated_approved_source_derivative":True}
+
+    def data_av_export_native_acescg_exr(self,request):
+        """Produce approved source-linear ACEScg RGB32 OpenEXR and PCM.
+
+        Each full-float EXR is a separate, SHA-audited DERIVATIVE. Browser
+        JavaScript cannot choose an OS path or synthesize creator consent.
+        """
+        self._native_window()
+        required={"project_id","take_id","take_document_sha256",
+                  "presentation_id","listener_path","fps_num","fps_den",
+                  "linear_exr_grade"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Exact original source/grade/EXR scope required")
+        from backend.nvp_final_2d_native import (
+            Approved2DPackage,OUTPUT_CADENCES)
+        from backend.nvp_native_cpu_raster import NativeSourceRaster
+        from webview import FileDialog
+        pid=request["project_id"];take=request["take_id"]
+        sha=request["take_document_sha256"]
+        presentation=request["presentation_id"]
+        _require_pid(pid);_id(take,"original USD Take")
+        _id(presentation,"new scene-linear presentation identity")
+        _sha(sha)
+        if (type(request["fps_num"]) is not int or
+            type(request["fps_den"]) is not int or
+            (request["fps_num"],request["fps_den"]) not in OUTPUT_CADENCES):
+            raise ValueError("Unsupported native ACEScg output cadence")
+        listener=request["listener_path"]
+        if type(listener) is not str or not listener.startswith("/World/"):
+            raise ValueError("Original authored scene camera required")
+        color=request["linear_exr_grade"]
+        if type(color) is not dict or set(color)!={
+            "grade_id","revision","document_sha256","config_sha256"}:
+            raise ValueError("Native ACEScg source grade needs exact SHA")
+        for key in ("document_sha256","config_sha256"):
+            _sha(color[key])
+        old=self.index.read_revision(pid,take,1)
+        if old["kind"]!="take" or old["document_sha256"]!=sha:
+            raise RuntimeError("Original frozen Take changed before approval")
+        window=self._native_window()
+        if not callable(getattr(window,"create_file_dialog",None)):
+            raise PermissionError("Native OS OpenEXR output folder chooser absent")
+        picked=window.create_file_dialog(FileDialog.FOLDER)
+        if not picked:
+            return {"status":"CANCELLED","ffmpeg_used":False,
+                    "original_modified":False}
+        if type(picked) not in (tuple,list) or len(picked)!=1:
+            raise PermissionError("Select exactly one trusted native folder")
+        parent=Path(picked[0])
+        if parent.is_symlink() or not parent.is_dir():
+            raise PermissionError("Native export destination is not trusted")
+        def approve(scope):
+            if (scope.get("take_document_sha256")!=sha or
+                scope.get("presentation_id")!=presentation or
+                scope.get("listener_path")!=listener or
+                scope.get("color_pipeline")!=
+                    "ocio_scene_linear_acescg_exr32_unmastered" or
+                scope.get("color_grade_sha256")!=color["document_sha256"] or
+                scope.get("aces_config_sha256")!=color["config_sha256"] or
+                scope.get("original_data_immutable") is not True):
+                return False
+            return self._ask(
+                "Publish a NEW unmastered ACEScg FLOAT32 OpenEXR + PCM package?\n"
+                f"Original frozen USD Take SHA: {sha}\n"
+                f"Original creative grade SHA: {color['document_sha256']}\n"
+                f"Native OCIO config SHA: {color['config_sha256']}\n"
+                f"Film Time cadence: {scope['fps_num']}/{scope['fps_den']}\n"
+                f"Original authored USD camera: {listener}\n"
+                f"Frames: {scope['frame_count']}\n"
+                f"Native folder: {parent}\n"
+                "OpenEXR contains native full-float ACEScg scene-linear pixels, "
+                "not a completed DCP. No original data changes, FFmpeg, or "
+                "automatic picture down-conversion.")
+        primitive=NativeSourceRaster(self.index,pid)
+        result=Approved2DPackage(
+            self.index,native_creator_approval=approve,
+            render_png=primitive.render_png).export(
+                pid,take,sha,presentation,parent,
+                listener_path=listener,
+                fps_num=request["fps_num"],fps_den=request["fps_den"],
+                linear_exr_grade=color,resumable=True)
+        if (result["color_pipeline"]!=
+            "ocio_scene_linear_acescg_exr32_unmastered" or
+            result["pixel_bit_depth"]!=32 or
+            result["picture_format"]!="exr"):
+            raise RuntimeError("Native ACEScg interchange was not source-verified")
+        return {**result,
+                "format":"nvp.native_ocio.approved_acescg_exr32_package.v1",
+                "status":"UNMASTERED_SOURCE_ACESCG_EXR32_PCM_PACKAGE",
                 "original_modified":False,"master_approved":False}
 
     def data_av_export_native_avi(self,request):

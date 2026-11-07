@@ -46,6 +46,31 @@ function environment(){
       directory:'C:/Approved/ACESPresentation001',
       manifest_sha256:'f'.repeat(64),
     })),
+    data_av_export_native_acescg_exr:vi.fn(async()=>({
+      format:'nvp.native_ocio.approved_acescg_exr32_package.v1',
+      status:'UNMASTERED_SOURCE_ACESCG_EXR32_PCM_PACKAGE',
+      take_sha256:takeSHA,color_grade_sha256:gradeSHA,
+      color_pipeline:'ocio_scene_linear_acescg_exr32_unmastered',
+      picture_format:'exr',pixel_bit_depth:32,
+      ffmpeg_used:false,original_modified:false,master_approved:false,
+      directory:'C:/Approved/ACEScgScene001',
+      manifest_sha256:'f'.repeat(64),
+    })),
+    data_av_cinema_readiness:vi.fn(async()=>({
+      format:'nvp.native_data_first.cinema_preflight.v1',
+      status:'NO_CINEMA_OR_HDR_MASTER_AUTHORIZED',
+      target:'SMPTE_2K_FLAT_24',
+      source_take_sha256:takeSHA,
+      source_integrity_verified:true,
+      authenticated_approved_source_derivative:true,
+      authenticated_native_presentation_sha256:'e'.repeat(64),
+      dcp_delivered:false,hdr10_master_approved:false,
+      source_original_modified:false,ffmpeg_used:false,
+      required_master_color_and_delivery_capabilities:[
+        'native_SMPTE_2K_XYZ_12bit_JPEG2000_encoder',
+        'theater_server_and_projector_ingest_acceptance',
+      ],
+    })),
     data_av_native_aces_review:vi.fn(async()=>({
       format:'nvp.native_ocio.source_pinned_aces2_review.v1',
       status:'VERIFIED_SOURCE_UNMASTERED_ACES2_SDR_DERIVATIVE',
@@ -118,6 +143,48 @@ describe('DA-06D creator-approved OpenUSD source color in ACES2',()=>{
     expect(await screen.findByText(/Saved a new immutable derived package/))
       .toBeTruthy();
     expect(screen.getByText(/not a cinema master/i)).toBeTruthy();
+  });
+
+  it('exports separately approved original ACEScg FLOAT32 EXR+PCM source',async()=>{
+    const {bridge,api,action}=environment();
+    render(<NativeColorGradePanel
+      project={{id:pid}} api={api} action={action} busy={false}/>);
+    await screen.findByText('SceneTake');
+    fireEvent.click(screen.getByText('Reopen prior color decision'));
+    await screen.findByText(/Opened original color decision revision 1/);
+    fireEvent.click(screen.getByText(
+      'Approve source-linear OpenEXR and PCM package'));
+    await waitFor(()=>expect(
+      bridge.data_av_export_native_acescg_exr).toHaveBeenCalledWith({
+        project_id:pid,take_id:'SceneTake',
+        take_document_sha256:takeSHA,
+        presentation_id:'ACEScgScene001',
+        listener_path:'/World/Camera',
+        fps_num:24,fps_den:1,
+        linear_exr_grade:{
+          grade_id:'Color001',revision:1,
+          document_sha256:gradeSHA,config_sha256:configSHA,
+        },
+      }));
+    expect(await screen.findByText(/Verified new ACEScg EXR32 package/))
+      .toBeTruthy();
+  });
+
+  it('never advertises source-only cinema readiness as an approved DCP',async()=>{
+    const {bridge,api,action}=environment();
+    render(<NativeColorGradePanel
+      project={{id:pid}} api={api} action={action} busy={false}/>);
+    await screen.findByText('SceneTake');
+    fireEvent.click(screen.getByText('Inspect cinema/HDR readiness'));
+    await waitFor(()=>expect(
+      bridge.data_av_cinema_readiness).toHaveBeenCalledWith({
+        project_id:pid,take_id:'SceneTake',
+        take_document_sha256:takeSHA,
+        target:'SMPTE_2K_FLAT_24',
+      }));
+    expect(await screen.findByText((_,node)=>node?.tagName==='P' &&
+        node.textContent?.includes('not an approved cinema or HDR master'))).toBeTruthy();
+    expect(screen.getByText(/JPEG2000 encoder/)).toBeTruthy();
   });
 
   it('does not preview unsaved creative changes or imaginary Film Time',async()=>{
