@@ -80,6 +80,10 @@ class WO2NativeTextureTests(unittest.TestCase):
         packet=texture_transport(self.index,self.pid,desc)
         self.assertEqual(packet["sha256"],desc["sha256"])
         self.assertTrue(packet["png_base64"].startswith("iVBORw0KGgo"))
+        self.assertEqual(packet["gpu_reference_uv"],
+                         [[.125,.125],[.875,.125],[.125,.875],[.875,.875]])
+        self.assertEqual(len(packet["gpu_reference_rgb"]),4)
+        self.assertEqual(packet["gpu_reference_rgb"][0],[255,32,16])
         stage=Usd.Stage.Open(layer)
         tex=UsdShade.Shader(
             stage.GetPrimAtPath("/Asset/Material/Texture"))
