@@ -913,3 +913,18 @@ remains a separate pending gate. WO4 deferred/open.
 installed sustained playback or original 30m finished-film acceptance
 until actual GitHub test receipts and director review arrive. WO4
 production deferred/open; WO5 still open.
+
+## WO6 — Creator-guided AI production operations (opened 2026-11-07)
+
+**Scope established from approved end-state design, not a preexisting WO6 assignment.** New draft PR #93, branch \`nvp/wo6-ai-creator-guidance-20261107\`, stacked on draft WO5 PR #92. The creator directed continuing development while earlier WO5 installed/duration/physical cinema gates remain open. These gates carry forward rather than being misreported as complete.
+
+**WO6 goal:** Make NVP's source-immutable production data and native capabilities useful to a model-independent, human-supervised filmmaking assistant. A director should ask for revised scene/camera/actor/sound/Takes, see exact sources and likely affected film deliveries, review a proposed native task, authorize consequential operations, and inspect genuine worker receipts. Reuse existing Studio + FilmIndex, read-only AI-01/02/03 host, trusted native supervisor and creator-authority model. Avoid another planner database, unscoped HTTP actions, model self-permission, Docker, FFmpeg or an invented Lu v1.0/DLC transport ABI.
+
+**WO6-01 source-bound retake planning IMPLEMENTED, exact-head native verification pending:** \`backend/nvp_wo6_creator_plan.py\`, \`backend/nvp_ai_read_host.py\`, \`tests/test_nvp_wo6_creator_plan.py\`, \`.github/workflows/nvp-wo6-creator-ai.yml\`.
+- Exact FilmIndex presentation/edit/master/Take ID and revision; SHA re-open; bounded upstream dependency graph and exact frozen OpenUSD scene + temporal SHA. One-hop *indexed* impact only; partial/unindexed/FeatureJournal sources explicitly reported unknown; standalone flattened DCP is not a USD archive.
+- Adds semantic capability \`nvp.film.plan_retake.v1\` to original trusted read host. Current actor/project/turn must be authorized for every invocation, with SHA-bound request/result receipts. Unknown fields, cross-project reads, stale/missing references, malformed source Take hashes and model approval claims rejected. Source, Digital Take and published DCP are not changed, no media is rendered and no worker is admitted.
+- Native Windows/Linux Python3.11/3.13 tests + AI-01/02/03 regressions submitted to GitHub; **do not claim any WO6 passing verdict until the run completes successfully**.
+
+**Remaining sequential WO6 phases:** WO6-02 actual FeatureJournal DCP→reel→source Take resolver; WO6-03 task-aware film context + installed verified capability/license/tool readiness; WO6-04 bounded source-impact/approval preview; WO6-05 native scoped host execution+creator approvals (no AI execution by discovery); WO6-06 unified worker receipts/cancel/recovery; WO6-07 genuine installed NVP model-assisted end-to-end director workflow and novice/professional usability. Canonical plan: \`docs/NVP_WO6_AI_FIRST_FILM_ASSISTANT.md\`.
+
+**Independent source and release gates still OPEN:** WO5 actual continuous picture/mastered-sound in installed NVP.exe, original fully rendered/seen 43,200-frame 30-minute pilot, 60–90-minute real feature, >=3-hour epic and independent calibrated Bv2.1 theater ingest; WO4 production release acceptance deferred. WO6's read-only AI source plan does not satisfy these.
