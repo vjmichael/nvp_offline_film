@@ -470,6 +470,87 @@ class TrustedDesktopCameraBridge:
     def data_av_stop(self,session_id):
         return self._data_av().stop(session_id)
 
+
+    def data_av_export_native_avi(self,request):
+        """Two native approvals and OS folder choice; browser supplies no path.
+
+        The approved original is a 3D Take. PNG+PCM and the AVI are distinct,
+        immutable derivatives, never new capture sources or cinema masters.
+        """
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","take_id","take_document_sha256",
+                "presentation_id","listener_path","fps_num","fps_den"}:
+            raise ValueError("Native delivery needs exactly scoped source IDs")
+        from backend.nvp_final_2d_native import Approved2DPackage,OUTPUT_CADENCES
+        from backend.nvp_native_cpu_raster import NativeSourceRaster
+        from backend.nvp_native_avi_delivery import deliver_avi
+        from webview import FileDialog
+        pid=request["project_id"]
+        take=request["take_id"]
+        sha=request["take_document_sha256"]
+        presentation=request["presentation_id"]
+        _require_pid(pid)
+        _id(take,"original Digital Take")
+        _id(presentation,"derived presentation identity")
+        _sha(sha)
+        if (type(request["fps_num"]) is not int or
+                type(request["fps_den"]) is not int or
+                (request["fps_num"],request["fps_den"]) not in OUTPUT_CADENCES):
+            raise ValueError("Unapproved native output cadence")
+        listener=request["listener_path"]
+        if type(listener) is not str or not listener.startswith("/World/"):
+            raise ValueError("A native scene virtual microphone is required")
+        window=self._native_window()
+        if not callable(getattr(window,"create_file_dialog",None)):
+            raise PermissionError("Native OS destination picker is unavailable")
+        chosen=window.create_file_dialog(FileDialog.FOLDER)
+        if not chosen:
+            return {"status":"CANCELLED","ffmpeg_used":False,
+                    "original_modified":False}
+        if type(chosen) not in (tuple,list) or len(chosen)!=1:
+            raise PermissionError("Choose one native output folder")
+        parent=Path(chosen[0])
+        if parent.is_symlink() or not parent.is_dir():
+            raise PermissionError("Native output folder is no longer trusted")
+        source=self.index.read_revision(pid,take,1)
+        if source["document_sha256"]!=sha:
+            raise RuntimeError("Selected original Digital Take changed")
+        def approve_package(scope):
+            if (scope.get("take_document_sha256")!=sha or
+                    scope.get("presentation_id")!=presentation or
+                    scope.get("listener_path")!=listener or
+                    scope.get("original_data_immutable") is not True):
+                return False
+            return self._ask(
+                "Approve derived native 2D picture and PCM sound?\n"
+                f"Original Take: {take}\nSHA-256: {sha}\n"
+                f"Presentation: {presentation}\nListener: {listener}\n"
+                f"Output folder: {parent}\n"
+                "This is a limited native 640×360 procedural OpenUSD raster,\n"
+                "not a cinema-quality final master. Sources remain immutable.")
+        render=NativeSourceRaster(self.index,pid)
+        package=Approved2DPackage(
+            self.index,native_creator_approval=approve_package,
+            render_png=render.render_png).export(
+                pid,take,sha,presentation,parent,listener_path=listener,
+                fps_num=request["fps_num"],fps_den=request["fps_den"])
+        def approve_movie(scope):
+            if scope.get("original_take_sha256")!=sha or (
+                    scope.get("source_mutated") is not False):
+                return False
+            return self._ask(
+                "Publish a new native uncompressed AVI + PCM movie?\n"
+                f"Original Take SHA-256: {sha}\n"
+                f"Approved derived image/audio manifest: {scope['manifest_sha256']}\n"
+                f"File: {scope['output_name']}\n"
+                "No FFmpeg or overwrite. This AVI is not a mastered DCP.")
+        result=deliver_avi(
+            package["directory"],parent/("NVP2D_"+presentation+".avi"),
+            expected_take_sha256=sha,approve_delivery=approve_movie)
+        return {**result,"picture_audio_package":package["directory"],
+                "original_modified":False,"master_approved":False}
+
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
 
