@@ -22,7 +22,7 @@ from backend.nvp_wo3_atomic_publish import (
     atomic_publish_directory,_fsync_directory)
 from backend.nvp_wo3_native_codecs import digest_file
 from backend.nvp_wo4_file_dcp import _uuid,_memory_digest
-from backend.nvp_wo4_resource_budget import MAX_REELS
+from backend.nvp_wo4_resource_budget import MAX_REELS,require_stage_space
 from backend.nvp_production_journal import TICKS_PER_SECOND
 from backend.nvp_wo3_j2k_audit import PROFILES
 
@@ -183,6 +183,11 @@ def publish_multireel_dcp(*,reels,ids,title,profile,output_root,check_cancel):
     if not root.is_absolute() or root.is_symlink() or not root.is_dir():
         raise PermissionError("Host-selected feature output directory required")
     root=root.resolve(strict=True)
+    # The approved source MXF sizes bound the data copied into one feature
+    # package. Require storage headroom before creating any stage output.
+    require_stage_space(root,sum(part[kind]["file_bytes"]
+        for part in reels for kind in ("picture","sound"))+
+        (len(reels)+2)*1024*1024)
     stage=root/(".nvp-feature-stage-"+ids["cpl"])
     target=root/("DCP_FEATURE_"+ids["cpl"])
     if (stage.exists() or stage.is_symlink() or
