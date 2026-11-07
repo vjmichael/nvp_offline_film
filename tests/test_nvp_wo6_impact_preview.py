@@ -16,6 +16,7 @@ import unittest
 from backend.nvp_ai_read_host import NativeAiReadHost, TrustedReadScope
 from backend.nvp_bible_context import canon_snapshot
 from backend.nvp_film_index import FilmIndex
+from backend.nvp_film_source_lifecycle import FilmSourceLifecycle
 from backend.nvp_scene_mind import SceneMind
 from backend.nvp_studio import Studio
 from backend.nvp_story_bible import StoryBible
@@ -193,6 +194,24 @@ class OriginalSourceImpactAndApprovedBibleTests(unittest.TestCase):
         self.assertEqual(
             self.index.read_revision(self.pid,"RelayScene",1)[
                 "document_sha256"],self.scene["document_sha256"])
+
+    def test_retired_original_source_reports_blocked_new_work_without_erasing_history(self):
+        lifecycle=FilmSourceLifecycle(
+            self.index,verify_creator_action=lambda event,scope:True)
+        lifecycle.retire(
+            self.pid,"RelayScene",reason="Creator archived old scene",
+            creator_event="CI_CREATOR_RETIRE",expected_head_revision=1)
+        old=self.preview()
+        self.assertEqual(old["status"],
+                         "RETIRED_SOURCE_NOT_ADMISSIBLE_FOR_NEW_WORK")
+        self.assertTrue(old["proposal_source"]["retired_or_purged"])
+        self.assertEqual(old["proposal_source"]["lifecycle_state"],"RETIRED")
+        self.assertIn(
+            "Original source is retired or purged; restore through native creator policy first",
+            old["approval_blockers"])
+        self.assertEqual(
+            self.index.read_revision(self.pid,"FrozenRelayTake",1)[
+                "document_sha256"],self.take["document_sha256"])
 
     def test_bounded_graph_truncation_and_unindexed_custody_block(self):
         result=self.preview(max_nodes=2)
