@@ -16,6 +16,7 @@ from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,digest_file
 from backend.nvp_wo3_j2k_audit import PROFILES,inspect_j2k_header,MAX_CODESTREAM
 from backend.nvp_wo3_mxf_native import INFO_RE,_verify_info
 from backend.nvp_wo3_atomic_publish import _fsync_directory
+from backend.nvp_wo4_resource_budget import require_stage_space
 
 BLOCK=1024*1024
 FRAME_RE=re.compile(r"[0-9]{6}\.j2c\Z")
@@ -79,6 +80,8 @@ def encode_disk_xyz12(codec,*,profile,source_path,source_sha256,
             codec.product!="OpenJPEG-opj_compress"):
         raise PermissionError("Only SHA-reviewed OpenJPEG encoder allowed")
     root=_root(private_work)
+    width,height,_=PROFILES[profile]
+    require_stage_space(root,width*height*6+MAX_CODESTREAM+1024*1024)
     inp=root/"frame.ppm"
     output=root/"frame.j2c"
     if output.exists() or output.is_symlink():
@@ -151,6 +154,9 @@ def wrap_disk_j2k_picture(wrap,info,*,frames_dir,stage_dir,
         if path.is_symlink() or path.stat().st_size>MAX_CODESTREAM:
             raise PermissionError("Unsafe native picture codestream")
         # SQLite checkpoint hashes are checked by the supervisor before this call.
+    require_stage_space(stage,
+        sum((frames/name).stat().st_size for name in expected)
+        +frame_count*1024*1024)
     out=stage/"picture.mxf"
     if out.exists() or out.is_symlink():
         raise FileExistsError("Uncommitted picture MXF exists; review before resume")
