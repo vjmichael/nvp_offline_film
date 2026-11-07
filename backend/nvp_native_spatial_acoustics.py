@@ -32,6 +32,11 @@ def _right(matrix):
     return tuple(x/size for x in direction)
 
 
+def right_axis(listener_matrix):
+    """Reusable source-local right direction from the original USD matrix."""
+    return _right(listener_matrix)
+
+
 def spatial_gains(emitter,listener,listener_matrix,gain,obstruction=1.0):
     """Equal-power stereo panning in the listener's *local* right axis."""
     emitter=_xyz(emitter)
@@ -43,7 +48,14 @@ def spatial_gains(emitter,listener,listener_matrix,gain,obstruction=1.0):
         raise ValueError("Untrusted native acoustic gain")
     vec=tuple(e-l for e,l in zip(emitter,listener))
     distance=math.sqrt(sum(x*x for x in vec))
-    right=_right(listener_matrix)
+    if (isinstance(listener_matrix,(tuple,list)) and
+            len(listener_matrix)==3):
+        direction=_xyz(listener_matrix)
+        length=math.sqrt(sum(v*v for v in direction))
+        if length<1e-9:raise ValueError("Degenerate USD local-right axis")
+        right=tuple(v/length for v in direction)
+    else:
+        right=_right(listener_matrix)
     # Local orientation, not global world X. No Doppler or HRTF claim.
     balance=max(-1.,min(1.,sum(v*r for v,r in zip(vec,right))/
                                max(distance,1.0)))
