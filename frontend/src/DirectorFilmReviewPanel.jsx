@@ -323,6 +323,7 @@ export default function DirectorFilmReviewPanel({projectId, nativeBridge=null}){
             key={featureId+':'+previewReel.reel_number}
             projectId={projectId}
             initialTakeId={previewReel.take_id}
+            initialTakeSha256={previewReel.take_document_sha256}
             initialSourceSample={Math.floor(previewReel.take_start_tick/147000)}/>
         </>}
       </div>}
