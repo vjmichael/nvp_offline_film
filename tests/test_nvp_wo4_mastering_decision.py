@@ -40,7 +40,9 @@ class WO4SourceCustody(unittest.TestCase):
                     decision_id="ApprovedCinemaMaster",
                     approve=lambda _:True)
         fields.update(change)
-        return register_mastering_decision(**fields)
+        with patch("backend.nvp_wo4_mastering_decision.PROFILES",
+                   {"2K_FLAT_24":(2,1,24)}):
+            return register_mastering_decision(**fields)
 
     def test_creator_decision_is_new_immutable_take_bound_presentation(self):
         result=self.authorize()
@@ -52,6 +54,26 @@ class WO4SourceCustody(unittest.TestCase):
         self.assertFalse(saved["data"]["production_master_accepted"])
         self.assertEqual(self.f.index.read_revision(
             self.f.pid,"FrozenFixture",1)["document_sha256"],self.f.sha)
+
+    def test_distinct_ordered_motion_frames_produce_exact_film_time_manifest(self):
+        second=dict(self.picture,xyz12=b"\\x00\\x01\\x00\\x02\\x00\\x03"*2)
+        second["xyz12_sha256"]=sha256(second["xyz12"]).hexdigest()
+        third=dict(self.picture,xyz12=b"\\x00\\x03\\x00\\x02\\x00\\x01"*2)
+        third["xyz12_sha256"]=sha256(third["xyz12"]).hexdigest()
+        ordered=[self.picture,second,third]
+        self.authorize(ordered_pictures=ordered,start_tick=588000000)
+        record=self.f.index.read_revision(self.f.pid,"ApprovedCinemaMaster",1)["data"]
+        self.assertEqual(record["ordered_picture_sha256"],
+                         [x["xyz12_sha256"] for x in ordered])
+        self.assertEqual(record["film_start_tick"],588000000)
+        self.assertEqual(record["picture_tick_step"],294000000)
+        self.assertEqual(record["sound_frame_count"],3)
+
+    def test_distinct_motion_frame_tampering_fails_before_consent(self):
+        other=dict(self.picture,xyz12=b"\\x00\\x01\\x00\\x00\\x00\\x00"*2)
+        other["xyz12_sha256"]="0"*64
+        with self.assertRaises(PermissionError):
+            self.authorize(ordered_pictures=[self.picture,other,self.picture])
 
     def test_denied_decision_never_registers_presentation(self):
         result=self.authorize(approve=lambda _:False)
