@@ -86,10 +86,10 @@ class NativeSceneSoundCapture:
         # Original mono source signal is stored independently, not a room mix.
         # Exact per-emitter timing and the scene geometry remain authoritative.
         for entry in recordings:
-            if type(entry) is not dict or set(entry)!={
-                "event_id","event_kind","subject_id","source_id",
-                "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
-            }:
+            required={"event_id","event_kind","subject_id","source_id",
+                      "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"}
+            if (type(entry) is not dict or
+                set(entry) not in (required,required|{"source_sync","clock_evidence"})):
                 raise ValueError("Recorded sound requires typed source/evidence/Film Time")
             eid=_id(entry["event_id"],"recorded sound event")
             if eid in seen:
@@ -116,9 +116,34 @@ class NativeSceneSoundCapture:
             source_record=self.index.read_revision(
                 project_id,audio_id,receipt["revision"])
             available=source_record["data"]["sample_count"]
-            required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
-            if available<required:
-                raise RuntimeError("Actual recorded source contains fewer samples than its event")
+            synchronized=entry.get("source_sync")
+            evidence=entry.get("clock_evidence")
+            if synchronized is not None:
+                from backend.nvp_independent_device_sync import verified_source_map,FORMAT as CF
+                verified_source_map(
+                    synchronized,source_sample_count=available,
+                    event_start=start,event_end=end)
+                if type(evidence) is not dict or set(evidence)!={
+                        "object_id","document_sha256"}:
+                    raise RuntimeError("Independent device timing evidence is not bound")
+                proof=self.index.read_revision(
+                    project_id,evidence["object_id"],1)
+                if (proof["document_sha256"]!=evidence["document_sha256"] or
+                    proof["kind"]!="audio" or
+                    proof["data"].get("format")!=CF or
+                    proof["data"].get("hardware_genlocked") is not False):
+                    raise RuntimeError("Independent device clock proof is stale")
+                if not any(
+                    x["device_id"]==synchronized["device_id"] and
+                    x["source_clock_model_sha256"]==
+                    synchronized["source_clock_model_sha256"]
+                    for x in proof["data"]["sample_maps"]):
+                    raise RuntimeError("Source timing map differs from sealed native proof")
+            else:
+                required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
+                if available<required:
+                    raise RuntimeError(
+                        "Actual recorded source contains fewer samples than its event")
             events.append({
                 "event_id":eid,
                 "event_kind":entry["event_kind"],
@@ -131,7 +156,11 @@ class NativeSceneSoundCapture:
                            "gain":float(gain),
                            "source_sample_rate":SAMPLE_RATE,
                            "original_recording":True,
-                           "acoustic_mix_frozen":False}})
+                           "acoustic_mix_frozen":False,
+                           **({"source_sync":synchronized,
+                               "clock_evidence_id":evidence["object_id"],
+                               "clock_evidence_sha256":evidence["document_sha256"]}
+                              if synchronized is not None else {})}})
         combined=self.timeline.publish(
             project_id,sound_timeline_id,events,
             duration_tick=duration,expected_revision=0)
