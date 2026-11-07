@@ -407,6 +407,43 @@ class CinemaDeliveryJournal(CinemaJournal):
                 "production_dcp_accepted":False,
                 "independent_dci_validator_passed":False}
 
+    def request_delivery_cancel(self,job_id,authorize):
+        """Host-authorized cancellation before sound/DCP publication."""
+        if not callable(authorize):
+            raise PermissionError("Trusted native cancellation confirmation required")
+        d=self.delivery(job_id)
+        if d["phase"] not in ("SOUND_PENDING","SOUND_RUNNING",
+                              "SOUND_READY","PACKAGE_RUNNING"):
+            raise PermissionError("Published or indexed package cannot be cancelled")
+        status=self.status(job_id)
+        scope={"operation":"nvp.supervisor.cancel_file_dcp_delivery.v1",
+               "job_id":job_id,"manifest_sha256":status["manifest_sha256"],
+               "cpl_uuid":d["cpl_uuid"],"delivery_phase":d["phase"]}
+        if authorize(deepcopy(scope)) is not True:
+            return {"status":"DENIED","job_id":job_id}
+        with self._tx() as db:
+            current=db.execute("""SELECT d.phase,j.manifest_sha256,
+                j.cancel_requested FROM production_cinema_delivery d
+                JOIN production_jobs j ON j.job_id=d.job_id
+                WHERE d.job_id=?""",(job_id,)).fetchone()
+            if (current is None or current["phase"]!=scope["delivery_phase"]
+                    or current["manifest_sha256"]!=scope["manifest_sha256"]
+                    or current["cancel_requested"]):
+                raise PermissionError("Delivery changed while confirming cancellation")
+            db.execute("UPDATE production_jobs SET cancel_requested=1,updated_at=? WHERE job_id=?",
+                       (_now(),job_id))
+            self._event(db,job_id,"DCP_CANCEL_REQUESTED","Creator-authorized")
+        return {"status":"CANCEL_REQUESTED","job_id":job_id}
+
+    def next_pending_index(self):
+        with self._read() as db:
+            row=db.execute("""SELECT d.job_id FROM production_cinema_delivery d
+                    JOIN production_jobs j ON j.job_id=d.job_id
+                    WHERE d.phase='PUBLISHED_PENDING_INDEX'
+                      AND j.state='DCP_PUBLISHED' AND j.cancel_requested=0
+                    ORDER BY j.created_at LIMIT 1""").fetchone()
+            return row["job_id"] if row is not None else None
+
     def delivery_reconcile(self):
         """Retain interrupted stages; auto-resume only explicit durable index gap."""
         records=[]
