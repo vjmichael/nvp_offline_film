@@ -171,8 +171,14 @@ jobs:
               (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash) {
             throw 'Installed NVP executable differs from built native source'
           }
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-installed-data-av-failure.txt'
+          Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
           & $installed '--smoke-data-av'
-          if ($LASTEXITCODE -ne 0) { throw 'Installed native Digital Take and sound playback failed' }
+          $smokeExit=$LASTEXITCODE
+          if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
+            Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output
+          }
+          if ($smokeExit -ne 0) { throw "Installed native Digital Take and sound playback failed (exit $smokeExit)" }
           & $installed '--smoke-window'
           if ($LASTEXITCODE -ne 0) { throw 'Installed WebView2 data-first sound UI failed' }
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
