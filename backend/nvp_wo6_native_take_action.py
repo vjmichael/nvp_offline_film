@@ -302,8 +302,8 @@ class NativeTakeActionHost:
                 raise PermissionError("Creator or native grant revoked before acceptance")
             self.ledger.update(task_id, "verifying_output",
                                "Reopened original scene, timed events and frozen Take")
-            self.ledger.finish(task_id, "SUCCEEDED",
-                               "New immutable source Take verified; film not rendered")
+            self.recovery.finish_verified(
+                task_id, detail="New immutable source Take verified; film not rendered")
             return {"task_id": task_id, "state": "SUCCEEDED",
                     "new_take_id": spec["take_id"],
                     "take_document_sha256": verified["take_document_sha256"],
