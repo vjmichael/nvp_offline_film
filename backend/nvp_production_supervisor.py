@@ -415,6 +415,12 @@ class ProductionSupervisor:
                 if delivery is not None:
                     return self._run_delivery(delivery)
             if isinstance(self.journal,FeatureJournal):
+                with self.journal._read() as db:
+                    cancelled=[r["feature_id"] for r in db.execute(
+                        "SELECT feature_id FROM production_features WHERE state='QUEUED' AND cancel_requested=1")]
+                if cancelled:
+                    return self.journal.finalize_feature_cancel(
+                        cancelled[0],self.owner)
                 feature_index=self.journal.next_feature_index()
                 if feature_index is not None:
                     return self._run_feature_index(feature_index)
