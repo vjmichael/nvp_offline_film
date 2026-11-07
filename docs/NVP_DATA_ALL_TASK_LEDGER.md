@@ -878,3 +878,38 @@ DCP Bv2.1 expert/projection review: **OPEN**, not production accepted.
 Old preexisting Native MaterialX source scalar failure patched with
 strict exact-map source verification; installed WebView2 reenactment
 remains a separate pending gate. WO4 deferred/open.
+
+### WO5 installed native theatrical playback and original thirty-minute source (2026-11-07)
+
+**Draft PR #92**, stacked on #91. Engineering work:
+- Pinned-source **real Windows OpenJPEG/CineCert** build, verified complete
+  BSD license notices and exact release SHA manifest baked into installed
+  NVP.exe; binary self-pinning from runtime/browser forbidden.
+- Actual NSIS install + embedded WebView2 native codec capability test,
+  real published two-reel SMPTE picture and mastered PCM24 decoding from
+  installed NVP.exe, and a measured >=24fps throughput gate that fails
+  closed when the native codec is too slow. Source fixture contains six
+  distinct synthetic test patterns and must NOT be reported as a film.
+- **Original 30m source pilot** Last Light at Relay Nine: six-act creative
+  experimental OpenUSD scene, 60 original timed camera cuts, moving
+  3D actors, six original PCM recorded motifs, a persisted/frozen
+  full-1,800s Digital Take and 6x7,200-frame reel plan, plus source
+  scene-linear visual checkpoints across all acts. Verify the original
+  Take/scene SHAs remain immutable if a new scene revision and new Take
+  are recorded from the surviving original data.
+- The actual rendered final 43,200 cinema-resolution frames, 30-minute
+  mastered sound and finished DCP, uninterrupted native Windows physical
+  audio/display playback, user/director creative review, 60–90min real
+  feature, >=3h epic and independent DCI/SMPTE projector validation:
+  **NOT IMPLEMENTED OR ACCEPTED by these source/codec tests**.
+- NVP project provenance can navigate from published DCP metadata to
+  FilmIndex assembled reels, mastering decision, original Take and exact
+  native OpenUSD scene source. New Takes must have a new identity; DCP
+  essence alone cannot reconstruct editable scenes/camera/actor actions.
+  Keep this in project/archival metadata rather than proprietary DCP
+  extensions. Original files stay immutable, no FFmpeg.
+
+**Status:** implementation and native tests submitted. Do not close
+installed sustained playback or original 30m finished-film acceptance
+until actual GitHub test receipts and director review arrive. WO4
+production deferred/open; WO5 still open.
