@@ -127,7 +127,8 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
       data_av_audio_window:vi.fn(),data_av_stop:vi.fn(),
     };
     render(<DataFirstAVPanel projectId={pid} nativeBridge={bridge}/>);
-    expect(await screen.findByText(/FailedTake/)).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent)
+      .toMatch(/FailedTake/);
     fireEvent.click(screen.getByText('Approve recovery of original sound only'));
     await waitFor(()=>expect(
       bridge.data_av_live_recover_original).toHaveBeenCalledWith({
