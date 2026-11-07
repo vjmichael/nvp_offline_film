@@ -2,8 +2,9 @@
 import React from 'react';
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {render,screen,cleanup,fireEvent,waitFor} from '@testing-library/react';
-import FinishedFilmPlaybackPanel,{checkFinishedFrame}
-  from './FinishedFilmPlaybackPanel.jsx';
+import FinishedFilmPlaybackPanel,{
+  checkFinishedFrame,requireAheadOfAudioClock,requireContinuousPicture
+} from './FinishedFilmPlaybackPanel.jsx';
 
 const FORMAT='nvp.wo5.finished_dcp_pcm24_picture_review.v1';
 const pid='a'.repeat(32),fid='OriginalFilmFeature01';
@@ -20,6 +21,16 @@ const packet=n=>({
 afterEach(()=>{cleanup();delete window.pywebview;vi.restoreAllMocks();});
 
 describe('WO5 finished published picture/mastered sound playback',()=>{
+  it('never schedules already-expired audio or counts hidden skipped frames as watched',()=>{
+    expect(requireAheadOfAudioClock(10.2,10.05)).toBe(10.2);
+    expect(()=>requireAheadOfAudioClock(10.2,10.21))
+      .toThrow(/missed its exact presentation deadline/);
+    expect(()=>requireAheadOfAudioClock(10.2,10.198))
+      .toThrow(/missed its exact presentation deadline/);
+    expect(requireContinuousPicture(23,24)).toBe(24);
+    expect(()=>requireContinuousPicture(23,25))
+      .toThrow(/skipped a required presentation frame/);
+  });
   it('rejects stale audio indices, missing picture, forged production approval',()=>{
     expect(checkFinishedFrame(packet(12),12).frame_index).toBe(12);
     for(const forged of [
