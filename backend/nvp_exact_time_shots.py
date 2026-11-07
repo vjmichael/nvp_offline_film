@@ -137,10 +137,12 @@ class ExactTimeShotSequence:
                 ev["source_revision"]!=srev or
                 ev["source_document_sha256"]!=source["document_sha256"] or
                 data.get("format")!=FORMAT or
+                data.get("observation_pattern") not in PATTERNS or
                 data.get("usd_prim_path") not in cameras or
                 data.get("world_duplicated") is not False or
                 data.get("picture_frames_recorded") is not False or
-                ev["start_tick"]<last or ev["end_tick"]<=ev["start_tick"]):
+                ev["start_tick"]<last or ev["end_tick"]<=ev["start_tick"] or
+                ev["end_tick"]>doc["duration_tick"]):
                 raise RuntimeError("Old frame-scoped/cross-scene timeline is not native")
             last=ev["end_tick"]
             shots.append({
