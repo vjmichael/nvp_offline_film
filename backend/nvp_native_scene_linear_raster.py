@@ -326,7 +326,8 @@ class NativeSceneLinearRaster:
             visual=visual_state(
                 self.index,project_id,snapshot,
                 scene_id=original["scene_id"],
-                scene_revision=original["scene_revision"])
+                scene_revision=original["scene_revision"],
+                include_texture_transport=False)
             view,focal=_camera(snapshot,camera_path)
             eye=next(_array3(o["world_translation"])
                      for o in snapshot["objects"] if o["path"]==camera_path)
