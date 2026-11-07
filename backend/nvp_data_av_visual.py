@@ -69,11 +69,14 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             size=skin["size_m"]
             mesh_points=skin["mesh_points"]
             mesh_triangles=skin["mesh_triangles"]
-            mesh_points_total+=len(mesh_points)
-            mesh_triangles_total+=len(mesh_triangles)
-            if (mesh_points_total>MAX_MESH_POINTS_TOTAL or
-                    mesh_triangles_total>MAX_MESH_TRIANGLES_TOTAL):
-                raise RuntimeError("Live source character mesh budget exceeded")
+            if shape=="skinned_mesh":
+                mesh_points_total+=len(mesh_points)
+                mesh_triangles_total+=len(mesh_triangles)
+                if (mesh_points_total>MAX_MESH_POINTS_TOTAL or
+                        mesh_triangles_total>MAX_MESH_TRIANGLES_TOTAL):
+                    raise RuntimeError("Live source character mesh budget exceeded")
+            elif shape!="missing_rig_geometry":
+                raise RuntimeError("Unknown original rigged actor presentation")
         matrix=obj["world_matrix"]
         if (type(matrix) is not list or len(matrix)!=4 or
             any(type(row) is not list or len(row)!=4 for row in matrix)):
@@ -89,9 +92,14 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             "gizmo_only":binding is None and skin is None,
             "mesh_points":mesh_points,
             "mesh_triangles":mesh_triangles,
-            "source_skinning":bool(skin),
+            "source_skinning":shape=="skinned_mesh",
+            "source_rigged_actor":skin is not None,
             "source_skinning_tick":skin["source_skinning_tick"] if skin else None,
             "source_color_rgb":skin["source_color_rgb"] if skin else None,
+            "native_geometry_status":(
+                "MISSING_BOUND_USD_MESH" if shape=="missing_rig_geometry"
+                else "VERIFIED_SKINNED" if shape=="skinned_mesh"
+                else "VERIFIED_STATIC" if binding else "UNMESHED_SCENE_MARKER"),
             "facial_animation_evaluated":False,
         })
     return {"format":FORMAT,
