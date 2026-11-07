@@ -13,7 +13,7 @@ from backend.nvp_native_cinema_master_gate import (
 class NativeCinemaReadinessTests(unittest.TestCase):
     def setUp(self):
         fixture.NativeDataFirstOutputTests.setUp(self)
-        self.take_sha=self.create()
+        self.take_sha=fixture.NativeDataFirstOutputTests.create(self)
         self.result=self.exporter.export(
             self.pid,"OutputTake",self.take_sha,
             "CinemaReadiness",self.out,
