@@ -81,6 +81,43 @@ class TrustedWO2DesktopTextureTests(unittest.TestCase):
                 "asset_document_sha256":row["asset_document_sha256"],
                 "texture_sha256":digest})
 
+    def test_native_creator_can_publish_each_typed_channel_without_mutating_prior(self):
+        first=self.bridge.data_av_import_original_texture(self.pid)
+        row=next(x for x in self.bridge.data_av_texture_mesh_catalog(
+            self.pid)["assets"] if x["asset_id"]=="mesh_for_texture")
+        source_sha=row["asset_document_sha256"]
+        receipt=self.bridge.data_av_apply_original_texture({
+            "project_id":self.pid,"asset_id":"mesh_for_texture",
+            "asset_revision":1,"asset_document_sha256":source_sha,
+            "texture_sha256":first["texture"]["sha256"],
+            "channel":"normal"})
+        self.assertEqual(receipt["status"],"NEW_SOURCE_REVISION")
+        self.assertEqual(receipt["source_material_channel"],"normal")
+        old=self.assets.open(self.pid,"mesh_for_texture",1)[0]
+        new=self.assets.open(self.pid,"mesh_for_texture",2)[0]
+        self.assertNotIn("pbr_maps",old["data"]["preview_material"])
+        self.assertEqual(
+            new["data"]["preview_material"]["pbr_maps"]["normal"]["sha256"],
+            first["texture"]["sha256"])
+        self.assertEqual(old["document_sha256"],source_sha)
+        from backend.nvp_native_usd_texture import publish_texture
+        gray=Image.new("RGB",(2,2),(50,50,50))
+        out=BytesIO()
+        gray.save(out,format="PNG")
+        scalar=publish_texture(self.index,self.pid,out.getvalue())
+        follow=self.bridge.data_av_apply_original_texture({
+            "project_id":self.pid,"asset_id":"mesh_for_texture",
+            "asset_revision":2,
+            "asset_document_sha256":new["document_sha256"],
+            "texture_sha256":scalar["sha256"],
+            "channel":"roughness"})
+        self.assertEqual(follow["asset_revision"],3)
+        final=self.assets.open(self.pid,"mesh_for_texture",3)[0]["data"][
+            "preview_material"]["pbr_maps"]
+        self.assertEqual(set(final),{"normal","roughness"})
+        self.assertEqual(final["normal"]["sha256"],
+                         first["texture"]["sha256"])
+
     def test_native_denial_does_not_publish_revision(self):
         imported=self.bridge.data_av_import_original_texture(self.pid)
         self.window.approve=False
