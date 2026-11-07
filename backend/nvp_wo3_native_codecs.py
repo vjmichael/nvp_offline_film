@@ -19,7 +19,7 @@ from backend.nvp_wo3_j2k_audit import inspect_j2k_header,PROFILES
 
 FORMAT="nvp.wo3.native_openjpeg_frame.v1"
 MAX_PROCESS_SECONDS=180
-MAX_FRAME_BYTES=2048*1080*6
+MAX_FRAME_BYTES=4096*2160*6
 
 
 def digest_file(path):
@@ -113,8 +113,10 @@ def encode_xyz12_frame(codec:ApprovedCodecBinary,xyz12,*,profile,
         inp=root/"approved_xyz.ppm"
         out=root/"cinema.j2k"
         inp.write_bytes(ppm)
-        args=["-i",inp.name,"-o",out.name,
-              "-cinema2K","24","-p","CPRL","-mct","0","-I"]
+        cinema_flags=(["-cinema4K"] if profile.startswith("4K_")
+                      else ["-cinema2K","24"])
+        args=["-i",inp.name,"-o",out.name,*cinema_flags,
+              "-p","CPRL","-mct","0","-I"]
         result=codec.run(args,cwd=root)
         if out.is_symlink() or not out.is_file() or (
             not 80<=out.stat().st_size<=16*1024*1024):
