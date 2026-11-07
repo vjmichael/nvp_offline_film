@@ -7,6 +7,7 @@ The worker reuses first-party DA-01 and DA-06 implementations.
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 from pathlib import Path
 import secrets
@@ -25,6 +26,9 @@ from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_resource_supervisor import wait_guarded, NativeCancelRequested
 from backend.nvp_worker_containment import launch_contained
 from backend.nvp_worker_host_lease import exclusive_worker_host
+from backend.nvp_wo6_kernel_attestation import (
+    persist_windows_job_identity, immutable_job_name,
+    attest_windows_job_stopped)
 from backend.nvp_wo6_impact_preview import preview_source_impact, _source_lifecycle_state
 from backend.nvp_wo6_native_take_action import digest_file, _exact_source
 from backend.nvp_wo6_recovery import WO6DurableRecovery
@@ -251,6 +255,11 @@ class NativeFilmDecisionHost:
                 stream.write(raw)
                 stream.flush()
                 __import__("os").fsync(stream.fileno())
+            if os.name=="nt":
+                persist_windows_job_identity(
+                    folder,task_id=task,
+                    spec_sha256=hashlib.sha256(canonical_bytes(spec)).hexdigest(),
+                    owner=self.owner)
             self.binding.enqueue(
                 AdmissionRequest(task, "compositing",
                                  "Approve source-bound native film decision", ram_mb),
@@ -291,7 +300,10 @@ class NativeFilmDecisionHost:
                      "--expected-sha",hashlib.sha256(raw).hexdigest(),
                      "--ledger-db",str(self.ledger.db_path),
                      "--owner-key",self.owner]),
-                    cwd=str(folder),stdout=out,stderr=err,memory_mb=spec["ram_mb"])
+                    cwd=str(folder),stdout=out,stderr=err,
+                    memory_mb=spec["ram_mb"],
+                    windows_job_name=(
+                        immutable_job_name(task) if os.name=="nt" else None))
                 self.ledger.update(task,"building_scene",
                                    "Contained native Film Time or color decision writer")
                 def cancel():
