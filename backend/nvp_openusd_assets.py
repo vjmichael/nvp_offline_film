@@ -27,7 +27,8 @@ class OpenUSDAssetRegistry:
 
     def publish(self, project_id, asset_id, *, shape, size_m,
                 expected_revision=0, points=None, triangles=None,
-                preview_material=None, mesh_uvs=None, texture_png=None):
+                preview_material=None, mesh_uvs=None, face_uvs=None,
+                texture_png=None):
         _require_pid(project_id)
         _id(asset_id, "reusable asset ID")
         if shape not in KINDS:
@@ -53,8 +54,20 @@ class OpenUSDAssetRegistry:
                    any(type(i) is not int or i<0 or i>=len(points)
                        for i in t) or len(set(t))!=3 for t in triangles):
                 raise ValueError("Mesh needs nondegenerate triangle indices")
-        elif points is not None or triangles is not None or mesh_uvs is not None:
+        elif points is not None or triangles is not None or mesh_uvs is not None or face_uvs is not None:
             raise ValueError("Procedural cube/sphere does not accept mesh data")
+        if mesh_uvs is not None and face_uvs is not None:
+            raise ValueError("USD st UV interpolation must be unambiguous")
+        if face_uvs is not None:
+            if (shape!="mesh" or type(face_uvs) is not list or
+                len(face_uvs)!=len(triangles) or
+                any(type(face) is not list or len(face)!=3 or
+                    any(type(uv) is not list or len(uv)!=2 or
+                        any(type(v) not in (int,float) or
+                            not math.isfinite(v) or abs(v)>1024
+                            for v in uv) for uv in face)
+                    for face in face_uvs)):
+                raise ValueError("USD face-varying UVs must match each triangle corner")
         if mesh_uvs is not None:
             if (shape!="mesh" or type(mesh_uvs) is not list or
                 len(mesh_uvs)!=len(points) or
@@ -88,7 +101,7 @@ class OpenUSDAssetRegistry:
                 "texture_images_loaded":False,
                 "original_source_modified":False}
         if texture_png is not None:
-            if shape!="mesh" or mesh_uvs is None or authored_material is None:
+            if shape!="mesh" or (mesh_uvs is None and face_uvs is None) or authored_material is None:
                 raise ValueError("Original PNG texture requires UV mesh and source material")
             from backend.nvp_native_usd_texture import publish_texture
             texture=publish_texture(self.index,project_id,texture_png)
@@ -118,6 +131,10 @@ class OpenUSDAssetRegistry:
                 st=UsdGeom.PrimvarsAPI(obj).CreatePrimvar(
                     "st",Sdf.ValueTypeNames.TexCoord2fArray,"vertex")
                 st.Set([Gf.Vec2f(*uv) for uv in mesh_uvs])
+            if face_uvs is not None:
+                st=UsdGeom.PrimvarsAPI(obj).CreatePrimvar(
+                    "st",Sdf.ValueTypeNames.TexCoord2fArray,"faceVarying")
+                st.Set([Gf.Vec2f(*uv) for face in face_uvs for uv in face])
         if authored_material is not None:
             from pxr import UsdShade
             material=UsdShade.Material.Define(stage,"/Asset/Material")
@@ -170,6 +187,9 @@ class OpenUSDAssetRegistry:
             document["triangles"]=[list(t) for t in triangles]
             if mesh_uvs is not None:
                 document["mesh_uvs"]=[[float(x) for x in uv] for uv in mesh_uvs]
+            if face_uvs is not None:
+                document["face_uvs"]=[[[float(x) for x in uv]
+                                      for uv in face] for face in face_uvs]
         def guard(db):
             row = db.execute("""SELECT 1 FROM film_blob_refs
                 WHERE project_id=? AND sha256=?""",
@@ -229,8 +249,31 @@ class OpenUSDAssetRegistry:
                         for actual,p in zip(actual_points,points))):
                 raise RuntimeError("Frozen USD triangle topology differs from indexed source")
             uv=doc.get("mesh_uvs")
+            per_face=doc.get("face_uvs")
             primvar=UsdGeom.PrimvarsAPI(mesh).GetPrimvar("st")
-            if uv is not None:
+            if uv is not None and per_face is not None:
+                raise RuntimeError("Original mesh UV interpolation is ambiguous")
+            if per_face is not None:
+                if (type(per_face) is not list or
+                    len(per_face)!=len(triangles) or
+                    not primvar or primvar.GetInterpolation()!="faceVarying"):
+                    raise RuntimeError("Original face UV topology changed")
+                wanted=[x for face in per_face for x in face]
+                if (any(type(face) is not list or len(face)!=3 or
+                        any(type(x) is not list or len(x)!=2 or
+                            any(type(v) not in (int,float) or
+                                not math.isfinite(v) or abs(v)>1024
+                                for v in x) for x in face)
+                        for face in per_face)):
+                    raise RuntimeError("Invalid frozen face UVs")
+                actual=primvar.Get()
+                if actual is None or len(actual)!=len(wanted) or any(
+                        not all(math.isclose(float(x),float(y),
+                            rel_tol=1e-5,abs_tol=1e-5)
+                            for x,y in zip(got,expected))
+                        for got,expected in zip(actual,wanted)):
+                    raise RuntimeError("Frozen USD face-varying UVs changed")
+            elif uv is not None:
                 if (type(uv) is not list or len(uv)!=len(points) or
                     any(type(p) is not list or len(p)!=2 or
                         any(type(x) not in (int,float) or
