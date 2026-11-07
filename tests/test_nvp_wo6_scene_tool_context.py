@@ -113,8 +113,10 @@ class NativeSceneCrewContext(unittest.TestCase):
         self.assertEqual(result["sound_events"][0]["source_id"],
                          "RecordedActorVoice")
         self.assertTrue(result["sound_events"][0][
-            "recorded_sound_pcm_verified"])
+            "sample_window_pcm_verified"])
         self.assertEqual(result["sound_events"][0]["sample_count"],256)
+        self.assertEqual(result["sound_events"][0]["verified_sample_count"],64)
+        self.assertFalse(result["sound_events"][0]["full_recorded_audio_verified"])
         self.assertFalse(result["sound_events"][0][
             "mastered_final_audio_verified"])
         self.assertEqual(result["screenplay_scene_context"][
