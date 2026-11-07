@@ -97,6 +97,11 @@ class WO2NativeTextureReference(unittest.TestCase):
             points,surface,lights,eye,white,np,
             roughness_texels=np.full((2,2),.1,dtype=np.float32))
         self.assertFalse(np.allclose(matte,gloss))
+        metal=_shade_texture_texels(
+            points,surface,lights,eye,white,np,
+            metallic_texels=np.ones((2,2),dtype=np.float32))
+        self.assertTrue(np.all(np.isfinite(metal)))
+        self.assertFalse(np.allclose(base,metal))
         normal=np.full((2,2,3),.5,dtype=np.float32)
         normal[:,:,2]=1.
         raised=_shade_texture_texels(
@@ -104,6 +109,15 @@ class WO2NativeTextureReference(unittest.TestCase):
             normal_texels=normal,
             uv_face=[[0,0],[1,0],[0,1]])
         self.assertTrue(np.all(np.isfinite(raised)))
+        tilted=normal.copy()
+        tilted[:,:,0]=.95
+        tilted[:,:,2]=.75
+        tilted_lit=_shade_texture_texels(
+            points,surface,lights,eye,white,np,
+            normal_texels=tilted,
+            uv_face=[[0,0],[1,0],[0,1]])
+        self.assertTrue(np.all(np.isfinite(tilted_lit)))
+        self.assertFalse(np.allclose(raised,tilted_lit))
 
     def test_source_texture_cannot_render_without_authoritative_uv(self):
         rgba=np.zeros((HEIGHT,WIDTH,4),dtype=np.float32)
