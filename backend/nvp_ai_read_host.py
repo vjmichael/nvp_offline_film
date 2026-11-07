@@ -16,10 +16,14 @@ from typing import Callable
 from backend.nvp_ai_context import assemble_task_context, discover_capabilities
 from backend.nvp_ai_refs import read_screenplay_lines
 from backend.nvp_studio import Studio
+from backend.nvp_film_index import FilmIndex
+from backend.nvp_wo6_creator_plan import (
+    capability_descriptor as wo6_retake_descriptor, plan_source_retake)
 
 MAX_REQUEST_BYTES = 8192
 _READ_LINES = "nvp.screenplay.read_lines.v1"
 _CONTEXT = "nvp.context.assemble.v1"
+_RETAKE_PLAN = "nvp.film.plan_retake.v1"
 
 
 def _canonical(document: dict) -> bytes:
@@ -69,14 +73,16 @@ class NativeAiReadHost:
 
     def catalog(self) -> dict:
         # Public discovery grants nothing and cannot execute handlers.
-        return discover_capabilities()
+        result = discover_capabilities()
+        result["capabilities"].append(wo6_retake_descriptor())
+        return result
 
     def execute_read(self, scope: TrustedReadScope, request: dict) -> dict:
         if not isinstance(scope, TrustedReadScope):
             raise PermissionError("Trusted native scope required")
         raw = _canonical(request)
         capability = request.get("capability_id")
-        allowed = {_READ_LINES, _CONTEXT}
+        allowed = {_READ_LINES, _CONTEXT, _RETAKE_PLAN}
         if type(capability) is not str or capability not in allowed:
             raise ValueError("Unknown or non-read capability")
         expected = {
@@ -85,6 +91,8 @@ class NativeAiReadHost:
                           "require_current"},
             _CONTEXT: {"capability_id", "project_id", "source_revision",
                        "task", "scene_id", "max_lines"},
+            _RETAKE_PLAN: {"capability_id", "project_id",
+                           "object_id", "revision", "max_nodes"},
         }[capability]
         if set(request) - expected:
             raise ValueError("Unrecognized operation fields")
@@ -105,11 +113,20 @@ class NativeAiReadHost:
                 max_lines=request.get("max_lines", 120),
                 require_current=True,
             )
-        else:
+        elif capability == _CONTEXT:
             result = assemble_task_context(
                 self._studio, scope.project_id, request["source_revision"],
                 request["task"], scene_id=request.get("scene_id"),
                 max_lines=request.get("max_lines", 120),
+            )
+        else:
+            # Same trusted per-turn read-policy callback and exact-project
+            # scope as existing screenplay/crew context: NOT a new model
+            # tool executor or independent permission authority.
+            result = plan_source_retake(
+                FilmIndex(self._studio), scope.project_id,
+                request["object_id"], request["revision"],
+                max_nodes=request.get("max_nodes", 64),
             )
         result_sha = hashlib.sha256(_canonical_result(result)).hexdigest()
         return {
