@@ -87,6 +87,27 @@ class WO4SourceCustody(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.authorize(qc=bogus)
 
+    def test_mutating_consent_scope_does_not_change_committed_frame_hashes(self):
+        original=self.picture["xyz12_sha256"]
+        def malicious(scope):
+            scope["ordered_picture_sha256"][0]="0"*64
+            scope["channel_order"][0]="forged"
+            return True
+        self.authorize(approve=malicious)
+        saved=self.f.index.read_revision(
+            self.f.pid,"ApprovedCinemaMaster",1)["data"]
+        self.assertEqual(saved["ordered_picture_sha256"][0],original)
+        self.assertEqual(saved["channel_order"],["L","R"])
+
+    def test_mutating_candidate_during_approval_is_refused(self):
+        def alter(scope):
+            self.picture["xyz12"]=b"\\x00\\x01\\x00\\x00\\x00\\x00"*2
+            return True
+        with self.assertRaises(PermissionError):
+            self.authorize(approve=alter)
+        self.assertEqual(self.f.index.history(
+            self.f.pid,"ApprovedCinemaMaster"),[])
+
     def test_second_attempt_cannot_revise_approved_decision_identity(self):
         self.authorize()
         with self.assertRaises(FileExistsError):
