@@ -1,0 +1,45 @@
+# NVP WO4 cinema-mastering acceptance matrix
+
+**Status:** Work order implementation in progress; no production/cinema
+certificate. No FFmpeg. This document records evidence requirements, not
+claims that missing external evidence has occurred.
+
+## Native code gates
+
+| Gate | Evidence | Required outcome |
+| --- | --- | --- |
+| PCM24 source | Native Win/Linux Python 3.11 and 3.13 tests | Exact original SHA, 48 kHz, 24-bit, 24 fps timing, declared channels, no source mutation |
+| Motion custody | Real frozen USD Take + FilmIndex + ordered frame-SHA manifest | Approved exact Film Time range, immutable decision ID, denial/tampering after approval |
+| Picture transform | Independent ST 428-1 vectors and test images | Correct 12-bit DCDM transfer, explicit D65 vs Bradford cinema-white decisions, bounded gamut and no implicit clipping |
+| Audio metrics | Independent BS.1770 calibrated meter on genuine samples | K-weighted gated loudness accuracy within published tolerance; LFE excluded; oversampled true peak verified |
+| Full native delivery | Real encoder/wrapper/decoder binaries, independently SHA pinned | Three distinct WO4-derived 2K XYZ12 pictures and original PCM24 through SMPTE DCP, unwrap, pixel and sound SHA reconciliation |
+| Extended real-time production | Large varied 2K and 4K reels, bounded resources | Progressive disk-spooled frames and MXF with memory/throughput/cancellation receipts; no all-frames-in-RAM reliance |
+| Native fault containment | Kill after file write, fsync, publish, FilmIndex commit | No source overwrite, no published unverified candidate accepted, restart reconciliation |
+| Installer | Native NVP Windows/Linux desktop installer | Reviewed codec builds and transitive libraries; complete actual upstream notices; host approval and trusted OS directory picker; reinstall/uninstall |
+| External DCI | Independent full DCP validator + projector/server | Schema, essence and cinema ingest; no false certification from NVP self-check |
+| Calibrated image/sound | Reference projector/monitor and audio lab | Chromaticity, white point, Y luminance, transfer curve, channel layout, film-mix SPL, loudness and true peak |
+
+## Explicitly unaccepted
+
+- No physical theater screen, calibrated projector or cinema audio measurement
+  is available from CI. Source and native unit tests cannot replace those.
+- Current WO3 native picture/MXF interface loads whole reels into process
+  memory. It is a short-reel acceptance route and must be redesigned for
+  production-size 2K/4K features with bounded streaming.
+- WO4-05 adapter has a native three-distinct-frame test workflow, but that
+  workflow must actually pass at the exact current head before native
+  integration acceptance can be recorded.
+- Direct installed creator controls and host-connected OS approvals need real
+  installed application acceptance. A mock approved callback is not proof.
+- An uncertified BS.1770-style pure-Python meter is a diagnostic; laboratory
+  true-peak and loudness conformance is still a release gate.
+- WO3 independent SMPTE schema and external DCP checks remain outside WO4
+  and must be reconciled before a theatrical release.
+- Always bundle the exact applicable license/copyright notices for every
+  shipped third-party component, including transitive native dependencies.
+
+## Handoff policy
+
+The next work order may proceed while these external/installed gates remain
+OPEN, but no document or product UI may call an NVP cinema master formally
+accepted until the signed/native, external and physical receipts are present.
