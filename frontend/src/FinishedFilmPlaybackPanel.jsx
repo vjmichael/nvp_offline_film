@@ -5,6 +5,23 @@ const FPS=24, RATE=48000, SAMPLES=2000;
 const BUFFER=16, PREROLL=8, AHEAD=0.75;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
+export function requireAheadOfAudioClock(plannedStart,currentTime){
+  // WebAudio starts late nodes immediately. That would pair picture frame N
+  // with sound heard at N+1. Never silently accept an already-expired cue.
+  if(!Number.isFinite(plannedStart)||!Number.isFinite(currentTime)||
+     plannedStart<currentTime+0.005)
+    throw Error('Finished-film audio missed its exact presentation deadline');
+  return plannedStart;
+}
+export function requireContinuousPicture(lastPainted,nextFrame){
+  // rAF can be throttled when the window is hidden. An unseen skipped
+  // picture cannot be counted as a complete film review.
+  if(!Number.isInteger(lastPainted)||!Number.isInteger(nextFrame)||
+     nextFrame>lastPainted+1)
+    throw Error('Finished-film picture skipped a required presentation frame');
+  return nextFrame;
+}
+
 export function checkFinishedFrame(packet,expected){
   if(!packet||packet.format!==FORMAT||
      packet.status!=='DECODED_PUBLISHED_FINAL_FRAME'||
@@ -174,7 +191,8 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
           const node=ctx.createBufferSource();
           node.buffer=clip;
           node.connect(ctx.destination);
-          node.start(c.anchor+(c.nextSchedule-c.first)/FPS);
+          node.start(requireAheadOfAudioClock(
+            c.anchor+(c.nextSchedule-c.first)/FPS,ctx.currentTime));
           c.scheduled.push(node);
           item.scheduled=true;
           c.nextSchedule++;
@@ -182,12 +200,21 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
       }
       function tick(){
         if(!remain())return;
-        schedule();
+        try{schedule();}catch(e){
+          setError(e.message);
+          setStatus('FAILED_AUDIO_CLOCK_NOT_REVIEWED');
+          void stop(true);setPlaying(false);return;
+        }
         if(c.started){
           const elapsed=ctx.currentTime-c.anchor;
           if(elapsed>=0){
             const frame=c.first+Math.floor(elapsed*FPS);
             if(frame>c.lastFrame){
+              if(c.displayed!==c.lastFrame || c.nextSchedule!==c.lastFrame+1){
+                setError('Final film ended with missing presented picture or audio.');
+                setStatus('FAILED_INCOMPLETE_FILM_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
+              }
               setStatus('FINISHED_PLAYBACK_REACHED_END_NOT_CREATIVE_APPROVAL');
               setNote('Decoded final picture/audio reached the last presentation frame. This does not certify that a person watched and heard it.');
               void stop(true);
@@ -203,6 +230,12 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
               return;
             }
             if(frame!==c.displayed){
+              try{requireContinuousPicture(c.displayed,frame);}
+              catch(e){
+                setError(e.message);
+                setStatus('FAILED_SKIPPED_PICTURE_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
+              }
               const target=canvas.current;
               const paint=target?.getContext('2d');
               if(target&&paint){
