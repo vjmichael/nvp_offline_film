@@ -80,6 +80,7 @@ jobs:
       - name: Encode actual 1998x1080 XYZ12 cinema J2K (not fake frames)
         env:
           NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+          NVP_NATIVE_OPENJPEG_4K: '1'
         run: python -m unittest discover -s tests -p test_nvp_wo3_real_openjpeg.py -v
 
   wo3-real-smpte-mxf-roundtrip:
