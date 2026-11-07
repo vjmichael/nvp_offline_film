@@ -56,7 +56,8 @@ class NativeCodecReleaseTests(unittest.TestCase):
         self.files.pop("asdcp-info")
         with self.assertRaises(PermissionError):self.stage()
         self.files["asdcp-info"]=self.source/"asdcp-info.exe"
-        self.files["asdcp-info"].symlink_to(self.files["asdcp-wrap"])
+        self.files["asdcp-info"].unlink()
+        self.files["asdcp-info"].mkdir()
         with self.assertRaises(PermissionError):self.stage()
 
     def test_no_runtime_self_pinning(self):
