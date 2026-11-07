@@ -91,7 +91,7 @@ class StreamedPCM24Acceptance(unittest.TestCase):
 
     def test_source_replaced_during_consent_does_not_publish(self):
         def change_source(scope):
-            self.source.write_bytes(b"\\x00"*len(self.raw))
+            self.source.write_bytes(bytes(len(self.raw)))
             return True
         with self.assertRaises(PermissionError):
             self.stream(approve=change_source)
