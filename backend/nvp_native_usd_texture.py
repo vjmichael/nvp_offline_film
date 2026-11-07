@@ -96,12 +96,24 @@ def texture_transport(index: FilmIndex, project_id, descriptor):
         out=BytesIO()
         reduced.save(out,format="PNG",optimize=False)
         preview=out.getvalue()
+    # Independent host-side CPU reference samples from the *actual*
+    # verified GPU-preview PNG, not from a shader or JavaScript guess.
+    _,_,pixels=decode_png(preview)
+    expected=[]
+    for u,v in ((.125,.125),(.875,.125),(.125,.875),(.875,.875)):
+        px=min(pw-1,int(u*pw))
+        py=ph-1-min(ph-1,int(v*ph))
+        offset=(py*pw+px)*4
+        expected.append(list(pixels[offset:offset+3]))
     return {
         "format": FORMAT, "sha256": descriptor["sha256"],
         "original_width":width,"original_height":height,
         "width":pw,"height":ph,
         "derived_preview":preview!=png,
         "preview_sha256":sha256(preview).hexdigest(),
+        "gpu_reference_rgb":expected,
+        "gpu_reference_uv":[[.125,.125],[.875,.125],
+                            [.125,.875],[.875,.875]],
         "color_space": "sRGB", "wrap": "repeat",
         "png_base64": base64.b64encode(preview).decode("ascii"),
         "source_modified": False,
