@@ -257,6 +257,10 @@ class TrustedDesktopWO5Bridge(TrustedDesktopCameraBridge):
         self._native_window()
         return self._wo5_finished().frame(session_id,frame_index)
 
+    def wo5_film_window(self,session_id,first_frame,count=4):
+        self._native_window()
+        return self._wo5_finished().window(session_id,first_frame,count)
+
     def wo5_film_stop(self,session_id):
         self._native_window()
         return self._wo5_finished().stop(session_id)
