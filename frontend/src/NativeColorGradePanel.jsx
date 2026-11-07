@@ -341,7 +341,7 @@ export default function NativeColorGradePanel({project,api,action,busy}){
       </p>}
     </fieldset>
     {message&&<p role="status">{message}</p>}
-    {error&&<p role="alert">{error}</p>
+    {error&&<p role="alert">{error}</p>}
     <p className="fineprint">No FFmpeg, EXR decoder, flattened
       frames, proxy or color grade is written to the original.
       Applying and measuring the chosen grade in final output is
