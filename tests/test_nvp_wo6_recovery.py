@@ -5,7 +5,7 @@ import time
 import unittest
 from pathlib import Path
 
-from backend.nvp_ai_read_host import TrustedReadScope
+from backend.nvp_ai_read_host import TrustedReadScope, NativeAiReadHost
 from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
@@ -173,6 +173,41 @@ class WO6NativeDurability(unittest.TestCase):
         self.assertEqual(
             status["latest_reconciliation"]["evidence_status"],
             "VERIFIED_COMMIT_AND_RECEIPT_NOT_RELEASE_APPROVED")
+
+    def test_authorized_task_status_is_read_only_scoped_and_sealed(self):
+        task=self._queued()
+        grants=[]
+        def read_policy(scope,capability,sha,request):
+            grants.append((scope.actor_id,capability,sha))
+            return scope.actor_id=="director" and scope.project_id==self.pid
+        read_host=NativeAiReadHost(
+            self.studio,authorize_read=read_policy,
+            durable_recovery=self.host.recovery)
+        public={x["id"]:x for x in read_host.catalog()["capabilities"]}
+        self.assertIn("nvp.film.read_native_task_status.v1",public)
+        self.assertEqual(public["nvp.film.read_native_task_status.v1"]["effect"],
+                         "read")
+        self.assertFalse(public["nvp.film.read_native_task_status.v1"][
+            "executable_by_model"])
+        request={"capability_id":"nvp.film.read_native_task_status.v1",
+                 "project_id":self.pid,"task_id":task}
+        answer=read_host.execute_read(self.scope,request)
+        self.assertEqual(answer["result"]["state"],"QUEUED")
+        self.assertFalse(answer["side_effects_performed"])
+        self.assertFalse(answer["creator_approval_granted"])
+        self.assertTrue(grants)
+        with self.assertRaises(PermissionError):
+            read_host.execute_read(
+                TrustedReadScope("different_creator",self.pid,"turn_x"),request)
+        with self.assertRaises(PermissionError):
+            read_host.execute_read(
+                self.scope,{**request,"project_id":"foreign_project"})
+        with self.assertRaises(ValueError):
+            read_host.execute_read(
+                self.scope,{**request,"approve":True})
+        without=NativeAiReadHost(self.studio,authorize_read=lambda *_:True)
+        self.assertNotIn("nvp.film.read_native_task_status.v1",
+            [x["id"] for x in without.catalog()["capabilities"]])
 
     def test_worker_rejects_queued_wrong_owner_and_durable_cancel(self):
         task=self._queued()
