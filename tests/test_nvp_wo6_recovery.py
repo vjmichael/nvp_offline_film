@@ -201,6 +201,30 @@ class WO6NativeDurability(unittest.TestCase):
                     job_root=self.host.root, studio_db=self.studio.db_path)
         self.assertEqual(self.ledger.get_task(task)["state"], "ACTIVE")
 
+    def test_real_reopened_ledger_and_studio_retain_recovery_history(self):
+        task = self._queued()
+        self.host.binding.claim_next(owner_key=self.host.owner)
+        self._recovery(True).reconcile_interrupted(
+            task, owner_key=self.host.owner,
+            job_root=self.host.root, studio_db=self.studio.db_path)
+        reopened_ledger = TaskLedger(
+            self.base / "task_root",
+            sampler=lambda: ResourceSnapshot(time.time(), 32768, 22000, 0., ()))
+        reopened_recovery = WO6DurableRecovery(
+            reopened_ledger, attest_worker_tree_stopped=lambda *_: True)
+        state = reopened_recovery.status(task, owner_key=self.host.owner)
+        self.assertEqual(state["state"], "INTERRUPTED")
+        self.assertEqual(
+            state["latest_reconciliation"]["evidence_status"],
+            "NO_SOURCE_COMMIT_FOUND")
+        self.assertGreaterEqual(len(state["events"]), 2)
+        reopened_index = FilmIndex(Studio(self.studio.db_path))
+        self.assertEqual(
+            reopened_index.read_revision(self.pid, "scene", 1)[
+                "document_sha256"], self.args["scene_sha256"])
+        with self.assertRaises(KeyError):
+            reopened_index.read_revision(self.pid, "new_take", 1)
+
     def test_tampered_sealed_spec_cannot_claim_reconciled_success(self):
         task = self._queued()
         self.host.binding.claim_next(owner_key=self.host.owner)
