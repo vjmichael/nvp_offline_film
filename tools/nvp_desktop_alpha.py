@@ -491,7 +491,7 @@ if __name__=="__main__":
         import traceback
         mode="a" if diagnostic.exists() else "x"
         with diagnostic.open(mode,encoding="utf8") as sink:
-            sink.write(message+"\\n")
+            sink.write(message+"\n")
             if failure:
                 traceback.print_exc(file=sink)
             sink.flush();os.fsync(sink.fileno())
