@@ -19,6 +19,8 @@ from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_wo6_creator_plan import (
     capability_descriptor as wo6_retake_descriptor, plan_source_retake)
+from backend.nvp_wo6_impact_preview import (
+    CAPABILITY as IMPACT_PREVIEW_CAPABILITY, preview_source_impact)
 from backend.nvp_wo6_scene_context import (
     CAPABILITY as SCENE_CREW_CAPABILITY, assemble_film_crew_context)
 from backend.nvp_wo6_tool_readiness import (
@@ -31,6 +33,7 @@ _RETAKE_PLAN = "nvp.film.plan_retake.v1"
 _FEATURE_SOURCE = "nvp.film.resolve_published_sources.v1"
 _SCENE_CREW = "nvp.film.read_scene_crew_context.v1"
 _TOOL_PREFLIGHT = "nvp.tools.inspect_host_pinned.v1"
+_IMPACT_PREVIEW = "nvp.film.preview_source_impact.v1"
 
 
 def _canonical(document: dict) -> bytes:
@@ -94,6 +97,7 @@ class NativeAiReadHost:
         result["capabilities"].append(wo6_retake_descriptor())
         from copy import deepcopy
         result["capabilities"].append(deepcopy(SCENE_CREW_CAPABILITY))
+        result["capabilities"].append(deepcopy(IMPACT_PREVIEW_CAPABILITY))
         if self._trusted_tool_inventory is not None:
             result["capabilities"].append({
                 "id": _TOOL_PREFLIGHT,
@@ -117,7 +121,8 @@ class NativeAiReadHost:
             raise PermissionError("Trusted native scope required")
         raw = _canonical(request)
         capability = request.get("capability_id")
-        allowed = {_READ_LINES, _CONTEXT, _RETAKE_PLAN, _SCENE_CREW}
+        allowed = {_READ_LINES, _CONTEXT, _RETAKE_PLAN, _SCENE_CREW,
+                   _IMPACT_PREVIEW}
         if self._trusted_tool_inventory is not None:
             allowed.add(_TOOL_PREFLIGHT)
         if self._feature_journal is not None:
@@ -138,6 +143,11 @@ class NativeAiReadHost:
                           "screenplay_scene_id", "max_prims", "max_events",
                           "shot_sequence_id", "shot_sequence_revision"},
             _TOOL_PREFLIGHT: {"capability_id", "project_id"},
+            _IMPACT_PREVIEW: {"capability_id", "project_id", "source_id",
+                              "source_revision", "source_sha256",
+                              "change_kind", "scene_id", "screenplay_revision",
+                              "bible_fact_id", "expected_bible_digest",
+                              "max_nodes", "delivery"},
         }[capability]
         if set(request) - expected:
             raise ValueError("Unrecognized operation fields")
@@ -195,6 +205,21 @@ class NativeAiReadHost:
                 }
         elif capability == _TOOL_PREFLIGHT:
             result = preflight_tool_inventory(self._trusted_tool_inventory)
+        elif capability == _IMPACT_PREVIEW:
+            # Read-only, digest bound and scoped like all existing internal
+            # AI reads. The returned approval checklist is descriptive; it
+            # cannot approve or start any native operation.
+            result = preview_source_impact(
+                FilmIndex(self._studio), scope.project_id,
+                request["source_id"], request["source_revision"],
+                request["source_sha256"], request["change_kind"],
+                scene_id=request.get("scene_id"),
+                screenplay_revision=request.get("screenplay_revision"),
+                bible_fact_id=request.get("bible_fact_id"),
+                expected_bible_digest=request.get("expected_bible_digest"),
+                max_nodes=request.get("max_nodes", 32),
+                delivery=request.get("delivery"),
+            )
         else:
             # Heavy source/essence re-verification is available only when a
             # trusted native host injected the real durable FeatureJournal.
