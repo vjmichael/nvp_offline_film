@@ -490,7 +490,7 @@ export default function DataFirstWorldViewport({
             material.needsUpdate=true;
           }
           for(const [channel,desc] of Object.entries(surface?.pbr_maps||{})){
-            if(!['roughness','metallic','emission','normal'].includes(channel))
+            if(!['roughness','metallic','emission','normal','opacity'].includes(channel))
               throw Error('Unsupported original PBR map channel');
             const channelTransport=surface?.pbr_map_transports?.[channel];
             validateSourceTexture({
@@ -504,12 +504,18 @@ export default function DataFirstWorldViewport({
               metallic:'metalnessMap',
               emission:'emissiveMap',
               normal:'normalMap',
+              opacity:'alphaMap',
             }[channel];
             material[field]=tex;
             material.userData.textureCacheKeys[field]=key;
             if(channel==='roughness')material.roughness=1;
             if(channel==='metallic')material.metalness=1;
             if(channel==='emission')material.emissive.setRGB(1,1,1);
+            if(channel==='opacity'){
+              material.alphaTest=.5;
+              material.transparent=false;
+              material.depthWrite=true;
+            }
             material.needsUpdate=true;
           }
           const slots=validateMaterialSlots(obj);
