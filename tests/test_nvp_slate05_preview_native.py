@@ -115,7 +115,7 @@ class Slate05NativeTests(unittest.TestCase):
             "shot_id":None,"shot_revision":None,
             "slate":{"scene":"01","setup":"A","shot":"01A",
                      "camera":"A","take_number":1,"wild":False,
-                     "script_revision":"script_01","notes":"Original"}},
+                     "script_revision":"script_01","notes":"Original"}}
         coverage={
             "branch_id":"shot_A","kind":"coverage","parent_id":"take_root",
             "fork_tick":0,"group_id":"closeup","primary":False,
@@ -124,7 +124,7 @@ class Slate05NativeTests(unittest.TestCase):
             "shot_id":"close_angle","shot_revision":1,
             "slate":{"scene":"01","setup":"A","shot":"01A",
                      "camera":"A","take_number":1,"wild":False,
-                     "script_revision":"script_01","notes":"Close camera"}},
+                     "script_revision":"script_01","notes":"Close camera"}}
         self.slate.publish_graph(self.pid,"slate",
             scene_id="scene",scene_label="01",nodes=[original,coverage])
         self.editor.commit(
