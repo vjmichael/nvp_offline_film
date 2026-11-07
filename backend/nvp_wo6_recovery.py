@@ -205,7 +205,10 @@ class WO6DurableRecovery:
         if (not folder.is_dir() or folder.is_symlink() or
                 type(studio_db) not in (Path, str)):
             raise RuntimeError("Native job folder/database path is unavailable")
-        path = Path(studio_db).resolve()
+        path = Path(studio_db)
+        if path.is_symlink():
+            raise RuntimeError("Untrusted symlinked Studio database")
+        path = path.resolve()
         # Database is a host-injected installation value, never a model path.
         if not path.is_file() or path.is_symlink():
             raise RuntimeError("Missing or symlinked original Studio database")
