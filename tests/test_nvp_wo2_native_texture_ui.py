@@ -3,6 +3,8 @@ from io import BytesIO
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from PIL import Image
 import test_nvp_openusd_reusable_assets as fixture
@@ -33,6 +35,12 @@ class TrustedWO2DesktopTextureTests(fixture.NativeUSD02Integration):
             self.png=buffer.getvalue()
         self.path=Path(self.temp.name)/"original.png"
         self.path.write_bytes(self.png)
+        # The actual host requires OS pywebview; native unit tests exercise
+        # its exact IPC contract without requiring a GUI installation.
+        module_patch=patch.dict("sys.modules",{
+            "webview":SimpleNamespace(FileDialog=SimpleNamespace(OPEN=1))})
+        module_patch.start()
+        self.addCleanup(module_patch.stop)
         self.window=Window(self.path)
         self.bridge=TrustedDesktopCameraBridge(
             self.index,origin="http://127.0.0.1:43211",
