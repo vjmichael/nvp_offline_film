@@ -16,6 +16,11 @@ on:
       - 'backend/nvp_final_2d_native.py'
       - 'backend/nvp_native_avi_delivery.py'
       - 'backend/nvp_native_live_take.py'
+      - 'backend/nvp_native_spatial_acoustics.py'
+      - 'tests/test_nvp_native_spatial_acoustics.py'
+      - 'backend/nvp_native_color_eval.py'
+      - 'tests/test_nvp_native_color_eval.py'
+      - 'frontend/src/DataFirstWorldViewport.jsx'
       - 'tests/test_nvp_native_live_take.py'
       - 'backend/nvp_legacy_quarantine.py'
       - 'backend/nvp_api.py'
@@ -89,6 +94,8 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_final_2d_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_avi_delivery.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_live_take.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_native_spatial_acoustics.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_native_color_eval.py' -v
           python -m unittest discover -s tests -p 'test_nvp_legacy_quarantine.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_decisions.py' -v
       - name: Existing frozen source/camera/provenance regressions
@@ -150,7 +157,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-submodules pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_native_avi_delivery --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_legacy_quarantine --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-submodules pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_native_avi_delivery --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_spatial_acoustics --hidden-import backend.nvp_native_color_eval --hidden-import backend.nvp_legacy_quarantine --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
