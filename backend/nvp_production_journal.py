@@ -340,7 +340,8 @@ class ProductionJournal:
             raise PermissionError("Native worker identity required")
         with self._tx() as db:
             row=db.execute("""SELECT s.job_id,s.position,s.source_path,
-                    s.expected_sha256,s.expected_bytes,s.start_tick,s.end_tick
+                    s.expected_sha256,s.expected_bytes,s.start_tick,s.end_tick,
+                    j.task_kind
                     FROM production_segments s JOIN production_jobs j
                       ON j.job_id=s.job_id
                     WHERE j.cancel_requested=0
@@ -528,8 +529,9 @@ class ProductionJournal:
         reports=[]
         with self._tx() as db:
             jobs=db.execute("""SELECT job_id,task_kind FROM production_jobs
-                       WHERE state IN ('QUEUED','RUNNING','VERIFY_COMPLETE',
-                                       'REVIEW_REQUIRED')""").fetchall()
+                       WHERE task_kind=? AND state IN
+                       ('QUEUED','RUNNING','VERIFY_COMPLETE','REVIEW_REQUIRED')""",
+                       (TASK_KIND,)).fetchall()
             for job in jobs:
                 job_id=job["job_id"]
                 if job["task_kind"]!=TASK_KIND:
