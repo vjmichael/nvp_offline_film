@@ -39,6 +39,7 @@ class OriginalPBRChannelAcceptance(unittest.TestCase):
             "metallic":self.png((200,200,200)),
             "emission":self.png((18,60,220)),
             "normal":self.png((128,128,255)),
+            "opacity":self.png((255,255,255)),
         }
         original=self.publish(maps=maps)
         rec,layer=self.assets.open(self.pid,"pbr_mesh",1)
@@ -50,6 +51,7 @@ class OriginalPBRChannelAcceptance(unittest.TestCase):
         for channel,expected in (
             ("roughness","roughness"),("metallic","metallic"),
             ("emission","emissiveColor"),("normal","normal"),
+            ("opacity","opacity"),
         ):
             shader=UsdShade.Shader(stage.GetPrimAtPath(
                 "/Asset/Material/Map_"+channel.capitalize()))
@@ -63,6 +65,10 @@ class OriginalPBRChannelAcceptance(unittest.TestCase):
                 "/Asset/Material/MtlxMap_"+channel.capitalize()))
             self.assertIn(mtlx.GetIdAttr().Get(),
                           ("ND_image_float","ND_image_color3"))
+            if channel=="opacity":
+                self.assertAlmostEqual(float(
+                    preview.GetInput("opacityThreshold").GetAttr().Get()),
+                    .5,places=5)
             if channel=="normal":
                 self.assertEqual(list(shader.GetInput(
                     "scale").GetAttr().Get()),[2.,2.,2.,1.])
@@ -111,6 +117,8 @@ class OriginalPBRChannelAcceptance(unittest.TestCase):
             {"normal":b"not_png"},
             {"roughness":png,"metallic":png,
              "normal":png,"emission":png,"extra":png},
+            {"opacity":self.png((128,128,128))},
+            {"roughness":self.png((255,0,255))},
         ):
             with self.subTest(bad=list(bad)):
                 with self.assertRaises((ValueError,RuntimeError)):
