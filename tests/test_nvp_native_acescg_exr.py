@@ -70,6 +70,70 @@ class SceneLinearEXRTests(unittest.TestCase):
         self.assertFalse(receipt["professional_master_approved"])
         self.assertFalse(receipt["ffmpeg_used"])
 
+    def test_interrupted_acescg_original_source_export_resumes_without_rerender(self):
+        from unittest.mock import patch
+        from backend.nvp_native_scene_linear_exr import NativeSceneLinearEXR
+        engine=Approved2DPackage(
+            self.index,native_creator_approval=lambda _:True,
+            render_png=NativeSourceRaster(self.index,self.pid).render_png)
+        take_sha=self.take["document_sha256"]
+        kwargs=dict(
+            listener_path="/World/Camera",fps_num=24,fps_den=1,
+            linear_exr_grade=self.inputs,resumable=True)
+        old=NativeSceneLinearEXR.write
+        first=[0]
+        def interrupt(obj,*args,**kw):
+            first[0]+=1
+            if first[0]==4:
+                raise RuntimeError("Simulated host crash before derived frame receipt")
+            return old(obj,*args,**kw)
+        with patch.object(NativeSceneLinearEXR,"write",interrupt):
+            with self.assertRaisesRegex(RuntimeError,"Simulated host crash"):
+                engine.export(self.pid,"SourceColorTake",take_sha,
+                    "RecoveredACEScgFilm",self.root,**kwargs)
+        incomplete=self.root/".nvp-color-work-RecoveredACEScgFilm"
+        self.assertTrue(incomplete.is_dir())
+        self.assertEqual(len(list((incomplete/"pictures").glob("*.exr"))),3)
+        old_sha=hashlib.sha256(
+            (incomplete/"pictures"/"0000001.exr").read_bytes()).hexdigest()
+        resumed=[0]
+        def count(obj,*args,**kw):
+            resumed[0]+=1
+            return old(obj,*args,**kw)
+        with patch.object(NativeSceneLinearEXR,"write",count):
+            result=engine.export(self.pid,"SourceColorTake",take_sha,
+                "RecoveredACEScgFilm",self.root,**kwargs)
+        self.assertEqual(resumed,[21])
+        self.assertEqual(result["status"],"DERIVED_2D_PACKAGE")
+        target=Path(result["directory"])
+        self.assertFalse(incomplete.exists())
+        self.assertEqual(hashlib.sha256(
+            (target/"pictures"/"0000001.exr").read_bytes()).hexdigest(),
+            old_sha)
+        self.assertFalse((target/"owner.lock").exists())
+        self.assertEqual(self.index.read_revision(
+            self.pid,"SourceColorTake",1)["document_sha256"],take_sha)
+
+    def test_explicit_native_cancel_preserves_unapproved_derived_progress(self):
+        engine=Approved2DPackage(
+            self.index,native_creator_approval=lambda _:True,
+            render_png=NativeSourceRaster(self.index,self.pid).render_png)
+        calls=[0]
+        def stop_after_first_two():
+            calls[0]+=1
+            return calls[0]>=3
+        with self.assertRaises(InterruptedError):
+            engine.export(self.pid,"SourceColorTake",
+                self.take["document_sha256"],"CancelUnmastered",self.root,
+                listener_path="/World/Camera",
+                linear_exr_grade=self.inputs,resumable=True,
+                cancel_check=stop_after_first_two)
+        workspace=self.root/".nvp-color-work-CancelUnmastered"
+        self.assertTrue(workspace.is_dir())
+        self.assertFalse((self.root/"NVP2D_CancelUnmastered").exists())
+        self.assertEqual(len(list((workspace/"pictures").glob("*.exr"))),2)
+        self.assertFalse(self.take["data"].get("master_approved",False))
+
     def test_invalid_source_or_config_and_existing_destination_refused(self):
         path=self.root/"refuse.exr"
         with self.assertRaises(RuntimeError):
