@@ -5,6 +5,8 @@ on:
     paths:
       - backend/nvp_production_journal.py
       - backend/nvp_production_supervisor.py
+      - backend/nvp_production_monitor.py
+      - tests/test_nvp_production_monitor.py
       - tests/test_nvp_production_journal.py
       - tests/test_nvp_production_supervisor_process.py
       - .github/workflows/nvp-production-supervisor-native.yml
@@ -12,6 +14,8 @@ on:
     paths:
       - backend/nvp_production_journal.py
       - backend/nvp_production_supervisor.py
+      - backend/nvp_production_monitor.py
+      - tests/test_nvp_production_monitor.py
       - tests/test_nvp_production_journal.py
       - tests/test_nvp_production_supervisor_process.py
       - .github/workflows/nvp-production-supervisor-native.yml
@@ -33,8 +37,10 @@ jobs:
         with:
           python-version: ${{ matrix.py }}
       - name: Compile durable journal, daemon and native process acceptance tests
-        run: python -m compileall -q backend/nvp_production_journal.py backend/nvp_production_supervisor.py tests/test_nvp_production_journal.py tests/test_nvp_production_supervisor_process.py
+        run: python -m compileall -q backend/nvp_production_journal.py backend/nvp_production_supervisor.py backend/nvp_production_monitor.py tests/test_nvp_production_monitor.py tests/test_nvp_production_journal.py tests/test_nvp_production_supervisor_process.py
       - name: Test genuine FilmIndex admission, SQLite leases, cancellation and revision custody
         run: python -m unittest discover -s tests -p test_nvp_production_journal.py -v
       - name: Prove standalone process survives GUI absence, singleton and forced crash restart
         run: python -m unittest discover -s tests -p test_nvp_production_supervisor_process.py -v
+      - name: Verify native read-only project monitor, no cross-project leakage and reopen
+        run: python -m unittest discover -s tests -p test_nvp_production_monitor.py -v
