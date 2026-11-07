@@ -24,6 +24,7 @@ MAX_REQUEST_BYTES = 8192
 _READ_LINES = "nvp.screenplay.read_lines.v1"
 _CONTEXT = "nvp.context.assemble.v1"
 _RETAKE_PLAN = "nvp.film.plan_retake.v1"
+_FEATURE_SOURCE = "nvp.film.resolve_published_sources.v1"
 
 
 def _canonical(document: dict) -> bytes:
@@ -65,16 +66,26 @@ class NativeAiReadHost:
     literal boolean True. An LLM must never supply this callback.
     """
 
-    def __init__(self, studio: Studio, *, authorize_read: Callable):
+    def __init__(self, studio: Studio, *, authorize_read: Callable,
+                 feature_journal=None):
         if not isinstance(studio, Studio) or not callable(authorize_read):
             raise TypeError("Studio and trusted read policy callback required")
+        if feature_journal is not None:
+            from backend.nvp_wo4_feature_journal import FeatureJournal
+            if not isinstance(feature_journal, FeatureJournal):
+                raise TypeError("Only a host-owned native FeatureJournal is allowed")
         self._studio = studio
         self._authorize_read = authorize_read
+        self._feature_journal = feature_journal
 
     def catalog(self) -> dict:
         # Public discovery grants nothing and cannot execute handlers.
         result = discover_capabilities()
         result["capabilities"].append(wo6_retake_descriptor())
+        if self._feature_journal is not None:
+            from backend.nvp_wo6_feature_origins import CAPABILITY
+            from copy import deepcopy
+            result["capabilities"].append(deepcopy(CAPABILITY))
         return result
 
     def execute_read(self, scope: TrustedReadScope, request: dict) -> dict:
@@ -83,6 +94,8 @@ class NativeAiReadHost:
         raw = _canonical(request)
         capability = request.get("capability_id")
         allowed = {_READ_LINES, _CONTEXT, _RETAKE_PLAN}
+        if self._feature_journal is not None:
+            allowed.add(_FEATURE_SOURCE)
         if type(capability) is not str or capability not in allowed:
             raise ValueError("Unknown or non-read capability")
         expected = {
@@ -93,6 +106,7 @@ class NativeAiReadHost:
                        "task", "scene_id", "max_lines"},
             _RETAKE_PLAN: {"capability_id", "project_id",
                            "object_id", "revision", "max_nodes"},
+            _FEATURE_SOURCE: {"capability_id", "project_id", "feature_id"},
         }[capability]
         if set(request) - expected:
             raise ValueError("Unrecognized operation fields")
@@ -119,7 +133,7 @@ class NativeAiReadHost:
                 request["task"], scene_id=request.get("scene_id"),
                 max_lines=request.get("max_lines", 120),
             )
-        else:
+        elif capability == _RETAKE_PLAN:
             # Same trusted per-turn read-policy callback and exact-project
             # scope as existing screenplay/crew context: NOT a new model
             # tool executor or independent permission authority.
@@ -127,6 +141,17 @@ class NativeAiReadHost:
                 FilmIndex(self._studio), scope.project_id,
                 request["object_id"], request["revision"],
                 max_nodes=request.get("max_nodes", 64),
+            )
+        else:
+            # Heavy source/essence re-verification is available only when a
+            # trusted native host injected the real durable FeatureJournal.
+            # Merely guessing a feature ID or discovering this read method
+            # grants no rights. The same per-call policy callback runs.
+            from backend.nvp_wo6_feature_origins import (
+                resolve_published_feature_origins)
+            result = resolve_published_feature_origins(
+                FilmIndex(self._studio), self._feature_journal,
+                scope.project_id, request["feature_id"],
             )
         result_sha = hashlib.sha256(_canonical_result(result)).hexdigest()
         return {
