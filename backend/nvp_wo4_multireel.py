@@ -24,6 +24,7 @@ from backend.nvp_wo3_native_codecs import digest_file
 from backend.nvp_wo4_file_dcp import _uuid,_memory_digest
 from backend.nvp_wo4_resource_budget import MAX_REELS
 from backend.nvp_production_journal import TICKS_PER_SECOND
+from backend.nvp_wo3_j2k_audit import PROFILES
 
 FORMAT="nvp.wo4.file_multireel_dcp.v1"
 BLOCK=1024*1024
@@ -102,7 +103,7 @@ def _stream_copy(src,dest,expected,check_cancel):
     return {"bytes":size,"sha256":sha256sum.hexdigest(),
             "sha1_b64":base64.b64encode(sha1sum.digest()).decode("ascii")}
 
-def _make_xml(reels,ids,title,issued,metadata):
+def _make_xml(reels,ids,title,issued,metadata,profile):
     cpl=ET.Element("{"+NS_CPL+"}CompositionPlaylist")
     for k,v in (("Id",_uuid(ids["cpl"])),("AnnotationText",title),
                 ("IssueDate",issued),("Issuer","NVP Native Cinema"),
@@ -122,10 +123,8 @@ def _make_xml(reels,ids,title,issued,metadata):
                         ("EntryPoint",0),("Duration",part["frames"])):
                 _tag(entry,NS_CPL,k,v)
             if kind=="picture":
-                # Already validated as a supported 2K/4K cinema profile by
-                # the host before approval; screen ratio is stated in its CPL.
-                profile=part["picture"].get("profile") # intentionally omitted
-                _tag(entry,NS_CPL,"ScreenAspectRatio","1998 1080")
+                width,height,_=PROFILES[profile]
+                _tag(entry,NS_CPL,"ScreenAspectRatio",f"{width} {height}")
     xmls={"CPL.xml":_xml(cpl)}
     metadata["CPL.xml"]=_memory_digest(xmls["CPL.xml"])
     entries=[]
@@ -173,10 +172,11 @@ def _make_xml(reels,ids,title,issued,metadata):
         metadata[name]=_memory_digest(xmls[name])
     return xmls
 
-def publish_multireel_dcp(*,reels,ids,title,output_root,check_cancel):
+def publish_multireel_dcp(*,reels,ids,title,profile,output_root,check_cancel):
     if (not callable(check_cancel) or type(title) is not str or
             not 1<=len(title)<=80 or
-            any(ord(c)<32 or c in "<>&" for c in title)):
+            any(ord(c)<32 or c in "<>&" for c in title)
+            or profile not in PROFILES):
         raise ValueError("Trusted bounded feature publication required")
     frames=_check_manifest(reels,ids)
     root=Path(output_root)
@@ -197,7 +197,7 @@ def publish_multireel_dcp(*,reels,ids,title,output_root,check_cancel):
             metadata[filename]=_stream_copy(
                 source["file_path"],stage/filename,source,check_cancel)
     issued=datetime.now(timezone.utc).isoformat(timespec="seconds")
-    xmls=_make_xml(reels,ids,title,issued,metadata)
+    xmls=_make_xml(reels,ids,title,issued,metadata,profile)
     for name,data in xmls.items():
         if check_cancel():
             raise InterruptedError("Feature packaging cancelled")
