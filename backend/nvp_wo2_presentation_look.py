@@ -179,6 +179,74 @@ class OriginalSceneLook:
             raise PermissionError("Original source scene revision changed")
         return record
 
+    def assistant_scene_brief(self,pid,*,scene_id,scene_revision,scene_sha256):
+        """Read bounded verified USD facts for a future local AI director.
+
+        No remote requests, model execution, external paths, raw recordings
+        or access to unrelated source revisions is performed by this tool.
+        """
+        source=self._source(pid,scene_id,scene_revision,scene_sha256)
+        from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+        assets=OpenUSDAssetRegistry(self.index)
+        materials=[]
+        for bind in source["data"].get("asset_bindings",[])[:64]:
+            record,_=assets.open(pid,bind["asset_id"],bind["asset_revision"])
+            if record["document_sha256"]!=bind["asset_document_sha256"]:
+                raise PermissionError("AI material brief source changed")
+            material=record["data"].get("preview_material") or {}
+            materials.append({
+                "path":bind["path"],
+                "geometry":record["data"]["shape"],
+                "asset_document_sha256":record["document_sha256"],
+                "roughness":material.get("roughness"),
+                "metallic":material.get("metallic"),
+                "original_image_channels":(
+                    (["base_color"] if material.get("texture") else [])+
+                    sorted((material.get("pbr_maps") or {}).keys())),
+            })
+        roles=source["data"]["prim_roles"]
+        return {
+            "format":"nvp.wo2.assistant_source_scene_brief.v1",
+            "project_scoped":True,
+            "scene_id":scene_id,"scene_revision":scene_revision,
+            "scene_sha256":scene_sha256,
+            "cameras":sorted(x for x,r in roles.items() if r=="camera")[:16],
+            "lights":sorted(x for x,r in roles.items() if r=="light")[:32],
+            "actors":sorted(x for x,r in roles.items() if r=="actor")[:32],
+            "material_sources":materials,
+            "supported_look_capabilities":[
+                "soft_shadows","environment_reflections",
+                "camera_exposure","depth_of_field","UV_transform",
+                "texture_filtering","opacity","transmission","ior"],
+            "source_mutation_permitted":False,
+            "source_modified":False,
+        }
+
+    def validate_assistant_proposal(self,pid,*,scene_id,scene_revision,
+                                    scene_sha256,look,rationale):
+        """Validate an external model suggestion; never save or execute it."""
+        if (type(rationale) is not str or not 1<=len(rationale)<=1200 or
+            any(ord(c)<32 and c not in "\\n\\t" for c in rationale)):
+            raise ValueError("Assistant reasoning must be bounded plain text")
+        source=self._source(pid,scene_id,scene_revision,scene_sha256)
+        checked=validate_look(look,source["data"]["prim_roles"])
+        changes=[]
+        standard=default_look()
+        for area in ("lighting","environment","camera","textures","materials"):
+            if checked[area]!=standard[area]:
+                changes.append(area)
+        return {
+            "format":"nvp.wo2.assistant_look_proposal.v1",
+            "scene_sha256":scene_sha256,
+            "look":checked,"rationale":rationale,
+            "changed_areas":changes,
+            "project_scoped":True,
+            "creator_approved":False,"persisted":False,
+            "source_modified":False,
+            "may_execute_native_tools":False,
+            "may_author_shader_code":False,
+        }
+
     def publish(self,pid,look_id,*,scene_id,scene_revision,
                 scene_sha256,look,expected_revision=0,approve):
         _id(look_id,"presentation decision identity")
