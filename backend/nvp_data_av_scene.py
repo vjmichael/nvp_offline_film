@@ -147,6 +147,8 @@ class FrozenSceneAV:
         axis_b=right_axis(orientations_b[self.listener_path])
         # Coarse, SHA-verified original USD solids; no simulated room mix.
         obstacles=verified_occluders(self.index,self.project_id,at_start)
+        obstacles_end=[{**ob,"center":positions_b.get(ob["path"],ob["center"])}
+                       for ob in obstacles]
         if self.listener_path not in positions_a:
             raise RuntimeError("Virtual listener no longer exists")
         page=self.timeline.events_in(
@@ -190,8 +192,11 @@ class FrozenSceneAV:
                 self.project_id,event["source_id"],
                 event["source_revision"],first_src,n)
             samples=struct.unpack("<"+str(n)+"h",raw)
-            obstruction=obstruction_gain(
+            obstruction_start=obstruction_gain(
                 positions_a[path],positions_a[self.listener_path],obstacles,
+                source_path=path,listener_path=self.listener_path)
+            obstruction_end=obstruction_gain(
+                positions_b[path],positions_b[self.listener_path],obstacles_end,
                 source_path=path,listener_path=self.listener_path)
             for i,val in enumerate(samples):
                 cursor=first_active+i-first_sample
@@ -205,6 +210,8 @@ class FrozenSceneAV:
                 listener=[la[j]+(lb[j]-la[j])*fraction for j in range(3)]
                 listener_right=tuple(axis_a[j]+(axis_b[j]-axis_a[j])*fraction
                                      for j in range(3))
+                obstruction=obstruction_start+(
+                    obstruction_end-obstruction_start)*fraction
                 l,r=spatial_gains(emitter,listener,listener_right,
                                   gain,obstruction)
                 left[cursor]+=val*l
