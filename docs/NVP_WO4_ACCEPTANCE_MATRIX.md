@@ -94,3 +94,18 @@ The first three are **implementation-only pending exact-head CI and installed/na
 | Feature-length rendered picture→J2K→MXF→DCP output receipts and physical cinema source/calibration | **OPEN, separate LF02/LF04 and WO5** |
 
 The supervisor's first verified task is **read-only original media SHA verification**. The successful tests cannot be represented as a completed film export or proof that the OS will continue running during sleep/shutdown. The app-local Home/slide lock is separately verified as a convenience overlay and does not stop native production jobs.
+
+
+## LF02/LF04 native file-backed picture worker acceptance (2026-11-07)
+
+| Gate | Exact evidence | Status |
+| --- | --- | --- |
+| Real verified 2K OpenJPEG per-frame worker | Run `42357220969`, source-bound full 1998×1080 XYZ12, 3 distinct original frames, SHA-pinned OpenJPEG, separate process per frame | **PASS at commit `3857076b`** |
+| File-backed CineCert picture MXF and actual unwrap | Same run, matching real asdcplib wrapping/info and independent full codestream unwrap SHA, no full MXF byte array | **PASS at commit `3857076b`** |
+| Same SQLite production journal + durable per-frame/track checkpoints | Independent supervisor process reopened four times; final output state `OUTPUT_READY` not DCP accepted | **PASS at commit `3857076b`** |
+| Windows/Linux process-tree cancel and timeout | Actual OS subprocess+grandchild tests in `test_nvp_supervised_codec_process.py`, POSIX process group / Windows Job Object | Implemented; **new-head native CI pending** |
+| Output crash recovery, quarantine and reviewed retry | Real `os._exit(79)` partial stage and uncommitted file tests; host-approved no-clobber quarantine preserving all bytes | Implemented; **new-head native CI pending** |
+| Post-wrapper source integrity | Rehash approved J2K files after CineCert, reject symlinked output stage and altered original source | Implemented; **new-head codec acceptance pending** |
+| Features, full DCP and physical release | Long 2K/4K multi-reel, PCM picture/sound integration, file-backed XML/DCP, installed service and independent cinema ingest | **OPEN** |
+
+Note that LF02's `OUTPUT_READY` is **only a verified disk-backed picture MXF candidate**. No full sound track, DCP AssetMap/PKL/CPL package, external DCI compliance or certified theatrical master is implied. A 3–7200 frame bounded reel is an intentional first production unit; concatenating two hours of cinematic material into one in-memory object remains disallowed. The native output's reviewed quarantine preserves the creator's files; uncommitted stages require explicit disposition rather than automatic deletion.
