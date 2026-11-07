@@ -17,7 +17,7 @@ A director requesting a different Take from the final DCP must preserve: `publis
 | --- | --- | --- |
 | **WO6-01** | Bounded SHA-bound FilmIndex source-to-retake lineage and host-authorized read-only plan, deterministic digest, negative/cross-project tests. Reuse `NativeAiReadHost` and `TrustedReadScope`; discovery is not authorization. | **IMPLEMENTED, CI verdict pending.** |
 | **WO6-02** | Native FeatureJournal-backed origin resolver: reruns WO5's full indexed DCP/Take/PCM/J2K source audit, reports original per-reel Take/scene/temporal SHA and Film Time; host-injected only, read-only. Missing/retired/altered sources are refused. | **IMPLEMENTED, CI verdict pending; genuine 30m film still open.** |
-| **WO6-03** | Grounded, bounded task-aware film context (shot/camera/sound/actor/scene) and installed tool/license/model readiness, without a new memory database; report stale/missing/unverified sources. | **OPEN.** |
+| **WO6-03** | Trusted-host scene/actor/camera/sound/shot/script/accepted-canon context from reopened frozen Takes, exact Film Time, bounded SHA provenance and omissions; native installed binary/license pin preflight. Full model/runtime readiness and installed app integration are later gates. | **IMPLEMENTED, exact-head native CI verdict pending.** |
 | **WO6-04** | Preview effects to edits, Takes, stereo/5.1/7.1 sound, color, mastering and DCP; exact source SHA/revision, indexed/unindexed impacts, required grants, resources and recovery action. | **OPEN.** |
 | **WO6-05** | Native creator-confirmed action bridge and model-independent proposals: concrete first-party tool execution through existing durable supervisor, no AI self-approval and no arbitrary filesystem/network authority. | **OPEN; human consent required.** |
 | **WO6-06** | Unified read-only receipts for worker progress, cancellation, crash/restart reconciliation, source-vs-derivative status and filmmaker-facing errors; never fabricate finished-film evidence. | **OPEN.** |
@@ -70,3 +70,73 @@ FilmIndex edges. These tests do NOT constitute a new genuine native
 DCP/2K/PCM24/FilmIndex source-chain E2E proof. Existing WO5 genuine
 native tests and later installed movie/creator acceptance remain
 independent. WO6-02 current native matrix verdict is pending.
+
+
+## WO6-03 — Real source-aware scene/crew context and native-tool readiness (2026-11-07)
+
+**Code implemented, CI verdict PENDING.** The native internal readers are:
+\`backend/nvp_wo6_scene_context.py\` and \`backend/nvp_wo6_tool_readiness.py\`.
+They extend \`backend/nvp_ai_read_host.py\` with two *read-only* capabilities:
+\`nvp.film.read_scene_crew_context.v1\` and, only when the native host
+has explicitly pinned local tools,
+\`nvp.tools.inspect_host_pinned.v1\`. The first is not enabled for
+model self-authorization: each call must pass the existing
+\`TrustedReadScope\` current actor/project/turn authorization callback.
+Unknown keys/paths and other projects are rejected before access.
+
+The scene context **reopens the actual frozen OpenUSD Digital Take** and
+verifies its immutable scene+temporal source hashes and sample/checkpoint
+digest using \`OpenUSDTakeCapture.verify_take\`; it does not trust a
+model-supplied or self-described scene. At a caller-selected exact integer
+Film Time tick, it reads NVP actor/camera/prop/light semantic roles,
+actual composed OpenUSD world translations, lens/light values when
+real UsdGeom.Camera/UsdLux schemas exist, active typed sparse events
+and their exact source IDs/SHA/revision. Linked immutable audio source
+events are classified separately; actual bounded recorded PCM samples
+are reopened from source chunk SHA before reporting them as verified.
+Original sound here is **not** finished multichannel mastered sound.
+The original Take and current head scene revision are distinguished,
+so an earlier original performance cannot be mistaken for the current
+working revision.
+
+If the creator selects an existing exact \`ExactTimeShotSequence\` ID
+and revision, the packet validates its original scene SHA and identifies
+the active camera shot at that time; gaps remain gaps, not invented
+shots. If an exact current screenplay revision+scene ID is selected,
+existing AI-02 context supplies screenplay excerpts. The Story Bible is
+queried **without creating tables or altering canon**; only explicit
+scene-linked and creator-accepted facts with matching exact scene-text
+SHA/revision are included, up to a bounded limit. AI proposals, rejected
+facts and stale scene links are excluded. A screenplay character and a
+3D actor are *not* automatically treated as the same person merely
+because their names look similar. Unseen prims/events/facts carry
+explicit omission counts/flags; a packet SHA seals the result.
+
+Native tool readiness is an *actual local file preflight*, not
+model assertion or remembered file path. An already trusted host
+injects \`TrustedToolInventory\` with exact absolute installation root,
+expected SHA-256 native binary/license notice hashes, and tool IDs.
+The read checks current files and detects MISSING, binary SHA mismatch,
+missing/altered license or verified matching on-disk files, without
+executing a program, probing PATH, creating worker authority or
+installing packages. Model/browser requests cannot supply new
+tool paths, pin hashes, or create a tool inventory. Even
+\`SHA_AND_LICENSE_VERIFIED_NOT_EXECUTED\` is **not** evidence of
+actual runtime execution, GPU compatibility or release acceptance.
+If no native inventory is injected, NVP returns
+\`HOST_HAS_NOT_PINNED_NATIVE_TOOL_INSTALLATIONS\` rather than guessing.
+
+**Native tests submitted:** \`tests/test_nvp_wo6_scene_tool_context.py\`
+uses real OpenUSD actors/cameras/lights, moving camera/actor,
+actual indexed temporal event and original PCM chunk, immutable Take
+reopen, creator-authored shot timeline, Story Bible accepted versus
+proposed facts, stale scene/camera source, cross-project/turn revocation,
+binary/license tampering, missing files, symlink refusal and no model
+tool-path injection. CI matrix is Windows/Linux x Python 3.11/3.13 and
+runs existing AI-01/02/03 regression tests. It requires actual
+\`usd-core==26.11\`; earlier GitHub YAML install scalar parse failure
+was repaired. **This is not a model-in-the-loop or installed GUI
+film production acceptance**. WO6-04+ and the earlier WO5 original
+film/theater gates remain independent; installed model readiness,
+actual runtime tool execution and full creative source/canon linking
+will require later first-party native acceptance.
