@@ -187,10 +187,15 @@ class NativeColorOutputJournal:
             output.flush();os.fsync(output.fileno())
         self.records.append(row)
 
-    def finish(self):
-        self.release()
-        for filename in ("scope.json","progress.jsonl","owner.lock"):
+    def prepare_publish(self):
+        """Remove internal receipts while the cross-process OS lock is held."""
+        for filename in ("scope.json","progress.jsonl"):
             (self.staged/filename).unlink(missing_ok=True)
+
+    def finish_published(self):
+        """The target now exists, so no competitor can begin this identity."""
+        self.release()
+        (self.target/"owner.lock").unlink(missing_ok=True)
 
     def release(self):
         if self.fd is not None:
