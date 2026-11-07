@@ -123,7 +123,8 @@ class Approved2DPackage:
     def export(self,project_id,take_id,expected_take_sha256,
                presentation_id,output_parent,*,listener_path,
                fps_num=24,fps_den=1,color_grade=None,
-               aces_color_grade=None,linear_exr_grade=None):
+               aces_color_grade=None,linear_exr_grade=None,
+               resumable=False,cancel_check=None):
         _require_pid(project_id)
         _id(take_id,"original Digital Take")
         _id(presentation_id,"unique final presentation identity")
@@ -140,6 +141,11 @@ class Approved2DPackage:
         if (original["kind"]!="take" or data.get("frozen") is not True or
             data.get("format")!="nvp.digital_take.openusd_temporal.v1"):
             raise RuntimeError("Cannot flatten an old frame-proxy or unfrozen source")
+        if (type(resumable) is not bool or
+            (cancel_check is not None and not callable(cancel_check))):
+            raise TypeError("Native color output needs trusted cancellation authority")
+        if resumable and aces_color_grade is None and linear_exr_grade is None:
+            raise ValueError("Resumable native output requires source-verifiable color")
         if sum(mode is not None for mode in (
                 color_grade,aces_color_grade,linear_exr_grade))>1:
             raise ValueError("Cannot mix display SDR, ACES2 and ACEScg EXR grades")
@@ -254,7 +260,8 @@ class Approved2DPackage:
                     grade["document_sha256"] if grade else None),
                "aces_config_sha256":(
                     exr["config_sha256"] if exr else
-                    aces["config_sha256"] if aces else None)}
+                    aces["config_sha256"] if aces else None),
+               "durable_source_recovery_requested":resumable}
         if self.approve(dict(scope)) is not True:
             raise PermissionError("Creator did not authorize exact final 2D sample projection")
         if self.index.read_revision(
@@ -271,11 +278,23 @@ class Approved2DPackage:
         source=FrozenSceneAV(self.index,project_id,take_id,
             expected_take_sha256=expected_take_sha256,
             listener_path=self._listener(project_id,data,listener_path))
-        staged=Path(tempfile.mkdtemp(prefix=".nvp-2d-",dir=parent))
+        journal=None
+        if resumable:
+            from backend.nvp_native_color_export_journal import NativeColorOutputJournal
+            journal=NativeColorOutputJournal(
+                parent,presentation_id,scope,
+                picture_ext=".exr" if exr else ".png")
+            staged=journal.staged
+        else:
+            staged=Path(tempfile.mkdtemp(prefix=".nvp-2d-",dir=parent))
         try:
-            pictures=staged/"pictures"
-            pictures.mkdir()
-            receipt=[]
+            if journal is not None:
+                pictures=journal.pictures
+                receipt=list(journal.records)
+            else:
+                pictures=staged/"pictures"
+                pictures.mkdir()
+                receipt=[]
             dimensions=None
             grade_channels_clipped=0
             grade_channels_seen=0
@@ -302,6 +321,19 @@ class Approved2DPackage:
                         if active else None)
                 if camera is not None and source.roles.get(camera)!="camera":
                     raise RuntimeError("Output camera is not native OpenUSD scene camera")
+                if i<len(receipt):
+                    previous=receipt[i]
+                    if (previous["source_tick"]!=str(tick) or
+                        previous["camera_path"]!=camera or
+                        previous.get("original_scene_snapshot_sha256")!=
+                            state["snapshot_sha256"] or
+                        previous.get("width")!=640 or
+                        previous.get("height")!=360):
+                        raise RuntimeError("Recovered derived picture does not match original source")
+                    if dimensions is None:dimensions=(640,360)
+                    continue
+                if cancel_check is not None and cancel_check() is True:
+                    raise InterruptedError("Creator cancelled source-only color output")
                 # Gaps are real Film Time; a trusted renderer emits an actual
                 # blank picture for camera=None, never fabricates scene data.
                 if exr:
@@ -337,7 +369,7 @@ class Approved2DPackage:
                         "sample_index":i,"source_tick":str(tick),
                         "camera_path":camera,"exr_file":name,
                         "sha256":source_receipt["output_exr_sha256"],
-                        "pixel_type":"FLOAT32",
+                        "pixel_type":"FLOAT32","width":width,"height":height,
                         "working_space":"ACEScg",
                         "original_scene_snapshot_sha256":
                             state["snapshot_sha256"],
@@ -405,6 +437,7 @@ class Approved2DPackage:
                                     "camera_path":camera,
                                     "png_file":name,
                                     "sha256":sha256(encoded).hexdigest(),
+                                    "width":width,"height":height,
                                     **({"original_scene_snapshot_sha256":
                                         state["snapshot_sha256"],
                                         "pixel_bit_depth":16}
@@ -413,6 +446,8 @@ class Approved2DPackage:
                     dimensions=(width,height)
                 elif dimensions!=(width,height):
                     raise RuntimeError("Final presentation geometry changed raster dimensions")
+                if journal is not None:
+                    journal.append(receipt[i])
             if len(receipt)!=count:
                 raise RuntimeError("Native image output cadence incomplete")
             wav_path=staged/"soundtrack.wav"
@@ -483,7 +518,11 @@ class Approved2DPackage:
             with (staged/"manifest.json").open("x",encoding="utf8") as f:
                 json.dump(manifest,f,sort_keys=True,separators=(",",":"))
                 f.flush();os.fsync(f.fileno())
+            if journal is not None:
+                journal.prepare_publish()
             _publish_no_replace(staged,target)
+            if journal is not None:
+                journal.finish_published()
             return {"status":"DERIVED_2D_PACKAGE",
                     "directory":str(target),
                     "manifest_sha256":sha256(
@@ -500,7 +539,12 @@ class Approved2DPackage:
                     "single_file_master":False}
         finally:
             source.close()
-            if staged.exists():
+            if journal is not None:
+                # After a non-success result, keep original-identity-pinned
+                # unapproved DERIVED picture receipts for a later native
+                # creator-authorized resume, without auto-freezing a movie.
+                journal.release()
+            elif staged.exists():
                 shutil.rmtree(staged)
 
     def _listener(self,project_id,take,selected):
