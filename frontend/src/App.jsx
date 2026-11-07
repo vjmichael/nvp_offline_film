@@ -17,6 +17,7 @@ import FilmCameraSourcePanel from './FilmCameraSourcePanel.jsx';
 import DataFirstAVPanel from './DataFirstAVPanel.jsx';
 import WorkspaceLock from './WorkspaceLock.jsx';
 import DirectorFilmReviewPanel from './DirectorFilmReviewPanel.jsx';
+import FinishedFilmPlaybackPanel from './FinishedFilmPlaybackPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -42,7 +43,7 @@ function readManualWorkspaceLock(){
   catch{return false;}
 }
 
-export default function App() {
+function MainApp() {
   const [workspaceLocked,setWorkspaceLocked]=useState(readManualWorkspaceLock);
   useEffect(()=>{
     try{window.sessionStorage.setItem('nvp.workspace.manual_lock',
@@ -737,4 +738,50 @@ export default function App() {
   <WorkspaceLock locked={workspaceLocked}
                  onUnlock={()=>setWorkspaceLocked(false)}/>
   </>;
+}
+
+
+/** Explicit host-only installed movie presentation smoke.
+
+    This does not register a browser service, create a film, grant creator
+    consent, change FilmIndex or expose a codec path. A normal NVP.exe never
+    exports wo5_ci_published_mxf_descriptor, and therefore never mounts the
+    test-only panel regardless of the query string. The production panel
+    itself is unchanged and is precisely the one being exercised.
+*/
+export default function App(){
+  const [visibleProof,setVisibleProof]=useState(null);
+  useEffect(()=>{
+    if(window.location.search!=='?nvp_wo5_installed_real_published_mxf=1')
+      return;
+    let live=true;
+    const discover=async()=>{
+      const native=window.pywebview?.api;
+      if(typeof native?.wo5_ci_published_mxf_descriptor!=='function')return;
+      try{
+        const proof=await native.wo5_ci_published_mxf_descriptor();
+        if(live&&proof?.format==='nvp.wo5.ci_installed_real_final_mxf_visible_av.v1'&&
+          proof?.source==='REAL_PUBLISHED_DCP_PICTURE_AND_SOUND_MXF'&&
+          proof?.production_accepted===false&&proof.project_id&&
+          proof.feature_id){
+          setVisibleProof({...proof,native});
+        }
+      }catch{/* fail closed: no browser-side codec/feature discovery fallback */}
+    };
+    void discover();
+    window.addEventListener('pywebviewready',discover);
+    return ()=>{live=false;window.removeEventListener('pywebviewready',discover);};
+  },[]);
+  if(visibleProof)return <main aria-label="Installed native finished DCP visual and WebAudio verification">
+    <h2>Installed NVP.exe: actual published DCP display/audio-clock test</h2>
+    <p>Native CI fixture only. Pictures and PCM originate from real
+      packaged SMPTE MXF reels, predecoded from build-pinned codecs.
+      Director creative approval, calibrated display and audible speaker
+      output are not established by this automated test.</p>
+    <FinishedFilmPlaybackPanel
+      projectId={visibleProof.project_id}
+      featureId={visibleProof.feature_id}
+      nativeBridge={visibleProof.native}/>
+  </main>;
+  return <MainApp/>;
 }
