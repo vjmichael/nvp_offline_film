@@ -129,6 +129,21 @@ class PersistentMultiReelFeatureTests(unittest.TestCase):
         self.assertEqual(self.journal.feature(job["feature_id"])["state"],
                          "REVIEW_REQUIRED")
         self.assertFalse(self.journal.feature(job["feature_id"])["filmindex_sha256"])
+        denied=self.journal.approve_orphan_feature_adoption(
+            job["feature_id"],lambda _:False)
+        self.assertEqual(denied["status"],"DENIED")
+        adopted=self.journal.approve_orphan_feature_adoption(
+            job["feature_id"],lambda scope:
+            scope["preserve_published_directory"] is True)
+        self.assertEqual(adopted["status"],"PUBLISHED_PENDING_INDEX")
+        self.assertFalse(adopted["filesystem_mutated"])
+        with SingletonSupervisor(self.journal.root):
+            final=ProductionSupervisor(self.journal).run_one()
+        self.assertEqual(final["status"],
+                         "MULTIREEL_FEATURE_FILMINDEX_RECORDED")
+        self.assertEqual(self.journal.feature(job["feature_id"])["state"],
+                         "INDEXED")
+        self.assertTrue(Path(receipt["destination"]).is_dir())
 
 
 if __name__=="__main__":
