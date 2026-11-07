@@ -473,6 +473,32 @@ class TrustedDesktopCameraBridge:
         return self._data_av().stop(session_id)
 
 
+
+    def data_av_native_color_catalog(self,project_id,take_id,take_sha256):
+        """List only source-bound, verified immutable grade revisions."""
+        self._native_window()
+        _require_pid(project_id)
+        _id(take_id,"original Digital Take")
+        _sha(take_sha256)
+        from backend.nvp_native_color_decisions import NativeColorDecisions
+        grades=[]
+        grader=NativeColorDecisions(self.index)
+        for row in self.index.list_objects(project_id,kind="style")[:128]:
+            try:
+                plan=grader.read(project_id,row["object_id"])
+            except (RuntimeError,ValueError,KeyError):
+                continue
+            if (plan["take_id"]==take_id and
+                    plan["take_sha256"]==take_sha256):
+                grades.append({
+                    "grade_id":plan["grade_id"],
+                    "revision":plan["revision"],
+                    "document_sha256":plan["document_sha256"],
+                    "parameters":plan["parameters"],
+                })
+        return {"format":"nvp.data_first.native_grade_catalog.v1",
+                "status":"AVAILABLE","grades":grades,"ffmpeg_used":False}
+
     def data_av_export_native_avi(self,request):
         """Two native approvals and OS folder choice; browser supplies no path.
 
@@ -480,9 +506,10 @@ class TrustedDesktopCameraBridge:
         immutable derivatives, never new capture sources or cinema masters.
         """
         self._native_window()
-        if type(request) is not dict or set(request)!={
-                "project_id","take_id","take_document_sha256",
-                "presentation_id","listener_path","fps_num","fps_den"}:
+        required={"project_id","take_id","take_document_sha256",
+                  "presentation_id","listener_path","fps_num","fps_den"}
+        if type(request) is not dict or set(request) not in (
+                required,required|{"color_grade"}):
             raise ValueError("Native delivery needs exactly scoped source IDs")
         from backend.nvp_final_2d_native import Approved2DPackage,OUTPUT_CADENCES
         from backend.nvp_native_cpu_raster import NativeSourceRaster
@@ -529,6 +556,7 @@ class TrustedDesktopCameraBridge:
                 f"Original Take: {take}\nSHA-256: {sha}\n"
                 f"Presentation: {presentation}\nListener: {listener}\n"
                 f"Output folder: {parent}\n"
+                f"Color grade SHA-256: {scope['color_grade_sha256']}\n"
                 "This is a limited native 640×360 procedural OpenUSD raster,\n"
                 "not a cinema-quality final master. Sources remain immutable.")
         render=NativeSourceRaster(self.index,pid)
@@ -536,7 +564,8 @@ class TrustedDesktopCameraBridge:
             self.index,native_creator_approval=approve_package,
             render_png=render.render_png).export(
                 pid,take,sha,presentation,parent,listener_path=listener,
-                fps_num=request["fps_num"],fps_den=request["fps_den"])
+                fps_num=request["fps_num"],fps_den=request["fps_den"],
+            color_grade=request.get("color_grade"))
         def approve_movie(scope):
             if scope.get("original_take_sha256")!=sha or (
                     scope.get("source_mutated") is not False):
@@ -546,6 +575,7 @@ class TrustedDesktopCameraBridge:
                 f"Original Take SHA-256: {sha}\n"
                 f"Approved derived image/audio manifest: {scope['manifest_sha256']}\n"
                 f"File: {scope['output_name']}\n"
+                f"Color grade SHA-256: {scope['color_grade_sha256']}\n"
                 "No FFmpeg or overwrite. This AVI is not a mastered DCP.")
         result=deliver_avi(
             package["directory"],parent/("NVP2D_"+presentation+".avi"),
