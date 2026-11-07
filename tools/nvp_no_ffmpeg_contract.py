@@ -43,6 +43,7 @@ ENTRYPOINTS=(
     "backend/nvp_native_scene_linear_raster.py",
     "backend/nvp_native_scene_linear_exr.py",
     "backend/nvp_native_color_export_journal.py",
+    "backend/nvp_native_cinema_master_gate.py",
     "backend/nvp_native_color_decisions.py",
     "backend/nvp_imported_audio.py",
     "backend/nvp_legacy_quarantine.py",
