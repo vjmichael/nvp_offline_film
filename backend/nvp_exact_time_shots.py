@@ -252,6 +252,40 @@ class ExactTimeShotSequence:
                 "start_tick":str(start),"end_tick":str(end),
                 "segments":result,"video_frames_created":False}
 
+    def revise_shot(self,project_id,timeline_id,expected_revision,shot_id,replacement):
+        """Replace or remove one shot in a new immutable, CAS-checked revision.
+
+        The original revision and source scene remain untouched. A replacement
+        must contain the complete exact-time shot schema; no frame fields or
+        implicit source rebindings are accepted.
+        """
+        _int(expected_revision,"expected camera revision",minimum=1)
+        _id(shot_id,"shot ID")
+        plan=self.read(project_id,timeline_id,expected_revision)
+        if replacement is not None:
+            if type(replacement) is not dict or replacement.get("shot_id")!=shot_id:
+                raise ValueError("Replacement must retain the exact shot identity")
+        found=False
+        updated=[]
+        for shot in plan["shots"]:
+            item={key:shot[key] for key in (
+                "shot_id","camera_path","start_tick","end_tick","pattern")}
+            if item["shot_id"]==shot_id:
+                found=True
+                if replacement is not None:
+                    updated.append(replacement)
+            else:
+                updated.append(item)
+        if not found:
+            raise ValueError("Shot identity not found in expected revision")
+        if not updated:
+            raise ValueError("Cannot remove the final authored camera shot")
+        return self.publish(
+            project_id,timeline_id,scene_id=plan["scene_id"],
+            scene_revision=plan["scene_revision"],
+            duration_tick=plan["duration_tick"],shots=updated,
+            expected_revision=expected_revision)
+
     def checkpoints(self,project_id,timeline_id,revision):
         plan=self.read(project_id,timeline_id,revision)
         points={0}
