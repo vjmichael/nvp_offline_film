@@ -153,8 +153,12 @@ def smoke_from_installed_bundle(bundle_root):
     report=run_installed_finished_probe(
         bundle_root=bundle_root,dcp_dir=Path(selection),
         seconds=float(os.environ.get("NVP_WO5_SMOKE_SECONDS","20")))
-    print("NVP_WO5_INSTALLED_CODEC_EVIDENCE="+
-          json.dumps(report,sort_keys=True),flush=True)
+    # A PyInstaller --windowed Windows executable has sys.stdout=None.
+    # The durable CI report remains the source of truth in that mode.
+    import sys
+    if sys.stdout is not None:
+        print("NVP_WO5_INSTALLED_CODEC_EVIDENCE="+
+              json.dumps(report,sort_keys=True),flush=True)
     destination=os.environ.get("NVP_WO5_SMOKE_REPORT")
     if destination:
         file=Path(destination)
