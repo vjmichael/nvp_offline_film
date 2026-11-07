@@ -34,13 +34,20 @@ CI_FORMAT="nvp.wo5.ci_installed_real_final_mxf_visible_av.v1"
 CI_FEATURE="NVP_WO5_REAL_PUBLISHED_MXF_CI_ONLY"
 CI_SESSION="NVP_WO5_CI_ACTUAL_DCP_DISPLAY"
 MIN_CI_FRAMES=24
+# Reopen at most one genuine second of published MXF essence per codec
+# invocation; four-frame launch churn caused 180 repeated native process pairs
+# for a 720-frame rehearsal. This stays disk-bounded and preserves ALL frames.
+MAX_UNWRAP_FRAMES=24
 
 class InstalledPublishedDCPFixture:
     """Bounded native rehearsal cache: every frame read from final MXF."""
 
-    def __init__(self,root,codec_provider,*,max_frames=720):
+    def __init__(self,root,codec_provider,*,max_frames=720,progress=None):
         if not callable(codec_provider):
             raise RuntimeError("Release-pinned installed decoder not available")
+        if progress is not None and not callable(progress):
+            raise TypeError("Native progress observer must be host-supplied")
+        self.progress=progress
         self.unwrap,self.decode=codec_provider()
         self.root=Path(root)
         if not self.root.is_absolute() or self.root.is_symlink():
@@ -93,7 +100,7 @@ class InstalledPublishedDCPFixture:
                 raise PermissionError("Final SMPTE DCP track modified during native rehearsal")
 
     def prepare(self):
-        """Pre-roll EXACT real MXF frames with bounded <=4-frame workers.
+        """Pre-roll EXACT real MXF frames using bounded <=24-frame native unwrap workers.
 
         This is cache-ahead playback acceptance, NOT native decode throughput.
         A repeated-source 30s fixture has only six unique codestreams;
@@ -103,8 +110,10 @@ class InstalledPublishedDCPFixture:
             raise PermissionError("Fixture decoder preparation is one-shot")
         for ri,reel in enumerate(self.reels):
             self._checked_asset(reel)
-            for local in range(0,reel["frames"],4):
-                count=min(4,reel["frames"]-local)
+            for local in range(0,reel["frames"],MAX_UNWRAP_FRAMES):
+                count=min(MAX_UNWRAP_FRAMES,reel["frames"]-local)
+                if self.progress is not None:
+                    self.progress(ri,local,count,self.total)
                 with TemporaryDirectory(prefix="nvp-real-visible-mxf-") as temp:
                     work=Path(temp)
                     run_supervised_codec(self.unwrap,
