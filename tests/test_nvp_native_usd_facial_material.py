@@ -86,6 +86,49 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
         with self.assertRaises(PermissionError):
             native.read_original_rig_texture_tile(ticket,req)
 
+    def test_source_rig_five_channel_pbr_material_maps_are_verified(self):
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_native_usd_texture import publish_texture
+        def image(color):
+            stream=BytesIO()
+            Image.new("RGB",(2,2),color).save(stream,format="PNG")
+            return stream.getvalue()
+        maps={
+            "roughness":(100,100,100),
+            "metallic":(200,200,200),
+            "emission":(20,60,100),
+            "normal":(128,128,255),
+            "opacity":(255,255,255),
+        }
+        self.rig["skin"]["mesh_uvs"]=[
+            [float(i%2),float((i//2)%2)]
+            for i in range(len(self.skin["points"]))]
+        self.rig["skin"]["pbr_maps"]={
+            key:publish_texture(self.index,self.pid,image(color))
+            for key,color in maps.items()}
+        self._publish()
+        _,stage=self.scene.open(self.pid,"face_world",1)
+        material_path="/World/Actor/Rig/Material"
+        shader=UsdShade.Shader(
+            stage.GetPrimAtPath(material_path+"/OpenPBR"))
+        self.assertEqual(shader.GetIdAttr().Get(),
+                         "ND_open_pbr_surface_surfaceshader")
+        self.assertEqual(float(UsdShade.Shader(
+            stage.GetPrimAtPath(material_path+"/PreviewSurface"))
+            .GetInput("opacityThreshold").GetAttr().Get()),.5)
+        snap=OpenUSDTimeState(self.index).evaluate(
+            self.pid,"face_world",1,"acting",1,tick=T)
+        live=visual_state(self.index,self.pid,snap,
+            scene_id="face_world",scene_revision=1)
+        actor=next(x for x in live["objects"] if
+                   x["path"]=="/World/Actor")
+        self.assertEqual(set(actor["source_material"]["pbr_maps"]),set(maps))
+        self.assertEqual(set(actor["source_material"]["pbr_map_transports"]),
+                         set(maps))
+        self.assertEqual(actor["shape"],"skinned_mesh")
+        self.assertFalse(live["source_modified"])
+
     def test_real_original_blendshape_and_usd_pbr_material_move_skin(self):
         record=self._publish()
         source_sha=record["document_sha256"]
