@@ -14,6 +14,8 @@ FORMAT="nvp.data_av.native_visual_state.v1"
 MAX_OBJECTS=64
 MAX_MESH_POINTS_TOTAL=4096
 MAX_MESH_TRIANGLES_TOTAL=8192
+# An audition is a bounded visual event, not a whole-project image cache.
+MAX_LIVE_TEXTURE_TRANSPORT_BYTES=8*1024*1024
 
 
 def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
@@ -34,6 +36,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             scene_id=scene_id,scene_revision=scene_revision,
             include_texture_transport=include_texture_transport)
     visual=[]
+    texture_transport_bytes=0
     mesh_points_total=0
     mesh_triangles_total=0
     assets=OpenUSDAssetRegistry(index)
@@ -97,6 +100,12 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
         if (type(matrix) is not list or len(matrix)!=4 or
             any(type(row) is not list or len(row)!=4 for row in matrix)):
             raise RuntimeError("Invalid native USD object transform")
+        source_surface=(skin.get("source_material") if skin else asset_material)
+        if source_surface is not None and "texture_transport" in source_surface:
+            packet=source_surface["texture_transport"]
+            texture_transport_bytes+=len(packet["png_base64"])
+            if texture_transport_bytes>MAX_LIVE_TEXTURE_TRANSPORT_BYTES:
+                raise RuntimeError("Live source texture transfer exceeds bounded 8 MiB frame")
         visual.append({
             "path":obj["path"],"semantic_role":role,
             "shape":shape,"size_m":size,
