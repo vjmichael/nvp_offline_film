@@ -364,7 +364,9 @@ class CinemaJournal(ProductionJournal):
                 work=root/"frame-work"/f"{pos:06d}"
                 if item["state"]=="VERIFIED":
                     try:
-                        if (item["file_sha256"]!=item["verified_sha256"] or
+                        if (Path(item["source_path"]).is_symlink() or
+                                not Path(item["source_path"]).is_file() or
+                                item["file_sha256"]!=item["verified_sha256"] or
                                 digest_file(item["source_path"])!=item["expected_sha256"] or
                                 item["file_bytes"]!=item["verified_bytes"] or
                                 verify_frame_file(filename,item["file_sha256"],
@@ -383,9 +385,12 @@ class CinemaJournal(ProductionJournal):
             track=root/"picture.mxf"
             stage=root/"mxf-stage"
             if job["reel_state"]=="TRACK_VERIFIED":
-                if (not track.is_file() or track.is_symlink() or
-                        digest_file(track)!=job["track_sha256"] or
-                        track.stat().st_size!=job["track_bytes"]):
+                try:
+                    if (not track.is_file() or track.is_symlink() or
+                            digest_file(track)!=job["track_sha256"] or
+                            track.stat().st_size!=job["track_bytes"]):
+                        needs_review=True
+                except OSError:
                     needs_review=True
             elif (track.exists() or track.is_symlink() or
                   stage.exists() or stage.is_symlink() or
