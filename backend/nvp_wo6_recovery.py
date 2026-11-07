@@ -184,7 +184,7 @@ class WO6DurableRecovery:
                     raise RuntimeError("Shot source/layer SHA mismatch")
                 from backend.nvp_wo6_native_shot_action import RECEIPT as fmt
                 receipt_id = "shot_sha256"
-        except (RuntimeError, ValueError, KeyError, TypeError):
+        except (RuntimeError, ValueError, KeyError, TypeError, PermissionError, OSError):
             return "COMMITTED_SOURCE_INTEGRITY_UNVERIFIED", None
         receipt_path = folder / "receipt.json"
         if not receipt_path.exists():
