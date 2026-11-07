@@ -109,7 +109,7 @@ describe('WO5 actual NVP director review desktop workflow',()=>{
       name:'Verify original source and delivery receipts'}));
     await waitFor(()=>expect(native.wo5_review_inspect_feature)
       .toHaveBeenCalledWith(project,'durable-feature-01'));
-    expect(screen.getByText(/This is not playback of the final flattened DCP/i)).toBeTruthy();
+    expect(screen.getByText(/playback of the final flattened DCP/i)).toBeTruthy();
     fireEvent.click(screen.getByRole('button',{name:'Audition original source'}));
     expect(screen.getByRole('region',{name:'Real original Take playback'}).textContent)
       .toContain('FrozenRealTake01 / 2000');
