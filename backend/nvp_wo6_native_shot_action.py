@@ -311,6 +311,9 @@ class NativeShotActionHost:
                 raise RuntimeError("Director shot native receipt does not match actual layer")
             if self.recovery.cancel_requested(task_id):
                 raise NativeCancelRequested("Creator cancelled completed shot operation")
+            _exact_source(
+                self.index, spec["project_id"], spec["scene_id"],
+                spec["scene_revision"], spec["scene_sha256"], "scene")
             if not self._check(spec["native_approval_id"],
                                hashlib.sha256(raw).hexdigest(), spec):
                 raise PermissionError("Director or host approval revoked after shot worker")
