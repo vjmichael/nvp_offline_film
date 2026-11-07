@@ -13,9 +13,10 @@ import base64
 from backend.nvp_film_index import FilmIndex, _sha
 
 MEDIA = "image/png"
-MAX_SOURCE_BYTES = 2 * 1024 * 1024
-MAX_EDGE = 512
-MAX_PIXELS = 512 * 512
+MAX_SOURCE_BYTES = 8 * 1024 * 1024
+MAX_EDGE = 2048
+MAX_PIXELS = 2048 * 2048
+MAX_LIVE_PREVIEW_EDGE = 512
 PREFIX = "nvp-blob://texture/"
 FORMAT = "nvp.original.usd_texture_png.v1"
 
@@ -79,14 +80,30 @@ def verified_texture(index: FilmIndex, project_id, descriptor):
 
 
 def texture_transport(index: FilmIndex, project_id, descriptor):
-    png, _ = verified_texture(index, project_id, descriptor)
-    # This is an ephemeral UI transport of an independently SHA-verified
-    # frozen original. It is never saved as a new source image.
+    png, (width,height,raw) = verified_texture(index, project_id, descriptor)
+    preview=png
+    pw,ph=width,height
+    if max(width,height)>MAX_LIVE_PREVIEW_EDGE:
+        # A disposable, deterministically derived display LOD, NEVER a new
+        # source texture or substitute material authority. CPU source raster
+        # continues to sample the original full-resolution FilmIndex PNG.
+        from PIL import Image
+        image=Image.frombytes("RGBA",(width,height),raw).convert("RGB")
+        factor=MAX_LIVE_PREVIEW_EDGE/max(width,height)
+        pw=max(1,round(width*factor))
+        ph=max(1,round(height*factor))
+        reduced=image.resize((pw,ph),Image.Resampling.LANCZOS)
+        out=BytesIO()
+        reduced.save(out,format="PNG",optimize=False)
+        preview=out.getvalue()
     return {
         "format": FORMAT, "sha256": descriptor["sha256"],
-        "width": descriptor["width"], "height": descriptor["height"],
+        "original_width":width,"original_height":height,
+        "width":pw,"height":ph,
+        "derived_preview":preview!=png,
+        "preview_sha256":sha256(preview).hexdigest(),
         "color_space": "sRGB", "wrap": "repeat",
-        "png_base64": base64.b64encode(png).decode("ascii"),
+        "png_base64": base64.b64encode(preview).decode("ascii"),
         "source_modified": False,
     }
 
