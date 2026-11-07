@@ -45,7 +45,7 @@ class LiveTakeMicTests(unittest.TestCase):
             scene_id="spatial_world",scene_revision=1,
             camera_timeline_id="LiveCamera",camera_timeline_revision=1,
             sound_timeline_id="MicEvents001",source_id="MicSignal001",
-            emitter_path="/World/Emitter",event_id="MicSpeech001",
+            emitter_path="/World/Actor",event_id="MicSpeech001",
             subject_id="Emitter",native_approve_start=lambda s:
                 self.scopes.append(("start",s)) is None,
             native_approve_freeze=lambda ev,s:
