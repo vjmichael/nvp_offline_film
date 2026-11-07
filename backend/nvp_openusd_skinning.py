@@ -11,11 +11,14 @@ rig joints; more general bind-pose authoring and facial rigging follow later.
 from __future__ import annotations
 
 import math
+import re
 
 MAX_SKIN_VERTICES=512
 MAX_SKIN_FACES=1024
 MAX_INFLUENCES=4
 SKIN_MESH_SUFFIX="/Rig/CharacterMesh"
+MAX_FACIAL_SHAPES=8
+SHAPE_NAME=re.compile(r"[A-Za-z][A-Za-z0-9_]{0,30}\\Z")
 
 
 def _float(value):
@@ -25,9 +28,10 @@ def _float(value):
 
 
 def normalize_skin(skin,joint_count):
-    if type(skin) is not dict or set(skin)!={"points","faces","joint_indices",
-                                            "joint_weights","display_color"}:
-        raise ValueError("Skin requires exact typed point/topology/joint influence fields")
+    required={"points","faces","joint_indices","joint_weights","display_color"}
+    optional={"blend_shapes","preview_material"}
+    if type(skin) is not dict or not required<=set(skin) or not set(skin)<=required|optional:
+        raise ValueError("Skin requires source topology, influence fields and typed optional appearance")
     points=skin["points"]
     faces=skin["faces"]
     ids=skin["joint_indices"]
@@ -76,12 +80,44 @@ def normalize_skin(skin,joint_count):
     rgb=[_float(x) for x in color]
     if any(not 0<=x<=1 for x in rgb):
         raise ValueError("Material preview color out of RGB domain")
+    shapes=skin.get("blend_shapes",[])
+    if type(shapes) is not list or len(shapes)>MAX_FACIAL_SHAPES:
+        raise ValueError("Too many original facial shape targets")
+    bound_shapes=[]
+    names=set()
+    for original in shapes:
+        if type(original) is not dict or set(original)!={"name","offsets"}:
+            raise ValueError("A USD blend shape requires a name and mesh point offsets")
+        name=original["name"]
+        if type(name) is not str or not SHAPE_NAME.fullmatch(name) or name in names:
+            raise ValueError("Duplicate/unsafe original facial shape identity")
+        names.add(name)
+        offsets=original["offsets"]
+        if type(offsets) is not list or len(offsets)!=len(pts):
+            raise ValueError("Native face blend shape does not match original mesh")
+        verified=[]
+        for vec in offsets:
+            if type(vec) is not list or len(vec)!=3:
+                raise ValueError("Face shape offset must contain exactly XYZ")
+            values=[_float(x) for x in vec]
+            if any(abs(x)>2.0 for x in values):
+                raise ValueError("Unbounded original facial mesh displacement")
+            verified.append(values)
+        bound_shapes.append({"name":name,"offsets":verified})
+    material=skin.get("preview_material",{"roughness":0.8,"metallic":0.05})
+    if (type(material) is not dict or
+        set(material)!={"roughness","metallic"} or
+        any(type(v) not in (int,float) or
+            not math.isfinite(v) or not 0<=v<=1 for v in material.values())):
+        raise ValueError("Original USD PreviewSurface needs bounded roughness/metallic")
     return {"points":pts,"faces":polygons,"joint_indices":joints,
-            "joint_weights":normalized_weights,"display_color":rgb}
+            "joint_weights":normalized_weights,"display_color":rgb,
+            "blend_shapes":bound_shapes,
+            "preview_material":{k:float(v) for k,v in material.items()}}
 
 
 def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
-    from pxr import Gf,Sdf,UsdGeom,UsdSkel,Vt
+    from pxr import Gf,Sdf,UsdGeom,UsdSkel,UsdShade,Vt
     bound=normalize_skin(skin,joint_count)
     mesh=UsdGeom.Mesh.Define(stage,actor_path+SKIN_MESH_SUFFIX)
     mesh.GetPointsAttr().Set(Vt.Vec3fArray([Gf.Vec3f(*x) for x in bound["points"]]))
@@ -105,6 +141,39 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         not influence_weights.Set(Vt.FloatArray(
             [w for row in bound["joint_weights"] for w in row]))):
         raise RuntimeError("Could not author native USD per-vertex joint influences")
+    # The actual USD PreviewSurface is source geometry authority. The
+    # Three.js viewport reads these exact typed shader inputs, not a
+    # guessed RGB actor material or external texture.
+    material_path=actor_path+"/Rig/Material"
+    material=UsdShade.Material.Define(stage,material_path)
+    shader=UsdShade.Shader.Define(stage,material_path+"/PreviewSurface")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
+        Gf.Vec3f(*bound["display_color"]))
+    shader.CreateInput("roughness",Sdf.ValueTypeNames.Float).Set(
+        bound["preview_material"]["roughness"])
+    shader.CreateInput("metallic",Sdf.ValueTypeNames.Float).Set(
+        bound["preview_material"]["metallic"])
+    shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
+    material.CreateSurfaceOutput().ConnectToSource(
+        shader.ConnectableAPI(),"surface")
+    if not UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(material):
+        raise RuntimeError("Unable to bind original actor USD PreviewSurface")
+    blend_paths=[]
+    shape_names=[]
+    for shape in bound["blend_shapes"]:
+        name=shape["name"]
+        blend=UsdSkel.BlendShape.Define(
+            stage,actor_path+SKIN_MESH_SUFFIX+"/Blend_"+name)
+        offsets=Vt.Vec3fArray([Gf.Vec3f(*p) for p in shape["offsets"]])
+        if not blend.GetOffsetsAttr().Set(offsets):
+            raise RuntimeError("Failed to author original USD facial shape offsets")
+        blend_paths.append(blend.GetPrim().GetPath())
+        shape_names.append(name)
+    if shape_names:
+        if (not binding.CreateBlendShapesAttr().Set(Vt.TokenArray(shape_names))
+            or not binding.CreateBlendShapeTargetsRel().SetTargets(blend_paths)):
+            raise RuntimeError("USD face shape binding is not authoritative")
     return {
         "mesh_path":actor_path+SKIN_MESH_SUFFIX,
         "source_vertex_count":len(bound["points"]),
@@ -113,7 +182,10 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         "geom_bind_transform":"identity",
         "max_influences":MAX_INFLUENCES,
         "human_actor_geometry_preview":True,
-        "facial_deformation_rendered":False,
+        "facial_shape_names":shape_names,
+        "facial_shape_count":len(shape_names),
+        "facial_deformation_rendered":len(shape_names)>0,
+        "preview_material_path":material_path,
     }
 
 
@@ -151,6 +223,37 @@ def evaluate_skin(stage,mesh_prim,actor_path,tick):
     bind=binding.GetGeomBindTransformAttr().Get()
     if bind is None or bind!=Gf.Matrix4d(1.0):
         raise RuntimeError("This bounded NVP source renderer only supports identity mesh bind")
+    # Evaluate the original USDSkel blend-shape offsets BEFORE skinning,
+    # as required by the USD schema. This does not mutate the original
+    # mesh or author a replacement performance Take.
+    blend_names=list(binding.GetBlendShapesAttr().Get() or [])
+    blend_targets=list(binding.GetBlendShapeTargetsRel().GetTargets())
+    active_shapes=[]
+    if blend_names or blend_targets:
+        if len(blend_names)!=len(blend_targets):
+            raise RuntimeError("Broken USD original facial shape binding")
+        animation=UsdSkel.Animation(
+            stage.GetPrimAtPath(actor_path+"/Rig/Skeleton/Animation"))
+        if not animation:
+            raise RuntimeError("Missing original USD facial performance animation")
+        frame_names=list(animation.GetBlendShapesAttr().Get() or [])
+        weights=animation.GetBlendShapeWeightsAttr().Get(t)
+        if (weights is None or len(weights)!=len(frame_names) or
+            set(blend_names)!=set(frame_names)):
+            raise RuntimeError("Source facial performance no longer matches USD binding")
+        for name,target in zip(blend_names,blend_targets):
+            shape=UsdSkel.BlendShape(stage.GetPrimAtPath(target))
+            if (not shape or str(target)!=
+                    actor_path+SKIN_MESH_SUFFIX+"/Blend_"+str(name)
+                    or shape.GetAuthoredInbetweens()):
+                raise RuntimeError("Unsupported or changed original facial shape")
+            offsets=shape.GetOffsetsAttr().Get()
+            if offsets is None:
+                raise RuntimeError("Source face blend offsets missing")
+            weight=float(weights[frame_names.index(name)])
+            if not math.isfinite(weight) or not 0<=weight<=1:
+                raise RuntimeError("Original facial animation weight is unbounded")
+            active_shapes.append((weight,offsets))
     raw=mesh.GetPointsAttr().Get(t)
     ids=binding.GetJointIndicesPrimvar().Get()
     weights=binding.GetJointWeightsPrimvar().Get()
@@ -158,8 +261,13 @@ def evaluate_skin(stage,mesh_prim,actor_path,tick):
         raise RuntimeError("Missing authored source actor geometry/weights")
     if len(raw)>MAX_SKIN_VERTICES or len(ids)!=4*len(raw) or len(weights)!=4*len(raw):
         raise RuntimeError("Frozen source joint influence arrays changed")
+    if any(len(offsets)!=len(raw) for _,offsets in active_shapes):
+        raise RuntimeError("Original USD blend shape topology changed")
     points=[]
     for n,p in enumerate(raw):
+        face_point=Gf.Vec3d(*p)
+        for weight,offsets in active_shapes:
+            face_point+=Gf.Vec3d(*offsets[n])*weight
         out=Gf.Vec3d(0)
         total=0.
         for influence in range(MAX_INFLUENCES):
@@ -168,7 +276,7 @@ def evaluate_skin(stage,mesh_prim,actor_path,tick):
             if not 0<=joint<len(transforms) or not math.isfinite(weight) or weight<0:
                 raise RuntimeError("Invalid frozen source skin weights")
             if weight:
-                v=transforms[joint].Transform(Gf.Vec3d(*p))
+                v=transforms[joint].Transform(face_point)
                 out+=Gf.Vec3d(v)*weight
                 total+=weight
         if not math.isclose(total,1.,abs_tol=1e-5):
@@ -181,5 +289,6 @@ def evaluate_skin(stage,mesh_prim,actor_path,tick):
         "skinning_evaluated":True,
         "usd_skin_binding_verified":True,
         "joint_count":len(transforms),
-        "facial_deformation_evaluated":False,
+        "facial_deformation_evaluated":bool(active_shapes),
+        "original_blend_shape_count":len(active_shapes),
     }
