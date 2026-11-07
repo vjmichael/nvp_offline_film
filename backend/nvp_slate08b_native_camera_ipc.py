@@ -449,6 +449,36 @@ class TrustedDesktopCameraBridge:
             return {"format":"nvp.native.texture_mesh_catalog.v1",
                     "assets":result,"original_modified":False}
 
+    def wo2_assistant_scene_brief(self,request):
+        """Trusted source-scoped film facts for a local AI planning tool."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","scene_id","scene_revision","scene_sha256"}:
+                raise PermissionError("AI planning must not broaden scene scope")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).assistant_scene_brief(
+                request["project_id"],
+                scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                scene_sha256=request["scene_sha256"])
+
+    def wo2_validate_assistant_look_proposal(self,request):
+        """Never execute, approve or persist model-authored look JSON."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","scene_id","scene_revision","scene_sha256",
+                "look","rationale"}:
+                raise PermissionError("AI look suggestions require complete USD authority")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).validate_assistant_proposal(
+                request["project_id"],
+                scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                scene_sha256=request["scene_sha256"],
+                look=request["look"],rationale=request["rationale"])
+
     def wo2_propose_presentation_look(self,request):
         """Generate an untrusted, non-persistent assistant-facing film look."""
         with self._lock:
