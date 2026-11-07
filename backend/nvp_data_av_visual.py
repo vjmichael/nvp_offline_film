@@ -44,6 +44,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
         mesh_points=None
         mesh_triangles=None
         mesh_uvs=None
+        mesh_face_uvs=None
         binding=obj.get("asset")
         skin=skins.get(obj["path"])
         asset_material=None
@@ -71,6 +72,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
                 mesh_points=source["data"]["points"]
                 mesh_triangles=source["data"]["triangles"]
                 mesh_uvs=source["data"].get("mesh_uvs")
+                mesh_face_uvs=source["data"].get("face_uvs")
                 mesh_points_total+=len(mesh_points)
                 mesh_triangles_total+=len(mesh_triangles)
                 if (mesh_points_total>MAX_MESH_POINTS_TOTAL or
@@ -106,6 +108,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             "mesh_points":mesh_points,
             "mesh_triangles":mesh_triangles,
             "mesh_uvs":mesh_uvs,
+            "mesh_face_uvs":mesh_face_uvs,
             "source_skinning":shape=="skinned_mesh",
             "source_rigged_actor":skin is not None,
             "source_skinning_tick":skin["source_skinning_tick"] if skin else None,
