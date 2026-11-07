@@ -292,11 +292,11 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
         dsq=_dot(d,d)
         light=_unit(d)
         if light is None:continue
-        nl=max(0.,_dot(n,light))
-        if nl<=0 or nv<=0:continue
+        nl=np.maximum(0.,np.sum(normal*np.asarray(light),axis=-1))
+        if not np.any(nl>0) or not np.any(nv>0):continue
         h=_unit(tuple(light[i]+view[i] for i in range(3)))
         if h is None:continue
-        nh=max(0.,_dot(n,h))
+        nh=np.maximum(0.,np.sum(normal*np.asarray(h),axis=-1))
         vh=max(0.,_dot(view,h))
         denom=nh*nh*(alpha2-1.)+1.
         distribution=alpha2/(math.pi*denom*denom+1e-8)
