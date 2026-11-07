@@ -303,6 +303,37 @@ def run_installed_data_av_smoke():
                 receipt["source_modified"] is not False or
                 not float(rgb[:,:,:3].max())>0):
                 raise RuntimeError("Installed source texture/seam raster failed")
+            # The same installed worker must enforce Take-scoped tiled
+            # texture reads, including immediate revocation on stop.
+            tile_session=bridge.data_av_begin({
+                "project_id":pid,"take_id":"smoke_texture_take",
+                "take_document_sha256":texture_take["document_sha256"],
+                "listener_path":"/World/ColorCamera",
+                "first_sample":0,"direction":"forward"})
+            if tile_session["status"]!="READY":
+                raise RuntimeError("Installed texture Take review not approved")
+            ticket=tile_session["session_id"]
+            request={
+                "asset_id":"smoke_original_texture_mesh","asset_revision":1,
+                "asset_document_sha256":asset["document_sha256"],
+                "texture_sha256":texture_doc["preview_material"][
+                    "texture"]["sha256"],
+                "mip_level":0,"tile_x":0,"tile_y":0,
+            }
+            preview=bridge.data_av_original_texture_tile(ticket,request)
+            if (preview["source_sha256"]!=request["texture_sha256"] or
+                preview["take_document_sha256"]!=
+                    texture_take["document_sha256"] or
+                preview["source_modified"] is not False or
+                preview["ffmpeg_used"] is not False):
+                raise RuntimeError("Installed source texture tile authorization failed")
+            bridge.data_av_stop(ticket)
+            try:
+                bridge.data_av_original_texture_tile(ticket,request)
+            except PermissionError:
+                pass
+            else:
+                raise RuntimeError("Installed texture tile grant survived revocation")
             _native_checkpoint("installed_av_original_usd_texture_passed")
             _native_checkpoint("installed_av_aces_exr_passed")
             if __import__("sys").stdout is not None:
