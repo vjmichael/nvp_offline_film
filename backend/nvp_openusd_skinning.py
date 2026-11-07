@@ -18,7 +18,7 @@ MAX_SKIN_FACES=1024
 MAX_INFLUENCES=4
 SKIN_MESH_SUFFIX="/Rig/CharacterMesh"
 MAX_FACIAL_SHAPES=8
-SHAPE_NAME=re.compile(r"[A-Za-z][A-Za-z0-9_]{0,30}\\Z")
+SHAPE_NAME=re.compile(r"[A-Za-z][A-Za-z0-9_]{0,30}\Z")
 
 
 def _float(value):
@@ -189,6 +189,37 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
     }
 
 
+def read_original_preview_surface(stage,mesh_prim,actor_path):
+    """Read the actual frozen UsdShade shader, not assumed actor colors."""
+    from pxr import UsdShade
+    expected=actor_path+"/Rig/Material"
+    binding=UsdShade.MaterialBindingAPI(mesh_prim)
+    bound,relationship=binding.ComputeBoundMaterial()
+    if (not bound or str(bound.GetPath())!=expected):
+        raise RuntimeError("Skinned actor's source USD material binding changed")
+    shader=UsdShade.Shader(
+        stage.GetPrimAtPath(expected+"/PreviewSurface"))
+    if not shader or shader.GetIdAttr().Get()!="UsdPreviewSurface":
+        raise RuntimeError("Original actor material is not a supported USD PreviewSurface")
+    values={}
+    for name in ("diffuseColor","roughness","metallic"):
+        inp=shader.GetInput(name)
+        if not inp:
+            raise RuntimeError("Authored actor shader input missing: "+name)
+        values[name]=inp.Get()
+    color=[float(x) for x in values["diffuseColor"]]
+    roughness=float(values["roughness"])
+    metallic=float(values["metallic"])
+    if (any(not math.isfinite(v) or not 0<=v<=1 for v in color) or
+        any(not math.isfinite(v) or not 0<=v<=1
+            for v in (roughness,metallic))):
+        raise RuntimeError("Original source actor material parameters untrusted")
+    return {"format":"nvp.original_usd_preview_surface.v1",
+            "material_path":expected,"base_color_rgb":color,
+            "roughness":roughness,"metallic":metallic,
+            "texture_images_loaded":False,"original_source_modified":False}
+
+
 def evaluate_skin(stage,mesh_prim,actor_path,tick):
     """Read REAL USD skin binding and native joint pose; produce deformed vertices.
 
@@ -291,4 +322,6 @@ def evaluate_skin(stage,mesh_prim,actor_path,tick):
         "joint_count":len(transforms),
         "facial_deformation_evaluated":bool(active_shapes),
         "original_blend_shape_count":len(active_shapes),
+        "source_preview_material":read_original_preview_surface(
+            stage,mesh_prim,actor_path),
     }
