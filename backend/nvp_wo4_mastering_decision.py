@@ -12,6 +12,7 @@ from backend.nvp_wo4_xyz12_master import FORMAT as PICTURE_FORMAT
 from backend.nvp_wo4_pcm_master import FORMAT as SOUND_FORMAT
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 from hashlib import sha256
+from copy import deepcopy
 from backend.nvp_wo3_j2k_audit import PROFILES
 
 FORMAT="nvp.wo4.approved_mastering_decision.v1"
@@ -109,7 +110,7 @@ def register_mastering_decision(index:FilmIndex,pid,*,take_id,take_revision,
         "source_modified":False,
         "production_master_accepted":False,
     }
-    if approve(dict(approved)) is not True:
+    if approve(deepcopy(approved)) is not True:
         return {"format":FORMAT,"status":"DENIED","source_modified":False}
     if (index.read_revision(pid,take_id,take_revision)["document_sha256"]
             !=take_sha256 or
@@ -117,6 +118,19 @@ def register_mastering_decision(index:FilmIndex,pid,*,take_id,take_revision,
         raise PermissionError("Original Take changed during creator approval")
     if index.history(pid,decision_id):
         raise FileExistsError("Mastering decision was committed during consent")
+    for frame,expected in zip(ordered_pictures,frame_shas):
+        if (type(frame.get("xyz12")) is not bytes or
+                sha256(frame["xyz12"]).hexdigest()!=expected or
+                frame.get("xyz12_sha256")!=expected):
+            raise PermissionError("Picture frame changed after mastering approval")
+    remeasured=evaluate_master_candidates(picture,sound)
+    for key in ("picture_xyz12_sha256","sound_pcm24_sha256",
+                "xyz12_component_min","xyz12_component_max",
+                "xyz12_component_mean","sound_peak_absolute_24bit",
+                "sound_peak_dbfs","sound_rms_fraction_full_scale",
+                "sound_loudness_lufs_measured","sound_integrated_lufs"):
+        if remeasured.get(key)!=measured.get(key):
+            raise PermissionError("Mastering source changed after approval")
     # Register a bounded JSON receipt only. Real XYZ/PCM are derivatives,
     # not source-of-truth film takes or mutable original recording blobs.
     data=dict(approved)
