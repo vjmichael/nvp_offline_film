@@ -115,6 +115,18 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
     return ()=>{active=false;};
   },[project.id,source?.scene_id,source?.document_sha256,timelineId,api]);
 
+  function editDraftShot(shotId, field, value){
+    setTimelineSha(''); // Any edit revokes authority to freeze the saved revision.
+    setShots(previous=>previous.map(s=>s.shot_id===shotId?{...s,[field]:value}:s));
+    setNotice('Unsaved camera revision; freeze requires publication.');
+  }
+
+  function removeDraftShot(shotId){
+    setTimelineSha('');
+    setShots(previous=>previous.filter(s=>s.shot_id!==shotId));
+    setNotice('Draft observation removed; prior immutable revisions are preserved.');
+  }
+
   function appendShot(){
     setError('');
     if(!source||!cameraPath)return;
@@ -128,7 +140,10 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
       if(shots.length&&BigInt(first)<BigInt(shots.at(-1).end_tick))
         throw Error('Shots must not overlap; intentional empty-time gaps are supported.');
       setTimelineSha(''); // Draft edits must never authorize freezing a stale saved revision.
-      setShots(a=>[...a,{shot_id:'Shot'+String(a.length+1).padStart(3,'0'),
+      const used=new Set(shots.map(s=>s.shot_id));
+      let number=1;
+      while(used.has('Shot'+String(number).padStart(3,'0')))number++;
+      setShots(a=>[...a,{shot_id:'Shot'+String(number).padStart(3,'0'),
         camera_path:cameraPath,pattern,start_tick:first,end_tick:last}]);
       const micros=BigInt(last)/US;
       setStartTick(last);
@@ -260,10 +275,22 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
       </div>
       <p className="fineprint">Current saved revision: {revision||'not saved'}.
         Gaps remain empty Film Time, not placeholder pictures.</p>
-      {shots.map(s=><p key={s.shot_id} className="scene-item">
-        <strong>{s.shot_id}</strong> {s.camera_path} ·
-        Film ticks {s.start_tick} to {s.end_tick} · {s.pattern}
-      </p>)}
+      {shots.map(s=><div key={s.shot_id} className="scene-item">
+        <strong>{s.shot_id}</strong>
+        <label>Camera <select aria-label={`${s.shot_id} camera`} value={s.camera_path}
+          onChange={e=>editDraftShot(s.shot_id,'camera_path',e.target.value)}>
+          {(source?.cameras||[]).map(c=><option key={c.path} value={c.path}>{c.label}</option>)}
+        </select></label>
+        <label>Start tick <input aria-label={`${s.shot_id} start tick`} value={s.start_tick}
+          onChange={e=>editDraftShot(s.shot_id,'start_tick',e.target.value)}/></label>
+        <label>End tick <input aria-label={`${s.shot_id} end tick`} value={s.end_tick}
+          onChange={e=>editDraftShot(s.shot_id,'end_tick',e.target.value)}/></label>
+        <label>Coverage <select aria-label={`${s.shot_id} coverage`} value={s.pattern}
+          onChange={e=>editDraftShot(s.shot_id,'pattern',e.target.value)}>
+          {SHAPES.map(x=><option key={x} value={x}>{x.replaceAll('_',' ')}</option>)}
+        </select></label>
+        <button disabled={busy} onClick={()=>removeDraftShot(s.shot_id)}>Remove draft observation</button>
+      </div>)}
     </section>
     <section className="card">
       <h2>Freeze the Digital Take</h2>
