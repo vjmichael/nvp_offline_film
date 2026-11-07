@@ -4,9 +4,9 @@ The codec is created CREATE_SUSPENDED, then assigned to a KILL_ON_JOB_CLOSE
 Job Object by the caller *before* ResumeThread. A failed admission/assignment
 terminates the still-suspended child. No cmd.exe, PowerShell, shell or FFmpeg.
 
-This is a native Windows implementation; CI must prove it on real Windows.
-Installer/service identity, restricted token and process handle allowlist
-remain independent release gates.
+This uses a STARTUPINFOEXW restricted HANDLE_LIST of only three duplicate
+standard handles. Windows native CI must prove the handle allowlist. A
+separately protected installed service identity remains an external gate.
 """
 from __future__ import annotations
 
@@ -22,6 +22,9 @@ CREATE_NEW_PROCESS_GROUP=0x00000200
 CREATE_UNICODE_ENVIRONMENT=0x00000400
 CREATE_NO_WINDOW=0x08000000
 STARTF_USESTDHANDLES=0x00000100
+EXTENDED_STARTUPINFO_PRESENT=0x00080000
+PROC_THREAD_ATTRIBUTE_HANDLE_LIST=0x00020002
+DUPLICATE_SAME_ACCESS=0x00000002
 WAIT_TIMEOUT=0x00000102
 WAIT_OBJECT_0=0
 
@@ -39,6 +42,11 @@ class STARTUPINFOW(ctypes.Structure):
         ("hStdOutput",wintypes.HANDLE),
         ("hStdError",wintypes.HANDLE)
     ]
+
+class STARTUPINFOEXW(ctypes.Structure):
+    _fields_=[("StartupInfo",STARTUPINFOW),
+              ("lpAttributeList",ctypes.c_void_p)]
+
 
 class PROCESS_INFORMATION(ctypes.Structure):
     _fields_=[("hProcess",wintypes.HANDLE),
@@ -113,7 +121,7 @@ def create_suspended_native_worker(executable,argv,*,cwd,env,stdin,stdout,stderr
         wintypes.LPCWSTR,wintypes.LPWSTR,
         ctypes.c_void_p,ctypes.c_void_p,wintypes.BOOL,wintypes.DWORD,
         ctypes.c_void_p,wintypes.LPCWSTR,
-        ctypes.POINTER(STARTUPINFOW),
+        ctypes.POINTER(STARTUPINFOEXW),
         ctypes.POINTER(PROCESS_INFORMATION)]
     kernel.CreateProcessW.restype=wintypes.BOOL
     kernel.WaitForSingleObject.argtypes=[wintypes.HANDLE,wintypes.DWORD]
@@ -127,6 +135,23 @@ def create_suspended_native_worker(executable,argv,*,cwd,env,stdin,stdout,stderr
     kernel.TerminateProcess.restype=wintypes.BOOL
     kernel.CloseHandle.argtypes=[wintypes.HANDLE]
     kernel.CloseHandle.restype=wintypes.BOOL
+    kernel.GetCurrentProcess.restype=wintypes.HANDLE
+    kernel.DuplicateHandle.argtypes=[
+        wintypes.HANDLE,wintypes.HANDLE,wintypes.HANDLE,
+        ctypes.POINTER(wintypes.HANDLE),wintypes.DWORD,wintypes.BOOL,
+        wintypes.DWORD]
+    kernel.DuplicateHandle.restype=wintypes.BOOL
+    kernel.InitializeProcThreadAttributeList.argtypes=[
+        ctypes.c_void_p,wintypes.DWORD,wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_size_t)]
+    kernel.InitializeProcThreadAttributeList.restype=wintypes.BOOL
+    kernel.UpdateProcThreadAttribute.argtypes=[
+        ctypes.c_void_p,wintypes.DWORD,ctypes.c_size_t,
+        ctypes.c_void_p,ctypes.c_size_t,ctypes.c_void_p,
+        ctypes.c_void_p]
+    kernel.UpdateProcThreadAttribute.restype=wintypes.BOOL
+    kernel.DeleteProcThreadAttributeList.argtypes=[ctypes.c_void_p]
+    kernel.DeleteProcThreadAttributeList.restype=None
     executable=str(executable)
     if not os.path.isabs(executable) or not os.path.isfile(executable):
         raise PermissionError("SHA-reviewed absolute native codec executable required")
@@ -136,30 +161,65 @@ def create_suspended_native_worker(executable,argv,*,cwd,env,stdin,stdout,stderr
         "\0".join(f"{k}={v}" for k,v in sorted(env.items(),
                   key=lambda pair:pair[0].upper()))+"\0\0")
     flags=(CREATE_SUSPENDED|CREATE_NEW_PROCESS_GROUP|
-           CREATE_UNICODE_ENVIRONMENT|CREATE_NO_WINDOW)
-    # Temporary file handles are non-inheritable by default. Mark only
-    # these three required standard streams inheritable during CreateProcess.
-    # True restricted handle-list inheritance is a later OS security gate.
-    handles=[msvcrt.get_osfhandle(f.fileno()) for f in
-             (stdin,stdout,stderr)]
-    original=[os.get_handle_inheritable(h) for h in handles]
-    for h in handles:os.set_handle_inheritable(h,True)
-    start=STARTUPINFOW()
-    start.cb=ctypes.sizeof(STARTUPINFOW)
-    start.dwFlags=STARTF_USESTDHANDLES
-    start.hStdInput=handles[0]
-    start.hStdOutput=handles[1]
-    start.hStdError=handles[2]
-    process=PROCESS_INFORMATION()
+           CREATE_UNICODE_ENVIRONMENT|CREATE_NO_WINDOW|
+           EXTENDED_STARTUPINFO_PRESENT)
+    # Duplicate ONLY stdin/stdout/stderr as inheritable handles. The Windows
+    # HANDLE_LIST explicitly excludes every other inheritable host handle,
+    # even when a parent plugin or thread created one earlier.
+    originals=[msvcrt.get_osfhandle(f.fileno()) for f in
+               (stdin,stdout,stderr)]
+    current=kernel.GetCurrentProcess()
+    duplicates=[]
+    attr_buffer=None
+    attr_initialized=False
     try:
+        for original in originals:
+            copied=wintypes.HANDLE()
+            if not kernel.DuplicateHandle(
+                    current,wintypes.HANDLE(original),current,
+                    ctypes.byref(copied),0,True,DUPLICATE_SAME_ACCESS):
+                raise OSError(ctypes.get_last_error(),"DuplicateHandle failed")
+            duplicates.append(copied)
+        allowed=(wintypes.HANDLE*len(duplicates))(*[
+            h.value for h in duplicates])
+        length=ctypes.c_size_t()
+        kernel.InitializeProcThreadAttributeList(None,1,0,ctypes.byref(length))
+        if length.value==0:
+            raise OSError(ctypes.get_last_error(),
+                          "Native attribute-list size unavailable")
+        attr_buffer=ctypes.create_string_buffer(length.value)
+        pointer=ctypes.cast(attr_buffer,ctypes.c_void_p)
+        if not kernel.InitializeProcThreadAttributeList(
+                pointer,1,0,ctypes.byref(length)):
+            raise OSError(ctypes.get_last_error(),
+                          "InitializeProcThreadAttributeList failed")
+        attr_initialized=True
+        if not kernel.UpdateProcThreadAttribute(
+                pointer,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                ctypes.cast(allowed,ctypes.c_void_p),
+                ctypes.sizeof(allowed),None,None):
+            raise OSError(ctypes.get_last_error(),
+                          "Restricted STARTUPINFOEX HANDLE_LIST failed")
+        start=STARTUPINFOEXW()
+        start.StartupInfo.cb=ctypes.sizeof(STARTUPINFOEXW)
+        start.StartupInfo.dwFlags=STARTF_USESTDHANDLES
+        start.StartupInfo.hStdInput=duplicates[0]
+        start.StartupInfo.hStdOutput=duplicates[1]
+        start.StartupInfo.hStdError=duplicates[2]
+        start.lpAttributeList=pointer
+        process=PROCESS_INFORMATION()
         success=kernel.CreateProcessW(
             executable,command,None,None,True,flags,ctypes.cast(
                 environ,ctypes.c_void_p),str(cwd),
             ctypes.byref(start),ctypes.byref(process))
         if not success:
-            raise OSError(ctypes.get_last_error(),"Suspended CreateProcessW failed")
+            raise OSError(ctypes.get_last_error(),
+                          "Suspended restricted CreateProcessW failed")
         return SuspendedWindowsProcess(
             process.hProcess,process.hThread,process.dwProcessId,kernel)
     finally:
-        for h,old in zip(handles,original):
-            os.set_handle_inheritable(h,old)
+        if attr_initialized:
+            kernel.DeleteProcThreadAttributeList(
+                ctypes.cast(attr_buffer,ctypes.c_void_p))
+        for handle in duplicates:
+            kernel.CloseHandle(handle)
