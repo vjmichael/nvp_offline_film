@@ -239,7 +239,8 @@ function usdMatrix(m){
 }
 
 export default function DataFirstWorldViewport({
-  objects=[],listenerPath='',tick='0',sceneSha='',nativeSchemas=[]
+  objects=[],listenerPath='',tick='0',sceneSha='',nativeSchemas=[],
+  upgradedTexture=null,
 }){
   const holder=useRef(null);
   const env=useRef(null);
@@ -269,22 +270,34 @@ export default function DataFirstWorldViewport({
     const meshes=new Map();
     const textureCache=new Map();
     const MAX_GPU_TEXTURES=16;
-    const MAX_GPU_TEXELS=16*1024*1024/4;
+    const MAX_GPU_TEXELS=8*1024*1024; // 32 MiB decoded GPU texture budget
     let gpuTexels=0;
-    const acquireTexture=(transport)=>{
-      const sha=transport.sha256;
+    const acquireTexture=(transport,override=null)=>{
+      const approvedFull=(override&&
+        override.source_sha256===transport.sha256&&
+        override.derived_preview_only===true&&
+        override.source_modified===false&&
+        Number.isInteger(override.width)&&Number.isInteger(override.height)&&
+        override.width>=1&&override.height>=1&&
+        override.width<=2048&&override.height<=2048&&
+        override.canvas?.width===override.width&&
+        override.canvas?.height===override.height);
+      const sha=approvedFull?transport.sha256+':full':transport.sha256;
       const current=textureCache.get(sha);
       if(current){
         current.refs++;
         return current.texture;
       }
-      const pixels=transport.width*transport.height;
+      const pixels=(approvedFull?
+        override.width*override.height:transport.width*transport.height);
       if(textureCache.size>=MAX_GPU_TEXTURES||
          gpuTexels+pixels>MAX_GPU_TEXELS)
         throw Error('Native texture resource budget exceeded');
-      const tex=new THREE.TextureLoader().load(
-        'data:image/png;base64,'+transport.png_base64,
-        ()=>{if(!disposed)requestRender();});
+      const tex=approvedFull?
+        new THREE.CanvasTexture(override.canvas):
+        new THREE.TextureLoader().load(
+          'data:image/png;base64,'+transport.png_base64,
+          ()=>{if(!disposed)requestRender();});
       tex.colorSpace=THREE.SRGBColorSpace;
       tex.wrapS=THREE.RepeatWrapping;
       tex.wrapT=THREE.RepeatWrapping;
@@ -411,10 +424,13 @@ export default function DataFirstWorldViewport({
         }catch{continue;}
       }
       incoming.add(obj.path);
+      const isFullResolution=upgradedTexture?.source_sha256===
+        obj.source_material?.texture?.sha256;
       const fingerprint=[obj.shape,
         obj.shape==='skinned_mesh'?'skinned-source':obj.size_m,
         obj.semantic_role,obj.geometry_asset_sha256||'',
-        obj.source_material?.texture?.sha256||''].join(':');
+        obj.source_material?.texture?.sha256||'',
+        isFullResolution?'full-resolution':'bounded-preview'].join(':');
       let mesh=state.meshes.get(obj.path);
       if(mesh&&mesh.userData.sourceGeometry!==fingerprint){
         state.world.remove(mesh);
@@ -454,8 +470,10 @@ export default function DataFirstWorldViewport({
               THREE.DoubleSide:THREE.FrontSide});
           pendingMaterial=material;
           if(transport){
-            material.map=state.acquireTexture(transport);
-            material.userData.originalTextureSha=transport.sha256;
+            material.map=state.acquireTexture(
+              transport,isFullResolution?upgradedTexture:null);
+            material.userData.originalTextureSha=
+              isFullResolution?transport.sha256+':full':transport.sha256;
             material.needsUpdate=true;
           }
           const slots=validateMaterialSlots(obj);
@@ -568,7 +586,7 @@ export default function DataFirstWorldViewport({
       }
     }
     state.requestRender();
-  },[objects,listenerPath,tick]);
+  },[objects,listenerPath,tick,upgradedTexture]);
 
 
   useEffect(()=>{
