@@ -156,7 +156,6 @@ def main():
         output_root=wav_root,approve=lambda scope:
         scope["original_take_sha256"]==take_sha)
     assert master["status"]=="STREAMED_PCM24_CANDIDATE_PUBLISHED"
-    del master["whole_reel_loaded_into_ram"] # local test does not change receipt identity
     sha_in=master["wav_file_sha256"]
     original_shas[str(pcm)]=pcm_sha
     original_shas[master["destination"]]=sha_in
