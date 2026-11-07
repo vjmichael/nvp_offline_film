@@ -90,6 +90,9 @@ class NativeColorOutputJournal:
             raise
 
     def _lock(self):
+        if self.lock.is_symlink() or (
+                self.lock.exists() and not self.lock.is_file()):
+            raise PermissionError("Native color lock cannot follow hostile OS paths")
         self.fd=self.lock.open("a+b")
         self.fd.seek(0)
         self.fd.write(b" ")
@@ -177,7 +180,10 @@ class NativeColorOutputJournal:
             raise RuntimeError("Bounded source film sequence exceeded")
         self._verify_row(row,len(self.records))
         file=self.pictures/(row.get("png_file") or row["exr_file"])
-        with file.open("rb") as stream:os.fsync(stream.fileno())
+        # Windows FlushFileBuffers needs a handle opened with write access.
+        # This is a completed, unmodified DERIVED picture, not original PCM.
+        with file.open("rb+") as stream:
+            os.fsync(stream.fileno())
         progress=self.staged/"progress.jsonl"
         with progress.open("ab") as output:
             raw=_canonical(row)
