@@ -128,6 +128,9 @@ def inspect_dcp_structure(folder):
         if (_value(chunk,"VolumeIndex",NS_AM)!="1" or
             _value(chunk,"Offset",NS_AM)!="0"):
             raise ValueError("Nonzero offset/multi-volume DCP not supported")
+        declared_length=_value(chunk,"Length",NS_AM)
+        if not declared_length.isdecimal() or not 0<int(declared_length)<=MAX_PACKAGE_BYTES:
+            raise ValueError("Invalid SMPTE AssetMap chunk length")
         locations[ident]=name
         if (_child(entry,"PackingList",NS_AM,False) is not None and
             _value(entry,"PackingList",NS_AM).lower()=="true"):
@@ -146,6 +149,13 @@ def inspect_dcp_structure(folder):
         raise ValueError("Packing list must contain CPL and MXF tracks")
     packed={}
     seen_paths=set()
+    chunk_lengths={}
+    for entry in entries:
+        ident=_uuid(_value(entry,"Id",NS_AM))
+        chunk=_child(_child(entry,"ChunkList",NS_AM),"Chunk",NS_AM)
+        chunk_lengths[ident]=int(_value(chunk,"Length",NS_AM))
+    if chunk_lengths[pkls[0]]!=_asset_file(root,pkl_file).stat().st_size:
+        raise ValueError("SMPTE AssetMap PKL chunk length mismatch")
     for entry in declared:
         ident=_uuid(_value(entry,"Id",NS_PKL))
         if ident==pkls[0] or ident in packed or ident not in locations:
@@ -173,6 +183,7 @@ def inspect_dcp_structure(folder):
         file=_asset_file(root,filename)
         actual_size,actual_hash,actual_sha256=_hash_file(file)
         if (actual_size!=expected or
+            actual_size!=chunk_lengths[ident] or
             actual_hash!=expected_hash):
             raise RuntimeError("Independent DCP asset size or digest mismatch")
         packed[ident]={
@@ -190,25 +201,45 @@ def inspect_dcp_structure(folder):
     if _uuid(_value(cpl,"Id",NS_CPL))!=cpl_id:
         raise ValueError("Composition Playlist UUID differs from packing list")
     tracks=[]
+    reel_durations=[]
     reels=_child(cpl,"ReelList",NS_CPL).findall("{"+NS_CPL+"}Reel")
     if not reels or len(reels)>1000:
         raise ValueError("DCP needs bounded real reels")
     for reel in reels:
+        _uuid(_value(reel,"Id",NS_CPL))
         assets=_child(reel,"AssetList",NS_CPL)
         picture=_child(assets,"MainPicture",NS_CPL)
         sound=_child(assets,"MainSound",NS_CPL)
+        durations=[]
         for kind,node in (("picture",picture),("sound",sound)):
+            if _value(node,"EditRate",NS_CPL)!="24 1":
+                raise ValueError("Unsupported or mismatched DCP edit rate")
+            for field in ("IntrinsicDuration","EntryPoint","Duration"):
+                raw=_value(node,field,NS_CPL)
+                if not raw.isdecimal():
+                    raise ValueError("Invalid DCP track duration")
+            intrinsic=int(_value(node,"IntrinsicDuration",NS_CPL))
+            entry=int(_value(node,"EntryPoint",NS_CPL))
+            duration=int(_value(node,"Duration",NS_CPL))
+            if intrinsic<1 or duration<1 or entry+duration>intrinsic:
+                raise ValueError("Invalid source-bound DCP track range")
+            durations.append(duration)
             uid=_uuid(_value(node,"Id",NS_CPL))
             if uid not in packed or packed[uid]["mime"]!="application/mxf":
                 raise ValueError("CPL references unverified or non-MXF track")
             tracks.append({"kind":kind,"asset_id":uid,
-                           "filename":packed[uid]["filename"]})
+                           "filename":packed[uid]["filename"],
+                           "duration_frames":duration})
+        if durations[0]!=durations[1]:
+            raise ValueError("Picture and sound reel durations disagree")
+        reel_durations.append(durations[0])
     if not tracks or not any(x["kind"]=="picture" for x in tracks):
         raise ValueError("Missing real picture track reference")
     return {
         "format":FORMAT,"status":"STRUCTURE_AND_SHA_VERIFIED",
         "asset_count":len(packed),
         "reel_count":len(reels),"tracks":tracks,
+        "reel_durations":reel_durations,
         "assets":packed,
         "assetmap_filename":"ASSETMAP.xml",
         "pkl_uuid":pkls[0],"cpl_uuid":cpl_id,
