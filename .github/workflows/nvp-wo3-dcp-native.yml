@@ -1,0 +1,45 @@
+name: NVP WO3 Native DCP Structural Integrity (NO FFMPEG)
+on:
+  push:
+    branches:
+      - nvp/wo3-native-dcp-package-20261107
+    paths:
+      - backend/nvp_wo3_dcp_structure.py
+      - tests/test_nvp_wo3_dcp_structure.py
+      - .github/workflows/nvp-wo3-dcp-native.yml
+  pull_request:
+    paths:
+      - backend/nvp_wo3_dcp_structure.py
+      - tests/test_nvp_wo3_dcp_structure.py
+      - .github/workflows/nvp-wo3-dcp-native.yml
+
+permissions:
+  contents: read
+
+jobs:
+  wo3-independent-dcp-structure:
+    name: WO3 independent SMPTE metadata + digest audit / ${{ matrix.os }} / Python ${{ matrix.py }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        py: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Compile independent DCP inspector
+        run: python -m compileall -q backend/nvp_wo3_dcp_structure.py tests/test_nvp_wo3_dcp_structure.py
+      - name: Verify SMPTE ASSETMAP PKL CPL hashes and no fake MXF acceptance
+        run: python -m unittest discover -s tests -p test_nvp_wo3_dcp_structure.py -v
+      - name: No FFmpeg call sites in native WO3 inspector
+        shell: python
+        run: |
+          from pathlib import Path
+          src=Path('backend/nvp_wo3_dcp_structure.py').read_text(encoding='utf-8')
+          for forbidden in ('subprocess', 'os.system(', 'ff'+'mpeg ', 'shell=True'):
+              assert forbidden not in src, f'WO3 native inspector invokes {forbidden}'
+          print('WO3 read-only standard-library audit invokes no media converters')
