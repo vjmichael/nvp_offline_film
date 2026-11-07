@@ -29,7 +29,7 @@ def _float(value):
 
 def normalize_skin(skin,joint_count):
     required={"points","faces","joint_indices","joint_weights","display_color"}
-    optional={"blend_shapes","preview_material"}
+    optional={"blend_shapes","preview_material","mesh_uvs"}
     if type(skin) is not dict or not required<=set(skin) or not set(skin)<=required|optional:
         raise ValueError("Skin requires source topology, influence fields and typed optional appearance")
     points=skin["points"]
@@ -104,6 +104,13 @@ def normalize_skin(skin,joint_count):
                 raise ValueError("Unbounded original facial mesh displacement")
             verified.append(values)
         bound_shapes.append({"name":name,"offsets":verified})
+    authored_uv=skin.get("mesh_uvs")
+    if authored_uv is not None and (
+        type(authored_uv) is not list or len(authored_uv)!=len(pts) or
+        any(type(uv) is not list or len(uv)!=2 or
+            any(type(x) not in (int,float) or not math.isfinite(x) or
+                abs(x)>1024 for x in uv) for uv in authored_uv)):
+        raise ValueError("Actor UV primvar must match original skinned vertices")
     material=skin.get("preview_material",{"roughness":0.8,"metallic":0.05})
     if (type(material) is not dict or
         set(material)!={"roughness","metallic"} or
@@ -113,6 +120,8 @@ def normalize_skin(skin,joint_count):
     return {"points":pts,"faces":polygons,"joint_indices":joints,
             "joint_weights":normalized_weights,"display_color":rgb,
             "blend_shapes":bound_shapes,
+            "mesh_uvs":([[float(x) for x in uv] for uv in authored_uv]
+                        if authored_uv is not None else None),
             "preview_material":{k:float(v) for k,v in material.items()}}
 
 
@@ -126,6 +135,10 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
     mesh.GetFaceVertexIndicesAttr().Set(Vt.IntArray(
         [i for face in bound["faces"] for i in face]))
     mesh.GetDoubleSidedAttr().Set(True)
+    if bound["mesh_uvs"] is not None:
+        st=UsdGeom.PrimvarsAPI(mesh).CreatePrimvar(
+            "st",Sdf.ValueTypeNames.TexCoord2fArray,"vertex")
+        st.Set(Vt.Vec2fArray([Gf.Vec2f(*uv) for uv in bound["mesh_uvs"]]))
     mesh.GetDisplayColorPrimvar().Set(Vt.Vec3fArray(
         [Gf.Vec3f(*bound["display_color"])]))
     binding=UsdSkel.BindingAPI.Apply(mesh.GetPrim())
@@ -178,6 +191,7 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         "mesh_path":actor_path+SKIN_MESH_SUFFIX,
         "source_vertex_count":len(bound["points"]),
         "source_face_count":len(bound["faces"]),
+        "source_original_uvs_authored":bound["mesh_uvs"] is not None,
         "skinning_method":"classicLinear",
         "geom_bind_transform":"identity",
         "max_influences":MAX_INFLUENCES,
