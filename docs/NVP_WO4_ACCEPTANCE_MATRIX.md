@@ -81,3 +81,16 @@ The first three are **implementation-only pending exact-head CI and installed/na
 | Native four-platform | GitHub workflow for Ubuntu 24.04/Windows 2025 × Python 3.11/3.13, plus full process subprocess tests | Exact-head completed native success and any actual repairs |
 
 **Status:** LF01 core backend implemented and tested in submitted source; native CI acceptance pending. Do not mistake an in-process source SHA worker inside an independent **supervisor** process for protected subprocess-tree execution of real codec workers. WO4-LF02 and future output-producing worker handlers must use a stricter stage/publish/reconciliation contract; existing code deliberately refuses unknown job types.
+
+
+### LF01 verified CI checkpoint and project monitor (2026-11-07)
+
+| Evidence | Accepted at tested head? |
+| --- | --- |
+| Run `42355702884` at commit `d9e1c5dd`: native Ubuntu 24.04 and Windows 2025 × Python 3.11/3.13, separate-process crash and restart, read-only hashing, SQLite owner and cancel | **YES — all four matrix jobs SUCCESS** |
+| `backend/nvp_production_monitor.py`: native host-authorized project-scoped read-only source-redacted job progress and post-GUI restart journal reopen | Implemented, **exact newer head CI pending** |
+| WAL status/catalog/events no writer lock, restored-source hash outside write transaction followed by atomic reviewed segment check | Implemented, **exact newer head CI pending** |
+| Genuine NVP installed-app process/worker host, per-project native UI bridge, OS-contained J2K/MXF subprocess ownership and resumption | **OPEN** |
+| Feature-length rendered picture→J2K→MXF→DCP output receipts and physical cinema source/calibration | **OPEN, separate LF02/LF04 and WO5** |
+
+The supervisor's first verified task is **read-only original media SHA verification**. The successful tests cannot be represented as a completed film export or proof that the OS will continue running during sleep/shutdown. The app-local Home/slide lock is separately verified as a convenience overlay and does not stop native production jobs.
