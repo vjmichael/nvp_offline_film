@@ -755,3 +755,54 @@ Canonical full decision:
 [docs/NVP_WO5_PRODUCTION_ACCEPTANCE.md](NVP_WO5_PRODUCTION_ACCEPTANCE.md).
 Recorded as target and implementation mismatch, **not a completed task or
 passed conformance claim**.
+
+### WO5 30-minute multi-reel audit and creator review implementation — 2026-11-07
+
+**WO5-01 native implementation advanced:** Added
+`backend/nvp_wo5_original_feature.py` extending the earlier 30-second
+sample-only feature proof to an indexed native multi-reel FilmIndex/DCP
+readiness audit for a genuine original film of **up to 30 MINUTES**,
+43,200 ordered frames at 24fps. It reuses `FeatureJournal`'s complete
+picture XYZ12/J2K, PCM24, native picture/sound MXF and published DCP
+integrity rechecks, validates frozen FilmIndex feature assembly and exact
+continuous Film Time, per-reel original OpenUSD Take identities, indexed
+source DCP receipts, creator-approved picture SHA order and native
+source/encoded frame diversity using bounded SQLite row cursors.
+The return is ALWAYS
+`SOURCE_CUSTODY_READY_FOR_HUMAN_FILM_REVIEW_NOT_ACCEPTED` — no
+claim of director intention fulfilled, actual feature rendering, installed
+app, SMPTE DCP Bv2.1, projector compliance or WO4/WO5 completion.
+
+**WO5-01 CI evidence:** Four Windows/Linux × Python 3.11/3.13
+native tests **ALL PASS** in exact source head workflow
+[42401400107](https://github.com/vjmichael/nvp_offline_film/actions/runs/42401400107).
+The 43,200-frame tests exercise deterministic SHA **admission-contract
+fixtures** and bad-input denial. They do **not** encode or play back a
+30-minute original film, test 43,200 distinct natural/author-provided
+movie frames, prove independent essence decode, or assess actual
+creative success. Older 30-second one-reel inspector remains a
+deliberately limited sample, not the corrected acceptance target.
+
+**WO5-02 native implementation added; new exact-head CI pending:**
+`backend/nvp_wo5_director_review.py` freezes creator-authored shot
+intent against the actual FilmIndex edit/assembly before review, with
+bounded full-coverage Film Time, expected action/camera/sound and a
+native creator approval callback. Its follow-up `record_director_review`
+requires current WO5-01 indexed-feature evidence before recording the
+creator's specific observed action/camera/sound per shot, whether full
+picture/sound was watched/heard, and revision-needed judgments. FilmIndex
+retains immutable revision-level source relationships and separates
+human-reported observations from any independent production, theatrical
+or AI-generated approval. Added
+`tests/test_nvp_wo5_director_review.py` and native Win/Linux CI.
+Installed GUI authentication/real film human review remain **OPEN**.
+
+**Outstanding acceptance and WO5 continuation:** 
+(1) independent genuine multi-reel original-film source+essence E2E,
+(2) source-consistent interactive installed GUI and real creator-signed
+review workflow, (3) native crash/cancellation/reconnect full application
+exercise, (4) independent SMPTE Bv2.1 DCP verification and cinema ingest,
+(5) actual 30-minute original creator judgment, (6) longer-feature
+performance proof, and (7) release notices/SBOM and installed packaging
+when due. WO4 remains **OPEN/DEFERRED**. No FFmpeg, source mutation
+or fabricated acceptance.
