@@ -974,3 +974,42 @@ WO6-06 reliable progress/cancellation/recovery report; WO6-07 model-in-loop
 installed NVP filmmaker acceptance. WO5 real installed sustained picture+
 mastered audio, 30-minute finished original, 60–90-minute feature, >=3-hour
 epic and independent DCP Bv2.1 theatrical validation remain separate gates.
+
+### WO6-05 extension / WO6-06 native recovery — 2026-11-07
+
+**Implemented in draft PR #93, native exact-head verification PENDING.**
+Beyond the original immutable Take operation, three additional first-party
+director-authorized classes now exist in
+`backend/nvp_wo6_native_shot_action.py` and
+`tools/nvp_wo6_shot_worker.py`: camera optics/position; actor/prop blocking
+and eyeline; shot-local native lighting. Exact authorized shot changes are
+normalized against reopened real OpenUSD roles, SHA-bound to original frozen
+Take, exact scene and WO6-04 approved-source impact, then committed as a NEW
+`OpenUSDShotOverrides` presentation record. They do not rewrite an original
+Take/scene, render frames or approve a release. The model read-only catalog
+does not expose execution; creator decision and native host permission remain
+separate required callbacks.
+
+**WO6-06 initial durable implementation:** `backend/nvp_wo6_recovery.py`
+persists cancellation intents and append-only reconciliation evidence within
+the existing FULL-sync TaskLedger SQLite. The host checks current cancellation
+during native execution; successful worker completion uses one atomic
+transaction to fence cancellation. `WorkerHostLease` prevents two local
+hosts from simultaneously driving or reconciling the same native work root.
+After crash, reconciliation requires independently attested stopped process
+tree, reopens genuine FilmIndex/OpenUSD source bytes, distinguishes missing
+commit from committed source with missing receipt and verified source+receipt,
+and does not auto-retry, roll back immutable source or mark film delivery.
+Task events and read-only status remain available after reopening SQLite.
+Additional Windows/Linux 3.11/3.13 CI tests cover positive source execution,
+negative grants, stale/revoked source, late cancellation, kernel lease, crash
+after native immutable commit and missing/tampered receipts.
+
+**Still OPEN:** actual exact-head four-platform CI logs/failure repairs;
+trusted installed-Windows and Linux native worker-tree attestation and
+recovery proof on true process crashes; wired director UI + model-in-loop
+approval flows; other creator-authorized edit/sound/color/master/DCP native
+operations; WO6-07 full installed first-film assistant. WO5's sustained
+installed finished-film picture/mastered audio, authentic 30-minute film,
+60-90min feature, >=3h epic and independent SMPTE Bv2.1 cinema acceptance
+are not completed by these source operations.
