@@ -283,7 +283,7 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
     metal=np.asarray(metallic,dtype=np.float64)
     out=AMBIENT_REVIEW*color*(1.-metal[...,None])
     f0=.04*(1.-metal[...,None])+metal[...,None]*color
-    alpha=max(.04,roughness*roughness)
+    alpha=np.maximum(.04,roughness*roughness)
     alpha2=alpha*alpha
     k=(roughness+1.)**2/8.
     ggx_view=nv/(nv*(1.-k)+k+1e-8)
