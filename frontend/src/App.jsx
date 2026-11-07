@@ -752,8 +752,9 @@ function MainApp() {
 export default function App(){
   const [visibleProof,setVisibleProof]=useState(null);
   useEffect(()=>{
-    if(window.location.search!=='?nvp_wo5_installed_real_published_mxf=1')
-      return;
+    // The real trusted desktop origin forbids query parameters.
+    // This test UI is enabled ONLY when the host exposes the CI-only
+    // descriptor method; the production bridge never has that method.
     let live=true;
     const discover=async()=>{
       const native=window.pywebview?.api;
