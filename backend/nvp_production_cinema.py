@@ -313,6 +313,19 @@ class CinemaJournal(ProductionJournal):
                 (_now(),job_id))
             self._event(db,job_id,"PICTURE_MXF_REVIEW_REQUIRED",reason)
 
+    def heartbeat_track(self,owner,job_id):
+        with self._tx() as db:
+            row=db.execute("""SELECT j.owner_token,j.cancel_requested,
+                r.reel_state FROM production_jobs j
+                JOIN production_cinema_reels r ON j.job_id=r.job_id
+                WHERE j.job_id=?""",(job_id,)).fetchone()
+            if (row is None or row["owner_token"]!=owner or
+                    row["reel_state"]!="TRACK_RUNNING"):
+                raise PermissionError("Stale Cinema MXF worker heartbeat")
+            db.execute("UPDATE production_jobs SET updated_at=? WHERE job_id=?",
+                       (_now(),job_id))
+            return bool(row["cancel_requested"])
+
     def cinema_reconcile(self):
         """Read-only file audit + conservative transactional restart decisions.
 
@@ -331,12 +344,12 @@ class CinemaJournal(ProductionJournal):
             root=self.spool(uid)
             with self._read() as db:
                 segments=[dict(x) for x in db.execute("""SELECT s.position,
-                    s.state,s.expected_sha256,s.verified_sha256,
+                    s.state,s.source_path,s.expected_sha256,s.verified_sha256,
                     s.verified_bytes,f.file_sha256,f.file_bytes
                     FROM production_segments s LEFT JOIN production_cinema_frames f
                     ON s.job_id=f.job_id AND s.position=f.position
                     WHERE s.job_id=? ORDER BY s.position""",(uid,))]
-            needs_review=False
+            needs_review=job["state"]=="REVIEW_REQUIRED"
             resumed=[]
             for item in segments:
                 pos=item["position"]
@@ -345,6 +358,7 @@ class CinemaJournal(ProductionJournal):
                 if item["state"]=="VERIFIED":
                     try:
                         if (item["file_sha256"]!=item["verified_sha256"] or
+                                digest_file(item["source_path"])!=item["expected_sha256"] or
                                 item["file_bytes"]!=item["verified_bytes"] or
                                 verify_frame_file(filename,item["file_sha256"],
                                                   job["profile"])!=item["file_bytes"]):
