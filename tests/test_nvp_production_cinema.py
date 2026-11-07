@@ -160,6 +160,57 @@ class PictureReelJournalTest(unittest.TestCase):
         self.assertEqual(self.journal.cinema_reconcile()["jobs"][0]["status"],
                          "REVIEW_REQUIRED")
 
+    def test_explicit_review_quarantines_stage_then_requeues_without_deleting(self):
+        job=self.submit()["job_id"]
+        self.journal.claim_next("InterruptedEncoder",876)
+        stage=self.journal.spool(job)/"frame-work"/"000000"
+        stage.mkdir(parents=True)
+        (stage/"frame.ppm").write_bytes(b"KEEP_CREATOR_EVIDENCE")
+        self.journal.cinema_reconcile()
+        self.assertEqual(self.journal.approve_rebuild_uncommitted(
+            job,lambda _:False)["status"],"DENIED")
+        self.assertTrue(stage.exists())
+        result=self.journal.approve_rebuild_uncommitted(
+            job,lambda scope:scope["preserve_all_uncommitted_files"] is True)
+        self.assertEqual(result["status"],"QUEUED")
+        self.assertEqual(result["requeued_frames"],3)
+        self.assertFalse(stage.exists())
+        self.assertEqual(self.journal.status(job)["state"],"QUEUED")
+        reviewed=list((self.journal.spool(job)/"frame-work").glob(
+            ".nvp-reviewed-000000-*"))
+        self.assertEqual(len(reviewed),1)
+        self.assertEqual((reviewed[0]/"frame.ppm").read_bytes(),
+                         b"KEEP_CREATOR_EVIDENCE")
+
+    def test_output_without_receipt_is_preserved_in_review_quarantine(self):
+        job=self.submit()["job_id"]
+        self.journal.claim_next("PostLinkCrash",222)
+        frame=self.journal.spool(job)/"frames"/"000000.j2c"
+        frame.parent.mkdir(parents=True)
+        original=synthetic_header(width=2,height=1)
+        frame.write_bytes(original)
+        self.journal.cinema_reconcile()
+        result=self.journal.approve_rebuild_uncommitted(job,lambda _:True)
+        self.assertEqual(result["status"],"QUEUED")
+        self.assertFalse(frame.exists())
+        reviewed=list(frame.parent.glob(".nvp-reviewed-000000.j2c-*"))
+        self.assertEqual(len(reviewed),1)
+        self.assertEqual(reviewed[0].read_bytes(),original)
+        self.assertEqual(self.journal.status(job)["verified_segments"],0)
+
+    def test_rebuild_refuses_changed_original_source_without_data_loss(self):
+        job=self.submit()["job_id"]
+        self.journal.claim_next("FailedEncoder",1357)
+        stage=self.journal.spool(job)/"frame-work"/"000000"
+        stage.mkdir(parents=True)
+        (stage/"frame.ppm").write_bytes(b"evidence")
+        self.journal.cinema_reconcile()
+        Path(self.files[1]).write_bytes(b"changed source")
+        with self.assertRaises(PermissionError):
+            self.journal.approve_rebuild_uncommitted(job,lambda _:True)
+        self.assertTrue((stage/"frame.ppm").exists())
+        self.assertEqual(self.journal.status(job)["state"],"REVIEW_REQUIRED")
+
     def test_claim_after_crash_with_no_stage_may_safely_requeue(self):
         job=self.submit()["job_id"]
         self.journal.claim_next("KilledBeforeStart",12345)
