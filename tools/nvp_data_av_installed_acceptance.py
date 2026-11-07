@@ -222,6 +222,61 @@ def run_installed_data_av_smoke():
                 index.read_revision(pid,"smoke_color_take",1)[
                     "document_sha256"]!=color_take["document_sha256"]):
                 raise RuntimeError("Installed source ACEScg EXR32 failed")
+            # WO2: the installed native application must also decode a
+            # frozen original PNG from FilmIndex, honor face-varying USD st,
+            # and rasterize the exact authored texture without FFmpeg.
+            from io import BytesIO
+            from PIL import Image
+            from backend.nvp_native_scene_linear_raster import NativeSceneLinearRaster
+            im=Image.new("RGB",(2,2),(180,50,20))
+            buffer=BytesIO()
+            im.save(buffer,format="PNG")
+            original_png=buffer.getvalue()
+            asset=OpenUSDAssetRegistry(index).publish(
+                pid,"smoke_original_texture_mesh",shape="mesh",size_m=2.,
+                points=[[-1.,-1.,0.],[1.,-1.,0.],
+                        [1.,1.,0.],[-1.,1.,0.]],
+                triangles=[[0,1,2],[0,2,3]],
+                face_uvs=[[[0,0],[1,0],[1,1]],
+                          [[.5,0],[.5,1],[0,1]]],
+                preview_material={"base_color_rgb":[1.,1.,1.],
+                                  "roughness":.45,"metallic":.05},
+                texture_png=original_png)
+            texture_doc=OpenUSDAssetRegistry(index).open(
+                pid,"smoke_original_texture_mesh",1)[0]["data"]
+            from backend.nvp_native_usd_texture import verified_texture
+            if verified_texture(index,pid,texture_doc[
+                    "preview_material"]["texture"])[0]!=original_png:
+                raise RuntimeError("Installed PNG original did not reopen")
+            color_scene.publish(pid,"smoke_texture_world",prims=[
+                {"path":"/World/ColorActor","role":"actor","position":[0,0,0]},
+                {"path":"/World/ColorCamera","role":"camera","position":[0,0,5]},
+                {"path":"/World/ColorLight","role":"light","position":[1,2,3]},
+            ],curves=[],native_schemas=True,asset_bindings=[{
+                "path":"/World/ColorActor",
+                "asset_id":"smoke_original_texture_mesh",
+                "asset_revision":1}])
+            ExactTimeShotSequence(index).publish(
+                pid,"smoke_texture_shots",scene_id="smoke_texture_world",
+                scene_revision=1,duration_tick=str(T),shots=[{
+                    "shot_id":"TextureShot",
+                    "camera_path":"/World/ColorCamera",
+                    "start_tick":"0","end_tick":str(T),
+                    "pattern":"continuous"}])
+            texture_take=freezes.freeze(
+                pid,"smoke_texture_take",scene_id="smoke_texture_world",
+                scene_revision=1,timeline_id="smoke_texture_shots",
+                timeline_revision=1,sample_ticks=[0],
+                creator_event="approved")
+            rgb,receipt=NativeSceneLinearRaster(index).render(
+                pid,"smoke_texture_take",texture_take["document_sha256"],
+                tick=0,camera_path="/World/ColorCamera")
+            if (receipt["source_uv_texture_rasterized_triangles"]<1 or
+                receipt["ffmpeg_used"] is not False or
+                receipt["source_modified"] is not False or
+                not float(rgb[:,:,:3].max())>0):
+                raise RuntimeError("Installed source texture/seam raster failed")
+            _native_checkpoint("installed_av_original_usd_texture_passed")
             _native_checkpoint("installed_av_aces_exr_passed")
             if __import__("sys").stdout is not None:
                 print("DATA_AV01_INSTALLED_NATIVE_SOURCE_AND_ACES_PASS",
