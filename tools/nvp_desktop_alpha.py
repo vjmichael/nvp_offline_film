@@ -470,23 +470,37 @@ def main(argv=None):
 
 
 if __name__=="__main__":
-    # Windowed PyInstaller executables have no visible stdout/stderr.
-    # A trusted CI/desktop administrator can opt into a local one-run
-    # traceback receipt for smoke commands. Never accept this path from
-    # browser IPC, a model tool or normal interactive application launch.
+    # A windowed PyInstaller binary has no user-visible stderr. For
+    # native smoke acceptance only, preserve a small opt-in execution
+    # receipt before running the code. A missing START means bootloader/
+    # native DLL initialization failed before Python; an error later
+    # records the real Python traceback. Never take this path from JS.
+    diagnostic=None
+    smoke=any(flag in sys.argv for flag in (
+        "--smoke","--smoke-create","--smoke-reopen",
+        "--smoke-window","--smoke-data-av"))
+    if smoke:
+        report=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+        if report:
+            target=Path(report)
+            if target.parent.is_dir() and not target.is_symlink() and (
+                    not target.exists()):
+                diagnostic=target
+    def record_smoke_result(message,*,failure=False):
+        if diagnostic is None:return
+        import traceback
+        mode="a" if diagnostic.exists() else "x"
+        with diagnostic.open(mode,encoding="utf8") as sink:
+            sink.write(message+"\\n")
+            if failure:
+                traceback.print_exc(file=sink)
+            sink.flush();os.fsync(sink.fileno())
+    record_smoke_result("NVP_SMOKE_PYTHON_ENTRY")
     try:
-        raise SystemExit(main())
-    except Exception:
-        if any(flag in sys.argv for flag in (
-                "--smoke","--smoke-create","--smoke-reopen",
-                "--smoke-window","--smoke-data-av")):
-            report=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
-            if report:
-                import traceback
-                file=Path(report)
-                if (file.parent.is_dir() and not file.is_symlink() and
-                    not file.exists()):
-                    with file.open("x",encoding="utf8") as sink:
-                        traceback.print_exc(file=sink)
-                        sink.flush();os.fsync(sink.fileno())
+        result=main()
+    except BaseException:
+        record_smoke_result("NVP_SMOKE_PYTHON_EXCEPTION",failure=True)
         raise
+    else:
+        record_smoke_result("NVP_SMOKE_PYTHON_EXIT="+str(result))
+        raise SystemExit(result)
