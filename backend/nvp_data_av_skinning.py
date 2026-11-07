@@ -41,8 +41,9 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
     rigs=original["data"].get("skeleton_rigs",[])
     if len(rigs)>8:
         raise RuntimeError("Live native actor count exceeds bounded UsdSkel scene")
-    if not any(r.get("skin_weighted") is True for r in rigs):
-        return {}
+    # Every authored rig must produce either a real bound mesh or an
+    # explicit missing-geometry status. Treating an unmeshed rig as an
+    # anonymous actor sphere misrepresents the captured performance.
     from pxr import UsdGeom
     result={}
     vertices=0
@@ -50,10 +51,21 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
     layer_sha=_sha(original["data"]["skeleton_layer_sha256"])
     for rig in rigs:
         path=rig["path"]
-        if not rig.get("skin_weighted"):
-            continue
         if path not in observed:
             # Snapshot can be a subset selected for audio or inspection.
+            continue
+        if not rig.get("skin_weighted"):
+            result[path]={
+                "shape":"missing_rig_geometry",
+                "size_m":0.4,
+                "mesh_points":None,"mesh_triangles":None,
+                "geometry_asset_sha256":None,
+                "source_skinning":False,
+                "source_skinning_tick":str(tick),
+                "source_color_rgb":None,
+                "reason":"Rigged original USD actor has no bound UsdSkel mesh",
+                "facial_animation_evaluated":False,
+            }
             continue
         if declared.get(path)!="actor" or observed[path]["semantic_role"]!="actor":
             raise RuntimeError("Bound live skin has no matching original actor")
