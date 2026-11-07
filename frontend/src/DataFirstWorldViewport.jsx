@@ -1,7 +1,8 @@
 import React,{useEffect,useRef,useState} from 'react';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {runGPUTextureReference} from './NativeTextureGPUReference.js';
+import {runGPUTextureReference,runGPUSourceTextureReference}
+  from './NativeTextureGPUReference.js';
 
 // DA-04: evaluate OpenUSD source geometry IN THREE DIMENSIONS at the actual
 // audio presentation Film Time. There is no MP4, frame sequencer, texture
@@ -250,6 +251,9 @@ export default function DataFirstWorldViewport({
   const cameraPath=cameraObjects.some(o=>o.path===selectedCamera)?
     selectedCamera:cameraObjects[0]?.path||'';
   const bounded=Array.isArray(objects)?objects.slice(0,64):[];
+  const originalTexturePacket=bounded.find(obj=>
+    obj?.source_material?.texture_transport?.gpu_reference_rgb
+  )?.source_material?.texture_transport||null;
   const missingRigGeometry=bounded.filter(o=>o?.source_rigged_actor===true&&
     o.native_geometry_status!=='VERIFIED_SKINNED');
   const staleRigPoses=bounded.filter(o=>o?.shape==='skinned_mesh'&&
@@ -609,7 +613,14 @@ export default function DataFirstWorldViewport({
           try{setGpuFixture(runGPUTextureReference());}
           catch(e){setGpuFixture({passed:false,reason:String(e.message),
             actual_gpu_readback:false});}
-        }}>Check GPU source-texture pixels</button>
+        }}>Check GPU texture reference</button>
+      <button type="button" disabled={disabled||!originalTexturePacket}
+        onClick={async()=>{
+          try{setGpuFixture(await runGPUSourceTextureReference(
+            originalTexturePacket));}
+          catch(e){setGpuFixture({passed:false,reason:String(e.message),
+            actual_gpu_readback:false});}
+        }}>Compare actual source PNG CPU–GPU texels</button>
       <label>Live 3D camera view
         <select aria-label="Live source camera mode" value={viewMode}
           onChange={e=>setViewMode(e.target.value)}>
