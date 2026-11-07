@@ -169,11 +169,10 @@ def _unit(v):
 
 
 def _shade(points,surface,lights,eye):
-    """Bounded GGX/Smith/Schlick source-preview microfacet approximation.
+    """Deterministic scalar GGX/Smith/Schlick source-preview shading.
 
-    No IES/texture spectral equivalence is implied: the native USD source
-    exposes material scalar inputs, but this raster is not a validated Hydra
-    shader/delegate. Working RGB is an explicitly uncalibrated derivative.
+    The untextured path deliberately uses Python scalars; per-texel maps
+    are handled separately by _shade_texture_texels with NumPy arrays.
     """
     color,roughness,metallic,_=surface
     a,b,c=points
@@ -186,27 +185,26 @@ def _shade(points,surface,lights,eye):
     center=tuple((a[i]+b[i]+c[i])/3. for i in range(3))
     view=_unit(tuple(eye[i]-center[i] for i in range(3)))
     if view is None:return None
-    # USD authored double-sided meshes are visible from either side.
     if _dot(n,view)<0:n=tuple(-x for x in n)
     nv=max(0.,_dot(n,view))
     out=[AMBIENT_REVIEW*value*(1.-metallic) for value in color]
     f0=[.04*(1.-metallic)+metallic*x for x in color]
-    alpha=np.maximum(.04,roughness*roughness)
+    alpha=max(.04,roughness*roughness)
     alpha2=alpha*alpha
-    k=(roughness+1)**2/8.
+    k=(roughness+1.)**2/8.
     ggx_view=nv/(nv*(1.-k)+k+1e-8)
     for light_position,intensity in lights:
         d=tuple(light_position[i]-center[i] for i in range(3))
         dsq=_dot(d,d)
         light=_unit(d)
         if light is None:continue
-        nl=np.maximum(0.,np.sum(normal*np.asarray(light),axis=-1))
-        if not np.any(nl>0) or not np.any(nv>0):continue
+        nl=max(0.,_dot(n,light))
+        if nl<=0 or nv<=0:continue
         h=_unit(tuple(light[i]+view[i] for i in range(3)))
         if h is None:continue
-        nh=np.maximum(0.,np.sum(normal*np.asarray(h),axis=-1))
+        nh=max(0.,_dot(n,h))
         vh=max(0.,_dot(view,h))
-        denom=(nh*nh*(alpha2-1.)+1.)
+        denom=nh*nh*(alpha2-1.)+1.
         distribution=alpha2/(math.pi*denom*denom+1e-8)
         ggx_light=nl/(nl*(1.-k)+k+1e-8)
         geometry=ggx_view*ggx_light
