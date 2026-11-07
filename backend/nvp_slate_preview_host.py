@@ -181,7 +181,9 @@ class NativeSlatePreviewHost:
             if (source.get("format")!=adapter.FORMAT or
                 source.get("renderer_version")!=adapter.RENDERER_VERSION or
                 source.get("worker_script_sha256")!=op.script_sha256 or
-                source.get("source_cache_key")!=row["cache_key"] or
+                # Source recipe carries the immutable ticket cache_key,
+                # independently verified against the reopened ticket below.
+                # It does not carry a second `source_cache_key` field.
                 source.get("source_take_sha256")!=ticket["source_take_document_sha256"] or
                 source.get("source_shot_sha256")!=ticket["source_shot_document_sha256"] or
                 source.get("source_tick")!=ticket["source_tick"] or
