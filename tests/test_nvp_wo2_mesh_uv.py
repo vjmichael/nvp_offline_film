@@ -6,7 +6,7 @@ import test_nvp_openusd_reusable_assets as fixture
 from backend.nvp_data_av_visual import visual_state
 
 
-class NativeWO2MeshUVTests(fixture.NativeUSD02Integration):
+class NativeWO2MeshUVTests(unittest.TestCase):
     def test_real_st_primvar_and_revision_stable_live_view(self):
         pts=[[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]]
         faces=[[0,1,2]]
