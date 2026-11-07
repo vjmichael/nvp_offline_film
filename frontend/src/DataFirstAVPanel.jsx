@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import DataFirstWorldViewport from './DataFirstWorldViewport.jsx';
 import {runGPUSourceTextureReference} from './NativeTextureGPUReference.js';
+import {inspectOriginalTextureTiles} from './NativeTextureTileStream.js';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -47,6 +48,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [textureMeshId,setTextureMeshId]=useState('');
   const [textureApplying,setTextureApplying]=useState(false);
   const [installedGPUReceipt,setInstalledGPUReceipt]=useState(null);
+  const [highResolutionTexture,setHighResolutionTexture]=useState(null);
+  const [textureTileProgress,setTextureTileProgress]=useState(null);
+  const tileAbortRef=useRef(null);
   const [presentationId,setPresentationId]=useState('NativeFilm001');
   const [aviReceipt,setAviReceipt]=useState(null);
   const [gradeChoices,setGradeChoices]=useState([]);
@@ -309,6 +313,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
 
 
   async function stop(){
+    tileAbortRef.current?.abort();
+    tileAbortRef.current=null;
+    setHighResolutionTexture(null);
     const st=controller.current;
     st.generation++;
     st.active=false;st.working=false;st.exhausted=false;
@@ -508,6 +515,34 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       await refreshTextureMeshes();
     }catch(e){setError(e.message);}
     finally{setTextureApplying(false);}
+  }
+
+  async function inspectHighResolutionTexture(){
+    const asset=scene?.visual?.objects?.find(obj=>
+      obj?.source_asset_binding&&obj?.source_material?.texture);
+    const ticket=controller.current.ticket;
+    if(!asset||!ticket||!native)return;
+    tileAbortRef.current?.abort();
+    const aborter=new AbortController();
+    tileAbortRef.current=aborter;
+    setTextureTileProgress({completed:0,total:0});
+    setHighResolutionTexture(null);
+    try{
+      const output=await inspectOriginalTextureTiles({
+        native,sessionId:ticket,
+        asset:asset.source_asset_binding,
+        texture:asset.source_material.texture,
+        takeSha256:scene.take_document_sha256,
+        signal:aborter.signal,
+        onProgress:setTextureTileProgress,
+      });
+      if(!aborter.signal.aborted)
+        setHighResolutionTexture(output);
+    }catch(e){
+      if(!aborter.signal.aborted)setError(e.message);
+    }finally{
+      if(tileAbortRef.current===aborter)tileAbortRef.current=null;
+    }
   }
 
   async function runInstalledOriginalGPUProbe(){
@@ -768,9 +803,26 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <button disabled={!controller.current.ticket}
         onClick={stop}>Stop and revoke native audition</button>
     </div>
+    {scene?.visual?.objects?.some(obj=>
+      obj.source_asset_binding&&obj.source_material?.texture)&&
+      <section aria-label="Source high-resolution material inspection">
+        <button disabled={!native||!controller.current.ticket||
+          typeof native.data_av_original_texture_tile!=='function'||
+          tileAbortRef.current!==null}
+          onClick={inspectHighResolutionTexture}>
+          Inspect full-resolution original texture</button>
+        {textureTileProgress&&<p role="status">
+          Original texture tiles loaded: {textureTileProgress.completed}/
+          {textureTileProgress.total}</p>}
+        {highResolutionTexture&&<p role="status">
+          Full-resolution texture {highResolutionTexture.width} ×
+          {highResolutionTexture.height} is a temporary GPU derivative;
+          original source SHA remains unchanged.</p>}
+      </section>}
     {scene?.visual?.format==='nvp.data_av.native_visual_state.v1'&&
       <DataFirstWorldViewport
         objects={scene.visual.objects||[]}
+        upgradedTexture={highResolutionTexture}
         listenerPath={listener}
         sceneSha={scene.visual.scene_document_sha256}
         tick={String(scene.visual.time_tick||'0')}
