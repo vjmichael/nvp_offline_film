@@ -139,17 +139,19 @@ class NativePublishedViewerTests(unittest.TestCase):
             root=Path(workdir)
             if codec.product=="ASDCP-asdcp_unwrap":
                 start=int(args[args.index("-f")+1])
+                frames=int(args[args.index("-d")+1])
                 if args[-1]=="p_":
-                    (root/f"p_{start:06d}.j2c").write_bytes(self.codestream)
+                    for n in range(frames):
+                        (root/f"p_{start+n:06d}.j2c").write_bytes(self.codestream)
                 else:
                     with wave.open(str(root/"snd"),"wb") as out:
                         out.setnchannels(2)
                         out.setsampwidth(3)
                         out.setframerate(RATE)
                         out.writeframes((b"\x00\x00\x40"+b"\x00\x00\x80")*
-                                        SAMPLES_PER_FRAME)
+                                        SAMPLES_PER_FRAME*frames)
             elif codec.product=="OpenJPEG-opj_decompress":
-                (root/"actual.ppm").write_bytes(
+                (root/args[args.index("-o")+1]).write_bytes(
                     b"P6\n1998 1080\n4095\n"+
                     (0x0300).to_bytes(2,"big")*3*(1998*1080))
             return {"exit_code":0}
@@ -160,6 +162,17 @@ class NativePublishedViewerTests(unittest.TestCase):
                    "backend.nvp_wo5_finished_playback.inspect_j2k_header",
                    return_value={"raw_codestream_sha256":self.expected}):
             final=self.player.frame(ticket,3)
+            last_first_reel=self.player.window(ticket,2,4)
+            next_reel=self.player.window(ticket,3,2)
+        self.assertEqual(last_first_reel["frame_count"],1)
+        self.assertEqual(last_first_reel["frames"][0]["frame_index"],2)
+        self.assertEqual(next_reel["frame_count"],2)
+        self.assertEqual(
+            [v["audio_start_sample"] for v in next_reel["frames"]],
+            [3*SAMPLES_PER_FRAME,4*SAMPLES_PER_FRAME])
+        self.assertTrue(last_first_reel["no_reel_crossing"])
+        self.assertTrue(next_reel["no_reel_crossing"])
+        self.assertFalse(next_reel["production_accepted"])
         self.assertEqual(final["status"],"DECODED_PUBLISHED_FINAL_FRAME")
         self.assertEqual(final["reel_index"],1)
         self.assertEqual(final["reel_frame_index"],0)
@@ -170,7 +183,7 @@ class NativePublishedViewerTests(unittest.TestCase):
                          SAMPLES_PER_FRAME*4)
         self.assertTrue(base64.b64decode(final["picture_png_base64"]).startswith(
             b"\x89PNG\r\n\x1a\n"))
-        self.assertEqual(len(invocations),3)
+        self.assertEqual(len(invocations),10)
         self.assertEqual(invocations[0][1][1:4],["0","-d","1"])
         self.assertEqual(invocations[2][1][1:4],["0","-d","1"])
         self.assertFalse(final["production_accepted"])
