@@ -471,8 +471,7 @@ export default function DataFirstWorldViewport({
       if(!incoming.has(path)){
         state.world.remove(mesh);
         mesh.geometry.dispose();
-        if(mesh.material.map)mesh.material.map.dispose();
-        mesh.material.dispose();
+        disposeMeshMaterial(mesh.material);
         state.meshes.delete(path);
       }
     }
