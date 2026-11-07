@@ -94,6 +94,51 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
       })));
   });
 
+  it('creator-approves sealed original mono recovery but never marks a new Take',async()=>{
+    const record={
+      format:'nvp.data_av.capture_recovery.v1',
+      status:'RECOVERED_UNATTACHED_ORIGINAL_MONO',
+      source_id:'RecoveredSound001',
+      source_document_sha256:'c'.repeat(64),
+      created_frozen_take:false,original_source_modified:false,
+    };
+    const catalog=vi.fn()
+      .mockResolvedValueOnce({
+        format:'nvp.data_av.live_camera_catalog.v1',
+        status:'AVAILABLE',camera_timelines:[],
+        unapproved_capture_recovery:[{
+          capture_reference:'nvp-live-original-aabbccddeeff',
+          take_id:'FailedTake',durable_sample_count:4000,
+          phase:'DRAINED',recoverable_sealed_mono:true,
+        }],
+      })
+      .mockResolvedValueOnce({
+        format:'nvp.data_av.live_camera_catalog.v1',
+        status:'AVAILABLE',camera_timelines:[],
+        unapproved_capture_recovery:[],
+      });
+    const bridge={
+      data_av_catalog:vi.fn(async()=>({
+        format:'nvp.data_av.native_session.v1',status:'AVAILABLE',
+        ffmpeg_runtime_required:false,takes:[],
+      })),
+      data_av_live_catalog:catalog,
+      data_av_live_recover_original:vi.fn(async()=>record),
+      data_av_audio_window:vi.fn(),data_av_stop:vi.fn(),
+    };
+    render(<DataFirstAVPanel projectId={pid} nativeBridge={bridge}/>);
+    expect(await screen.findByText(/FailedTake/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Approve recovery of original sound only'));
+    await waitFor(()=>expect(
+      bridge.data_av_live_recover_original).toHaveBeenCalledWith({
+        project_id:pid,
+        capture_reference:'nvp-live-original-aabbccddeeff',
+        new_source_id:'RecoveredSound001',
+      }));
+    expect(await screen.findByText(/No Take created/)).toBeTruthy();
+    expect(screen.queryByText('FailedTake')).toBeNull();
+  });
+
   it('fails closed when native catalog demands an FFmpeg runtime',async()=>{
     const bridge={
       data_av_catalog:vi.fn(async()=>({
