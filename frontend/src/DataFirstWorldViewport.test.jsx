@@ -86,7 +86,9 @@ describe('WO2 SHA-bound native PNG source transport',()=>{
       width:2,height:2,color_space:'sRGB',wrap:'repeat',
       source_modified:false},
     texture_transport:{format:'nvp.original.usd_texture_png.v1',
-      sha256:sha,width:2,height:2,color_space:'sRGB',wrap:'repeat',
+      sha256:sha,width:2,height:2,original_width:2,original_height:2,
+      derived_preview:false,preview_sha256:sha,
+      color_space:'sRGB',wrap:'repeat',
       png_base64:'iVBORw0KGgoAAA==',source_modified:false},
   };
   const mesh={
@@ -197,5 +199,27 @@ describe('WO2 original USD materialBind face subsets',()=>{
     expect(()=>validateMaterialSlots({...mesh,
       source_material_slots:[{...slot,roughness:NaN}]}))
       .toThrow(/Malformed/);
+  });
+});
+
+describe('WO2 high-resolution original and derived viewport LOD',()=>{
+  const sha='a'.repeat(64),lod='b'.repeat(64);
+  const mat={
+    texture:{format:'nvp.original.usd_texture_png.v1',
+      sha256:sha,width:2048,height:1024,color_space:'sRGB',
+      wrap:'repeat',source_modified:false},
+    texture_transport:{format:'nvp.original.usd_texture_png.v1',
+      sha256:sha,original_width:2048,original_height:1024,
+      width:512,height:256,derived_preview:true,
+      preview_sha256:lod,color_space:'sRGB',wrap:'repeat',
+      png_base64:'iVBORw0KGgoAAAA',source_modified:false},
+  };
+  const mesh={shape:'mesh',mesh_uvs:[[0,0],[1,0],[0,1]]};
+  it('keeps source identity while accepting a smaller disposable GPU preview',()=>{
+    expect(validateSourceTexture(mat,mesh).preview_sha256).toBe(lod);
+  });
+  it('rejects a preview claiming a different source image',()=>{
+    expect(()=>validateSourceTexture({...mat,texture_transport:{
+      ...mat.texture_transport,original_width:512}},mesh)).toThrow();
   });
 });
