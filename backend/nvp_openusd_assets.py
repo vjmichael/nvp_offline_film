@@ -7,6 +7,33 @@ passed through the FilmIndex boundary. Source layers are SHA-addressed blobs.
 from __future__ import annotations
 
 import math
+from hashlib import sha256
+from io import BytesIO
+
+MAX_TEXTURE_BYTES=256*1024
+MAX_TEXTURE_SIDE=256
+
+
+def _source_rgb_texture(data):
+    """Validate bounded true PNG RGB8, not an external texture URI."""
+    if type(data) is not bytes or not 0<len(data)<=MAX_TEXTURE_BYTES:
+        raise ValueError("Original texture must be bounded PNG bytes")
+    from PIL import Image
+    try:
+        with Image.open(BytesIO(data)) as image:
+            if (image.format!="PNG" or image.mode!="RGB" or
+                not 1<=image.width<=MAX_TEXTURE_SIDE or
+                not 1<=image.height<=MAX_TEXTURE_SIDE or
+                getattr(image,"n_frames",1)!=1 or
+                image.info.get("icc_profile") or
+                image.info.get("gamma") or
+                image.info.get("transparency")):
+                raise ValueError("Native original texture requires RGB8/sRGB PNG")
+            image.load()
+            return image.width,image.height
+    except (OSError,ValueError) as exc:
+        raise ValueError("Native source texture failed bounded PNG validation") from exc
+
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_openusd_scene import (
@@ -27,7 +54,7 @@ class OpenUSDAssetRegistry:
 
     def publish(self, project_id, asset_id, *, shape, size_m,
                 expected_revision=0, points=None, triangles=None,
-                preview_material=None):
+                preview_material=None,uvs=None,preview_texture_png=None):
         _require_pid(project_id)
         _id(asset_id, "reusable asset ID")
         if shape not in KINDS:
@@ -55,6 +82,29 @@ class OpenUSDAssetRegistry:
                 raise ValueError("Mesh needs nondegenerate triangle indices")
         elif points is not None or triangles is not None:
             raise ValueError("Procedural cube/sphere does not accept mesh data")
+        texture_info=None
+        original_uvs=None
+        if preview_texture_png is not None or uvs is not None:
+            if (shape!="mesh" or preview_texture_png is None or
+                type(uvs) is not list or len(uvs)!=len(points) or
+                preview_material is None):
+                raise ValueError("Real source texture needs mesh UV and authored shader")
+            original_uvs=[]
+            for uv in uvs:
+                if (type(uv) is not list or len(uv)!=2 or
+                    any(type(x) not in (int,float) or not math.isfinite(x)
+                        or not 0<=x<=1 for x in uv)):
+                    raise ValueError("Source USD UVs must be normalized finite pairs")
+                original_uvs.append([float(x) for x in uv])
+            w,h=_source_rgb_texture(preview_texture_png)
+            texture_sha=sha256(preview_texture_png).hexdigest()
+            texture_info={
+                "format":"nvp.original_png_rgb8_uv_texture.v1",
+                "blob_sha256":texture_sha,"width":w,"height":h,
+                "source_encoding":"sRGB",
+                "uv_interpolation":"vertex",
+                "original_source_modified":False,
+            }
         authored_material=None
         if preview_material is not None:
             if (type(preview_material) is not dict or
@@ -98,6 +148,11 @@ class OpenUSDAssetRegistry:
                 v for triangle in triangles for v in triangle])
             obj.CreateSubdivisionSchemeAttr().Set("none")
             obj.CreateDoubleSidedAttr().Set(True)
+        if original_uvs is not None:
+            from pxr import Vt
+            st=UsdGeom.PrimvarsAPI(obj).CreatePrimvar(
+                "st",Sdf.ValueTypeNames.TexCoord2fArray,UsdGeom.Tokens.vertex)
+            st.Set(Vt.Vec2fArray([Gf.Vec2f(*uv) for uv in original_uvs]))
         if authored_material is not None:
             from pxr import UsdShade
             material=UsdShade.Material.Define(stage,"/Asset/Material")
@@ -110,6 +165,24 @@ class OpenUSDAssetRegistry:
                 shader.CreateInput(name,Sdf.ValueTypeNames.Float).Set(
                     authored_material[name])
             shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
+            if texture_info is not None:
+                tex=UsdShade.Shader.Define(
+                    stage,"/Asset/Material/BaseColorTexture")
+                tex.CreateIdAttr("UsdUVTexture")
+                tex.CreateInput("file",Sdf.ValueTypeNames.Asset).Set(
+                    Sdf.AssetPath("nvpblob:"+texture_info["blob_sha256"]))
+                tex.CreateInput("sourceColorSpace",Sdf.ValueTypeNames.Token).Set(
+                    "sRGB")
+                primvar=UsdShade.Shader.Define(
+                    stage,"/Asset/Material/SourceUV")
+                primvar.CreateIdAttr("UsdPrimvarReader_float2")
+                primvar.CreateInput("varname",Sdf.ValueTypeNames.Token).Set("st")
+                primvar.CreateOutput("result",Sdf.ValueTypeNames.Float2)
+                tex.CreateInput("st",Sdf.ValueTypeNames.Float2).ConnectToSource(
+                    primvar.ConnectableAPI(),"result")
+                tex.CreateOutput("rgb",Sdf.ValueTypeNames.Float3)
+                shader.GetInput("diffuseColor").ConnectToSource(
+                    tex.ConnectableAPI(),"rgb")
             material.CreateSurfaceOutput().ConnectToSource(
                 shader.ConnectableAPI(),"surface")
             if not UsdShade.MaterialBindingAPI.Apply(
@@ -127,6 +200,13 @@ class OpenUSDAssetRegistry:
         }
         if authored_material is not None:
             document["preview_material"]=authored_material
+        if texture_info is not None:
+            original=self.index.put_blob(
+                project_id,preview_texture_png,media_type="image/png")
+            if original["sha256"]!=texture_info["blob_sha256"]:
+                raise RuntimeError("Immutable RGB texture blob digest changed")
+            document["preview_texture"]=texture_info
+            document["uvs"]=original_uvs
         if shape=="mesh":
             # Keep canonical, bounded source topology alongside the verified
             # original USD layer for the ephemeral native WebGL renderer.
@@ -138,6 +218,12 @@ class OpenUSDAssetRegistry:
                 (project_id, blob_sha)).fetchone()
             if row is None:
                 raise RuntimeError("Referenced procedural USD layer missing at commit")
+            if texture_info is not None:
+                image=db.execute("""SELECT 1 FROM film_blob_refs
+                    WHERE project_id=? AND sha256=? AND media_type=?""",
+                    (project_id,texture_info["blob_sha256"],"image/png")).fetchone()
+                if image is None:
+                    raise RuntimeError("Original source texture blob no longer exists")
         return self.index.register_revision(
             project_id, asset_id, "asset", document,
             expected_revision=expected_revision, dependencies=[],
