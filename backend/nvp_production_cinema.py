@@ -333,6 +333,138 @@ class CinemaJournal(ProductionJournal):
                        (_now(),job_id))
             return bool(row["cancel_requested"])
 
+    def approve_rebuild_uncommitted(self,job_id,authorize):
+        """Host-approved rescue; preserve orphan stages before selective retry.
+
+        The operation is not available to the browser or automatic restart.
+        It refuses changed original sources or corrupted already committed
+        checkpoints. Any interrupted disposable outputs are MOVED to unique
+        hidden review names on the SAME volume; no source is deleted.
+        """
+        if not callable(authorize):
+            raise PermissionError("Native creator review authorization required")
+        snap=self.status(job_id)
+        if snap["task_kind"]!=TASK_KIND or snap["state"]!="REVIEW_REQUIRED":
+            raise PermissionError("Only an inspected cinema job may resume")
+        reel=self.reel(job_id)
+        root=self.spool(job_id)
+        with self._read() as db:
+            sources=[dict(x) for x in db.execute("""SELECT position,
+                state,source_path,expected_sha256,expected_bytes
+                FROM production_segments WHERE job_id=? ORDER BY position""",
+                (job_id,))]
+            committed={r["position"]:dict(r) for r in db.execute(
+                """SELECT position,file_sha256,file_bytes FROM production_cinema_frames
+                   WHERE job_id=?""",(job_id,))}
+        scope={"operation":"nvp.supervisor.review_quarantine_and_rebuild.v1",
+               "job_id":job_id,"manifest_sha256":snap["manifest_sha256"],
+               "approved_take_sha256":reel["take_sha256"],
+               "verified_frame_count":len(committed),
+               "unfinished_frames":len(sources)-len(committed),
+               "preserve_all_uncommitted_files":True}
+        if authorize(deepcopy(scope)) is not True:
+            return {"status":"DENIED","job_id":job_id}
+        # Do potentially expensive original and completed output hashing
+        # outside a SQLite write transaction.
+        for entry in sources:
+            file=Path(entry["source_path"])
+            if (file.is_symlink() or not file.is_file() or
+                    file.stat().st_size!=entry["expected_bytes"] or
+                    digest_file(file)!=entry["expected_sha256"]):
+                raise PermissionError("Approved source changed; cannot rebuild")
+            i=entry["position"]
+            target=root/"frames"/f"{i:06d}.j2c"
+            if i in committed:
+                record=committed[i]
+                if (entry["state"]!="VERIFIED" or
+                        verify_frame_file(target,record["file_sha256"],
+                                          reel["profile"])!=record["file_bytes"]):
+                    raise PermissionError("Completed checkpoint corrupted; manual repair")
+        if reel["track_sha256"] is not None:
+            raise PermissionError("Committed MXF cannot be replaced by reviewed retry")
+        # Only this same-host trusted method can move disposable stages.
+        # Refuse symlinked work roots even if the apparent file names match.
+        frame_parent=root/"frame-work"
+        frames=root/"frames"
+        mxf_stage=root/"mxf-stage"
+        if any(x.is_symlink() for x in (root,frame_parent,frames,mxf_stage)):
+            raise PermissionError("Untrusted spool directory redirection")
+        from backend.nvp_wo3_atomic_publish import atomic_publish_directory
+        def archive_directory(path):
+            if not path.exists() and not path.is_symlink():
+                return None
+            if path.is_symlink() or not path.is_dir():
+                raise PermissionError("Unsafe uncommitted codec work stage")
+            destination=path.parent/(".nvp-reviewed-"+path.name+"-"+str(uuid4()))
+            atomic_publish_directory(path,destination)
+            return str(destination.name)
+        def archive_file(path):
+            if not path.exists() and not path.is_symlink():
+                return None
+            if path.is_symlink() or not path.is_file():
+                raise PermissionError("Unsafe uncommitted codec output")
+            destination=path.parent/(".nvp-reviewed-"+path.name+"-"+str(uuid4()))
+            os.link(path,destination) # kernel-enforced no replacement
+            _fsync_directory(path.parent)
+            path.unlink() # one link removed, REVIEWED bytes kept in new link
+            _fsync_directory(path.parent)
+            return str(destination.name)
+        archived=[]
+        for entry in sources:
+            i=entry["position"]
+            if i in committed:
+                continue
+            work=frame_parent/f"{i:06d}"
+            target=frames/f"{i:06d}.j2c"
+            moved=archive_directory(work)
+            if moved is not None:
+                archived.append(moved)
+            moved=archive_file(target)
+            if moved is not None:
+                archived.append(moved)
+        moved=archive_directory(mxf_stage)
+        if moved is not None:
+            archived.append(moved)
+        moved=archive_file(root/"picture.mxf")
+        if moved is not None:
+            archived.append(moved)
+        # All interrupted data is preserved under review filenames. Only
+        # NOW may the journal requeue the missing segments and MXF stage.
+        with self._tx() as db:
+            row=db.execute("""SELECT j.state,j.manifest_sha256,
+                j.cancel_requested,r.track_sha256
+                FROM production_jobs j JOIN production_cinema_reels r
+                ON j.job_id=r.job_id WHERE j.job_id=?""",
+                (job_id,)).fetchone()
+            if (row is None or row["state"]!="REVIEW_REQUIRED" or
+                    row["manifest_sha256"]!=scope["manifest_sha256"] or
+                    row["cancel_requested"] or row["track_sha256"] is not None):
+                raise PermissionError("Job changed during source review")
+            current={r["position"]:dict(r) for r in db.execute(
+                """SELECT position,file_sha256,file_bytes FROM production_cinema_frames
+                WHERE job_id=?""",(job_id,))}
+            if current!=committed:
+                raise PermissionError("Completed checkpoints changed during review")
+            for entry in sources:
+                if entry["position"] not in committed:
+                    db.execute("""UPDATE production_segments SET state='PENDING',
+                        owner_token=NULL,verified_sha256=NULL,
+                        verified_bytes=NULL,verified_at=NULL
+                        WHERE job_id=? AND position=?""",
+                        (job_id,entry["position"]))
+            db.execute("""UPDATE production_jobs SET state='QUEUED',
+                owner_token=NULL,owner_pid=NULL,updated_at=? WHERE job_id=?""",
+                (_now(),job_id))
+            db.execute("""UPDATE production_cinema_reels SET reel_state='ENCODING',
+                updated_at=? WHERE job_id=?""",(_now(),job_id))
+            self._event(db,job_id,"PICTURE_REBUILD_APPROVED",
+                        str(len(archived))+" old stages preserved for review")
+        return {"status":"QUEUED","job_id":job_id,
+                "already_verified_frames":len(committed),
+                "requeued_frames":len(sources)-len(committed),
+                "preserved_review_artifacts":archived,
+                "production_dcp_accepted":False}
+
     def cinema_reconcile(self):
         """Read-only file audit + conservative transactional restart decisions.
 
