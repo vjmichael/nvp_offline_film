@@ -297,6 +297,21 @@ export default function DataFirstWorldViewport({
   const setPresentation=updated=>{
     try{
       const verified=validateWO2Look(updated,sceneRoles);
+      for(const [path,channels] of Object.entries(
+          verified.textures.transforms)){
+        const material=objects.find(o=>o.path===path)?.source_material;
+        const available=new Set([
+          ...(material?.texture?['base_color']:[]),
+          ...Object.keys(material?.pbr_maps||{}),
+        ]);
+        if(!Object.keys(channels).every(ch=>available.has(ch)))
+          throw Error('Original actor does not own that texture channel');
+      }
+      for(const [path,physical] of Object.entries(verified.materials)){
+        const material=objects.find(o=>o.path===path)?.source_material;
+        if(physical.opacity<1&&material?.pbr_maps?.opacity)
+          throw Error('Cannot blend an original binary cutout without a compositing graph');
+      }
       if(onLookChange)onLookChange(verified);
       else setLocalLook(verified);
       setLookWarning('');
