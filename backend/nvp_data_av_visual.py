@@ -96,11 +96,15 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             "source_rigged_actor":skin is not None,
             "source_skinning_tick":skin["source_skinning_tick"] if skin else None,
             "source_color_rgb":skin["source_color_rgb"] if skin else None,
+            "source_material":skin.get("source_material") if skin else None,
+            "original_blend_shape_count":(
+                skin.get("original_blend_shape_count",0) if skin else 0),
             "native_geometry_status":(
                 "MISSING_BOUND_USD_MESH" if shape=="missing_rig_geometry"
                 else "VERIFIED_SKINNED" if shape=="skinned_mesh"
                 else "VERIFIED_STATIC" if binding else "UNMESHED_SCENE_MARKER"),
-            "facial_animation_evaluated":False,
+            "facial_animation_evaluated":bool(
+                skin and skin.get("facial_animation_evaluated") is True),
         })
     return {"format":FORMAT,
             "time_tick":str(scene_snapshot["time_tick"]),
