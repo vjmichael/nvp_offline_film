@@ -60,6 +60,18 @@ class NativeCodecReleaseTests(unittest.TestCase):
         self.files["asdcp-info"].mkdir()
         with self.assertRaises(PermissionError):self.stage()
 
+    def test_installed_binary_admission_rejects_unmanifested_same_directory_dll(self):
+        from backend.nvp_wo5_codec_binding import pinned_codec_pair
+        out=self.stage()
+        manifest=json.loads((self.bundle/"nvp-codec-manifest.json").read_text())
+        unwrap,decoder=pinned_codec_pair(
+            self.bundle,manifest,out["manifest_sha256"])
+        self.assertEqual(unwrap.product,"ASDCP-asdcp_unwrap")
+        self.assertEqual(decoder.product,"OpenJPEG-opj_decompress")
+        (self.bundle/"unexpected-native-codec.dll").write_bytes(b"unreviewed")
+        with self.assertRaises(PermissionError):
+            pinned_codec_pair(self.bundle,manifest,out["manifest_sha256"])
+
     def test_no_runtime_self_pinning(self):
         self.assertRaises(PermissionError,write_compiled_pin,
                           self.root/"new.py","")
