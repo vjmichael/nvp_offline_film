@@ -368,8 +368,6 @@ class NativeSceneLinearRaster:
                         type(row) is not list or len(row)!=3
                         for row in face_uvs)):
                         raise RuntimeError("Malformed original face UV corners")
-                    if False:
-                        raise RuntimeError("USD texture requires original mesh UV primvar")
                     from backend.nvp_native_usd_texture import verified_texture
                     key=descriptor["sha256"]
                     if key not in texture_cache:
