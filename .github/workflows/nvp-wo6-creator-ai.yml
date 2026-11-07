@@ -5,17 +5,23 @@ on:
     paths:
       - backend/nvp_wo6_creator_plan.py
       - backend/nvp_wo6_feature_origins.py
+      - backend/nvp_wo6_scene_context.py
+      - backend/nvp_wo6_tool_readiness.py
       - backend/nvp_ai_read_host.py
       - tests/test_nvp_wo6_creator_plan.py
       - tests/test_nvp_wo6_feature_origins.py
+      - tests/test_nvp_wo6_scene_tool_context.py
       - .github/workflows/nvp-wo6-creator-ai.yml
   pull_request:
     paths:
       - backend/nvp_wo6_creator_plan.py
       - backend/nvp_wo6_feature_origins.py
+      - backend/nvp_wo6_scene_context.py
+      - backend/nvp_wo6_tool_readiness.py
       - backend/nvp_ai_read_host.py
       - tests/test_nvp_wo6_creator_plan.py
       - tests/test_nvp_wo6_feature_origins.py
+      - tests/test_nvp_wo6_scene_tool_context.py
       - .github/workflows/nvp-wo6-creator-ai.yml
   workflow_dispatch:
 concurrency:
@@ -38,13 +44,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Install existing test framework only
-        run: python -m pip install "pytest>=8,<10"
+      - name: Install actual native OpenUSD and existing test framework
+        run: python -m pip install --only-binary=:all: "usd-core==26.11" "pytest>=8,<10"
       - name: Compile new and existing trusted read-only host
-        run: python -m compileall -q backend/nvp_wo6_creator_plan.py backend/nvp_wo6_feature_origins.py backend/nvp_ai_read_host.py tests/test_nvp_wo6_creator_plan.py tests/test_nvp_wo6_feature_origins.py
+        run: python -m compileall -q backend/nvp_wo6_creator_plan.py backend/nvp_wo6_feature_origins.py backend/nvp_wo6_scene_context.py backend/nvp_wo6_tool_readiness.py backend/nvp_ai_read_host.py tests/test_nvp_wo6_creator_plan.py tests/test_nvp_wo6_feature_origins.py tests/test_nvp_wo6_scene_tool_context.py
       - name: Run WO6 original FilmIndex source-to-Take planning, negative and trusted-host tests
         run: python -m unittest discover -s tests -p test_nvp_wo6_creator_plan.py -v
       - name: Verify native source-DCP-to-Take resolver and per-turn FeatureJournal grant
         run: python -m unittest discover -s tests -p test_nvp_wo6_feature_origins.py -v
+      - name: Verify real source-reopened OpenUSD actor/camera/light, original PCM and host native tool/license readiness
+        run: python -m unittest discover -s tests -p test_nvp_wo6_scene_tool_context.py -v
       - name: Preserve existing AI-01/02/03 read-only reference contracts
         run: python -m pytest -q tests/test_nvp_ai_read_host.py tests/test_nvp_ai_context.py tests/test_nvp_ai_refs.py
