@@ -67,8 +67,10 @@ def _avi_stream_header(kind,handler,scale,rate,length,buffer_size,
         buffer_size,0xffffffff,sample_size,0,0,width,height)
 
 
-def _frame_bgr(png_path,width,height):
+def _frame_bgr(png_path,width,height,expected_sha256):
     data=png_path.read_bytes()
+    if sha256(data).hexdigest()!=expected_sha256:
+        raise RuntimeError("Renderer picture bytes changed during verified read")
     if _png_header(data)!=(width,height):
         raise RuntimeError("Approved picture raster dimensions changed")
     with Image.open(BytesIO(data)) as image:
@@ -191,9 +193,7 @@ def deliver_avi(package_dir,output_file,*,expected_take_sha256,
             previous_sample=0
             for i,frame in enumerate(frames):
                 path=parent/"pictures"/frame["png_file"]
-                if _sha(path)!=frame["sha256"]:
-                    raise RuntimeError("Approved frame SHA changed before encode")
-                raw=_frame_bgr(path,width,height)
+                raw=_frame_bgr(path,width,height,frame["sha256"])
                 if len(raw)!=frame_bytes:raise RuntimeError("Noncanonical BGR24 buffer")
                 pos=_chunk(out,b"00db",raw)
                 index.append((b"00db",0x10,pos-(movi+8),len(raw)))
@@ -215,6 +215,12 @@ def deliver_avi(package_dir,output_file,*,expected_take_sha256,
                 if len(pcm)!=n*4:raise RuntimeError("Truncated soundtrack tail")
                 pos=_chunk(out,b"01wb",pcm)
                 index.append((b"01wb",0,pos-(movi+8),len(pcm)))
+            # The source PCM can be externally altered while streaming.
+            # Never publish picture/audio whose approved manifest no longer
+            # matches the exact bytes that were used to author the AVI.
+            if (_sha(wav)!=doc["audio_sha256"] or
+                    _sha(manifest_path)!=grant["manifest_sha256"]):
+                raise RuntimeError("Approved soundtrack or manifest changed during mux")
             _finish(out,movi)
             _chunk(out,b"idx1",b"".join(
                 struct.pack("<4sIII",*item) for item in index))
