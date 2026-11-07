@@ -6,6 +6,29 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 // audio presentation Film Time. There is no MP4, frame sequencer, texture
 // proxy, video transcoding or persistent picture. SHA-bound NVP procedural
 // meshes and UsdSkel actors are source-verified; unbound actors stay gizmos.
+// The native host, not JavaScript, verifies the source PNG against FilmIndex.
+export function validateSourceTexture(surface,item){
+  const descriptor=surface?.texture;
+  if(!descriptor)return null;
+  const packet=surface?.texture_transport;
+  if(item.shape!=='mesh'||!item.mesh_uvs||
+     descriptor.format!=='nvp.original.usd_texture_png.v1'||
+     packet?.format!==descriptor.format||
+     descriptor.source_modified!==false||packet.source_modified!==false||
+     !/^[0-9a-f]{64}$/.test(descriptor.sha256||'')||
+     packet.sha256!==descriptor.sha256||
+     descriptor.width!==packet.width||descriptor.height!==packet.height||
+     !Number.isInteger(packet.width)||!Number.isInteger(packet.height)||
+     packet.width<1||packet.height<1||
+     packet.width>512||packet.height>512||
+     descriptor.color_space!=='sRGB'||packet.color_space!=='sRGB'||
+     descriptor.wrap!=='repeat'||packet.wrap!=='repeat'||
+     typeof packet.png_base64!=='string'||packet.png_base64.length>2800000||
+     !packet.png_base64.startsWith('iVBORw0KGgo'))
+    throw Error('Unverified original USD texture transport');
+  return packet;
+}
+
 function validMatrix(m){
   return Array.isArray(m)&&m.length===4&&
     m.every(r=>Array.isArray(r)&&r.length===4&&
@@ -216,6 +239,7 @@ export default function DataFirstWorldViewport({
       if(controls)controls.dispose();
       for(const mesh of meshes.values()){
         if(mesh.geometry)mesh.geometry.dispose();
+        if(mesh.material?.map)mesh.material.map.dispose();
         if(mesh.material)mesh.material.dispose();
       }
       if(renderer){
@@ -251,11 +275,14 @@ export default function DataFirstWorldViewport({
       incoming.add(obj.path);
       const fingerprint=[obj.shape,
         obj.shape==='skinned_mesh'?'skinned-source':obj.size_m,
-        obj.semantic_role,obj.geometry_asset_sha256||''].join(':');
+        obj.semantic_role,obj.geometry_asset_sha256||'',
+        obj.source_material?.texture?.sha256||''].join(':');
       let mesh=state.meshes.get(obj.path);
       if(mesh&&mesh.userData.sourceGeometry!==fingerprint){
         state.world.remove(mesh);
-        mesh.geometry.dispose();mesh.material.dispose();
+        mesh.geometry.dispose();
+        if(mesh.material.map)mesh.material.map.dispose();
+        mesh.material.dispose();
         state.meshes.delete(obj.path);mesh=null;
       }
       if(!mesh){
@@ -279,12 +306,27 @@ export default function DataFirstWorldViewport({
             throw Error('Original USD material has invalid source provenance');
           const surfaceColor=surface?
             new THREE.Color().setRGB(...surface.base_color_rgb):color;
+          const transport=validateSourceTexture(surface,obj);
           const material=new THREE.MeshStandardMaterial({
             color:surfaceColor,
             roughness:surface?surface.roughness:.8,
             metalness:surface?surface.metallic:.05,
             side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
               THREE.DoubleSide:THREE.FrontSide});
+          if(transport){
+            const tex=new THREE.TextureLoader().load(
+              'data:image/png;base64,'+transport.png_base64,
+              ()=>state.requestRender());
+            tex.colorSpace=THREE.SRGBColorSpace;
+            tex.wrapS=THREE.RepeatWrapping;
+            tex.wrapT=THREE.RepeatWrapping;
+            tex.magFilter=THREE.NearestFilter;
+            tex.minFilter=THREE.NearestFilter;
+            // USD st v=0 is bottom of the original PNG.
+            tex.flipY=true;
+            material.map=tex;
+            material.needsUpdate=true;
+          }
           mesh=new THREE.Mesh(geometry,material);
           mesh.matrixAutoUpdate=false;
           mesh.userData.sourceGeometry=fingerprint;
@@ -326,7 +368,9 @@ export default function DataFirstWorldViewport({
     for(const [path,mesh] of state.meshes){
       if(!incoming.has(path)){
         state.world.remove(mesh);
-        mesh.geometry.dispose();mesh.material.dispose();
+        mesh.geometry.dispose();
+        if(mesh.material.map)mesh.material.map.dispose();
+        mesh.material.dispose();
         state.meshes.delete(path);
       }
     }
