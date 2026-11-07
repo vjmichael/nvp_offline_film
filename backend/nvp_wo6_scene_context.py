@@ -282,8 +282,13 @@ def assemble_film_crew_context(
         # source-authorized registry data.
     # An immutable Take can remain historically valid when a new scene
     # revision exists; never describe an old Take as the current edit.
-    heads = {r["object_id"]: r["head_revision"]
-             for r in index.list_objects(project_id)}
+    # O(1) exact-object head checks. Long films can have millions of
+    # assets; never materialize the whole production catalog to report
+    # whether these two trusted source revisions are still the heads.
+    heads = {
+        doc["scene_id"]: index.read_revision(project_id,doc["scene_id"])["revision"],
+        doc["timeline_id"]: index.read_revision(project_id,doc["timeline_id"])["revision"],
+    }
     anchored = [
         {"object_id": doc["scene_id"], "revision": doc["scene_revision"],
          "document_sha256": doc["scene_document_sha256"],
