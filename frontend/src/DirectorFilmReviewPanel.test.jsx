@@ -5,9 +5,9 @@ import {cleanup,render,screen,fireEvent,waitFor} from '@testing-library/react';
 import DirectorFilmReviewPanel,{buildSourceBoundShots} from './DirectorFilmReviewPanel.jsx';
 
 vi.mock('./DataFirstAVPanel.jsx',()=>({
-  default:({initialTakeId,initialSourceSample})=>
+  default:({initialTakeId,initialTakeSha256,initialSourceSample})=>
     <div role="region" aria-label="Real original Take playback">
-      Real source A/V selected: {initialTakeId} / {initialSourceSample}
+      Real source A/V selected: {initialTakeId} / {initialTakeSha256} / {initialSourceSample}
     </div>
 }));
 
@@ -40,6 +40,7 @@ function bridge(extra={}){return{
     ordered_picture_custody_sha256:sourceSha,
     source_reels_for_native_take_audition:[{
       reel_number:1,take_id:'FrozenRealTake01',
+      take_document_sha256:sourceSha,
       take_start_tick:294000000,approved_frame_count:24,
       source_playback_only:true,finished_dcp_playback_verified:false
     }],
@@ -112,7 +113,7 @@ describe('WO5 actual NVP director review desktop workflow',()=>{
     expect(screen.getByText(/playback of the final flattened DCP/i)).toBeTruthy();
     fireEvent.click(screen.getByRole('button',{name:'Audition original source'}));
     expect(screen.getByRole('region',{name:'Real original Take playback'}).textContent)
-      .toContain('FrozenRealTake01 / 2000');
+      .toContain('FrozenRealTake01 / '+sourceSha+' / 2000');
     expect(native.wo5_review_save_observations).not.toHaveBeenCalled();
   });
 
