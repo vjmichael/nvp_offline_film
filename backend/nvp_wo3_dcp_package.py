@@ -163,6 +163,13 @@ def publish_dcp_candidate(index:FilmIndex,pid,*,take_id,take_revision,
     if take["kind"]!="take" or take["document_sha256"]!=take_sha256 or (
         take["data"].get("frozen") is not True):
         raise PermissionError("Cinema output must bind one frozen original Take")
+    from backend.nvp_openusd_take import OpenUSDTakeCapture
+    source_verifier=OpenUSDTakeCapture(
+        index,verify_creator_action=lambda *_:False)
+    evidence=source_verifier.verify_take(pid,take_id)
+    if (evidence["status"]!="VERIFIED_FROZEN_DATA_TAKE" or
+        evidence["take_document_sha256"]!=take_sha256):
+        raise PermissionError("Source OpenUSD/temporal Take verification failed")
     picture=_asset(picture,"picture",take_sha256)
     sound=_asset(sound,"sound",take_sha256)
     if type(title) is not str or not 1<=len(title)<=80 or (
@@ -187,6 +194,9 @@ def publish_dcp_candidate(index:FilmIndex,pid,*,take_id,take_revision,
     if index.read_revision(pid,take_id,take_revision)[
         "document_sha256"]!=take_sha256:
         raise PermissionError("Original source changed during OS approval")
+    if source_verifier.verify_take(pid,take_id)[
+            "take_document_sha256"]!=take_sha256:
+        raise PermissionError("Original USD content changed after native consent")
     issued=datetime.now(timezone.utc).isoformat(timespec="seconds")
     files,identifiers=_compose_xml(picture,sound,title=title,issued=issued)
     target_name="DCP_"+identifiers["composition_uuid"][9:]
