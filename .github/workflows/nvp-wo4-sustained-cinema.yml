@@ -1,0 +1,87 @@
+name: NVP WO4 Long-Form 2h/3h 2K/4K Native DCP Stress (NO FFMPEG)
+on:
+  push:
+    branches: [nvp/wo4-cinema-mastering-20261107]
+    paths:
+      - tests/nvp_wo4_sustained_ci.py
+      - backend/nvp_wo4_picture_spool.py
+      - backend/nvp_wo4_supervised_sound.py
+      - backend/nvp_wo4_multireel.py
+      - backend/nvp_wo4_resource_budget.py
+      - .github/workflows/nvp-wo4-sustained-cinema.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nvp-wo4-sustained-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  full-duration-native:
+    name: Full-duration ${{ matrix.hours }}h ${{ matrix.profile }} actual MXF and SMPTE DCP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - hours: 2
+            profile: 2K_FLAT_24
+          - hours: 3
+            profile: 2K_FLAT_24
+          - hours: 2
+            profile: 4K_SCOPE_24
+          - hours: 3
+            profile: 4K_SCOPE_24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: cinecert/asdcplib
+          ref: 905d6047f67c8211c2d22f29fb0e2e44c142b59b
+          path: deps/asdcplib
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install reviewed actual OpenJPEG and build CineCert/asdcplib tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libopenjp2-tools build-essential cmake
+          test "$(git -C deps/asdcplib rev-parse HEAD)" = 905d6047f67c8211c2d22f29fb0e2e44c142b59b
+          test -f deps/asdcplib/COPYING
+          cmake -S deps/asdcplib -B deps/asdcplib/build -DCMAKE_BUILD_TYPE=Release -DWITHOUT_SSL=ON -DWITHOUT_XML=ON
+          cmake --build deps/asdcplib/build --config Release --parallel 2 --target asdcp-wrap asdcp-info asdcp-unwrap
+      - name: Record runner capacity and native dependency identity
+        run: |
+          df -h .
+          free -h
+          /usr/bin/opj_compress -h | head -30 || true
+          sha256sum /usr/bin/opj_compress deps/asdcplib/build/src/asdcp-wrap deps/asdcplib/build/src/asdcp-info
+      - name: Run genuine native picture and stereo sound MXF for every 5-minute reel; assemble full-duration DCP
+        env:
+          NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+          NVP_NATIVE_ASDCP_WRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-wrap
+          NVP_NATIVE_ASDCP_INFO: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-info
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python -m compileall -q tests/nvp_wo4_sustained_ci.py
+          python tests/nvp_wo4_sustained_ci.py \
+            --hours ${{ matrix.hours }} \
+            --profile ${{ matrix.profile }} \
+            --root "${{ runner.temp }}/nvp-longform-${{ matrix.hours }}h-${{ matrix.profile }}" \
+            --audit "${{ github.workspace }}/longform-audit/${{ matrix.hours }}h-${{ matrix.profile }}.json"
+      - name: Display bounded resource usage (no full media upload)
+        if: always()
+        run: |
+          df -h .
+          free -h
+          ls -lh longform-audit/ 2>/dev/null || true
+      - name: Upload source-verified long-form duration receipts ONLY
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-wo4-${{ matrix.hours }}h-${{ matrix.profile }}-audit
+          path: longform-audit/
+          if-no-files-found: warn
+          retention-days: 14
