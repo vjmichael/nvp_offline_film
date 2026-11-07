@@ -460,6 +460,35 @@ class TrustedDesktopCameraBridge:
     def data_av_catalog(self,project_id):
         return self._data_av().catalog(project_id)
 
+    def data_av_binaural_catalog(self,project_id):
+        """List only real source-bound IR profiles; never invent measurements."""
+        self._native_window()
+        _require_pid(project_id)
+        from backend.nvp_native_hrir import NativeMeasuredBinauralIR
+        profiles=[]
+        for row in self.index.list_objects(project_id,kind="audio")[:128]:
+            try:
+                record=self.index.read_revision(
+                    project_id,row["object_id"],1)
+                if record["data"].get("format")!=(
+                        "nvp.data_av.source_binaural_ir.v1"):
+                    continue
+                verified=NativeMeasuredBinauralIR(
+                    self.index,project_id,row["object_id"],
+                    record["document_sha256"])
+                profiles.append({
+                    "source_id":verified.source_id,
+                    "source_document_sha256":verified.source_sha,
+                    "measurement_kind":verified.kind,
+                    "measured_source_label":record["data"]["measured_source_label"],
+                    "calibrated":False,
+                })
+            except (RuntimeError,ValueError,KeyError):
+                continue
+        return {"format":"nvp.data_av.binaural_ir_catalog.v1",
+                "status":"AVAILABLE","profiles":profiles,
+                "ffmpeg_used":False,"cinema_calibration_accepted":False}
+
     def data_av_begin(self,request):
         return self._data_av().begin(request)
 
