@@ -57,3 +57,24 @@ describe('DA-04B bounded source-verified live skinned actor',()=>{
     geometry.dispose();
   });
 });
+
+describe('WO2 original USD UV source contract',()=>{
+  const authored={
+    ...actor,shape:'mesh',source_skinning:false,
+    mesh_uvs:[[0,0],[1,0],[0,1],[1,1]],
+  };
+  it('accepts finite per-vertex source st coordinates',()=>{
+    expect(validateMeshData(authored).uv).toEqual(authored.mesh_uvs);
+    expect(validateMeshData({...authored,mesh_uvs:null}).uv).toBeNull();
+  });
+  it('rejects fake skinned UVs, wrong vertex counts and unsafe numbers',()=>{
+    expect(()=>validateMeshData({...actor,mesh_uvs:authored.mesh_uvs}))
+      .toThrow(/UV/);
+    expect(()=>validateMeshData({...authored,mesh_uvs:[[0,0]]}))
+      .toThrow(/UV/);
+    expect(()=>validateMeshData({...authored,
+      mesh_uvs:[[0,0],[1,0],[NaN,1],[1,1]]})).toThrow(/UV/);
+    expect(()=>validateMeshData({...authored,
+      mesh_uvs:[[0,0],[1025,0],[0,1],[1,1]]})).toThrow(/UV/);
+  });
+});
