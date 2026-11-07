@@ -1,7 +1,6 @@
 name: NVP WO4 Long-Form 2h/3h 2K/4K Native DCP Stress (NO FFMPEG)
 on:
-  push:
-    branches: [nvp/wo4-cinema-mastering-20261107]
+  pull_request:
     paths:
       - tests/nvp_wo4_sustained_ci.py
       - backend/nvp_wo4_picture_spool.py
