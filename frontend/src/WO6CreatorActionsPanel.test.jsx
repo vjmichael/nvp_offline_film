@@ -57,7 +57,7 @@ afterEach(()=>{cleanup();delete window.pywebview;vi.restoreAllMocks()});
 describe('WO6 installed creator-native first-party actions',()=>{
   it('never offers a browser/LLM fallback or auto-authorizes an operation',async()=>{
     render(<WO6CreatorActionsPanel projectId={pid}/>);
-    expect(await screen.findByRole('alert')).toHaveTextContent(
+    expect((await screen.findByRole('alert')).textContent).toMatch(
       /installed NVP desktop WebView2 host/i);
     expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
   });
