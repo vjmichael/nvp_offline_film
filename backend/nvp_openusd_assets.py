@@ -28,7 +28,7 @@ class OpenUSDAssetRegistry:
     def publish(self, project_id, asset_id, *, shape, size_m,
                 expected_revision=0, points=None, triangles=None,
                 preview_material=None, mesh_uvs=None, face_uvs=None,
-                texture_png=None,material_slots=None):
+                texture_png=None,material_slots=None,pbr_maps_png=None):
         _require_pid(project_id)
         _id(asset_id, "reusable asset ID")
         if shape not in KINDS:
@@ -112,6 +112,13 @@ class OpenUSDAssetRegistry:
             texture=publish_texture(self.index,project_id,texture_png)
             authored_material["texture"]=texture
             authored_material["texture_images_loaded"]=True
+        if pbr_maps_png is not None:
+            if shape!="mesh" or authored_material is None:
+                raise ValueError("PBR source maps require a real UV mesh material")
+            from backend.nvp_wo2_pbr_channels import publish_pbr_maps
+            authored_material["pbr_maps"]=publish_pbr_maps(
+                self.index,project_id,pbr_maps_png,
+                has_uv=mesh_uvs is not None or face_uvs is not None)
         Gf, Sdf, Usd, UsdGeom = _usd()
         layer = Sdf.Layer.CreateAnonymous("nvp_asset.usda")
         stage = Usd.Stage.Open(layer)
@@ -184,6 +191,12 @@ class OpenUSDAssetRegistry:
                     authored_material["base_color_rgb"],
                     authored_material["roughness"],
                     authored_material["metallic"])
+            if authored_material.get("pbr_maps"):
+                from backend.nvp_wo2_pbr_channels import author_pbr_maps
+                author_pbr_maps(stage,"/Asset/Material",shader,
+                    UsdShade.Shader(stage.GetPrimAtPath(
+                        "/Asset/Material/OpenPBR")),
+                    authored_material["pbr_maps"])
             if not UsdShade.MaterialBindingAPI.Apply(
                     obj.GetPrim()).Bind(material):
                 raise RuntimeError("Cannot bind real original USD PreviewSurface")
@@ -365,6 +378,15 @@ class OpenUSDAssetRegistry:
                         original_material["base_color_rgb"],
                         original_material["roughness"],
                         original_material["metallic"])
+            if original_material.get("pbr_maps"):
+                from backend.nvp_wo2_pbr_channels import (
+                    verify_pbr_maps,verify_pbr_map_graph)
+                maps=verify_pbr_maps(
+                    self.index,project_id,original_material["pbr_maps"])
+                verify_pbr_map_graph(
+                    stage,"/Asset/Material",shader,
+                    UsdShade.Shader(stage.GetPrimAtPath(
+                        "/Asset/Material/OpenPBR")),maps)
             if "texture" in original_material:
                 from backend.nvp_native_usd_texture import verified_texture
                 texture=original_material["texture"]
