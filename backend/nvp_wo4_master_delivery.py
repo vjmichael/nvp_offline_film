@@ -8,6 +8,8 @@ a calibrated/production-ready cinema master.
 from __future__ import annotations
 from hashlib import sha256
 from uuid import uuid4
+from io import BytesIO
+import wave
 
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_wo4_mastering_decision import FORMAT as DECISION_FORMAT
@@ -39,6 +41,21 @@ def publish_mastered_dcp(index:FilmIndex,pid,*,take_id,take_revision,take_sha256
             sound.get("original_take_sha256")!=take_sha256 or
             sound.get("master_pcm_sha256")!=decision["data"].get("sound_sha256")):
         raise PermissionError("Film-duration matched source picture/sound mastering required")
+    wav=sound.get("wav_bytes")
+    if type(wav) is not bytes:
+        raise PermissionError("Native derived sound master missing")
+    try:
+        with wave.open(BytesIO(wav),"rb") as reader:
+            if (reader.getnframes()!=len(pictures)*2000 or
+                    reader.getframerate()!=48000 or
+                    reader.getsampwidth()!=3 or
+                    reader.getnchannels()!=len(sound.get("channel_order",[]))):
+                raise PermissionError("Mastered sound timing/format invalid")
+            actual_pcm=reader.readframes(reader.getnframes())
+    except (wave.Error,EOFError) as exc:
+        raise PermissionError("Invalid source-bound PCM WAV master") from exc
+    if sha256(actual_pcm).hexdigest()!=sound.get("master_pcm_sha256"):
+        raise PermissionError("Mastering decision does not match actual WAV samples")
     if not callable(approve_package):
         raise PermissionError("Creator native package approval callback required")
     profile=decision["data"]["picture_profile"]
