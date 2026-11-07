@@ -79,7 +79,7 @@ export function validateMeshData(item){
     throw Error('Source mesh UV primvar is invalid or mismatched');
   const faceUV=item.mesh_face_uvs;
   if(faceUV!=null&&(
-    item.shape!=='mesh'||uv!=null||
+    !['mesh','skinned_mesh'].includes(item.shape)||uv!=null||
     !Array.isArray(faceUV)||faceUV.length!==faces.length||
     !faceUV.every(face=>Array.isArray(face)&&face.length===3&&
       face.every(pair=>Array.isArray(pair)&&pair.length===2&&
@@ -128,9 +128,30 @@ function shapeFor(item){
 // Updates only disposable Three.js vertex buffers. Original USD binding,
 // weights and animation remain on the trusted native scene side.
 export function updateSkinnedGeometry(geometry,item){
-  const {pts,faces}=validateMeshData(item);
+  const {pts,faces,faceUV}=validateMeshData(item);
   const attr=geometry.getAttribute('position');
   const index=geometry.getIndex();
+  if(faceUV){
+    const texcoords=geometry.getAttribute('uv');
+    if(!attr||index||attr.count!==faces.length*3||
+       !texcoords||texcoords.count!==attr.count)
+      throw Error('Original skinned face-varying topology changed');
+    let offset=0;
+    for(let i=0;i<faces.length;i++){
+      for(let corner=0;corner<3;corner++){
+        const p=pts[faces[i][corner]];
+        const uv=faceUV[i][corner];
+        if(Math.abs(texcoords.getX(offset)-uv[0])>1e-6||
+           Math.abs(texcoords.getY(offset)-uv[1])>1e-6)
+          throw Error('Original rig UV seams changed without source revision');
+        attr.setXYZ(offset++,p[0],p[1],p[2]);
+      }
+    }
+    attr.needsUpdate=true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    return;
+  }
   if(!attr||attr.count!==pts.length||!index||
      index.count!==faces.length*3)
     throw Error('Frozen actor topology changed during native live pose');
