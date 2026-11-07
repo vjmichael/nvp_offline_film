@@ -10,6 +10,9 @@ on:
       - backend/nvp_wo4_master_delivery.py
       - tests/test_nvp_wo4_real_delivery.py
       - backend/nvp_production_cinema.py
+      - backend/nvp_wo4_delivery_journal.py
+      - backend/nvp_wo4_file_dcp.py
+      - backend/nvp_wo4_supervised_sound.py
       - backend/nvp_production_supervisor.py
       - backend/nvp_production_journal.py
       - backend/nvp_supervised_codec_process.py
@@ -28,6 +31,9 @@ on:
       - backend/nvp_wo4_master_delivery.py
       - tests/test_nvp_wo4_real_delivery.py
       - backend/nvp_production_cinema.py
+      - backend/nvp_wo4_delivery_journal.py
+      - backend/nvp_wo4_file_dcp.py
+      - backend/nvp_wo4_supervised_sound.py
       - backend/nvp_production_supervisor.py
       - backend/nvp_production_journal.py
       - backend/nvp_supervised_codec_process.py
@@ -80,9 +86,10 @@ jobs:
           NVP_NATIVE_ASDCP_INFO: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-info
           NVP_NATIVE_ASDCP_UNWRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-unwrap
         run: python -m unittest discover -s tests -p test_nvp_wo4_real_stream_mxf.py -v
-      - name: Real independently restarted native supervisor, 3 full 2K XYZ12 frames→J2K checkpoint→file-backed MXF→CineCert unwrap
+      - name: Real independently restarted native supervisor, full picture + supervised PCM24 sound → file-backed SMPTE DCP → FilmIndex with actual full decode
         env:
           NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+          NVP_NATIVE_OPENJPEG_DECODE: /usr/bin/opj_decompress
           NVP_NATIVE_ASDCP_WRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-wrap
           NVP_NATIVE_ASDCP_INFO: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-info
           NVP_NATIVE_ASDCP_UNWRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-unwrap
