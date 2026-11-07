@@ -114,6 +114,11 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             "geometry_asset_sha256":(
                 binding["asset_document_sha256"] if binding else
                 skin["geometry_asset_sha256"] if skin else None),
+            "source_asset_binding":(
+                {"asset_id":binding["asset_id"],
+                 "asset_revision":binding["asset_revision"],
+                 "asset_document_sha256":binding["asset_document_sha256"]}
+                if binding else None),
             "gizmo_only":binding is None and skin is None,
             "mesh_points":mesh_points,
             "mesh_triangles":mesh_triangles,
