@@ -8,9 +8,12 @@ from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGE
 from backend.nvp_model_service import discover_models, writer_for
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_render_preflight import preflight_scene
+from backend.nvp_legacy_quarantine import LegacyMediaQuarantine
 import uuid
 
 app = FastAPI(title="NVP — Your movie, your way", version="0.3.0-creative-foundation")
+# DA-06: block legacy codec/frame execution before endpoint dispatch.
+app.add_middleware(LegacyMediaQuarantine)
 studio = Studio()
 resource_activity = TaskLedger()
 

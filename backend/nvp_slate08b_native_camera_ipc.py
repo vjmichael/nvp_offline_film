@@ -132,6 +132,8 @@ class TrustedDesktopCameraBridge:
         self._futures = {}
         self._host = None
         self._data_av_controller = None
+        self._live_sound_session = None
+        self._live_sound_ticket = None
         self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
@@ -470,6 +472,223 @@ class TrustedDesktopCameraBridge:
     def data_av_stop(self,session_id):
         return self._data_av().stop(session_id)
 
+
+
+    def data_av_native_color_catalog(self,project_id,take_id,take_sha256):
+        """List only source-bound, verified immutable grade revisions."""
+        self._native_window()
+        _require_pid(project_id)
+        _id(take_id,"original Digital Take")
+        _sha(take_sha256)
+        from backend.nvp_native_color_decisions import NativeColorDecisions
+        grades=[]
+        grader=NativeColorDecisions(self.index)
+        for row in self.index.list_objects(project_id,kind="style")[:128]:
+            try:
+                plan=grader.read(project_id,row["object_id"])
+            except (RuntimeError,ValueError,KeyError):
+                continue
+            if (plan["take_id"]==take_id and
+                    plan["take_sha256"]==take_sha256):
+                grades.append({
+                    "grade_id":plan["grade_id"],
+                    "revision":plan["revision"],
+                    "document_sha256":plan["document_sha256"],
+                    "parameters":plan["parameters"],
+                })
+        return {"format":"nvp.data_first.native_grade_catalog.v1",
+                "status":"AVAILABLE","grades":grades,"ffmpeg_used":False}
+
+    def data_av_export_native_avi(self,request):
+        """Two native approvals and OS folder choice; browser supplies no path.
+
+        The approved original is a 3D Take. PNG+PCM and the AVI are distinct,
+        immutable derivatives, never new capture sources or cinema masters.
+        """
+        self._native_window()
+        required={"project_id","take_id","take_document_sha256",
+                  "presentation_id","listener_path","fps_num","fps_den"}
+        if type(request) is not dict or set(request) not in (
+                required,required|{"color_grade"}):
+            raise ValueError("Native delivery needs exactly scoped source IDs")
+        from backend.nvp_final_2d_native import Approved2DPackage,OUTPUT_CADENCES
+        from backend.nvp_native_cpu_raster import NativeSourceRaster
+        from backend.nvp_native_avi_delivery import deliver_avi
+        from webview import FileDialog
+        pid=request["project_id"]
+        take=request["take_id"]
+        sha=request["take_document_sha256"]
+        presentation=request["presentation_id"]
+        _require_pid(pid)
+        _id(take,"original Digital Take")
+        _id(presentation,"derived presentation identity")
+        _sha(sha)
+        if (type(request["fps_num"]) is not int or
+                type(request["fps_den"]) is not int or
+                (request["fps_num"],request["fps_den"]) not in OUTPUT_CADENCES):
+            raise ValueError("Unapproved native output cadence")
+        listener=request["listener_path"]
+        if type(listener) is not str or not listener.startswith("/World/"):
+            raise ValueError("A native scene virtual microphone is required")
+        window=self._native_window()
+        if not callable(getattr(window,"create_file_dialog",None)):
+            raise PermissionError("Native OS destination picker is unavailable")
+        chosen=window.create_file_dialog(FileDialog.FOLDER)
+        if not chosen:
+            return {"status":"CANCELLED","ffmpeg_used":False,
+                    "original_modified":False}
+        if type(chosen) not in (tuple,list) or len(chosen)!=1:
+            raise PermissionError("Choose one native output folder")
+        parent=Path(chosen[0])
+        if parent.is_symlink() or not parent.is_dir():
+            raise PermissionError("Native output folder is no longer trusted")
+        source=self.index.read_revision(pid,take,1)
+        if source["document_sha256"]!=sha:
+            raise RuntimeError("Selected original Digital Take changed")
+        def approve_package(scope):
+            if (scope.get("take_document_sha256")!=sha or
+                    scope.get("presentation_id")!=presentation or
+                    scope.get("listener_path")!=listener or
+                    scope.get("original_data_immutable") is not True):
+                return False
+            return self._ask(
+                "Approve derived native 2D picture and PCM sound?\n"
+                f"Original Take: {take}\nSHA-256: {sha}\n"
+                f"Presentation: {presentation}\nListener: {listener}\n"
+                f"Output folder: {parent}\n"
+                f"Color grade SHA-256: {scope['color_grade_sha256']}\n"
+                "This is a limited native 640×360 procedural OpenUSD raster,\n"
+                "not a cinema-quality final master. Sources remain immutable.")
+        render=NativeSourceRaster(self.index,pid)
+        package=Approved2DPackage(
+            self.index,native_creator_approval=approve_package,
+            render_png=render.render_png).export(
+                pid,take,sha,presentation,parent,listener_path=listener,
+                fps_num=request["fps_num"],fps_den=request["fps_den"],
+            color_grade=request.get("color_grade"))
+        def approve_movie(scope):
+            if scope.get("original_take_sha256")!=sha or (
+                    scope.get("source_mutated") is not False):
+                return False
+            return self._ask(
+                "Publish a new native uncompressed AVI + PCM movie?\n"
+                f"Original Take SHA-256: {sha}\n"
+                f"Approved derived image/audio manifest: {scope['manifest_sha256']}\n"
+                f"File: {scope['output_name']}\n"
+                f"Color grade SHA-256: {scope['color_grade_sha256']}\n"
+                "No FFmpeg or overwrite. This AVI is not a mastered DCP.")
+        result=deliver_avi(
+            package["directory"],parent/("NVP2D_"+presentation+".avi"),
+            expected_take_sha256=sha,approve_delivery=approve_movie)
+        return {**result,"picture_audio_package":package["directory"],
+                "original_modified":False,"master_approved":False}
+
+
+    def data_av_live_catalog(self,project_id):
+        """Only verified exact-time source camera timelines can be filmed."""
+        self._native_window()
+        _require_pid(project_id)
+        from backend.nvp_exact_time_shots import ExactTimeShotSequence
+        from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        choices=[]
+        for row in self.index.list_objects(project_id,kind="temporal")[:128]:
+            try:
+                record=self.index.read_revision(project_id,row["object_id"])
+                plan=ExactTimeShotSequence(self.index).read(
+                    project_id,row["object_id"],record["revision"])
+                scene,_=OpenUSDSceneBridge(self.index).open(
+                    project_id,plan["scene_id"],plan["scene_revision"])
+            except (RuntimeError,ValueError,KeyError):
+                continue
+            sources=sorted(p for p,role in scene["data"]["prim_roles"].items()
+                           if role in ("actor","anchor"))
+            if sources:
+                choices.append({
+                    "scene_id":plan["scene_id"],
+                    "scene_revision":plan["scene_revision"],
+                    "scene_document_sha256":plan["scene_document_sha256"],
+                    "camera_timeline_id":plan["timeline_id"],
+                    "camera_timeline_revision":plan["revision"],
+                    "camera_timeline_document_sha256":plan["document_sha256"],
+                    "duration_tick":plan["duration_tick"],
+                    "emitters":sources[:64],
+                })
+        return {"format":"nvp.data_av.live_camera_catalog.v1",
+                "status":"AVAILABLE","camera_timelines":choices,
+                "ffmpeg_used":False}
+
+    def data_av_live_begin(self,request):
+        """Start a real OS microphone; no browser-provided executable/path."""
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","take_id","scene_id","scene_revision",
+                "camera_timeline_id","camera_timeline_revision",
+                "sound_timeline_id","source_id","emitter_path",
+                "event_id","subject_id"}:
+            raise ValueError("Native microphone capture requires exact identity")
+        from backend.nvp_native_live_take import NativeLiveSoundSession
+        with self._lock:
+            if self._live_sound_session is not None:
+                raise RuntimeError("Native microphone capture already in progress")
+            def start(scope):
+                return self._ask(
+                    "START real microphone capture into ORIGINAL Digital Take?\n"
+                    f"Take: {scope['take_id']}\n"
+                    f"Scene SHA-256: {scope['scene_sha256']}\n"
+                    f"Camera Film Time SHA-256: {scope['camera_timeline_sha256']}\n"
+                    f"Source emitter: {scope['emitter_path']}\n"
+                    f"At most {scope['max_samples']//48000} seconds at 48 kHz.\n"
+                    "This records original source PCM only. No picture movie,\n"
+                    "FFmpeg, flattened soundtrack, or master is produced.")
+            def freeze(event,scope):
+                return self._ask(
+                    "FREEZE this exact 3D scene and recorded original sound?\n"
+                    f"Take: {scope['take_id']}\n"
+                    f"Scene SHA-256: {scope['scene_document_sha256']}\n"
+                    f"Events SHA-256: {scope['timeline_document_sha256']}\n"
+                    "This seals an immutable Digital Take, not a movie export.")
+            session=NativeLiveSoundSession(
+                self.index,project_id=request["project_id"],
+                take_id=request["take_id"],scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                camera_timeline_id=request["camera_timeline_id"],
+                camera_timeline_revision=request["camera_timeline_revision"],
+                sound_timeline_id=request["sound_timeline_id"],
+                source_id=request["source_id"],
+                emitter_path=request["emitter_path"],
+                event_id=request["event_id"],
+                subject_id=request["subject_id"],
+                native_approve_start=start,native_approve_freeze=freeze)
+            started=session.begin()
+            ticket=secrets.token_urlsafe(32)
+            self._live_sound_session=session
+            self._live_sound_ticket=ticket
+            return {**started,"session_id":ticket}
+
+    def data_av_live_status(self,session_id):
+        self._native_window()
+        with self._lock:
+            if (type(session_id) is not str or
+                    session_id!=self._live_sound_ticket or
+                    self._live_sound_session is None):
+                raise PermissionError("Unrecognized native recording session")
+            return self._live_sound_session.status
+
+    def data_av_live_finish(self,session_id,freeze):
+        self._native_window()
+        with self._lock:
+            if (type(session_id) is not str or
+                    session_id!=self._live_sound_ticket or
+                    self._live_sound_session is None or
+                    type(freeze) is not bool):
+                raise PermissionError("Unknown live source capture or action")
+            session=self._live_sound_session
+            try:
+                return session.finish() if freeze else session.cancel()
+            finally:
+                self._live_sound_session=None
+                self._live_sound_ticket=None
+
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
 
@@ -483,6 +702,10 @@ class TrustedDesktopCameraBridge:
             self._closing=True
             if self._data_av_controller is not None:
                 self._data_av_controller.close()
+            if self._live_sound_session is not None:
+                self._live_sound_session.cancel()
+                self._live_sound_session=None
+                self._live_sound_ticket=None
             host=self._host
             tickets=list(self._tickets.values())
         if host is not None:

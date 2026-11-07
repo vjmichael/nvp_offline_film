@@ -121,7 +121,7 @@ class Approved2DPackage:
 
     def export(self,project_id,take_id,expected_take_sha256,
                presentation_id,output_parent,*,listener_path,
-               fps_num=24,fps_den=1):
+               fps_num=24,fps_den=1,color_grade=None):
         _require_pid(project_id)
         _id(take_id,"original Digital Take")
         _id(presentation_id,"unique final presentation identity")
@@ -138,6 +138,26 @@ class Approved2DPackage:
         if (original["kind"]!="take" or data.get("frozen") is not True or
             data.get("format")!="nvp.digital_take.openusd_temporal.v1"):
             raise RuntimeError("Cannot flatten an old frame-proxy or unfrozen source")
+        grade=None
+        if color_grade is not None:
+            if (type(color_grade) is not dict or
+                    set(color_grade)!={"grade_id","revision","document_sha256"}):
+                raise ValueError("Only exact immutable color revision pins accepted")
+            from backend.nvp_native_color_decisions import NativeColorDecisions
+            from backend.nvp_film_index import _id as _color_id
+            _color_id(color_grade["grade_id"],"native color decision")
+            _sha(color_grade["document_sha256"])
+            plan=NativeColorDecisions(self.index).read(
+                project_id,color_grade["grade_id"],color_grade["revision"])
+            if (plan["document_sha256"]!=color_grade["document_sha256"] or
+                    plan["take_id"]!=take_id or
+                    plan["take_sha256"]!=expected_take_sha256):
+                raise RuntimeError("Derived grade not bound to immutable original Take")
+            grade={"grade_id":plan["grade_id"],
+                   "revision":plan["revision"],
+                   "document_sha256":plan["document_sha256"],
+                   "parameters":plan["parameters"],
+                   "processing_profile":"display_referred_preview_only"}
         duration=data["duration_tick"]
         count=frame_at_tick(duration,fps_num,fps_den,rounding="ceil")
         if count<=0 or count>MAX_FRAMES:
@@ -153,7 +173,8 @@ class Approved2DPackage:
                "listener_path":listener_path,
                "scene_document_sha256":data["scene_document_sha256"],
                "timeline_document_sha256":data["timeline_document_sha256"],
-               "output_kind":"png_sequence_pcm_wav_not_single_file_master"}
+               "output_kind":"png_sequence_pcm_wav_not_single_file_master",
+               "color_grade_sha256":(grade["document_sha256"] if grade else None)}
         if self.approve(dict(scope)) is not True:
             raise PermissionError("Creator did not authorize exact final 2D sample projection")
         if self.index.read_revision(
@@ -196,6 +217,10 @@ class Approved2DPackage:
                 encoded=self.render(
                     scope=dict(scope),tick=tick,camera_path=camera,
                     source_snapshot=state)
+                _png_header(encoded)
+                if grade:
+                    from backend.nvp_native_color_eval import apply_display_grade
+                    encoded=apply_display_grade(encoded,grade["parameters"])
                 width,height=_png_header(encoded)
                 if dimensions is None:
                     dimensions=(width,height)
@@ -239,6 +264,7 @@ class Approved2DPackage:
                 "output_picture_count":len(receipt),
                 "picture_dimensions":dimensions,
                 "pictures":receipt,
+                "color_grade":grade,
                 "audio_file":"soundtrack.wav",
                 "audio_sample_rate":SAMPLE_RATE,
                 "audio_samples":samples,
@@ -257,6 +283,7 @@ class Approved2DPackage:
                     "manifest_sha256":sha256(
                         (target/"manifest.json").read_bytes()).hexdigest(),
                     "take_sha256":expected_take_sha256,
+                    "color_grade_sha256":(grade["document_sha256"] if grade else None),
                     "ffmpeg_used":False,
                     "single_file_master":False}
         finally:

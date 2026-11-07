@@ -38,10 +38,23 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [direction,setDirection]=useState('forward');
   const [originalSoundId,setOriginalSoundId]=useState('Music001');
   const [originalSoundReceipt,setOriginalSoundReceipt]=useState(null);
+  const [presentationId,setPresentationId]=useState('NativeFilm001');
+  const [aviReceipt,setAviReceipt]=useState(null);
+  const [gradeChoices,setGradeChoices]=useState([]);
+  const [gradeChoice,setGradeChoice]=useState('');
+  const [exporting,setExporting]=useState(false);
+  const [cameraPlans,setCameraPlans]=useState([]);
+  const [cameraPlanIndex,setCameraPlanIndex]=useState('0');
+  const [liveEmitter,setLiveEmitter]=useState('');
+  const [newLiveTake,setNewLiveTake]=useState('LiveTake001');
+  const [liveTicket,setLiveTicket]=useState(null);
+  const [liveBusy,setLiveBusy]=useState(false);
+  const [liveReceipt,setLiveReceipt]=useState(null);
+  const liveTicketRef=useRef(null);
   const controller=useRef({ticket:null,context:null,scheduled:[],
     presentationMarks:[],generation:0,cursor:0,last:0,first:0,
     nextAudioAt:0,working:false,active:false,stopping:false,
-    sceneBusy:false,lastSceneAt:-1});
+    sceneBusy:false,lastSceneAt:-1,exhausted:false});
   const item=takes.find(x=>x.take_id===takeId);
 
   useEffect(()=>{
@@ -76,10 +89,110 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     setListener(item?.listeners?.[0]||'');
   },[takeId,takes]);
 
+  useEffect(()=>{
+    if(!native||!projectId||
+       typeof native.data_av_live_catalog!=='function')return;
+    let live=true;
+    Promise.resolve(native.data_av_live_catalog(projectId)).then(result=>{
+      if(!live)return;
+      if(result?.format!=='nvp.data_av.live_camera_catalog.v1'||
+         result.status!=='AVAILABLE'||!Array.isArray(result.camera_timelines))
+        throw Error('Live source camera catalog is unverified');
+      setCameraPlans(result.camera_timelines);
+      setCameraPlanIndex('0');
+    }).catch(e=>{if(live)setError(e.message);});
+    return ()=>{live=false;};
+  },[native,projectId]);
+
+
+  useEffect(()=>{
+    if(!native||!projectId||!item||
+       typeof native.data_av_native_color_catalog!=='function'){
+      setGradeChoices([]);setGradeChoice('');return;
+    }
+    let live=true;
+    Promise.resolve(native.data_av_native_color_catalog(
+      projectId,item.take_id,item.take_document_sha256)).then(result=>{
+      if(!live)return;
+      if(result?.format!=='nvp.data_first.native_grade_catalog.v1'||
+         result.status!=='AVAILABLE'||result.ffmpeg_used!==false||
+         !Array.isArray(result.grades))
+        throw Error('Native source-bound color catalog failed');
+      setGradeChoices(result.grades);
+      setGradeChoice('');
+    }).catch(e=>{if(live)setError(e.message);});
+    return ()=>{live=false;};
+  },[native,projectId,takeId,item?.take_document_sha256]);
+
+  const livePlan=cameraPlans[Number(cameraPlanIndex)];
+  useEffect(()=>{
+    setLiveEmitter(livePlan?.emitters?.[0]||'');
+  },[cameraPlanIndex,cameraPlans]);
+
+  async function beginLiveCapture(){
+    if(!native||!livePlan||liveTicket||liveBusy||playing||exporting)return;
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,60}$/.test(newLiveTake)){
+      setError('Choose a unique native Take ID with letters and digits.');return;
+    }
+    setError('');setLiveReceipt(null);setLiveBusy(true);
+    try{
+      const result=await native.data_av_live_begin({
+        project_id:projectId,take_id:newLiveTake,
+        scene_id:livePlan.scene_id,scene_revision:livePlan.scene_revision,
+        camera_timeline_id:livePlan.camera_timeline_id,
+        camera_timeline_revision:livePlan.camera_timeline_revision,
+        sound_timeline_id:newLiveTake+'.Events',
+        source_id:newLiveTake+'.Mic',
+        emitter_path:liveEmitter,
+        event_id:newLiveTake+'.Speech',
+        subject_id:liveEmitter.split('/').pop(),
+      });
+      if(result?.format!=='nvp.data_av.live_mic_take.v1'||
+         result.status!=='RECORDING'||
+         typeof result.session_id!=='string'||
+         result.output_is_original_source!==true||
+         result.flattened_soundtrack!==false)
+        throw Error('Native source recording was not confirmed');
+      liveTicketRef.current=result.session_id;
+      setLiveTicket(result.session_id);
+      setNote('Real microphone is recording an original sound signal. Freeze or discard to stop.');
+    }catch(e){setError(e.message);}
+    finally{setLiveBusy(false);}
+  }
+
+  async function finishLiveCapture(freeze){
+    if(!native||!liveTicket||liveBusy)return;
+    setLiveBusy(true);setError('');
+    try{
+      const result=await native.data_av_live_finish(liveTicket,freeze);
+      if(freeze){
+        if(result?.format!=='nvp.data_av.filming_capture.v1'||
+           result.status!=='FROZEN_ORIGINAL_LIVE_TAKE'||
+           result.original_scene_modified!==false||
+           result.audio_mix_flattened!==false)
+          throw Error('Native captured source was not immutably frozen');
+        setLiveReceipt(result);
+        const updated=await native.data_av_catalog(projectId);
+        if(updated?.format===FORMAT&&Array.isArray(updated.takes)){
+          setTakes(updated.takes);
+          setTakeId(result.take_id);
+        }
+        setNote('Original microphone source and 3D Film Time are frozen; no movie rendered.');
+      }else{
+        setNote('Live microphone capture discarded. No new Digital Take was frozen.');
+      }
+    }catch(e){setError(e.message);}
+    finally{
+      liveTicketRef.current=null;
+      setLiveTicket(null);setLiveBusy(false);
+    }
+  }
+
+
   async function stop(){
     const st=controller.current;
     st.generation++;
-    st.active=false;st.working=false;
+    st.active=false;st.working=false;st.exhausted=false;
     for(const node of st.scheduled){
       try{node.stop();}catch{}
       try{node.disconnect();}catch{}
@@ -111,6 +224,11 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     if(st.ticket&&native)Promise.resolve(
       native.data_av_stop(st.ticket)).catch(()=>{});
     st.ticket=null;st.context=null;
+    if(liveTicketRef.current&&native&&
+       typeof native.data_av_live_finish==='function')
+      Promise.resolve(native.data_av_live_finish(
+        liveTicketRef.current,false)).catch(()=>{});
+    liveTicketRef.current=null;
   },[native,projectId]);
 
   async function inspect(ticket,sample){
@@ -132,7 +250,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
 
   async function queueAudio(gen){
     const st=controller.current;
-    if(!st.active||!st.context||!st.ticket||st.generation!==gen||
+    if(!st.active||st.exhausted||!st.context||!st.ticket||st.generation!==gen||
        st.working)return;
     st.working=true;
     try{
@@ -145,9 +263,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         const first=reverse?Math.max(st.first,st.cursor-WINDOW):st.cursor;
         const count=reverse?st.cursor-first:Math.min(WINDOW,st.last-first);
         if(count<=0){
-          st.active=false;
-          setPlaying(false);
-          setNote('Reached the end of this creator-approved Film Time interval.');
+          st.exhausted=true;
+          setNote('Final source samples queued; native permission closes after the sound finishes.');
+          if(st.scheduled.length===0)void stop();
           break;
         }
         const response=await native.data_av_audio_window(st.ticket,first,count);
@@ -179,7 +297,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         });
         if(st.presentationMarks.length>32)st.presentationMarks.shift();
         node.onended=()=>{const k=st.scheduled.indexOf(node);
-          if(k>=0)st.scheduled.splice(k,1);};
+          if(k>=0)st.scheduled.splice(k,1);
+          if(st.exhausted&&st.scheduled.length===0&&st.generation===gen)
+            void stop();
+        };
         st.nextAudioAt=startAt+count/RATE;
         st.cursor=reverse?first:first+count;
       }
@@ -188,10 +309,46 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         setError(e.message);setPlaying(false);st.active=false;
         for(const node of st.scheduled)try{node.stop();}catch{}
         st.scheduled=[];
+        void stop(); // Fail closed: revoke the native source grant too.
       }
     }finally{
       st.working=false;
     }
+  }
+
+  async function exportDerivedAvi(){
+    if(!native||typeof native.data_av_export_native_avi!=='function')return;
+    setError('');setAviReceipt(null);
+    if(playing){setError('Stop playback before authorizing final output.');return;}
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/.test(presentationId)){
+      setError('Enter a valid new derived-presentation identity.');return;
+    }
+    const color=gradeChoices.find(g=>g.grade_id+':'+g.revision===gradeChoice);
+    setExporting(true);
+    try{
+      const r=await native.data_av_export_native_avi({
+        project_id:projectId,take_id:item.take_id,
+        take_document_sha256:item.take_document_sha256,
+        presentation_id:presentationId,listener_path:listener,
+        color_grade:color?{
+          grade_id:color.grade_id,revision:color.revision,
+          document_sha256:color.document_sha256,
+        }:null,
+        fps_num:24,fps_den:1,
+      });
+      if(r?.status==='CANCELLED'){setNote('Native destination selection cancelled.');return;}
+      if(r?.format!=='nvp.final_2d.avi_rgb_pcm.v1'||
+         r.status!=='DERIVED_SINGLE_FILE_AVI'||
+         r.take_sha256!==item.take_document_sha256||
+         r.source_modified!==false||r.ffmpeg_used!==false||
+         r.master_approved!==false||
+         r.color_grade_sha256!==(color?.document_sha256||null)||
+         typeof r.output_sha256!=='string')
+        throw Error('Derived AVI failed native approval and SHA validation');
+      setAviReceipt(r);
+      setNote('New derived AVI and picture/PCM package published. Original 3D Take unchanged.');
+    }catch(e){setError(e.message);}
+    finally{setExporting(false);}
   }
 
   async function importOriginalSound(){
@@ -250,7 +407,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       st.nextAudioAt=st.context.currentTime+0.08;
       st.presentationMarks=[];
       st.lastSceneAt=-1;
-      st.active=true;setPlaying(true);
+      st.active=true;st.exhausted=false;setPlaying(true);
       queueAudio(st.generation);
     }catch(e){setError(e.message);await stop();}
   }
@@ -336,7 +493,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         objects={scene.visual.objects||[]}
         listenerPath={listener}
         sceneSha={scene.visual.scene_document_sha256}
-        tick={String(scene.visual.time_tick||'0')}/>}
+        tick={String(scene.visual.time_tick||'0')}
+        nativeSchemas={scene.scene?.native_scene_schemas||[]}/>}
     {scene&&!scene.visual&&<p role="status">Native source geometry
       is not verified; spatial sound may still be inspected.</p>}
     {scene&&<section aria-label="Current frozen USD scene state">
@@ -351,6 +509,87 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <p className="fineprint">{scene.spatial_audio?.bindings?.length||0}
         spatial audio source(s) active at this moment.</p>
     </section>}
+    <section className="card" aria-label="Live original microphone source and Digital Take freeze">
+      <h3>Record original sound into the live 3D filming session</h3>
+      <p className="fineprint">Select an existing authored OpenUSD camera
+        timeline and real scene emitter. The native OS requests microphone
+        approval. Recorded mono PCM goes into a bounded on-disk original
+        source; a second confirmation freezes its exact Film Time with
+        the original 3D scene. No movie frames or flattened soundtrack.</p>
+      <label>Exact-time 3D camera timeline
+        <select aria-label="Native live camera timeline"
+          value={cameraPlanIndex} disabled={!!liveTicket||liveBusy}
+          onChange={e=>setCameraPlanIndex(e.target.value)}>
+          {!cameraPlans.length&&<option value="0">No verified camera timelines</option>}
+          {cameraPlans.map((p,i)=><option key={p.camera_timeline_id+':'+p.camera_timeline_revision}
+            value={String(i)}>{p.camera_timeline_id} · rev {p.camera_timeline_revision}</option>)}
+        </select>
+      </label>
+      <label>Original scene sound emitter
+        <select aria-label="Live original source emitter" value={liveEmitter}
+          disabled={!!liveTicket||liveBusy}
+          onChange={e=>setLiveEmitter(e.target.value)}>
+          {(livePlan?.emitters||[]).map(p=><option key={p} value={p}>{p}</option>)}
+        </select>
+      </label>
+      <label>New immutable Digital Take identity
+        <input aria-label="New live Digital Take name" value={newLiveTake}
+          disabled={!!liveTicket||liveBusy} maxLength={61}
+          onChange={e=>setNewLiveTake(e.target.value)}/>
+      </label>
+      <div className="actions">
+        <button onClick={beginLiveCapture}
+          disabled={!livePlan||!liveEmitter||!!liveTicket||liveBusy||playing||exporting||
+            typeof native?.data_av_live_begin!=='function'}>
+          Approve native microphone recording
+        </button>
+        <button onClick={()=>finishLiveCapture(true)}
+          disabled={!liveTicket||liveBusy}>Stop and freeze original Take</button>
+        <button onClick={()=>finishLiveCapture(false)}
+          disabled={!liveTicket||liveBusy}>Discard live recording</button>
+      </div>
+      {liveTicket&&<p role="status">Microphone active; original Take has
+        not been frozen. Closing this window cancels capture.</p>}
+      {liveReceipt&&<p role="status">Frozen Take {liveReceipt.take_id} ·
+        original source SHA <code>{liveReceipt.take_document_sha256.slice(0,16)}…</code> ·
+        {liveReceipt.actual_recorded_samples} captured samples.</p>}
+    </section>
+    <section className="card" aria-label="Creator-approved FFmpeg-free 2D film delivery">
+      <h3>Render a 2D version from the frozen 3D world</h3>
+      <p className="fineprint">Choose a new presentation name, then select the
+        output folder using the native OS picker. NVP requires separate native
+        confirmations to render the original Take as a derived picture/PCM
+        package and publish an AVI. No original film data is rewritten.
+        First native CPU output is 640×360 uncompressed AVI/PCM, not a
+        cinema-quality final master.</p>
+      <label>Derived presentation identity
+        <input aria-label="Native derived presentation identity"
+          value={presentationId} maxLength={80}
+          disabled={playing||exporting}
+          onChange={e=>setPresentationId(e.target.value)}/>
+      </label>
+      <label>Optional saved non-destructive color decision
+        <select aria-label="Native selected output color grade"
+          value={gradeChoice} disabled={playing||exporting}
+          onChange={e=>setGradeChoice(e.target.value)}>
+          <option value="">Original color presentation (no saved grade)</option>
+          {gradeChoices.map(g=><option key={g.grade_id+':'+g.revision}
+            value={g.grade_id+':'+g.revision}>
+            {g.grade_id} · revision {g.revision}</option>)}
+        </select>
+      </label>
+      <button disabled={playing||exporting||!native||!item||!listener||
+        typeof native.data_av_export_native_avi!=='function'}
+        onClick={exportDerivedAvi}>
+        {exporting?'Rendering approved 2D derivative…':
+          'Approve native 2D picture + sound export'}
+      </button>
+      {aviReceipt&&<p role="status">AVI saved as {aviReceipt.output_file}.
+        {aviReceipt.color_grade_sha256&&'Color decision SHA '+
+          aviReceipt.color_grade_sha256.slice(0,16)+'… · '}
+        Output SHA-256: <code>{aviReceipt.output_sha256.slice(0,16)}…</code>
+        {' '}Original Digital Take remains immutable.</p>}
+    </section>
     <section className="card" aria-label="Add creator-supplied original music">
       <h3>Bring in background music or sound effects</h3>
       <p className="fineprint">The OS file picker accepts the original MP3,

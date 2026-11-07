@@ -40,11 +40,16 @@ function usdMatrix(m){
 }
 
 export default function DataFirstWorldViewport({
-  objects=[],listenerPath='',tick='0',sceneSha=''
+  objects=[],listenerPath='',tick='0',sceneSha='',nativeSchemas=[]
 }){
   const holder=useRef(null);
   const env=useRef(null);
   const [disabled,setDisabled]=useState(false);
+  const [viewMode,setViewMode]=useState('orbit');
+  const [selectedCamera,setSelectedCamera]=useState('');
+  const cameraObjects=objects.filter(o=>o?.semantic_role==='camera');
+  const cameraPath=cameraObjects.some(o=>o.path===selectedCamera)?
+    selectedCamera:cameraObjects[0]?.path||'';
   const bounded=Array.isArray(objects)?objects.slice(0,64):[];
 
   useEffect(()=>{
@@ -73,13 +78,14 @@ export default function DataFirstWorldViewport({
       const sun=new THREE.DirectionalLight(0xffffff,2.5);
       sun.position.set(10,-6,16);scene.add(sun);
       const camera=new THREE.PerspectiveCamera(50,2,.01,5000);
+      const authoredCamera=new THREE.PerspectiveCamera(50,2,.01,5000);
       camera.up.set(0,0,1);
       camera.position.set(12,-15,12);
       camera.lookAt(0,0,0);
       const render=()=>{
         if(disposed)return;
         raf=0;
-        renderer.render(scene,camera);
+        renderer.render(scene,env.current?.activeCamera||camera);
       };
       const requestRender=()=>{
         if(!disposed&&!raf)raf=requestAnimationFrame(render);
@@ -94,6 +100,8 @@ export default function DataFirstWorldViewport({
         renderer.setSize(width,height);
         camera.aspect=width/height;
         camera.updateProjectionMatrix();
+        authoredCamera.aspect=width/height;
+        authoredCamera.updateProjectionMatrix();
         requestRender();
       };
       resizeNow();
@@ -101,7 +109,16 @@ export default function DataFirstWorldViewport({
         resize=new ResizeObserver(resizeNow);
         resize.observe(root);
       }
-      env.current={world,meshes,requestRender};
+      env.current={world,meshes,requestRender,
+        orbitCamera:camera,authoredCamera,activeCamera:camera};
+      const lost=event=>{event.preventDefault();setDisabled(true);};
+      const restored=()=>{setDisabled(false);requestRender();};
+      renderer.domElement.addEventListener('webglcontextlost',lost);
+      renderer.domElement.addEventListener('webglcontextrestored',restored);
+      env.current.detachDeviceHandlers=()=>{
+        renderer.domElement.removeEventListener('webglcontextlost',lost);
+        renderer.domElement.removeEventListener('webglcontextrestored',restored);
+      };
       setDisabled(false);
     }catch(_error){
       // A headless browser or disabled GPU must still expose textual,
@@ -118,6 +135,7 @@ export default function DataFirstWorldViewport({
         if(mesh.material)mesh.material.dispose();
       }
       if(renderer){
+        if(env.current?.detachDeviceHandlers)env.current.detachDeviceHandlers();
         renderer.dispose();
         if(root.contains(renderer.domElement))
           root.removeChild(renderer.domElement);
@@ -133,7 +151,8 @@ export default function DataFirstWorldViewport({
     for(const obj of bounded){
       if(typeof obj.path!=='string'||!validMatrix(obj.world_matrix))continue;
       incoming.add(obj.path);
-      const fingerprint=[obj.shape,obj.size_m,obj.semantic_role].join(':');
+      const fingerprint=[obj.shape,obj.size_m,obj.semantic_role,
+        obj.geometry_asset_sha256||''].join(':');
       let mesh=state.meshes.get(obj.path);
       if(mesh&&mesh.userData.sourceGeometry!==fingerprint){
         state.world.remove(mesh);
@@ -171,13 +190,61 @@ export default function DataFirstWorldViewport({
     state.requestRender();
   },[objects,listenerPath]);
 
+
+  useEffect(()=>{
+    const state=env.current;
+    if(!state)return;
+    if(viewMode!=='authored'||!cameraPath){
+      state.activeCamera=state.orbitCamera;
+      state.requestRender();
+      return;
+    }
+    const obj=cameraObjects.find(x=>x.path===cameraPath);
+    const optic=nativeSchemas.find(x=>x?.prim_path===cameraPath&&
+      x.schema==='UsdGeom.Camera');
+    if(!obj||!validMatrix(obj.world_matrix)||
+       !optic||!Number.isFinite(optic.focal_length_mm)||
+       optic.focal_length_mm<1||optic.focal_length_mm>400||
+       optic.projection!=='perspective'){
+      state.activeCamera=state.orbitCamera;
+      state.requestRender();
+      return;
+    }
+    const camera=state.authoredCamera;
+    // NVP native UsdGeom.Camera schema authors a 20.25 mm vertical
+    // aperture. A variable sensor/aperture is not yet accepted here.
+    camera.fov=2*Math.atan(20.25/(2*optic.focal_length_mm))*180/Math.PI;
+    camera.updateProjectionMatrix();
+    camera.matrixAutoUpdate=false;
+    camera.matrix.copy(usdMatrix(obj.world_matrix));
+    camera.matrixWorldNeedsUpdate=true;
+    state.activeCamera=camera;
+    state.requestRender();
+  },[objects,nativeSchemas,cameraPath,viewMode]);
+
   return <section aria-label="Live native OpenUSD three-dimensional scene">
     <p className="fineprint">3D source world at Film Time tick {tick}.
       {sceneSha&&<> Immutable scene SHA: <code>{sceneSha.slice(0,16)}…</code></>}
-      Drag to orbit, scroll to inspect. Live data, not a movie.</p>
+      {viewMode==='orbit'?' Drag to orbit, scroll to inspect.':
+        ' Looking through an authored OpenUSD scene camera.'} Live data, not a movie.</p>
+    <div className="actions">
+      <label>Live 3D camera view
+        <select aria-label="Live source camera mode" value={viewMode}
+          onChange={e=>setViewMode(e.target.value)}>
+          <option value="orbit">Free 3D orbit</option>
+          <option value="authored">Authored USD camera</option>
+        </select>
+      </label>
+      {viewMode==='authored'&&<label>Native authored camera
+        <select aria-label="Live authored USD camera" value={cameraPath}
+          onChange={e=>setSelectedCamera(e.target.value)}>
+          {cameraObjects.map(x=><option key={x.path} value={x.path}>{x.path}</option>)}
+        </select>
+      </label>}
+    </div>
     <div ref={holder} style={{width:'100%',minHeight:'360px',borderRadius:8,
       overflow:'hidden',background:'#121a2a'}}/>
-    {disabled&&<p role="status">3D hardware context unavailable.
+    {disabled&&<p role="status">3D hardware context lost or unavailable.
       The original scene data remains inspectable below.</p>}
     <ul>
       {bounded.map(item=><li key={item.path}>
