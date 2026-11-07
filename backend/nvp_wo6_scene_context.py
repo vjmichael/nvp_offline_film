@@ -161,7 +161,8 @@ def assemble_film_crew_context(
             "source_revision": event["source_revision"],
             "source_kind": source["kind"],
             "source_document_sha256": source["document_sha256"],
-            "recorded_sound_pcm_verified": False,
+            "sample_window_pcm_verified": False,
+            "full_recorded_audio_verified": False,
             "mastered_final_audio_verified": False,
         }
         if source["kind"] == "audio":
@@ -175,7 +176,8 @@ def assemble_film_crew_context(
                 project_id, event["source_id"], event["source_revision"],
                 0, min(samples, 64))
             item.update({
-                "recorded_sound_pcm_verified": True,
+                "sample_window_pcm_verified": True,
+                "verified_sample_count": min(samples, 64),
                 "sample_rate": rec["data"]["sample_rate"],
                 "channels": rec["data"]["channels"],
                 "sample_count": samples,
