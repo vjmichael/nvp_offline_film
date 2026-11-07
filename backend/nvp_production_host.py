@@ -26,16 +26,21 @@ class NativeProductionHost:
     def __init__(self,state_root,*,runtime_executable=None,runtime_root=None):
         self.journal=FeatureJournal(state_root)
         self.root=self.journal.root
-        self.executable=Path(runtime_executable or sys.executable)
-        self.runtime_root=Path(runtime_root or Path(__file__).resolve().parents[1])
-        if (not self.executable.is_absolute() or
-                not self.executable.is_file() or self.executable.is_symlink() or
-                not self.runtime_root.is_absolute() or
-                not self.runtime_root.is_dir() or
-                self.runtime_root.is_symlink()):
+        supplied_runtime=Path(runtime_executable or sys.executable)
+        supplied_root=Path(runtime_root or Path(__file__).resolve().parents[1])
+        if (not supplied_runtime.is_absolute() or
+                not supplied_root.is_absolute() or
+                supplied_root.is_symlink()):
             raise PermissionError("Protected installed native runtime required")
-        self.executable=self.executable.resolve(strict=True)
-        self.runtime_root=self.runtime_root.resolve(strict=True)
+        # Python on Linux commonly exposes sys.executable through an OS
+        # symlink (e.g. /opt/hostedtoolcache/.../bin/python). Resolve
+        # this trusted *host-owned* executable before testing its identity.
+        # A source path selected by a browser is never accepted here.
+        self.executable=supplied_runtime.resolve(strict=True)
+        self.runtime_root=supplied_root.resolve(strict=True)
+        if (not self.executable.is_file() or self.executable.is_symlink() or
+                not self.runtime_root.is_dir()):
+            raise PermissionError("Protected installed native runtime required")
         self.process=None
 
     def is_running(self):
@@ -50,14 +55,16 @@ class NativeProductionHost:
             raise ValueError("Bounded host startup deadline required")
         if self.is_running():
             return {"format":FORMAT,"status":"ALREADY_RUNNING",
-                    "supervisor_running":True,"gui_process_owns_worker":False}
+                    "supervisor_running":True,"gui_process_owns_worker":False,
+                        "survives_enclosing_job_termination_certified":False}
         flags=0
         if sys.platform=="win32":
-            # Break away rather than tie export to Lu/NVP's window Job Object.
-            # If the parent job disallows breakaway, fail closed; a true
-            # installed service/helper broker is still required for release.
-            flags=(subprocess.CREATE_NEW_PROCESS_GROUP|0x00000008|
-                   0x01000000) # DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB
+            # DETACHED_PROCESS isolates the console/window, NOT a parent
+            # Job Object. CI and some installed hosts deny BREAKAWAY_FROM_JOB
+            # with WinError 5. Do not request privileges the host lacks.
+            # A protected independently provisioned OS service/broker is the
+            # only supported path to survive termination of an enclosing job.
+            flags=(subprocess.CREATE_NEW_PROCESS_GROUP|0x00000008)
         with open(os.devnull,"rb") as stdin, open(os.devnull,"wb") as logs:
             self.process=subprocess.Popen(
                 [str(self.executable),"-m","backend.nvp_production_supervisor",
