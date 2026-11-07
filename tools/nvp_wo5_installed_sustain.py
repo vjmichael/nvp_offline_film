@@ -9,6 +9,7 @@ NOT a complete original film viewed in a WebView/physical cinema.
 from __future__ import annotations
 from hashlib import sha256
 import json
+from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import tempfile
@@ -28,6 +29,7 @@ from backend.nvp_wo4_pcm_master import CHANNEL_LAYOUTS
 FORMAT="nvp.wo5.installed_real_codec_sustained_throughput.v1"
 FRAME_SAMPLES=2000
 MAX_FRAMES_PER_BATCH=4
+MAX_DECODE_WORKERS=4
 
 def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                                  min_fps=24):
@@ -100,7 +102,7 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                 workdir=work,check_cancel=cancel,timeout=12)
             run_supervised_codec(unwrap,["-f","0","-d",str(n),
                 str(snd),"snd"],workdir=work,
-                check_cancel=cancel,timeout=240)
+                check_cancel=cancel,timeout=12)
             with wave.open(str(work/"snd"),"rb") as wav:
                 channels=wav.getnchannels()
                 if (channels!=2 or wav.getsampwidth()!=3 or
@@ -110,17 +112,21 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                 audio=wav.readframes(n*FRAME_SAMPLES)
             if len(audio)!=n*FRAME_SAMPLES*channels*3:
                 raise RuntimeError("Native decoded PCM24 samples missing")
-            for frame in range(n):
+            # Every picture is independently decoded from the real MXF
+            # codestream. Four distinct pinned OpenJPEG worker processes can
+            # overlap on native Windows runners; each owns an OS Job Object.
+            # No frame cache, fabricated throughput or reduced picture count.
+            def decode_original_published_frame(frame):
                 j2c=work/f"p_{frame:06d}.j2c"
                 if j2c.is_symlink() or not j2c.is_file():
                     raise RuntimeError("Missing real published native MXF picture")
                 j2k=j2c.read_bytes()
                 inspect_j2k_header(j2k,profile)
-                out=f"review_{frame:06d}.ppm"
+                output=f"review_{frame:06d}.ppm"
                 run_supervised_codec(decode,
-                    ["-i",j2c.name,"-o",out],
-                    workdir=work,check_cancel=cancel,timeout=240)
-                pixels=_ppm_header(work/out,
+                    ["-i",j2c.name,"-o",output],
+                    workdir=work,check_cancel=cancel,timeout=12)
+                pixels=_ppm_header(work/output,
                     width=PROFILES[profile][0],
                     height=PROFILES[profile][1])
                 png,_=_display_png(pixels,profile)
@@ -130,8 +136,13 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                     CHANNEL_LAYOUTS["stereo"])
                 if len(stereo)!=FRAME_SAMPLES*2*2:
                     raise RuntimeError("Real sound monitor output lost samples")
-                bytes_output+=len(png)+len(stereo)
-                decoded+=1
+                return len(png)+len(stereo)
+            with ThreadPoolExecutor(
+                    max_workers=min(MAX_DECODE_WORKERS,n)) as pool:
+                for actual_bytes in pool.map(
+                        decode_original_published_frame,range(n)):
+                    bytes_output+=actual_bytes
+                    decoded+=1
         reel_index=(reel_index+1)%len(reels)
     elapsed=time.monotonic()-start
     complete=(elapsed>=seconds and native_failure is None)
@@ -152,6 +163,9 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
         "full_wall_window_measured":bool(complete),
         "probe_wall_budget_seconds":max_wall_seconds,
         "native_failure":native_failure,
+        "native_parallel_openjpeg_processes":MAX_DECODE_WORKERS,
+        "all_counted_pictures_independently_decoded":True,
+        "cache_hits_counted_as_codec_throughput":False,
         "decoded_review_bytes":bytes_output,
         "python_tracemalloc_peak_bytes":peak,
         "real_device_av_sync_verified":False,
