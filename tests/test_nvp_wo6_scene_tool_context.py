@@ -14,6 +14,8 @@ from backend.nvp_data_av_source import RecordedSoundSources
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
 from backend.nvp_openusd_take import OpenUSDTakeCapture
+from backend.nvp_exact_time_shots import ExactTimeShotSequence
+from backend.nvp_story_bible import StoryBible
 from backend.nvp_studio import Studio
 from backend.nvp_temporal_ledger import TemporalLedger,TICKS_PER_SECOND
 from backend.nvp_wo6_scene_context import (
@@ -128,6 +130,78 @@ class NativeSceneCrewContext(unittest.TestCase):
         self.assertEqual(actual,hashlib.sha256(json.dumps(
             copy,sort_keys=True,separators=(",",":"),
             ensure_ascii=True,allow_nan=False).encode("ascii")).hexdigest())
+
+    def test_selected_camera_is_recovered_from_exact_authored_shot_not_guessed(self):
+        shots=ExactTimeShotSequence(self.index).publish(
+            self.pid,"DirectorShots",
+            scene_id="OriginalScene",scene_revision=1,
+            duration_tick=str(3*T),
+            shots=[
+                {"shot_id":"Wide","camera_path":"/World/Camera",
+                 "start_tick":"0","end_tick":str(T),"pattern":"master"},
+                {"shot_id":"Closer","camera_path":"/World/Camera",
+                 "start_tick":str(T),"end_tick":str(3*T),
+                 "pattern":"tracking"},
+            ])
+        packet=self.context(
+            shot_sequence_id="DirectorShots",
+            shot_sequence_revision=shots["revision"])
+        selected=packet["authored_camera_selection"]
+        self.assertEqual(selected["camera_coverage_status"],
+                         "SELECTED_AUTHORED_CAMERA")
+        self.assertEqual(selected["selected_shot"]["shot_id"],"Closer")
+        self.assertEqual(selected["selected_shot"]["camera_path"],
+                         "/World/Camera")
+        self.assertEqual(selected["shot_timeline_document_sha256"],
+                         shots["document_sha256"])
+        self.assertFalse(selected["rendered_output_proven"])
+        with self.assertRaises(ValueError):
+            self.context(shot_sequence_id="DirectorShots")
+        unrelated=OpenUSDSceneBridge(self.index).publish(
+            self.pid,"OtherScene",prims=self.actor_scene,
+            curves=self.curves,native_schemas=True)
+        ExactTimeShotSequence(self.index).publish(
+            self.pid,"UnrelatedShots",
+            scene_id="OtherScene",scene_revision=1,duration_tick=str(3*T),
+            shots=[{"shot_id":"Another","camera_path":"/World/Camera",
+                    "start_tick":"0","end_tick":str(3*T),"pattern":"single"}])
+        with self.assertRaises(PermissionError):
+            self.context(shot_sequence_id="UnrelatedShots",
+                         shot_sequence_revision=1)
+
+    def test_accepted_scene_linked_story_bible_facts_exclude_proposals(self):
+        bible=StoryBible(self.studio)
+        actor=bible.create_entity(self.pid,"character","Ada")
+        good=bible.propose_fact(self.pid,actor["id"],"objective",
+                                "Protect the relay")
+        actor=bible.get_entity(self.pid,actor["id"])
+        bible.decide_fact(self.pid,good["id"],"accept",
+                          expected_entity_revision=actor["revision"])
+        rejected=bible.propose_fact(self.pid,actor["id"],
+                                   "fabricated_skill","Fly a starship",
+                                   origin="ai_proposal")
+        actor=bible.get_entity(self.pid,actor["id"])
+        bible.link_scene(self.pid,actor["id"],self.script_scene,
+                         expected_entity_revision=actor["revision"])
+        packet=self.context()
+        self.assertEqual(packet["story_bible_status"],
+                         "SCENE_LINKED_ACCEPTED_FACTS_ONLY")
+        self.assertEqual(len(packet["approved_story_facts"]),1)
+        fact=packet["approved_story_facts"][0]
+        self.assertEqual(fact["fact_id"],good["id"])
+        self.assertEqual(fact["value"],"Protect the relay")
+        self.assertFalse(fact["usd_actor_binding_proven"])
+        self.assertFalse(packet["screenplay_to_usd_actor_identity_verified"])
+        self.assertNotIn(rejected["id"],
+                         [x["fact_id"] for x in packet["approved_story_facts"]])
+        with self.studio._connection() as db:
+            db.execute("""UPDATE bible_scene_links SET scene_sha=?
+                WHERE project_id=? AND entity_id=?""",
+                ("0"*64,self.pid,actor["id"]))
+        packet=self.context()
+        self.assertEqual(packet["story_bible_status"],
+                         "HAS_STALE_SCENE_LINKS_OMITTED")
+        self.assertEqual(packet["approved_story_facts"],[])
 
     def test_context_exposes_truncated_prims_events_and_missing_screenplay(self):
         result=self.context(source_revision=None,screenplay_scene_id=None,
