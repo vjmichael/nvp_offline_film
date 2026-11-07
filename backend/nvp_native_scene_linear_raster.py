@@ -355,10 +355,20 @@ class NativeSceneLinearRaster:
                 surface=_surface(obj)
                 texture=None
                 uvs=obj.get("mesh_uvs")
+                face_uvs=obj.get("mesh_face_uvs")
                 descriptor=(obj.get("source_material") or {}).get("texture")
                 if descriptor is not None:
-                    if obj["shape"] not in ("mesh","skinned_mesh") or uvs is None or (
-                        len(uvs)!=len(raw)):
+                    if (obj["shape"] not in ("mesh","skinned_mesh") or
+                        (uvs is None and face_uvs is None) or
+                        (uvs is not None and face_uvs is not None) or
+                        (uvs is not None and len(uvs)!=len(raw)) or
+                        (face_uvs is not None and len(face_uvs)!=len(faces))):
+                        raise RuntimeError("USD texture requires original UV authority")
+                    if (face_uvs is not None and any(
+                        type(row) is not list or len(row)!=3
+                        for row in face_uvs)):
+                        raise RuntimeError("Malformed original face UV corners")
+                    if False:
                         raise RuntimeError("USD texture requires original mesh UV primvar")
                     from backend.nvp_native_usd_texture import verified_texture
                     key=descriptor["sha256"]
@@ -383,14 +393,15 @@ class NativeSceneLinearRaster:
                         factor=(focal/36.0)*WIDTH/(-z)
                         projected.append((WIDTH*.5+x*factor,
                                           HEIGHT*.5-y*factor,-z))
-                for face in faces:
+                for face_index,face in enumerate(faces):
                     verts=[projected[i] for i in face]
                     if any(v is None for v in verts):continue
                     original_points=[transformed[i] for i in face]
                     if _draw_triangle(
                         color,depth,verts,original_points,
                         surface,lights,eye,np,texture=texture,
-                        uv_face=([uvs[i] for i in face]
+                        uv_face=(face_uvs[face_index] if face_uvs is not None
+                                 else [uvs[i] for i in face]
                                  if texture is not None else None)):
                         rasterized+=1
                         textured_triangles+=int(texture is not None)
