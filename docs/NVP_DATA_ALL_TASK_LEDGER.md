@@ -1057,3 +1057,86 @@ physical workers with real media, independent OS termination attestation
 after supervisor crash, existing installed-app desktop approval UX and
 WO6-07 actual model-in-loop 30min film remain OPEN. WO4/WO5 sustained
 installed finished A/V and cinema Bv2.1 gates are separate and OPEN.
+
+
+## WO6-07 installed director-native GUI and WO5/WO6 shared acceptance — 2026-11-07
+
+**Implementation committed and under native CI, not yet accepted by an
+installed-end-user/model-in-loop test.** This update supersedes earlier notes
+that said the native GUI or installed Windows process-tree attestation
+implementation was entirely absent.
+
+- The PyInstaller/NSIS NVP.exe private command
+  `--nvp-wo6-worker take|shot|data` now routes the three **first-party**
+  worker classes before a FastAPI server or WebView2 starts. A frozen
+  NVP.exe is not a Python interpreter. Every caller SHA-pins the executable
+  and sealed spec; the contained child independently reopens the actual
+  FULL-sync native TaskLedger and checks current ACTIVE+reserved admission,
+  host owner and absence of a durable cancellation before touching FilmIndex.
+  Arbitrary worker names are rejected.
+- Windows WO6 workers use the existing suspended-first Job Object
+  containment with an **exact durable prelaunch named NT Job Object**.
+  `backend/nvp_wo6_kernel_attestation.py` stores the task-specific Job
+  identity before worker admission and, on recovery, queries the real NT
+  kernel rather than trusting a PID, marker file or expired timeout.
+  Only a verified absent named Job Object after kill-on-last-handle-close
+  permits a stale ACTIVE task's native recovery. Windows hard
+  `os._exit` and live Job Object acceptance tests were added. Linux
+  without delegated cgroup-v2 whole-tree attestation still refuses such
+  recovery. Windows implementation is NOT accepted without its real CI.
+- `tools/nvp_wo6_installed_action_smoke.py` and
+  `tests/test_nvp_wo6_installed_smoke.py` exercise six actual
+  source-bound, OS-contained writes through the real FilmIndex and durable
+  TaskLedger: NEW frozen Take, camera shot, actor blocking, native light
+  shot, new non-destructive color, and exact Film Time editorial camera
+  sequence. The source-mode regression runs on Linux/Windows/Python 3.11
+  and 3.13; the actual NSIS installed Windows candidate has a **separate
+  real NVP.exe executable mode** gate in its WO5/WO6 CI matrix. This
+  disposable test uses test-only approval callbacks; it does **not**
+  claim the director actually approved a film, provided cinematic acting,
+  rendered a mastered output or delivered a DCP.
+- The **actual installed desktop** entrypoint now creates
+  `TrustedDesktopWO6Bridge` (subclassing the established WO5 creator
+  bridge). Every source-mutating WebView2 action is preceded by the
+  read-only exact FilmIndex source-impact preview; the host itself creates
+  actor/project/turn identity, random decision ID and job-owner identity.
+  One real OS dialog confirms the director's **exact creative scope** and
+  a separate OS dialog confirms the **exact SHA-sealed first-party worker**.
+  A browser boolean, model suggestion, source ID, or finding an exposed
+  method is NOT authorization. Policy grants live only in this host and
+  expire/revoke on restart; queued unverified work is never automatically
+  continued. Native status/cancel requires the same local creator ownership
+  and explicit OS cancellation confirmation.
+- `frontend/src/WO6CreatorActionsPanel.jsx` adds a distinct native
+  director-approval tab in the existing React NVP screen, linking real
+  OpenUSD scene/Take/TemporalLedger sources to actual read-only previews,
+  typed Take/shot/color/camera-sequence authoring, OS confirmation,
+  immutable-result receipts and durable task status. There is **no**
+  HTTP mutation endpoint or model-facing native executor. The existing
+  installed WebView2 source-window smoke now must mount the actual new
+  tab and read the correct FilmIndex catalog over real JS-to-native IPC.
+  `tests/test_nvp_wo6_desktop_bridge.py` and React Vitest suite cover
+  project isolation, untrusted origins, denied first/second OS grants,
+  queued cancellation and lack of phantom finished-film status.
+
+**WO5 integration:** On the WO6 stacked branch, latest repaired WO5
+native OpenJPEG throughput, predecoded real SMPTE MXF/PCM fixture, exact
+frame/reel stage diagnostics and escaped-NUL regression repair are
+integrated. The WO5/WO6 combined installed NSIS acceptance workflow
+preserves the actual WO5 24fps measured throughput and 720-frame
+Canvas/WebAudio presentation release gates **AND** independently requires
+all six genuine installed WO6 source-worker receipts. Passing one gate
+does not imply another. The compiled DCP's 30-second repeated-pattern
+fixture is not the authentic 30-minute original film.
+
+**Outstanding after implementation:** actual exact-head GitHub CI,
+genuine installed actor/project/approval UX/manual playback acceptance,
+local model-in-the-loop assistant orchestration in the native GUI,
+persisted release-safe creative decisions after user restart,
+full authentic original 30-minute film with 43,200 distinct rendered 2K/4K
+images and 30-minute mastered PCM, approved native export/manufacturing
+operations (color/picture, sound, edit/reel and DCP write) beyond current
+six data-authoring classes, guaranteed process-tree shutdown on installed
+Linux cgroup host, 60–90min feature and >=3hr epic, and independent SMPTE
+Bv2.1 projection/server ingest. All are still OPEN until real evidence
+has been collected. CI queued/pending or cancelled runs are not passes.
