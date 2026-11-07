@@ -160,14 +160,36 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
     }
     const Audio=window.AudioContext||window.webkitAudioContext;
     if(!Audio){setError('A real WebView2 WebAudio device is required for synchronized film review.');return;}
+    // AudioContext must be created/resumed in the ORIGINAL creator click
+    // task, before awaiting native OS confirmation. Chromium can refuse
+    // an audio device resume attempted only after an async permission IPC.
+    // No film data is played before the exact native grant is approved.
+    let ctx=null,activated=null;
+    try{
+      ctx=new Audio({sampleRate:RATE});
+      activated=ctx.resume();
+    }catch(e){
+      if(ctx)try{await ctx.close();}catch{}
+      setError('WebView2 audio activation failed: '+e.message);return;
+    }
     await stop(true);
     const current=ref.current;
     const gen=current.generation;
     setStatus('APPROVING_NATIVE_READ');
-    let session=null,ctx=null;
+    let session=null;
     try{
       session=await native.wo5_film_begin(projectId,featureId);
-      if(session?.status==='DENIED'){setStatus('DENIED');return;}
+      if(session?.status==='DENIED'){
+        await ctx.close();
+        setStatus('DENIED');return;
+      }
+      if(ref.current.generation!==gen){
+        await ctx.close();
+        if(session?.session_id)try{
+          await native.wo5_film_stop(session.session_id);
+        }catch{}
+        return;
+      }
       if(!session||session.format!==FORMAT||
          session.status!=='FINISHED_DCP_READONLY_READY'||
          session.native_picture_and_sound_from_published_mxf!==true||
@@ -178,8 +200,9 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
          session.frame_count<1||!session.session_id)
         throw Error('Native completed-film session receipt is invalid');
       if(start>=session.frame_count)throw Error('Seek beyond finished film duration');
-      ctx=new Audio({sampleRate:RATE});
-      await ctx.resume();
+      await activated;
+      if(ctx.state!=='running')
+        throw Error('Native WebView2 WebAudio device did not enter running state');
       // Observe actual WebAudio graph samples during playback, in addition
       // to verifying native PCM receipts and scheduled source windows.
       const analyser=ctx.createAnalyser();
