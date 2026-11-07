@@ -2,8 +2,8 @@
 
 This adapter never loads the approved WAV or resulting MXF into Python RAM.
 It consumes only a native host's SHA-bound streamed WO4 receipt and a pinned
-CineCert wrapper/info executable. Temporary output and final no-clobber
-publication use the approved same-volume directory. Exact source PCM SHA is
+CineCert wrapper/info executable. The codec receives a private stream-copied
+WAV, never a hardlink to approved source media. Output is no-clobber. Exact source PCM SHA is
 independently rechecked after wrapper execution. No FFmpeg or shell.
 """
 from __future__ import annotations
@@ -87,14 +87,20 @@ def wrap_streamed_pcm_mxf(wrap:ApprovedCodecBinary,info:ApprovedCodecBinary,
     stage=Path(tempfile.mkdtemp(prefix=".nvp-wo4-mxf-",dir=root))
     target=root/("SoundMXF_"+asset_uuid+".mxf")
     try:
-        # Local hardlink avoids making a second complete WAV copy. Failure on
-        # a different filesystem is intentional; the trusted host can choose
-        # a same-volume destination rather than bypassing content custody.
-        source_link=stage/"master.wav"
-        os.link(path,source_link)
+        # Hardlinking a frozen WAV into a native worker shares an inode:
+        # codec write bugs could mutate the approved file. Stream-copy into
+        # a private stage instead, with no complete soundtrack in RAM.
+        private_source=stage/"master.wav"
+        with path.open("rb") as source, private_source.open("xb") as private:
+            shutil.copyfileobj(source,private,1024*1024)
+            private.flush()
+            os.fsync(private.fileno())
+        private_sha,private_size=_hash_stream(private_source)
+        if private_sha!=source_sha or private_size!=source_size:
+            raise PermissionError("Private codec input differs from approved WAV")
         result=wrap.run(["-L","-a",asset_uuid.replace("-",""),
                          "-p","24","-d",str(frames),
-                         source_link.name,"sound.mxf"],cwd=stage,timeout=3600)
+                         private_source.name,"sound.mxf"],cwd=stage,timeout=3600)
         file=stage/"sound.mxf"
         if file.is_symlink() or not file.is_file() or file.stat().st_size<128:
             raise RuntimeError("Native CineCert MXF sound track not created")
@@ -102,7 +108,9 @@ def wrap_streamed_pcm_mxf(wrap:ApprovedCodecBinary,info:ApprovedCodecBinary,
         _verify_info(props,asset_uuid,frames)
         # Input remains the identical approved bytes after native execution.
         after,size_after=_hash_stream(path)
+        staged_after,staged_size=_hash_stream(private_source)
         if (after!=source_sha or size_after!=source_size or
+                staged_after!=source_sha or staged_size!=source_size or
                 _pcm_digest(path,frames,len(channels))!=candidate["master_pcm_sha256"]):
             raise PermissionError("Approved sound changed during native MXF encoding")
         with file.open("rb+") as stream:
