@@ -96,9 +96,9 @@ def write_original_30minute_source(destination,*,approve_test_only):
         {"path":"/World/RelayCore","role":"prop","position":[0,0,0]},
         {"path":"/World/ServiceCraft","role":"actor","position":[-14,0,0]},
         {"path":"/World/Engineer","role":"actor","position":[-9,-1,0]},
-        {"path":"/World/WideCamera","role":"camera","position":[0,-26,12]},
-        {"path":"/World/CloseCamera","role":"camera","position":[2,-12,3]},
-        {"path":"/World/TravelCamera","role":"camera","position":[-14,-10,6]},
+        {"path":"/World/WideCamera","role":"camera","position":[0,0,25]},
+        {"path":"/World/CloseCamera","role":"camera","position":[1,0,9]},
+        {"path":"/World/TravelCamera","role":"camera","position":[-10,0,12]},
         {"path":"/World/RelayKey","role":"light","position":[2,1,7]},
     ]
     curves=[
@@ -111,11 +111,11 @@ def write_original_30minute_source(destination,*,approve_test_only):
             (900,[-1,-.4,2]),(1200,[0,0,3]),
             (1500,[-1,-2,0]),(1800,[3,-4,0])])},
         {"path":"/World/TravelCamera","samples":_keys([
-            (0,[-14,-10,6]),(450,[-8,-9,5]),
-            (900,[-4,-8,4]),(1350,[2,-9,4]),(1800,[10,-9,6])])},
+            (0,[-10,0,12]),(450,[-6,0,12]),
+            (900,[-3,0,12]),(1350,[2,0,12]),(1800,[9,0,12])])},
         {"path":"/World/CloseCamera","samples":_keys([
-            (0,[2,-12,3]),(600,[0,-10,3]),
-            (1200,[-2,-8,3]),(1800,[0,-10,3])])},
+            (0,[1,0,9]),(600,[0,0,8]),
+            (1200,[-2,0,9]),(1800,[0,0,9])])},
     ]
     scene=OpenUSDSceneBridge(index)
     authored=scene.publish(
@@ -191,6 +191,31 @@ def write_original_30minute_source(destination,*,approve_test_only):
     verified=freezer.verify_take(pid,"RelayNineOriginalTake")
     if verified["status"]!="VERIFIED_FROZEN_DATA_TAKE":
         raise RuntimeError("Real original scene+sound Take did not reopen")
+    # Real non-cinema 640x360 scene-linear pictures derived from the frozen
+    # USD Take at one original authored position per act, not generated
+    # synthetic cinema bitstreams. They give an actual visual regression
+    # across the 30-minute story while awaiting a production 2K/4K renderer.
+    from backend.nvp_native_scene_linear_raster import NativeSceneLinearRaster
+    snapshots=[]
+    raster=NativeSceneLinearRaster(index)
+    for act in range(len(TAGS)):
+        tick=(act*REEL_SECONDS+45)*T
+        shot=shots[tick//(SHOT_SECONDS*T)]
+        pixels,visual=raster.render(
+            pid,"RelayNineOriginalTake",take["document_sha256"],
+            tick=tick,camera_path=shot["camera_path"])
+        if pixels.shape!=(360,640,4) or visual["time_tick"]!=str(tick):
+            raise RuntimeError("Original OpenUSD scene projection missing")
+        snapshots.append({
+            "act":TAGS[act][0],"film_tick":tick,
+            "take_frame_source_only":True,
+            "scene_linear_sha256":visual["scene_linear_rgba_sha256"],
+            "rasterized_triangles":visual["rasterized_triangles"],
+            "calibrated_cinema_master":False})
+    if len({v["scene_linear_sha256"] for v in snapshots})<3 or (
+            sum(v["rasterized_triangles"]>0 for v in snapshots)<3):
+        raise RuntimeError(
+            "Original 30min scene visual evidence lacks real source variation")
     plan=plan_feature(frames=FRAMES,profile="2K_FLAT_24",
                       channels=2,max_reel_frames=7200)
     if plan["reel_count"]!=6 or any(
@@ -207,6 +232,10 @@ def write_original_30minute_source(destination,*,approve_test_only):
         "take_id":"RelayNineOriginalTake",
         "take_document_sha256":take["document_sha256"],
         "source_take_frozen_verified":True,
+        "source_visual_checkpoints":snapshots,
+        "distinct_actual_usd_source_preview_sha256":len({
+            v["scene_linear_sha256"] for v in snapshots}),
+        "native_visual_proof_is_not_cinema_rendering":True,
         "shot_sequence_id":"RelayNineShotEdit",
         "shot_count":len(shots),
         "all_shots_exactly_cover_30_minutes":True,
