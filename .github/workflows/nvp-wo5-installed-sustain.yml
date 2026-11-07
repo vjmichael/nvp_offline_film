@@ -68,7 +68,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'OpenJPEG Windows configure failure' }
           cmake --build deps/openjpeg/build --config Release --parallel 2 --target opj_compress opj_decompress
           if ($LASTEXITCODE -ne 0) { throw 'OpenJPEG native binaries missing' }
-          cmake -S deps/asdcplib -B deps/asdcplib/build -DCMAKE_BUILD_TYPE=Release -DWITHOUT_SSL=ON -DWITHOUT_XML=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake -S deps/asdcplib -B deps/asdcplib/build -DCMAKE_BUILD_TYPE=Release -DWITHOUT_SSL=ON -DWITHOUT_XML=ON -DBUILD_SHARED_LIBS=OFF "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
           if ($LASTEXITCODE -ne 0) { throw 'CineCert Windows configure failure' }
           cmake --build deps/asdcplib/build --config Release --parallel 2 --target asdcp-wrap asdcp-info asdcp-unwrap
           if ($LASTEXITCODE -ne 0) { throw 'CineCert native binaries missing' }
