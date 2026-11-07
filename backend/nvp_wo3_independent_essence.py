@@ -100,7 +100,9 @@ def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
             j2k.unlink();(root/out).unlink()
         unwrap.run(["-d",str(expected_frames),"sound.mxf","audio"],
                    cwd=root,timeout=3600)
-        audio=root/"audio.wav"
+        # CineCert WavFileWriter::ST_NONE writes exactly file_prefix
+        # (no automatically appended .wav extension).
+        audio=root/"audio"
         if not audio.is_file() or audio.is_symlink():
             raise RuntimeError("Real MXF sound unwrap did not create PCM WAV")
         with wave.open(str(audio),"rb") as w:
