@@ -34,6 +34,7 @@ _FEATURE_SOURCE = "nvp.film.resolve_published_sources.v1"
 _SCENE_CREW = "nvp.film.read_scene_crew_context.v1"
 _TOOL_PREFLIGHT = "nvp.tools.inspect_host_pinned.v1"
 _IMPACT_PREVIEW = "nvp.film.preview_source_impact.v1"
+_TASK_STATUS = "nvp.film.read_native_task_status.v1"
 
 
 def _canonical(document: dict) -> bytes:
@@ -76,7 +77,8 @@ class NativeAiReadHost:
     """
 
     def __init__(self, studio: Studio, *, authorize_read: Callable,
-                 feature_journal=None, trusted_tool_inventory=None):
+                 feature_journal=None, trusted_tool_inventory=None,
+                 durable_recovery=None):
         if not isinstance(studio, Studio) or not callable(authorize_read):
             raise TypeError("Studio and trusted read policy callback required")
         if feature_journal is not None:
@@ -86,6 +88,11 @@ class NativeAiReadHost:
         if (trusted_tool_inventory is not None and
                 not isinstance(trusted_tool_inventory, TrustedToolInventory)):
             raise TypeError("Native tool inventory must be host-built, not model JSON")
+        if durable_recovery is not None:
+            from backend.nvp_wo6_recovery import WO6DurableRecovery
+            if not isinstance(durable_recovery, WO6DurableRecovery):
+                raise TypeError("Trusted native task recovery must be host-injected")
+        self._durable_recovery = durable_recovery
         self._studio = studio
         self._authorize_read = authorize_read
         self._feature_journal = feature_journal
@@ -98,6 +105,21 @@ class NativeAiReadHost:
         from copy import deepcopy
         result["capabilities"].append(deepcopy(SCENE_CREW_CAPABILITY))
         result["capabilities"].append(deepcopy(IMPACT_PREVIEW_CAPABILITY))
+        if self._durable_recovery is not None:
+            result["capabilities"].append({
+                "id": _TASK_STATUS,
+                "description": "Read verified native task events, cancellation "
+                               "and crash evidence for this creator/project only",
+                "effect": "read", "requires_host_authorization": True,
+                "executable_by_model": False,
+                "input_schema": {
+                    "project_id": "current host-authorized project",
+                    "task_id": "exact existing creator-owned WO6 native job"},
+                "result_schema": "nvp.wo6.native_creator_task_status.v1",
+                "worker_admission_authorized": False,
+                "cancellation_authorized": False,
+                "release_approved": False,
+            })
         if self._trusted_tool_inventory is not None:
             result["capabilities"].append({
                 "id": _TOOL_PREFLIGHT,
@@ -123,6 +145,8 @@ class NativeAiReadHost:
         capability = request.get("capability_id")
         allowed = {_READ_LINES, _CONTEXT, _RETAKE_PLAN, _SCENE_CREW,
                    _IMPACT_PREVIEW}
+        if self._durable_recovery is not None:
+            allowed.add(_TASK_STATUS)
         if self._trusted_tool_inventory is not None:
             allowed.add(_TOOL_PREFLIGHT)
         if self._feature_journal is not None:
@@ -143,6 +167,7 @@ class NativeAiReadHost:
                           "screenplay_scene_id", "max_prims", "max_events",
                           "shot_sequence_id", "shot_sequence_revision"},
             _TOOL_PREFLIGHT: {"capability_id", "project_id"},
+            _TASK_STATUS: {"capability_id", "project_id", "task_id"},
             _IMPACT_PREVIEW: {"capability_id", "project_id", "source_id",
                               "source_revision", "source_sha256",
                               "change_kind", "scene_id", "screenplay_revision",
@@ -205,6 +230,18 @@ class NativeAiReadHost:
                 }
         elif capability == _TOOL_PREFLIGHT:
             result = preflight_tool_inventory(self._trusted_tool_inventory)
+        elif capability == _TASK_STATUS:
+            # The native host owns the recovery ledger. Even after general
+            # current-turn read authorization, the exact task must belong
+            # to this creator and project. The model cannot supply an owner
+            # key, call cancellation or write any recovery/worker record.
+            task_id = request["task_id"]
+            row, task_spec = self._durable_recovery._approved_spec(task_id)
+            if (task_spec["project_id"] != scope.project_id or
+                    task_spec["actor_id"] != scope.actor_id):
+                raise PermissionError("Native task is not owned by current creator")
+            result = self._durable_recovery.status(
+                task_id, owner_key=row["owner_key"])
         elif capability == _IMPACT_PREVIEW:
             # Read-only, digest bound and scoped like all existing internal
             # AI reads. The returned approval checklist is descriptive; it
