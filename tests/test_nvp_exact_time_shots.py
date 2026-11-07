@@ -184,6 +184,32 @@ class ExactTimeCameraSequenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             editor.camera_segments(self.pid,"ExactCameraEdits",1,0.5,"1")
 
+    def test_revise_one_shot_preserves_prior_revision_and_cas(self):
+        first=self.publish()
+        editor=ExactTimeShotSequence(self.index)
+        replacement={**self.shots()[1],"start_tick":str(T+1)}
+        second=editor.revise_shot(
+            self.pid,"ExactCameraEdits",1,"Shot002",replacement)
+        self.assertEqual(second["revision"],2)
+        self.assertEqual(second["shots"][1]["start_tick"],str(T+1))
+        self.assertEqual(editor.read(self.pid,"ExactCameraEdits",1)[
+            "document_sha256"],first["document_sha256"])
+        self.assertNotEqual(second["document_sha256"],first["document_sha256"])
+        with self.assertRaises(Exception):
+            editor.revise_shot(self.pid,"ExactCameraEdits",1,
+                               "Shot002",replacement)
+        with self.assertRaises(ValueError):
+            editor.revise_shot(self.pid,"ExactCameraEdits",2,
+                               "Shot002",{**replacement,"shot_id":"Changed"})
+        with self.assertRaises(ValueError):
+            editor.revise_shot(self.pid,"ExactCameraEdits",2,"Unknown",None)
+        third=editor.revise_shot(self.pid,"ExactCameraEdits",2,"Shot002",None)
+        self.assertEqual([s["shot_id"] for s in third["shots"]],["Shot001"])
+        with self.assertRaises(ValueError):
+            editor.revise_shot(self.pid,"ExactCameraEdits",3,"Shot001",None)
+        self.assertEqual(editor.read(self.pid,"ExactCameraEdits",2)[
+            "shots"][1]["shot_id"],"Shot002")
+
     def test_os_authorization_controls_exact_scene_and_timeline_take_freeze(self):
         saved=self.publish()
         bridge=TrustedDesktopCameraBridge(
