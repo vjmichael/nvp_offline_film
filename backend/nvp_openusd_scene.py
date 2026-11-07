@@ -39,7 +39,7 @@ def _native_publish_checkpoint(stage):
         raise RuntimeError("Refusing symlink diagnostic target")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as stream:
-        stream.write("NVP_SMOKE_STAGE usd_publish_" + stage + "\\n")
+        stream.write("NVP_SMOKE_STAGE usd_publish_" + stage + "\n")
         stream.flush()
         os.fsync(stream.fileno())
 
@@ -150,7 +150,9 @@ class OpenUSDSceneBridge:
         _native_publish_checkpoint("before_pxr")
         Gf,Sdf,Usd,UsdGeom=_usd()
         _native_publish_checkpoint("after_pxr")
+        _native_publish_checkpoint("before_layout_layer_create")
         base=Sdf.Layer.CreateAnonymous("nvp_layout.usda")
+        _native_publish_checkpoint("after_layout_layer_create")
         _native_publish_checkpoint("before_stage_open")
         layout=Usd.Stage.Open(base)
         _native_publish_checkpoint("after_stage_open")
