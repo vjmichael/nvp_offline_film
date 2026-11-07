@@ -424,3 +424,12 @@ Added `backend/nvp_wo3_export_recovery.py` and `tests/test_nvp_wo3_export_recove
 ### WO3 licensing disposition (creator decision, 2026-11-07)
 
 **Decision: APPROVED IN PRINCIPLE.** OpenJPEG BSD-2-Clause and CineCert asdcplib BSD-3-Clause are sufficiently permissive for NVP's native cinematic pipeline. NVP will not modify or remove upstream copyright attribution. Do not block WO3 implementation on further licensing discussion. Preserve each required copyright/license notice and BSD-3-Clause non-endorsement provision in distributable packages, document third-party runtime/build dependencies, and keep reproducible SHA-pinned release artifacts. Exact native binary bundle inclusion, notices, and dependency inventory are packaging/acceptance tasks, **not unresolved permission to use the licenses**. No FFmpeg.
+
+
+### WO3 trusted FilmIndex restart integration (2026-11-07)
+
+Added `backend/nvp_wo3_project_recovery.py` to retrieve historical presentation revisions from the native project's real local FilmIndex, validate single source-Take dependency and no-original-mutation custody, and feed those trusted durable records into the read-only export scanner. This closes the earlier untrusted caller-supplied receipt interface at the **host adapter** level: UI/browser/LLM cannot invent accepted receipt hashes for this entrypoint. Regression fixtures in `tests/test_nvp_wo3_native_delivery.py` now publish a genuine structural export, reload from persisted FilmIndex, and detect modified exported VOLINDEX metadata without updating the original source or approving cinema readiness. Native CI compile/test includes the adapter.
+
+**Current observed CI:** native WO3 run `42349957081` at prior commit `b526cfd8` completed SUCCESS; previous run `42349929367` also completed SUCCESS. The present FilmIndex adapter commit still requires a fresh exact-head run; do not infer its pass from earlier heads.
+
+**Remaining:** crash-kill injected at real staging/fsync/publish/database boundaries and restart reconciliation across processes; real installed Windows host/UI admission and packaging; standards-sourced SMPTE XML-schema validator and separate vendor DCP checker; varying multi-frame full 4K MXF and independent pixel/rate evidence; physical projection in WO5. Reconciliation identifies inconsistencies but never automatically deletes or repairs user packages.
