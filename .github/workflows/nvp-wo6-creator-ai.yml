@@ -45,7 +45,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install actual native OpenUSD and existing test framework
-        run: python -m pip install --only-binary=:all: "usd-core==26.11" "pytest>=8,<10"
+        run: 'python -m pip install --only-binary=:all: "usd-core==26.11" "pytest>=8,<10"'
       - name: Compile new and existing trusted read-only host
         run: python -m compileall -q backend/nvp_wo6_creator_plan.py backend/nvp_wo6_feature_origins.py backend/nvp_wo6_scene_context.py backend/nvp_wo6_tool_readiness.py backend/nvp_ai_read_host.py tests/test_nvp_wo6_creator_plan.py tests/test_nvp_wo6_feature_origins.py tests/test_nvp_wo6_scene_tool_context.py
       - name: Run WO6 original FilmIndex source-to-Take planning, negative and trusted-host tests
