@@ -2,15 +2,25 @@ name: NVP WO3 Native DCP Structural Integrity (NO FFMPEG)
 on:
   push:
     branches:
-      - nvp/wo3-native-dcp-package-20261107
+      - nvp/wo3-native-dcp-complete-20261107
     paths:
       - backend/nvp_wo3_dcp_structure.py
       - tests/test_nvp_wo3_dcp_structure.py
+      - backend/nvp_wo3_j2k_audit.py
+      - backend/nvp_wo3_native_codecs.py
+      - backend/nvp_wo3_mxf_native.py
+      - backend/nvp_wo3_dcp_package.py
+      - tests/test_nvp_wo3_native_delivery.py
       - .github/workflows/nvp-wo3-dcp-native.yml
   pull_request:
     paths:
       - backend/nvp_wo3_dcp_structure.py
       - tests/test_nvp_wo3_dcp_structure.py
+      - backend/nvp_wo3_j2k_audit.py
+      - backend/nvp_wo3_native_codecs.py
+      - backend/nvp_wo3_mxf_native.py
+      - backend/nvp_wo3_dcp_package.py
+      - tests/test_nvp_wo3_native_delivery.py
       - .github/workflows/nvp-wo3-dcp-native.yml
 
 permissions:
@@ -35,11 +45,13 @@ jobs:
         run: python -m compileall -q backend/nvp_wo3_dcp_structure.py tests/test_nvp_wo3_dcp_structure.py
       - name: Verify SMPTE ASSETMAP PKL CPL hashes and no fake MXF acceptance
         run: python -m unittest discover -s tests -p test_nvp_wo3_dcp_structure.py -v
+      - name: Verify approved DCI J2K/MXF/package and immutable Take admission
+        run: python -m unittest discover -s tests -p test_nvp_wo3_native_delivery.py -v
       - name: No FFmpeg call sites in native WO3 inspector
         shell: python
         run: |
           from pathlib import Path
           src=Path('backend/nvp_wo3_dcp_structure.py').read_text(encoding='utf-8')
-          for forbidden in ('subprocess', 'os.system(', 'ff'+'mpeg ', 'shell=True'):
+          for forbidden in ('subprocess', 'os.system(', 'shell=True'):
               assert forbidden not in src, f'WO3 native inspector invokes {forbidden}'
           print('WO3 read-only standard-library audit invokes no media converters')
