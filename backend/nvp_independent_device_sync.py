@@ -51,6 +51,7 @@ class DeviceTimeTrack:
         self.calibrations=[]
         self.anchors=[]
         self.sample_count=0
+        self.last_adc_ns=None
         self.error=None
 
     def calibrate(self,before_ns,stream_time_ns,after_ns):
@@ -72,11 +73,15 @@ class DeviceTimeTrack:
             raise RuntimeError(self.error)
         if not 1<=frames<=RATE:
             raise ValueError("Unbounded native device callback")
-        if len(self.anchors)>=MAX_ANCHORS:
-            raise RuntimeError("Too many ADC clock anchors")
-        if self.anchors and adc_first_stream_ns<=self.anchors[-1][1]:
+        if self.last_adc_ns is not None and adc_first_stream_ns<=self.last_adc_ns:
             raise RuntimeError("Nonmonotonic original ADC clock")
-        self.anchors.append((self.sample_count,adc_first_stream_ns,frames))
+        self.last_adc_ns=adc_first_stream_ns
+        # Preserve all PCM packets but store at most ~4 clock anchors/second.
+        # This keeps original provenance bounded for a full ten-minute Take.
+        if not self.anchors or self.sample_count-self.anchors[-1][0]>=RATE//4:
+            if len(self.anchors)>=MAX_ANCHORS:
+                raise RuntimeError("Too many ADC clock anchors")
+            self.anchors.append((self.sample_count,adc_first_stream_ns,frames))
         self.sample_count+=frames
         if self.sample_count>MAX_DURATION_S*RATE:
             raise RuntimeError("Independent source exceeded original audio bound")
