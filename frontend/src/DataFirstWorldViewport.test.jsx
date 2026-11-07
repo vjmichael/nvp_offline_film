@@ -7,6 +7,12 @@ const actor={
   path:'/World/Actor',shape:'skinned_mesh',source_skinning:true,
   source_skinning_tick:'7056000000',
   size_m:2,source_color_rgb:[0.35,0.55,0.82],
+  source_material:{
+    format:'nvp.original_usd_preview_surface.v1',
+    material_path:'/World/Actor/Rig/Material',
+    base_color_rgb:[0.35,0.55,0.82],
+    roughness:.37,metallic:.12,original_source_modified:false,
+  },
   mesh_points:[[0,0,0],[1,0,0],[0,1,0],[0,0,1]],
   mesh_triangles:[[0,1,2],[0,2,3]],
 };
@@ -31,6 +37,12 @@ describe('DA-04B bounded source-verified live skinned actor',()=>{
 
   it('rejects impossible skinning authority, pose and changed mesh faces',()=>{
     expect(()=>validateMeshData({...actor,source_skinning:false})).toThrow();
+    expect(()=>validateMeshData({...actor,source_material:{
+      ...actor.source_material,roughness:2,
+    }})).toThrow();
+    expect(()=>validateMeshData({...actor,source_material:{
+      ...actor.source_material,base_color_rgb:[1,0,0],
+    }})).toThrow();
     expect(()=>validateMeshData({...actor,
       source_skinning_tick:'1.5'})).toThrow();
     expect(()=>validateMeshData({...actor,
