@@ -131,6 +131,7 @@ class TrustedDesktopCameraBridge:
         self._tickets = {}
         self._futures = {}
         self._host = None
+        self._data_av_controller = None
         self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
@@ -186,19 +187,27 @@ class TrustedDesktopCameraBridge:
             return self._host
 
     def camera_render_capabilities(self):
+        # DA-06: external Blender still capture was part of the retired
+        # frame/proxy bridge. NVP now auditions 3D USD directly. Never
+        # discover or start a legacy media worker from the active editor.
         self._native_window()
         return {
             "format":"nvp.camera.desktop_capability.v1",
             "native_window":True,
-            "blender_discovered":discover_blender() is not None,
-            "supports_approved_still":True,
+            "blender_discovered":False,
+            "supports_approved_still":False,
             "supports_cancel":True,
+            "native_data_first_scene":True,
+            "legacy_render_retired":True,
             "source_modified":False,
         }
 
     def request_camera_still(self, payload):
-        """Untrusted JSON -> exact FilmIndex identity -> native OS approval."""
+        """Retired external proxy renderer. Data-first scene view is native."""
         self._native_window()
+        raise PermissionError(
+            "External camera still/proxy worker retired by DA-06; use native "
+            "OpenUSD WebGL audition without FFmpeg or frame capture.")
         if type(payload) is not dict or set(payload)!={
                 "project_id","source_scene_id","source_scene_revision",
                 "source_scene_document_sha256","source_tick","camera_path",
@@ -401,6 +410,66 @@ class TrustedDesktopCameraBridge:
                 self._grants.pop(grant.token,None)
             return {"status":done["state"],"native_worker_cancelled":True}
 
+    # DATA-AV-01: same authenticated native window, wholly distinct from
+    # the optional Blender camera still and conventional video preview.
+    # The browser cannot provide source media paths or grant its own consent.
+    def _data_av(self):
+        if self._data_av_controller is None:
+            from backend.nvp_data_av_desktop import TrustedDataAVController
+            self._data_av_controller=TrustedDataAVController(
+                self.index,native_window=self._native_window,
+                ask_native=self._ask)
+        return self._data_av_controller
+
+    def data_av_import_original_audio(self,project_id,source_id):
+        """Open a REAL native OS picker. The browser supplies IDs, never paths."""
+        self._native_window()
+        from backend.nvp_imported_audio import OriginalAudioImport
+        from webview import FileDialog
+        def selected():
+            window=self._native_window()
+            if not callable(getattr(window,"create_file_dialog",None)):
+                raise PermissionError("No trusted native audio file picker installed")
+            chosen=window.create_file_dialog(
+                FileDialog.OPEN,allow_multiple=False,
+                file_types=("Sound files (*.mp3;*.flac;*.wav;*.ogg)",))
+            if not chosen:
+                return None
+            if len(chosen)!=1:
+                raise PermissionError("Only one original audio file may be imported")
+            return chosen[0]
+        source=OriginalAudioImport(
+            self.index,trusted_native_picker=selected
+        ).register_from_picker(project_id,source_id)
+        data=self.index.read_revision(project_id,source_id,
+                                      source["revision"])["data"]
+        return {"format":"nvp.data_av.native_audio_import.v1",
+                "status":"ORIGINAL_IMPORTED",
+                "source_id":source_id,"source_revision":source["revision"],
+                "source_document_sha256":source["document_sha256"],
+                "original_codec":data["original_codec"],
+                "original_media_sha256":data["source_media_sha256"],
+                "original_modified":False,
+                "soundtrack_flattened":False,"ffmpeg_used":False}
+
+    def data_av_freeze_timed_take(self,request):
+        return self._data_av().freeze_exact_camera_take(request)
+
+    def data_av_catalog(self,project_id):
+        return self._data_av().catalog(project_id)
+
+    def data_av_begin(self,request):
+        return self._data_av().begin(request)
+
+    def data_av_audio_window(self,session_id,first_sample,count):
+        return self._data_av().read_audio(session_id,first_sample,count)
+
+    def data_av_scene_at(self,session_id,tick):
+        return self._data_av().scene_at(session_id,tick)
+
+    def data_av_stop(self,session_id):
+        return self._data_av().stop(session_id)
+
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
 
@@ -412,6 +481,8 @@ class TrustedDesktopCameraBridge:
             if self._closing:
                 return
             self._closing=True
+            if self._data_av_controller is not None:
+                self._data_av_controller.close()
             host=self._host
             tickets=list(self._tickets.values())
         if host is not None:

@@ -27,7 +27,7 @@ describe('SLATE-08 main UI read-only real scene camera',()=>{
     const {container}=render(<FilmCameraSourcePanel
       projectId={pid} api={api}/>);
     expect(await screen.findByText(/50 mm · 39.6° horizontal FOV/)).toBeTruthy();
-    expect(api).toHaveBeenCalledTimes(2);
+    await waitFor(()=>expect(api).toHaveBeenCalledTimes(2));
     fireEvent.change(screen.getByLabelText('Lens preset'),
                      {target:{value:'wide_24'}});
     expect(screen.getByText(/24 mm · 73.7° horizontal FOV/)).toBeTruthy();

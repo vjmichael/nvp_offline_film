@@ -1,26 +1,8 @@
 name: NVP DATA-TIME-01 Sparse Timeline and Indexed Decoder A-B
 
+# DATA-AV-01 migration: legacy imported-video/benchmark workflow is
+# manual-only; it must not gate or relaunch native Digital Take A/V.
 on:
-  push:
-    branches:
-      - nvp/data-first-temporal-ledger-bench-20261105
-    paths:
-      - "backend/nvp_temporal_ledger.py"
-      - "backend/nvp_temporal_projection.py"
-      - "backend/nvp_film_index.py"
-      - "tests/test_nvp_temporal_ledger.py"
-      - "tests/test_data_time_projection.py"
-      - "tools/benchmarks/**"
-      - ".github/workflows/nvp-data-time01-bench.yml"
-  pull_request:
-    paths:
-      - "backend/nvp_temporal_ledger.py"
-      - "backend/nvp_temporal_projection.py"
-      - "backend/nvp_film_index.py"
-      - "tests/test_nvp_temporal_ledger.py"
-      - "tests/test_data_time_projection.py"
-      - "tools/benchmarks/**"
-      - ".github/workflows/nvp-data-time01-bench.yml"
   workflow_dispatch:
 
 concurrency:

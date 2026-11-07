@@ -771,6 +771,15 @@ def production_solve_camera(project_id: str, scene_id: str, payload: CameraShotI
         project_id,scene_id,payload.subjects,lens_mm=payload.lens_mm,
         shot_size=payload.shot_size,desired_positions=payload.desired_positions))
 
+# DA-06: old fixed-rate proxy production is READ-ONLY history only.
+# The new camera timeline is /film/native-time-shots, and native OS approval
+# freezes exact-time OpenUSD Takes. Never publish new frame-authoritative
+# captures, clips, or Blender proxy scripts from the active NVP API.
+def _retired_fixed_frame_authoring():
+    raise HTTPException(status_code=410,detail=(
+        "Legacy frame-based proxy authoring retired. Use exact Film Time "
+        "OpenUSD shot revisions and native Digital Take freeze."))
+
 # NVP-PROD-05: author-controlled, frame-accurate shot sequences.
 from backend.nvp_shot_sequence import ShotSequence
 
@@ -797,6 +806,7 @@ class TakeWarningsInput(TakeRevisionInput):
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence', status_code=201)
 def prod05_create(project_id: str, scene_id: str):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).create(project_id,scene_id))
 
 
@@ -807,45 +817,53 @@ def prod05_read(project_id: str, scene_id: str):
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/shots')
 def prod05_append(project_id: str, scene_id: str, payload: TakeShotInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).add_shot(project_id,scene_id,
         payload.camera_id,payload.frames,payload.pattern,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/shots/pop')
 def prod05_remove_last_shot(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).remove_last_shot(project_id,scene_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/cues/{line_id}')
 def prod05_place_cue(project_id: str, scene_id: str, line_id: str, payload: TakeCueInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).place_cue(project_id,scene_id,
         line_id,payload.start_frame,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/cues/{line_id}/clear')
 def prod05_clear_cue(project_id: str, scene_id: str, line_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).clear_cue(project_id,scene_id,
         line_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/warnings/acknowledge')
 def prod05_acknowledge(project_id: str, scene_id: str, payload: TakeWarningsInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).acknowledge(project_id,scene_id,
         payload.codes,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/approve')
 def prod05_approve(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).approve(project_id,scene_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/revision')
 def prod05_revision(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).new_revision(project_id,scene_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/reset')
 def prod05_reset(project_id: str, scene_id: str, payload: TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).reset_draft(project_id,scene_id,payload.expected_revision))
 
 
@@ -856,11 +874,13 @@ def prod05_history(project_id: str, scene_id: str):
 
 @app.get('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/package')
 def prod05_package(project_id: str, scene_id: str):
+    _retired_fixed_frame_authoring()
     return run(lambda: ShotSequence(studio).export(project_id,scene_id))
 
 
 @app.get('/api/projects/{project_id}/production/scenes/{scene_id}/sequence/blender-script')
 def prod05_blender_script(project_id: str, scene_id: str):
+    _retired_fixed_frame_authoring()
     return {'script':run(lambda: ShotSequence(studio).blender_script(project_id,scene_id)),
             'language':'python','runtime':'Blender 5.2+ bpy'}
 
@@ -901,18 +921,21 @@ def prod06_clips(project_id:str):
 
 @app.post('/api/projects/{project_id}/production/motion-clips/bvh', status_code=201)
 def prod06_register_bvh(project_id:str,payload:RegisterBVHMotion):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).register(project_id,payload.name,payload.license,
                       bvh=payload.bvh,mapping=payload.mapping))
 
 
 @app.post('/api/projects/{project_id}/production/motion-clips/authored', status_code=201)
 def prod06_register_authored(project_id:str,payload:RegisterAuthoredMotion):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).register(project_id,payload.name,payload.license,
                       frames=payload.frames,fps=payload.fps))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion',status_code=201)
 def prod06_create(project_id:str,scene_id:str):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).create(project_id,scene_id))
 
 
@@ -923,18 +946,21 @@ def prod06_read(project_id:str,scene_id:str):
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/attach')
 def prod06_attach(project_id:str,scene_id:str,payload:AttachMotion):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).attach(project_id,scene_id,
         payload.actor_instance_id,payload.clip_id,payload.start_frame,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/clear')
 def prod06_clear(project_id:str,scene_id:str,payload:ActorMotionRevision):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).clear(project_id,scene_id,
         payload.actor_instance_id,payload.expected_revision))
 
 
 @app.post('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/approve')
 def prod06_approve(project_id:str,scene_id:str,payload:TakeRevisionInput):
+    _retired_fixed_frame_authoring()
     return run(lambda:RigMotion(studio).approve(project_id,scene_id,payload.expected_revision))
 
 
@@ -945,6 +971,7 @@ def prod06_history(project_id:str,scene_id:str):
 
 @app.get('/api/projects/{project_id}/production/scenes/{scene_id}/rig-motion/blender-script')
 def prod06_blender(project_id:str,scene_id:str):
+    _retired_fixed_frame_authoring()
     return {'script':run(lambda:RigMotion(studio).blender_script(project_id,scene_id)),
             'language':'python','runtime':'Blender 5.2+ bpy','rig':'humanoid_preview_v1'}
 
@@ -1123,12 +1150,22 @@ def prod06d_bundle(project_id:str,scene_id:str):
         'Cache-Control':'no-store'})
 
 
+# DA-06: Retire the old color subsystem only from the ACTIVE API. Its
+# original indexed film data and previous revisions are preserved, but no
+# frame-based EXR decode, old presentation export, external subprocess,
+# codec discovery or FFmpeg-bound grading task is permitted to execute.
+# Native data-first source grade controls are implemented separately.
+def _retired_frame_color():
+    raise HTTPException(status_code=410,detail=(
+        "Frame-based color preview/mastering was retired by DA-06. "
+        "Use the native OpenUSD presentation and data-first color controls."))
+
 # NVP-GRADE-UI-01 — project-scoped, non-destructive grade version history.
 # These endpoints do NOT approve a creative grade or export a final master.
 from typing import Any as _GradeAny
 from fastapi import Query as _GradeQuery
-from backend.nvp_grade_workspace import GradeWorkspace
-from backend.nvp_color_mastering import grade_recipe, validate_grade
+# Retired old EXR/frame-bound codec dependency: from_backend.nvp_grade_workspace import GradeWorkspace
+# Retired old EXR/frame-bound codec dependency: from_backend.nvp_color_mastering import grade_recipe, validate_grade
 
 class GradeWorkspaceSaveInput(BaseModel):
     source_exr_id: str = Field(min_length=1,max_length=80)
@@ -1139,14 +1176,17 @@ class GradeWorkspaceSaveInput(BaseModel):
 
 @app.get('/api/projects/{project_id}/color-grading/sources')
 def color_grade_sources(project_id:str):
+    _retired_frame_color()
     return run(lambda:GradeWorkspace(studio).sources(project_id))
 
 @app.get('/api/projects/{project_id}/color-grading/grades')
 def color_grade_list(project_id:str,source_id:str|None=None):
+    _retired_frame_color()
     return run(lambda:GradeWorkspace(studio).list_grades(project_id,source_id))
 
 @app.post('/api/projects/{project_id}/color-grading/grades',status_code=201)
 def color_grade_save(project_id:str,payload:GradeWorkspaceSaveInput):
+    _retired_frame_color()
     if payload.source_primaries_declared is not True:
         raise HTTPException(status_code=422,detail='Confirm the source EXR color primaries declaration before saving a grade')
     return run(lambda:GradeWorkspace(studio).save(
@@ -1155,6 +1195,7 @@ def color_grade_save(project_id:str,payload:GradeWorkspaceSaveInput):
 
 @app.get('/api/projects/{project_id}/color-grading/grades/{grade_id}')
 def color_grade_read(project_id:str,grade_id:str,revision:int|None=None):
+    _retired_frame_color()
     record=run(lambda:GradeWorkspace(studio).reopen(project_id,grade_id,revision))
     return {'id':grade_id,'revision':record['record']['revision'],
             'source_exr_id':record['record']['data']['source_exr_id'],
@@ -1164,6 +1205,7 @@ def color_grade_read(project_id:str,grade_id:str,revision:int|None=None):
 
 @app.get('/api/projects/{project_id}/color-grading/grades/{grade_id}/history')
 def color_grade_history(project_id:str,grade_id:str):
+    _retired_frame_color()
     return run(lambda:GradeWorkspace(studio).history(project_id,grade_id))
 
 @app.get('/api/projects/{project_id}/color-grading/sources/{source_id}/preview')
@@ -1178,6 +1220,7 @@ def color_grade_preview(
     green_gain:float=_GradeQuery(default=1.0,ge=0.7,le=1.3),
     blue_gain:float=_GradeQuery(default=1.0,ge=0.7,le=1.3),
 ):
+    _retired_frame_color()
     recipe=run(lambda:grade_recipe(
         **({} if mode=='before' else {
             'exposure_stops':exposure_stops,'contrast':contrast,'saturation':saturation,
@@ -1193,9 +1236,7 @@ def color_grade_preview(
 
 # GRADE-UI-02A — source-shot anchored advanced looks, measured post-ACES
 # scopes and exact per-shot RGB preview, all without creative approval.
-from backend.nvp_grade_advanced import (
-    AdvancedGradeWorkspace, validate_plan, neutral_wheels, make_plan,
-)
+# Retired old EXR/frame-bound codec dependency: from_backend.nvp_grade_advanced import (
 
 class AdvancedGradeSaveInput(BaseModel):
     source_id: str = Field(min_length=1,max_length=80)
@@ -1211,10 +1252,12 @@ class AdvancedGradePreviewInput(BaseModel):
 
 @app.get('/api/projects/{project_id}/color-grading/advanced/shots')
 def grade_advanced_shots(project_id:str, source_id:str):
+    _retired_frame_color()
     return run(lambda:AdvancedGradeWorkspace(studio).timeline(project_id,source_id))
 
 @app.post('/api/projects/{project_id}/color-grading/advanced/grades',status_code=201)
 def grade_advanced_save(project_id:str, payload:AdvancedGradeSaveInput):
+    _retired_frame_color()
     if payload.source_primaries_declared is not True:
         raise HTTPException(status_code=422,detail='Declare the actual scene-linear EXR source primaries before saving a shot look')
     return run(lambda:AdvancedGradeWorkspace(studio).save_advanced(
@@ -1222,6 +1265,7 @@ def grade_advanced_save(project_id:str, payload:AdvancedGradeSaveInput):
 
 @app.get('/api/projects/{project_id}/color-grading/advanced/grades/{grade_id}')
 def grade_advanced_read(project_id:str,grade_id:str,revision:int|None=None):
+    _retired_frame_color()
     result=run(lambda:AdvancedGradeWorkspace(studio).reopen_advanced(project_id,grade_id,revision))
     return {
         'id':grade_id,'revision':result['record']['revision'],
@@ -1233,12 +1277,13 @@ def grade_advanced_read(project_id:str,grade_id:str,revision:int|None=None):
 
 @app.post('/api/projects/{project_id}/color-grading/advanced/preview')
 def grade_advanced_preview(project_id:str,payload:AdvancedGradePreviewInput):
+    _retired_frame_color()
     return run(lambda:AdvancedGradeWorkspace(studio).render_scope_preview(
         project_id,payload.source_id,payload.frame,payload.plan))
 
 
 # GRADE-UI-02B1: source-linked HDR EV tone curves and non-applying reference advice.
-from backend.nvp_grade_curves import CurveGradeWorkspace
+# Retired old EXR/frame-bound codec dependency: from_backend.nvp_grade_curves import CurveGradeWorkspace
 
 class CurvePreviewInput(BaseModel):
     source_id: str = Field(min_length=1,max_length=80)
@@ -1260,17 +1305,20 @@ class MatchReferenceInput(BaseModel):
 
 @app.post('/api/projects/{project_id}/color-grading/curves/preview')
 def grade_curve_preview(project_id:str,payload:CurvePreviewInput):
+    _retired_frame_color()
     return run(lambda:CurveGradeWorkspace(studio).render_curve_preview(
         project_id,payload.source_id,payload.frame,payload.plan))
 
 @app.post('/api/projects/{project_id}/color-grading/curves/reference-suggestion')
 def grade_curve_reference(project_id:str,payload:MatchReferenceInput):
+    _retired_frame_color()
     return run(lambda:CurveGradeWorkspace(studio).compare_reference(
         project_id,payload.source_id,payload.target_frame,
         payload.reference_frame,payload.base_plan))
 
 @app.post('/api/projects/{project_id}/color-grading/curves/grades',status_code=201)
 def grade_curve_save(project_id:str,payload:CurveSaveInput):
+    _retired_frame_color()
     if payload.source_primaries_declared is not True:
         raise HTTPException(status_code=422,detail='Declare the original source EXR primaries before saving a curve draft')
     return run(lambda:CurveGradeWorkspace(studio).save_curve(
@@ -1279,6 +1327,7 @@ def grade_curve_save(project_id:str,payload:CurveSaveInput):
 
 @app.get('/api/projects/{project_id}/color-grading/curves/grades/{grade_id}')
 def grade_curve_reopen(project_id:str,grade_id:str,revision:int|None=None):
+    _retired_frame_color()
     row=run(lambda:CurveGradeWorkspace(studio).reopen_curve(
         project_id,grade_id,revision))
     return {'id':grade_id,'revision':row['record']['revision'],
@@ -1306,3 +1355,69 @@ def film_camera_source_snapshot(
 ):
     return run(lambda: _FilmCameraReadBridge(_FilmCameraIndex(studio)).snapshot(
         project_id,scene_id,revision,tick=source_tick,camera_path=camera_path))
+
+# DA-01 — New native scene authoring is exact Film Time, never 24 fps.
+# This is an EDITORIAL source-revision writer, not an implicit Digital Take
+# freeze or approved final 2D presentation. Frozen Take approval is available
+# exclusively through the trusted native desktop bridge.
+from backend.nvp_exact_time_shots import ExactTimeShotSequence as _NativeShots
+
+class NativeTimeShot(BaseModel):
+    shot_id: str = Field(min_length=1,max_length=80)
+    camera_path: str = Field(min_length=1,max_length=240)
+    start_tick: str = Field(min_length=1,max_length=20)
+    end_tick: str = Field(min_length=1,max_length=20)
+    pattern: str = Field(min_length=1,max_length=40)
+
+class NativeTimeShotRevision(BaseModel):
+    scene_id: str = Field(min_length=1,max_length=80)
+    scene_revision: int = Field(ge=1,le=1000000)
+    expected_revision: int = Field(ge=0,le=1000000)
+    duration_tick: str = Field(min_length=1,max_length=20)
+    shots: list[NativeTimeShot] = Field(min_length=1,max_length=128)
+
+@app.post('/api/projects/{project_id}/film/native-time-shots/{timeline_id}')
+def native_time_shots_publish(project_id: str,timeline_id: str,
+                              payload: NativeTimeShotRevision):
+    return run(lambda:_NativeShots(_FilmCameraIndex(studio)).publish(
+        project_id,timeline_id,
+        scene_id=payload.scene_id,
+        scene_revision=payload.scene_revision,
+        expected_revision=payload.expected_revision,
+        duration_tick=payload.duration_tick,
+        shots=[s.model_dump() for s in payload.shots]))
+
+@app.get('/api/projects/{project_id}/film/native-time-shots/{timeline_id}')
+def native_time_shots_read(project_id: str,timeline_id: str,
+                           revision: int|None = _FilmCameraQuery(default=None,ge=1,le=1000000)):
+    def resolved():
+        index=_FilmCameraIndex(studio)
+        target=revision if revision is not None else index.read_revision(
+            project_id,timeline_id)["revision"]
+        return _NativeShots(index).read(project_id,timeline_id,target)
+    return run(resolved)
+
+# DA-06 — color grading is structured non-destructive source/presentation
+# data. Old fixed-frame EXR/MOV grading APIs above are deliberately 410.
+from backend.nvp_native_color_decisions import NativeColorDecisions as _NativeColor
+
+class NativeColorPlanInput(BaseModel):
+    take_id: str = Field(min_length=1,max_length=80)
+    take_sha256: str = Field(min_length=64,max_length=64)
+    expected_revision: int = Field(ge=0,le=1000000)
+    parameters: dict[str,float]
+
+@app.post('/api/projects/{project_id}/film/native-color/{grade_id}')
+def native_color_publish(project_id:str,grade_id:str,
+                         payload:NativeColorPlanInput):
+    return run(lambda:_NativeColor(_FilmCameraIndex(studio)).publish(
+        project_id,grade_id,take_id=payload.take_id,
+        take_sha256=payload.take_sha256,
+        expected_revision=payload.expected_revision,
+        parameters=payload.parameters))
+
+@app.get('/api/projects/{project_id}/film/native-color/{grade_id}')
+def native_color_read(project_id:str,grade_id:str,
+                      revision:int|None=_FilmCameraQuery(default=None,ge=1,le=1000000)):
+    return run(lambda:_NativeColor(_FilmCameraIndex(studio)).read(
+        project_id,grade_id,revision))

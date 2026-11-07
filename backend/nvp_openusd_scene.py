@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
@@ -26,6 +27,21 @@ MAX_USD_LAYER_BYTES = 8 * 1024 * 1024
 # IEEE-754 double Usd.TimeCode. This spans ~14.8 days at our tick rate.
 MAX_USD_EXACT_TICK = 2**53 - 1
 ROLES = frozenset({"actor", "camera", "prop", "environment", "light", "anchor"})
+
+
+def _native_publish_checkpoint(stage):
+    """Opt-in, durable native crash locator; never writes scene/source content."""
+    target = os.environ.get("NVP_SMOKE_DIAGNOSTIC_PATH")
+    if not target:
+        return
+    path = Path(target)
+    if path.is_symlink():
+        raise RuntimeError("Refusing symlink diagnostic target")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write("NVP_SMOKE_STAGE usd_publish_" + stage + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
 
 
 def _usd():
@@ -79,6 +95,16 @@ def _compose(base, motion, Sdf, Usd, parameters=None, skeletons=None):
     if not stage:
         raise RuntimeError("Native OpenUSD composition returned no scene")
     stage.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
+    # The composed root is a new stronger anonymous layer. It must copy
+    # the immutable layout's authored global stage units/up-axis rather
+    # than returning the generic USD defaults (centimeters/Y-up). Keep
+    # the layout SHA unmodified; all statements are in-memory metadata.
+    from pxr import UsdGeom
+    original=Usd.Stage.Open(base,Usd.Stage.LoadNone)
+    if not original:
+        raise RuntimeError("Frozen layout stage cannot be reopened")
+    UsdGeom.SetStageMetersPerUnit(stage,UsdGeom.GetStageMetersPerUnit(original))
+    UsdGeom.SetStageUpAxis(stage,UsdGeom.GetStageUpAxis(original))
     return stage
 
 
@@ -121,9 +147,15 @@ class OpenUSDSceneBridge:
             raise ValueError("Scene prim/curve authoring budget exceeded")
         if type(native_schemas) is not bool:
             raise ValueError("Explicit native scene schema choice required")
+        _native_publish_checkpoint("before_pxr")
         Gf,Sdf,Usd,UsdGeom=_usd()
+        _native_publish_checkpoint("after_pxr")
+        _native_publish_checkpoint("before_layout_layer_create")
         base=Sdf.Layer.CreateAnonymous("nvp_layout.usda")
+        _native_publish_checkpoint("after_layout_layer_create")
+        _native_publish_checkpoint("before_stage_open")
         layout=Usd.Stage.Open(base)
+        _native_publish_checkpoint("after_stage_open")
         layout.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
         if native_schemas:
             from backend.nvp_openusd_native_schemas import METERS_PER_UNIT
@@ -134,6 +166,7 @@ class OpenUSDSceneBridge:
             UsdGeom.SetStageUpAxis(layout,UsdGeom.Tokens.z)
         UsdGeom.Xform.Define(layout,"/World")
         paths={}
+        _native_publish_checkpoint("before_prims")
         for value in prims:
             if type(value) is not dict or set(value)!={"path","role","position"}:
                 raise ValueError("Invalid typed scene prim")
@@ -143,6 +176,7 @@ class OpenUSDSceneBridge:
                 raise ValueError("Duplicate scene path or invalid semantic role")
             pos=_vector(value["position"])
             if native_schemas:
+                _native_publish_checkpoint("before_native_prim_" + role)
                 from backend.nvp_openusd_native_schemas import define_native_scene_prim
                 prim=define_native_scene_prim(layout,path,role)
             else:
@@ -164,6 +198,7 @@ class OpenUSDSceneBridge:
                     Gf.Vec3d(*pos)):
                 raise RuntimeError("Cannot author USD layout transform")
             paths[path]=role
+            _native_publish_checkpoint("after_prim_" + role)
         motion=Sdf.Layer.CreateAnonymous("nvp_performance.usda")
         moving=Usd.Stage.Open(motion)
         moving.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
@@ -227,7 +262,9 @@ class OpenUSDSceneBridge:
         if skeletal_rigs:
             from backend.nvp_openusd_skeleton import author_skeleton_layer
             skeleton_layer,rig_manifest=author_skeleton_layer(paths,skeletal_rigs)
+        _native_publish_checkpoint("before_compose")
         composed=_compose(base,motion,Sdf,Usd,parameter_layer,skeleton_layer)
+        _native_publish_checkpoint("after_compose")
         self._attach_assets(composed,bindings)
         for path in paths:
             _evaluate(composed,path,0,Sdf,Usd,UsdGeom)

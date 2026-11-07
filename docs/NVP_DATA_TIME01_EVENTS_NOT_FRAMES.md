@@ -4,6 +4,28 @@
 
 **Implementation status:** First typed temporal-event ledger, FilmIndex revision dependencies, sparse event queries and bounded derived presentation-time plans committed. Existing frame-based media import/editor and B14 conform are still separate legacy/media adapters; migration and full Digital Take integration remain OPEN.
 
+## DATA-AV-01 native A/V source migration — 2026-11-06
+
+The authoritative temporal event ledger and immutable OpenUSD Digital
+Take now feed a native FFmpeg-free audio evaluation path, using
+SHA-addressed original sound signals and bounded sample queries.
+`backend/nvp_data_av_source.py`, `nvp_data_av_scene.py`,
+`nvp_data_av_usd.py` and `nvp_data_av_desktop.py` supply recorded
+source windows, in-memory `UsdMedia.SpatialAudio` bindings, dry
+stereo listener mix and trusted on-demand audition. Captured sound
+assets are not synonymous with the flattened soundtrack; neither a
+WAV/BWF print nor a video frame sequence is the source of truth.
+
+All previous FFmpeg/indexed-video native runtime references in this
+document describe **optional conventional-media source adapters**
+and historical proof gates, not the current Digital Take player.
+The separate final 2D presentation may encode video/audio after
+the frozen source has been evaluated. Detailed active work:
+`docs/NVP_DATA_AV01_NATIVE_MIGRATION.md` and
+`docs/NVP_SOUND01_NATIVE_SPATIAL_AUDIO.md`.
+The new native 3D visual player, complete 3D acoustics and installed
+long-form acceptance remain open.
+
 ## Why this is important
 
 - One authored action can be reused for a 24fps cinema presentation, a 60fps preview, or a different artistic interpretation without rewriting its source time.

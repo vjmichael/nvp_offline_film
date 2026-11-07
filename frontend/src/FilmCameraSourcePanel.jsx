@@ -278,3 +278,4 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
           : 'Native Blender still rendering requires the installed desktop application. Preset and shot approval are not exposed to ordinary browsers.'}
     </p>}
   </section>;
+}
