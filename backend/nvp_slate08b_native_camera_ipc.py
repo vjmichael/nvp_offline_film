@@ -613,8 +613,14 @@ class TrustedDesktopCameraBridge:
                     "duration_tick":plan["duration_tick"],
                     "emitters":sources[:64],
                 })
+        from backend.nvp_capture_recovery import OriginalCaptureJournal
+        recovery=OriginalCaptureJournal(
+            self.index.studio.db_path.parent/"native-original-capture-recovery")
+        unapproved=recovery.catalog(project_id)
         return {"format":"nvp.data_av.live_camera_catalog.v1",
                 "status":"AVAILABLE","camera_timelines":choices,
+                "unapproved_capture_recovery":unapproved["items"],
+                "recovery_automatic_freeze":False,
                 "ffmpeg_used":False}
 
     def data_av_live_begin(self,request):
