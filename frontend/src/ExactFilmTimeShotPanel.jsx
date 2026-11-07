@@ -7,6 +7,16 @@ import React,{useEffect,useMemo,useState} from 'react';
 const T=7056000000n;
 const US=7056n;
 
+function secondsFromTicks(value){
+  const n=BigInt(value);
+  const whole=n/T, fraction=n%T;
+  if(fraction===0n)return whole.toString();
+  // Film Time has sub-microsecond resolution. Preserve the exact tick
+  // count as an explicit read-only value rather than rounding it in UI.
+  if(fraction%US!==0n)return null;
+  return whole.toString()+'.'+(fraction/US).toString().padStart(6,'0').replace(/0+$/,'');
+}
+
 function ticks(seconds){
   if(typeof seconds!=='string'||!/^(0|[1-9][0-9]{0,7})(?:\.\d{1,6})?$/.test(seconds))
     throw Error('Use nonnegative seconds with up to six decimal places.');
@@ -23,6 +33,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
   const [cameraPath,setCameraPath]=useState('');
   const [shots,setShots]=useState([]);
   const [duration,setDuration]=useState('60');
+  const [exactDuration,setExactDuration]=useState(null);
   const [start,setStart]=useState('0');
   const [seconds,setSeconds]=useState('3');
   const [pattern,setPattern]=useState('continuous');
@@ -61,7 +72,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
 
   useEffect(()=>{
     setCameraPath(source?.cameras?.[0]?.path||'');
-    setShots([]);setRevision(0);setTimelineSha('');setNotice('');
+    setShots([]);setRevision(0);setTimelineSha('');setExactDuration(null);setNotice('');
     if(!source)return;
     let active=true;
     api('/projects/'+encodeURIComponent(project.id)+
@@ -77,7 +88,9 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
           camera_path:s.camera_path,pattern:s.pattern,
           start_tick:s.start_tick,end_tick:s.end_tick})));
         setRevision(x.revision);setTimelineSha(x.document_sha256);
-        setDuration(String(BigInt(x.duration_tick)/T));
+        const display=secondsFromTicks(x.duration_tick);
+        setExactDuration(display===null?x.duration_tick:null);
+        if(display!==null)setDuration(display);
       }).catch(e=>{
         // A new scene has no timeline yet; do not convert/read old 24-fps
         // sequences as native source data by guessing their timing.
@@ -96,6 +109,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
       if(shots.length>=128)throw Error('Maximum 128 shot observations per sequence.');
       if(shots.length&&BigInt(first)<BigInt(shots.at(-1).end_tick))
         throw Error('Shots must not overlap; intentional empty-time gaps are supported.');
+      setTimelineSha(''); // Draft edits must never authorize freezing a stale saved revision.
       setShots(a=>[...a,{shot_id:'Shot'+String(a.length+1).padStart(3,'0'),
         camera_path:cameraPath,pattern,start_tick:first,end_tick:last}]);
       const micros=BigInt(last)/US;
@@ -110,6 +124,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
     if(!source||!shots.length||busy)return;
     setError('');setNotice('');
     try{
+      if(exactDuration!==null)throw Error('Exact sub-microsecond sequence duration is read-only until a precise-tick editor is available.');
       const requested=ticks(duration);
       const far=shots.reduce((a,s)=>BigInt(s.end_tick)>a?
         BigInt(s.end_tick):a,0n);
@@ -126,7 +141,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
            next.video_frames_created!==false||
            next.shots.length!==shots.length)
           throw Error('Published timeline did not preserve source identity.');
-        setRevision(next.revision);setTimelineSha(next.document_sha256);
+        setRevision(next.revision);setTimelineSha(next.document_sha256);setExactDuration(null);
         setNotice('Saved exact-time source revision '+next.revision+
           '. No frames, audio master or Digital Take generated.');
       });
@@ -192,7 +207,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
       <label>Film Time duration limit (seconds)
         <input value={duration} onChange={e=>setDuration(e.target.value)}/></label>
       <div className="actions">
-        <button disabled={busy||!shots.length||!source} onClick={save}>
+        <button disabled={busy||!shots.length||!source||exactDuration!==null} onClick={save}>
           Save immutable timing revision</button>
         <button disabled={busy||!shots.length} onClick={()=>{
           setShots(s=>s.slice(0,-1));setTimelineSha('');
