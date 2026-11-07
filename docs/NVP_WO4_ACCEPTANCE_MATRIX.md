@@ -109,3 +109,19 @@ The supervisor's first verified task is **read-only original media SHA verificat
 | Features, full DCP and physical release | Long 2K/4K multi-reel, PCM picture/sound integration, file-backed XML/DCP, installed service and independent cinema ingest | **OPEN** |
 
 Note that LF02's `OUTPUT_READY` is **only a verified disk-backed picture MXF candidate**. No full sound track, DCP AssetMap/PKL/CPL package, external DCI compliance or certified theatrical master is implied. A 3–7200 frame bounded reel is an intentional first production unit; concatenating two hours of cinematic material into one in-memory object remains disallowed. The native output's reviewed quarantine preserves the creator's files; uncommitted stages require explicit disposition rather than automatic deletion.
+
+
+## LF02/LF04 — supervised complete file-backed SMPTE DCP acceptance (2026-11-07)
+
+| Gate | New implementation / test | Exact acceptance |
+| --- | --- | --- |
+| Sound MXF in same job | `nvp_wo4_supervised_sound.py` binds the prior approved 24-bit 48 kHz WAV and exact PCM SHA to the verified original mastering decision, streams a private copy, invokes SHA-pinned CineCert wrapper/info through OS process-tree supervisor, and commits output SHA + size in the existing SQLite job | **Code committed. Latest Windows/Linux + real native CI pending** |
+| Complete file-backed DCP publisher | `nvp_wo4_file_dcp.py` streams the two real file-backed MXFs in bounded blocks into private stage, generates genuine CPL/PKL/AssetMap/VOLINDEX, independently audits PKL and full hashes, and promotes only with OS atomic no-overwrite directory primitive | **Code committed; structural fake-MXF unit tests pending** |
+| Two durable final commits | `CinemaDeliveryJournal.commit_package` records published directory and hash manifest; `commit_filmindex` reopens original FilmIndex, verifies Take/mastering decision and all original WAV/XYZ12/J2K/MXF SHAs, commits exact immutable project revision and is idempotent across crash after FilmIndex commit/before journal update | **Code committed; restart tests pending** |
+| Proven actual source + decode | Extended `test_nvp_production_cinema_real.py` continues from prior independently verified genuine 2K OpenJPEG/CineCert picture track through real supervised sound MXF, full SMPTE package, 3 additional independent supervisor processes, FilmIndex receipt and full J2K/PCM decode | **New-head real Linux codec CI queued; old picture-only 2K PASS must not certify new sound/DCP stages** |
+| Explicit cancel before publish | New separate creator-confirmed delivery cancellation, no cancelled sound/MXF checkpoint; retroactive cancel of `DCP_PUBLISHED` or `DCP_INDEXED` refused | **Code committed; native CI pending** |
+| Crash after promotion but before journal | Existing final folder retained and job put into `REVIEW_REQUIRED` without silently trusting, deleting or automatically relinking it | **Code committed; exact native tests pending** |
+| Crash after FilmIndex commit but before final journal | Reads the existing exact immutable FilmIndex record and verifies equality instead of duplicate-revision publication | **Code committed; exact native tests pending** |
+| Native installed 2–3 h feature and independent theatrical mastering | Multi-reel/4K performance, OS service deployment, trusted desktop binding, Win suspended-first-job containment, installed binary licenses, independent SMPTE schema/true peak/color/projector validator | **OPEN** |
+
+The full DCP output is still a **source-bound structural candidate**. Correct native MXF wrapping/decoding and SMPTE PKL consistency do not establish formal DCI certification, projector calibration or physical exhibition acceptance. An orphaned final DCP published before journal commit requires a future trusted, creator-approved review disposition rather than automatic overwrite or removal.
