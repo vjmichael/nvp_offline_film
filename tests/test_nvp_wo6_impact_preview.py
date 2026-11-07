@@ -19,6 +19,7 @@ from backend.nvp_film_index import FilmIndex
 from backend.nvp_scene_mind import SceneMind
 from backend.nvp_studio import Studio
 from backend.nvp_story_bible import StoryBible
+from backend.nvp_temporal_ledger import TemporalLedger
 from backend.nvp_wo6_impact_preview import (
     FORMAT, _indexed_consumers, preview_source_impact)
 
@@ -130,6 +131,22 @@ class OriginalSourceImpactAndApprovedBibleTests(unittest.TestCase):
         for name,historical in histories.items():
             self.assertEqual(self.index.history(self.pid,name),historical)
 
+    def test_normalized_temporal_event_consumer_is_included_without_duplicate(self):
+        ledger=TemporalLedger(self.index)
+        ledger.publish(
+            self.pid,"CameraActions",[
+                {"event_id":"ActiveCamera","event_kind":"camera",
+                 "subject_id":"Camera","start_tick":0,"end_tick":100,
+                 "source_id":"RelayScene","source_revision":1,
+                 "payload":{"camera":"wide"}}
+            ],duration_tick=200)
+        chain=self.preview()
+        ids=[x["object_id"] for x in chain["indexed_downstream"]]
+        self.assertEqual(ids.count("CameraActions"),1)
+        self.assertIn("CameraActions",ids)
+        self.assertEqual(next(x["depth"] for x in chain["indexed_downstream"]
+                              if x["object_id"]=="CameraActions"),1)
+
     def test_bible_fact_change_requires_exact_accepted_fact_and_known_scene(self):
         result=preview_source_impact(
             self.index,self.pid,"RelayScene",1,self.scene["document_sha256"],
@@ -203,7 +220,9 @@ class OriginalSourceImpactAndApprovedBibleTests(unittest.TestCase):
                 self.index,self.pid,"RelayScene",1,"0"*64,
                 "revise_scene")
         with self.assertRaises(ValueError):
-            self.preview(change_kind="republish_dcp")
+            preview_source_impact(
+                self.index,self.pid,"RelayScene",1,
+                self.scene["document_sha256"],"republish_dcp")
         with self.assertRaises(RuntimeError):
             self.preview(expected_bible_digest="0"*64)
         other=self.studio.create_project("Other","")["id"]
