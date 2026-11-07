@@ -36,7 +36,9 @@ class ApprovedCodecBinary:
         if (not file.is_absolute() or file.is_symlink() or
             not file.is_file() or type(sha256) is not str or
             len(sha256)!=64 or any(c not in "0123456789abcdef" for c in sha256) or
-            product not in ("OpenJPEG-opj_compress","ASDCP-asdcp_wrap","ASDCP-asdcp_info")):
+            product not in ("OpenJPEG-opj_compress","OpenJPEG-opj_decompress",
+                            "ASDCP-asdcp_wrap","ASDCP-asdcp_info",
+                            "ASDCP-asdcp_unwrap")):
             raise PermissionError("Only a registered reviewed native codec binary")
         self.executable=file.resolve(strict=True)
         self.sha256=sha256
