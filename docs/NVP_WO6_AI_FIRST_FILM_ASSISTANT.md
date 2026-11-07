@@ -19,8 +19,8 @@ A director requesting a different Take from the final DCP must preserve: `publis
 | **WO6-02** | Native FeatureJournal-backed origin resolver: reruns WO5's full indexed DCP/Take/PCM/J2K source audit, reports original per-reel Take/scene/temporal SHA and Film Time; host-injected only, read-only. Missing/retired/altered sources are refused. | **IMPLEMENTED, CI verdict pending; genuine 30m film still open.** |
 | **WO6-03** | Trusted-host scene/actor/camera/sound/shot/script/accepted-canon context from reopened frozen Takes, exact Film Time, bounded SHA provenance and omissions; native installed binary/license pin preflight. Full model/runtime readiness and installed app integration are later gates. | **IMPLEMENTED, exact-head native CI verdict pending.** |
 | **WO6-04** | Read-only SHA-pinned source-to-Take/edit/master/DCP impact graph, exact accepted Production Bible digest and typed fact continuity, separate director grants, optional 2K/4K 2/6/8ch capacity estimate, source-race/truncation refusal. | **IMPLEMENTED; exact-head CI verdict pending; installed creator UI remains WO6-07.** |
-| **WO6-05** | Native creator-confirmed action bridge: exact original scene+timeline -> NEW immutable OpenUSD Take through durable approved task queue, contained worker and separate creator/host checks. Other editing/audio/delivery native actions remain pending. | **INITIAL OPERATION IMPLEMENTED; native CI/installed acceptance OPEN.** |
-| **WO6-06** | Unified read-only receipts for worker progress, cancellation, crash/restart reconciliation, source-vs-derivative status and filmmaker-facing errors; never fabricate finished-film evidence. | **OPEN.** |
+| **WO6-05** | Native creator-confirmed operation bridges: new immutable OpenUSD Take plus distinct camera, blocking and lighting shot-local opinions. Separate human/host grants and contained workers. Sound/edit/color/DCP operations later. | **IMPLEMENTED FOR FOUR OPERATION CLASSES; CI AND INSTALLED ACCEPTANCE OPEN.** |
+| **WO6-06** | Durable per-task cancellation, atomic success/cancel fencing, single-supervisor lease, snapshot/events and restart/source-commit reconciliation receipts. | **INITIAL IMPLEMENTATION COMMITTED; NATIVE CI, INDEPENDENT PROCESS-TREE ATTESTATION AND INSTALLED RESTART GATES OPEN.** |
 | **WO6-07** | End-to-end novice-and-professional desktop/installed AI-assisted scene/Take/edit/sound/render/review workflow with actual local model tests, camera/actor direction and performance/film-quality review. | **OPEN; depends on previous gates and real film assets.** |
 
 WO4 and WO5 remain independently **OPEN** for genuine full-resolution 30-minute original film, sustained installed picture and mastered audio, 60–90-minute actual feature, >=3-hour epic, native legally bundled release and independently validated SMPTE DCP Bv2.1/theater ingest.
@@ -201,3 +201,52 @@ preworker mutation. Windows and Linux, Python 3.11 and 3.13, through
 accepted. Windows protected worker launch additionally installs pywin32.
 WO6-06/07, WO5 actual sustained installed A/V, original 30-minute
 rendered film and Bv2.1 independent cinema gates remain OPEN.
+
+## WO6-05/06 implementation follow-up — camera/blocking/light operations and durable recovery
+
+`backend/nvp_wo6_native_shot_action.py` and
+`tools/nvp_wo6_shot_worker.py` extend the native, creator-confirmed action
+pattern beyond Take creation using the existing
+`OpenUSDShotOverrides.publish`. Three explicit typed operations are supported:
+(1) camera shot optics/position, (2) actor/prop blocking/eyeline and
+(3) native light-intensity/position/visibility. Each pins the current source
+scene SHA and original immutable Take SHA, original WO6-04 typed-impact SHA,
+exact Film Time interval and bounded role-specific property changes. It
+normalizes real OpenUSD properties before human confirmation and refuses
+invented prims/camera/actor identities. The worker writes a **new**, separately
+verified shot-local OpenUSD layer/FilmIndex presentation revision, never
+mutating frozen Takes or declaring a rendered/delivered picture. No AI execute
+capability was added. All native actions use separate human creator and host
+permissions, durable queued specs, worker SHA pins, resource admission,
+bounded timeouts and existing OS containment.
+
+`backend/nvp_wo6_recovery.py` adds durable WO6 cancel intent and
+source-evidence journals on the **existing TaskLedger SQLite** connection,
+not a new model memory store. Pending cancellation is persisted and reread
+during native operation; queued cancellation never starts a worker. Atomic
+native success publication is fenced against late cancellation under the
+same SQLite write transaction. `WorkerHostLease` serializes worker execution
+and recovery, and a native OS-owned **positive tree-stopped attestor** is
+mandatory before an ACTIVE reservation can be marked stopped and reopened
+source evidence is reconciled.
+
+The recovery evidence distinguishes NO_SOURCE_COMMIT_FOUND, real reopened
+COMMITTED_SOURCE_WITHOUT_WORKER_RECEIPT, genuine verified immutable commit
+with correctly bound worker receipt, and tampered/mismatched source or sealed
+task. An interrupted job is **not automatically retried, treated as
+SUCCEEDED, declared rolled back or granted film-release approval**. Read-only
+status exposes original native TaskLedger events, cancellation and the latest
+explicit reconciliation report with truthful unknown/stale states.
+
+New Windows/Linux Python 3.11/3.13 test matrix includes actual contained
+camera/blocking/lighting OpenUSD source operations
+(`tests/test_nvp_wo6_native_shot_action.py`) and negative/multi-step
+cancellation, kernel lease, startup failure, crash-after-FilmIndex-commit
+without receipt, persisted event/receipt, and late-cancel tests
+(`tests/test_nvp_wo6_recovery.py`). All remain **pending actual exact-head
+CI results**, not automatically accepted because code is committed. Further
+required work: independent native OS tree-stop attestation in the installed
+host; release-grade per-turn policy adapters and creator GUI; durable
+crash/restart reconciliation against real installed NVP.exe; native editing,
+sound/PCM mastering, color and DCP action bridges; model-in-the-loop end-to-end
+filmmaking. The real WO5 cinema/film gates are unchanged and OPEN.
