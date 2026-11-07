@@ -205,6 +205,20 @@ def create_trusted_camera_bridge(port):
         finished_codec_provider=desktop_finished_decoder_provider(bundle_root()))
 
 
+def _native_window_stage(message):
+    """Persist installed-source UI progress before timeouts or hard exit."""
+    destination=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+    if not destination or type(message) is not str or len(message)>96:
+        return
+    path=Path(destination)
+    if not path.is_absolute() or path.is_symlink() or not path.parent.is_dir():
+        return
+    with path.open("a",encoding="utf8") as stream:
+        stream.write("NVP_INSTALLED_WINDOW_STAGE="+message+"\\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
 def run_visible_window_smoke():
     """Installed real WebView2 + native OpenUSD source panel smoke.
 
@@ -213,10 +227,12 @@ def run_visible_window_smoke():
     """
     import webview
     from threading import Event
+    _native_window_stage("source_smoke_enter")
     test_home=Path(tempfile.mkdtemp(prefix="nvp-slate08b-installed-"))
     old_home=os.environ.get("NVP_HOME")
     os.environ["NVP_HOME"]=str(test_home)
     try:
+        _native_window_stage("create_source_app")
         app=create_app()
         from backend.nvp_api import studio
         from backend.nvp_film_index import FilmIndex
@@ -291,7 +307,9 @@ def run_visible_window_smoke():
                 scene_revision=1,timeline_id="smoke_events",
                 timeline_revision=1,sample_ticks=[0],
                 creator_event="smoke_only")
+        _native_window_stage("original_source_take_frozen")
         server,worker,port,sock=serve(app)
+        _native_window_stage("original_source_service_ready")
     except BaseException:
         if old_home is None: os.environ.pop("NVP_HOME",None)
         else: os.environ["NVP_HOME"]=old_home
@@ -323,9 +341,11 @@ def run_visible_window_smoke():
             "http://127.0.0.1:"+str(port),width=1000,height=700,
             js_api=bridge)
         bridge._attach_window(window)
+        _native_window_stage("native_source_webview_window_created")
         window.events.loaded += lambda:loaded.set()
         def inspect_and_close():
             try:
+                _native_window_stage("source_webview_inspection_started")
                 if not loaded.wait(timeout=25):
                     raise RuntimeError("Native WebView2 did not fire page-loaded event")
                 # HTML loaded is insufficient: require actual React DOM mount.
@@ -558,9 +578,13 @@ def run_visible_window_smoke():
                     raise RuntimeError("Bundled NVP React interface did not render")
             except Exception as exc:
                 result["failure"]=str(exc)
+                _native_window_stage("source_webview_inspection_failed")
             finally:
+                _native_window_stage("source_webview_destroy_request")
                 window.destroy()
+        _native_window_stage("source_webview_message_loop_start")
         webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
+        _native_window_stage("source_webview_message_loop_returned")
         if not result["passed"]:
             raise RuntimeError(
                 "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
@@ -570,6 +594,7 @@ def run_visible_window_smoke():
         from backend.nvp_wo2_hardware_evidence import collect_windows_gpu_evidence
         import json
         result["native_windows_gpu_evidence"]=collect_windows_gpu_evidence()
+        _native_window_stage("source_webview_full_acceptance_finished")
         print("NVP_WO2_HARDWARE_EVIDENCE="+json.dumps(
             result["native_windows_gpu_evidence"],sort_keys=True),flush=True)
         return 0
