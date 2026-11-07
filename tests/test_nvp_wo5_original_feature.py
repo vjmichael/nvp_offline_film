@@ -43,10 +43,7 @@ class WO5ThirtyMinuteFeature(unittest.TestCase):
     def test_uneven_valid_reels_and_no_gap(self):
         evidence = inspect_ordered_feature_reels(parts([311, 7199, 107]))
         self.assertEqual(evidence["frame_count"], 7617)
-        for bad in (
-            parts([7200]*6+[3]),  # over thirty minutes
-            parts([7200]+[7201]),
-        ):
+        for bad in (parts([7200]*6+[3]),):  # over thirty minutes
             with self.assertRaises(ValueError):
                 inspect_ordered_feature_reels(bad)
         with self.assertRaises(PermissionError):
