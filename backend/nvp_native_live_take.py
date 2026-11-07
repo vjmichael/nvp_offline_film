@@ -105,6 +105,8 @@ class NativeLiveSoundSession:
         return scene["data"]["prim_roles"]
 
     def _append(self,samples):
+        if self._error is not None or self._state not in ("AUTHORIZING","RECORDING"):
+            return
         if not isinstance(samples,array.array) or samples.typecode!="h":
             self._error=RuntimeError("Capture callback returned non-PCM16 frames")
             return
@@ -230,10 +232,20 @@ class NativeLiveSoundSession:
                     "actual_audio_end_tick":str(end),
                     "device_runtime":"native_miniaudio_pcm",
                     "source_modified":False}
+        except Exception:
+            self._state="FAILED"
+            raise
         finally:
-            self._cleanup()
+            if self._worker is None or not self._worker.is_alive():
+                self._cleanup()
+            else:
+                # Do not delete a spool still owned by the recorder thread.
+                self._state="RECOVERY_REQUIRED"
 
     def _cleanup(self):
+        if self._worker is not None and self._worker.is_alive():
+            self._state="RECOVERY_REQUIRED"
+            raise RuntimeError("Cannot remove live source spool while writer remains active")
         if self._tmp is not None:
             self._tmp.cleanup()
             self._tmp=None
@@ -251,7 +263,12 @@ class NativeLiveSoundSession:
                     raise RuntimeError("Cannot prove native microphone worker terminated")
                 self._worker=None
         finally:
-            self._cleanup()
+            if self._worker is None or not self._worker.is_alive():
+                self._cleanup()
+            else:
+                self._state="RECOVERY_REQUIRED"
+        if self._state=="RECOVERY_REQUIRED":
+            raise RuntimeError("Native recorder cleanup requires host reconciliation")
         self._state="CANCELLED"
         return {"format":FORMAT,"status":"CANCELLED",
                 "take_created":False,"source_modified":False}

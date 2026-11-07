@@ -3,9 +3,9 @@
 No FFmpeg, Blender, video decoder, 2D source-frame index or external code
 execution. Verified FilmIndex/OpenUSD primitive shapes and exact-time USD
 world transforms are projected through the chosen real authored camera.
-This restricted renderer handles cubes/spheres and blank authored gaps:
-unsupported real character meshes/materials refuse production use instead
-of forging them. Pillow encodes the disposable derived PNG on demand.
+This restricted renderer handles verified cubes/spheres, bounded authored
+triangle geometry and blank camera gaps. It cannot certify material textures,
+rigged/skinned character performance, professional shading or calibrated color. Pillow encodes the disposable derived PNG on demand.
 
 This is a first procedural geometry acceptance backend, NOT a general
 Hydra renderer, calibrated color pipeline or completed cinema master.
@@ -141,6 +141,28 @@ class NativeSourceRaster:
                     shade=round(185*brightness)
                     primitives.append((avg,"polygon",[(p[0],p[1]) for p in pts],
                                        (shade,shade,shade)))
+            elif obj["shape"]=="mesh":
+                points=obj["mesh_points"]
+                faces=obj["mesh_triangles"]
+                if (type(points) is not list or type(faces) is not list or
+                        not 3<=len(points)<=2048 or
+                        not 1<=len(faces)<=4096):
+                    raise RuntimeError("Unverified source USD mesh topology")
+                projected=[_project(_apply(matrix,p),inverse,focal)
+                           for p in points]
+                for number,triangle in enumerate(faces):
+                    if (len(triangle)!=3 or
+                            any(type(i) is not int or
+                                i<0 or i>=len(projected) for i in triangle)):
+                        raise RuntimeError("Corrupted indexed USD triangle")
+                    vertices=[projected[i] for i in triangle]
+                    if any(p is None for p in vertices):
+                        continue
+                    avg=sum(v[2] for v in vertices)/3.0
+                    shade=170+(number%4)*8
+                    primitives.append((avg,"polygon",
+                        [(p[0],p[1]) for p in vertices],
+                        (shade,shade,shade)))
             elif obj["shape"]=="sphere":
                 center=_project(_apply(matrix,(0,0,0)),inverse,focal)
                 if center is None:continue
