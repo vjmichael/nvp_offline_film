@@ -37,11 +37,15 @@ class SMPTEIntegrityTests(unittest.TestCase):
         field(cpl,NS_CPL,"Id",self.ids["cpl"])
         reels=ET.SubElement(cpl,"{"+NS_CPL+"}ReelList")
         reel=ET.SubElement(reels,"{"+NS_CPL+"}Reel")
+        field(reel,NS_CPL,"Id",uid())
         assets=ET.SubElement(reel,"{"+NS_CPL+"}AssetList")
-        field(ET.SubElement(assets,"{"+NS_CPL+"}MainPicture"),
-              NS_CPL,"Id",self.ids["pic"])
-        field(ET.SubElement(assets,"{"+NS_CPL+"}MainSound"),
-              NS_CPL,"Id",self.ids["snd"])
+        for tag,key in (("MainPicture","pic"),("MainSound","snd")):
+            track=ET.SubElement(assets,"{"+NS_CPL+"}"+tag)
+            field(track,NS_CPL,"Id",self.ids[key])
+            field(track,NS_CPL,"EditRate","24 1")
+            field(track,NS_CPL,"IntrinsicDuration",3)
+            field(track,NS_CPL,"EntryPoint",0)
+            field(track,NS_CPL,"Duration",3)
         self.files["CPL.xml"]=ET.tostring(
             cpl,encoding="utf-8",xml_declaration=True)
         pkl=ET.Element("{"+NS_PKL+"}PackingList")
@@ -77,6 +81,7 @@ class SMPTEIntegrityTests(unittest.TestCase):
             field(chunk,NS_AM,"Path",name)
             field(chunk,NS_AM,"VolumeIndex",1)
             field(chunk,NS_AM,"Offset",0)
+            field(chunk,NS_AM,"Length",len(self.files[name]))
         self.files["ASSETMAP.xml"]=ET.tostring(
             assetmap,encoding="utf-8",xml_declaration=True)
         for name,data in self.files.items():
@@ -94,6 +99,43 @@ class SMPTEIntegrityTests(unittest.TestCase):
         self.assertFalse(report["jpeg2000_xyz12_verified"])
         self.assertFalse(report["independent_dci_compliance_verified"])
         self.assertFalse(report["production_dcp_accepted"])
+
+    def test_bad_assetmap_chunk_length_fails_even_when_pkl_sha_matches(self):
+        tree=ET.parse(self.root/"ASSETMAP.xml")
+        chunk=tree.getroot().find(
+            ".//{"+NS_AM+"}Chunk/{"+NS_AM+"}Length")
+        chunk.text=str(int(chunk.text)+1)
+        tree.write(self.root/"ASSETMAP.xml",encoding="utf-8")
+        with self.assertRaises(ValueError):
+            inspect_dcp_structure(self.root)
+
+    def test_unequal_picture_sound_cpl_duration_fails(self):
+        tree=ET.parse(self.root/"CPL.xml")
+        picture=tree.getroot().find(
+            ".//{"+NS_CPL+"}MainPicture/{"+NS_CPL+"}Duration")
+        picture.text="2"
+        tree.write(self.root/"CPL.xml",encoding="utf-8")
+        # Rebind the CPL PKL hash to isolate duration validation.
+        altered=(self.root/"CPL.xml").read_bytes()
+        pkl=ET.parse(self.root/"PKL.xml")
+        for asset in pkl.getroot().findall(
+                ".//{"+NS_PKL+"}Asset"):
+            if asset.find("{"+NS_PKL+"}Id").text==self.ids["cpl"]:
+                asset.find("{"+NS_PKL+"}Size").text=str(len(altered))
+                asset.find("{"+NS_PKL+"}Hash").text=base64.b64encode(
+                    sha1(altered).digest()).decode("ascii")
+        pkl.write(self.root/"PKL.xml",encoding="utf-8")
+        # Update AssetMap's PKL and CPL chunk sizes as well.
+        am=ET.parse(self.root/"ASSETMAP.xml")
+        for asset in am.getroot().findall(".//{"+NS_AM+"}Asset"):
+            uid_text=asset.find("{"+NS_AM+"}Id").text
+            if uid_text in (self.ids["cpl"],self.ids["pkl"]):
+                target="CPL.xml" if uid_text==self.ids["cpl"] else "PKL.xml"
+                asset.find(".//{"+NS_AM+"}Length").text=str(
+                    (self.root/target).stat().st_size)
+        am.write(self.root/"ASSETMAP.xml",encoding="utf-8")
+        with self.assertRaisesRegex(ValueError,"durations disagree"):
+            inspect_dcp_structure(self.root)
 
     def test_corrupted_mxf_fails_before_any_acceptance(self):
         (self.root/"picture.mxf").write_bytes(b"CORRUPTED")
