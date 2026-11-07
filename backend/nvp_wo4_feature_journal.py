@@ -443,8 +443,9 @@ class FeatureJournal(CinemaDeliveryJournal):
                 filename=f"{kind}_{i:04d}.mxf"
                 names.add(filename)
                 original=part[kind]
-                if (digest_file(folder/filename)!=original["file_sha256"] or
-                        (folder/filename).is_symlink()):
+                if ((folder/filename).is_symlink() or
+                        not (folder/filename).is_file() or
+                        digest_file(folder/filename)!=original["file_sha256"]):
                     raise PermissionError("Feature MXF differs from verified original reel")
                 expected_tracks.add((kind,original["asset_uuid"]))
         if {p.name for p in folder.iterdir()}!=names:
