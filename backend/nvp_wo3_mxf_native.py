@@ -88,6 +88,8 @@ def wrap_cinema_picture(wrap:ApprovedCodecBinary,info:ApprovedCodecBinary,
         raise PermissionError("Pinned asdcplib SMPTE wrapper required")
     uid=_uuid_v4(asset_uuid)
     origin=_frame_receipts(frames,profile)
+    if len(frames)<3:
+        raise ValueError("CineCert asdcp-info currently requires >=3 frames to avoid a native bitrate fault")
     with tempfile.TemporaryDirectory(prefix="nvp-wo3-mxf-pic-") as tmp:
         root=Path(tmp);in_dir=root/"source_j2c";in_dir.mkdir()
         for i,frame in enumerate(frames):
@@ -121,6 +123,8 @@ def wrap_cinema_pcm(wrap:ApprovedCodecBinary,info:ApprovedCodecBinary,
         not 1<=frame_count<=MAX_REEL_FRAMES):
         raise PermissionError("Real 24-bit source WAV and pinned wrapper required")
     uid=_uuid_v4(asset_uuid)
+    if frame_count<3:
+        raise ValueError("Current native MXF verification minimum is three frames")
     with tempfile.TemporaryDirectory(prefix="nvp-wo3-mxf-snd-") as tmp:
         root=Path(tmp);wav=root/"source.wav";wav.write_bytes(wav_bytes)
         with wave.open(str(wav),"rb") as handle:
