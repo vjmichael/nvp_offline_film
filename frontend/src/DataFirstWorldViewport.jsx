@@ -121,9 +121,17 @@ export function validateMaterialSlots(item){
   return slots;
 }
 
-function disposeMeshMaterial(material){
+function disposeMeshMaterial(material,cache=null){
   for(const entry of Array.isArray(material)?material:[material]){
-    if(entry?.map)entry.map.dispose();
+    const map=entry?.map;
+    if(map){
+      const digest=entry.userData?.originalTextureSha;
+      const stored=digest&&cache?.get(digest);
+      if(stored&&stored.texture===map){
+        stored.refs-=1;
+        if(stored.refs<=0){map.dispose();cache.delete(digest);}
+      }else map.dispose();
+    }
     entry?.dispose();
   }
 }
@@ -247,6 +255,44 @@ export default function DataFirstWorldViewport({
     let scene=null;
     let disposed=false;
     const meshes=new Map();
+    const textureCache=new Map();
+    const MAX_GPU_TEXTURES=16;
+    const MAX_GPU_TEXELS=16*1024*1024/4;
+    let gpuTexels=0;
+    const acquireTexture=(transport)=>{
+      const sha=transport.sha256;
+      const current=textureCache.get(sha);
+      if(current){
+        current.refs++;
+        return current.texture;
+      }
+      const pixels=transport.width*transport.height;
+      if(textureCache.size>=MAX_GPU_TEXTURES||
+         gpuTexels+pixels>MAX_GPU_TEXELS)
+        throw Error('Native texture resource budget exceeded');
+      const tex=new THREE.TextureLoader().load(
+        'data:image/png;base64,'+transport.png_base64,
+        ()=>{if(!disposed)requestRender();});
+      tex.colorSpace=THREE.SRGBColorSpace;
+      tex.wrapS=THREE.RepeatWrapping;
+      tex.wrapT=THREE.RepeatWrapping;
+      tex.magFilter=THREE.NearestFilter;
+      tex.minFilter=THREE.NearestFilter;
+      tex.flipY=true;
+      textureCache.set(sha,{texture:tex,refs:1,pixels});
+      gpuTexels+=pixels;
+      return tex;
+    };
+    const releaseMaterial=material=>{
+      const keys=Array.isArray(material)?material:[material];
+      for(const entry of keys){
+        const digest=entry?.userData?.originalTextureSha;
+        const current=digest?textureCache.get(digest):null;
+        const pixels=(current?.refs===1)?current.pixels:0;
+        disposeMeshMaterial(entry,textureCache);
+        gpuTexels-=pixels;
+      }
+    };
     try{
       renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,
         powerPreference:'low-power'});
@@ -320,7 +366,7 @@ export default function DataFirstWorldViewport({
       if(controls)controls.dispose();
       for(const mesh of meshes.values()){
         if(mesh.geometry)mesh.geometry.dispose();
-        disposeMeshMaterial(mesh.material);
+        releaseMaterial(mesh.material);
       }
       if(renderer){
         if(env.current?.detachDeviceHandlers)env.current.detachDeviceHandlers();
@@ -393,17 +439,8 @@ export default function DataFirstWorldViewport({
             side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
               THREE.DoubleSide:THREE.FrontSide});
           if(transport){
-            const tex=new THREE.TextureLoader().load(
-              'data:image/png;base64,'+transport.png_base64,
-              ()=>state.requestRender());
-            tex.colorSpace=THREE.SRGBColorSpace;
-            tex.wrapS=THREE.RepeatWrapping;
-            tex.wrapT=THREE.RepeatWrapping;
-            tex.magFilter=THREE.NearestFilter;
-            tex.minFilter=THREE.NearestFilter;
-            // USD st v=0 is bottom of the original PNG.
-            tex.flipY=true;
-            material.map=tex;
+            material.map=acquireTexture(transport);
+            material.userData.originalTextureSha=transport.sha256;
             material.needsUpdate=true;
           }
           const slots=validateMaterialSlots(obj);
