@@ -116,6 +116,13 @@ class CinemaJournal(ProductionJournal):
                 source_take["document_sha256"]!=data["source_take_sha256"] or
                 source_take["data"].get("frozen") is not True):
             raise PermissionError("Original frozen Digital Take differs")
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        attested=OpenUSDTakeCapture(
+            index,verify_creator_action=lambda *_:False
+        ).verify_take(pid,data["source_take_id"])
+        if (attested["status"]!="VERIFIED_FROZEN_DATA_TAKE" or
+                attested["take_document_sha256"]!=data["source_take_sha256"]):
+            raise PermissionError("Digital Take's native USD and temporal sources differ")
         shas=data.get("ordered_picture_sha256")
         profile=data.get("picture_profile")
         if (profile not in PROFILES or type(shas) is not list or
