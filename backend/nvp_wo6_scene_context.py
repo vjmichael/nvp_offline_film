@@ -85,9 +85,10 @@ def assemble_film_crew_context(
     doc = take["data"]
     if (take["kind"] != "take" or doc.get("format") != TAKE_FORMAT or
             doc.get("frozen") is not True or
-            type(doc.get("duration_tick")) is not int or
-            not 0 <= tick < doc["duration_tick"]):
-        raise PermissionError("Not a valid frozen OpenUSD Take at selected Film Time")
+            type(doc.get("duration_tick")) is not int):
+        raise PermissionError("Not a valid frozen OpenUSD Take")
+    if tick >= doc["duration_tick"]:
+        raise ValueError("Requested Film Time exceeds frozen source duration")
     # Reopens the actual native layers, temporal source references and
     # saved Take checkpoints. This must not silently accept plausible
     # metadata from an unreopened source.
