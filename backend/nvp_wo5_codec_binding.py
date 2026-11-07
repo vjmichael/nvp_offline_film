@@ -35,6 +35,19 @@ def pinned_codec_pair(root,manifest,expected_manifest_sha256):
     if sha256(canonical).hexdigest()!=expected_manifest_sha256:
         raise PermissionError("Installed decoder manifest differs from build pin")
     record=verify_native_codec_bundle(root,manifest)
+    # Release alpha uses fully static reviewed tools. Reject unmanifested
+    # DLLs/aliases/files rather than trusting a hash of the EXE while
+    # Windows loads an unreviewed same-directory native dependency.
+    allowed={"nvp-codec-manifest.json"}
+    for entry in record["tools"].values():
+        allowed.add(entry["filename"])
+    for entry in manifest["tools"].values():
+        allowed.add(entry["license_notice"])
+    root=Path(root)
+    if (set(path.name for path in root.iterdir())!=allowed or
+            any(path.is_symlink() or not path.is_file()
+                for path in root.iterdir())):
+        raise PermissionError("Unreviewed native codec dependency or staged extra file")
     roles=record["tools"]
     root=Path(root).resolve(strict=True)
     result=[]
