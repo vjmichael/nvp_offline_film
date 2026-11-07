@@ -179,6 +179,39 @@ class OriginalSceneLook:
             raise PermissionError("Original source scene revision changed")
         return record
 
+    def _check_material_sources(self,pid,source,checked):
+        """Ensure every proposed UV edit names a real SHA-verified image.
+
+        A model or user cannot make a plausible-looking material look by
+        connecting a nonexistent channel or mixing fractional opacity
+        with a previously cutout-masked original source.
+        """
+        from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+        assets=OpenUSDAssetRegistry(self.index)
+        channels={}
+        for binding in source["data"].get("asset_bindings",[]):
+            rec,_=assets.open(pid,binding["asset_id"],
+                              binding["asset_revision"])
+            if rec["document_sha256"]!=binding["asset_document_sha256"]:
+                raise PermissionError("Presentation target original asset changed")
+            material=rec["data"].get("preview_material") or {}
+            available=set(material.get("pbr_maps") or {})
+            if material.get("texture"):available.add("base_color")
+            channels[binding["path"]]=available
+        for rig in source["data"].get("skeleton_rigs",[]):
+            available=set(rig.get("pbr_maps") or {})
+            if rig.get("texture"):available.add("base_color")
+            channels[rig["path"]]=available
+        for path,overrides in checked["textures"]["transforms"].items():
+            if not set(overrides)<=channels.get(path,set()):
+                raise ValueError(
+                    "Original USD source material lacks requested UV channel")
+        for path,mat in checked["materials"].items():
+            if mat["opacity"]<1. and "opacity" in channels.get(path,set()):
+                raise ValueError(
+                    "Fractional opacity cannot overwrite binary source cutouts")
+        return True
+
     def assistant_scene_brief(self,pid,*,scene_id,scene_revision,scene_sha256):
         """Read bounded verified USD facts for a future local AI director.
 
@@ -230,6 +263,7 @@ class OriginalSceneLook:
             raise ValueError("Assistant reasoning must be bounded plain text")
         source=self._source(pid,scene_id,scene_revision,scene_sha256)
         checked=validate_look(look,source["data"]["prim_roles"])
+        self._check_material_sources(pid,source,checked)
         changes=[]
         standard=default_look()
         for area in ("lighting","environment","camera","textures","materials"):
@@ -252,6 +286,7 @@ class OriginalSceneLook:
         _id(look_id,"presentation decision identity")
         source=self._source(pid,scene_id,scene_revision,scene_sha256)
         checked=validate_look(look,source["data"]["prim_roles"])
+        self._check_material_sources(pid,source,checked)
         if not callable(approve):
             raise PermissionError("A real desktop creator approval is required")
         approved=approve({
@@ -316,8 +351,9 @@ class OriginalSceneLook:
             raise PermissionError("Presentation look is not bound to requested source")
         source=self._source(pid,data["scene_id"],data["scene_revision"],
                             scene_sha256)
-        return {"format":FORMAT,"look":validate_look(
-                    data["look"],source["data"]["prim_roles"]),
+        checked=validate_look(data["look"],source["data"]["prim_roles"])
+        self._check_material_sources(pid,source,checked)
+        return {"format":FORMAT,"look":checked,
                 "scene_sha256":scene_sha256,
                 "look_document_sha256":record["document_sha256"],
                 "original_modified":False}
