@@ -36,6 +36,13 @@ class _Window:
 
 
 def run_installed_data_av_smoke():
+    # This is NOT a physical two-input sync claim. It verifies that the
+    # installed binary includes the actual PortAudio adapter and its DLL,
+    # rather than passing from a Python environment without native inputs.
+    import sounddevice as sd
+    if not callable(getattr(sd,"RawInputStream",None)):
+        raise RuntimeError("Installed native independent microphone adapter missing")
+    sd.query_hostapis()
     T=TICKS_PER_SECOND
     with tempfile.TemporaryDirectory(prefix="nvp-installed-data-av-") as root:
         studio=Studio(Path(root)/"native_sound.sqlite3")
