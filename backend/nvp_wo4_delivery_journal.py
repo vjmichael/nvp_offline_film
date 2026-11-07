@@ -324,11 +324,55 @@ class CinemaDeliveryJournal(CinemaJournal):
             raise PermissionError("Independent published DCP recheck failed")
         return folder,expected
 
+    def _verify_all_production_sources(self,job_id):
+        """Reopen original media and all intermediate checkpoint receipts."""
+        reel=self.reel(job_id)
+        delivery=self.delivery(job_id)
+        root=self.spool(job_id)
+        if root.is_symlink():
+            raise PermissionError("Approved production spool redirected")
+        _read_guarded_sound(
+            self.approved_sound_candidate(job_id),
+            reel["frame_count"],reel["take_sha256"])
+        with self._read() as db:
+            frames=[dict(row) for row in db.execute("""SELECT
+                s.position,s.source_path,s.expected_sha256,s.expected_bytes,
+                s.state,f.file_sha256,f.file_bytes
+                FROM production_segments s
+                LEFT JOIN production_cinema_frames f
+                ON f.job_id=s.job_id AND f.position=s.position
+                WHERE s.job_id=? ORDER BY s.position""",(job_id,))]
+        if len(frames)!=reel["frame_count"]:
+            raise PermissionError("Approved image manifest incomplete")
+        from backend.nvp_wo4_picture_spool import verify_frame_file
+        for index,item in enumerate(frames):
+            source=Path(item["source_path"])
+            file=root/"frames"/f"{index:06d}.j2c"
+            if (item["position"]!=index or item["state"]!="VERIFIED" or
+                    source.is_symlink() or not source.is_file() or
+                    source.stat().st_size!=item["expected_bytes"] or
+                    digest_file(source)!=item["expected_sha256"] or
+                    not isinstance(item["file_sha256"],str) or
+                    verify_frame_file(file,item["file_sha256"],reel["profile"])
+                    !=item["file_bytes"]):
+                raise PermissionError("Source XYZ12/JPEG2000 SHA no longer approved")
+        picture=root/"picture.mxf"
+        sound=root/"sound.mxf"
+        if (picture.is_symlink() or not picture.is_file() or
+                digest_file(picture)!=reel["track_sha256"] or
+                picture.stat().st_size!=reel["track_bytes"] or
+                sound.is_symlink() or not sound.is_file() or
+                digest_file(sound)!=delivery["sound_sha256"] or
+                sound.stat().st_size!=delivery["sound_bytes"]):
+            raise PermissionError("Source-bound picture/sound MXF checkpoint changed")
+        return True
+
     def commit_filmindex(self,job_id):
         """Restart-safe post-publish FilmIndex commit, no repeat output write."""
         d=self.delivery(job_id)
         reel=self.reel(job_id)
         folder,files=self._check_published(job_id)
+        self._verify_all_production_sources(job_id)
         status=self.status(job_id)
         if status["state"] not in ("DCP_PUBLISHED","DCP_INDEXED"):
             raise PermissionError("Unexpected delivery state before FilmIndex")
