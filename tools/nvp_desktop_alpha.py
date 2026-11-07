@@ -588,7 +588,32 @@ def run_visible_window_smoke():
                 shutil.rmtree(test_home,ignore_errors=True)
 
 
+def _run_private_wo6_worker(argv):
+    """Packaged native NVP.exe worker mode, no UI/loopback server/model dispatch.
+
+    A frozen PyInstaller executable is not a Python interpreter; passing a
+    .py path to it would instead launch the main desktop process and strand
+    the approved task. The real internal workers perform their own durable
+    ACTIVE/reserved/owner/spec-SHA checks before any FilmIndex writes.
+    """
+    if type(argv) is not list or len(argv)<3 or argv[0]!="--nvp-wo6-worker":
+        raise ValueError("Malformed private native worker invocation")
+    entrypoint=argv[1]
+    if entrypoint=="take":
+        from tools.nvp_wo6_take_worker import main as run_worker
+    elif entrypoint=="shot":
+        from tools.nvp_wo6_shot_worker import main as run_worker
+    elif entrypoint=="data":
+        from tools.nvp_wo6_data_worker import main as run_worker
+    else:
+        raise PermissionError("No arbitrary worker dispatch in installed NVP")
+    return run_worker(argv[2:])
+
+
 def main(argv=None):
+    raw_args=sys.argv[1:] if argv is None else list(argv)
+    if raw_args and raw_args[0]=="--nvp-wo6-worker":
+        return _run_private_wo6_worker(raw_args)
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
