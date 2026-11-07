@@ -30,6 +30,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [takes,setTakes]=useState([]);
   const [takeId,setTakeId]=useState('');
   const [listener,setListener]=useState('');
+  const [binauralProfiles,setBinauralProfiles]=useState([]);
+  const [binauralChoice,setBinauralChoice]=useState('');
   const [sourceSample,setSourceSample]=useState('0');
   const [playing,setPlaying]=useState(false);
   const [error,setError]=useState('');
@@ -95,6 +97,24 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   useEffect(()=>{
     setListener(item?.listeners?.[0]||'');
   },[takeId,takes]);
+
+  useEffect(()=>{
+    if(!native||!projectId||
+       typeof native.data_av_binaural_catalog!=='function'){
+      setBinauralProfiles([]);setBinauralChoice('');return;
+    }
+    let active=true;
+    Promise.resolve(native.data_av_binaural_catalog(projectId)).then(doc=>{
+      if(!active)return;
+      if(doc?.format!=='nvp.data_av.binaural_ir_catalog.v1'||
+         doc.status!=='AVAILABLE'||doc.ffmpeg_used!==false||
+         !Array.isArray(doc.profiles))
+        throw Error('Native measured binaural source catalog is invalid');
+      setBinauralProfiles(doc.profiles);
+      setBinauralChoice('');
+    }).catch(err=>{if(active)setError(err.message);});
+    return ()=>{active=false;};
+  },[native,projectId]);
 
   useEffect(()=>{
     if(!native||!projectId||
@@ -449,6 +469,14 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         project_id:projectId,take_id:item.take_id,
         take_document_sha256:item.take_document_sha256,
         listener_path:listener,first_sample:first,direction,
+        ...(binauralChoice?{
+          measured_binaural:(()=>{
+            const original=binauralProfiles.find(x=>x.source_id===binauralChoice);
+            if(!original)throw Error('Selected measured IR source disappeared');
+            return {source_id:original.source_id,
+              source_document_sha256:original.source_document_sha256};
+          })(),
+        }:{}),
       });
       if(reply?.status==='DENIED'){setNote('Native audition was not approved.');return;}
       if(reply?.format!==FORMAT||reply.status!=='READY'||
@@ -456,6 +484,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          reply.take_document_sha256!==item.take_document_sha256||
          reply.listener_path!==listener||
          reply.direction!==direction||
+         (binauralChoice&&reply.binaural_profile_sha256!==
+           binauralProfiles.find(x=>x.source_id===binauralChoice)
+             ?.source_document_sha256)||
          !Number.isSafeInteger(reply.approved_first_sample)||
          !Number.isSafeInteger(reply.last_sample_exclusive))
         throw Error('Native Digital Take approval was not source-bound');
@@ -532,6 +563,20 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         {(item?.listeners||[]).map(p=><option key={p} value={p}>{p}</option>)}
       </select>
     </label>
+    <label>Measured original binaural response
+      <select aria-label="Native measured binaural IR profile"
+        disabled={playing} value={binauralChoice}
+        onChange={e=>setBinauralChoice(e.target.value)}>
+        <option value="">Dry spatial stereo (no HRIR)</option>
+        {binauralProfiles.map(p=><option key={p.source_id}
+          value={p.source_id}>
+          {p.source_id} · {p.measurement_kind}
+        </option>)}
+      </select>
+    </label>
+    {binauralChoice&&<p className="fineprint">Selected source-measured
+      head/room impulses require independent headphone and device
+      calibration. Creator consent will show the original IR SHA.</p>}
     <label>48-kHz source sample position
       <input aria-label="Native source sample seek" value={sourceSample}
         disabled={playing} onChange={e=>setSourceSample(e.target.value)}
