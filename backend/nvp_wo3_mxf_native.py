@@ -37,9 +37,11 @@ def _frame_receipts(frames,profile):
         raise ValueError("Source picture sequence bounded to one reel")
     seen=[]
     for i,frame in enumerate(frames):
-        if type(frame) is not dict or set(frame)!={
-            "codestream","codestream_sha256","independent_header_constraints_verified",
-            "original_approved_presentation_sha256"}:
+        if type(frame) is not dict or frame.get("format")!=(
+            "nvp.wo3.native_openjpeg_frame.v1") or not all(k in frame for k in (
+            "codestream","codestream_sha256",
+            "independent_header_constraints_verified",
+            "original_approved_presentation_sha256")):
             raise PermissionError("Only exact approved native J2K outputs allowed")
         raw=frame["codestream"]
         if type(raw) is not bytes or hashlib.sha256(raw).hexdigest()!=frame[
