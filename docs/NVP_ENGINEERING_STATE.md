@@ -197,3 +197,10 @@ Code commit [1ba8288](https://github.com/vjmichael/nvp_offline_film/commit/1ba82
 
 
 **CI status correction (2026-11-07):** Reinspection of DATA-AV run [42375345690](https://github.com/vjmichael/nvp_offline_film/actions/runs/42375345690) jobs confirms six passes (DA-00 audit, React, four Win/Linux native Python jobs), while the packaged/installed Windows NVP.exe job ended **cancelled**, not accepted. These results apply to historical head `5887c89a730368fbd96c32502955a7e395252a66`, not the newly committed camera window partition. Installed interaction and device A/V acceptance remain OPEN.
+
+### 2026-11-07 — DATA-ALL DA-01 exact-tick shot revision implementation
+
+- Source: `backend/nvp_exact_time_shots.py` commit `802116e83a8d7e78e17f65e9cdeca0ee37fe9a5b` adds `revise_shot(project_id,timeline_id,expected_revision,shot_id,replacement)`. The verified prior timeline determines source scene identity and exact duration; complete replacement data is validated by the existing immutable TemporalLedger publication and CAS. Deletion is allowed only if at least one camera observation remains. Old revisions and captured Take history remain intact.
+- Regression: `tests/test_nvp_exact_time_shots.py` commit `5c226656426c9e990f3f9b9e623e9c902340bf6f` checks exact-tick replacement, removal, SHA preservation, stale expected revision and invalid IDs. **Not independently run at this new head.**
+- Historical CI: [DATA-AV run 42380560101](https://github.com/vjmichael/nvp_offline_film/actions/runs/42380560101) at `09ea0f2b6fc944775aa09c0f4cb80c6dc431d3d3`: DA-00 audit, React, Windows/Linux native Python 3.11/3.13 jobs passed; Windows packaged/installed job was in progress at inspection. Do not claim installed acceptance from the other six jobs.
+- Status: DA-01 PARTIAL / acceptance OPEN; DA-00 and DA-02..DA-07 not fully accepted. Real installed `NVP.exe`, continuous 3D/audio, environmental acoustics/HRTF, device synchronization, microphone capture and 3D-to-2D deliverable remain independent gates. No FFmpeg invocation/fallback introduced, and old proxy workflows remain retired.
