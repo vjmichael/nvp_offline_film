@@ -59,8 +59,12 @@ def stage_bundle(destination,source,openjpeg_license,asdcp_license,
         "asdcplib":(asdcp_license,"asdcplib.BSD-3-Clause.LICENSE"),
     }
     for item in source.values():require_source(item)
-    if type(dlls) not in (list,tuple) or len(dlls)>24:
-        raise PermissionError("Bounded reviewed native codec DLL list required")
+    # Only statically linked reviewed codec tools are eligible for WO5
+    # alpha. A DLL carried outside the signed/hash-scoped manifest can
+    # override a reviewed executable through Windows DLL search.
+    # Proper transitive DLL approval belongs to a later explicit manifest.
+    if type(dlls) not in (list,tuple) or dlls:
+        raise PermissionError("WO5 release requires fully static pinned codecs; no extra DLLs")
     loaded_dll=[]
     for item in dlls:
         f=require_source(item)
