@@ -17,6 +17,8 @@ from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND
 from backend.nvp_wo6_impact_preview import preview_source_impact
 from backend.nvp_wo6_native_take_action import NativeTakeActionHost, RECEIPT_FORMAT
 from backend.nvp_wo6_recovery import WO6DurableRecovery
+from backend.nvp_resource_supervisor import NativeCancelRequested
+from backend.nvp_worker_host_lease import WorkerHostLease
 
 
 class WO6NativeDurability(unittest.TestCase):
@@ -170,6 +172,34 @@ class WO6NativeDurability(unittest.TestCase):
         self.assertEqual(
             status["latest_reconciliation"]["evidence_status"],
             "VERIFIED_COMMIT_AND_RECEIPT_NOT_RELEASE_APPROVED")
+
+    def test_late_cancellation_atomically_fences_verified_success(self):
+        task = self._queued()
+        self.host.binding.claim_next(owner_key=self.host.owner)
+        cancelled = self.host.recovery.request_cancel(
+            self.scope, task, authorize_cancel=lambda *_: True,
+            reason="Director cancelled while task was admitted")
+        self.assertEqual(cancelled["state"], "ACTIVE")
+        with self.assertRaises(NativeCancelRequested):
+            self.host.recovery.finish_verified(
+                task, detail="No actual finished source receipt exists")
+        self.assertEqual(self.ledger.get_task(task)["state"], "ACTIVE")
+        evidence = self._recovery(True).reconcile_interrupted(
+            task, owner_key=self.host.owner,
+            job_root=self.host.root, studio_db=self.studio.db_path)
+        self.assertEqual(evidence["current_ledger_state"], "CANCELLED")
+        self.assertEqual(evidence["evidence_status"], "NO_SOURCE_COMMIT_FOUND")
+        self.assertTrue(self.host.recovery.cancel_requested(task))
+
+    def test_recovery_refuses_competing_kernel_worker_host_lease(self):
+        task = self._queued()
+        self.host.binding.claim_next(owner_key=self.host.owner)
+        with WorkerHostLease(self.host.root):
+            with self.assertRaises(RuntimeError):
+                self._recovery(True).reconcile_interrupted(
+                    task, owner_key=self.host.owner,
+                    job_root=self.host.root, studio_db=self.studio.db_path)
+        self.assertEqual(self.ledger.get_task(task)["state"], "ACTIVE")
 
     def test_tampered_sealed_spec_cannot_claim_reconciled_success(self):
         task = self._queued()
