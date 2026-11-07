@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 
 // WO6 first-party WebView2 only. An LLM, ordinary HTTP browser or project
 // JSON cannot grant creator/native execution. The Python OS host must show
@@ -54,9 +54,10 @@ export default function WO6CreatorActionsPanel({projectId}){
   const currentScene=catalog?.scenes?.find(x=>x.id===sceneId)||null;
   const currentTake=catalog?.takes?.find(x=>x.id===takeId)||null;
   const currentTimeline=catalog?.timelines?.find(x=>x.id===timelineId)||null;
-  const scene=currentTake?.data?.scene_id
-    ?catalog?.scenes?.find(x=>x.id===currentTake.data.scene_id)||null
-    :currentScene;
+  const scene=(kind==='take'||kind==='camera_sequence')?currentScene:
+    (currentTake?.data?.scene_id
+      ?catalog?.scenes?.find(x=>x.id===currentTake.data.scene_id)||null
+      :currentScene);
   const matchingRoles=scene?.data?.prim_roles||{};
   const paths=Object.entries(matchingRoles).filter(([path,role])=>
     (kind==='camera'||kind==='camera_sequence')?role==='camera':
