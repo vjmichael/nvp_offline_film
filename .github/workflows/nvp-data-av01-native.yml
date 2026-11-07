@@ -50,6 +50,8 @@ on:
       - 'tests/test_nvp_source_linear_aces_scene.py'
       - 'tests/test_nvp_native_usd_material_fidelity.py'
       - 'tests/test_nvp_wo2_mesh_uv.py'
+      - 'tests/test_nvp_wo2_usd_texture.py'
+      - 'backend/nvp_native_usd_texture.py'
       - 'tests/test_nvp_native_aces2_package.py'
       - 'frontend/src/NativeColorGradePanel.test.jsx'
       - 'tests/test_nvp_native_aces_color.py'
@@ -125,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m compileall -q backend/nvp_data_av_skinning.py backend/nvp_native_spatial_acoustics.py backend/nvp_openusd_skeleton.py backend/nvp_openusd_skinning.py backend/nvp_native_stereo_take.py backend/nvp_native_independent_take.py backend/nvp_independent_device_sync.py backend/nvp_capture_recovery.py backend/nvp_native_hrir.py
-          python -m compileall -q backend/nvp_native_scene_linear_raster.py backend/nvp_native_scene_linear_exr.py backend/nvp_native_color_export_journal.py backend/nvp_native_cinema_master_gate.py
+          python -m compileall -q backend/nvp_native_scene_linear_raster.py backend/nvp_native_scene_linear_exr.py backend/nvp_native_color_export_journal.py backend/nvp_native_cinema_master_gate.py backend/nvp_native_usd_texture.py
           python -m compileall -q backend/nvp_data_av_source.py backend/nvp_data_av_scene.py backend/nvp_data_av_usd.py backend/nvp_data_av_desktop.py backend/nvp_slate08b_native_camera_ipc.py tools/nvp_desktop_alpha.py tools/nvp_data_av_installed_acceptance.py tests/test_nvp_data_av_native.py
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_exact_time_shots.py' -v
@@ -149,6 +151,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_source_linear_aces_scene.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_usd_material_fidelity.py' -v
           python -m unittest discover -s tests -p 'test_nvp_wo2_mesh_uv.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_wo2_usd_texture.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_acescg_exr.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_export_recovery.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_cinema_master_gate.py' -v
