@@ -688,12 +688,12 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
             {recoverBusy?'Reconciling original PCM…':
               'Approve recovery of original sound only'}
           </button>
-          {recoverReceipt&&<p role="status">
-            Recovered original source {recoverReceipt.source_id}, SHA
-            {recoverReceipt.source_document_sha256.slice(0,16)}…
-            No Take created.
-          </p>}
         </section>}
+      {recoverReceipt&&<p role="status">
+        Recovered original source {recoverReceipt.source_id}, SHA
+        {recoverReceipt.source_document_sha256.slice(0,16)}…
+        No Take created.
+      </p>}
       <label>Exact-time 3D camera timeline
         <select aria-label="Native live camera timeline"
           value={cameraPlanIndex} disabled={!!liveTicket||liveBusy}
