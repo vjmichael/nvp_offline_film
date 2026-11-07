@@ -206,6 +206,16 @@ class NativeIndependentDeviceTakeTests(unittest.TestCase):
         self.assertFalse(w["source_modified"])
         self.assertFalse(w["film_master_approved"])
 
+    def test_creator_discard_stops_both_inputs_without_clock_qualification(self):
+        session=self.session()
+        session.begin()
+        receipt=session.cancel()
+        self.assertEqual(receipt["status"],"CANCELLED")
+        self.assertFalse(receipt["take_created"])
+        self.assertTrue(all(dev.closed for dev in self.native_devices))
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"DualIndependentTake",1)
+
     def test_bad_clock_evidence_never_publishes_a_take(self):
         clock=self.session()
         clock.begin()
