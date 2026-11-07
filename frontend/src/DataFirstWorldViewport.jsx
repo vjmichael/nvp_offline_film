@@ -343,7 +343,7 @@ export default function DataFirstWorldViewport({
         resize=new ResizeObserver(resizeNow);
         resize.observe(root);
       }
-      env.current={world,meshes,requestRender,
+      env.current={world,meshes,requestRender,acquireTexture,releaseMaterial,
         orbitCamera:camera,authoredCamera,activeCamera:camera};
       const lost=event=>{event.preventDefault();setDisabled(true);};
       const restored=()=>{setDisabled(false);requestRender();};
@@ -407,7 +407,7 @@ export default function DataFirstWorldViewport({
       if(mesh&&mesh.userData.sourceGeometry!==fingerprint){
         state.world.remove(mesh);
         mesh.geometry.dispose();
-        disposeMeshMaterial(mesh.material);
+        state.releaseMaterial(mesh.material);
         state.meshes.delete(obj.path);mesh=null;
       }
       if(!mesh){
@@ -439,7 +439,7 @@ export default function DataFirstWorldViewport({
             side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
               THREE.DoubleSide:THREE.FrontSide});
           if(transport){
-            material.map=acquireTexture(transport);
+            material.map=state.acquireTexture(transport);
             material.userData.originalTextureSha=transport.sha256;
             material.needsUpdate=true;
           }
@@ -508,7 +508,7 @@ export default function DataFirstWorldViewport({
       if(!incoming.has(path)){
         state.world.remove(mesh);
         mesh.geometry.dispose();
-        disposeMeshMaterial(mesh.material);
+        state.releaseMaterial(mesh.material);
         state.meshes.delete(path);
       }
     }
