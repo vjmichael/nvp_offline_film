@@ -19,9 +19,6 @@ class WO2PresentationLookAuthority(unittest.TestCase):
         original=default_look()
         original["materials"]["/World/Actor"]={
             "opacity":.8,"transmission":.6,"ior":1.45,"thickness_m":.02}
-        original["textures"]["transforms"]["/World/Actor"]={
-            "normal":{"repeat":[2.,2.],"offset":[.1,.0],
-                      "rotation_deg":30.}}
         source_before=self.scene.open(self.pid,"scene_reusable",1)[0]
         proposal=propose_look("dramatic",self.roles)
         self.assertFalse(proposal["creator_approved"])
@@ -111,6 +108,18 @@ class WO2PresentationLookAuthority(unittest.TestCase):
             validate_look(bad,self.roles)
         with self.assertRaises(ValueError):
             propose_look("model says run remote code",self.roles)
+        # This source cube has no PNGs. An AI/editor cannot conjure
+        # texture channels just by naming a real actor path.
+        bad=default_look()
+        bad["textures"]["transforms"]["/World/Actor"]={
+            "normal":{"repeat":[1,1],"offset":[0,0],
+                      "rotation_deg":0}}
+        with self.assertRaises(ValueError):
+            self.looks.publish(
+                self.pid,"MissingTextureLook",
+                scene_id="scene_reusable",scene_revision=1,
+                scene_sha256=self.sha,look=bad,
+                approve=lambda _:True)
         with self.assertRaises(PermissionError):
             self.looks.publish(
                 self.pid,"OtherLook001",
