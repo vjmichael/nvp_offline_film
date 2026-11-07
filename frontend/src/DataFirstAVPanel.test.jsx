@@ -196,3 +196,33 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
       .toBe(true);
   });
 });
+
+describe('WO2 creator-picked original PNG texture',()=>{
+  it('calls only native OS picker and reports SHA without authoring a scene',async()=>{
+    const hash='c'.repeat(64);
+    const bridge={
+      data_av_catalog:vi.fn(async()=>({
+        format:'nvp.data_av.native_session.v1',status:'AVAILABLE',
+        ffmpeg_runtime_required:false,takes:[],
+      })),
+      data_av_import_original_texture:vi.fn(async projectId=>({
+        format:'nvp.native.texture_import.v1',
+        status:'ORIGINAL_TEXTURE_IMPORTED',
+        original_modified:false,ffmpeg_used:false,
+        texture:{format:'nvp.original.usd_texture_png.v1',
+          sha256:hash,width:2,height:2,source_modified:false},
+      })),
+    };
+    render(<DataFirstAVPanel projectId={pid} nativeBridge={bridge}/>);
+    fireEvent.click(screen.getByText('Choose original PNG texture'));
+    await waitFor(()=>expect(
+      bridge.data_av_import_original_texture).toHaveBeenCalledWith(pid));
+    expect(await screen.findByText(/Frozen texture 2/)).toBeTruthy();
+    expect(screen.getByText(/Applying it to/)).toBeTruthy();
+  });
+  it('does not reveal a source path control or enable picker in browser-only mode',()=>{
+    render(<DataFirstAVPanel projectId={pid}/>);
+    expect(screen.getByText('Choose original PNG texture').disabled).toBe(true);
+    expect(screen.queryByLabelText(/texture file path/i)).toBeNull();
+  });
+});
