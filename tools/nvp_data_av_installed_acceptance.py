@@ -13,14 +13,39 @@ from pathlib import Path
 import math
 import struct
 import tempfile
+import os
 
+def _native_checkpoint(label):
+    """Emit fsynced installed-runtime breadcrumbs before C++ library init.
+
+    A packaged GUI EXE can terminate via Windows SEH/abort without a Python
+    exception. The last successfully fsynced stage then identifies which
+    boundary crossed into failing native code. No user projects are read.
+    """
+    target=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+    if not target:return
+    path=Path(target)
+    if (not path.is_absolute() or not path.parent.is_dir() or
+        path.is_symlink() or len(label)>80):
+        return
+    with path.open("a",encoding="utf8") as trace:
+        trace.write("NVP_AV_CHECKPOINT="+label+"\n")
+        trace.flush();os.fsync(trace.fileno())
+
+_native_checkpoint("import_started")
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
+_native_checkpoint("film_index_imported")
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
+_native_checkpoint("openusd_scene_module_imported")
 from backend.nvp_openusd_take import OpenUSDTakeCapture
+_native_checkpoint("openusd_take_module_imported")
 from backend.nvp_temporal_ledger import TemporalLedger,TICKS_PER_SECOND
+_native_checkpoint("temporal_ledger_imported")
 from backend.nvp_data_av_source import RecordedSoundSources
+_native_checkpoint("sound_sources_imported")
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+_native_checkpoint("trusted_bridge_imported")
 
 
 class _Window:
@@ -39,13 +64,19 @@ def run_installed_data_av_smoke():
     # This is NOT a physical two-input sync claim. It verifies that the
     # installed binary includes the actual PortAudio adapter and its DLL,
     # rather than passing from a Python environment without native inputs.
+    _native_checkpoint("sounddevice_import_begin")
     import sounddevice as sd
+    _native_checkpoint("sounddevice_imported")
     if not callable(getattr(sd,"RawInputStream",None)):
         raise RuntimeError("Installed native independent microphone adapter missing")
+    _native_checkpoint("portaudio_hostapi_probe_begin")
     sd.query_hostapis()
+    _native_checkpoint("portaudio_hostapi_probe_done")
     T=TICKS_PER_SECOND
     with tempfile.TemporaryDirectory(prefix="nvp-installed-data-av-") as root:
+        _native_checkpoint("new_project_db_begin")
         studio=Studio(Path(root)/"native_sound.sqlite3")
+        _native_checkpoint("new_project_db_ready")
         project=studio.create_project("Native frozen 3D sound","No FFmpeg runtime")
         pid=project["id"]
         index=FilmIndex(studio)
@@ -55,12 +86,16 @@ def run_installed_data_av_smoke():
             for i in range(24000)))
         sound=sources.publish(pid,"captured_dialogue",[sample[:24000],sample[24000:]])
         original=sha256(sample).hexdigest()
+        _native_checkpoint("openusd_scene_init_begin")
         scene=OpenUSDSceneBridge(index)
+        _native_checkpoint("openusd_scene_init_done")
+        _native_checkpoint("native_usd_publish_begin")
         scene.publish(pid,"native_scene",prims=[
             {"path":"/World/Speaker","role":"actor","position":[3,0,0]},
             {"path":"/World/CameraA","role":"camera","position":[0,0,0]},
             {"path":"/World/CameraB","role":"camera","position":[7,0,0]},
         ],curves=[],native_schemas=True)
+        _native_checkpoint("native_usd_publish_done")
         timeline=TemporalLedger(index)
         timeline.publish(pid,"native_sound_events",[{
             "event_id":"speech","event_kind":"dialogue",
@@ -77,6 +112,7 @@ def run_installed_data_av_smoke():
             timeline_id="native_sound_events",timeline_revision=1,
             sample_ticks=[0,T],creator_event="approved")
         original_take_sha=take["document_sha256"]
+        _native_checkpoint("frozen_take_ready")
         bridge=TrustedDesktopCameraBridge(
             index,origin="http://127.0.0.1:7777")
         window=_Window()
@@ -186,6 +222,7 @@ def run_installed_data_av_smoke():
                 index.read_revision(pid,"smoke_color_take",1)[
                     "document_sha256"]!=color_take["document_sha256"]):
                 raise RuntimeError("Installed source ACEScg EXR32 failed")
+            _native_checkpoint("installed_av_aces_exr_passed")
             if __import__("sys").stdout is not None:
                 print("DATA_AV01_INSTALLED_NATIVE_SOURCE_AND_ACES_PASS",
                       original_take_sha,mixes[0],mixes[1],
