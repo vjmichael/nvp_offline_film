@@ -131,6 +131,61 @@ class NativeSceneLinearEXR:
             raise
 
 
+def write_authored_camera_gap_exr(output_file,*,take_sha256,
+                                  grade_sha256,ocio_config_sha256,
+                                  source_snapshot_sha256,film_time_tick):
+    """Black is a declared gap in the ORIGINAL camera observation timeline.
+
+    This is not a manufactured 3D scene or unconsented color decision.
+    """
+    import numpy as np
+    _sha(take_sha256);_sha(grade_sha256)
+    _sha(ocio_config_sha256);_sha(source_snapshot_sha256)
+    _int(film_time_tick,"camera gap Film Time")
+    import OpenEXR
+    if not str(getattr(OpenEXR,"__version__","")).startswith("3.4.17"):
+        raise RuntimeError("Native OpenEXR version changed during package")
+    target=Path(output_file)
+    if (target.exists() or target.is_symlink() or
+        target.suffix.lower()!=".exr" or
+        not target.parent.is_dir() or target.parent.is_symlink()):
+        raise PermissionError("Untrusted original camera gap destination")
+    frame=np.zeros((360,640,3),dtype=np.float32)
+    hdr={
+        "type":OpenEXR.scanlineimage,
+        "compression":OpenEXR.ZIP_COMPRESSION,
+        "nvpOriginalTakeSha":take_sha256,
+        "nvpSavedGradeSha":grade_sha256,
+        "nvpOCIOConfigSha":ocio_config_sha256,
+        "nvpOriginalSnapshotSha":source_snapshot_sha256,
+        "nvpColorSpace":DEST,
+        "nvpFilmTimeTick":str(film_time_tick),
+        "nvpCameraGap":"true",
+        "nvpCinemaMasterStatus":"unmastered",
+    }
+    try:
+        with OpenEXR.File(hdr,{"RGB":frame}) as writer:
+            writer.write(str(target))
+        if target.stat().st_size>MAX_EXR_BYTES:
+            raise RuntimeError("Source camera gap exceeds bounded EXR output")
+        with OpenEXR.File(str(target)) as reader:
+            observed=reader.channels()["RGB"].pixels
+            if (observed.dtype!=np.float32 or observed.shape!=frame.shape or
+                not np.array_equal(observed,frame) or
+                reader.header()["nvpCameraGap"]!="true"):
+                raise RuntimeError("Native EXR camera gap was not verified")
+        return {"format":FORMAT,"source_tick":str(film_time_tick),
+                "camera_path":None,"black_camera_gap":True,
+                "scene_snapshot_sha256":source_snapshot_sha256,
+                "output_exr_sha256":_sha_file(target),
+                "working_space":DEST,"width":640,"height":360,
+                "float_bits_per_component":32,
+                "original_modified":False,"ffmpeg_used":False}
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+
+
 def _sha_file(path):
     digest=sha256()
     with Path(path).open("rb") as f:
