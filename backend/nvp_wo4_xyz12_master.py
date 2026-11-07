@@ -15,6 +15,14 @@ from backend.nvp_wo3_j2k_audit import PROFILES
 FORMAT = "nvp.wo4.xyz12_master_candidate.v1"
 ST428_PEAK_NITS = 52.37
 REFERENCE_WHITE_NITS = 48.0
+CINEMA_WHITE_XY = (0.314,0.351)
+SOURCE_D65_XY = (0.3127,0.3290)
+BRADFORD=((0.8951,0.2664,-0.1614),(-0.7502,1.7135,0.0367),
+          (0.0389,-0.0685,1.0296))
+BRADFORD_INV=((0.9869929,-0.1470543,0.1599627),
+              (0.4323053,0.5183603,0.0492912),
+              (-0.0085287,0.0400428,0.9684867))
+
 GAMMA = 2.6
 # IEC 61966-2-1 D65 linear RGB -> CIE 1931 XYZ, Y normalized to 1.
 RGB_D65_TO_XYZ = (
@@ -24,13 +32,31 @@ RGB_D65_TO_XYZ = (
 )
 
 
+def _matvec(matrix,vector):
+    return [sum(row[i]*vector[i] for i in range(3)) for row in matrix]
+
+
+def _white_xyz(xy):
+    x,y=xy
+    return (x/y,1.0,(1.0-x-y)/y)
+
+
+def _bradford_d65_to_dci(xyz):
+    source=_matvec(BRADFORD,_white_xyz(SOURCE_D65_XY))
+    target=_matvec(BRADFORD,_white_xyz(CINEMA_WHITE_XY))
+    cones=_matvec(BRADFORD,xyz)
+    return _matvec(BRADFORD_INV,
+                   [cones[i]*(target[i]/source[i]) for i in range(3)])
+
+
 def encode_linear_rgb_d65_to_xyz12(source_float32:bytes,*,profile:str,
         source_sha256:str,original_take_sha256:str,creator_approved:bool,
         output_white_intent:str="D65_UNADAPTED",
         mastering_reference_nits:float=48.0):
     if creator_approved is not True:
         raise PermissionError("Native approved picture-mastering decision required")
-    if (profile not in PROFILES or output_white_intent!="D65_UNADAPTED"
+    if (profile not in PROFILES or output_white_intent not in (
+            "D65_UNADAPTED","DCI_REFERENCE_BRADFORD")
             or type(mastering_reference_nits) not in (int,float)
             or mastering_reference_nits!=REFERENCE_WHITE_NITS):
         raise ValueError("Explicit supported cinema color and luminance intent required")
@@ -52,6 +78,8 @@ def encode_linear_rgb_d65_to_xyz12(source_float32:bytes,*,profile:str,
             raise ValueError("Nonfinite or out-of-range linear RGB; manual grading required")
         xyz=[sum(matrix[i]*rgb[i] for i in range(3))
              for matrix in RGB_D65_TO_XYZ]
+        if output_white_intent=="DCI_REFERENCE_BRADFORD":
+            xyz=_bradford_d65_to_dci(xyz)
         for component in xyz:
             if component<0 or not math.isfinite(component):
                 raise ValueError("Source transform generated invalid XYZ")
@@ -73,7 +101,10 @@ def encode_linear_rgb_d65_to_xyz12(source_float32:bytes,*,profile:str,
         "profile":profile,"width":width,"height":height,
         "source_color_space":"linear_sRGB_D65",
         "output_color_space":"SMPTE_ST_428_1_XYZ12",
-        "chromatic_adaptation":"NONE",
+        "chromatic_adaptation":("BRADFORD_D65_TO_DCI_REFERENCE" if
+             output_white_intent=="DCI_REFERENCE_BRADFORD" else "NONE"),
+        "target_white_xy":(list(CINEMA_WHITE_XY) if
+             output_white_intent=="DCI_REFERENCE_BRADFORD" else list(SOURCE_D65_XY)),
         "output_white_intent":output_white_intent,
         "reference_white_nits":REFERENCE_WHITE_NITS,
         "transfer_gamma":GAMMA,"peak_normalization_nits":ST428_PEAK_NITS,
