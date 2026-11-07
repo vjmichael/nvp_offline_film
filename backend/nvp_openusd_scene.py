@@ -235,6 +235,13 @@ class OpenUSDSceneBridge:
             parameter_layer,channel_manifest=None,[]
         skeleton_layer,rig_manifest=None,[]
         if skeletal_rigs:
+            # A rig texture is an existing project-owned immutable PNG,
+            # not a browser-provided USD asset resolver or filesystem path.
+            from backend.nvp_native_usd_texture import verified_texture
+            for rig in skeletal_rigs:
+                descriptor=(rig.get("skin") or {}).get("texture")
+                if descriptor is not None:
+                    verified_texture(self.index,project_id,descriptor)
             from backend.nvp_openusd_skeleton import author_skeleton_layer
             skeleton_layer,rig_manifest=author_skeleton_layer(paths,skeletal_rigs)
         composed=_compose(base,motion,Sdf,Usd,parameter_layer,skeleton_layer)
