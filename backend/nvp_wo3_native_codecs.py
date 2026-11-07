@@ -68,7 +68,14 @@ class ApprovedCodecBinary:
                                    "TEMP":str(root)})
         self.check()
         if result.returncode!=0:
-            raise RuntimeError("Native licensed cinema codec rejected input")
+            # A bounded native-tool diagnostic for deterministic CI failure
+            # repair. The arguments and original camera/PCM/film source bytes
+            # are never included in error receipts or logs.
+            reason=(result.stderr or result.stdout)[:512].decode(
+                "utf-8","replace").replace("\\x00","")
+            raise RuntimeError(
+                f"Native cinema {self.product} failed with exit "
+                f"{result.returncode}: {reason}")
         receipt={"exit_code":0,
                  "native_codec_sha256":self.sha256,
                  "stdout_sha256":hashlib.sha256(result.stdout).hexdigest(),
