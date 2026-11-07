@@ -5,6 +5,10 @@ on:
     paths:
       - tools/nvp_wo5_release_codecs.py
       - tools/nvp_wo5_installed_sustain.py
+      - tools/nvp_wo5_visible_finished_fixture.py
+      - tools/nvp_wo5_installed_visible.py
+      - frontend/src/App.jsx
+      - frontend/src/FinishedFilmPlaybackPanel.jsx
       - tools/nvp_desktop_alpha.py
       - backend/nvp_wo5_codec_binding.py
       - backend/_nvp_wo5_release_pin.py
@@ -15,6 +19,10 @@ on:
     paths:
       - tools/nvp_wo5_release_codecs.py
       - tools/nvp_wo5_installed_sustain.py
+      - tools/nvp_wo5_visible_finished_fixture.py
+      - tools/nvp_wo5_installed_visible.py
+      - frontend/src/App.jsx
+      - frontend/src/FinishedFilmPlaybackPanel.jsx
       - tools/nvp_desktop_alpha.py
       - backend/nvp_wo5_codec_binding.py
       - backend/_nvp_wo5_release_pin.py
@@ -126,6 +134,10 @@ jobs:
           $env:NVP_NATIVE_ASDCP_INFO=Join-Path $native 'asdcp-info.exe'
           $env:NVP_NATIVE_ASDCP_UNWRAP=Join-Path $native 'asdcp-unwrap.exe'
           $env:NVP_WO5_TEST_KEEP_DCP=Join-Path $env:RUNNER_TEMP 'wo5-genuine-test-dcp'
+          # Published 30s two-reel SMPTE DCP: 2 x 360 genuine
+          # picture/PCM24 frame positions, 3 verified repeated 2K
+          # codestream patterns per reel. Synthetic fixture, NOT a film.
+          $env:NVP_WO5_CI_REEL_FRAMES='360'
           python -m unittest discover -s tests -p nvp_wo5_finished_real_dcp_ci.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Real two-reel 2K DCP source test failed on native Windows' }
           if (-not (Test-Path (Join-Path $env:NVP_WO5_TEST_KEEP_DCP 'ASSETMAP.xml'))) {
@@ -172,6 +184,21 @@ jobs:
           $result=Start-Process -FilePath $installed -ArgumentList '--smoke-finished-playback' -PassThru -Wait
           if ($result.ExitCode -ne 0) { throw 'Installed real decoder did not achieve sustained 24fps; report is a failed release gate' }
           if (-not (Test-Path $env:NVP_WO5_SMOKE_REPORT)) { throw 'No measured native decode evidence' }
+      - name: Actual installed visible WebView2 complete 30s published SMPTE DCP picture+mastered PCM presentation
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $env:NVP_WO5_SMOKE_DCP_DIR=Join-Path $env:RUNNER_TEMP 'wo5-genuine-test-dcp'
+          $env:NVP_WO5_VISIBLE_AV_REPORT=Join-Path $env:RUNNER_TEMP 'wo5-visible-webview2-av.json'
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'wo5-visible-webview2-diagnostics.txt'
+          $result=Start-Process -FilePath $installed -ArgumentList '--smoke-visible-finished-av' -PassThru -Wait
+          if ($result.ExitCode -ne 0) {
+            throw 'Installed visible WebView2 failed complete picture/PCM clock presentation; see separate report'
+          }
+          if (-not (Test-Path $env:NVP_WO5_VISIBLE_AV_REPORT)) {
+            throw 'Installed visible WebView2 completed without actual canvas+WebAudio receipt'
+          }
       - name: Actual installed native WebView2 source review and codec capability
         shell: pwsh
         run: |
@@ -179,6 +206,18 @@ jobs:
           $env:NVP_WO5_EXPECT_CODEC_INSTALL='1'
           $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru -Wait
           if ($window.ExitCode -ne 0) { throw 'Installed WebView2/native decoder capability not proven' }
+      - name: Independently enforce actual installed visible Canvas+WebAudio frame-completion gate
+        shell: pwsh
+        run: |
+          $file=Join-Path $env:RUNNER_TEMP 'wo5-visible-webview2-av.json'
+          if (-not (Test-Path $file)) { throw 'Release blocker: installed visible finished-film player did not report completion' }
+          $receipt=Get-Content $file -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'VISIBLE_INSTALLED_PUBLISHED_DCP_CANVAS_AUDIO_CLOCK_PASSED' -or
+              -not $receipt.uninterrupted_webview2_canvas_web_audio -or
+              $receipt.presentation_receipt.canvasFramesDrawn -ne 720 -or
+              $receipt.presentation_receipt.masteredPcmWindowsQueued -ne 720) {
+            throw 'Release blocker: 720 actual DCP pictures/PCM frames were not continuously presented in visible NVP.exe'
+          }
       - name: Confirm measured 24fps gate from installed binary report
         shell: pwsh
         run: |
@@ -203,6 +242,8 @@ jobs:
           name: nvp-wo5-real-installed-decoder-and-reel-speed
           path: |
             ${{ runner.temp }}/wo5-installed-throughput.json
+            ${{ runner.temp }}/wo5-visible-webview2-av.json
+            ${{ runner.temp }}/wo5-visible-webview2-diagnostics.txt
             ${{ runner.temp }}/wo5-installed-diagnostic.txt
           if-no-files-found: warn
           retention-days: 7
