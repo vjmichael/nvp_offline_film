@@ -26,7 +26,8 @@ function environment(){
     data_av_catalog:vi.fn(async()=>({
       format:'nvp.data_av.native_session.v1',
       ffmpeg_runtime_required:false,status:'AVAILABLE',
-      takes:[{take_id:'SceneTake',take_document_sha256:takeSHA}],
+      takes:[{take_id:'SceneTake',take_document_sha256:takeSHA,
+        source_cameras:['/World/Camera']}],
     })),
     data_av_native_aces_policy:vi.fn(async()=>({
       format:'nvp.native_ocio.pinned_aces2_policy.v1',
@@ -34,6 +35,16 @@ function environment(){
       configuration_sha256:configSHA,
       configuration:'ocio://pinned-ACES2',
       output_view:'ACES 2.0 - SDR',
+    })),
+    data_av_export_native_aces_package:vi.fn(async()=>({
+      format:'nvp.native_ocio.approved_source_png16_package.v1',
+      status:'UNMASTERED_ACES2_PNG16_AUDIO_PACKAGE',
+      take_sha256:takeSHA,color_grade_sha256:gradeSHA,
+      color_pipeline:'ocio_aces2_scene_linear_png16_unmastered',
+      pixel_bit_depth:16,ffmpeg_used:false,
+      original_modified:false,master_approved:false,
+      directory:'C:/Approved/ACESPresentation001',
+      manifest_sha256:'f'.repeat(64),
     })),
     data_av_native_aces_review:vi.fn(async()=>({
       format:'nvp.native_ocio.source_pinned_aces2_review.v1',
@@ -79,6 +90,34 @@ describe('DA-06D creator-approved OpenUSD source color in ACES2',()=>{
     )).getAttribute('src')).toMatch(/^data:image\/png;base64,/);
     expect(screen.getByText(/not an approved professional color master/i))
       .toBeTruthy();
+  });
+
+  it('uses native OS picker for a separate RGB16 ACES2 and PCM output',async()=>{
+    const {bridge,api,action}=environment();
+    render(<NativeColorGradePanel
+      project={{id:pid}} api={api} action={action} busy={false}/>);
+    await screen.findByText('SceneTake');
+    fireEvent.click(screen.getByText('Reopen prior color decision'));
+    await screen.findByText(/Opened original color decision revision 1/);
+    expect(screen.getByLabelText('Native ACES output source camera').value)
+      .toBe('/World/Camera');
+    fireEvent.click(screen.getByText(
+      'Approve ACES2 16-bit picture and PCM package'));
+    await waitFor(()=>expect(
+      bridge.data_av_export_native_aces_package).toHaveBeenCalledWith({
+        project_id:pid,take_id:'SceneTake',
+        take_document_sha256:takeSHA,
+        presentation_id:'ACESPresentation001',
+        listener_path:'/World/Camera',
+        fps_num:24,fps_den:1,
+        aces_color_grade:{
+          grade_id:'Color001',revision:1,
+          document_sha256:gradeSHA,config_sha256:configSHA,
+        },
+      }));
+    expect(await screen.findByText(/Saved a new immutable derived package/))
+      .toBeTruthy();
+    expect(screen.getByText(/not a cinema master/i)).toBeTruthy();
   });
 
   it('does not preview unsaved creative changes or imaginary Film Time',async()=>{
