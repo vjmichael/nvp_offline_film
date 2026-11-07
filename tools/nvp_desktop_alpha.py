@@ -196,10 +196,13 @@ def create_trusted_camera_bridge(port):
     from backend.nvp_api import studio
     from backend.nvp_film_index import FilmIndex
     from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
-    # Retains the established trusted camera and OpenUSD A/V methods; WO5
-    # adds only native-window-scoped intent/review functions, never HTTP.
+    from backend.nvp_wo5_codec_binding import desktop_finished_decoder_provider
+    # Original DataFirst A/V remains active; finished DCP decoding requires
+    # separately SHA-pinned native OpenJPEG/CineCert binaries installed by
+    # the trusted host. Ordinary browser/AI callers cannot supply paths.
     return TrustedDesktopWO5Bridge(
-        FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
+        FilmIndex(studio),origin="http://127.0.0.1:"+str(port),
+        finished_codec_provider=desktop_finished_decoder_provider(bundle_root()))
 
 
 def run_visible_window_smoke():
