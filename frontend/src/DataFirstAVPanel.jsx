@@ -41,6 +41,14 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [presentationId,setPresentationId]=useState('NativeFilm001');
   const [aviReceipt,setAviReceipt]=useState(null);
   const [exporting,setExporting]=useState(false);
+  const [cameraPlans,setCameraPlans]=useState([]);
+  const [cameraPlanIndex,setCameraPlanIndex]=useState('0');
+  const [liveEmitter,setLiveEmitter]=useState('');
+  const [newLiveTake,setNewLiveTake]=useState('LiveTake001');
+  const [liveTicket,setLiveTicket]=useState(null);
+  const [liveBusy,setLiveBusy]=useState(false);
+  const [liveReceipt,setLiveReceipt]=useState(null);
+  const liveTicketRef=useRef(null);
   const controller=useRef({ticket:null,context:null,scheduled:[],
     presentationMarks:[],generation:0,cursor:0,last:0,first:0,
     nextAudioAt:0,working:false,active:false,stopping:false,
@@ -79,6 +87,86 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     setListener(item?.listeners?.[0]||'');
   },[takeId,takes]);
 
+  useEffect(()=>{
+    if(!native||!projectId||
+       typeof native.data_av_live_catalog!=='function')return;
+    let live=true;
+    Promise.resolve(native.data_av_live_catalog(projectId)).then(result=>{
+      if(!live)return;
+      if(result?.format!=='nvp.data_av.live_camera_catalog.v1'||
+         result.status!=='AVAILABLE'||!Array.isArray(result.camera_timelines))
+        throw Error('Live source camera catalog is unverified');
+      setCameraPlans(result.camera_timelines);
+      setCameraPlanIndex('0');
+    }).catch(e=>{if(live)setError(e.message);});
+    return ()=>{live=false;};
+  },[native,projectId]);
+
+  const livePlan=cameraPlans[Number(cameraPlanIndex)];
+  useEffect(()=>{
+    setLiveEmitter(livePlan?.emitters?.[0]||'');
+  },[cameraPlanIndex,cameraPlans]);
+
+  async function beginLiveCapture(){
+    if(!native||!livePlan||liveTicket||liveBusy||playing||exporting)return;
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,60}$/.test(newLiveTake)){
+      setError('Choose a unique native Take ID with letters and digits.');return;
+    }
+    setError('');setLiveReceipt(null);setLiveBusy(true);
+    try{
+      const result=await native.data_av_live_begin({
+        project_id:projectId,take_id:newLiveTake,
+        scene_id:livePlan.scene_id,scene_revision:livePlan.scene_revision,
+        camera_timeline_id:livePlan.camera_timeline_id,
+        camera_timeline_revision:livePlan.camera_timeline_revision,
+        sound_timeline_id:newLiveTake+'.Events',
+        source_id:newLiveTake+'.Mic',
+        emitter_path:liveEmitter,
+        event_id:newLiveTake+'.Speech',
+        subject_id:liveEmitter.split('/').pop(),
+      });
+      if(result?.format!=='nvp.data_av.live_mic_take.v1'||
+         result.status!=='RECORDING'||
+         typeof result.session_id!=='string'||
+         result.output_is_original_source!==true||
+         result.flattened_soundtrack!==false)
+        throw Error('Native source recording was not confirmed');
+      liveTicketRef.current=result.session_id;
+      setLiveTicket(result.session_id);
+      setNote('Real microphone is recording an original sound signal. Freeze or discard to stop.');
+    }catch(e){setError(e.message);}
+    finally{setLiveBusy(false);}
+  }
+
+  async function finishLiveCapture(freeze){
+    if(!native||!liveTicket||liveBusy)return;
+    setLiveBusy(true);setError('');
+    try{
+      const result=await native.data_av_live_finish(liveTicket,freeze);
+      if(freeze){
+        if(result?.format!=='nvp.data_av.filming_capture.v1'||
+           result.status!=='FROZEN_ORIGINAL_LIVE_TAKE'||
+           result.original_scene_modified!==false||
+           result.audio_mix_flattened!==false)
+          throw Error('Native captured source was not immutably frozen');
+        setLiveReceipt(result);
+        const updated=await native.data_av_catalog(projectId);
+        if(updated?.format===FORMAT&&Array.isArray(updated.takes)){
+          setTakes(updated.takes);
+          setTakeId(result.take_id);
+        }
+        setNote('Original microphone source and 3D Film Time are frozen; no movie rendered.');
+      }else{
+        setNote('Live microphone capture discarded. No new Digital Take was frozen.');
+      }
+    }catch(e){setError(e.message);}
+    finally{
+      liveTicketRef.current=null;
+      setLiveTicket(null);setLiveBusy(false);
+    }
+  }
+
+
   async function stop(){
     const st=controller.current;
     st.generation++;
@@ -114,6 +202,11 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     if(st.ticket&&native)Promise.resolve(
       native.data_av_stop(st.ticket)).catch(()=>{});
     st.ticket=null;st.context=null;
+    if(liveTicketRef.current&&native&&
+       typeof native.data_av_live_finish==='function')
+      Promise.resolve(native.data_av_live_finish(
+        liveTicketRef.current,false)).catch(()=>{});
+    liveTicketRef.current=null;
   },[native,projectId]);
 
   async function inspect(ticket,sample){
@@ -383,6 +476,51 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <p className="fineprint">{scene.spatial_audio?.bindings?.length||0}
         spatial audio source(s) active at this moment.</p>
     </section>}
+    <section className="card" aria-label="Live original microphone source and Digital Take freeze">
+      <h3>Record original sound into the live 3D filming session</h3>
+      <p className="fineprint">Select an existing authored OpenUSD camera
+        timeline and real scene emitter. The native OS requests microphone
+        approval. Recorded mono PCM goes into a bounded on-disk original
+        source; a second confirmation freezes its exact Film Time with
+        the original 3D scene. No movie frames or flattened soundtrack.</p>
+      <label>Exact-time 3D camera timeline
+        <select aria-label="Native live camera timeline"
+          value={cameraPlanIndex} disabled={!!liveTicket||liveBusy}
+          onChange={e=>setCameraPlanIndex(e.target.value)}>
+          {!cameraPlans.length&&<option value="0">No verified camera timelines</option>}
+          {cameraPlans.map((p,i)=><option key={p.camera_timeline_id+':'+p.camera_timeline_revision}
+            value={String(i)}>{p.camera_timeline_id} · rev {p.camera_timeline_revision}</option>)}
+        </select>
+      </label>
+      <label>Original scene sound emitter
+        <select aria-label="Live original source emitter" value={liveEmitter}
+          disabled={!!liveTicket||liveBusy}
+          onChange={e=>setLiveEmitter(e.target.value)}>
+          {(livePlan?.emitters||[]).map(p=><option key={p} value={p}>{p}</option>)}
+        </select>
+      </label>
+      <label>New immutable Digital Take identity
+        <input aria-label="New live Digital Take name" value={newLiveTake}
+          disabled={!!liveTicket||liveBusy} maxLength={61}
+          onChange={e=>setNewLiveTake(e.target.value)}/>
+      </label>
+      <div className="actions">
+        <button onClick={beginLiveCapture}
+          disabled={!livePlan||!liveEmitter||!!liveTicket||liveBusy||playing||exporting||
+            typeof native?.data_av_live_begin!=='function'}>
+          Approve native microphone recording
+        </button>
+        <button onClick={()=>finishLiveCapture(true)}
+          disabled={!liveTicket||liveBusy}>Stop and freeze original Take</button>
+        <button onClick={()=>finishLiveCapture(false)}
+          disabled={!liveTicket||liveBusy}>Discard live recording</button>
+      </div>
+      {liveTicket&&<p role="status">Microphone active; original Take has
+        not been frozen. Closing this window cancels capture.</p>}
+      {liveReceipt&&<p role="status">Frozen Take {liveReceipt.take_id} ·
+        original source SHA <code>{liveReceipt.take_document_sha256.slice(0,16)}…</code> ·
+        {liveReceipt.actual_recorded_samples} captured samples.</p>}
+    </section>
     <section className="card" aria-label="Creator-approved FFmpeg-free 2D film delivery">
       <h3>Render a 2D version from the frozen 3D world</h3>
       <p className="fineprint">Choose a new presentation name, then select the
