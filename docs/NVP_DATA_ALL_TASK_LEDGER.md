@@ -673,3 +673,14 @@ Replaced the initial hardlink of the approved WAV into the CineCert staging area
 - **Four-platform supervisor matrix PASS** at same exact head: [42392709385](https://github.com/vjmichael/nvp_offline_film/actions/runs/42392709385), Ubuntu 24.04 and Windows 2025 with Python 3.11/3.13.
 - **New follow-on native sample:** `tests/nvp_wo4_unique_frame_pilot_ci.py` and `.github/workflows/nvp-wo4-unique-frame-pilot.yml` demand twelve genuinely distinct, source-SHA-checked patterned XYZ12 originals and twelve unique actual OpenJPEG codestreams for each 2K and 4K profile. Each source must remain intact; elapsed native codec time, RAM and bytes recorded. This is a separate bounded sample, **not** a full-feature distinct-frame performance acceptance. New workflow CI verification pending.
 - **Still open:** physical installed Lu/NVP DLC, protected native project/worker bridge and background service, real diverse full-feature rendering resource acceptance, independent DCI/SMPTE specialist/cinema ingest, true-peak/loudness/color projector calibration; exact shipping licenses and transitive dependency notices intentionally deferred until installer freeze, still compulsory. NO FFMPEG.
+
+#### NVP 17 native distinct-frame pilot — **BOTH PROFILES PASS**
+
+GitHub Actions [42395210102](https://github.com/vjmichael/nvp_offline_film/actions/runs/42395210102) completed successfully at test code commit `58c09e1a05155dd3401f1d219740f2c57751d3c7` (later documentation-only edits do not change the tested pilot). Verified **12 different original XYZ12 samples and 12 different native OpenJPEG J2K outputs per profile**, all original hashes unchanged, with both JSON SHA custody receipts archived.
+
+| Native genuine-source pilot | Sample result | Measured encode time (mean) | Total pilot elapsed |
+| --- | --- | --- | --- |
+| 2K Flat 24fps | **PASS**, 12/12 distinct | **1.0904 s/frame** | **13.806 s** |
+| 4K Scope 24fps | **PASS**, 12/12 distinct | **3.9297 s/frame** | **48.968 s** |
+
+These **specific patterned low-complexity synthetic source frames** are a short sample on Ubuntu-hosted CPU hardware, not representative full camera/image-generation scenes and not proof of 172,800/259,200 distinct-frame production throughput, GPU acceleration, long-form FilmIndex authorization, DCI theatrical acceptance, or physical installed NVP. NVP must not multiply this mean into a definitive film export forecast. The full-duration repeated-source structural packaging gate and this short distinct-frame encoding pilot are now separately verified; *real varied full-feature and installed-machine acceptance remain OPEN*. No FFmpeg.
