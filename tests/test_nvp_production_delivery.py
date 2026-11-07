@@ -220,6 +220,22 @@ class DurableCinemaDeliveryTests(unittest.TestCase):
         self.assertEqual(result["jobs"][0]["phase"],"REVIEW_REQUIRED")
         self.assertTrue(Path(published["destination"]).is_dir())
         self.assertEqual(self.journal.status(job)["state"],"REVIEW_REQUIRED")
+        denied=self.journal.approve_orphan_dcp_adoption(job,lambda _:False)
+        self.assertEqual(denied["status"],"DENIED")
+        self.assertEqual(self.journal.delivery(job)["phase"],"REVIEW_REQUIRED")
+        self.assertTrue(Path(published["destination"]).is_dir())
+        adopted=self.journal.approve_orphan_dcp_adoption(
+            job,lambda scope:(
+                scope["operation"]=="nvp.supervisor.adopt_verified_orphan_dcp.v1"
+                and scope["preserve_published_directory"] is True))
+        self.assertEqual(adopted["status"],"PUBLISHED_PENDING_INDEX")
+        self.assertFalse(adopted["filesystem_mutated"])
+        self.assertEqual(self.journal.status(job)["state"],"DCP_PUBLISHED")
+        self.assertTrue(Path(published["destination"]).is_dir())
+        with SingletonSupervisor(self.journal.root):
+            final=ProductionSupervisor(self.journal).run_one()
+        self.assertEqual(final["status"],"STRUCTURAL_DCP_FILMINDEX_RECORDED")
+        self.assertEqual(self.journal.delivery(job)["phase"],"INDEXED")
 
     def test_published_package_does_not_hide_later_source_frame_tampering(self):
         job=self.finish_picture()
@@ -253,6 +269,22 @@ class DurableCinemaDeliveryTests(unittest.TestCase):
                          "PUBLISHED_PENDING_INDEX")
         self.assertTrue((self.output/(
             "DCP_"+self.journal.delivery(job)["cpl_uuid"])).exists())
+
+    def test_partial_orphan_dcp_never_adopted_or_deleted(self):
+        job=self.finish_picture()
+        self.attach(job)
+        self.run_sound_mock()
+        claim=self.journal.next_delivery("KilledWriter",12345)
+        self.assertEqual(claim["stage"],"PACKAGE_RUNNING")
+        folder=self.output/("DCP_"+claim["cpl_uuid"])
+        folder.mkdir()
+        (folder/"picture.mxf").write_bytes(b"uncommitted not a DCP")
+        self.journal.delivery_reconcile()
+        with self.assertRaises((PermissionError,ValueError,RuntimeError)):
+            self.journal.approve_orphan_dcp_adoption(job,lambda _:True)
+        self.assertEqual(self.journal.delivery(job)["phase"],"REVIEW_REQUIRED")
+        self.assertEqual((folder/"picture.mxf").read_bytes(),
+                         b"uncommitted not a DCP")
 
     def test_post_filmindex_pre_journal_crash_retries_without_duplicate_revision(self):
         job=self.finish_picture()
