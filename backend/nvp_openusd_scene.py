@@ -242,6 +242,10 @@ class OpenUSDSceneBridge:
                 descriptor=(rig.get("skin") or {}).get("texture")
                 if descriptor is not None:
                     verified_texture(self.index,project_id,descriptor)
+                maps=(rig.get("skin") or {}).get("pbr_maps")
+                if maps:
+                    from backend.nvp_wo2_pbr_channels import verify_pbr_maps
+                    verify_pbr_maps(self.index,project_id,maps)
             from backend.nvp_openusd_skeleton import author_skeleton_layer
             skeleton_layer,rig_manifest=author_skeleton_layer(paths,skeletal_rigs)
         composed=_compose(base,motion,Sdf,Usd,parameter_layer,skeleton_layer)
