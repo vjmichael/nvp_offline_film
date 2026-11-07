@@ -72,3 +72,38 @@ jobs:
         run: npm run test:ui -- src/DirectorFilmReviewPanel.test.jsx src/WO5NativeSourcePlayback.test.jsx src/DataFirstAVPanel.test.jsx
       - name: Build actual installed WebView UI
         run: npm run build
+  real-windows-webview-review:
+    name: WO5 real native Windows WebView2 source UI and trusted review IPC
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build real desktop WebView React source
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+      - name: Install actual native NVP runtime for visible WebView2
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install 'pywebview>=5.3,<7' 'pywin32>=306'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Launch real WebView2, select film project and open WO5 review native catalog
+        shell: pwsh
+        run: |
+          python tools/nvp_desktop_alpha.py --smoke-window
+          if ($LASTEXITCODE -ne 0) { throw 'Native visible WO5 project review not established; headless contracts cannot replace this gate' }
