@@ -424,7 +424,7 @@ export default function DataFirstWorldViewport({
     };
     try{
       renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,
-        powerPreference:'low-power'});
+        powerPreference:'high-performance'});
       renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
       renderer.outputColorSpace=THREE.SRGBColorSpace;
       renderer.shadowMap.enabled=true;
@@ -450,11 +450,21 @@ export default function DataFirstWorldViewport({
       sun.shadow.camera.near=.1;sun.shadow.camera.far=140;
       sun.shadow.bias=-.00015;
       scene.add(sun);
-      pmrem=new THREE.PMREMGenerator(renderer);
-      const studio=new RoomEnvironment();
-      environmentMap=pmrem.fromScene(studio,.08).texture;
-      studio.dispose();
-      scene.environment=environmentMap;
+      try{
+        pmrem=new THREE.PMREMGenerator(renderer);
+        const studio=new RoomEnvironment();
+        try{environmentMap=pmrem.fromScene(studio,.08).texture;}
+        finally{studio.dispose();}
+        scene.environment=environmentMap;
+      }catch{
+        // A low-budget or recovering GPU may lack PMREM support. Preserve
+        // accurate source geometry and direct lighting instead of hiding
+        // the entire original scene or claiming reflection acceptance.
+        environmentMap?.dispose();
+        pmrem?.dispose();
+        pmrem=null;environmentMap=null;
+        scene.environment=null;
+      }
       scene.environmentIntensity=1;
       const camera=new THREE.PerspectiveCamera(50,2,.01,5000);
       const authoredCamera=new THREE.PerspectiveCamera(50,2,.01,5000);
@@ -501,17 +511,23 @@ export default function DataFirstWorldViewport({
           if(composer){composer.dispose();composer=null;renderPass=null;
             bokehPass=null;}
           if(cameraLook.depth_of_field){
-            const width=Math.max(280,Math.min(root.clientWidth||640,1900));
-            composer=new EffectComposer(renderer);
-            renderPass=new RenderPass(scene,camera);
-            composer.addPass(renderPass);
-            bokehPass=new BokehPass(scene,camera,{
-              focus:cameraLook.focus_distance_m,
-              aperture:Math.min(.05,.015/(cameraLook.f_stop*cameraLook.f_stop)),
-              maxblur:.018,width,height:360});
-            composer.addPass(bokehPass);
-            composer.addPass(new OutputPass());
-            composer.setSize(width,360);
+            try{
+              const width=Math.max(280,Math.min(root.clientWidth||640,1900));
+              composer=new EffectComposer(renderer);
+              renderPass=new RenderPass(scene,camera);
+              composer.addPass(renderPass);
+              bokehPass=new BokehPass(scene,camera,{
+                focus:cameraLook.focus_distance_m,
+                aperture:Math.min(.05,.015/(cameraLook.f_stop*cameraLook.f_stop)),
+                maxblur:.018,width,height:360});
+              composer.addPass(bokehPass);
+              composer.addPass(new OutputPass());
+              composer.setSize(width,360);
+            }catch{
+              composer?.dispose();
+              composer=null;renderPass=null;bokehPass=null;
+              setLookWarning('Optical DOF unavailable on this device; normal 3D preview remains usable.');
+            }
           }
           requestRender();
         }};
