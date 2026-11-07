@@ -197,6 +197,20 @@ class NativePublishedMultiReelViewing(unittest.TestCase):
                 player.close()
             for original,original_sha in original_files:
                 self.assertEqual(digest_file(original),original_sha)
+            # Optional GitHub-owned fixture for a REAL installed NVP.exe
+            # codec timing acceptance. Never treat six distinct frames as
+            # original feature-film proof or include a synthetic movie in
+            # the released installer.
+            fixture_root=os.environ.get("NVP_WO5_TEST_KEEP_DCP")
+            if fixture_root:
+                import shutil
+                destination=Path(fixture_root)
+                if (not destination.is_absolute() or destination.exists() or
+                        destination.is_symlink() or not destination.parent.is_dir()):
+                    raise PermissionError("Fresh CI-owned native DCP fixture destination required")
+                shutil.copytree(folder,destination)
+                check=inspect_dcp_structure(destination)
+                self.assertEqual(check["reel_durations"],[3,3])
 
 if __name__=="__main__":
     unittest.main()
