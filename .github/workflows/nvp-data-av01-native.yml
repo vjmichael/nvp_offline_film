@@ -68,7 +68,7 @@ on:
       - 'tests/test_nvp_wo2_pbr_channels.py'
       - 'backend/nvp_wo2_hydra_probe.py'
       - 'tests/test_nvp_wo2_hydra_probe.py'
-      - 'backend/nvp_wo2_hardware_evidence.py backend/nvp_wo2_renderer_comparison.py'
+      - 'backend/nvp_wo2_hardware_evidence.py'
       - 'tests/test_nvp_wo2_hardware_evidence.py'
       - 'backend/nvp_wo2_renderer_comparison.py'
       - 'tests/test_nvp_wo2_renderer_comparison.py'
@@ -150,7 +150,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m compileall -q backend/nvp_data_av_skinning.py backend/nvp_native_spatial_acoustics.py backend/nvp_openusd_skeleton.py backend/nvp_openusd_skinning.py backend/nvp_native_stereo_take.py backend/nvp_native_independent_take.py backend/nvp_independent_device_sync.py backend/nvp_capture_recovery.py backend/nvp_native_hrir.py
-          python -m compileall -q backend/nvp_native_scene_linear_raster.py backend/nvp_native_scene_linear_exr.py backend/nvp_native_color_export_journal.py backend/nvp_native_cinema_master_gate.py backend/nvp_native_usd_texture.py backend/nvp_wo2_openpbr.py backend/nvp_wo2_material_slots.py backend/nvp_wo2_materialx_resolver.py backend/nvp_wo2_pbr_channels.py backend/nvp_wo2_hydra_probe.py backend/nvp_wo2_hardware_evidence.py
+          python -m compileall -q backend/nvp_native_scene_linear_raster.py backend/nvp_native_scene_linear_exr.py backend/nvp_native_color_export_journal.py backend/nvp_native_cinema_master_gate.py backend/nvp_native_usd_texture.py backend/nvp_wo2_openpbr.py backend/nvp_wo2_material_slots.py backend/nvp_wo2_materialx_resolver.py backend/nvp_wo2_pbr_channels.py backend/nvp_wo2_hydra_probe.py backend/nvp_wo2_hardware_evidence.py backend/nvp_wo2_renderer_comparison.py backend/nvp_wo2_continuity.py
           python -m compileall -q backend/nvp_data_av_source.py backend/nvp_data_av_scene.py backend/nvp_data_av_usd.py backend/nvp_data_av_desktop.py backend/nvp_slate08b_native_camera_ipc.py tools/nvp_desktop_alpha.py tools/nvp_data_av_installed_acceptance.py tests/test_nvp_data_av_native.py
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_exact_time_shots.py' -v
@@ -216,7 +216,7 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/DataFirstWorldViewport.test.jsx src/NativeColorGradePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx
+      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/DataFirstWorldViewport.test.jsx src/NativeColorGradePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/NativeTextureGPUReference.test.js src/NativeTextureTileStream.test.js src/NativeInstalledTextureProbe.test.jsx
 
   installed-windows-native:
     name: Real packaged / installed Windows NVP.exe with OpenUSD and PCM (no FFmpeg)
