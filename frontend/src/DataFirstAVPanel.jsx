@@ -55,6 +55,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [liveEmitter,setLiveEmitter]=useState('');
   const [secondLiveEmitter,setSecondLiveEmitter]=useState('');
   const [sharedStereo,setSharedStereo]=useState(false);
+  const [independentClocks,setIndependentClocks]=useState(false);
+  const [independentInputs,setIndependentInputs]=useState([]);
+  const [firstDevice,setFirstDevice]=useState('');
+  const [secondDevice,setSecondDevice]=useState('');
   const [newLiveTake,setNewLiveTake]=useState('LiveTake001');
   const [liveTicket,setLiveTicket]=useState(null);
   const [liveBusy,setLiveBusy]=useState(false);
@@ -126,6 +130,14 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          result.status!=='AVAILABLE'||!Array.isArray(result.camera_timelines))
         throw Error('Live source camera catalog is unverified');
       setCameraPlans(result.camera_timelines);
+      const inputs=Array.isArray(result.independent_audio_inputs)?
+        result.independent_audio_inputs.filter(x=>
+          Number.isInteger(x?.device_id)&&typeof x.name==='string'
+          &&Number.isInteger(x.max_input_channels)&&x.max_input_channels>=1
+        ).slice(0,128):[];
+      setIndependentInputs(inputs);
+      setFirstDevice(inputs[0]?String(inputs[0].device_id):'');
+      setSecondDevice(inputs[1]?String(inputs[1].device_id):'');
       const unapproved=Array.isArray(result.unapproved_capture_recovery)?
         result.unapproved_capture_recovery.slice(0,128):[];
       setUnapprovedCaptures(unapproved);
@@ -199,9 +211,16 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
 
   async function beginLiveCapture(){
     if(!native||!livePlan||liveTicket||liveBusy||playing||exporting)return;
-    if(sharedStereo&&(!secondLiveEmitter||secondLiveEmitter===liveEmitter)){
-      setError('Two distinct authored 3D emitters are required for shared-clock stereo.');
+    if((sharedStereo||independentClocks)&&
+       (!secondLiveEmitter||secondLiveEmitter===liveEmitter)){
+      setError('Two distinct authored 3D emitters are required for dual-source filming.');
       return;
+    }
+    if(independentClocks&&(
+        firstDevice===secondDevice||
+        !independentInputs.some(x=>String(x.device_id)===firstDevice)||
+        !independentInputs.some(x=>String(x.device_id)===secondDevice))){
+      setError('Choose two distinct connected native input devices.');return;
     }
     if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,60}$/.test(newLiveTake)){
       setError('Choose a unique native Take ID with letters and digits.');return;
@@ -218,11 +237,14 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         emitter_path:liveEmitter,
         event_id:newLiveTake+'.Speech',
         subject_id:liveEmitter.split('/').pop(),
-        ...(sharedStereo?{
+        ...((sharedStereo||independentClocks)?{
           second_source_id:newLiveTake+'.Mic2',
           second_emitter_path:secondLiveEmitter,
           second_event_id:newLiveTake+'.Speech2',
           second_subject_id:secondLiveEmitter.split('/').pop(),
+        }:{}),
+        ...(independentClocks?{
+          independent_device_ids:[Number(firstDevice),Number(secondDevice)],
         }:{}),
       });
       if(result?.format!=='nvp.data_av.live_mic_take.v1'||
@@ -252,7 +274,15 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         if(sharedStereo&&(result.native_input_channels!==2||
             result.shared_capture_clock!==true||
             result.original_mono_source_count!==2))
-          throw Error('Native source channel alignment was not verified');
+          throw Error('Shared-device channel alignment was not verified');
+        if(independentClocks&&(
+            result.independent_device_clocks_synchronized!==true||
+            result.shared_capture_clock!==false||
+            result.hardware_genlock!==false||
+            result.original_mono_source_count!==2||
+            !/^[0-9a-f]{64}$/.test(result.clock_evidence_sha256||'')||
+            !Array.isArray(result.drift_ppm)||result.drift_ppm.length!==2))
+          throw Error('Independent device native clock calibration was not proven');
         setLiveReceipt(result);
         const updated=await native.data_av_catalog(projectId);
         if(updated?.format===FORMAT&&Array.isArray(updated.takes)){
@@ -683,10 +713,50 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <label>
         <input type="checkbox" aria-label="Record two independent mono sources on one stereo input"
           checked={sharedStereo} disabled={!!liveTicket||liveBusy}
-          onChange={e=>setSharedStereo(e.target.checked)}/>
+          onChange={e=>{
+            setSharedStereo(e.target.checked);
+            if(e.target.checked)setIndependentClocks(false);
+          }}/>
         Two original mono sources from one shared-clock stereo input
       </label>
-      {sharedStereo&&<label>Second authored source emitter
+      <label>
+        <input type="checkbox"
+          aria-label="Record two original mono sources from independent audio devices"
+          checked={independentClocks}
+          disabled={!!liveTicket||liveBusy||independentInputs.length<2}
+          onChange={e=>{
+            setIndependentClocks(e.target.checked);
+            if(e.target.checked)setSharedStereo(false);
+          }}/>
+        Two original mono sources from separate sound devices with ADC drift calibration
+      </label>
+      {independentClocks&&<div>
+        <p className="fineprint">Each real input has its own clock. NVP
+          measures relative capture offsets and drift, preserves both raw
+          sources, and derives temporary Film Time-aligned playback. A failed
+          ADC timing check rejects the Take. This is not genlock.</p>
+        <label>First independent native input
+          <select aria-label="First independent audio capture device"
+            value={firstDevice} disabled={!!liveTicket||liveBusy}
+            onChange={e=>setFirstDevice(e.target.value)}>
+            {independentInputs.map(x=><option key={x.device_id}
+              value={String(x.device_id)}>
+              {x.name} · {x.host_api} · device {x.device_id}
+            </option>)}
+          </select>
+        </label>
+        <label>Second independent native input
+          <select aria-label="Second independent audio capture device"
+            value={secondDevice} disabled={!!liveTicket||liveBusy}
+            onChange={e=>setSecondDevice(e.target.value)}>
+            {independentInputs.map(x=><option key={x.device_id}
+              value={String(x.device_id)}>
+              {x.name} · {x.host_api} · device {x.device_id}
+            </option>)}
+          </select>
+        </label>
+      </div>}
+      {(sharedStereo||independentClocks)&&<label>Second authored source emitter
         <select aria-label="Second original source emitter"
           value={secondLiveEmitter} disabled={!!liveTicket||liveBusy}
           onChange={e=>setSecondLiveEmitter(e.target.value)}>
@@ -705,7 +775,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <div className="actions">
         <button onClick={beginLiveCapture}
           disabled={!livePlan||!liveEmitter||
-            (sharedStereo&&(!secondLiveEmitter||secondLiveEmitter===liveEmitter))||
+            ((sharedStereo||independentClocks)&&
+              (!secondLiveEmitter||secondLiveEmitter===liveEmitter))||
+            (independentClocks&&(firstDevice===secondDevice||
+              !firstDevice||!secondDevice))||
             !!liveTicket||liveBusy||playing||exporting||
             typeof native?.data_av_live_begin!=='function'}>
           Approve native microphone recording
@@ -720,7 +793,13 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       {liveReceipt&&<p role="status">Frozen Take {liveReceipt.take_id} ·
         original source SHA <code>{liveReceipt.take_document_sha256.slice(0,16)}…</code> ·
         {liveReceipt.actual_recorded_samples} captured frames ·
-        {liveReceipt.original_mono_source_count||1} original mono source(s).</p>}
+        {liveReceipt.original_mono_source_count||1} original mono source(s).
+        {liveReceipt.independent_device_clocks_synchronized===true&&
+          <> Independent-clock model verified · drifts
+            {liveReceipt.drift_ppm?.join(' / ')} ppm ·
+            proof <code>{liveReceipt.clock_evidence_sha256.slice(0,16)}…</code>.
+          </>}
+      </p>}
     </section>
     <section className="card" aria-label="Creator-approved FFmpeg-free 2D film delivery">
       <h3>Render a 2D version from the frozen 3D world</h3>
