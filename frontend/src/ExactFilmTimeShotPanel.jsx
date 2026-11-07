@@ -200,7 +200,10 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
         // An in-flight publication must not authorize a newer unsaved draft.
         if(draftEpoch.current===publishingEpoch)setTimelineSha(next.document_sha256);
         else setTimelineSha('');
-        setDurationTick(next.duration_tick);setExactDuration(null);
+        setDurationTick(next.duration_tick);
+        const display=secondsFromTicks(next.duration_tick);
+        setExactDuration(display===null?next.duration_tick:null);
+        if(display!==null)setDuration(display);
         setNotice('Saved exact-time source revision '+next.revision+
           '. No frames, audio master or Digital Take generated.');
       });
@@ -262,9 +265,19 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
               setStartTick(ticks(start));setLengthTick(ticks(seconds));
               if(exactDuration===null)setDurationTick(ticks(duration));
             }catch(err){setError(err.message);return;}
-          }else if(exactDuration!==null){
-            setError("Sub-microsecond saved duration requires exact tick mode.");
-            return;
+          }else{
+            // A tick-mode edit must not be silently replaced by stale
+            // seconds fields when the creator switches back to convenience units.
+            try{
+              const values=[startTick,lengthTick,durationTick].map(x=>
+                secondsFromTicks(exactTick(x).toString()));
+              if(values.some(x=>x===null)){
+                setError("Sub-microsecond Film Time requires exact tick mode.");
+                return;
+              }
+              setStart(values[0]);setSeconds(values[1]);setDuration(values[2]);
+              setExactDuration(null);
+            }catch(err){setError(err.message);return;}
           }
           setTickMode(e.target.checked);setError("");
         }}/> Author exact integer Film Time ticks</label>
