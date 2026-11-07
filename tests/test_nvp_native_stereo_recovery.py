@@ -71,8 +71,9 @@ class NativeSynchronizedSourceTests(unittest.TestCase):
         self.assertNotEqual(self.sound.read(
             self.pid,"DualMicrophoneA",1,0,24),
             self.sound.read(self.pid,"DualMicrophoneB",1,0,24))
-        events=self.index.read_revision(self.pid,"DualEvents",1)
-        self.assertEqual(len([ev for ev in events["data"]["events"]
+        events=self.timeline.events_in(self.pid,"DualEvents",1,
+            start_tick=0,end_tick=T,limit=64)
+        self.assertEqual(len([ev for ev in events["events"]
                               if ev["event_kind"]=="dialogue"]),2)
         self.assertEqual(self.journal.catalog(self.pid)["items"],[])
         self.assertEqual(self.index.read_revision(
