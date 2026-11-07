@@ -377,7 +377,9 @@ export default function DataFirstWorldViewport({
         tex.repeat.set(...options.uv.repeat);
         tex.offset.set(...options.uv.offset);
         tex.rotation=options.uv.rotation_deg*Math.PI/180;
-        tex.center.set(.5,.5);
+        // USD UsdTransform2d uses scale/rotation about the UV origin.
+        // Never use Three's default centered-rotation convenience here.
+        tex.center.set(0,0);
       }
       tex.flipY=true;
       textureCache.set(sha,{texture:tex,refs:1,pixels});
