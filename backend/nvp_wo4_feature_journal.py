@@ -404,6 +404,87 @@ class FeatureJournal(CinemaDeliveryJournal):
                 "deleted_uncommitted_files":False,
                 "production_dcp_accepted":False}
 
+    def approve_orphan_feature_adoption(self,feature_id,authorize):
+        """Explicitly adopt a complete post-publish/pre-checkpoint feature.
+
+        No mutation of the DCP directory, no overwrites and no acceptance of
+        incomplete stages. All original source reels and approved MXFs, every
+        copied asset and the exact CPL/PKL/AssetMap must match.
+        """
+        if not callable(authorize):
+            raise PermissionError("Native creator review authorization required")
+        f=self.feature(feature_id)
+        if (f["state"]!="REVIEW_REQUIRED" or f["file_sha_json"] is not None
+                or f["filmindex_sha256"] is not None or f["cancel_requested"]):
+            raise PermissionError("Only uncommitted feature orphan may be reviewed")
+        manifest=json.loads(f["manifest_json"])
+        if _digest(_canonical(manifest))!=f["manifest_sha256"]:
+            raise PermissionError("Frozen feature manifest integrity failed")
+        root=Path(f["output_root"])
+        folder=root/("DCP_FEATURE_"+manifest["ids"]["cpl"])
+        stage=root/(".nvp-feature-stage-"+manifest["ids"]["cpl"])
+        if (root.is_symlink() or folder.is_symlink() or
+                not folder.is_dir() or stage.exists() or stage.is_symlink()):
+            raise PermissionError("Partial feature stage cannot be adopted")
+        _check_manifest(manifest["reels"],manifest["ids"])
+        names={"CPL.xml","PKL.xml","ASSETMAP.xml","VOLINDEX.xml"}
+        expected_tracks=set()
+        for i,part in enumerate(manifest["reels"]):
+            job_id=manifest["ordered_reel_job_ids"][i]
+            status=self.status(job_id)
+            delivery=self.delivery(job_id)
+            if (status["state"]!="DCP_INDEXED" or
+                    status["project_id"]!=f["project_id"] or
+                    delivery["phase"]!="INDEXED"):
+                raise PermissionError("Frozen original reel index was revoked")
+            self._verify_all_production_sources(job_id)
+            self._check_published(job_id)
+            for kind in ("picture","sound"):
+                filename=f"{kind}_{i:04d}.mxf"
+                names.add(filename)
+                original=part[kind]
+                if (digest_file(folder/filename)!=original["file_sha256"] or
+                        (folder/filename).is_symlink()):
+                    raise PermissionError("Feature MXF differs from verified original reel")
+                expected_tracks.add((kind,original["asset_uuid"]))
+        if {p.name for p in folder.iterdir()}!=names:
+            raise PermissionError("Orphan feature has extra or missing package assets")
+        report=inspect_dcp_structure(folder)
+        if (report["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
+                report["cpl_uuid"]!=manifest["ids"]["cpl"] or
+                report["pkl_uuid"]!=manifest["ids"]["pkl"] or
+                report["reel_durations"]!=[r["frames"] for r in manifest["reels"]] or
+                {(x["kind"],x["asset_id"]) for x in report["tracks"]}!=expected_tracks):
+            raise PermissionError("Orphan multi-reel CPL/PKL/hash proof failed")
+        files={name:digest_file(folder/name) for name in sorted(names)}
+        scope={"operation":"nvp.supervisor.adopt_verified_orphan_feature.v1",
+               "feature_id":feature_id,
+               "manifest_sha256":f["manifest_sha256"],
+               "cpl_uuid":manifest["ids"]["cpl"],
+               "file_sha256":files,
+               "preserve_published_directory":True}
+        if authorize(deepcopy(scope)) is not True:
+            return {"status":"DENIED","feature_id":feature_id}
+        if (inspect_dcp_structure(folder)["status"]!="STRUCTURE_AND_SHA_VERIFIED"
+                or any(digest_file(folder/name)!=digest
+                       for name,digest in files.items())):
+            raise PermissionError("Feature changed during creator approval")
+        with self._tx() as db:
+            row=db.execute("""SELECT state,manifest_sha256,
+                file_sha_json,cancel_requested FROM production_features
+                WHERE feature_id=?""",(feature_id,)).fetchone()
+            if (row is None or row["state"]!="REVIEW_REQUIRED" or
+                    row["manifest_sha256"]!=f["manifest_sha256"] or
+                    row["file_sha_json"] is not None or row["cancel_requested"]):
+                raise PermissionError("Feature review changed before durable adoption")
+            db.execute("""UPDATE production_features SET
+                state='PUBLISHED_PENDING_INDEX',file_sha_json=?,
+                owner=NULL,updated_at=? WHERE feature_id=?""",
+                (json.dumps(files,sort_keys=True),_now(),feature_id))
+        return {"status":"PUBLISHED_PENDING_INDEX","feature_id":feature_id,
+                "destination":str(folder),"file_sha256":files,
+                "filesystem_mutated":False,"production_dcp_accepted":False}
+
     def _mark_feature_restart_review(self,feature_id):
         with self._tx() as db:
             db.execute("""UPDATE production_features
