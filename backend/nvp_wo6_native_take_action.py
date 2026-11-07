@@ -9,6 +9,7 @@ ApprovedTaskBindings, OS containment and guarded cancellation.
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 from pathlib import Path
 import secrets
@@ -25,6 +26,9 @@ from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_resource_supervisor import wait_guarded, NativeCancelRequested
 from backend.nvp_worker_containment import launch_contained
 from backend.nvp_worker_host_lease import exclusive_worker_host
+from backend.nvp_wo6_kernel_attestation import (
+    persist_windows_job_identity, immutable_job_name,
+    attest_windows_job_stopped)
 from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_wo6_impact_preview import preview_source_impact, _source_lifecycle_state
 
@@ -217,6 +221,11 @@ class NativeTakeActionHost:
                 out.write(raw)
                 out.flush()
                 __import__("os").fsync(out.fileno())
+            if os.name=="nt":
+                persist_windows_job_identity(
+                    folder,task_id=task_id,
+                    spec_sha256=hashlib.sha256(canonical_bytes(spec)).hexdigest(),
+                    owner=self.owner)
             self.binding.enqueue(
                 AdmissionRequest(task_id, "compositing",
                                  "Create approved new immutable OpenUSD Take",
@@ -266,7 +275,9 @@ class NativeTakeActionHost:
                     folder / "stderr.log").open("wb") as err:
                 worker = launch_contained(
                     command, cwd=str(folder), stdout=out, stderr=err,
-                    memory_mb=spec["ram_mb"])
+                    memory_mb=spec["ram_mb"],
+                    windows_job_name=(
+                        immutable_job_name(task_id) if os.name=="nt" else None))
                 self.ledger.update(task_id, "building_scene",
                                    "Contained native frozen Take creation")
                 def cancelled():
