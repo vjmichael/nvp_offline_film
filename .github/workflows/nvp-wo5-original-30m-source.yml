@@ -38,7 +38,7 @@ jobs:
       - name: Verify exactly 30m original data, source shots, recorded PCM, SQLite persistence, new Take
         run: python -m unittest discover -s tests -p test_nvp_wo5_original_30m_pilot.py -v
       - name: Publish real original OpenUSD source-only project artifact for follow-on film mastering
-        run: python tools/nvp_wo5_original_30m_pilot.py --output-root ci-original-30m
+        run: python -m tools.nvp_wo5_original_30m_pilot --output-root ci-original-30m
       - uses: actions/upload-artifact@v4
         if: success()
         with:
