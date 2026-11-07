@@ -4,14 +4,21 @@
  * may return a tile, and no tile becomes an authoritative new source.
  */
 export async function inspectOriginalTextureTiles({
-  native,sessionId,asset,texture,takeSha256,
+  native,sessionId,asset,rig,texture,takeSha256,
   mipLevel=0,signal,onProgress,
 }){
-  if(!native||typeof native.data_av_original_texture_tile!=='function'||
+  const isRig=rig!=null;
+  const method=isRig?'data_av_original_rig_texture_tile':
+    'data_av_original_texture_tile';
+  if(!native||typeof native[method]!=='function'||
      typeof sessionId!=='string'||sessionId.length<16||
-     !asset||typeof asset.asset_id!=='string'||
-     !Number.isInteger(asset.asset_revision)||asset.asset_revision<1||
-     !/^[0-9a-f]{64}$/.test(asset.asset_document_sha256||'')||
+     Boolean(asset)===Boolean(rig)||
+     (!isRig&&(typeof asset.asset_id!=='string'||
+       !Number.isInteger(asset.asset_revision)||asset.asset_revision<1||
+       !/^[0-9a-f]{64}$/.test(asset.asset_document_sha256||'')))||
+     (isRig&&(typeof rig.actor_path!=='string'||
+       !rig.actor_path.startsWith('/World/')||
+       !/^[0-9a-f]{64}$/.test(rig.skeleton_layer_sha256||'')))||
      !/^[0-9a-f]{64}$/.test(texture?.sha256||'')||
      !/^[0-9a-f]{64}$/.test(takeSha256||'')||
      !Number.isInteger(mipLevel)||mipLevel<0||mipLevel>3)
@@ -25,10 +32,15 @@ export async function inspectOriginalTextureTiles({
     for(let x=0;columns===null||x<columns;x++){
       if(signal?.aborted)
         throw Error('Original source texture inspection cancelled');
-      const reply=await native.data_av_original_texture_tile(sessionId,{
-        asset_id:asset.asset_id,
-        asset_revision:asset.asset_revision,
-        asset_document_sha256:asset.asset_document_sha256,
+      const reply=await native[method](sessionId,{
+        ...(isRig?{
+          actor_path:rig.actor_path,
+          skeleton_layer_sha256:rig.skeleton_layer_sha256,
+        }:{
+          asset_id:asset.asset_id,
+          asset_revision:asset.asset_revision,
+          asset_document_sha256:asset.asset_document_sha256,
+        }),
         texture_sha256:texture.sha256,
         mip_level:mipLevel,tile_x:x,tile_y:y,
       });
@@ -36,7 +48,9 @@ export async function inspectOriginalTextureTiles({
          reply.source_modified!==false||
          reply.ffmpeg_used!==false||
          reply.derived_preview_only!==true||
-         reply.asset_document_sha256!==asset.asset_document_sha256||
+         (isRig?(reply.actor_path!==rig.actor_path||
+                  reply.skeleton_layer_sha256!==rig.skeleton_layer_sha256):
+                reply.asset_document_sha256!==asset.asset_document_sha256)||
          reply.take_document_sha256!==takeSha256||
          reply.source_sha256!==texture.sha256||
          reply.mip_level!==mipLevel||
@@ -86,6 +100,7 @@ export async function inspectOriginalTextureTiles({
   return {format:'nvp.wo2.derived_texture_inspection.v1',
     source_sha256:texture.sha256,
     take_document_sha256:takeSha256,
+    source_rig_binding:isRig?rig:null,
     canvas,width,height,mip_level:mipLevel,
     tiles_verified:processed,source_modified:false,
     derived_preview_only:true,hardware_gpu_uploaded:false};
