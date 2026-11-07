@@ -1,21 +1,25 @@
-name: NVP WO5 Original Short Proof Admission (NO FFMPEG)
+name: NVP WO5 Original Film Source Evidence (NO FFMPEG)
 on:
   push:
     branches: [nvp/wo5-production-proof-20261107]
     paths:
       - backend/nvp_wo5_original_short.py
+      - backend/nvp_wo5_original_feature.py
       - tests/test_nvp_wo5_original_short.py
+      - tests/test_nvp_wo5_original_feature.py
       - .github/workflows/nvp-wo5-original-short.yml
   pull_request:
     paths:
       - backend/nvp_wo5_original_short.py
+      - backend/nvp_wo5_original_feature.py
       - tests/test_nvp_wo5_original_short.py
+      - tests/test_nvp_wo5_original_feature.py
       - .github/workflows/nvp-wo5-original-short.yml
 permissions:
   contents: read
 jobs:
   native-original-proof-admission:
-    name: WO5 source-verified short-film eligibility, never creative acceptance / ${{ matrix.os }} / Py ${{ matrix.py }}
+    name: WO5 30-minute multi-reel source admission (not creative acceptance) / ${{ matrix.os }} / Py ${{ matrix.py }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -31,6 +35,8 @@ jobs:
       - name: Install pinned OpenUSD runtime for trusted source Take import
         run: python -m pip install 'usd-core==26.11'
       - name: Compile WO5 source review entrypoint and tests
-        run: python -m compileall -q backend/nvp_wo5_original_short.py tests/test_nvp_wo5_original_short.py
+        run: python -m compileall -q backend/nvp_wo5_original_short.py backend/nvp_wo5_original_feature.py tests/test_nvp_wo5_original_short.py tests/test_nvp_wo5_original_feature.py
       - name: Reject fake original film, repeated synthetic frames and untrusted grants
         run: python -m unittest discover -s tests -p test_nvp_wo5_original_short.py -v
+      - name: Verify bounded 30-minute six-reel source admission and hostile cases
+        run: python -m unittest discover -s tests -p test_nvp_wo5_original_feature.py -v
