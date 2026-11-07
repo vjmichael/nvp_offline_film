@@ -139,8 +139,8 @@ def normalize_skin(skin,joint_count):
             texture["source_modified"] is not False or
             type(texture["width"]) is not int or
             type(texture["height"]) is not int or
-            not 1<=texture["width"]<=512 or
-            not 1<=texture["height"]<=512):
+            not 1<=texture["width"]<=2048 or
+            not 1<=texture["height"]<=2048):
             raise ValueError("Skinned PNG texture must reference a verified source blob")
     material=skin.get("preview_material",{"roughness":0.8,"metallic":0.05})
     if (type(material) is not dict or
