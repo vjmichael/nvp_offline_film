@@ -131,8 +131,8 @@ class OriginalCaptureJournal:
         for directory in sorted(self.root.iterdir()):
             if len(report)>=MAX_CATALOG:
                 break
-            if directory.is_symlink() or not directory.is_dir() or
-                    not ID.fullmatch(directory.name):
+            if (directory.is_symlink() or not directory.is_dir() or
+                    not ID.fullmatch(directory.name)):
                 continue
             receipt=directory/"receipt.json"
             if not receipt.is_file() or receipt.is_symlink():
