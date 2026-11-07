@@ -280,7 +280,8 @@ class Approved2DPackage:
                             aces["grade_id"],aces["revision"],
                             aces["document_sha256"],
                             tick=tick,camera_path=camera,
-                            expected_config_sha256=aces["config_sha256"])
+                            expected_config_sha256=aces["config_sha256"],
+                            source_session=source,source_snapshot=state)
                         original_source=processed["scene_linear_source"]
                         if (original_source["scene_snapshot_sha256"]!=
                                 state["snapshot_sha256"] or
