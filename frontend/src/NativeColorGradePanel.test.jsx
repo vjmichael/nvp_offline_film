@@ -62,6 +62,8 @@ function environment(){
       target:'SMPTE_2K_FLAT_24',
       source_take_sha256:takeSHA,
       source_integrity_verified:true,
+      authenticated_approved_source_derivative:true,
+      authenticated_native_presentation_sha256:'e'.repeat(64),
       dcp_delivered:false,hdr10_master_approved:false,
       source_original_modified:false,ffmpeg_used:false,
       required_master_color_and_delivery_capabilities:[
