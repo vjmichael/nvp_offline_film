@@ -74,12 +74,20 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
         "original_30_minute_film_watched":False,
         "external_projection_passed":False,
     }
+    # Realtime 24fps is an actual release requirement; the bounded probe
+    # must not hide a native subprocess stall until the CI outer 180s kill.
+    max_wall_seconds=max(60.,min(120.,float(seconds)*3.))
+    deadline=time.monotonic()+max_wall_seconds
+    native_failure=None
     tracemalloc.start()
     decoded=0
     bytes_output=0
     start=time.monotonic()
     reel_index=0
     while time.monotonic()-start<seconds:
+        if time.monotonic()>=deadline:
+            native_failure="SUSTAINED_PROBE_EXCEEDED_WALL_BUDGET"
+            break
         pic,snd,nframes=reels[reel_index]
         # The same real six-frame sample is recycled to probe sustained
         # decoder work; this IS NOT a varied original-film acceptance.
@@ -89,7 +97,7 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
             cancel=lambda:False
             run_supervised_codec(unwrap,["-f","0","-d",str(n),
                 "-b",str(16*1024*1024),str(pic),"p_"],
-                workdir=work,check_cancel=cancel,timeout=240)
+                workdir=work,check_cancel=cancel,timeout=12)
             run_supervised_codec(unwrap,["-f","0","-d",str(n),
                 str(snd),"snd"],workdir=work,
                 check_cancel=cancel,timeout=240)
@@ -126,18 +134,24 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                 decoded+=1
         reel_index=(reel_index+1)%len(reels)
     elapsed=time.monotonic()-start
+    complete=(elapsed>=seconds and native_failure is None)
     _,peak=tracemalloc.get_traced_memory()
     tracemalloc.stop()
     fps=decoded/elapsed
     report.update({
         "status":("THROUGHPUT_TARGET_MET_NOT_GUI_ACCEPTED" if
-                  fps>=min_fps else "THROUGHPUT_BELOW_TARGET"),
+                  complete and fps>=min_fps else
+                  "THROUGHPUT_INCOMPLETE_NO_ACCEPTANCE" if not complete else
+                  "THROUGHPUT_BELOW_TARGET"),
         "repeated_original_sample":True,
         "real_native_picture_and_pcm_windows":decoded,
         "real_codec_elapsed_seconds":round(elapsed,3),
         "picture_decode_frames_per_second":round(fps,3),
         "target_frames_per_second":min_fps,
-        "throughput_target_met":fps>=min_fps,
+        "throughput_target_met":bool(complete and fps>=min_fps),
+        "full_wall_window_measured":bool(complete),
+        "probe_wall_budget_seconds":max_wall_seconds,
+        "native_failure":native_failure,
         "decoded_review_bytes":bytes_output,
         "python_tracemalloc_peak_bytes":peak,
         "real_device_av_sync_verified":False,
