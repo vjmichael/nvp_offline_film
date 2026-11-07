@@ -503,6 +503,90 @@ class TrustedDesktopCameraBridge:
 
 
 
+    def data_av_native_aces_policy(self):
+        """Exact OpenColorIO display processor pinned to installed library."""
+        self._native_window()
+        from backend.nvp_native_aces_color import policy
+        info,_=policy()
+        return info
+
+    def data_av_native_aces_review(self,request):
+        """Creator-authorized transient PNG16 derived from real original USD.
+
+        No model-provided image, scene-linear pixel buffer, camera selector,
+        local path, color-config text or imported render is accepted.
+        """
+        self._native_window()
+        required={"project_id","take_id","take_sha256",
+                  "grade_id","grade_revision","grade_sha256",
+                  "film_time_tick","expected_config_sha256"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Native ACES source color request must be exact")
+        from backend.nvp_native_color_decisions import NativeColorDecisions
+        from backend.nvp_native_aces_color import NativeACESColor,policy
+        from backend.nvp_temporal_ledger import TemporalLedger,_int
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        _require_pid(request["project_id"])
+        _id(request["take_id"],"original USD Digital Take")
+        _id(request["grade_id"],"original source color decision")
+        _sha(request["take_sha256"])
+        _sha(request["grade_sha256"])
+        _sha(request["expected_config_sha256"])
+        _int(request["film_time_tick"],"approved Film Time")
+        grade=NativeColorDecisions(self.index).read(
+            request["project_id"],request["grade_id"],
+            request["grade_revision"])
+        if (grade["take_id"]!=request["take_id"] or
+            grade["take_sha256"]!=request["take_sha256"] or
+            grade["document_sha256"]!=request["grade_sha256"]):
+            raise RuntimeError("Native ACES grade is not pinned to this frozen Take")
+        original=self.index.read_revision(
+            request["project_id"],request["take_id"],1)
+        data=original["data"]
+        if (original["document_sha256"]!=request["take_sha256"] or
+            original["kind"]!="take" or data.get("frozen") is not True or
+            data.get("format")!="nvp.digital_take.openusd_temporal.v1" or
+            request["film_time_tick"]>=data["duration_tick"]):
+            raise RuntimeError("Native color preview source Take/time is not frozen")
+        active=TemporalLedger(self.index).events_at(
+            request["project_id"],data["timeline_id"],
+            data["timeline_revision"],tick=request["film_time_tick"],
+            event_kind="camera",limit=2)
+        if len(active)!=1:
+            raise RuntimeError("Color preview needs exactly one original USD shot camera")
+        camera=active[0]["payload"].get("usd_prim_path")
+        if (type(camera) is not str or not camera.startswith("/World/")):
+            raise RuntimeError("Original active camera event has invalid source")
+        info,_=policy()
+        if info["configuration_sha256"]!=request["expected_config_sha256"]:
+            raise RuntimeError("Installed native ACES 2 config changed")
+        approved=self._ask(
+            "Create a TEMPORARY unmastered ACES 2 SDR review picture?\n"
+            f"Original frozen Take: {request['take_id']}\n"
+            f"Take SHA: {request['take_sha256']}\n"
+            f"Grade SHA: {request['grade_sha256']}\n"
+            f"ACES configuration SHA: {info['configuration_sha256']}\n"
+            f"Original Film Time tick: {request['film_time_tick']}\n"
+            f"Authored USD camera: {camera}\n"
+            "The renderer uses source USD geometry/light, not a captured 2D frame.\n"
+            "Working color/lights are NOT professionally calibrated.\n"
+            "No movie/master, FFmpeg process or source modification.")
+        if approved is not True:
+            raise PermissionError("Creator declined the native ACES review projection")
+        picture,receipt=NativeACESColor(self.index).process_verified_usd_scene(
+            request["project_id"],request["take_id"],request["take_sha256"],
+            request["grade_id"],request["grade_revision"],
+            request["grade_sha256"],
+            tick=request["film_time_tick"],camera_path=camera,
+            expected_config_sha256=request["expected_config_sha256"])
+        if len(picture)>16*1024*1024:
+            raise RuntimeError("Bounded native source color picture exceeded limit")
+        return {
+            **receipt,"png16_base64":base64.b64encode(picture).decode("ascii"),
+            "output_mime":"image/png","original_modified":False,
+            "saved_picture_files":False,"master_approved":False,
+        }
+
     def data_av_native_color_catalog(self,project_id,take_id,take_sha256):
         """List only source-bound, verified immutable grade revisions."""
         self._native_window()
