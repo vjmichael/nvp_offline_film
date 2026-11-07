@@ -66,3 +66,7 @@ remain for external media or final export are explicitly withdrawn.
 A decoder/encoder must come from another suitable library or a native
 format adapter; where none exists, the operation remains unavailable
 until implemented instead of silently invoking FFmpeg.
+
+## 2026-11-06 native CI diagnosis and repair
+
+At historical head `06546564941b319ccea436be59427d213db480ab`, DATA-AV workflow run [42307683019](https://github.com/vjmichael/nvp_offline_film/actions/runs/42307683019) **failed** on both Windows and Linux Python matrix. Native test `test_native_usd_spatial_audio_overlay_is_ephemeral_and_sha_bound` raised OpenUSD `Type mismatch ... expected GfTimeCode, got TfPyObjWrapper` while writing `UsdMedia.SpatialAudio.startTime`. DA-03 code repair commit `e50029bbd4f0e4a762012f7482c01911643088ac` replaces the Python wrapper with the USD value type `Sdf.TimeCode` for start and end attributes. This repair has **not yet passed exact-head CI**. Other native permission tests failed (`READY` vs `DENIED`, `DENIED` vs `READY`); the React `FilmCameraSourcePanel.test.jsx` test expected two API calls but observed one. These failures remain unresolved pending investigation. The installed Windows `NVP.exe` job was **skipped**, not accepted. DA-00 through DA-07 native acceptance remain OPEN; no full migration claim.
