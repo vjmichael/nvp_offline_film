@@ -29,7 +29,7 @@ function decodedStereo(base64,count){
   return [left,right];
 }
 
-export default function DataFirstAVPanel({projectId,nativeBridge=null,initialTakeId='',initialSourceSample=0}){
+export default function DataFirstAVPanel({projectId,nativeBridge=null,initialTakeId='',initialTakeSha256='',initialSourceSample=0}){
   const [native,setNative]=useState(nativeBridge);
   const [takes,setTakes]=useState([]);
   const [takeId,setTakeId]=useState('');
@@ -126,12 +126,13 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null,initialTak
          result.ffmpeg_runtime_required!==false||!Array.isArray(result.takes))
         throw Error('Native film data inventory is not verified');
       setTakes(result.takes);
-      const requested=result.takes.find(x=>x.take_id===initialTakeId);
+      const requested=result.takes.find(x=>x.take_id===initialTakeId &&
+        (!initialTakeSha256||x.take_document_sha256===initialTakeSha256));
       if(initialTakeId&&!requested){
-        // WO5 source preview may NOT silently switch the director to
-        // a different Take while displaying another reel's custody.
+        // WO5 source preview may NOT silently substitute a different
+        // Take identity or same-named Take with a different original SHA.
         setTakeId('');
-        setError('The exact approved original Take is missing from the native project catalog.');
+        setError('The exact approved original Take or source SHA is missing from the native project catalog.');
       }else{
         setTakeId(requested?.take_id||result.takes[0]?.take_id||'');
         if(requested&&Number.isSafeInteger(initialSourceSample)&&initialSourceSample>=0)
@@ -139,7 +140,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null,initialTak
       }
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
-  },[native,projectId,initialTakeId,initialSourceSample]);
+  },[native,projectId,initialTakeId,initialTakeSha256,initialSourceSample]);
 
   useEffect(()=>{
     setListener(item?.listeners?.[0]||'');
