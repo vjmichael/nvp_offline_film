@@ -315,8 +315,8 @@ class NativeShotActionHost:
                 raise PermissionError("Director or host approval revoked after shot worker")
             self.ledger.update(task_id, "verifying_output",
                                "Reopened exact immutable shot and original Take")
-            self.ledger.finish(task_id, "SUCCEEDED",
-                               "New shot override verified; film remains unrendered")
+            self.recovery.finish_verified(
+                task_id, detail="New shot override verified; film remains unrendered")
             return {"task_id": task_id, "state": "SUCCEEDED",
                     "shot_id": spec["shot_id"],
                     "shot_document_sha256": record["document_sha256"],
