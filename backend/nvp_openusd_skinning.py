@@ -225,6 +225,11 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
     shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
     material.CreateSurfaceOutput().ConnectToSource(
         shader.ConnectableAPI(),"surface")
+    if bound["texture"] is None:
+        from backend.nvp_wo2_openpbr import author_openpbr_scalar
+        author_openpbr_scalar(stage,material_path,material,
+            bound["display_color"],bound["preview_material"]["roughness"],
+            bound["preview_material"]["metallic"])
     if not UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(material):
         raise RuntimeError("Unable to bind original actor USD PreviewSurface")
     blend_paths=[]
@@ -303,6 +308,12 @@ def read_original_preview_surface(stage,mesh_prim,actor_path):
         any(not math.isfinite(v) or not 0<=v<=1
             for v in (roughness,metallic))):
         raise RuntimeError("Original source actor material parameters untrusted")
+    openpbr=stage.GetPrimAtPath(expected+"/OpenPBR")
+    if openpbr:
+        if shader.GetInput("diffuseColor").HasConnectedSource():
+            raise RuntimeError("Connected textured USD actor cannot use flat OpenPBR")
+        from backend.nvp_wo2_openpbr import verify_openpbr_scalar
+        verify_openpbr_scalar(stage,expected,bound,color,roughness,metallic)
     return {"format":"nvp.original_usd_preview_surface.v1",
             "material_path":expected,"base_color_rgb":color,
             "roughness":roughness,"metallic":metallic,
