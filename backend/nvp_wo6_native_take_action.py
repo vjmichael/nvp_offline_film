@@ -22,8 +22,9 @@ from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_openusd_take import OpenUSDTakeCapture, MAX_CHECKPOINTS
 from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
-from backend.nvp_resource_supervisor import wait_guarded
+from backend.nvp_resource_supervisor import wait_guarded, NativeCancelRequested
 from backend.nvp_worker_containment import launch_contained
+from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_wo6_impact_preview import preview_source_impact, _source_lifecycle_state
 
 OPERATION = "nvp.film.create_frozen_take.v1"
@@ -114,6 +115,7 @@ class NativeTakeActionHost:
         self.owner = "wo6take_" + hashlib.sha256(
             str(self.root).encode("utf-8")).hexdigest()[:16]
         self.binding = ApprovedTaskBindings(ledger, approval_check=self._check)
+        self.recovery = WO6DurableRecovery(ledger)
 
     def _check(self, approval_id, digest, document):
         if (document.get("format") != FORMAT or
@@ -257,6 +259,8 @@ class NativeTakeActionHost:
                 self.ledger.update(task_id, "building_scene",
                                    "Contained native frozen Take creation")
                 def cancelled():
+                    if self.recovery.cancel_requested(task_id):
+                        return True
                     try:
                         self.binding.verified_spec(task_id, owner_key=self.owner)
                         return False
@@ -288,6 +292,8 @@ class NativeTakeActionHost:
             # A human or trusted host may revoke during native execution.
             # A completed Take is immutable, but its job must not be called
             # creator-accepted after a revocation or expiry.
+            if self.recovery.cancel_requested(task_id):
+                raise NativeCancelRequested("Creator cancelled completed source operation")
             if not self._check(spec["native_approval_id"],
                                hashlib.sha256(canonical_bytes(spec)).hexdigest(),
                                spec):
@@ -300,7 +306,7 @@ class NativeTakeActionHost:
                     "new_take_id": spec["take_id"],
                     "take_document_sha256": verified["take_document_sha256"],
                     "native_worker_executed": True, "film_delivered": False}
-        except BaseException:
+        except BaseException as error:
             if worker is not None:
                 try:
                     if worker.poll() is None:
@@ -315,6 +321,7 @@ class NativeTakeActionHost:
                     # A worker can crash after the immutable FilmIndex commit.
                     # NEVER retry automatically or claim a rollback.
                     self.ledger.finish(
-                        task_id, "INTERRUPTED",
+                        task_id, "CANCELLED" if isinstance(error, NativeCancelRequested) else "INTERRUPTED",
+                        "Cancelled after contained worker cleanup; source commit may still exist" if isinstance(error, NativeCancelRequested) else
                         "Worker stopped; source Take commit may require reconciliation")
             raise
