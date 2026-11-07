@@ -1,0 +1,93 @@
+"""DA-02: bounded fake microphone acceptance before real hardware CI."""
+import array
+import tempfile
+import unittest
+
+import test_nvp_data_av_native as fixture
+from backend.nvp_exact_time_shots import ExactTimeShotSequence
+from backend.nvp_data_av_scene import FrozenSceneAV
+from backend.nvp_native_live_take import NativeLiveSoundSession
+from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+
+T=TICKS_PER_SECOND
+
+
+class FakeCaptureDevice:
+    def __init__(self,*,overrun=False):
+        self.gen=None
+        self.stopped=False
+        self.closed=False
+        self.overrun=overrun
+    def start(self,gen):
+        self.gen=gen
+        self.emit(4000)
+        if self.overrun:self.emit(50000)
+    def emit(self,n):
+        self.gen.send(array.array("h",[500]*n))
+    def stop(self):self.stopped=True
+    def close(self):self.closed=True
+
+
+class LiveTakeMicTests(unittest.TestCase):
+    def setUp(self):
+        fixture.NativeDigitalTakeAudioTests.setUp(self)
+        ExactTimeShotSequence(self.index).publish(
+            self.pid,"LiveCamera",scene_id="spatial_world",
+            scene_revision=1,duration_tick=str(T),shots=[{
+                "shot_id":"LiveShot","camera_path":"/World/ListenerLeft",
+                "start_tick":"0","end_tick":str(T),"pattern":"continuous"}])
+        self.device=FakeCaptureDevice()
+        self.scopes=[]
+        self.allowed=True
+
+    def session(self,**changes):
+        args=dict(project_id=self.pid,take_id="MicTake001",
+            scene_id="spatial_world",scene_revision=1,
+            camera_timeline_id="LiveCamera",camera_timeline_revision=1,
+            sound_timeline_id="MicEvents001",source_id="MicSignal001",
+            emitter_path="/World/Emitter",event_id="MicSpeech001",
+            subject_id="Emitter",native_approve_start=lambda s:
+                self.scopes.append(("start",s)) is None,
+            native_approve_freeze=lambda ev,s:
+                self.scopes.append(("freeze",s)) is None and self.allowed,
+            device_factory=lambda:self.device)
+        args.update(changes)
+        return NativeLiveSoundSession(self.index,**args)
+
+    def test_live_original_pcm_freezes_3d_scene_without_picture_frames(self):
+        mic=self.session()
+        self.assertEqual(mic.begin()["status"],"RECORDING")
+        receipt=mic.finish()
+        self.assertEqual(receipt["status"],"FROZEN_ORIGINAL_LIVE_TAKE")
+        self.assertEqual(receipt["actual_recorded_samples"],4000)
+        self.assertEqual(receipt["picture_frames_generated"],False)
+        self.assertTrue(self.device.stopped)
+        self.assertTrue(self.device.closed)
+        self.assertEqual([x[0] for x in self.scopes],["start","freeze"])
+        engine=FrozenSceneAV(self.index,self.pid,"MicTake001",
+            expected_take_sha256=receipt["take_document_sha256"],
+            listener_path="/World/ListenerLeft")
+        result=engine.audio_window(0,512)
+        self.assertIn("MicSpeech001",result["audible_event_ids"])
+        self.assertFalse(result["source_modified"])
+
+    def test_cancel_cannot_create_a_live_take(self):
+        mic=self.session()
+        mic.begin()
+        self.assertEqual(mic.cancel()["status"],"CANCELLED")
+        self.assertTrue(self.device.closed)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"MicTake001",1)
+
+    def test_freeze_denial_never_produces_false_approved_take(self):
+        self.allowed=False
+        mic=self.session()
+        mic.begin()
+        with self.assertRaises(PermissionError):
+            mic.finish()
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"MicTake001",1)
+
+
+if __name__=="__main__":
+    unittest.main()
