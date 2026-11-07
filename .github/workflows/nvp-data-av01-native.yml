@@ -51,6 +51,8 @@ on:
       - 'tests/test_nvp_native_usd_material_fidelity.py'
       - 'tests/test_nvp_wo2_mesh_uv.py'
       - 'tests/test_nvp_wo2_usd_texture.py'
+      - 'tests/test_nvp_wo2_native_texture_ui.py'
+      - 'backend/nvp_slate08b_native_camera_ipc.py'
       - 'backend/nvp_native_usd_texture.py'
       - 'tests/test_nvp_native_aces2_package.py'
       - 'frontend/src/NativeColorGradePanel.test.jsx'
@@ -152,6 +154,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_native_usd_material_fidelity.py' -v
           python -m unittest discover -s tests -p 'test_nvp_wo2_mesh_uv.py' -v
           python -m unittest discover -s tests -p 'test_nvp_wo2_usd_texture.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_wo2_native_texture_ui.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_acescg_exr.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_export_recovery.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_cinema_master_gate.py' -v
