@@ -213,9 +213,18 @@ class TrustedDataAVController:
             if record["document_sha256"]!=asset_sha or (
                     desc is None or desc["sha256"]!=texture_sha):
                 raise PermissionError("Original texture does not match frozen source")
-            from backend.nvp_native_usd_texture import texture_tile_transport
-            tile=texture_tile_transport(
-                self.index,pid,desc,
+            from backend.nvp_native_usd_texture import (
+                verified_texture,_tile_from_verified)
+            # Bound one decoded original image to this approved Take session.
+            # Tile #2..64 never reopen/redecode the same 2K source image.
+            cached=active.get("tile_cache")
+            if cached is None or cached[0]!=texture_sha:
+                _,decoded=verified_texture(self.index,pid,desc)
+                active["tile_cache"]=(texture_sha,decoded)
+            else:
+                decoded=cached[1]
+            tile=_tile_from_verified(
+                desc,decoded,
                 mip_level=request["mip_level"],
                 tile_x=request["tile_x"],tile_y=request["tile_y"])
             return {**tile,
