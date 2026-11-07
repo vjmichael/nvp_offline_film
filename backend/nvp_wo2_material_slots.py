@@ -53,10 +53,12 @@ def normalize_material_slots(slots,face_count):
 def author_material_slots(stage,geometry,slots):
     from pxr import Gf,Sdf,UsdGeom,UsdShade,Vt
     for spec in slots or []:
-        subset=UsdGeom.Subset.Define(stage,spec["subset_path"])
-        subset.CreateElementTypeAttr().Set(UsdGeom.Tokens.face)
-        subset.CreateFamilyNameAttr().Set("materialBind")
-        subset.CreateIndicesAttr().Set(Vt.IntArray(spec["faces"]))
+        subset=UsdShade.MaterialBindingAPI(
+            geometry.GetPrim()).CreateMaterialBindSubset(
+                "MaterialSlot"+str(slots.index(spec)),
+                Vt.IntArray(spec["faces"]),UsdGeom.Tokens.face)
+        if str(subset.GetPath())!=spec["subset_path"]:
+            raise RuntimeError("Source face subset has an unexpected path")
         material=UsdShade.Material.Define(stage,spec["material_path"])
         shader=UsdShade.Shader.Define(stage,
             spec["material_path"]+"/PreviewSurface")
@@ -82,6 +84,12 @@ def verify_material_slots(stage,geometry,slots,face_count):
         for s in slots],face_count)
     if expected!=slots:
         raise RuntimeError("Original material subset manifest differs")
+    found=UsdShade.MaterialBindingAPI(
+        geometry).GetMaterialBindSubsets()
+    if len(found)!=len(slots) or {
+            str(item.GetPath()) for item in found}!={
+            spec["subset_path"] for spec in slots}:
+        raise RuntimeError("Unexpected original USD material subset inserted")
     for spec in slots:
         prim=stage.GetPrimAtPath(spec["subset_path"])
         if not prim or not prim.IsA(UsdGeom.Subset):
