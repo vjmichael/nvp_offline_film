@@ -293,6 +293,12 @@ class NativeTakeActionHost:
                     receipt.get("rendered_frames") is not False or
                     receipt.get("existing_dcp_replaced") is not False):
                 raise RuntimeError("Native Take output cannot be independently verified")
+            _exact_source(
+                self.index,spec["project_id"],spec["scene_id"],
+                spec["scene_revision"],spec["scene_sha256"],"scene")
+            _exact_source(
+                self.index,spec["project_id"],spec["timeline_id"],
+                spec["timeline_revision"],spec["timeline_sha256"],"temporal")
             # A human or trusted host may revoke during native execution.
             # A completed Take is immutable, but its job must not be called
             # creator-accepted after a revocation or expiry.
