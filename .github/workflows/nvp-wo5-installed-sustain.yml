@@ -1,0 +1,208 @@
+name: NVP WO5 Installed Windows Real MXF Playback Acceptance (NO FFMPEG)
+on:
+  push:
+    branches: [nvp/wo5-installed-sustained-original30-20261107]
+    paths:
+      - tools/nvp_wo5_release_codecs.py
+      - tools/nvp_wo5_installed_sustain.py
+      - tools/nvp_desktop_alpha.py
+      - backend/nvp_wo5_codec_binding.py
+      - backend/_nvp_wo5_release_pin.py
+      - tests/test_nvp_wo5_release_codecs.py
+      - tests/nvp_wo5_finished_real_dcp_ci.py
+      - .github/workflows/nvp-wo5-installed-sustain.yml
+  pull_request:
+    paths:
+      - tools/nvp_wo5_release_codecs.py
+      - tools/nvp_wo5_installed_sustain.py
+      - tools/nvp_desktop_alpha.py
+      - backend/nvp_wo5_codec_binding.py
+      - backend/_nvp_wo5_release_pin.py
+      - tests/test_nvp_wo5_release_codecs.py
+      - tests/nvp_wo5_finished_real_dcp_ci.py
+      - .github/workflows/nvp-wo5-installed-sustain.yml
+  workflow_dispatch:
+concurrency:
+  group: nvp-wo5-installed-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  true-installed-codec-and-gui:
+    name: Real NSIS install, native SMPTE decoder throughput and visible WebView2
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: uclouvain/openjpeg
+          ref: 6c4a29b00211eb0430fa0e5e890f1ce5c80f409f
+          path: deps/openjpeg
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cinecert/asdcplib
+          ref: 905d6047f67c8211c2d22f29fb0e2e44c142b59b
+          path: deps/asdcplib
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Guard native codec source SHAs and legal notices
+        shell: pwsh
+        run: |
+          if ((git -C deps/openjpeg rev-parse HEAD).Trim() -ne '6c4a29b00211eb0430fa0e5e890f1ce5c80f409f') { throw 'OpenJPEG source drift' }
+          if ((git -C deps/asdcplib rev-parse HEAD).Trim() -ne '905d6047f67c8211c2d22f29fb0e2e44c142b59b') { throw 'CineCert source drift' }
+          if (-not (Test-Path deps/openjpeg/LICENSE)) { throw 'OpenJPEG BSD notice missing' }
+          if (-not (Test-Path deps/asdcplib/COPYING)) { throw 'CineCert license notice missing' }
+      - name: Run source-bound release codec custody tests
+        run: python -m unittest discover -s tests -p test_nvp_wo5_release_codecs.py -v
+      - name: Build real static OpenJPEG and CineCert codec binaries on Windows
+        shell: pwsh
+        run: |
+          cmake -S deps/openjpeg -B deps/openjpeg/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_CODEC=ON -DBUILD_TESTING=OFF -DBUILD_JPIP=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'OpenJPEG Windows configure failure' }
+          cmake --build deps/openjpeg/build --config Release --parallel 2 --target opj_compress opj_decompress
+          if ($LASTEXITCODE -ne 0) { throw 'OpenJPEG native binaries missing' }
+          cmake -S deps/asdcplib -B deps/asdcplib/build -DCMAKE_BUILD_TYPE=Release -DWITHOUT_SSL=ON -DWITHOUT_XML=ON -DBUILD_SHARED_LIBS=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'CineCert Windows configure failure' }
+          cmake --build deps/asdcplib/build --config Release --parallel 2 --target asdcp-wrap asdcp-info asdcp-unwrap
+          if ($LASTEXITCODE -ne 0) { throw 'CineCert native binaries missing' }
+          $out = Join-Path $env:RUNNER_TEMP 'wo5-codec-tools'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          foreach ($name in @('opj_compress','opj_decompress')) {
+            $matches = @(Get-ChildItem 'deps/openjpeg/build' -Recurse -File -Filter ($name+'.exe') | Where-Object { $_.FullName -match 'Release' })
+            if ($matches.Count -ne 1) { throw "Expected one native OpenJPEG $name; found $($matches.Count)" }
+            Copy-Item -LiteralPath $matches[0].FullName -Destination (Join-Path $out ($name+'.exe'))
+          }
+          foreach ($name in @('asdcp-wrap','asdcp-info','asdcp-unwrap')) {
+            $matches = @(Get-ChildItem 'deps/asdcplib/build' -Recurse -File -Filter ($name+'.exe') | Where-Object { $_.FullName -match 'Release' })
+            if ($matches.Count -ne 1) { throw "Expected one native CineCert $name; found $($matches.Count)" }
+            Copy-Item -LiteralPath $matches[0].FullName -Destination (Join-Path $out ($name+'.exe'))
+          }
+          Get-ChildItem $out | ForEach-Object { Write-Host "$($_.Name) $((Get-FileHash $_.FullName -Algorithm SHA256).Hash)" }
+      - name: Install native OpenUSD, original-codec runtime, PyInstaller and NSIS
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Stage exact real binary+notices and compile immutable pin into desktop
+        shell: pwsh
+        run: |
+          $native=Join-Path $env:RUNNER_TEMP 'wo5-codec-tools'
+          $bundle=Join-Path $env:RUNNER_TEMP 'wo5-sealed-native-codecs'
+          python tools/nvp_wo5_release_codecs.py stage `
+            --destination $bundle `
+            --openjpeg-license (Resolve-Path deps/openjpeg/LICENSE).Path `
+            --asdcp-license (Resolve-Path deps/asdcplib/COPYING).Path `
+            --openjpeg-encoder (Join-Path $native 'opj_compress.exe') `
+            --openjpeg-decoder (Join-Path $native 'opj_decompress.exe') `
+            --asdcp-wrap (Join-Path $native 'asdcp-wrap.exe') `
+            --asdcp-info (Join-Path $native 'asdcp-info.exe') `
+            --asdcp-unwrap (Join-Path $native 'asdcp-unwrap.exe') `
+            --pin-module (Join-Path (Get-Location) 'backend/_nvp_wo5_release_pin.py')
+          if ($LASTEXITCODE -ne 0) { throw 'No valid build-pinned licensed codec bundle' }
+          $env:NVP_WO5_BUNDLE=$bundle
+          $sha=(python -c "from backend._nvp_wo5_release_pin import RELEASE_CODEC_MANIFEST_SHA256; print(RELEASE_CODEC_MANIFEST_SHA256)").Trim()
+          python tools/nvp_wo5_release_codecs.py verify --bundle $bundle --pin $sha
+          if ($LASTEXITCODE -ne 0) { throw 'Build codec pin verification failed' }
+      - name: Generate genuine 2-reel SMPTE picture+sound fixture with actual Windows codecs
+        shell: pwsh
+        run: |
+          $native=Join-Path $env:RUNNER_TEMP 'wo5-codec-tools'
+          $env:NVP_NATIVE_OPENJPEG=Join-Path $native 'opj_compress.exe'
+          $env:NVP_NATIVE_OPENJPEG_DECODE=Join-Path $native 'opj_decompress.exe'
+          $env:NVP_NATIVE_ASDCP_WRAP=Join-Path $native 'asdcp-wrap.exe'
+          $env:NVP_NATIVE_ASDCP_INFO=Join-Path $native 'asdcp-info.exe'
+          $env:NVP_NATIVE_ASDCP_UNWRAP=Join-Path $native 'asdcp-unwrap.exe'
+          $env:NVP_WO5_TEST_KEEP_DCP=Join-Path $env:RUNNER_TEMP 'wo5-genuine-test-dcp'
+          python -m unittest discover -s tests -p nvp_wo5_finished_real_dcp_ci.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Real two-reel 2K DCP source test failed on native Windows' }
+          if (-not (Test-Path (Join-Path $env:NVP_WO5_TEST_KEEP_DCP 'ASSETMAP.xml'))) {
+            throw 'Actual SMPTE DCP was not preserved for installed playback'
+          }
+      - name: Build offline NVP React / PyInstaller one-directory release with REAL codecs
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          $bundle=Join-Path $env:RUNNER_TEMP 'wo5-sealed-native-codecs'
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --add-data "$bundle;native-codecs" --hidden-import backend._nvp_wo5_release_pin --collect-all webview --collect-all pxr --collect-submodules backend --collect-submodules tools tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { throw 'NVP PyInstaller build failed' }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP
+          if ($LASTEXITCODE -ne 0) { throw 'Real desktop package guard failed' }
+      - name: NSIS installer from actual sealed Windows binary
+        shell: pwsh
+        run: |
+          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS genuine package build failed' }
+          $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
+          $result=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          if ($result.ExitCode -ne 0) { throw 'Native installer failed' }
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          if (-not (Test-Path $installed)) { throw 'No actual installed NVP.exe' }
+          if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) {
+            throw 'Installed executable differs from SHA-reviewed binary'
+          }
+      - name: Actually installed NVP.exe decodes final SMPTE MXF + mastered PCM and measures sustained speed
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $env:NVP_WO5_SMOKE_DCP_DIR=Join-Path $env:RUNNER_TEMP 'wo5-genuine-test-dcp'
+          $env:NVP_WO5_SMOKE_SECONDS='30'
+          $env:NVP_WO5_SMOKE_REPORT=Join-Path $env:RUNNER_TEMP 'wo5-installed-throughput.json'
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'wo5-installed-diagnostic.txt'
+          $result=Start-Process -FilePath $installed -ArgumentList '--smoke-finished-playback' -PassThru -Wait
+          if ($result.ExitCode -ne 0) { throw 'Installed real decoder did not achieve sustained 24fps; report is a failed release gate' }
+          if (-not (Test-Path $env:NVP_WO5_SMOKE_REPORT)) { throw 'No measured native decode evidence' }
+      - name: Actual installed native WebView2 source review and codec capability
+        shell: pwsh
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $env:NVP_WO5_EXPECT_CODEC_INSTALL='1'
+          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru -Wait
+          if ($window.ExitCode -ne 0) { throw 'Installed WebView2/native decoder capability not proven' }
+      - name: Confirm measured 24fps gate from installed binary report
+        shell: pwsh
+        run: |
+          $file=Join-Path $env:RUNNER_TEMP 'wo5-installed-throughput.json'
+          if (-not (Test-Path $file)) { throw 'Release gate: installed real MXF decoder produced no evidence' }
+          $data=Get-Content $file -Raw | ConvertFrom-Json
+          if (-not $data.throughput_target_met) {
+            throw "Release gate: installed real native JPEG2000 decoder below 24fps: $($data.picture_decode_frames_per_second)"
+          }
+      - name: Uninstall real app and retain NVP creator data
+        if: always()
+        shell: pwsh
+        run: |
+          $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
+          if (Test-Path $uninstaller) {
+            $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+            if ($result.ExitCode -ne 0) { throw 'NVP native uninstall failed' }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-wo5-real-installed-decoder-and-reel-speed
+          path: |
+            ${{ runner.temp }}/wo5-installed-throughput.json
+            ${{ runner.temp }}/wo5-installed-diagnostic.txt
+          if-no-files-found: warn
+          retention-days: 7
