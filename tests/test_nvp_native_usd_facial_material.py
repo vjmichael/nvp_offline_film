@@ -36,6 +36,56 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
             ],curves=[],skeletal_rigs=[self.rig])
         return self.index.read_revision(self.pid,"face_world",1)
 
+    def test_skinned_original_png_tiles_require_frozen_rig_manifest(self):
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_native_usd_texture import publish_texture
+        from backend.nvp_data_av_desktop import TrustedDataAVController
+        stream=BytesIO()
+        Image.new("RGB",(512,257),(45,100,210)).save(stream,format="PNG")
+        desc=publish_texture(self.index,self.pid,stream.getvalue())
+        self.rig["skin"]["mesh_uvs"]=[
+            [float(i%2),float((i//2)%2)]
+            for i in range(len(self.skin["points"]))]
+        self.rig["skin"]["texture"]=desc
+        scene=self._publish()
+        take=self.takes.freeze(
+            self.pid,"rig_tile_take",scene_id="face_world",scene_revision=1,
+            timeline_id="acting",timeline_revision=1,
+            sample_ticks=[0],creator_event="freeze_take")
+        native=TrustedDataAVController(
+            self.index,native_window=lambda:None,
+            ask_native=lambda _:True)
+        self.addCleanup(native.close)
+        begun=native.begin({
+            "project_id":self.pid,"take_id":"rig_tile_take",
+            "take_document_sha256":take["document_sha256"],
+            "listener_path":"/World/Camera",
+            "first_sample":0,"direction":"forward"})
+        ticket=begun["session_id"]
+        layer_sha=scene["data"]["skeleton_layer_sha256"]
+        req={"actor_path":"/World/Actor",
+             "skeleton_layer_sha256":layer_sha,
+             "texture_sha256":desc["sha256"],
+             "mip_level":0,"tile_x":1,"tile_y":1}
+        result=native.read_original_rig_texture_tile(ticket,req)
+        self.assertEqual(result["tile_width"],256)
+        self.assertEqual(result["tile_height"],1)
+        self.assertEqual(result["actor_path"],"/World/Actor")
+        self.assertEqual(result["take_document_sha256"],
+                         take["document_sha256"])
+        for changed in (
+            {**req,"skeleton_layer_sha256":"0"*64},
+            {**req,"texture_sha256":"0"*64},
+            {**req,"actor_path":"/World/Intruder"},
+        ):
+            with self.subTest(changed=changed):
+                with self.assertRaises((PermissionError,RuntimeError)):
+                    native.read_original_rig_texture_tile(ticket,changed)
+        native.stop(ticket)
+        with self.assertRaises(PermissionError):
+            native.read_original_rig_texture_tile(ticket,req)
+
     def test_real_original_blendshape_and_usd_pbr_material_move_skin(self):
         record=self._publish()
         source_sha=record["document_sha256"]
