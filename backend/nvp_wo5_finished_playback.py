@@ -386,6 +386,119 @@ class FinishedFilmPlayer:
                 "production_accepted":False,
             }
 
+
+    def window(self,ticket,first_frame,count=4):
+        """Bounded final-MXF essence batch, clipped at one reel boundary.
+
+        Reuses ONE native picture unwrap, ONE sound unwrap and at most four
+        pinned OpenJPEG decodes, not three native process launches for every
+        single frame. Never crosses a CPL reel without reauthorizing the
+        next pinned track at its own exact local source position.
+        """
+        s=self._get(ticket)
+        if (type(first_frame) is not int or type(count) is not int or
+                not 1<=count<=4):
+            raise ValueError("Bounded exact finished DCP picture/sound window required")
+        reel_index,local=locate_reel(s["reels"],first_frame)
+        reel=s["reels"][reel_index]
+        count=min(count,reel.frames-local)
+        if count<1:
+            raise PermissionError("Finished DCP window is empty")
+        expected=[_expected_frame_sha(self.journal,reel.job_id,local+n)
+                  for n in range(count)]
+        with self._decode_lock:
+            self._get(ticket)
+            cancel=lambda:self._cancelled(ticket)
+            for file,stamp in ((reel.picture,reel.picture_stat),
+                               (reel.sound,reel.sound_stat)):
+                if (not file.is_file() or file.is_symlink() or
+                        file.resolve(strict=True).parent!=reel.picture.parent or
+                        _fingerprint(file)!=stamp):
+                    raise PermissionError("Published final MXF changed before playback batch")
+            with TemporaryDirectory(prefix="nvp-finished-batch-",dir=self.root) as temp:
+                work=Path(temp)
+                run_supervised_codec(self.unwrap,
+                    ["-f",str(local),"-d",str(count),
+                     "-b",str(MAX_J2K_BYTES),str(reel.picture),"p_"],
+                    workdir=work,check_cancel=cancel,
+                    timeout=150+count*25)
+                run_supervised_codec(self.unwrap,
+                    ["-f",str(local),"-d",str(count),
+                     str(reel.sound),"snd"],
+                    workdir=work,check_cancel=cancel,
+                    timeout=150+count*25)
+                sound=work/"snd"
+                if sound.is_symlink() or not sound.is_file():
+                    raise PermissionError("Native finished DCP audio batch missing")
+                with wave.open(str(sound),"rb") as wav:
+                    if (wav.getnchannels()!=len(reel.channels) or
+                        wav.getframerate()!=RATE or wav.getsampwidth()!=3 or
+                        wav.getcomptype()!="NONE" or
+                        wav.getnframes()!=count*SAMPLES_PER_FRAME):
+                        raise PermissionError("Final mastered audio window misaligned")
+                    pcm=wav.readframes(count*SAMPLES_PER_FRAME)
+                bytes_per_picture_sound=SAMPLES_PER_FRAME*3*len(reel.channels)
+                if len(pcm)!=count*bytes_per_picture_sound:
+                    raise PermissionError("Published PCM batch omitted samples")
+                results=[]
+                for n in range(count):
+                    self._get(ticket)
+                    local_frame=local+n
+                    file=work/("p_"+f"{local_frame:06d}"+".j2c")
+                    if (file.is_symlink() or not file.is_file() or
+                            not 80<=file.stat().st_size<=MAX_J2K_BYTES):
+                        raise PermissionError("Published picture batch omitted a frame")
+                    raw=file.read_bytes()
+                    if sha256(raw).hexdigest()!=expected[n]:
+                        raise PermissionError("Published J2K batch differs from FilmIndex")
+                    inspect_j2k_header(raw,s["profile"])
+                    dest="actual_"+f"{local_frame:06d}"+".ppm"
+                    run_supervised_codec(self.decoder,
+                        ["-i",file.name,"-o",dest],
+                        workdir=work,check_cancel=cancel,timeout=180)
+                    pixels=_ppm_header(work/dest,
+                        width=PROFILES[s["profile"]][0],
+                        height=PROFILES[s["profile"]][1])
+                    png,(width,height)=_display_png(pixels,s["profile"])
+                    audio=_stereo_pcm16(pcm[
+                        n*bytes_per_picture_sound:
+                        (n+1)*bytes_per_picture_sound],reel.channels)
+                    frame_index=first_frame+n
+                    results.append({
+                        "format":FORMAT,
+                        "status":"DECODED_PUBLISHED_FINAL_FRAME",
+                        "frame_index":frame_index,
+                        "reel_index":reel_index,
+                        "reel_frame_index":local_frame,
+                        "picture_24fps_film_time_tick":frame_index*FRAME_TICKS,
+                        "audio_start_sample":frame_index*SAMPLES_PER_FRAME,
+                        "audio_samples":SAMPLES_PER_FRAME,
+                        "picture_png_base64":base64.b64encode(png).decode("ascii"),
+                        "picture_width":width,"picture_height":height,
+                        "stereo_pcm16_base64":base64.b64encode(audio).decode("ascii"),
+                        "source_j2k_sha256":expected[n],
+                        "picture_and_sound_from_final_published_mxf":True,
+                        "screen_display_calibrated":False,
+                        "original_multichannel_master_preserved":True,
+                        "finished_film_complete_viewing_verified":False,
+                        "production_accepted":False,
+                    })
+                    file.unlink()
+                    (work/dest).unlink()
+                self._get(ticket)
+                return {
+                    "format":FORMAT,
+                    "status":"DECODED_PUBLISHED_FINAL_WINDOW",
+                    "start_frame":first_frame,
+                    "frame_count":count,
+                    "reel_index":reel_index,
+                    "frames":results,
+                    "no_reel_crossing":True,
+                    "whole_film_in_memory":False,
+                    "production_accepted":False,
+                    "ffmpeg_used":False,
+                }
+
     def stop(self,ticket):
         self.native_window()
         with self._lock:
