@@ -50,6 +50,12 @@ def register_mastering_decision(index:FilmIndex,pid,*,take_id,take_revision,
         raise PermissionError("Original approved picture/audio/QC identities disagree")
     if ordered_pictures is None:
         ordered_pictures=[picture]*sound["frame_count"]
+    if (take["data"].get("ticks_per_second")!=TICKS_PER_SECOND or
+            type(take["data"].get("duration_tick")) is not int or
+            type(start_tick) is not int or
+            start_tick+len(ordered_pictures)*(TICKS_PER_SECOND//24)>
+            take["data"]["duration_tick"]):
+        raise PermissionError("Cinema mastering sequence exceeds frozen Take Film Time")
     if (type(ordered_pictures) is not list or
             type(sound.get("frame_count")) is not int or
             not 3<=len(ordered_pictures)<=7200 or
