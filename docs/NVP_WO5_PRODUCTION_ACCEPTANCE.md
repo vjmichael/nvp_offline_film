@@ -445,3 +445,19 @@ frames and original 30m sound is still open, as are human director
 screening, 60–90min feature, >=3h epic and independent theater Bv2.1
 qualification. These performance fixes cannot be conflated with film
 delivery or calibrated speaker/display proof.
+
+
+### Native PCM24 reel-window optimization (additional WO5 performance repair)
+
+The 30s published-MXF visible acceptance now reopens the ORIGINAL signed
+SMPTE sound MXF once per reel with the SHA-pinned native CineCert decoder,
+verifies the real complete 48 kHz stereo 24-bit sample count for that reel,
+and reads each exact 2,000-sample-per-film-frame window from the real
+unwrapped temporary PCM file. The picture path still independently
+unpacks all original J2K MXF frames in bounded 24-picture chunks and checks
+real J2K SHAs; the six repeated test patterns are transparently identified
+and their predecode cache is **not** counted as real-time codec throughput.
+This avoids about 58 redundant native sound-unwrapping subprocesses in a
+two-reel, 720-frame test without dropping/muting/replacing any PCM samples.
+The genuine separate 24fps decoder-speed and real visible WebAudio/Canvas
+release gates remain required and OPEN pending exact-head installed runs.
