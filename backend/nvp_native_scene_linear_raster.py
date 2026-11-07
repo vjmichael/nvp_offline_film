@@ -191,7 +191,7 @@ def _shade(points,surface,lights,eye):
     nv=max(0.,_dot(n,view))
     out=[AMBIENT_REVIEW*value*(1.-metallic) for value in color]
     f0=[.04*(1.-metallic)+metallic*x for x in color]
-    alpha=max(.04,roughness*roughness)
+    alpha=np.maximum(.04,roughness*roughness)
     alpha2=alpha*alpha
     k=(roughness+1)**2/8.
     ggx_view=nv/(nv*(1.-k)+k+1e-8)
@@ -200,11 +200,11 @@ def _shade(points,surface,lights,eye):
         dsq=_dot(d,d)
         light=_unit(d)
         if light is None:continue
-        nl=max(0.,_dot(n,light))
-        if nl<=0 or nv<=0:continue
+        nl=np.maximum(0.,np.sum(normal*np.asarray(light),axis=-1))
+        if not np.any(nl>0) or not np.any(nv>0):continue
         h=_unit(tuple(light[i]+view[i] for i in range(3)))
         if h is None:continue
-        nh=max(0.,_dot(n,h))
+        nh=np.maximum(0.,np.sum(normal*np.asarray(h),axis=-1))
         vh=max(0.,_dot(view,h))
         denom=(nh*nh*(alpha2-1.)+1.)
         distribution=alpha2/(math.pi*denom*denom+1e-8)
@@ -223,7 +223,10 @@ def _shade(points,surface,lights,eye):
     return tuple(out)
 
 
-def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np):
+def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
+                          roughness_texels=None,metallic_texels=None,
+                          emission_texels=None,normal_texels=None,
+                          uv_face=None):
     """Evaluate bounded GGX/Schlick with the actual per-pixel source color.
 
     Avoid applying the sRGB base map to the *completed lighting result*:
@@ -233,6 +236,10 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np):
     tint,roughness,metallic,_=surface
     color=np.asarray(sampled_rgb,dtype=np.float64)*np.asarray(
         tint,dtype=np.float64)
+    if roughness_texels is not None:
+        roughness=np.clip(float(roughness)*roughness_texels,.04,1.)
+    if metallic_texels is not None:
+        metallic=np.clip(float(metallic)*metallic_texels,0.,1.)
     a,b,c=points
     u=tuple(b[i]-a[i] for i in range(3))
     v=tuple(c[i]-a[i] for i in range(3))
@@ -244,7 +251,33 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np):
     if n is None or view is None:
         raise RuntimeError("Degenerate USD source texture triangle")
     if _dot(n,view)<0:n=tuple(-x for x in n)
-    nv=max(0.,_dot(n,view))
+    normal=np.asarray(n,dtype=np.float64)
+    if normal_texels is not None:
+        if uv_face is None or len(uv_face)!=3:
+            raise RuntimeError("Normal map requires original USD face-corner st")
+        dp1=np.asarray(u,dtype=np.float64)
+        dp2=np.asarray(v,dtype=np.float64)
+        uv0,uv1,uv2=(np.asarray(x,dtype=np.float64) for x in uv_face)
+        du1,dv1=uv1-uv0
+        du2,dv2=uv2-uv0
+        determinant=du1*dv2-dv1*du2
+        if abs(determinant)<1e-8:
+            raise RuntimeError("Normal map has degenerate original UV tangent basis")
+        tangent=(dp1*dv2-dp2*dv1)/determinant
+        tangent=tangent-normal*np.dot(normal,tangent)
+        length=np.linalg.norm(tangent)
+        if length<1e-8:
+            raise RuntimeError("Invalid source texture tangent")
+        tangent=tangent/length
+        bitangent=np.cross(normal,tangent)*(
+            1. if determinant>=0 else -1.)
+        tangent_rgb=2.*np.asarray(normal_texels,dtype=np.float64)-1.
+        normal=(tangent_rgb[...,0,None]*tangent+
+                tangent_rgb[...,1,None]*bitangent+
+                tangent_rgb[...,2,None]*normal)
+        normal=normal/np.maximum(
+            np.linalg.norm(normal,axis=-1,keepdims=True),1e-8)
+    nv=np.maximum(0.,np.sum(normal*np.asarray(view),axis=-1))
     out=AMBIENT_REVIEW*color*(1.-metallic)
     f0=.04*(1.-metallic)+metallic*color
     alpha=max(.04,roughness*roughness)
@@ -271,14 +304,16 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np):
         diffuse=color*(1.-metallic)*(1.-fresnel)/math.pi
         specular=(distribution*geometry*fresnel/
                   max(1e-6,4.*nv*nl))
-        out=out+strength*nl*(diffuse+specular)
+        out=out+strength*nl[...,None]*(diffuse+specular)
+    if emission_texels is not None:
+        out=out+np.asarray(emission_texels,dtype=np.float64)
     if not np.all(np.isfinite(out)) or np.any(out<0):
         raise RuntimeError("Invalid source USD textured microfacet shading")
     return out.astype(np.float32)
 
 
 def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
-                   texture=None,uv_face=None):
+                   texture=None,uv_face=None,pbr_maps=None):
     a,b,c=tri
     x0,y0,z0=a;x1,y1,z1=b;x2,y2,z2=c
     if (not all(math.isfinite(v) for v in (
@@ -308,7 +343,7 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
     if not np.any(visible):return False
     crop[visible]=zz[visible]
     out=buffer[lo_y:hi_y+1,lo_x:hi_x+1,:3]
-    if texture is None:
+    if texture is None and not pbr_maps:
         out[visible]=shade
     else:
         if uv_face is None or len(uv_face)!=3:
@@ -320,14 +355,26 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
         v=sum(w*uv[1]/z for w,uv,z in (
             (w0,uv_face[0],z0),(w1,uv_face[1],z1),
             (w2,uv_face[2],z2)))/inv_safe
-        tex_h,tex_w=texture.shape[:2]
-        xx=np.floor(np.mod(u,1.)*tex_w).astype(np.int64)
-        yy=(tex_h-1)-np.floor(np.mod(v,1.)*tex_h).astype(np.int64)
-        sample=texture[yy,xx,:3]
+        def sample_map(image):
+            height,width=image.shape[:2]
+            xx=np.floor(np.mod(u,1.)*width).astype(np.int64)
+            yy=(height-1)-np.floor(np.mod(v,1.)*height).astype(np.int64)
+            return image[yy,xx,:3]
+        sample=(sample_map(texture) if texture is not None
+                else np.ones((*u.shape,3),dtype=np.float32))
+        maps=pbr_maps or {}
+        decoded={key:sample_map(img) for key,img in maps.items()}
         # Per-pixel sRGB-linear texel enters source base reflectance before
         # GGX/Schlick lighting. The HDR light/spectral model remains preview.
         lit=_shade_texture_texels(
-            world_points,surface,lights,eye,sample,np)
+            world_points,surface,lights,eye,sample,np,
+            roughness_texels=(decoded["roughness"][...,0]
+                              if "roughness" in decoded else None),
+            metallic_texels=(decoded["metallic"][...,0]
+                             if "metallic" in decoded else None),
+            emission_texels=decoded.get("emission"),
+            normal_texels=decoded.get("normal"),
+            uv_face=uv_face)
         out[visible]=lit[visible]
     return True
 
