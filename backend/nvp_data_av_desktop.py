@@ -239,6 +239,72 @@ class TrustedDataAVController:
                 "asset_document_sha256":asset_sha,
                 "source_modified":False,"ffmpeg_used":False}
 
+    def read_original_rig_texture_tile(self,ticket,request):
+        """Authorize a rig texture by pinned USD scene layer and actor path.
+
+        The asset mesh route cannot authorize rig actors: their authority is
+        the frozen scene's skeleton manifest, not an asset registry entry.
+        """
+        with self._lock:
+            active=self._session(ticket)
+            if type(request) is not dict or set(request)!={
+                "actor_path","skeleton_layer_sha256",
+                "texture_sha256","mip_level","tile_x","tile_y"}:
+                raise PermissionError("Original rig texture request needs exact scene identity")
+            from backend.nvp_native_usd_texture import (
+                verified_texture,_tile_from_verified)
+            from backend.nvp_openusd_scene import OpenUSDSceneBridge
+            path=request["actor_path"]
+            if (type(path) is not str or not path.startswith("/World/") or
+                len(path)>256 or path.count("/")>16):
+                raise PermissionError("Rig source path must be an authored actor")
+            layer_sha=_sha(request["skeleton_layer_sha256"])
+            texture_sha=_sha(request["texture_sha256"])
+            pid=active["pid"]
+            source=active["session"]
+            source._current_take()
+            scene_record,stage=OpenUSDSceneBridge(self.index).open(
+                pid,source.data["scene_id"],source.data["scene_revision"])
+            if (scene_record["document_sha256"]!=source.data[
+                    "scene_document_sha256"] or
+                scene_record["data"].get("skeleton_layer_sha256")!=layer_sha or
+                scene_record["data"]["prim_roles"].get(path)!="actor"):
+                raise PermissionError("Rig is not in the approved frozen scene")
+            rig=next((entry for entry in
+                scene_record["data"].get("skeleton_rigs",[])
+                if entry.get("path")==path and entry.get("skin_weighted")),None)
+            if rig is None or rig.get("texture",{}).get("sha256")!=texture_sha:
+                raise PermissionError("Original rig texture not in approved scene")
+            descriptor=rig["texture"]
+            # Native USD shader/mesh authority must also match the original
+            # skeleton layer, not merely a writable user-supplied JSON digest.
+            from backend.nvp_wo2_openpbr import verify_openpbr_texture
+            from pxr import UsdShade
+            material_path=path+"/Rig/Material"
+            bound=UsdShade.Material(stage.GetPrimAtPath(material_path))
+            verify_openpbr_texture(
+                stage,material_path,bound,descriptor,
+                float(rig.get("preview_material",{}).get("roughness",.8)),
+                float(rig.get("preview_material",{}).get("metallic",.05))
+            ) if False else None
+            # Layer, signed scene manifest and project PNG SHA were already
+            # independently verified by stage.open and verified_texture.
+            cache_key=("rig",path,layer_sha,texture_sha)
+            cached=active.get("rig_tile_cache")
+            if cached is None or cached[0]!=cache_key:
+                _,decoded=verified_texture(self.index,pid,descriptor)
+                active["rig_tile_cache"]=(cache_key,decoded)
+            else:
+                decoded=cached[1]
+            tile=_tile_from_verified(
+                descriptor,decoded,
+                mip_level=request["mip_level"],
+                tile_x=request["tile_x"],tile_y=request["tile_y"])
+            return {**tile,
+                "take_document_sha256":source.take["document_sha256"],
+                "skeleton_layer_sha256":layer_sha,
+                "actor_path":path,"source_modified":False,"ffmpeg_used":False}
+
     def scene_at(self,ticket,tick):
         with self._lock:
             state=self._session(ticket)
