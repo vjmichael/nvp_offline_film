@@ -6,9 +6,9 @@ private bounded files, not held in RAM. Explicit cancellation/timeout kills
 the Linux process group or Windows Job Object process tree; no silent fallback
 to killing only the direct child if job ownership cannot be established.
 
-Windows job assignment occurs just after process creation, not atomically:
-a child could theoretically spawn before assignment. Installed-app native
-containment acceptance and a suspended-start broker remain OPEN.
+Windows launches CREATE_SUSPENDED, assigns the Job Object, then resumes the
+child. This removes the initial uncontained execution window. Restricted
+handle inheritance, installed service identity and actual Win CI are separate gates.
 """
 from __future__ import annotations
 from hashlib import sha256
@@ -125,19 +125,27 @@ def run_supervised_codec(codec,argv,*,workdir,check_cancel,
     env={"PATH":str(codec.executable.parent),
          "SYSTEMROOT":os.environ.get("SYSTEMROOT",""),
          "HOME":str(root),"TMP":str(root),"TEMP":str(root)}
-    flags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform=="win32" else 0
     job=None
     proc=None
-    with tempfile.TemporaryFile(dir=root) as stdout, tempfile.TemporaryFile(dir=root) as stderr:
+    with (open(os.devnull,"rb") as stdin,
+          tempfile.TemporaryFile(dir=root) as stdout,
+          tempfile.TemporaryFile(dir=root) as stderr):
         started=time.monotonic()
         try:
-            proc=subprocess.Popen(
-                [str(codec.executable),*argv],cwd=str(root),env=env,
-                shell=False,stdin=subprocess.DEVNULL,stdout=stdout,
-                stderr=stderr,start_new_session=(sys.platform!="win32"),
-                creationflags=flags)
             if sys.platform=="win32":
+                from backend.nvp_win_suspended_worker import (
+                    create_suspended_native_worker)
+                proc=create_suspended_native_worker(
+                    codec.executable,argv,cwd=root,env=env,
+                    stdin=stdin,stdout=stdout,stderr=stderr)
+                # The native codec is STILL SUSPENDED while assigned.
                 job=_windows_job(proc)
+                proc.resume_after_job_assignment()
+            else:
+                proc=subprocess.Popen(
+                    [str(codec.executable),*argv],cwd=str(root),env=env,
+                    shell=False,stdin=subprocess.DEVNULL,stdout=stdout,
+                    stderr=stderr,start_new_session=True)
             if after_start is not None:
                 after_start(proc.pid)
             while proc.poll() is None:
@@ -174,7 +182,9 @@ def run_supervised_codec(codec,argv,*,workdir,check_cancel,
                     "diagnostic_bytes_bounded":True,
                     "elapsed_seconds":round(time.monotonic()-started,4),
                     "process_group_supervised":True,
-                    "windows_assignment_race_eliminated":False,
+                    "windows_assignment_race_eliminated":(
+                        sys.platform=="win32" and
+                        getattr(proc,"assignment_before_execution",False)),
                     "ffmpeg_used":False}
         except BaseException:
             if proc is not None:
@@ -198,3 +208,5 @@ def run_supervised_codec(codec,argv,*,workdir,check_cancel,
             if job is not None:
                 handle,kernel=job
                 kernel.CloseHandle(handle)
+            if sys.platform=="win32" and proc is not None:
+                proc.close()
