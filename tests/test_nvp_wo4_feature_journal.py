@@ -7,6 +7,10 @@ independently covered in test_nvp_production_cinema_real.py.
 """
 from hashlib import sha256
 from pathlib import Path
+import json
+import os
+import subprocess
+import sys
 from unittest.mock import patch
 import unittest
 
@@ -112,6 +116,44 @@ class PersistentMultiReelFeatureTests(unittest.TestCase):
         self.assertFalse(list(self.output.glob("DCP_FEATURE_*")))
         self.assertTrue(all((self.journal.spool(x)/"picture.mxf").is_file()
                             for x in self.ids))
+
+    def test_real_os_exit_after_feature_publish_preserves_orphan_for_consent(self):
+        job=self.submit()
+        fid=job["feature_id"]
+        claimed=self.journal.next_feature("AboutToCrash")
+        self.assertEqual(claimed["feature_id"],fid)
+        record=self.base.root/"feature_child_manifest.json"
+        record.write_text(json.dumps(claimed["manifest"],sort_keys=True))
+        script=(
+            "import os,sys,json;"
+            "from backend.nvp_wo4_multireel import publish_multireel_dcp;"
+            "m=json.load(open(sys.argv[1]));"
+            "publish_multireel_dcp(reels=m['reels'],ids=m['ids'],"
+            "title=m['title'],profile=m['profile'],"
+            "output_root=m['output_root'],check_cancel=lambda:False);"
+            "os._exit(79)"
+        )
+        result=subprocess.run(
+            [sys.executable,"-c",script,str(record)],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            capture_output=True,text=True,timeout=40,check=False)
+        self.assertEqual(result.returncode,79,result.stderr[-800:])
+        folder=self.output/("DCP_FEATURE_"+claimed["manifest"]["ids"]["cpl"])
+        self.assertTrue(folder.is_dir())
+        self.assertEqual(self.journal.feature(fid)["state"],"STAGING")
+        restarted=FeatureJournal(self.journal.root)
+        reports=restarted.reconcile_features()
+        self.assertEqual(reports["jobs"][0]["state"],"REVIEW_REQUIRED")
+        self.assertTrue(folder.is_dir())
+        approved=restarted.approve_orphan_feature_adoption(
+            fid,lambda scope:scope["manifest_sha256"]==job["manifest_sha256"])
+        self.assertEqual(approved["status"],"PUBLISHED_PENDING_INDEX")
+        self.assertFalse(approved["filesystem_mutated"])
+        with SingletonSupervisor(restarted.root):
+            index=ProductionSupervisor(restarted).run_one()
+        self.assertEqual(index["status"],"MULTIREEL_FEATURE_FILMINDEX_RECORDED")
+        self.assertTrue(folder.is_dir())
+        self.assertEqual(restarted.feature(fid)["state"],"INDEXED")
 
     def test_crash_after_promotion_before_journal_requires_review(self):
         job=self.submit()
