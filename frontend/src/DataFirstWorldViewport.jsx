@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {runGPUTextureReference} from './NativeTextureGPUReference.js';
 
 // DA-04: evaluate OpenUSD source geometry IN THREE DIMENSIONS at the actual
 // audio presentation Film Time. There is no MP4, frame sequencer, texture
@@ -188,6 +189,7 @@ export default function DataFirstWorldViewport({
   const holder=useRef(null);
   const env=useRef(null);
   const [disabled,setDisabled]=useState(false);
+  const [gpuFixture,setGpuFixture]=useState(null);
   const [viewMode,setViewMode]=useState('orbit');
   const [selectedCamera,setSelectedCamera]=useState('');
   const cameraObjects=objects.filter(o=>o?.semantic_role==='camera');
@@ -456,6 +458,12 @@ export default function DataFirstWorldViewport({
       {viewMode==='orbit'?' Drag to orbit, scroll to inspect.':
         ' Looking through an authored OpenUSD scene camera.'} Live data, not a movie.</p>
     <div className="actions">
+      <button type="button" disabled={disabled}
+        onClick={()=>{
+          try{setGpuFixture(runGPUTextureReference());}
+          catch(e){setGpuFixture({passed:false,reason:String(e.message),
+            actual_gpu_readback:false});}
+        }}>Check GPU source-texture pixels</button>
       <label>Live 3D camera view
         <select aria-label="Live source camera mode" value={viewMode}
           onChange={e=>setViewMode(e.target.value)}>
@@ -470,6 +478,18 @@ export default function DataFirstWorldViewport({
         </select>
       </label>}
     </div>
+    {gpuFixture&&<p role={gpuFixture.passed?'status':'alert'}>
+      {gpuFixture.passed?
+        'Real WebGL reference readback passed':
+        'GPU texture reference not accepted'} ·
+      {gpuFixture.actual_gpu_readback?
+        'Actual 4 × 4 GPU pixels compared':'No accepted GPU readback'}
+      {typeof gpuFixture.max_channel_error==='number'&&
+        ' · max channel error '+gpuFixture.max_channel_error}
+      {gpuFixture.reason&&' · '+gpuFixture.reason}.
+      This checks a native GPU texture reference, not full scene, color
+      calibration or Hydra material fidelity.
+    </p>}
     <div ref={holder} style={{width:'100%',minHeight:'360px',borderRadius:8,
       overflow:'hidden',background:'#121a2a'}}/>
     {disabled&&<p role="status">3D hardware context lost or unavailable.
