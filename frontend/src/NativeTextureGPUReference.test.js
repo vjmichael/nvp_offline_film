@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {compareGPUTexturePixels} from './NativeTextureGPUReference.js';
+import {compareGPUTexturePixels,compareGPUSourcePixels} from './NativeTextureGPUReference.js';
 
 function pixels(){
   const out=new Uint8Array(4*4*4);
@@ -33,5 +33,34 @@ describe('WO2 GPU texture acceptance receipt policy',()=>{
     expect(result.max_channel_error).toBe(255);
     expect(()=>compareGPUTexturePixels(new Uint8Array(3))).toThrow();
     expect(()=>compareGPUTexturePixels(pixels(),{tolerance:255})).toThrow();
+  });
+});
+
+describe('WO2 verified original PNG CPU/GPU texel comparison contract',()=>{
+  const sha='a'.repeat(64);
+  const preview='b'.repeat(64);
+  const packet={
+    format:'nvp.original.usd_texture_png.v1',
+    sha256:sha,preview_sha256:preview,
+    gpu_reference_uv:[[.125,.125],[.875,.125],[.125,.875],[.875,.875]],
+    gpu_reference_rgb:[[255,0,0],[0,0,255],[0,255,0],[255,255,255]],
+  };
+  it('reports source digest and measured GPU texels separately',()=>{
+    const result=compareGPUSourcePixels(pixels(),packet);
+    expect(result.passed).toBe(true);
+    expect(result.source_texture_sha256).toBe(sha);
+    expect(result.source_preview_sha256).toBe(preview);
+    expect(result.full_usd_material_parity_proven).toBe(false);
+    expect(result.max_channel_error).toBe(0);
+  });
+  it('rejects a tampered GPU corner and untrusted native expected data',()=>{
+    const data=pixels();data[0]=30;
+    const result=compareGPUSourcePixels(data,packet);
+    expect(result.passed).toBe(false);
+    expect(result.max_channel_error).toBe(225);
+    expect(()=>compareGPUSourcePixels(pixels(),{
+      ...packet,gpu_reference_rgb:[[255,0,0]]})).toThrow();
+    expect(()=>compareGPUSourcePixels(pixels(),{
+      ...packet,preview_sha256:'invalid'})).toThrow();
   });
 });
