@@ -10,6 +10,7 @@ on:
       - tests/test_nvp_wo4_native_bundle.py
       - backend/nvp_win_suspended_worker.py
       - tests/test_nvp_production_host.py
+      - tests/test_nvp_wo4_staged_host.py
       - backend/nvp_wo4_resource_budget.py
       - backend/nvp_wo4_multireel.py
       - backend/nvp_wo4_feature_journal.py
@@ -39,6 +40,7 @@ on:
       - tests/test_nvp_wo4_native_bundle.py
       - backend/nvp_win_suspended_worker.py
       - tests/test_nvp_production_host.py
+      - tests/test_nvp_wo4_staged_host.py
       - backend/nvp_wo4_resource_budget.py
       - backend/nvp_wo4_multireel.py
       - backend/nvp_wo4_feature_journal.py
@@ -102,3 +104,5 @@ jobs:
         run: python -m unittest discover -s tests -p test_nvp_production_host.py -v
       - name: Verify full native license/notice and transitive binary BOM evidence gates
         run: python -m unittest discover -s tests -p test_nvp_wo4_native_bundle.py -v
+      - name: Staged Windows/Linux NVP host smoke outside source checkout (not a signed installer)
+        run: python -m unittest discover -s tests -p test_nvp_wo4_staged_host.py -v
