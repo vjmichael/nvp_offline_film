@@ -57,6 +57,23 @@ class WO2NativeTextureTests(unittest.TestCase):
         self.assertEqual(rgb[1],"rgb")
         self.assertEqual(str(rgb[0].GetPrim().GetPath()),
                          "/Asset/Material/Texture")
+        mtlx=UsdShade.Shader(stage.GetPrimAtPath(
+            "/Asset/Material/OpenPBR"))
+        image=UsdShade.Shader(stage.GetPrimAtPath(
+            "/Asset/Material/MtlxImage"))
+        coords=UsdShade.Shader(stage.GetPrimAtPath(
+            "/Asset/Material/MtlxTexcoord"))
+        self.assertEqual(mtlx.GetIdAttr().Get(),
+            "ND_open_pbr_surface_surfaceshader")
+        self.assertEqual(image.GetIdAttr().Get(),"ND_image_color3")
+        self.assertEqual(coords.GetIdAttr().Get(),"ND_texcoord_vector2")
+        self.assertEqual(str(image.GetInput("file").GetAttr().Get().path),
+                         desc["usd_asset_path"])
+        self.assertEqual(
+            str(mtlx.GetInput("base_color").GetConnectedSource()[0]
+                .GetPrim().GetPath()),"/Asset/Material/MtlxImage")
+        self.assertTrue(UsdShade.Material(stage.GetPrimAtPath(
+            "/Asset/Material")).GetSurfaceOutput("mtlx").HasConnectedSource())
         self.scene.publish(
             self.pid,"texture_scene",
             prims=[
