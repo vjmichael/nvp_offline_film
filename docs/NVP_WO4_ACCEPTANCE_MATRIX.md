@@ -67,3 +67,17 @@ The first three are **implementation-only pending exact-head CI and installed/na
 **Verification:** Native Linux Ubuntu 24.04 frontend Vitest + Vite bundle job in run `42354746851` succeeded; native Windows 2025 job had not completed when last inspected. Real installed desktop/OS lock integration acceptance remains OPEN.
 
 **Separate capabilities not implemented yet:** a single genuinely out-of-process durable production supervisor, SQLite journal, process ownership and crash recovery; explicit optional host-vetted Windows/Linux OS session-lock button; production-aware sleep policy and sustained AFK full-film encoding acceptance. These must be tested without conflating the UI convenience lock with a security boundary. See `docs/NVP_PRODUCTION_SUPERVISOR_AND_LOCK.md`.
+
+
+## LF01 durable supervisor — first native implementation, not feature export
+
+| Gate | Evidence now submitted | Not yet certified |
+| --- | --- | --- |
+| Host-approved assembly snapshot | Real FilmIndex immutable edit/presentation SHA, dependency and contiguous Film Time job manifest, creator callback | Installed editor host grant, stronger source-root authorization, an actual frozen 3-hour export assembly |
+| Independent supervisor ownership | Native Python process, exclusive Linux flock / Windows msvcrt lock, SQLite WAL job journal and process PID, heartbeat | Installed Windows service or headless worker manager, OS process-tree containment, GUI reconnect |
+| Real durable verified work | One admitted bounded-memory read-only source verifier, SHA/size segment commits, event trail, no network/FFmpeg | Actual picture render, J2K, MXF and DCP publishing worker handlers with output receipts |
+| Crash and restart | Test child process dies via os._exit after claiming, new process reopens and resumes safe source-only scan, detects tampered verified sources | Interruption during output file writing, fsync, atomic promotion, FilmIndex commit; genuine power-loss hardware tests |
+| Cancel/AFK | Native host callback required for cancellation; manual NVP lock contains no worker API and is not supervisor-linked | Cooperative termination of real codec subprocess trees, installed app session lock/background job acceptance |
+| Native four-platform | GitHub workflow for Ubuntu 24.04/Windows 2025 × Python 3.11/3.13, plus full process subprocess tests | Exact-head completed native success and any actual repairs |
+
+**Status:** LF01 core backend implemented and tested in submitted source; native CI acceptance pending. Do not mistake an in-process source SHA worker inside an independent **supervisor** process for protected subprocess-tree execution of real codec workers. WO4-LF02 and future output-producing worker handlers must use a stricter stage/publish/reconciliation contract; existing code deliberately refuses unknown job types.
