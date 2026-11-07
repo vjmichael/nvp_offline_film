@@ -288,3 +288,27 @@ the native player; JavaScript cannot approve or supply binaries.
 Do not mark WO5/WO4, creator viewing, SMPTE DCP Bv2.1, 60-90min feature
 or >=3h epic accepted on the basis of this short real 6-frame test.
 See NVP_WO5_DESKTOP_DIRECTOR_WORKFLOW.md for exact code and open gates.
+
+### WO5 final DCP bounded-batch decoder acceptance — 2026-11-07
+
+**PROVEN: 7/7 [native final-film CI run 42409121482](https://github.com/vjmichael/nvp_offline_film/actions/runs/42409121482).**
+Windows/Linux Python 3.11+3.13 real XYZ12-to-preview and PCM24
+sample/channel tests; Windows/Linux React WebAudio time/denied grant/
+reel-continuity/late-sound and skipped-picture tests; one real
+Linux native OpenJPEG/CineCert two-reel SMPTE DCP master/unwrap/decode
+test all PASSED. The native test reopened actual published picture
+and actual mastered sound MXF at global frame 2 -> 3, then also
+decoded bounded 1/2-frame windows clipped at the same reel boundary.
+New native window API unwraps at most 4 final pictures and paired
+sound together in two native unwrap calls + per-picture pinned
+OpenJPEG decode, reducing native process launches compared with
+one frame at a time. All revisions remain derived/read-only.
+
+**Technical decoder and UI integration code gate COMPLETE.** The
+*film reviewing production acceptance gate is NOT complete*: no
+verified 30-minute real authored movie, no uninterrupted benchmarked
+24fps actual device playback, no fully legally bundled installed
+decoder, no real creator judgment of final story sound/motion, no
+60–90-minute original feature, no 3h+ original epic, no independent
+SMPTE DCP Bv2.1/theater validation. These are outstanding, not
+synthetic test substitutes.
