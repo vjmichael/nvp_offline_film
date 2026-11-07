@@ -72,6 +72,7 @@ class NativeColorOutputJournal:
             raise PermissionError("Native scene-linear recovery workspace unavailable")
         self.lock=self.staged/"owner.lock"
         self.fd=None
+        self.locked=False
         self.records=[]
         try:
             self._lock()
@@ -108,6 +109,7 @@ class NativeColorOutputJournal:
             try:fcntl.flock(self.fd.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
             except OSError as exc:
                 raise RuntimeError("Another native color producer is active") from exc
+        self.locked=True
 
     def _recover(self):
         meta=self.staged/"scope.json"
@@ -213,13 +215,15 @@ class NativeColorOutputJournal:
     def release(self):
         if self.fd is not None:
             try:
-                if os.name=="nt":
-                    import msvcrt
-                    self.fd.seek(0)
-                    msvcrt.locking(self.fd.fileno(),msvcrt.LK_UNLCK,1)
-                else:
-                    import fcntl
-                    fcntl.flock(self.fd.fileno(),fcntl.LOCK_UN)
+                if self.locked:
+                    if os.name=="nt":
+                        import msvcrt
+                        self.fd.seek(0)
+                        msvcrt.locking(self.fd.fileno(),msvcrt.LK_UNLCK,1)
+                    else:
+                        import fcntl
+                        fcntl.flock(self.fd.fileno(),fcntl.LOCK_UN)
             finally:
+                self.locked=False
                 self.fd.close()
                 self.fd=None
