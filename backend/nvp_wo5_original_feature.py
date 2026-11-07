@@ -191,6 +191,7 @@ def inspect_original_feature_readiness(index, journal, project_id, feature_id):
     frame_review = _FrameDigestReview(timeline["frame_count"])
     global_position = 0
     take_ids = set()
+    source_reels = []
     for i, (job_id, part) in enumerate(zip(ordered_jobs, reels)):
         job = journal.status(job_id)
         reel = journal.reel(job_id)
@@ -225,9 +226,28 @@ def inspect_original_feature_readiness(index, journal, project_id, feature_id):
                 approved.get("source_modified") is not False):
             raise PermissionError("Creator-approved original Take and picture/sound decision differ")
         ordered_approved = approved.get("ordered_picture_sha256")
+        source_start = approved.get("film_start_tick")
+        source_step = approved.get("picture_tick_step")
         if (type(ordered_approved) is not list or
-                len(ordered_approved) != reel["frame_count"]):
-            raise PermissionError("Original source picture approval is incomplete")
+                len(ordered_approved) != reel["frame_count"] or
+                type(source_start) is not int or source_start < 0 or
+                source_step != FRAME_TICKS or
+                type(original["data"].get("duration_tick")) is not int or
+                source_start + reel["frame_count"] * FRAME_TICKS >
+                    original["data"]["duration_tick"]):
+            raise PermissionError("Original picture approval is incomplete or outside Take Film Time")
+        source_reels.append({
+            "reel_number": i + 1,
+            "take_id": reel["take_id"],
+            "take_document_sha256": reel["take_sha256"],
+            "cut_start_tick": part["start_tick"],
+            "cut_end_tick": part["end_tick"],
+            "take_start_tick": source_start,
+            "take_end_tick": source_start + reel["frame_count"] * FRAME_TICKS,
+            "approved_frame_count": reel["frame_count"],
+            "source_playback_only": True,
+            "finished_dcp_playback_verified": False,
+        })
         key = (reel["take_id"], reel["take_revision"], reel["take_sha256"])
         if key not in verified_takes:
             actual = verifier.verify_take(project_id, reel["take_id"])
@@ -288,6 +308,7 @@ def inspect_original_feature_readiness(index, journal, project_id, feature_id):
         **timeline,
         **varied,
         "distinct_original_take_count": len(verified_takes),
+        "source_reels_for_native_take_audition": source_reels,
         "no_source_mutation_verified": True,
         "published_package_structure_and_sha_verified": True,
         "original_visual_content_and_storyline_verified": False,
