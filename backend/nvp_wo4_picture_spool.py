@@ -154,9 +154,14 @@ def wrap_disk_j2k_picture(wrap,info,*,frames_dir,stage_dir,
         if path.is_symlink() or path.stat().st_size>MAX_CODESTREAM:
             raise PermissionError("Unsafe native picture codestream")
         # SQLite checkpoint hashes are checked by the supervisor before this call.
+    # Admission uses bytes of the already SHA-verified codestreams plus
+    # a conservative 8 KiB/frame MXF index/header allowance. The previous
+    # hard-coded 1 MiB/frame over-reservation blocked 5-minute low-entropy
+    # reel packaging on 14 GiB CI workers despite tiny actual JPEG2000 data.
+    # Runtime ENOSPC still fails closed with the stage retained for review.
     require_stage_space(stage,
         sum((frames/name).stat().st_size for name in expected)
-        +frame_count*1024*1024)
+        +frame_count*8192+16*1024*1024)
     out=stage/"picture.mxf"
     if out.exists() or out.is_symlink():
         raise FileExistsError("Uncommitted picture MXF exists; review before resume")
