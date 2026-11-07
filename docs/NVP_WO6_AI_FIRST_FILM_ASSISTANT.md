@@ -16,7 +16,7 @@ A director requesting a different Take from the final DCP must preserve: `publis
 | Task | Deliverable | Status |
 | --- | --- | --- |
 | **WO6-01** | Bounded SHA-bound FilmIndex source-to-retake lineage and host-authorized read-only plan, deterministic digest, negative/cross-project tests. Reuse `NativeAiReadHost` and `TrustedReadScope`; discovery is not authorization. | **IMPLEMENTED, CI verdict pending.** |
-| **WO6-02** | Expand exact provenance resolution from FilmIndex presentations through existing `FeatureJournal` reel mastering receipts to actual Digital Takes, including lost/retired source and incomplete/ambiguous path handling. Read-only until scoped native project admission. | **OPEN.** |
+| **WO6-02** | Native FeatureJournal-backed origin resolver: reruns WO5's full indexed DCP/Take/PCM/J2K source audit, reports original per-reel Take/scene/temporal SHA and Film Time; host-injected only, read-only. Missing/retired/altered sources are refused. | **IMPLEMENTED, CI verdict pending; genuine 30m film still open.** |
 | **WO6-03** | Grounded, bounded task-aware film context (shot/camera/sound/actor/scene) and installed tool/license/model readiness, without a new memory database; report stale/missing/unverified sources. | **OPEN.** |
 | **WO6-04** | Preview effects to edits, Takes, stereo/5.1/7.1 sound, color, mastering and DCP; exact source SHA/revision, indexed/unindexed impacts, required grants, resources and recovery action. | **OPEN.** |
 | **WO6-05** | Native creator-confirmed action bridge and model-independent proposals: concrete first-party tool execution through existing durable supervisor, no AI self-approval and no arbitrary filesystem/network authority. | **OPEN; human consent required.** |
@@ -40,3 +40,33 @@ The read proof itself is narrower than **actual source file reopen/independent s
 `tests/test_nvp_wo6_creator_plan.py` covers source-to-final dependency graph, SHA-bound original Takes, immutable revised scene versus original Take, forged take manifest refusal, incomplete bounded graph, DCP-only nonreversibility, cross-project and stale/missing revision denial, unknown/write operation rejection, per-turn authorization digest and mid-task revocation. Add Windows/Linux Python 3.11/3.13 tests plus existing AI-01/02/03 regressions; **only mark tests accepted after their actual exact-head GitHub receipts arrive**.
 
 Current WO6-01 is a **planning contract**, not a live AI filmmaker or a claim that finished film/creative approval exists. The subsequent phases must add actual source navigation, purpose-built native execution, genuine working installed UI and model-in-the-loop evidence without bypassing creator authority.
+
+## WO6-02 implementation update — 2026-11-07
+
+`backend/nvp_wo6_feature_origins.py` adds a **separately bounded and
+potentially expensive** source-custody resolver. It requires an existing
+trusted `FilmIndex` and a real host-owned `FeatureJournal`; it first
+checks the exact project, indexed state, cancellation and FilmIndex
+feature SHA. It invokes WO5's `inspect_original_feature_readiness`
+which independently rechecks real native project/reel/Take originals,
+picture XYZ12/J2K, mastered PCM24, published MXF and DCP SHA provenance,
+and original OpenUSD Take reopening. It then re-reads each approved
+Take's exact FilmIndex SHA and verifies matched source scene+temporal
+SHA, maps Film Time by reel and checks publication state once more.
+The result never changes the film or implies calibrated cinema,
+human screening, an AI-executed task or a replacement Take.
+
+The original trusted `NativeAiReadHost` accepts an **optional,
+host-injected** FeatureJournal. Only that configuration advertises
+`nvp.film.resolve_published_sources.v1`; no model-supplied path
+or web request can inject a journal, and the per-call actor/project/
+turn digest authorization is unchanged. The no-journal catalog does not
+advertise the capability.
+
+`tests/test_nvp_wo6_feature_origins.py` tests the adapter boundary
+against an explicitly **mocked WO5 native auditor** to isolate consent,
+revocation, changed source hashes, changed feature state and returned
+FilmIndex edges. These tests do NOT constitute a new genuine native
+DCP/2K/PCM24/FilmIndex source-chain E2E proof. Existing WO5 genuine
+native tests and later installed movie/creator acceptance remain
+independent. WO6-02 current native matrix verdict is pending.
