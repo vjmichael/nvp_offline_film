@@ -114,6 +114,31 @@ def derived_look_stage(stage,scene_record,look):
                     Gf.Vec2f(*transform["offset"]))
                 st.ConnectToSource(
                     uvnode.CreateOutput("result",Sdf.ValueTypeNames.Float2))
+                # The same derived UV decision must reach the MaterialX
+                # shader context; PreviewSurface-only edits are misleading.
+                name=("MtlxImage" if channel=="base_color" else
+                      "MtlxMap_"+channel.capitalize())
+                mimage=UsdShade.Shader(
+                    derived.GetPrimAtPath(base+"/"+name))
+                if not mimage:
+                    raise RuntimeError("Original MaterialX source image missing")
+                m_st=mimage.GetInput("texcoord")
+                m_source=m_st.GetConnectedSource() if m_st else None
+                if not m_source:
+                    raise RuntimeError("Original MaterialX UV graph disconnected")
+                mtx=UsdShade.Shader.Define(
+                    derived,base+"/WO2MtlxTransform_"+channel)
+                mtx.CreateIdAttr("ND_UsdTransform2d")
+                mtx.CreateInput("in",Sdf.ValueTypeNames.Float2).ConnectToSource(
+                    m_source[0],m_source[1])
+                mtx.CreateInput("scale",Sdf.ValueTypeNames.Float2).Set(
+                    Gf.Vec2f(*transform["repeat"]))
+                mtx.CreateInput("rotation",Sdf.ValueTypeNames.Float).Set(
+                    transform["rotation_deg"])
+                mtx.CreateInput("translation",Sdf.ValueTypeNames.Float2).Set(
+                    Gf.Vec2f(*transform["offset"]))
+                m_st.ConnectToSource(
+                    mtx.CreateOutput("out",Sdf.ValueTypeNames.Float2))
                 found.add(channel)
                 uv_count+=1
         if found!=set(channels):
