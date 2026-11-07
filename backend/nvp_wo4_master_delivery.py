@@ -60,15 +60,18 @@ def publish_mastered_dcp(index:FilmIndex,pid,*,take_id,take_revision,take_sha256
         raise PermissionError("Creator native package approval callback required")
     profile=decision["data"]["picture_profile"]
     frames=[]
-    approved_sha=decision["data"]["picture_sha256"]
-    # A single approved still-derivative may be deliberately held across a
-    # short reel. Animated reels require explicit additional decision custody.
-    if len({x.get("xyz12_sha256") for x in pictures}) != 1:
-        raise PermissionError("Motion image masters need an ordered source-frame ledger")
-    for image in pictures:
+    approved_shas=decision["data"].get("ordered_picture_sha256")
+    # Historical single-image decisions remain readable, but delivery only
+    # allows an explicit ordered frame manifest created at creator approval.
+    if (type(approved_shas) is not list or len(approved_shas)!=len(pictures)
+            or decision["data"].get("picture_tick_step")!=294000000
+            or decision["data"].get("picture_sha256")!=approved_shas[0]):
+        raise PermissionError("An exact Film Time ordered master decision is required")
+    for image,approved_sha in zip(pictures,approved_shas):
         if (image.get("format")!=PICTURE_FORMAT or image.get("profile")!=profile
                 or image.get("original_take_sha256")!=take_sha256
                 or image.get("xyz12_sha256")!=approved_sha
+                or image.get("source_modified") is not False
                 or image.get("production_picture_accepted") is not False
                 or type(image.get("xyz12")) is not bytes
                 or sha256(image["xyz12"]).hexdigest()!=approved_sha):
