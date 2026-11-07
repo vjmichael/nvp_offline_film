@@ -423,6 +423,89 @@ class TrustedDesktopCameraBridge:
                 ask_native=self._ask)
         return self._data_av_controller
 
+    def data_av_texture_mesh_catalog(self,project_id):
+        """List eligible original mesh heads without exposing project file paths."""
+        with self._lock:
+            self._native_window()
+            _require_pid(project_id)
+            from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+            registry=OpenUSDAssetRegistry(self.index)
+            result=[]
+            for item in self.index.list_objects(project_id,kind="asset")[:128]:
+                record,_=registry.open(project_id,item["object_id"],
+                                       item["head_revision"])
+                doc=record["data"]
+                if (doc["shape"]=="mesh" and
+                    (doc.get("mesh_uvs") is not None or
+                     doc.get("face_uvs") is not None) and
+                    doc.get("preview_material") is not None):
+                    result.append({
+                        "asset_id":item["object_id"],
+                        "asset_revision":record["revision"],
+                        "asset_document_sha256":record["document_sha256"],
+                        "texture_sha256":doc["preview_material"].get(
+                            "texture",{}).get("sha256"),
+                    })
+            return {"format":"nvp.native.texture_mesh_catalog.v1",
+                    "assets":result,"original_modified":False}
+
+    def data_av_apply_original_texture(self,request):
+        """Create a NEW immutable mesh revision from an approved texture SHA."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","asset_id","asset_revision",
+                "asset_document_sha256","texture_sha256"}:
+                raise ValueError("Texture application requires exact source revisions")
+            pid=request["project_id"]
+            _require_pid(pid)
+            aid=request["asset_id"]
+            _id(aid,"original reusable mesh ID")
+            revision=request["asset_revision"]
+            if type(revision) is not int or revision<1:
+                raise ValueError("Original mesh revision required")
+            _sha(request["asset_document_sha256"])
+            digest=_sha(request["texture_sha256"])
+            from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+            from backend.nvp_native_usd_texture import decode_png
+            registry=OpenUSDAssetRegistry(self.index)
+            old,_=registry.open(pid,aid,revision)
+            if old["document_sha256"]!=request["asset_document_sha256"]:
+                raise PermissionError("Requested mesh source revision changed")
+            if self.index.read_revision(pid,aid)["revision"]!=revision:
+                raise RuntimeError("Original mesh was revised before selection")
+            doc=old["data"]
+            original_material=doc.get("preview_material")
+            if (doc["shape"]!="mesh" or original_material is None or
+                (doc.get("mesh_uvs") is None and doc.get("face_uvs") is None)):
+                raise ValueError("Only an original source UV mesh may use PNG")
+            png=self.index.get_blob(pid,digest)
+            width,height,_=decode_png(png)
+            if not self._ask(
+                "Publish NEW immutable mesh material revision?\\n"+
+                "Source mesh: "+aid+" revision "+str(revision)+"\\n"+
+                "Original mesh SHA-256: "+old["document_sha256"]+"\\n"+
+                "Frozen image SHA-256: "+digest+"\\n"+
+                "Texture: "+str(width)+" x "+str(height)+"\\n"+
+                "Existing scene, character and Digital Take revisions remain unchanged."):
+                return {"format":"nvp.native.texture_mesh_revision.v1",
+                        "status":"DENIED","original_modified":False}
+            if self.index.read_revision(pid,aid)["revision"]!=revision:
+                raise RuntimeError("Mesh changed while native approval was displayed")
+            controls={key:original_material[key] for key in (
+                "base_color_rgb","roughness","metallic")}
+            published=registry.publish(
+                pid,aid,shape="mesh",size_m=doc["size_m"],
+                points=doc["points"],triangles=doc["triangles"],
+                mesh_uvs=doc.get("mesh_uvs"),face_uvs=doc.get("face_uvs"),
+                preview_material=controls,texture_png=png,
+                expected_revision=revision)
+            return {"format":"nvp.native.texture_mesh_revision.v1",
+                    "status":"NEW_SOURCE_REVISION",
+                    "asset_id":aid,"asset_revision":published["revision"],
+                    "asset_document_sha256":published["document_sha256"],
+                    "original_modified":False,"ffmpeg_used":False}
+
     def data_av_import_original_texture(self,project_id):
         """Trusted desktop-only PNG picker. Browser passes no source paths."""
         with self._lock:
