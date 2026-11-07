@@ -62,7 +62,7 @@ def _asset_file(folder,filename):
     file=folder/filename
     if file.is_symlink() or not file.is_file():
         raise PermissionError("Missing or linked DCP package asset")
-    if file.resolve(strict=True).parent!=folder:
+    if file.resolve(strict=True).parent!=folder.resolve(strict=True):
         raise PermissionError("DCP asset escaped the approved directory")
     return file
 
