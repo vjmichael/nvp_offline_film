@@ -182,6 +182,47 @@ def run_installed_data_av_smoke():
             ],curves=[],native_schemas=True,asset_bindings=[{
                 "path":"/World/ColorActor","asset_id":"smoke_source_material",
                 "asset_revision":1}])
+            # WO2 A–E: real installed native bridge has to publish, reopen
+            # and derive an approved, SHA-bound cinematic look. An unapproved
+            # browser/editor cannot invent a new lighting or transmission
+            # revision, and existing original camera/Takes remain unchanged.
+            from backend.nvp_wo2_presentation_look import default_look
+            from backend.nvp_wo2_derived_usd_look import derived_look_stage
+            source_scene,original_stage=color_scene.open(
+                pid,"smoke_color_world",1)
+            before_scene=original_stage.GetRootLayer().ExportToString()
+            studio_look=default_look()
+            studio_look["materials"]["/World/ColorActor"]={
+                "opacity":.85,"transmission":.5,
+                "ior":1.48,"thickness_m":.02}
+            approval=bridge.wo2_approve_presentation_look({
+                "project_id":pid,"look_id":"InstalledDirectorLook",
+                "scene_id":"smoke_color_world","scene_revision":1,
+                "scene_sha256":source_scene["document_sha256"],
+                "expected_revision":0,"look":studio_look,
+            })
+            if approval.get("status")!="PRESENTATION_REVISION_APPROVED":
+                raise RuntimeError("Installed native cinematic look was not OS-approved")
+            catalog=bridge.wo2_presentation_look_catalog({
+                "project_id":pid,"scene_id":"smoke_color_world",
+                "scene_revision":1,
+                "scene_sha256":source_scene["document_sha256"],
+            })
+            if not any(x["look_id"]=="InstalledDirectorLook"
+                       for x in catalog["looks"]):
+                raise RuntimeError("Approved original-scene look cannot be rediscovered")
+            approved=bridge.wo2_read_presentation_look({
+                "project_id":pid,"look_id":"InstalledDirectorLook",
+                "revision":1,"scene_sha256":source_scene["document_sha256"],
+            })
+            derived,evidence=derived_look_stage(
+                original_stage,source_scene,approved["look"])
+            if (not evidence["original_source_unchanged"] or
+                evidence["material_count"]<1 or
+                not derived.GetPrimAtPath("/World/WO2PresentationRig/Key") or
+                original_stage.GetRootLayer().ExportToString()!=before_scene):
+                raise RuntimeError("Installed derived look modified original USD")
+            _native_checkpoint("wo2_look_approved_and_derived")
             ExactTimeShotSequence(index).publish(
                 pid,"smoke_color_shots",scene_id="smoke_color_world",
                 scene_revision=1,duration_tick=str(T),shots=[{
