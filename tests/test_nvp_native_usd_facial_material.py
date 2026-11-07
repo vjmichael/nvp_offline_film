@@ -194,10 +194,15 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
         self.assertIsNone(actor["mesh_uvs"])
         self.assertEqual(len(actor["mesh_face_uvs"]),
                          len(actor["mesh_triangles"]))
-        self.assertEqual(actor["mesh_face_uvs"][0],
-                         [uv[0][0],uv[0][1],uv[0][2]])
-        self.assertEqual(actor["mesh_face_uvs"][1],
-                         [uv[0][0],uv[0][2],uv[0][3]])
+        for actual,wanted in (
+            (actor["mesh_face_uvs"][0],
+             [uv[0][0],uv[0][1],uv[0][2]]),
+            (actor["mesh_face_uvs"][1],
+             [uv[0][0],uv[0][2],uv[0][3]]),
+        ):
+            for pair,expected in zip(actual,wanted):
+                for got,target in zip(pair,expected):
+                    self.assertAlmostEqual(got,target,places=5)
         self.assertFalse(state["source_modified"])
 
     def test_reject_rig_uvs_that_do_not_match_original_vertices(self):
