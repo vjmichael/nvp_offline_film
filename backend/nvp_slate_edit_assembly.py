@@ -308,6 +308,55 @@ class SlateSequenceAssembly:
             raise RuntimeError("Committed edit changed relative to frozen source slate")
         return result
 
+    def source_at(self,project_id,edit_id,edit_revision,*,timeline_tick,
+                  expected_edit_sha256):
+        """Resolve an output Film Time moment to one frozen source Take.
+
+        This is the single point-in-time mapping used by any eventual
+        assembly picture/audio player or final exporter. It never turns
+        the editor assembly into frame-authoritative media or substitutes
+        an uncommitted inspection selection for the actual active cut.
+        """
+        from backend.nvp_film_index import _sha
+        _sha(expected_edit_sha256)
+        edited=self.open_edit(project_id,edit_id,edit_revision)
+        if edited["document_sha256"]!=expected_edit_sha256:
+            raise RuntimeError("Active assembled edit SHA changed")
+        t=_int(timeline_tick,"assembly Film Time cursor")
+        doc=edited["data"]
+        if t>=doc["duration_tick"]:
+            raise ValueError("Assembly Film Time cursor beyond final cut")
+        for segment in doc["segments"]:
+            if segment["timeline_start_tick"]<=t<segment["timeline_end_tick"]:
+                source_tick=segment["source_in_tick"]+(
+                    t-segment["timeline_start_tick"])
+                take=self.index.read_revision(
+                    project_id,segment["source_take_id"],1)
+                if take["document_sha256"]!=segment[
+                        "source_take_document_sha256"]:
+                    raise RuntimeError("Frozen original Take has changed")
+                if not (segment["source_in_tick"]<=source_tick<
+                        segment["source_out_tick"]):
+                    raise RuntimeError("Assembly source time escaped pinned trim")
+                return {
+                    "format":"nvp.slate.exact_source_projection.v1",
+                    "edit_id":edit_id,"edit_revision":edit_revision,
+                    "edit_document_sha256":expected_edit_sha256,
+                    "segment_id":segment["segment_id"],
+                    "output_tick":str(t),
+                    "source_tick":str(source_tick),
+                    "source_take_id":segment["source_take_id"],
+                    "source_take_sha256":take["document_sha256"],
+                    "source_shot_id":segment["source_shot_id"],
+                    "source_shot_revision":segment["source_shot_revision"],
+                    "source_shot_sha256":segment["source_shot_document_sha256"],
+                    "source_modified":False,
+                    "rendered_picture_frames":False,
+                    "flattened_audio":False,
+                    "final_render_approved":False,
+                }
+        raise RuntimeError("Committed assembly has an uncovered time interval")
+
     def active_view(self,project_id,graph_id,graph_revision,*,edit_id,
                     edit_revision,inspection_branch_id=None):
         active=self.open_edit(project_id,edit_id,edit_revision)
