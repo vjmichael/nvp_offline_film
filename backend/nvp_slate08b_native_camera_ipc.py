@@ -726,7 +726,8 @@ class TrustedDesktopCameraBridge:
                     + (("Two physically independent original 48-kHz mono devices.\n"
                         "Native ADC timestamps + drift correction must pass; "
                         "original PCM is never retimed.\n"
-                        f"Device IDs: {scope['independent_device_ids']}\n")
+                        f"Device IDs: {scope['independent_device_ids']}\n"
+                        f"Verified native endpoints: {scope.get('independent_device_descriptors')}\n")
                         if "independent_device_ids" in scope else
                         ("Two original mono sources on one shared-clock stereo interface.\n"
                          if extra else "One original mono audio source.\n"))
