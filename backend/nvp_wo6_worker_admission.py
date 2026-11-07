@@ -28,8 +28,7 @@ def verify_admitted_worker(spec:dict, *, ledger_db, owner_key:str) -> None:
     expected=hashlib.sha256(raw).hexdigest()
     # Read-only SQLite URI: do not initialize a second ledger or create
     # schema from worker entrypoint. URI escape permits spaces in native path.
-    from urllib.parse import quote
-    uri="file:"+quote(str(path.resolve()),safe="/:")+"?mode=ro"
+    uri=path.resolve().as_uri()+"?mode=ro"
     with closing(sqlite3.connect(uri,uri=True,timeout=10)) as db:
         row=db.execute("""SELECT t.state,t.reserved,t.kind,
                                  a.owner_key,a.spec_sha256,a.spec_json,
