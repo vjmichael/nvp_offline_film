@@ -30,23 +30,20 @@ def plan_feature(*,frames,profile,channels=2,max_reel_frames=7200):
     width,height,_=PROFILES[profile]
     raw_frame_bytes=width*height*6
     reels=[]
+    reel_count=ceil(frames/max_reel_frames)
+    base,extra=divmod(frames,reel_count)
+    if base<3:
+        raise ValueError("Last reel would be shorter than three frames")
     begin=0
-    while begin<frames:
-        end=min(frames,begin+max_reel_frames)
-        if end-begin<3:
-            if not reels or end-reels[-1]["first_frame"]>MAX_REEL_FRAMES:
-                raise ValueError("Cannot form valid minimum-frame final reel")
-            reels[-1]["end_frame"]=end
-            reels[-1]["frame_count"]=end-reels[-1]["first_frame"]
-            reels[-1]["end_tick"]=end*(TICKS_PER_SECOND//24)
-            break
+    for i in range(reel_count):
+        end=begin+base+(1 if i<extra else 0)
         reels.append({
-            "reel_number":len(reels)+1,
+            "reel_number":i+1,
             "first_frame":begin,
             "end_frame":end,
             "frame_count":end-begin,
             "start_tick":begin*(TICKS_PER_SECOND//24),
-            "end_tick":end*(TICKS_PER_SECOND//24),
+            "end_tick":end*(TICKS_PER_SECOND//24)
         })
         begin=end
     if len(reels)>MAX_REELS:
