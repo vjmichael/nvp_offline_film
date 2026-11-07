@@ -89,3 +89,49 @@ def texture_transport(index: FilmIndex, project_id, descriptor):
         "png_base64": base64.b64encode(png).decode("ascii"),
         "source_modified": False,
     }
+
+
+def import_native_selected_png(index: FilmIndex, project_id, selected_path, *,
+                               approve):
+    """Only the host passes an OS-picked file; JavaScript cannot select paths."""
+    from pathlib import Path
+    import os
+    import stat
+    if not callable(approve) or type(selected_path) not in (str, Path):
+        raise PermissionError("Trusted native picker and approval required")
+    selected=Path(selected_path)
+    if not selected.is_absolute() or selected.is_symlink():
+        raise PermissionError("Native texture picker returned unsafe path")
+    before=selected.stat()
+    if not stat.S_ISREG(before.st_mode) or not 0<before.st_size<=MAX_SOURCE_BYTES:
+        raise ValueError("Original source PNG exceeds bounded file limit")
+    flags=os.O_RDONLY|getattr(os,"O_BINARY",0)|getattr(os,"O_NOFOLLOW",0)
+    fd=os.open(selected,flags)
+    try:
+        opened=os.fstat(fd)
+        identity=lambda st:(st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns)
+        if not stat.S_ISREG(opened.st_mode) or identity(opened)!=identity(before):
+            raise RuntimeError("Source PNG replaced during native selection")
+        chunks=[]
+        count=0
+        while True:
+            packet=os.read(fd,65536)
+            if not packet:break
+            count+=len(packet)
+            if count>MAX_SOURCE_BYTES:
+                raise ValueError("Original PNG exceeded trusted read bound")
+            chunks.append(packet)
+        if identity(os.fstat(fd))!=identity(opened) or count!=opened.st_size:
+            raise RuntimeError("Original PNG changed during trusted read")
+        png=b"".join(chunks)
+    finally:
+        os.close(fd)
+    width,height,_=decode_png(png)
+    digest=sha256(png).hexdigest()
+    if approve({"sha256":digest,"width":width,"height":height,
+                "size_bytes":len(png),"format":FORMAT}) is not True:
+        return {"status":"DENIED","original_modified":False}
+    descriptor=publish_texture(index,project_id,png)
+    return {"status":"ORIGINAL_TEXTURE_IMPORTED",
+            "texture":descriptor,"original_modified":False,
+            "ffmpeg_used":False}
