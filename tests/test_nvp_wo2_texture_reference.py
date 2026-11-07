@@ -58,6 +58,53 @@ class WO2NativeTextureReference(unittest.TestCase):
         self.assertGreater(float(lit[0,0,2]),0.)
         self.assertGreater(float(lit[0,0,0]),float(lit[0,0,1]))
 
+    def test_binary_cutout_does_not_write_depth_or_color_on_masked_pixels(self):
+        pixels=np.zeros((HEIGHT,WIDTH,4),dtype=np.float32)
+        depth=np.full((HEIGHT,WIDTH),np.inf,dtype=np.float32)
+        white=np.ones((2,2,3),dtype=np.float32)
+        cutout=np.array([
+            [[0.,0.,0.],[1.,1.,1.]],
+            [[0.,0.,0.],[1.,1.,1.]],
+        ],dtype=np.float32)
+        result=_draw_triangle(
+            pixels,depth,
+            [(0.,0.,2.),(100.,0.,2.),(0.,100.,2.)],
+            [(0.,0.,0.),(1.,0.,0.),(0.,1.,0.)],
+            ((1.,1.,1.),.5,0.,False),[],(0.,0.,5.),np,
+            texture=white,uv_face=[[0,0],[1,0],[0,1]],
+            pbr_maps={"opacity":cutout})
+        self.assertTrue(result)
+        self.assertTrue(np.isinf(depth[10,10]))
+        self.assertEqual(float(pixels[10,10,0]),0.)
+        self.assertTrue(np.isfinite(depth[10,60]))
+        self.assertGreater(float(pixels[10,60,0]),0.)
+
+    def test_source_maps_change_reflectance_and_emission_before_output(self):
+        points=[(0.,0.,0.),(1.,0.,0.),(0.,1.,0.)]
+        surface=((.8,.7,.5),.5,.0,False)
+        lights=[((0.,0.,5.),1500.)]
+        eye=(0.,0.,5.)
+        white=np.ones((2,2,3),dtype=np.float32)
+        base=_shade_texture_texels(points,surface,lights,eye,white,np)
+        bright=_shade_texture_texels(
+            points,surface,lights,eye,white,np,
+            emission_texels=np.ones_like(white))
+        self.assertTrue(np.all(bright>base))
+        matte=_shade_texture_texels(
+            points,surface,lights,eye,white,np,
+            roughness_texels=np.ones((2,2),dtype=np.float32))
+        gloss=_shade_texture_texels(
+            points,surface,lights,eye,white,np,
+            roughness_texels=np.full((2,2),.1,dtype=np.float32))
+        self.assertFalse(np.allclose(matte,gloss))
+        normal=np.full((2,2,3),.5,dtype=np.float32)
+        normal[:,:,2]=1.
+        raised=_shade_texture_texels(
+            points,surface,lights,eye,white,np,
+            normal_texels=normal,
+            uv_face=[[0,0],[1,0],[0,1]])
+        self.assertTrue(np.all(np.isfinite(raised)))
+
     def test_source_texture_cannot_render_without_authoritative_uv(self):
         rgba=np.zeros((HEIGHT,WIDTH,4),dtype=np.float32)
         depth=np.full((HEIGHT,WIDTH),np.inf,dtype=np.float32)
