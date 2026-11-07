@@ -191,8 +191,25 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
 
 def read_original_preview_surface(stage,mesh_prim,actor_path):
     """Read the actual frozen UsdShade shader, not assumed actor colors."""
-    from pxr import UsdShade
+    from pxr import UsdGeom,UsdShade
     expected=actor_path+"/Rig/Material"
+    if not mesh_prim.HasAPI(UsdShade.MaterialBindingAPI):
+        # Older immutable Takes legitimately predate authored
+        # UsdPreviewSurface. They STILL have actual original UsdGeom
+        # skinned meshes and displayColor. Never replace that actor
+        # geometry with a gizmo just because only displayColor exists.
+        raw=UsdGeom.Mesh(mesh_prim).GetDisplayColorPrimvar().Get()
+        if raw is None or len(raw)!=1:
+            raise RuntimeError("Legacy USD actor has no original color source")
+        color=[float(v) for v in raw[0]]
+        if any(not math.isfinite(v) or not 0<=v<=1 for v in color):
+            raise RuntimeError("Legacy original actor color invalid")
+        return {"format":"nvp.original_usd_displaycolor_preview.v1",
+                "material_path":None,"base_color_rgb":color,
+                "roughness":0.8,"metallic":0.05,
+                "roughness_metallic_authored":False,
+                "texture_images_loaded":False,
+                "original_source_modified":False}
     binding=UsdShade.MaterialBindingAPI(mesh_prim)
     bound,relationship=binding.ComputeBoundMaterial()
     if (not bound or str(bound.GetPath())!=expected):
@@ -217,6 +234,7 @@ def read_original_preview_surface(stage,mesh_prim,actor_path):
     return {"format":"nvp.original_usd_preview_surface.v1",
             "material_path":expected,"base_color_rgb":color,
             "roughness":roughness,"metallic":metallic,
+            "roughness_metallic_authored":True,
             "texture_images_loaded":False,"original_source_modified":False}
 
 
