@@ -40,6 +40,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [originalSoundReceipt,setOriginalSoundReceipt]=useState(null);
   const [presentationId,setPresentationId]=useState('NativeFilm001');
   const [aviReceipt,setAviReceipt]=useState(null);
+  const [gradeChoices,setGradeChoices]=useState([]);
+  const [gradeChoice,setGradeChoice]=useState('');
   const [exporting,setExporting]=useState(false);
   const [cameraPlans,setCameraPlans]=useState([]);
   const [cameraPlanIndex,setCameraPlanIndex]=useState('0');
@@ -101,6 +103,26 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
   },[native,projectId]);
+
+
+  useEffect(()=>{
+    if(!native||!projectId||!item||
+       typeof native.data_av_native_color_catalog!=='function'){
+      setGradeChoices([]);setGradeChoice('');return;
+    }
+    let live=true;
+    Promise.resolve(native.data_av_native_color_catalog(
+      projectId,item.take_id,item.take_document_sha256)).then(result=>{
+      if(!live)return;
+      if(result?.format!=='nvp.data_first.native_grade_catalog.v1'||
+         result.status!=='AVAILABLE'||result.ffmpeg_used!==false||
+         !Array.isArray(result.grades))
+        throw Error('Native source-bound color catalog failed');
+      setGradeChoices(result.grades);
+      setGradeChoice('');
+    }).catch(e=>{if(live)setError(e.message);});
+    return ()=>{live=false;};
+  },[native,projectId,takeId,item?.take_document_sha256]);
 
   const livePlan=cameraPlans[Number(cameraPlanIndex)];
   useEffect(()=>{
@@ -301,12 +323,17 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/.test(presentationId)){
       setError('Enter a valid new derived-presentation identity.');return;
     }
+    const color=gradeChoices.find(g=>g.grade_id+':'+g.revision===gradeChoice);
     setExporting(true);
     try{
       const r=await native.data_av_export_native_avi({
         project_id:projectId,take_id:item.take_id,
         take_document_sha256:item.take_document_sha256,
         presentation_id:presentationId,listener_path:listener,
+        color_grade:color?{
+          grade_id:color.grade_id,revision:color.revision,
+          document_sha256:color.document_sha256,
+        }:null,
         fps_num:24,fps_den:1,
       });
       if(r?.status==='CANCELLED'){setNote('Native destination selection cancelled.');return;}
@@ -315,6 +342,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          r.take_sha256!==item.take_document_sha256||
          r.source_modified!==false||r.ffmpeg_used!==false||
          r.master_approved!==false||
+         r.color_grade_sha256!==(color?.document_sha256||null)||
          typeof r.output_sha256!=='string')
         throw Error('Derived AVI failed native approval and SHA validation');
       setAviReceipt(r);
@@ -540,6 +568,16 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
           disabled={playing||exporting}
           onChange={e=>setPresentationId(e.target.value)}/>
       </label>
+      <label>Optional saved non-destructive color decision
+        <select aria-label="Native selected output color grade"
+          value={gradeChoice} disabled={playing||exporting}
+          onChange={e=>setGradeChoice(e.target.value)}>
+          <option value="">Original color presentation (no saved grade)</option>
+          {gradeChoices.map(g=><option key={g.grade_id+':'+g.revision}
+            value={g.grade_id+':'+g.revision}>
+            {g.grade_id} · revision {g.revision}</option>)}
+        </select>
+      </label>
       <button disabled={playing||exporting||!native||!item||!listener||
         typeof native.data_av_export_native_avi!=='function'}
         onClick={exportDerivedAvi}>
@@ -547,6 +585,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
           'Approve native 2D picture + sound export'}
       </button>
       {aviReceipt&&<p role="status">AVI saved as {aviReceipt.output_file}.
+        {aviReceipt.color_grade_sha256&&'Color decision SHA '+
+          aviReceipt.color_grade_sha256.slice(0,16)+'… · '}
         Output SHA-256: <code>{aviReceipt.output_sha256.slice(0,16)}…</code>
         {' '}Original Digital Take remains immutable.</p>}
     </section>
