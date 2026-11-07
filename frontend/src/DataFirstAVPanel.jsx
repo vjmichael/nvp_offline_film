@@ -47,6 +47,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [textureMeshes,setTextureMeshes]=useState([]);
   const [textureMeshId,setTextureMeshId]=useState('');
   const [textureApplying,setTextureApplying]=useState(false);
+  const [textureChannel,setTextureChannel]=useState('base_color');
   const [installedGPUReceipt,setInstalledGPUReceipt]=useState(null);
   const [highResolutionTexture,setHighResolutionTexture]=useState(null);
   const [textureTileProgress,setTextureTileProgress]=useState(null);
@@ -510,6 +511,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         asset_revision:original.asset_revision,
         asset_document_sha256:original.asset_document_sha256,
         texture_sha256:originalTextureReceipt.sha256,
+        ...(textureChannel==='base_color'?{}:{channel:textureChannel}),
       });
       if(result?.status==='DENIED')return;
       if(result?.format!=='nvp.native.texture_mesh_revision.v1'||
@@ -754,6 +756,18 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       </p>}
       {originalTextureReceipt&&textureMeshes.length>0&&
         <div className="actions">
+          <label>Original PBR material channel
+            <select aria-label="Original PBR channel"
+              value={textureChannel}
+              onChange={e=>setTextureChannel(e.target.value)}>
+              <option value="base_color">Base color</option>
+              <option value="roughness">Roughness (grayscale)</option>
+              <option value="metallic">Metallic (grayscale)</option>
+              <option value="emission">Emission (sRGB color)</option>
+              <option value="normal">Normal (tangent-space RGB)</option>
+              <option value="opacity">Opacity (binary black/white)</option>
+            </select>
+          </label>
           <label>Source UV mesh for a new material revision
             <select aria-label="Original textured mesh selection"
               value={textureMeshId}
