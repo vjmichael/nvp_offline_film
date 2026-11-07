@@ -102,6 +102,33 @@ verification, and update native test fixtures. Do not silently relabel
 30-second CI or write fake success receipts. This decision is documentation
 only; no codec/worker/UI change is authorized by recording it.
 
+## 3A. Three original-film validation tiers (creator update 2026-11-07)
+
+The up-to-30-minute original is only a **pilot for whether NVP works**.
+It does not by itself demonstrate that NVP can produce a feature film.
+**Real feature-film production acceptance** requires NVP to create a
+complete original **60–90 minute** movie with representative original
+performances, varied frames, continuous picture/sound, editing,
+mastering and actually watched/listened-to creator review.
+**Long-form epic acceptance** requires an original film **at least
+3 hours** long, including actual full-length scene/render/encoding
+throughput, crash/cancel/reconnect, resource budgets, edits and an
+independently decoded delivered movie.
+
+The prior 2h/3h synthetic SMPTE DCP stress and 12-unique-frame pilot
+remain lower-level engineering evidence, not these production tests.
+Each milestone must show the *film the filmmaker intended*, not only a
+valid media container. Preserve native SMPTE DCP Bv2.1 interchange
+and separately mastered higher-fidelity non-DCP exports.
+
+NVP's WO5 desktop director workflow now wires native human shot
+intention/review records to the existing WebView2 project UI and
+real OpenUSD source-Take audiovisual audition. **Finished-feature
+multi-reel picture+mastered-sound playback is still OPEN**, along with
+all real original film authoring, physical installed acceptance and
+theater ingest. See
+[WO5 Desktop Director Workflow](NVP_WO5_DESKTOP_DIRECTOR_WORKFLOW.md).
+
 ## 4. First-class desktop experience
 
 NVP must be usable by someone who has never made a film. The main desktop
