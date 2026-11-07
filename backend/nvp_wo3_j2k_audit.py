@@ -14,6 +14,9 @@ PROFILES={
     "2K_FLAT_24":(1998,1080,24),
     "2K_SCOPE_24":(2048,858,24),
     "2K_FULL_24":(2048,1080,24),
+    "4K_FLAT_24":(3996,2160,24),
+    "4K_SCOPE_24":(4096,1716,24),
+    "4K_FULL_24":(4096,2160,24),
 }
 MAX_CODESTREAM=16*1024*1024
 
@@ -69,8 +72,9 @@ def inspect_j2k_header(blob,profile):
         raise ValueError("No bounded JPEG2000 coding header and SOT")
     # Rsiz 3/4 generally denotes cinema 2K/4K profile. Independent
     # decoder and normative profile validation remain mandatory.
-    if rsiz not in (3,4):
-        raise ValueError("JPEG2000 codestream lacks cinema Rsiz profile")
+    expected_rsiz=4 if profile.startswith("4K_") else 3
+    if rsiz!=expected_rsiz:
+        raise ValueError("JPEG2000 cinema Rsiz does not match selected 2K/4K profile")
     return {
         "format":FORMAT,"status":"HEADER_CONSTRAINTS_VERIFIED",
         "profile":profile,"width":xsiz,"height":ysiz,
