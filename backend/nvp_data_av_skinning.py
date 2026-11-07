@@ -39,6 +39,11 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
     declared=original["data"]["prim_roles"]
     observed={obj["path"]:obj for obj in scene_snapshot["objects"]}
     rigs=original["data"].get("skeleton_rigs",[])
+    if not rigs:
+        # An original USD scene need not contain an actor skeleton.
+        # Unrigged camera/prop scenes are valid live 3D source data and
+        # do not need or possess a skeleton layer SHA.
+        return {}
     if len(rigs)>8:
         raise RuntimeError("Live native actor count exceeds bounded UsdSkel scene")
     # Every authored rig must produce either a real bound mesh or an
