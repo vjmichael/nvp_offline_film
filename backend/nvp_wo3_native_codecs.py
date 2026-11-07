@@ -36,7 +36,7 @@ class ApprovedCodecBinary:
         if (not file.is_absolute() or file.is_symlink() or
             not file.is_file() or type(sha256) is not str or
             len(sha256)!=64 or any(c not in "0123456789abcdef" for c in sha256) or
-            product not in ("OpenJPEG-opj_compress","ASDCP-asdcp_wrap")):
+            product not in ("OpenJPEG-opj_compress","ASDCP-asdcp_wrap","ASDCP-asdcp_info")):
             raise PermissionError("Only a registered reviewed native codec binary")
         self.executable=file.resolve(strict=True)
         self.sha256=sha256
@@ -48,7 +48,7 @@ class ApprovedCodecBinary:
             raise PermissionError("Native codec license-reviewed binary changed")
         return True
 
-    def run(self,args,*,cwd,timeout=MAX_PROCESS_SECONDS):
+    def run(self,args,*,cwd,timeout=MAX_PROCESS_SECONDS,include_stdout=False):
         self.check()
         root=Path(cwd).resolve(strict=True)
         if not root.is_dir() or type(args) not in (tuple,list) or (
@@ -67,10 +67,12 @@ class ApprovedCodecBinary:
         self.check()
         if result.returncode!=0:
             raise RuntimeError("Native licensed cinema codec rejected input")
-        return {"exit_code":0,
-                "native_codec_sha256":self.sha256,
-                "stdout_sha256":hashlib.sha256(result.stdout).hexdigest(),
-                "stderr_sha256":hashlib.sha256(result.stderr).hexdigest()}
+        receipt={"exit_code":0,
+                 "native_codec_sha256":self.sha256,
+                 "stdout_sha256":hashlib.sha256(result.stdout).hexdigest(),
+                 "stderr_sha256":hashlib.sha256(result.stderr).hexdigest()}
+        if include_stdout:receipt["stdout"]=result.stdout[:65536]
+        return receipt
 
 
 def _ppm_xyz12(pixels,profile):
