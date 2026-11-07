@@ -37,7 +37,12 @@ def decode_png(png: bytes):
         if image.mode not in ("RGB", "RGBA"):
             raise ValueError("Original texture must have RGB/RGBA channels")
         rgba = image.convert("RGBA")
-        return rgba.width, rgba.height, rgba.tobytes()
+        raw = rgba.tobytes()
+        # Transparent texels require a separately validated alpha blending
+        # contract. Never silently render invisible source as opaque color.
+        if image.mode == "RGBA" and any(a != 255 for a in raw[3::4]):
+            raise ValueError("Source transparency requires future alpha compositor")
+        return rgba.width, rgba.height, raw
 
 
 def publish_texture(index: FilmIndex, project_id, png: bytes):
