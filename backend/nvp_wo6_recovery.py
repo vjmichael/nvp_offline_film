@@ -201,6 +201,9 @@ class WO6DurableRecovery:
     def reconcile_interrupted(self, task_id: str, *, owner_key: str,
                               job_root, studio_db):
         """Single kernel-leased recovery pass after independently verified worker stop."""
+        from pathlib import Path
+        if Path(job_root).is_symlink():
+            raise RuntimeError("Refusing symlinked native recovery workspace")
         with WorkerHostLease(job_root):
             return self._reconcile_under_lease(
                 task_id, owner_key=owner_key, job_root=job_root,
