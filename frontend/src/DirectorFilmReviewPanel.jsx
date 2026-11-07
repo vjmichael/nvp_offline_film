@@ -1,5 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import DataFirstAVPanel from './DataFirstAVPanel.jsx';
+import FinishedFilmPlaybackPanel from './FinishedFilmPlaybackPanel.jsx';
 
 const FRAME_TICKS = 294000000; // source Film Time = 7,056,000,000 ticks/s / 24
 const REQUIRED = [
@@ -304,7 +305,10 @@ export default function DirectorFilmReviewPanel({projectId, nativeBridge=null}){
           Creative review, independent decode and SMPTE Bv2.1 remain unverified.</p>
         <p className="fineprint">Original picture SHA audit:
           {audit.ordered_picture_custody_sha256.slice(0,24)}…</p>
-        <h4>Listen and watch the original source Takes</h4>
+        <h4>Watch and listen to the published finished film</h4>
+        <FinishedFilmPlaybackPanel projectId={projectId}
+          featureId={featureId} nativeBridge={native}/>
+        <h4>Compare against original source Takes</h4>
         <p className="fineprint">The native 3D/sound viewer below plays a real
           source-authored OpenUSD Take at its approved source time.
           This is <strong>not</strong> playback of the final flattened DCP;
