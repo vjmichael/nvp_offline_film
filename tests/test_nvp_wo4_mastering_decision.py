@@ -56,9 +56,9 @@ class WO4SourceCustody(unittest.TestCase):
             self.f.pid,"FrozenFixture",1)["document_sha256"],self.f.sha)
 
     def test_distinct_ordered_motion_frames_produce_exact_film_time_manifest(self):
-        second=dict(self.picture,xyz12=b"\\x00\\x01\\x00\\x02\\x00\\x03"*2)
+        second=dict(self.picture,xyz12=b"\x00\x01\x00\x02\x00\x03"*2)
         second["xyz12_sha256"]=sha256(second["xyz12"]).hexdigest()
-        third=dict(self.picture,xyz12=b"\\x00\\x03\\x00\\x02\\x00\\x01"*2)
+        third=dict(self.picture,xyz12=b"\x00\x03\x00\x02\x00\x01"*2)
         third["xyz12_sha256"]=sha256(third["xyz12"]).hexdigest()
         ordered=[self.picture,second,third]
         self.authorize(ordered_pictures=ordered,start_tick=588000000)
@@ -74,7 +74,7 @@ class WO4SourceCustody(unittest.TestCase):
             self.authorize(start_tick=7056000000*2)
 
     def test_distinct_motion_frame_tampering_fails_before_consent(self):
-        other=dict(self.picture,xyz12=b"\\x00\\x01\\x00\\x00\\x00\\x00"*2)
+        other=dict(self.picture,xyz12=b"\x00\x01\x00\x00\x00\x00"*2)
         other["xyz12_sha256"]="0"*64
         with self.assertRaises(PermissionError):
             self.authorize(ordered_pictures=[self.picture,other,self.picture])
@@ -101,7 +101,7 @@ class WO4SourceCustody(unittest.TestCase):
 
     def test_mutating_candidate_during_approval_is_refused(self):
         def alter(scope):
-            self.picture["xyz12"]=b"\\x00\\x01\\x00\\x00\\x00\\x00"*2
+            self.picture["xyz12"]=b"\x00\x01\x00\x00\x00\x00"*2
             return True
         with self.assertRaises(PermissionError):
             self.authorize(approve=alter)
