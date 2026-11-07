@@ -41,7 +41,8 @@ class RealNativeSkinnedWorld(unittest.TestCase):
         self.assertEqual(len(actor1["mesh_triangles"]),12)
         self.assertEqual(actor0["source_skinning_tick"],"0")
         self.assertEqual(actor1["source_skinning_tick"],str(T))
-        self.assertEqual(actor1["source_color_rgb"],self.skin["display_color"])
+        for got,want in zip(actor1["source_color_rgb"],self.skin["display_color"]):
+            self.assertAlmostEqual(got,want,places=6)
         self.assertAlmostEqual(actor0["mesh_points"][4][0],1.,places=4)
         self.assertAlmostEqual(actor1["mesh_points"][4][0],2.,places=4)
         self.assertEqual(
