@@ -103,7 +103,9 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_nvp_openusd_take_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_openusd_reusable_assets.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_slate08b_native_camera_ipc.py' -v
+          # Retired SLATE-08B still IPC tests assert an intentionally removed
+          # executable feature. Check the retirement instead of resurrecting it.
+          python -m unittest discover -s tests -p 'test_nvp_legacy_camera_retirement.py' -v
           python -m unittest discover -s tests -p 'test_data_time_projection.py' -v
 
   native-react:
