@@ -312,3 +312,86 @@ decoder, no real creator judgment of final story sound/motion, no
 60–90-minute original feature, no 3h+ original epic, no independent
 SMPTE DCP Bv2.1/theater validation. These are outstanding, not
 synthetic test substitutes.
+
+## WO5-05 — installed native finished-film playback and original thirty-minute source pilot (2026-11-07)
+
+**Engineering implementation in draft PR #92, stacked on #91. Both acceptance gates OPEN pending exact-head native results.**
+
+### Actual installed Windows application / sustained playback
+
+- Trusted Windows GitHub Actions builds **source-pinned OpenJPEG 2.5.4** from commit
+  `6c4a29b00211eb0430fa0e5e890f1ce5c80f409f` and **CineCert asdcplib**
+  from commit `905d6047f67c8211c2d22f29fb0e2e44c142b59b` as genuine native
+  binaries. A fresh release staging manifest records exact installed
+  executable SHA-256 and the full upstream BSD license-notice SHA-256 for
+  all five codec tools, with the manifest SHA compiled into the frozen NVP
+  executable at build time. Browser/AI/runtime project bytes cannot choose
+  codec executables, re-pin their own manifests or bypass notices.
+- A native PyInstaller WebView2 bundle includes the reviewed codec payload.
+  The Windows NSIS installer must actually install this bundle, prove
+  installed NVP.exe SHA identity, decode genuine published **two-reel
+  SMPTE DCP picture JPEG2000 + mastered PCM24** and record 24fps
+  throughput from the installed executable, then open the visible
+  WebView2 and call its native decoder capability method before uninstall.
+  Source codec fixture uses six distinct authored 2K patterns and
+  genuine native wrapping; its playback speed is a codec load test,
+  **NOT an original movie**. No source DCP assets ship with installer.
+- The installed native smoke emits a structured timing+memory report and
+  **fails the release performance gate** if native processing is below
+  24 picture fps. A separate real WebView2/device clock full-film
+  presentation gate remains open even if codec throughput passes:
+  codec decoding alone does not prove uninterrupted audio-device playback,
+  accurate physical picture/sound sync or user-viewed film.
+- The earlier finished-film decoder passed seven native/React CI jobs in
+  GitHub run 42409121482; those did NOT test a standalone NSIS install,
+  licenses or sustained real-time output. Do not transplant that result
+  into the new installed gate.
+
+### Original 30-minute pilot, not a pretend completed film
+
+The original demonstration **Last Light at Relay Nine** is a six-act
+data-first native OpenUSD scenario, not someone else's video or a three-
+frame JPEG2000 loop. Real source authoring creates one 1,800-second
+immutable Digital Take linked to a native 3D relay/crew scene, actual USD
+motion curves, a 60-cut exact Film Time camera timeline, a combined
+authoritative action/sound event ledger, six freshly authored recorded
+48kHz mono PCM source motifs, genuine SQLite/FilmIndex dependency
+records, and a six-by-5-minute reel production plan. Every act also
+attempts a real **source-derived OpenUSD scene-linear review frame**
+at its authored film time; this is a 640x360 uncalibrated *source*
+preview, deliberately NOT a 2K cinema master. A new edited scene
+revision and distinct new frozen Take must be proven possible while
+the earlier scene/Take SHA remain unchanged.
+
+The 30m *source/shot/sound workspace* is distinct from a
+production-ready 30m *finished film*. A real movie requires all
+43,200 distinct authored-time picture frame derivations at 24fps
+using an authentic full-resolution 2K/4K scene renderer, approved
+graded XYZ12 output, actual 30m mastered PCM24 and multi-reel DCP,
+continuous end-to-end replay of the published essence in the
+installed NVP application, and a human filmmaker's evaluation
+of performance, camera decisions, grading, cut timing and soundtrack.
+The current NVP 640x360 uncalibrated native raster cannot be silently
+upscaled and presented as calibrated DCI. Those gates **remain OPEN**.
+
+### Return from theatrical package to original scene / new Take
+
+A DCP is **flattened** picture/sound delivery, not a reversible USD
+archive. FilmIndex's original feature presentation record stores the
+ordered native source reel job IDs and approved assembly SHA;
+`FeatureJournal` binds each reel to the approved source Take and
+mastering decision SHA. The Take manifest binds exact scene,
+animation and temporal revisions and their original SHA-checked
+blobs. Thus an NVP project with its original source data still present
+may follow **DCP presentation → feature/assembly receipt → reel
+mastering decision → frozen Take → original USD scene + temporal data**.
+The director authors a **new scene revision and new Digital Take ID**;
+the old Take and published DCP remain immutable. Standalone DCP
+picture/sound data without FilmIndex and scene blobs CANNOT recreate
+editable 3D actors, cameras or performances. Avoid embedding
+project-secret source data into a cinema DCP; preserve an accompanying
+native production archive instead.
+
+**Bigger original deliverables:** 60–90-minute feature and >=3-hour epic
+remain deferred major acceptance targets, never satisfied by synthetic
+throughput results. Open WO4 and WO5 production/DCI gates remain OPEN.
