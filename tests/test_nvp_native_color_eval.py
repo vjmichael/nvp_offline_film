@@ -1,6 +1,8 @@
 """DA-06B: exact source-bound grade affects only derived presentation."""
 import hashlib
 import json
+from io import BytesIO
+from PIL import Image
 from pathlib import Path
 import unittest
 
@@ -23,6 +25,22 @@ class NativeColorEvaluationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             apply_display_grade(original,{
                 **NEUTRAL,"exposure_stops":float("nan")})
+
+    def test_srgb_exposure_is_linear_light_and_clipping_is_audited(self):
+        # +1 stop on middle gray is about sRGB 175, not byte-level 255.
+        neutral={**NEUTRAL,"exposure_stops":1.0}
+        graded,audit=apply_display_grade(
+            png(128,128,128),neutral,return_audit=True)
+        with Image.open(BytesIO(graded)) as image:
+            result=image.getpixel((0,0))
+            self.assertTrue(all(168<=channel<=185 for channel in result))
+        self.assertEqual(audit["channels_clipped"],0)
+        self.assertFalse(audit["aces2_output"])
+        self.assertFalse(audit["real_scene_linear_renderer"])
+        blown,audit2=apply_display_grade(
+            png(240,240,240),neutral,return_audit=True)
+        self.assertGreater(audit2["channels_clipped"],0)
+        self.assertFalse(audit2["hdr_master"])
 
     def test_pinned_color_plan_preserves_original_take_and_full_history(self):
         fx=NativeDataFirstOutputTests(
