@@ -46,6 +46,29 @@ class WO2IndependentHydraGate(unittest.TestCase):
         self.assertFalse(receipt["hydra_shader_parity_accepted"])
         self.assertFalse(receipt["physical_gpu_accepted"])
 
+    def test_paired_image_requires_real_exact_frozen_take_identity(self):
+        with self.assertRaises(ValueError):
+            capture_hydra_evidence(
+                self.index,self.pid,"hydra_scene",1,
+                camera_path="/World/Camera",native_take={
+                    "take_id":"some_take","take_sha256":"a"*64,
+                    "tick":1})
+        with self.assertRaises(ValueError):
+            capture_hydra_evidence(
+                self.index,self.pid,"hydra_scene",1,
+                camera_path="/World/Camera",native_take={
+                    "take_id":"some_take","take_sha256":"not a SHA",
+                    "tick":0})
+        with patch("backend.nvp_wo2_hydra_probe.shutil.which",
+                   return_value=None):
+            result=capture_hydra_evidence(
+                self.index,self.pid,"hydra_scene",1,
+                camera_path="/World/Camera",native_take={
+                    "take_id":"some_take","take_sha256":"a"*64,
+                    "tick":0})
+        self.assertEqual(result["status"],"HYDRA_BINARY_UNAVAILABLE")
+        self.assertFalse(result["hydra_shader_parity_accepted"])
+
     def test_unapproved_camera_and_arbitrary_renderer_refused(self):
         with self.assertRaises(PermissionError):
             capture_hydra_evidence(
