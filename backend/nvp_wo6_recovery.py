@@ -14,6 +14,7 @@ import time
 from backend.nvp_ai_read_host import TrustedReadScope
 from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_resource_ledger import TaskLedger
+from backend.nvp_worker_host_lease import WorkerHostLease
 
 ID_RE = re.compile(r"wo6(?:take|shot)_[0-9a-f]{24}\Z")
 TAKE_OP = "nvp.film.create_frozen_take.v1"
@@ -194,7 +195,15 @@ class WO6DurableRecovery:
 
     def reconcile_interrupted(self, task_id: str, *, owner_key: str,
                               job_root, studio_db):
-        """Never auto-retry. Do not release ACTIVE reservation without OS proof."""
+        """Single kernel-leased recovery pass after independently verified worker stop."""
+        with WorkerHostLease(job_root):
+            return self._reconcile_under_lease(
+                task_id, owner_key=owner_key, job_root=job_root,
+                studio_db=studio_db)
+
+    def _reconcile_under_lease(self, task_id: str, *, owner_key: str,
+                               job_root, studio_db):
+        """Never auto-retry or release ACTIVE reservations without OS proof."""
         from pathlib import Path
         row, spec = self._approved_spec(task_id, owner=owner_key)
         if row["state"] not in ("ACTIVE", "INTERRUPTED", "CANCELLED"):
