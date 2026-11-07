@@ -1,19 +1,12 @@
 name: NVP WO4 Long-Form 2h/3h 2K/4K Native DCP Stress (NO FFMPEG)
 on:
-  pull_request:
-    paths:
-      - tests/nvp_wo4_sustained_ci.py
-      - backend/nvp_wo4_picture_spool.py
-      - backend/nvp_wo4_supervised_sound.py
-      - backend/nvp_wo4_multireel.py
-      - backend/nvp_wo4_resource_budget.py
-      - .github/workflows/nvp-wo4-sustained-cinema.yml
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: nvp-wo4-sustained-${{ github.ref }}
-  cancel-in-progress: false
+  group: nvp-wo4-sustained-reuse-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   full-duration-native:
     name: Full-duration ${{ matrix.hours }}h ${{ matrix.profile }} actual MXF and SMPTE DCP
