@@ -497,7 +497,7 @@ class ProductionJournal:
                            (job_id,)).fetchone()
             if row is None or row["manifest_sha256"]!=scope["manifest_sha256"]:
                 raise PermissionError("Production state changed during approval")
-            if row["state"] in ("VERIFY_COMPLETE","CANCELLED"):
+            if row["state"] in ("VERIFY_COMPLETE","OUTPUT_READY","CANCELLED"):
                 raise RuntimeError("Completed job cannot be retrospectively cancelled")
             db.execute("""UPDATE production_jobs SET cancel_requested=1,
                         updated_at=? WHERE job_id=?""",(_now(),job_id))
@@ -511,8 +511,8 @@ class ProductionJournal:
                            WHERE job_id=?""",(job_id,)).fetchone()
             if job is None or job["cancel_requested"]!=1:
                 raise PermissionError("No authorized cancellation requested")
-            if job["state"]=="VERIFY_COMPLETE":
-                raise RuntimeError("Verified complete job cannot be cancelled")
+            if job["state"] in ("VERIFY_COMPLETE","OUTPUT_READY"):
+                raise RuntimeError("Completed job cannot be cancelled")
             db.execute("""UPDATE production_jobs SET state='CANCELLED',
                  owner_token=NULL,owner_pid=NULL,updated_at=? WHERE job_id=?""",
                 (_now(),job_id))
