@@ -69,6 +69,10 @@ class WO4SourceCustody(unittest.TestCase):
         self.assertEqual(record["picture_tick_step"],294000000)
         self.assertEqual(record["sound_frame_count"],3)
 
+    def test_sequence_outside_original_take_duration_rejected(self):
+        with self.assertRaises(PermissionError):
+            self.authorize(start_tick=7056000000*2)
+
     def test_distinct_motion_frame_tampering_fails_before_consent(self):
         other=dict(self.picture,xyz12=b"\\x00\\x01\\x00\\x00\\x00\\x00"*2)
         other["xyz12_sha256"]="0"*64
