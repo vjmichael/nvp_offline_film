@@ -42,6 +42,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [originalSoundReceipt,setOriginalSoundReceipt]=useState(null);
   const [originalTextureReceipt,setOriginalTextureReceipt]=useState(null);
   const [textureImporting,setTextureImporting]=useState(false);
+  const [textureMeshes,setTextureMeshes]=useState([]);
+  const [textureMeshId,setTextureMeshId]=useState('');
+  const [textureApplying,setTextureApplying]=useState(false);
   const [presentationId,setPresentationId]=useState('NativeFilm001');
   const [aviReceipt,setAviReceipt]=useState(null);
   const [gradeChoices,setGradeChoices]=useState([]);
@@ -465,6 +468,46 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     finally{setExporting(false);}
   }
 
+  async function refreshTextureMeshes(){
+    if(!native||!projectId||
+       typeof native.data_av_texture_mesh_catalog!=='function')return;
+    const result=await native.data_av_texture_mesh_catalog(projectId);
+    if(result?.format!=='nvp.native.texture_mesh_catalog.v1'||
+       !Array.isArray(result.assets)||result.original_modified!==false)
+      throw Error('Original mesh selection was not SHA-verified');
+    setTextureMeshes(result.assets);
+    setTextureMeshId(existing=>result.assets.some(x=>x.asset_id===existing)?
+      existing:(result.assets[0]?.asset_id||''));
+  }
+
+  async function applyOriginalTexture(){
+    const original=textureMeshes.find(x=>x.asset_id===textureMeshId);
+    if(!original||!originalTextureReceipt||
+       typeof native?.data_av_apply_original_texture!=='function'||
+       textureApplying)return;
+    setTextureApplying(true);setError('');
+    try{
+      const result=await native.data_av_apply_original_texture({
+        project_id:projectId,asset_id:original.asset_id,
+        asset_revision:original.asset_revision,
+        asset_document_sha256:original.asset_document_sha256,
+        texture_sha256:originalTextureReceipt.sha256,
+      });
+      if(result?.status==='DENIED')return;
+      if(result?.format!=='nvp.native.texture_mesh_revision.v1'||
+         result.status!=='NEW_SOURCE_REVISION'||
+         result.asset_id!==original.asset_id||
+         result.asset_revision!==original.asset_revision+1||
+         !/^[0-9a-f]{64}$/.test(result.asset_document_sha256||'')||
+         result.original_modified!==false||result.ffmpeg_used!==false)
+        throw Error('Native source mesh revision did not verify');
+      setNote('A new immutable textured mesh revision was published. '+
+        'Existing source scenes and frozen Takes still reference their old revisions.');
+      await refreshTextureMeshes();
+    }catch(e){setError(e.message);}
+    finally{setTextureApplying(false);}
+  }
+
   async function importOriginalTexture(){
     if(!native||typeof native.data_av_import_original_texture!=='function'||
        textureImporting)return;
@@ -481,6 +524,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          desc.source_modified!==false)
         throw Error('Original texture did not pass native source verification');
       setOriginalTextureReceipt(desc);
+      await refreshTextureMeshes();
       setNote('PNG texture stored as an immutable source asset. Applying it to '+
         'a scene or character requires a separate source revision.');
     }catch(e){setError(e.message);}
@@ -619,6 +663,24 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         {originalTextureReceipt.height}; SHA-256
         {originalTextureReceipt.sha256.slice(0,16)}…
       </p>}
+      {originalTextureReceipt&&textureMeshes.length>0&&
+        <div className="actions">
+          <label>Source UV mesh for a new material revision
+            <select aria-label="Original textured mesh selection"
+              value={textureMeshId}
+              onChange={e=>setTextureMeshId(e.target.value)}>
+              {textureMeshes.map(asset=><option key={asset.asset_id}
+                value={asset.asset_id}>{asset.asset_id} ·
+                rev {asset.asset_revision}</option>)}
+            </select>
+          </label>
+          <button disabled={textureApplying||
+            typeof native?.data_av_apply_original_texture!=='function'}
+            onClick={applyOriginalTexture}>
+            {textureApplying?'Publishing source revision…':
+              'Approve new mesh texture revision'}
+          </button>
+        </div>}
     </section>
     <label>Frozen Digital Take
       <select aria-label="Native frozen Digital Take" value={takeId}
