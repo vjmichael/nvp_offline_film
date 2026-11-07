@@ -225,7 +225,12 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
     shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
     material.CreateSurfaceOutput().ConnectToSource(
         shader.ConnectableAPI(),"surface")
-    if bound["texture"] is None:
+    if bound["texture"] is not None:
+        from backend.nvp_wo2_openpbr import author_openpbr_texture
+        author_openpbr_texture(stage,material_path,material,
+            bound["texture"],bound["preview_material"]["roughness"],
+            bound["preview_material"]["metallic"])
+    else:
         from backend.nvp_wo2_openpbr import author_openpbr_scalar
         author_openpbr_scalar(stage,material_path,material,
             bound["display_color"],bound["preview_material"]["roughness"],
@@ -311,9 +316,28 @@ def read_original_preview_surface(stage,mesh_prim,actor_path):
     openpbr=stage.GetPrimAtPath(expected+"/OpenPBR")
     if openpbr:
         if shader.GetInput("diffuseColor").HasConnectedSource():
-            raise RuntimeError("Connected textured USD actor cannot use flat OpenPBR")
-        from backend.nvp_wo2_openpbr import verify_openpbr_scalar
-        verify_openpbr_scalar(stage,expected,bound,color,roughness,metallic)
+            # The source image identity is verified by the native pose reader
+            # against the original indexed rig descriptor before display.
+            image_node=UsdShade.Shader(stage.GetPrimAtPath(
+                expected+"/MtlxImage"))
+            source=image_node.GetInput("file").GetAttr().Get() if image_node else None
+            if source is None:
+                raise RuntimeError("Source rig MaterialX image missing")
+            # Verify graph node/terminal identity here; complete blob digest
+            # re-verification occurs using the exact manifest in live skins.
+            from backend.nvp_wo2_openpbr import verify_openpbr_texture
+            from backend.nvp_native_usd_texture import PREFIX,FORMAT
+            path=str(source.path)
+            if not path.startswith(PREFIX) or len(path)!=len(PREFIX)+64:
+                raise RuntimeError("Untrusted rig MaterialX image source")
+            descriptor={"format":FORMAT,"sha256":path[len(PREFIX):],
+                "usd_asset_path":path,"color_space":"sRGB","wrap":"repeat",
+                "source_modified":False}
+            verify_openpbr_texture(
+                stage,expected,bound,descriptor,roughness,metallic)
+        else:
+            from backend.nvp_wo2_openpbr import verify_openpbr_scalar
+            verify_openpbr_scalar(stage,expected,bound,color,roughness,metallic)
     return {"format":"nvp.original_usd_preview_surface.v1",
             "material_path":expected,"base_color_rgb":color,
             "roughness":roughness,"metallic":metallic,
