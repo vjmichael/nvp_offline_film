@@ -109,7 +109,7 @@ jobs:
         run: |
           $native=Join-Path $env:RUNNER_TEMP 'wo5-codec-tools'
           $bundle=Join-Path $env:RUNNER_TEMP 'wo5-sealed-native-codecs'
-          python tools/nvp_wo5_release_codecs.py stage `
+          python -m tools.nvp_wo5_release_codecs stage `
             --destination $bundle `
             --openjpeg-license (Resolve-Path deps/openjpeg/LICENSE).Path `
             --asdcp-license (Resolve-Path deps/asdcplib/COPYING).Path `
@@ -122,7 +122,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'No valid build-pinned licensed codec bundle' }
           $env:NVP_WO5_BUNDLE=$bundle
           $sha=(python -c "from backend._nvp_wo5_release_pin import RELEASE_CODEC_MANIFEST_SHA256; print(RELEASE_CODEC_MANIFEST_SHA256)").Trim()
-          python tools/nvp_wo5_release_codecs.py verify --bundle $bundle --pin $sha
+          python -m tools.nvp_wo5_release_codecs verify --bundle $bundle --pin $sha
           if ($LASTEXITCODE -ne 0) { throw 'Build codec pin verification failed' }
       - name: Generate genuine 2-reel SMPTE picture+sound fixture with actual Windows codecs
         shell: pwsh
