@@ -44,6 +44,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [gradeChoice,setGradeChoice]=useState('');
   const [exporting,setExporting]=useState(false);
   const [cameraPlans,setCameraPlans]=useState([]);
+  const [unapprovedCaptures,setUnapprovedCaptures]=useState([]);
   const [cameraPlanIndex,setCameraPlanIndex]=useState('0');
   const [liveEmitter,setLiveEmitter]=useState('');
   const [secondLiveEmitter,setSecondLiveEmitter]=useState('');
@@ -101,6 +102,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          result.status!=='AVAILABLE'||!Array.isArray(result.camera_timelines))
         throw Error('Live source camera catalog is unverified');
       setCameraPlans(result.camera_timelines);
+      setUnapprovedCaptures(Array.isArray(result.unapproved_capture_recovery)?
+        result.unapproved_capture_recovery.slice(0,128):[]);
       setCameraPlanIndex('0');
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
@@ -533,6 +536,13 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         approval. Recorded mono PCM goes into a bounded on-disk original
         source; a second confirmation freezes its exact Film Time with
         the original 3D scene. No movie frames or flattened soundtrack.</p>
+      {unapprovedCaptures.length>0&&
+        <p role="alert">Unapproved original microphone capture evidence:
+          {unapprovedCaptures.map(x=>' '+(x.take_id||x.capture_reference)+
+            ' ('+x.phase+')').join(', ')}.
+          These files were not frozen as Digital Takes. NVP preserves them
+          for trusted host reconciliation after a crash; it never approves
+          incomplete audio or deletes it automatically.</p>}
       <label>Exact-time 3D camera timeline
         <select aria-label="Native live camera timeline"
           value={cameraPlanIndex} disabled={!!liveTicket||liveBusy}
