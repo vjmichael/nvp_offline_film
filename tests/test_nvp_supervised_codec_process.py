@@ -32,6 +32,29 @@ class NativeCodecWorkerProcessTests(unittest.TestCase):
         self.assertIn(b"codec-worker-result",result["stdout"])
         self.assertTrue(result["process_group_supervised"])
 
+    @unittest.skipUnless(sys.platform=="win32",
+                         "Genuine Windows kernel containment test only")
+    def test_child_is_in_job_before_first_code_instruction(self):
+        script=(
+            "import ctypes;"
+            "from ctypes import wintypes;"
+            "k=ctypes.WinDLL('kernel32',use_last_error=True);"
+            "k.GetCurrentProcess.restype=wintypes.HANDLE;"
+            "k.IsProcessInJob.argtypes=[wintypes.HANDLE,wintypes.HANDLE,"
+            "ctypes.POINTER(wintypes.BOOL)];"
+            "result=wintypes.BOOL();"
+            "assert k.IsProcessInJob(k.GetCurrentProcess(),None,"
+            "ctypes.byref(result));"
+            "print('INSIDE_JOB_BEFORE_FIRST_INSTRUCTION' "
+            "if result.value else 'NOT_IN_JOB')"
+        )
+        record=run_supervised_codec(
+            self.codec,["-c",script],workdir=self.root,
+            check_cancel=lambda:False,timeout=8,read_stdout=True)
+        self.assertIn(b"INSIDE_JOB_BEFORE_FIRST_INSTRUCTION",record["stdout"])
+        self.assertTrue(record["windows_assignment_race_eliminated"])
+        self.assertTrue(record["process_group_supervised"])
+
     def test_native_cancel_kills_process_promptly(self):
         start=time.monotonic()
         with self.assertRaises(WorkerCancelled):
