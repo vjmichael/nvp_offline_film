@@ -206,6 +206,52 @@ class ExactTimeShotSequence:
                 "scene_document_sha256":plan["scene_document_sha256"],
                 "shot_id":None,"camera_path":None,"pattern":None}
 
+    def camera_segments(self,project_id,timeline_id,revision,start_tick,end_tick):
+        """Return a complete exact-tick camera/gap partition of a bounded window.
+
+        The caller receives half-open intervals, including intentional gaps,
+        without allocating picture frames or assuming any output frame rate.
+        """
+        start=_tick(start_tick,"camera window start")
+        end=_tick(end_tick,"camera window end",minimum=1)
+        if end<=start:
+            raise ValueError("Camera window must have positive duration")
+        plan=self.read(project_id,timeline_id,revision)
+        if end>int(plan["duration_tick"]):
+            raise ValueError("Camera window exceeds authored sequence")
+        result=[]
+        cursor=start
+        for shot in plan["shots"]:
+            a=int(shot["start_tick"]); b=int(shot["end_tick"])
+            if b<=cursor:
+                continue
+            if a>=end:
+                break
+            if cursor<a:
+                stop=min(a,end)
+                result.append({"status":"GAP","start_tick":str(cursor),
+                               "end_tick":str(stop),"shot_id":None,
+                               "camera_path":None,"pattern":None})
+                cursor=stop
+            if cursor>=end:
+                break
+            lo=max(cursor,a); hi=min(b,end)
+            if lo<hi:
+                result.append({"status":"CAMERA","start_tick":str(lo),
+                               "end_tick":str(hi),"shot_id":shot["shot_id"],
+                               "camera_path":shot["camera_path"],
+                               "pattern":shot["pattern"]})
+                cursor=hi
+        if cursor<end:
+            result.append({"status":"GAP","start_tick":str(cursor),
+                           "end_tick":str(end),"shot_id":None,
+                           "camera_path":None,"pattern":None})
+        return {"format":FORMAT,"timeline_id":timeline_id,"revision":revision,
+                "document_sha256":plan["document_sha256"],
+                "scene_document_sha256":plan["scene_document_sha256"],
+                "start_tick":str(start),"end_tick":str(end),
+                "segments":result,"video_frames_created":False}
+
     def checkpoints(self,project_id,timeline_id,revision):
         plan=self.read(project_id,timeline_id,revision)
         points={0}
