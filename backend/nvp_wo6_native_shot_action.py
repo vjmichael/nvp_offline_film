@@ -209,6 +209,7 @@ class NativeShotActionHost:
             "scene_sha256": scene_sha256,
             "director_shot_opinion_sha256": spec["shot_layer_sha256"],
             "start_tick": start_tick, "end_tick": end_tick,
+            "typed_changes": spec["changes"], "purpose": purpose,
             "continuity_policy": continuity_policy, "reason": reason.strip(),
             "preview_sha256": expected_preview_sha256,
             "no_original_take_mutation": True, "renders_finished": False,
