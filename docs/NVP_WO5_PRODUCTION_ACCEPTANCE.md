@@ -253,3 +253,38 @@ Exact installed WebView2 tests are separately required, as unit
 tests/mock WebView windows do not prove that the shipped installed
 NVP executable works end to end. See
 [NVP WO5 desktop workflow](NVP_WO5_DESKTOP_DIRECTOR_WORKFLOW.md).
+
+## WO5-04 real published picture+mastered sound desktop player (2026-11-07)
+
+**Implemented in draft PR #91, but NOT independently installed/realtime
+accepted.** New native FinishedFilmPlayer checks source-bound FilmIndex
+and fully SHA-audited multi-reel DCP structure, reopens final 2K/4K
+picture MXF, unwraps true approved JPEG2000 and 24-bit/48kHz mastered
+sound MXF, verifies J2K exact original SHA, and maps globally continuous
+24fps output Film Time to the correct source reel. An OS-scoped session
+in the same pywebview native bridge grants read-only viewing. A bounded
+16-frame screen buffer plays audio via WebAudio as the single hardware
+clock and displays corresponding decoded picture. The exact-frame seek
+and stop controls never change the source or mastered DCP. It fails closed
+on missed audio deadlines, missing picture or skipped frames. The screen
+preview is approximate sRGB from actual XYZ12; stereo local monitoring
+is downmixed from actual mastered PCM24 and is not cinema surround.
+
+The new real native codec CI proved **two-reel final-DCP output/unwrap
+picture and sound across the frame 2->3 reel transition** in
+[run 42408366415](https://github.com/vjmichael/nvp_offline_film/actions/runs/42408366415).
+Two React platform jobs passed there. Python mock-codec fixture with a
+too-short placeholder codestream failed and was corrected; newer tests
+remain pending. Real sustained 24fps performance, native installed
+application playback and audio-device timing remain OPEN. The current
+backend launches three supervised native codec processes for every
+frame, which is not a demonstrated efficient feature-film decoder.
+
+**Native decoder release gate OPEN:** the ordinary NVP installer has
+not packaged a build-time SHA-pinned and legally noticed OpenJPEG/
+CineCert viewer bundle, so the finished-DCP play button remains disabled
+by default. Explicit host-side developer binary+digest config can run
+the native player; JavaScript cannot approve or supply binaries.
+Do not mark WO5/WO4, creator viewing, SMPTE DCP Bv2.1, 60-90min feature
+or >=3h epic accepted on the basis of this short real 6-frame test.
+See NVP_WO5_DESKTOP_DIRECTOR_WORKFLOW.md for exact code and open gates.
