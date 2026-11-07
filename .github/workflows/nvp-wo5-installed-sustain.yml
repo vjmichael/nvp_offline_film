@@ -5,6 +5,8 @@ on:
     paths:
       - tools/nvp_wo5_release_codecs.py
       - tools/nvp_wo5_installed_sustain.py
+      - backend/nvp_wo5_finished_playback.py
+      - docs/NVP_WO5_PRODUCTION_ACCEPTANCE.md
       - tools/nvp_wo5_visible_finished_fixture.py
       - tools/nvp_wo5_installed_visible.py
       - frontend/src/App.jsx
@@ -19,6 +21,8 @@ on:
     paths:
       - tools/nvp_wo5_release_codecs.py
       - tools/nvp_wo5_installed_sustain.py
+      - backend/nvp_wo5_finished_playback.py
+      - docs/NVP_WO5_PRODUCTION_ACCEPTANCE.md
       - tools/nvp_wo5_visible_finished_fixture.py
       - tools/nvp_wo5_installed_visible.py
       - frontend/src/App.jsx
