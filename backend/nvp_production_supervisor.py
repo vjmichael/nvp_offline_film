@@ -128,9 +128,18 @@ class ProductionSupervisor:
             after_claim(dict(segment))
         job_id = segment["job_id"]
         try:
+            last_heartbeat=time.monotonic()
+            def check_cancel():
+                nonlocal last_heartbeat
+                if time.monotonic()-last_heartbeat>=1.0:
+                    self.journal.heartbeat(
+                        self.owner,job_id,segment["position"])
+                    last_heartbeat=time.monotonic()
+                return self.journal.status(job_id)["cancel_requested"]
             digest, size = verify_approved_file(
-                segment,
-                check_cancel=lambda:self.journal.status(job_id)["cancel_requested"])
+                segment,check_cancel=check_cancel)
+            if check_cancel():
+                raise InterruptedError("Explicit cancellation before verification commit")
             result = self.journal.finish_verified(
                 self.owner,job_id,segment["position"],digest,size)
             return {"status":"SEGMENT_VERIFIED",
@@ -141,6 +150,9 @@ class ProductionSupervisor:
             self.journal.finalize_cancel(job_id)
             return {"status":"CANCELLED","job_id":job_id}
         except (OSError, RuntimeError, PermissionError, ValueError) as exc:
+            if self.journal.status(job_id)["cancel_requested"]:
+                self.journal.finalize_cancel(job_id)
+                return {"status":"CANCELLED","job_id":job_id}
             self.journal.mark_review(
                 self.owner,job_id,segment["position"],type(exc).__name__)
             return {"status":"REVIEW_REQUIRED","job_id":job_id,
