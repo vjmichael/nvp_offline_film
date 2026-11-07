@@ -1,0 +1,59 @@
+name: NVP WO4 Native Distinct Picture Frame Pilot (NO FFMPEG)
+on:
+  push:
+    branches: [nvp/wo4-cinema-mastering-20261107]
+    paths:
+      - tests/nvp_wo4_unique_frame_pilot_ci.py
+      - backend/nvp_wo4_picture_spool.py
+      - backend/nvp_wo3_j2k_audit.py
+      - .github/workflows/nvp-wo4-unique-frame-pilot.yml
+  pull_request:
+    paths:
+      - tests/nvp_wo4_unique_frame_pilot_ci.py
+      - backend/nvp_wo4_picture_spool.py
+      - backend/nvp_wo3_j2k_audit.py
+      - .github/workflows/nvp-wo4-unique-frame-pilot.yml
+permissions:
+  contents: read
+jobs:
+  native-unique-sample:
+    name: Genuine native distinct XYZ12 and J2K / ${{ matrix.profile }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [2K_FLAT_24, 4K_SCOPE_24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native OpenJPEG (never FFmpeg)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libopenjp2-tools
+          test -x /usr/bin/opj_compress
+          sha256sum /usr/bin/opj_compress
+      - name: Sample 12 genuinely different synthetic original XYZ12 frames at native profile and independently inspect all codestream SHA
+        env:
+          NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+          PYTHONPATH: ${{ github.workspace }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python -m compileall -q tests/nvp_wo4_unique_frame_pilot_ci.py
+          python tests/nvp_wo4_unique_frame_pilot_ci.py \
+            --profile ${{ matrix.profile }} --samples 12 \
+            --root "${{ runner.temp }}/nvp-unique-${{ matrix.profile }}" \
+            --audit "${{ github.workspace }}/unique-frame-audit/${{ matrix.profile }}.json"
+      - name: Display scratch capacity without uploading source footage
+        if: always()
+        run: df -h .
+      - name: Upload native distinct-frame performance and source-custody receipts only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-wo4-unique-${{ matrix.profile }}-audit
+          path: unique-frame-audit/
+          if-no-files-found: warn
+          retention-days: 14
