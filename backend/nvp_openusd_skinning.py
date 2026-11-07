@@ -29,7 +29,7 @@ def _float(value):
 
 def normalize_skin(skin,joint_count):
     required={"points","faces","joint_indices","joint_weights","display_color"}
-    optional={"blend_shapes","preview_material","mesh_uvs","face_uvs","texture"}
+    optional={"blend_shapes","preview_material","mesh_uvs","face_uvs","texture","pbr_maps"}
     if type(skin) is not dict or not required<=set(skin) or not set(skin)<=required|optional:
         raise ValueError("Skin requires source topology, influence fields and typed optional appearance")
     points=skin["points"]
@@ -142,6 +142,22 @@ def normalize_skin(skin,joint_count):
             not 1<=texture["width"]<=2048 or
             not 1<=texture["height"]<=2048):
             raise ValueError("Skinned PNG texture must reference a verified source blob")
+    pbr_maps=skin.get("pbr_maps")
+    if pbr_maps is not None:
+        from backend.nvp_wo2_pbr_channels import CHANNELS
+        from backend.nvp_native_usd_texture import FORMAT as TF,PREFIX
+        if (authored_uv is None and face_uvs is None or
+            type(pbr_maps) is not dict or not pbr_maps or
+            len(pbr_maps)>4 or any(key not in CHANNELS for key in pbr_maps)):
+            raise ValueError("Skinned PBR maps require original authored UVs")
+        for descriptor in pbr_maps.values():
+            if (type(descriptor) is not dict or
+                descriptor.get("format")!=TF or
+                type(descriptor.get("sha256")) is not str or
+                not re.fullmatch(r"[0-9a-f]{64}",descriptor["sha256"]) or
+                descriptor.get("usd_asset_path")!=PREFIX+descriptor["sha256"] or
+                descriptor.get("source_modified") is not False):
+                raise ValueError("Skinned PBR source descriptor is invalid")
     material=skin.get("preview_material",{"roughness":0.8,"metallic":0.05})
     if (type(material) is not dict or
         set(material)!={"roughness","metallic"} or
@@ -157,6 +173,7 @@ def normalize_skin(skin,joint_count):
                           for face in face_uvs]
                          if face_uvs is not None else None),
             "texture":texture,
+            "pbr_maps":pbr_maps,
             "preview_material":{k:float(v) for k,v in material.items()}}
 
 
@@ -235,6 +252,11 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         author_openpbr_scalar(stage,material_path,material,
             bound["display_color"],bound["preview_material"]["roughness"],
             bound["preview_material"]["metallic"])
+    if bound.get("pbr_maps"):
+        from backend.nvp_wo2_pbr_channels import author_pbr_maps
+        author_pbr_maps(stage,material_path,shader,
+            UsdShade.Shader(stage.GetPrimAtPath(material_path+"/OpenPBR")),
+            bound["pbr_maps"])
     if not UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(material):
         raise RuntimeError("Unable to bind original actor USD PreviewSurface")
     blend_paths=[]
