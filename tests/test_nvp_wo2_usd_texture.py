@@ -137,6 +137,11 @@ class WO2NativeTextureTests(fixture.NativeUSD02Integration):
             with self.subTest(bad=bad):
                 with self.assertRaises((ValueError,OSError)):
                     decode_png(bad)
+        translucent=Image.new("RGBA",(1,1),(255,0,0,100))
+        alpha_bytes=BytesIO()
+        translucent.save(alpha_bytes,format="PNG")
+        with self.assertRaises(ValueError):
+            decode_png(alpha_bytes.getvalue())
         with self.assertRaises(ValueError):
             self.assets.publish(
                 self.pid,"bad_texture",shape="cube",size_m=2.,
