@@ -47,6 +47,13 @@ class WO2NativeMaterialSubsets(unittest.TestCase):
                 "/Asset/Materials/Slot"+str(i)+"/PreviewSurface"))
             actual=shader.GetInput("diffuseColor").GetAttr().Get()
             self.assertEqual([float(x) for x in actual],color)
+            mtlx=UsdShade.Shader(stage.GetPrimAtPath(
+                "/Asset/Materials/Slot"+str(i)+"/OpenPBR"))
+            self.assertEqual(mtlx.GetIdAttr().Get(),
+                             "ND_open_pbr_surface_surfaceshader")
+            self.assertEqual([float(x) for x in
+                mtlx.GetInput("base_color").GetAttr().Get()],color)
+            self.assertTrue(bound.GetSurfaceOutput("mtlx").HasConnectedSource())
         self.scene.publish(
             self.pid,"multi_scene",
             prims=[
