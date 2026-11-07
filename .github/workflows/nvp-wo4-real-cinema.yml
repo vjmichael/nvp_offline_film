@@ -9,6 +9,9 @@ on:
       - backend/nvp_wo4_mastering_decision.py
       - backend/nvp_wo4_master_delivery.py
       - tests/test_nvp_wo4_real_delivery.py
+      - backend/nvp_wo4_pcm_stream.py
+      - backend/nvp_wo4_mxf_stream.py
+      - tests/test_nvp_wo4_real_stream_mxf.py
       - .github/workflows/nvp-wo4-real-cinema.yml
   pull_request:
     paths:
@@ -18,6 +21,9 @@ on:
       - backend/nvp_wo4_mastering_decision.py
       - backend/nvp_wo4_master_delivery.py
       - tests/test_nvp_wo4_real_delivery.py
+      - backend/nvp_wo4_pcm_stream.py
+      - backend/nvp_wo4_mxf_stream.py
+      - tests/test_nvp_wo4_real_stream_mxf.py
       - .github/workflows/nvp-wo4-real-cinema.yml
 permissions:
   contents: read
@@ -56,3 +62,9 @@ jobs:
           NVP_NATIVE_ASDCP_INFO: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-info
           NVP_NATIVE_ASDCP_UNWRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-unwrap
         run: python -m unittest discover -s tests -p test_nvp_wo4_real_delivery.py -v
+      - name: Real disk-spooled PCM24 to CineCert MXF and exact native unwrap
+        env:
+          NVP_NATIVE_ASDCP_WRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-wrap
+          NVP_NATIVE_ASDCP_INFO: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-info
+          NVP_NATIVE_ASDCP_UNWRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-unwrap
+        run: python -m unittest discover -s tests -p test_nvp_wo4_real_stream_mxf.py -v
