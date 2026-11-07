@@ -174,19 +174,6 @@ def _shade(points,color,lights):
     return tuple(x*value for x in color)
 
 
-def _paint(zbuf,pixels,world,view,tri,color,np):
-    vertices=[]
-    for point in world:
-        x,y,z=_apply(view,point)
-        if not all(math.isfinite(v) for v in (x,y,z)) or z>=-NEAR:
-            return False  # No fake near-plane geometry.
-        vertices.append((WIDTH/2 + x*(50./36.)*WIDTH/(-z),
-                         HEIGHT/2-y*(50./36.)*WIDTH/(-z),-z))
-    # Use the actual focal length from the camera as projection input:
-    # triangle clipping and Z evaluation are independent of that source.
-    raise RuntimeError("Internal projection must supply original camera focal")
-
-
 def _draw_triangle(buffer,depth,tri,world_points,color,lights,np):
     a,b,c=tri
     x0,y0,z0=a;x1,y1,z1=b;x2,y2,z2=c
