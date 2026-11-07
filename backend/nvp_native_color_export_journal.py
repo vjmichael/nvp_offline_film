@@ -188,14 +188,21 @@ class NativeColorOutputJournal:
         self.records.append(row)
 
     def prepare_publish(self):
-        """Remove internal receipts while the cross-process OS lock is held."""
-        for filename in ("scope.json","progress.jsonl"):
-            (self.staged/filename).unlink(missing_ok=True)
+        """Keep recovery receipts until the exact no-clobber rename succeeds.
+
+        Removing the scope before the rename would make a crash just before
+        publication unrecoverable. Target publish must be the linearization.
+        """
+        if not (self.staged/"scope.json").is_file():
+            raise RuntimeError("Verified native source scope disappeared")
+        if self.target.exists() or self.target.is_symlink():
+            raise FileExistsError("No replacement of an approved presentation")
 
     def finish_published(self):
-        """The target now exists, so no competitor can begin this identity."""
+        """Target exists; now remove only internal native recovery metadata."""
         self.release()
-        (self.target/"owner.lock").unlink(missing_ok=True)
+        for name in ("scope.json","progress.jsonl","owner.lock"):
+            (self.target/name).unlink(missing_ok=True)
 
     def release(self):
         if self.fd is not None:
