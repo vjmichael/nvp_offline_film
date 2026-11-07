@@ -53,14 +53,17 @@ class TrustedDataAVController:
                 continue
             scene=self.index.read_revision(
                 project_id,data["scene_id"],data["scene_revision"])
-            choices=[p for p,role in scene["data"].get("prim_roles",{}).items()
+            roles=scene["data"].get("prim_roles",{})
+            choices=[p for p,role in roles.items()
                      if role in ("camera","anchor","actor")]
+            cameras=sorted(p for p,role in roles.items() if role=="camera")
             if choices:
                 result.append({
                     "take_id":row["object_id"],
                     "take_document_sha256":rec["document_sha256"],
                     "duration_tick":str(data["duration_tick"]),
                     "listeners":sorted(choices)[:64],
+                    "source_cameras":cameras[:64],
                 })
         return {"format":FORMAT,"status":"AVAILABLE",
                 "takes":result,"ffmpeg_runtime_required":False,
