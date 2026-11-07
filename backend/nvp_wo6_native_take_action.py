@@ -24,6 +24,7 @@ from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_resource_supervisor import wait_guarded, NativeCancelRequested
 from backend.nvp_worker_containment import launch_contained
+from backend.nvp_worker_host_lease import exclusive_worker_host
 from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_wo6_impact_preview import preview_source_impact, _source_lifecycle_state
 
@@ -226,6 +227,7 @@ class NativeTakeActionHost:
             "creator_and_host_grants_not_model_issued": True,
         }
 
+    @exclusive_worker_host
     def run_next(self, *, timeout_seconds=900):
         claimed = self.binding.claim_next(owner_key=self.owner)
         if not claimed or not claimed["admitted"]:
