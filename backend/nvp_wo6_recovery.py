@@ -20,6 +20,7 @@ from backend.nvp_worker_host_lease import WorkerHostLease
 ID_RE = re.compile(r"wo6(?:take|shot)_[0-9a-f]{24}\Z")
 TAKE_OP = "nvp.film.create_frozen_take.v1"
 SHOT_OP = "nvp.film.author_director_shot.v1"
+DATA_OP = "nvp.film.author_data_decision.v1"
 RECEIPT_FORMAT = "nvp.wo6.native_reconciliation_evidence.v1"
 
 
@@ -77,7 +78,7 @@ class WO6DurableRecovery:
         if (hashlib.sha256(raw).hexdigest() != row["spec_sha256"] or
                 canonical_bytes(doc) != raw or
                 doc.get("task_id") != task_id or
-                doc.get("operation") not in (TAKE_OP, SHOT_OP)):
+                doc.get("operation") not in (TAKE_OP, SHOT_OP, DATA_OP)):
             raise RuntimeError("Approved task ledger integrity has changed")
         return row, doc
 
@@ -138,7 +139,8 @@ class WO6DurableRecovery:
         from pathlib import Path
         db = Path(spec["studio_db"])
         index = FilmIndex(Studio(db))
-        oid = spec["take_id"] if operation == TAKE_OP else spec["shot_id"]
+        oid = (spec["take_id"] if operation == TAKE_OP else
+               spec["shot_id"] if operation == SHOT_OP else spec["decision_id"])
         try:
             record = index.read_revision(pid, oid, 1)
         except KeyError:
@@ -159,6 +161,13 @@ class WO6DurableRecovery:
                     raise RuntimeError("Take source SHA mismatch")
                 from backend.nvp_wo6_native_take_action import RECEIPT_FORMAT as fmt
                 receipt_id = "take_document_sha256"
+            elif operation == DATA_OP:
+                from backend.nvp_wo6_native_data_action import (
+                    verify_decision_output, RECEIPT as fmt)
+                evidence = verify_decision_output(index, spec)
+                if evidence["document_sha256"] != record["document_sha256"]:
+                    raise RuntimeError("Committed data decision source evidence mismatched")
+                receipt_id = "decision_sha256"
             else:
                 from backend.nvp_openusd_shot_overrides import OpenUSDShotOverrides
                 shooter = OpenUSDShotOverrides(
