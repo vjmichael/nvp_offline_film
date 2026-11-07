@@ -57,6 +57,37 @@ class NativeCodecWorkerProcessTests(unittest.TestCase):
         self.assertTrue(record["windows_assignment_race_eliminated"])
         self.assertTrue(record["process_group_supervised"])
 
+    @unittest.skipUnless(sys.platform=="win32",
+                         "Genuine Windows inheritance security test only")
+    def test_unlisted_inheritable_handle_cannot_reach_codec(self):
+        import msvcrt
+        read_fd,write_fd=os.pipe()
+        try:
+            unlisted=msvcrt.get_osfhandle(write_fd)
+            os.set_handle_inheritable(unlisted,True)
+            probe=self.root/"probe_no_handle_leak.py"
+            probe.write_text(
+                "import ctypes,sys\n"
+                "from ctypes import wintypes\n"
+                "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
+                "k.GetHandleInformation.argtypes=[wintypes.HANDLE,"
+                "ctypes.POINTER(wintypes.DWORD)]\n"
+                "flags=wintypes.DWORD()\n"
+                "access=k.GetHandleInformation(wintypes.HANDLE(int(sys.argv[1])),"
+                "ctypes.byref(flags))\n"
+                "print('UNLISTED_HANDLE_NOT_INHERITED' if not access "
+                "else 'UNLISTED_HANDLE_LEAKED',flush=True)\n")
+            record=run_supervised_codec(
+                self.codec,[str(probe),str(unlisted)],
+                workdir=self.root,check_cancel=lambda:False,
+                timeout=8,read_stdout=True)
+            self.assertIn(b"UNLISTED_HANDLE_NOT_INHERITED",
+                          record["stdout"])
+            self.assertNotIn(b"UNLISTED_HANDLE_LEAKED",record["stdout"])
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
+
     def test_native_cancel_kills_process_promptly(self):
         start=time.monotonic()
         with self.assertRaises(WorkerCancelled):
