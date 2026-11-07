@@ -28,6 +28,23 @@ MAX_USD_EXACT_TICK = 2**53 - 1
 ROLES = frozenset({"actor", "camera", "prop", "environment", "light", "anchor"})
 
 
+def _installed_usd_checkpoint(stage):
+    """Exact native crash boundary for the opt-in installed smoke test only."""
+    import os
+    target=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+    if not target:return
+    from pathlib import Path
+    path=Path(target)
+    if (not path.is_absolute() or path.is_symlink() or
+        not path.parent.is_dir() or
+        type(stage) is not str or len(stage)>72):
+        return
+    with path.open("a",encoding="utf-8") as trace:
+        trace.write("NVP_USD_PUBLISH="+stage+"\\n")
+        trace.flush()
+        os.fsync(trace.fileno())
+
+
 def _usd():
     try:
         from pxr import Gf, Sdf, Usd, UsdGeom
@@ -131,18 +148,27 @@ class OpenUSDSceneBridge:
             raise ValueError("Scene prim/curve authoring budget exceeded")
         if type(native_schemas) is not bool:
             raise ValueError("Explicit native scene schema choice required")
+        _installed_usd_checkpoint("pre_import")
         Gf,Sdf,Usd,UsdGeom=_usd()
+        _installed_usd_checkpoint("post_import")
         base=Sdf.Layer.CreateAnonymous("nvp_layout.usda")
+        _installed_usd_checkpoint("post_layout_layer")
         layout=Usd.Stage.Open(base)
+        _installed_usd_checkpoint("post_layout_stage")
         layout.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
+        _installed_usd_checkpoint("post_timecodes")
         if native_schemas:
             from backend.nvp_openusd_native_schemas import METERS_PER_UNIT
+            _installed_usd_checkpoint("pre_meters_per_unit")
             UsdGeom.SetStageMetersPerUnit(layout,METERS_PER_UNIT)
+            _installed_usd_checkpoint("post_meters_per_unit")
             # NVP authored coordinates use Z as vertical (elevation).
             # Persist that explicitly for all newly published native
             # scenes; old frozen USD layers remain SHA-stable and untouched.
             UsdGeom.SetStageUpAxis(layout,UsdGeom.Tokens.z)
+            _installed_usd_checkpoint("post_up_axis")
         UsdGeom.Xform.Define(layout,"/World")
+        _installed_usd_checkpoint("post_world_root")
         paths={}
         for value in prims:
             if type(value) is not dict or set(value)!={"path","role","position"}:
@@ -154,7 +180,9 @@ class OpenUSDSceneBridge:
             pos=_vector(value["position"])
             if native_schemas:
                 from backend.nvp_openusd_native_schemas import define_native_scene_prim
+                _installed_usd_checkpoint("pre_native_"+role)
                 prim=define_native_scene_prim(layout,path,role)
+                _installed_usd_checkpoint("post_native_"+role)
             else:
                 prim=UsdGeom.Xform.Define(layout,path)
             prim.GetPrim().CreateAttribute(
@@ -174,7 +202,9 @@ class OpenUSDSceneBridge:
                     Gf.Vec3d(*pos)):
                 raise RuntimeError("Cannot author USD layout transform")
             paths[path]=role
+        _installed_usd_checkpoint("post_layout_prims")
         motion=Sdf.Layer.CreateAnonymous("nvp_performance.usda")
+        _installed_usd_checkpoint("post_motion_layer")
         moving=Usd.Stage.Open(motion)
         moving.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
         animated=set()
