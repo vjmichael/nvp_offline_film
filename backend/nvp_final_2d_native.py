@@ -521,7 +521,40 @@ class Approved2DPackage:
             if journal is not None:
                 journal.prepare_publish()
             _publish_no_replace(staged,target)
+            presentation_receipt=None
             if journal is not None:
+                # Post-publication receipt is immutable FilmIndex authority.
+                # Self-consistent files alone are insufficient to prove
+                # a producer actually rendered/approved their contents.
+                source_color=exr or aces
+                registered=self.index.register_revision(
+                    project_id,"NativePackage_"+presentation_id,
+                    "presentation",{
+                        "format":"nvp.data_first.native_color_package.v1",
+                        "source_take_id":take_id,
+                        "source_take_sha256":expected_take_sha256,
+                        "presentation_id":presentation_id,
+                        "output_directory_name":target.name,
+                        "manifest_sha256":_file_sha256(target/"manifest.json"),
+                        "approved_scope_sha256":journal.scope_sha256,
+                        "color_pipeline":scope["color_pipeline"],
+                        "color_grade_id":source_color["grade_id"],
+                        "color_grade_revision":source_color["revision"],
+                        "color_grade_sha256":source_color["document_sha256"],
+                        "ocio_config_sha256":source_color["config_sha256"],
+                        "picture_count":len(receipt),
+                        "original_data_modified":False,
+                        "ffmpeg_used":False,
+                        "unmastered":True,
+                        "dcp_delivered":False,
+                    },expected_revision=0,dependencies=[
+                        {"object_id":take_id,"revision":1,
+                         "role":"source_take"},
+                        {"object_id":source_color["grade_id"],
+                         "revision":source_color["revision"],
+                         "role":"style"},
+                    ])
+                presentation_receipt=registered["document_sha256"]
                 journal.finish_published()
             return {"status":"DERIVED_2D_PACKAGE",
                     "directory":str(target),
@@ -535,6 +568,7 @@ class Approved2DPackage:
                     "color_pipeline":scope["color_pipeline"],
                     "pixel_bit_depth":32 if exr else 16 if aces else 8,
                     "picture_format":"exr" if exr else "png",
+                    "native_presentation_receipt_sha256":presentation_receipt,
                     "ffmpeg_used":False,
                     "single_file_master":False}
         finally:
