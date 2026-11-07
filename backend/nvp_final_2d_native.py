@@ -32,6 +32,7 @@ from backend.nvp_temporal_ledger import (
     TICKS_PER_SECOND,tick_from_frame,frame_at_tick,_int)
 
 FORMAT="nvp.final_2d.image_sequence_pcm.v1"
+FORMAT_EXR="nvp.final_2d.acescg_exr_sequence_pcm.v1"
 MAX_FRAMES=7200
 MAX_PNG_BYTES=24*1024*1024
 SAMPLE_RATE=48000
@@ -122,7 +123,7 @@ class Approved2DPackage:
     def export(self,project_id,take_id,expected_take_sha256,
                presentation_id,output_parent,*,listener_path,
                fps_num=24,fps_den=1,color_grade=None,
-               aces_color_grade=None):
+               aces_color_grade=None,linear_exr_grade=None):
         _require_pid(project_id)
         _id(take_id,"original Digital Take")
         _id(presentation_id,"unique final presentation identity")
@@ -139,9 +140,41 @@ class Approved2DPackage:
         if (original["kind"]!="take" or data.get("frozen") is not True or
             data.get("format")!="nvp.digital_take.openusd_temporal.v1"):
             raise RuntimeError("Cannot flatten an old frame-proxy or unfrozen source")
-        if color_grade is not None and aces_color_grade is not None:
-            raise ValueError("Cannot mix display SDR and original scene-linear ACES")
+        if sum(mode is not None for mode in (
+                color_grade,aces_color_grade,linear_exr_grade))>1:
+            raise ValueError("Cannot mix display SDR, ACES2 and ACEScg EXR grades")
         aces=None
+        exr=None
+        if linear_exr_grade is not None:
+            if type(linear_exr_grade) is not dict or set(linear_exr_grade)!={
+                    "grade_id","revision","document_sha256","config_sha256"}:
+                raise ValueError("Native linear EXR requires exact saved grade/config")
+            from backend.nvp_native_color_decisions import NativeColorDecisions
+            from backend.nvp_native_aces_color import policy
+            info,_=policy()
+            _sha(linear_exr_grade["config_sha256"])
+            if info["configuration_sha256"]!=linear_exr_grade["config_sha256"]:
+                raise RuntimeError("Native ACEScg source interchange config changed")
+            _id(linear_exr_grade["grade_id"],"frozen source grade")
+            _sha(linear_exr_grade["document_sha256"])
+            previous=NativeColorDecisions(self.index).read(
+                project_id,linear_exr_grade["grade_id"],
+                linear_exr_grade["revision"])
+            if (previous["document_sha256"]!=
+                    linear_exr_grade["document_sha256"] or
+                previous["take_id"]!=take_id or
+                previous["take_sha256"]!=expected_take_sha256):
+                raise RuntimeError("EXR source grade does not match original Take")
+            exr={
+                "grade_id":previous["grade_id"],
+                "revision":previous["revision"],
+                "document_sha256":previous["document_sha256"],
+                "config_sha256":info["configuration_sha256"],
+                "working_space":"ACEScg",
+                "output_encoding":"RGB32_FLOAT_OPENEXR",
+                "professional_calibration_accepted":False,
+                "master_approved":False,
+            }
         if aces_color_grade is not None:
             if type(aces_color_grade) is not dict or set(aces_color_grade)!={
                     "grade_id","revision","document_sha256","config_sha256"}:
@@ -208,14 +241,20 @@ class Approved2DPackage:
                "listener_path":listener_path,
                "scene_document_sha256":data["scene_document_sha256"],
                "timeline_document_sha256":data["timeline_document_sha256"],
-               "output_kind":"png_sequence_pcm_wav_not_single_file_master",
+               "output_kind":(
+                    "acescg_openexr_pcm_wav_not_single_file_master" if exr
+                    else "png_sequence_pcm_wav_not_single_file_master"),
                "color_pipeline":(
-                    "ocio_aces2_scene_linear_png16_unmastered" if aces else
-                    "display_linearized_srgb_png8_review"),
+                    "ocio_scene_linear_acescg_exr32_unmastered" if exr
+                    else "ocio_aces2_scene_linear_png16_unmastered" if aces
+                    else "display_linearized_srgb_png8_review"),
                "color_grade_sha256":(
+                    exr["document_sha256"] if exr else
                     aces["document_sha256"] if aces else
                     grade["document_sha256"] if grade else None),
-               "aces_config_sha256":aces["config_sha256"] if aces else None}
+               "aces_config_sha256":(
+                    exr["config_sha256"] if exr else
+                    aces["config_sha256"] if aces else None)}
         if self.approve(dict(scope)) is not True:
             raise PermissionError("Creator did not authorize exact final 2D sample projection")
         if self.index.read_revision(
@@ -241,6 +280,10 @@ class Approved2DPackage:
             grade_channels_clipped=0
             grade_channels_seen=0
             aces_source_pins=[]
+            exr_source_pins=[]
+            if exr:
+                from backend.nvp_native_scene_linear_exr import NativeSceneLinearEXR
+                exr_renderer=NativeSceneLinearEXR(self.index)
             if aces:
                 from backend.nvp_native_aces_color import NativeACESColor
                 aces_renderer=NativeACESColor(self.index)
@@ -261,7 +304,45 @@ class Approved2DPackage:
                     raise RuntimeError("Output camera is not native OpenUSD scene camera")
                 # Gaps are real Film Time; a trusted renderer emits an actual
                 # blank picture for camera=None, never fabricates scene data.
-                if aces:
+                if exr:
+                    from backend.nvp_native_scene_linear_exr import (
+                        write_authored_camera_gap_exr)
+                    name=f"{i+1:07d}.exr"
+                    dest=pictures/name
+                    if camera is None:
+                        source_receipt=write_authored_camera_gap_exr(
+                            dest,
+                            take_sha256=expected_take_sha256,
+                            grade_sha256=exr["document_sha256"],
+                            ocio_config_sha256=exr["config_sha256"],
+                            source_snapshot_sha256=state["snapshot_sha256"],
+                            film_time_tick=tick)
+                    else:
+                        source_receipt=exr_renderer.write(
+                            project_id,take_id,expected_take_sha256,
+                            exr["grade_id"],exr["revision"],
+                            exr["document_sha256"],tick=tick,
+                            camera_path=camera,
+                            expected_config_sha256=exr["config_sha256"],
+                            output_file=dest,
+                            source_session=source,source_snapshot=state)
+                        if (source_receipt["scene_snapshot_sha256"]!=
+                                state["snapshot_sha256"] or
+                            source_receipt["grade_sha256"]!=
+                                exr["document_sha256"]):
+                            raise RuntimeError("Authored source EXR provenance changed")
+                    width,height=source_receipt["width"],source_receipt["height"]
+                    exr_source_pins.append(source_receipt)
+                    receipt.append({
+                        "sample_index":i,"source_tick":str(tick),
+                        "camera_path":camera,"exr_file":name,
+                        "sha256":source_receipt["output_exr_sha256"],
+                        "pixel_type":"FLOAT32",
+                        "working_space":"ACEScg",
+                        "original_scene_snapshot_sha256":
+                            state["snapshot_sha256"],
+                    })
+                elif aces:
                     if camera is None:
                         # Actual gap has no source camera. Explicitly
                         # blank rather than fabricate one for a color grade.
@@ -314,23 +395,24 @@ class Approved2DPackage:
                             encoded,grade["parameters"],return_audit=True)
                         grade_channels_clipped+=audit["channels_clipped"]
                         grade_channels_seen+=audit["color_channel_count"]
-                width,height=_png_header(encoded)
+                if not exr:
+                    width,height=_png_header(encoded)
+                    name=f"{i+1:07d}.png"
+                    with (pictures/name).open("xb") as sink:
+                        sink.write(encoded);sink.flush();os.fsync(sink.fileno())
+                    receipt.append({"sample_index":i,
+                                    "source_tick":str(tick),
+                                    "camera_path":camera,
+                                    "png_file":name,
+                                    "sha256":sha256(encoded).hexdigest(),
+                                    **({"original_scene_snapshot_sha256":
+                                        state["snapshot_sha256"],
+                                        "pixel_bit_depth":16}
+                                       if aces else {})})
                 if dimensions is None:
                     dimensions=(width,height)
                 elif dimensions!=(width,height):
                     raise RuntimeError("Final presentation geometry changed raster dimensions")
-                name=f"{i+1:07d}.png"
-                with (pictures/name).open("xb") as sink:
-                    sink.write(encoded);sink.flush();os.fsync(sink.fileno())
-                receipt.append({"sample_index":i,
-                                "source_tick":str(tick),
-                                "camera_path":camera,
-                                "png_file":name,
-                                "sha256":sha256(encoded).hexdigest(),
-                                **({"original_scene_snapshot_sha256":
-                                    state["snapshot_sha256"],
-                                    "pixel_bit_depth":16}
-                                   if aces else {})})
             if len(receipt)!=count:
                 raise RuntimeError("Native image output cadence incomplete")
             wav_path=staged/"soundtrack.wav"
@@ -351,7 +433,8 @@ class Approved2DPackage:
             # Producer-owned receipts preserve original source SHA/provenance
             # alongside output digests, even if exported assets are later moved.
             manifest={
-                "format":FORMAT,"status":"DERIVED_2D_PACKAGE",
+                "format":FORMAT_EXR if exr else FORMAT,
+                "status":"DERIVED_2D_PACKAGE",
                 "presentation_id":presentation_id,
                 "original_project_id":project_id,
                 "original_take_id":take_id,
@@ -363,9 +446,12 @@ class Approved2DPackage:
                 "pictures":receipt,
                 "color_grade":grade,
                 "aces_color_grade":aces,
+                "linear_exr_grade":exr,
                 "color_pipeline":scope["color_pipeline"],
-                "pixel_bit_depth":16 if aces else 8,
+                "picture_format":"exr" if exr else "png",
+                "pixel_bit_depth":32 if exr else 16 if aces else 8,
                 "aces_source_receipts":aces_source_pins if aces else None,
+                "acescg_source_receipts":exr_source_pins if exr else None,
                 "derived_scene_linear_aces_audit":({
                     "processor_config_sha256":aces["config_sha256"],
                     "grade_sha256":aces["document_sha256"],
@@ -404,10 +490,12 @@ class Approved2DPackage:
                         (target/"manifest.json").read_bytes()).hexdigest(),
                     "take_sha256":expected_take_sha256,
                     "color_grade_sha256":(
+                        exr["document_sha256"] if exr else
                         aces["document_sha256"] if aces else
                         grade["document_sha256"] if grade else None),
                     "color_pipeline":scope["color_pipeline"],
-                    "pixel_bit_depth":16 if aces else 8,
+                    "pixel_bit_depth":32 if exr else 16 if aces else 8,
+                    "picture_format":"exr" if exr else "png",
                     "ffmpeg_used":False,
                     "single_file_master":False}
         finally:
