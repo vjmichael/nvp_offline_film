@@ -162,4 +162,24 @@ These **specific patterned low-complexity synthetic source frames** are a short 
 
 ### WO4 production validation deferred by creator (2026-11-07)
 
-Synthetic-native CI proves implementation/pipeline behavior only. It does **not** demonstrate the intended resulting film, correct visual performance, real-shot continuity, subjective picture/audio quality, full varied-original feature rendering or theatrical compliance. **WO4 remains OPEN** notwithstanding previously recorded green pipeline tests. The next production proof is **an original NVP-created short of 30 seconds maximum** (720 frames max at 24fps), consisting of varied genuine source-authoring frames, actual intended scene/acting/camera/sound/editorial results, source-bound frozen Takes and delivered picture/audio whose meaning and timing the creator inspects. No artificial repeated-frame stand-in may satisfy this. Feature-length performance, installed workstation and independent projector/audio/color specialist acceptance remain separate deferred gates. Work proceeds to WO5 Production Acceptance infrastructure; no fake pass or release-close action.
+Synthetic-native CI proves implementation/pipeline behavior only. It does **not** demonstrate the intended resulting film, correct visual performance, real-shot continuity, subjective picture/audio quality, full varied-original feature rendering or theatrical compliance. **WO4 remains OPEN** notwithstanding previously recorded green pipeline tests. The next production proof is **an original NVP-created film of 30 MINUTES maximum** (43,200 frames at 24fps), consisting of varied genuine source-authoring frames, actual intended scene/acting/camera/sound/editorial results, source-bound frozen Takes and delivered picture/audio whose meaning and timing the creator inspects. No artificial repeated-frame stand-in may satisfy this. Feature-length performance, installed workstation and independent projector/audio/color specialist acceptance remain separate deferred gates. Work proceeds to WO5 Production Acceptance infrastructure; no fake pass or release-close action.
+
+### Correction and production end state — creator approval (2026-11-07)
+
+**30 MINUTES, NOT 30 SECONDS:** The creator clarified that the original
+source-varied, genuine performance/camera/sound/editorial film should run
+**no more than 30 minutes** and be inspected against its intended artistic
+outcome. Previous 720-frame test assumptions are superseded at the program
+level; the existing WO5 one-reel/720-frame code remains a bounded **sample
+fixture** until separately extended. Do not pass it off as real 30-minute
+acceptance. No project or code migration was executed by this documentation.
+
+**Cinema destination:** Default theatrical DCP must ultimately meet the
+**SMPTE DCP Bv2.1 Application Profile (RDD 52:2020)** and applicable
+normative SMPTE standards and independently verified playback, **not** a
+nonstandard custom DCP. Enhanced OpenUSD/scene-linear/HDR/high-resolution
+non-DCP formats can surpass DCI's nominal theatrical interchange envelope
+under separate output profiles. The integrated native GUI/user experience
+and tool-capable AI execution layer are also first-class product end goals.
+
+Decision: [Theatrical Bv2.1 and product end state](NVP_THEATRICAL_BV21_AND_PRODUCT_ENDSTATE.md).

@@ -29,14 +29,14 @@ function decodedStereo(base64,count){
   return [left,right];
 }
 
-export default function DataFirstAVPanel({projectId,nativeBridge=null}){
+export default function DataFirstAVPanel({projectId,nativeBridge=null,initialTakeId='',initialTakeSha256='',initialSourceSample=0}){
   const [native,setNative]=useState(nativeBridge);
   const [takes,setTakes]=useState([]);
   const [takeId,setTakeId]=useState('');
   const [listener,setListener]=useState('');
   const [binauralProfiles,setBinauralProfiles]=useState([]);
   const [binauralChoice,setBinauralChoice]=useState('');
-  const [sourceSample,setSourceSample]=useState('0');
+  const [sourceSample,setSourceSample]=useState(String(initialSourceSample));
   const [playing,setPlaying]=useState(false);
   const [error,setError]=useState('');
   const [note,setNote]=useState('');
@@ -126,10 +126,21 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          result.ffmpeg_runtime_required!==false||!Array.isArray(result.takes))
         throw Error('Native film data inventory is not verified');
       setTakes(result.takes);
-      setTakeId(result.takes[0]?.take_id||'');
+      const requested=result.takes.find(x=>x.take_id===initialTakeId &&
+        (!initialTakeSha256||x.take_document_sha256===initialTakeSha256));
+      if(initialTakeId&&!requested){
+        // WO5 source preview may NOT silently substitute a different
+        // Take identity or same-named Take with a different original SHA.
+        setTakeId('');
+        setError('The exact approved original Take or source SHA is missing from the native project catalog.');
+      }else{
+        setTakeId(requested?.take_id||result.takes[0]?.take_id||'');
+        if(requested&&Number.isSafeInteger(initialSourceSample)&&initialSourceSample>=0)
+          setSourceSample(String(initialSourceSample));
+      }
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
-  },[native,projectId]);
+  },[native,projectId,initialTakeId,initialTakeSha256,initialSourceSample]);
 
   useEffect(()=>{
     setListener(item?.listeners?.[0]||'');
@@ -881,6 +892,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <select aria-label="Native frozen Digital Take" value={takeId}
         disabled={playing} onChange={e=>setTakeId(e.target.value)}>
         {!takes.length&&<option value="">No frozen Digital Takes in this project</option>}
+        {!!initialTakeId&&!takeId&&takes.length>0&&
+          <option value="">Exact approved Take or SHA unavailable — playback blocked</option>}
         {takes.map(x=><option key={x.take_id} value={x.take_id}>
           {x.take_id}</option>)}
       </select>
