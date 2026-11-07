@@ -111,8 +111,13 @@ class NativeTakeActionHost:
         self.confirm_creator, self.authorize_native = (
             confirm_creator, authorize_native)
         self.python = Path(sys.executable).resolve()
-        self.worker = (Path(__file__).resolve().parents[1] /
-                       "tools" / "nvp_wo6_take_worker.py").resolve()
+        self.frozen_worker = bool(getattr(sys, "frozen", False))
+        # The installer bundles NVP.exe, not an independent python.exe or
+        # loose .py tool. Its private --nvp-wo6-worker entrypoint performs
+        # the same durable admission checks in a separate contained process.
+        self.worker = (self.python if self.frozen_worker else
+                       (Path(__file__).resolve().parents[1] /
+                        "tools" / "nvp_wo6_take_worker.py").resolve())
         self.owner = "wo6take_" + hashlib.sha256(
             str(self.root).encode("utf-8")).hexdigest()[:16]
         self.binding = ApprovedTaskBindings(ledger, approval_check=self._check)
@@ -248,8 +253,10 @@ class NativeTakeActionHost:
             _preflight(self.index, spec)
             self.ledger.update(task_id, "preparing_scene",
                                "Creator and host grants verified; checking native source")
-            command = [
-                str(self.python), str(self.worker), "--spec", str(spec_path),
+            command = (
+                [str(self.python), "--nvp-wo6-worker", "take"] if
+                self.frozen_worker else [str(self.python), str(self.worker)]
+            ) + ["--spec", str(spec_path),
                 "--studio-db", str(self.index.studio.db_path),
                 "--expected-sha", hashlib.sha256(canonical_bytes(spec)).hexdigest(),
                 "--ledger-db", str(self.ledger.db_path),
