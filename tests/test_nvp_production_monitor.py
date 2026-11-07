@@ -73,7 +73,8 @@ class ScopedMonitor(unittest.TestCase):
         self.assertEqual(status["job_state"],"VERIFY_COMPLETE")
         self.assertEqual(status["verified_segments"],1)
         self.assertEqual(status["segments"][0]["state"],"VERIFIED")
-        self.assertNotIn("source_path",str(status))
+        self.assertNotIn("source_path",status["segments"][0])
+        self.assertNotIn(str(self.root),str(status))
         self.assertFalse(status["can_cancel_job"])
         self.assertFalse(status["production_dcp_accepted"])
 
