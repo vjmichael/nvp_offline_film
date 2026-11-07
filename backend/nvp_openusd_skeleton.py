@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import re
 from backend.nvp_openusd_scene import _usd, _vector, MAX_USD_EXACT_TICK
-from backend.nvp_temporal_ledger import _int
+from backend.nvp_temporal_ledger import _int, TICKS_PER_SECOND
 
 MAX_RIGS=8
 MAX_JOINTS=32
@@ -87,6 +87,10 @@ def author_skeleton_layer(roles, rigs):
     UsdSkel,Vt=_skel()
     layer=Sdf.Layer.CreateAnonymous("nvp_skeletons.usda")
     stage=Usd.Stage.Open(layer)
+    # Match the root stage's exact integer Film Time rate. USD rescales
+    # sublayer time samples using each layer's timeCodesPerSecond; default
+    # 24 would otherwise turn a one-second pose into a near-zero sample.
+    stage.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
     for rig in rigs:
         root_path=rig["path"]+"/Rig"
         root=UsdSkel.Root.Define(stage,root_path)
