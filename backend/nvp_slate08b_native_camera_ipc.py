@@ -763,15 +763,16 @@ class TrustedDesktopCameraBridge:
             data.get("original_data_modified") is not False or
             data.get("ffmpeg_used") is not False or
             data.get("dcp_delivered") is not False or
-            proof["dependencies"][0]!={
-                "object_id":take,"revision":1,"role":"source_take"}):
+            {"object_id":take,"revision":1,"role":"source_take"}
+                not in proof["dependencies"] or
+            len(proof["dependencies"])!=2):
             raise RuntimeError("Selected package lacks original native publisher authority")
         original_grade=self.index.read_revision(
             pid,data["color_grade_id"],data["color_grade_revision"])
         if (original_grade["document_sha256"]!=data["color_grade_sha256"] or
-            proof["dependencies"][1]!={
-                "object_id":data["color_grade_id"],
-                "revision":data["color_grade_revision"],"role":"style"}):
+            {"object_id":data["color_grade_id"],
+             "revision":data["color_grade_revision"],"role":"style"}
+                not in proof["dependencies"]):
             raise RuntimeError("Original NVP color decision receipt changed")
         receipt=assess_unmastered_source_package(
             path,target=request["target"],expected_take_sha256=sha)
