@@ -141,11 +141,17 @@ def run_supervised_codec(codec,argv,*,workdir,check_cancel,
             if after_start is not None:
                 after_start(proc.pid)
             while proc.poll() is None:
+                if (os.fstat(stdout.fileno()).st_size>MAX_LOG_BYTES or
+                        os.fstat(stderr.fileno()).st_size>MAX_LOG_BYTES):
+                    raise RuntimeError("Native codec output exceeded private log budget")
                 if check_cancel():
                     raise WorkerCancelled("Explicit approved production cancellation")
                 if time.monotonic()-started>timeout:
                     raise WorkerTimeout("Native codec timed out")
                 time.sleep(POLL_SECONDS)
+            if (os.fstat(stdout.fileno()).st_size>MAX_LOG_BYTES or
+                    os.fstat(stderr.fileno()).st_size>MAX_LOG_BYTES):
+                raise RuntimeError("Native codec output exceeded private log budget")
             # Evaluate cancellation even if worker exited simultaneously.
             if check_cancel():
                 raise WorkerCancelled("Production cancellation at codec boundary")
