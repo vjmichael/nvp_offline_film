@@ -1,0 +1,77 @@
+name: NVP WO5 Final DCP Finished-Film AV Playback (NO FFMPEG)
+on:
+  push:
+    branches: [nvp/wo5-production-proof-20261107]
+    paths:
+      - backend/nvp_wo5_finished_playback.py
+      - backend/nvp_wo5_codec_binding.py
+      - backend/nvp_wo5_desktop_bridge.py
+      - frontend/src/FinishedFilmPlaybackPanel.jsx
+      - frontend/src/FinishedFilmPlaybackPanel.test.jsx
+      - frontend/src/DirectorFilmReviewPanel.jsx
+      - tests/test_nvp_wo5_finished_playback.py
+      - tests/test_nvp_wo5_codec_binding.py
+      - tools/nvp_desktop_alpha.py
+      - .github/workflows/nvp-wo5-finished-playback.yml
+  pull_request:
+    paths:
+      - backend/nvp_wo5_finished_playback.py
+      - backend/nvp_wo5_codec_binding.py
+      - backend/nvp_wo5_desktop_bridge.py
+      - frontend/src/FinishedFilmPlaybackPanel.jsx
+      - frontend/src/FinishedFilmPlaybackPanel.test.jsx
+      - frontend/src/DirectorFilmReviewPanel.jsx
+      - tests/test_nvp_wo5_finished_playback.py
+      - tests/test_nvp_wo5_codec_binding.py
+      - tools/nvp_desktop_alpha.py
+      - .github/workflows/nvp-wo5-finished-playback.yml
+concurrency:
+  group: nvp-wo5-finished-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-real-pixel-pcm-contract:
+    name: Finished DCP XYZ12+PCM24 native review / ${{ matrix.os }} / Python ${{ matrix.py }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        py: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Install native OpenUSD and bounded image/math dependencies
+        run: python -m pip install --only-binary=:all: 'usd-core==26.11' 'numpy>=2.1,<3' 'Pillow>=11,<13'
+      - name: Compile real published-film review and native codec custody
+        run: python -m compileall -q backend/nvp_wo5_finished_playback.py backend/nvp_wo5_codec_binding.py backend/nvp_wo5_desktop_bridge.py tools/nvp_desktop_alpha.py tests/test_nvp_wo5_finished_playback.py tests/test_nvp_wo5_codec_binding.py
+      - name: Verify cinema reel continuity and real XYZ12 + PCM24 conversions and denial
+        run: python -m unittest discover -s tests -p test_nvp_wo5_finished_playback.py -v
+      - name: Verify reviewed codec license, binary identity and no injection
+        run: python -m unittest discover -s tests -p test_nvp_wo5_codec_binding.py -v
+  windows-linux-react-finished-dcp:
+    name: Finished DCP final picture/audio WebAudio UI / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install native desktop React dependencies
+        run: npm install --no-audit --no-fund
+      - name: Enforce exact final MXF vs USD source preview and consent checks
+        run: npm run test:ui -- src/FinishedFilmPlaybackPanel.test.jsx src/DirectorFilmReviewPanel.test.jsx
+      - name: Build native NVP desktop review frontend
+        run: npm run build
