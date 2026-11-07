@@ -10,6 +10,7 @@ import wave
 from io import BytesIO
 from backend.nvp_wo4_xyz12_master import FORMAT as PICTURE_FORMAT
 from backend.nvp_wo4_pcm_master import FORMAT as SOUND_FORMAT
+from backend.nvp_wo4_loudness import measure_pcm24_loudness
 
 FORMAT="nvp.wo4.master_candidate_qc.v1"
 
@@ -61,6 +62,7 @@ def evaluate_master_candidates(picture,sound):
         audio_peak=max(audio_peak,abs(value))
     total_samples=len(pcm)//3
     rms=math.sqrt(sq/total_samples)/8388608 if total_samples else 0
+    loudness=measure_pcm24_loudness(sound)
     return {
         "format":FORMAT,"status":"DETERMINISTIC_MASTER_QC_RECORDED",
         "picture_xyz12_sha256":picture["xyz12_sha256"],
@@ -77,7 +79,10 @@ def evaluate_master_candidates(picture,sound):
         "sound_peak_absolute_24bit":audio_peak,
         "sound_rms_fraction_full_scale":rms,
         "sound_peak_dbfs":(20*math.log10(audio_peak/8388608) if audio_peak else None),
-        "sound_loudness_lufs_measured":False,
+        "sound_loudness_lufs_measured":loudness["measured"],
+        "sound_integrated_lufs":loudness["lufs"],
+        "true_peak_measured":False,
+        "loudness_meter_calibrated":False,
         "calibrated_projector_verified":False,
         "independent_color_accuracy_verified":False,
         "production_master_accepted":False,
