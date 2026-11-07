@@ -16,6 +16,14 @@ on:
       - 'backend/nvp_final_2d_native.py'
       - 'backend/nvp_native_avi_delivery.py'
       - 'backend/nvp_native_live_take.py'
+      - 'backend/nvp_native_stereo_take.py'
+      - 'backend/nvp_capture_recovery.py'
+      - 'backend/nvp_native_hrir.py'
+      - 'backend/nvp_openusd_skinning.py'
+      - 'backend/nvp_openusd_skeleton.py'
+      - 'tests/test_nvp_native_stereo_recovery.py'
+      - 'tests/test_nvp_native_measured_binaural.py'
+      - 'tests/test_nvp_native_usd_facial_material.py'
       - 'backend/nvp_native_spatial_acoustics.py'
       - 'backend/nvp_openusd_skeleton.py'
       - 'backend/nvp_data_av_skinning.py'
@@ -99,7 +107,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_data_av_skinning.py backend/nvp_native_spatial_acoustics.py backend/nvp_openusd_skeleton.py
+          python -m compileall -q backend/nvp_data_av_skinning.py backend/nvp_native_spatial_acoustics.py backend/nvp_openusd_skeleton.py backend/nvp_openusd_skinning.py backend/nvp_native_stereo_take.py backend/nvp_capture_recovery.py backend/nvp_native_hrir.py
           python -m compileall -q backend/nvp_data_av_source.py backend/nvp_data_av_scene.py backend/nvp_data_av_usd.py backend/nvp_data_av_desktop.py backend/nvp_slate08b_native_camera_ipc.py tools/nvp_desktop_alpha.py tools/nvp_data_av_installed_acceptance.py tests/test_nvp_data_av_native.py
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_exact_time_shots.py' -v
@@ -109,6 +117,9 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_final_2d_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_avi_delivery.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_live_take.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_native_stereo_recovery.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_native_measured_binaural.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_native_usd_facial_material.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_spatial_acoustics.py' -v
           python -m unittest discover -s tests -p 'test_nvp_real_usd_acoustic_occlusion.py' -v
           python -m unittest discover -s tests -p 'test_nvp_data_av_skinned_world.py' -v
