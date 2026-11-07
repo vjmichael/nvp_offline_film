@@ -3,6 +3,7 @@ from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+import os
 
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
@@ -163,6 +164,41 @@ class DurableProductionJobTests(unittest.TestCase):
         self.assertEqual(status["segments"][0]["end_tick"],
                          3*3600*TICKS_PER_SECOND)
         self.assertEqual(status["state"],"QUEUED")
+
+    def test_owner_heartbeat_preserves_only_exact_native_lease(self):
+        accepted=self.submit()
+        segment=self.journal.claim_next("RealOwner",os.getpid())
+        self.assertEqual(segment["position"],0)
+        with self.assertRaises(PermissionError):
+            self.journal.heartbeat("WrongOwner",accepted["job_id"],0)
+        receipt=self.journal.heartbeat("RealOwner",accepted["job_id"],0)
+        self.assertFalse(receipt["cancel_requested"])
+        self.assertTrue(self.journal.status(accepted["job_id"])["updated_at"])
+        self.assertEqual(len(self.journal.events(accepted["job_id"])),2)
+
+    def test_reviewed_restoration_requires_host_approval_and_original_sha(self):
+        job=self.submit()["job_id"]
+        original=self.file1.read_bytes()
+        self.file1.write_bytes(b"INVALID")
+        with SingletonSupervisor(self.state_root):
+            self.assertEqual(ProductionSupervisor(self.journal).run_one()["status"],
+                             "REVIEW_REQUIRED")
+        self.assertEqual(self.journal.authorize_review_retry(job,lambda _:False)
+                         ["status"],"DENIED")
+        with self.assertRaises(PermissionError):
+            self.journal.authorize_review_retry(job,lambda _:True)
+        self.file1.write_bytes(original)
+        result=self.journal.authorize_review_retry(job,lambda _:True)
+        self.assertEqual(result["status"],"QUEUED")
+        self.assertEqual(result["segments_requeued"],1)
+        with SingletonSupervisor(self.state_root):
+            runner=ProductionSupervisor(self.journal)
+            for _ in range(3):
+                self.assertEqual(runner.run_one()["status"],"SEGMENT_VERIFIED")
+        self.assertEqual(self.journal.status(job)["state"],"VERIFY_COMPLETE")
+        self.assertTrue(any(x["event_kind"]=="SOURCE_RETRY_APPROVED"
+                            for x in self.journal.events(job)))
+        self.assertEqual(self.file1.read_bytes(),original)
 
     def test_symlinked_media_or_noncontiguous_film_time_rejected(self):
         with self.assertRaises(ValueError):
