@@ -6,6 +6,8 @@ checkpoints, staged crash/restart safety and no automatic deletion.
 """
 from hashlib import sha256
 from pathlib import Path
+import os
+import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -165,6 +167,50 @@ class PictureReelJournalTest(unittest.TestCase):
         self.assertEqual(report["jobs"][0]["interrupted_requeued"],[0])
         self.assertEqual(self.journal.status(job)["state"],"QUEUED")
         self.assertEqual(self.journal.status(job)["verified_segments"],0)
+
+    def test_real_os_exit_after_uncommitted_stage_preserves_review_evidence(self):
+        job=self.submit()["job_id"]
+        source=(
+            "import os,sys;"
+            "from pathlib import Path;"
+            "from backend.nvp_production_cinema import CinemaJournal;"
+            "j=CinemaJournal(sys.argv[1]);"
+            "s=j.claim_next('DiedDuringFrame',os.getpid());"
+            "assert s is not None;"
+            "p=j.spool(s['job_id'])/'frame-work'/'000000';"
+            "p.mkdir(parents=True);"
+            "(p/'frame.ppm').write_bytes(b'ORPHAN_UNCOMMITTED');"
+            "os._exit(79)"
+        )
+        proc=subprocess.run(
+            [sys.executable,"-c",source,str(self.journal.root)],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=20)
+        self.assertEqual(proc.returncode,79,proc.stderr[-800:])
+        reopened=CinemaJournal(self.journal.root)
+        evidence=reopened.cinema_reconcile()
+        self.assertEqual(evidence["jobs"][0]["status"],"REVIEW_REQUIRED")
+        orphan=reopened.spool(job)/"frame-work"/"000000"/"frame.ppm"
+        self.assertEqual(orphan.read_bytes(),b"ORPHAN_UNCOMMITTED")
+        self.assertEqual(reopened.status(job)["verified_segments"],0)
+        self.assertEqual(reopened.status(job)["state"],"REVIEW_REQUIRED")
+
+    def test_explicit_cancel_during_frame_refuses_output_checkpoint(self):
+        job=self.submit()["job_id"]
+        def cancelled_encode(codec,*,private_work,check_cancel,**kwargs):
+            self.assertEqual(self.journal.request_cancel(
+                job,lambda scope:scope["job_id"]==job)["status"],
+                "CANCEL_REQUESTED")
+            self.assertTrue(check_cancel())
+            raise InterruptedError("Native worker abort after explicit cancellation")
+        with SingletonSupervisor(self.journal.root), patch(
+                "backend.nvp_production_supervisor.encode_disk_xyz12",
+                side_effect=cancelled_encode):
+            result=ProductionSupervisor(self.journal).run_one()
+        self.assertEqual(result["status"],"CANCELLED")
+        self.assertEqual(self.journal.status(job)["state"],"CANCELLED")
+        self.assertEqual(self.journal.status(job)["verified_segments"],0)
+        self.assertFalse((self.journal.spool(job)/"frames"/"000000.j2c").exists())
 
     def test_published_frame_without_sqlite_commit_requires_review(self):
         job=self.submit()["job_id"]
