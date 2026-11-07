@@ -62,6 +62,8 @@ on:
       - 'frontend/src/NativeTextureTileStream.js'
       - 'frontend/src/NativeTextureTileStream.test.js'
       - 'tests/test_nvp_wo2_texture_tiles.py'
+      - 'tests/test_nvp_wo2_continuity.py'
+      - 'backend/nvp_wo2_continuity.py'
       - 'tests/test_nvp_wo2_material_subsets.py'
       - 'frontend/src/NativeTextureGPUReference.js'
       - 'frontend/src/NativeTextureGPUReference.test.js'
@@ -169,6 +171,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_wo2_texture_reference.py' -v
           python -m unittest discover -s tests -p 'test_nvp_wo2_material_subsets.py' -v
           python -m unittest discover -s tests -p 'test_nvp_wo2_texture_tiles.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_wo2_continuity.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_acescg_exr.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_export_recovery.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_cinema_master_gate.py' -v
