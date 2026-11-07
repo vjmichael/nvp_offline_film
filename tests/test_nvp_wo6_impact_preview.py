@@ -122,6 +122,15 @@ class OriginalSourceImpactAndApprovedBibleTests(unittest.TestCase):
         self.assertFalse(result["new_take_created"])
         self.assertFalse(result["final_dcp_replaced"])
         self.assertFalse(result["native_worker_executed"])
+        gates=result["approval_gate_preview"]
+        self.assertTrue(gates)
+        self.assertIn("new_immutable_take",{x["gate_id"] for x in gates})
+        self.assertIn("final_delivery_and_cinema_qc",
+                      {x["gate_id"] for x in gates})
+        self.assertTrue(all(x["state"]=="NOT_REQUESTED"
+                            and x["approval_token"] is None
+                            and not x["approval_issued_by_ai"] for x in gates))
+        self.assertFalse(result["native_execution_admissible_from_this_preview"])
         self.assertFalse(result["creator_approved"])
         raw=dict(result); digest=raw.pop("preview_sha256")
         self.assertEqual(hashlib.sha256(json.dumps(
