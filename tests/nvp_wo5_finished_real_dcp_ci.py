@@ -171,6 +171,17 @@ class NativePublishedMultiReelViewing(unittest.TestCase):
                            side_effect=expected_sha):
                     a=player.frame(token,2)
                     b=player.frame(token,3)
+                    one=player.window(token,2,4)
+                    two=player.window(token,3,2)
+                self.assertEqual(one["frame_count"],1)
+                self.assertEqual(two["frame_count"],2)
+                self.assertEqual(
+                    [f["frame_index"] for f in two["frames"]],[3,4])
+                self.assertEqual(
+                    [f["audio_start_sample"] for f in two["frames"]],
+                    [6000,8000])
+                self.assertTrue(one["no_reel_crossing"])
+                self.assertTrue(two["no_reel_crossing"])
                 self.assertEqual((a["reel_index"],a["reel_frame_index"]),(0,2))
                 self.assertEqual((b["reel_index"],b["reel_frame_index"]),(1,0))
                 self.assertEqual(a["audio_start_sample"],4000)
