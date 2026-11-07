@@ -1,0 +1,156 @@
+name: NVP WO3 Native DCP Structural Integrity (NO FFMPEG)
+on:
+  push:
+    branches:
+      - nvp/wo3-native-dcp-complete-20261107
+    paths:
+      - backend/nvp_wo3_dcp_structure.py
+      - tests/test_nvp_wo3_dcp_structure.py
+      - backend/nvp_wo3_j2k_audit.py
+      - backend/nvp_wo3_native_codecs.py
+      - backend/nvp_wo3_mxf_native.py
+      - backend/nvp_wo3_dcp_package.py
+      - backend/nvp_wo3_export_recovery.py
+      - backend/nvp_wo3_project_recovery.py
+      - backend/nvp_wo3_atomic_publish.py
+      - backend/nvp_wo3_codec_bundle_provenance.py
+      - tests/test_nvp_wo3_codec_bundle_provenance.py
+      - tests/test_nvp_wo3_real_variable_quality.py
+      - tests/test_nvp_wo3_atomic_publish.py
+      - tests/test_nvp_wo3_crash_publish_process.py
+      - tests/test_nvp_wo3_export_recovery.py
+      - tests/test_nvp_wo3_native_delivery.py
+      - tests/test_nvp_wo3_real_openjpeg.py
+      - tests/test_nvp_wo3_real_mxf.py
+      - .github/workflows/nvp-wo3-dcp-native.yml
+  pull_request:
+    paths:
+      - backend/nvp_wo3_dcp_structure.py
+      - tests/test_nvp_wo3_dcp_structure.py
+      - backend/nvp_wo3_j2k_audit.py
+      - backend/nvp_wo3_native_codecs.py
+      - backend/nvp_wo3_mxf_native.py
+      - backend/nvp_wo3_dcp_package.py
+      - backend/nvp_wo3_export_recovery.py
+      - backend/nvp_wo3_project_recovery.py
+      - backend/nvp_wo3_atomic_publish.py
+      - backend/nvp_wo3_codec_bundle_provenance.py
+      - tests/test_nvp_wo3_codec_bundle_provenance.py
+      - tests/test_nvp_wo3_real_variable_quality.py
+      - tests/test_nvp_wo3_atomic_publish.py
+      - tests/test_nvp_wo3_crash_publish_process.py
+      - tests/test_nvp_wo3_export_recovery.py
+      - tests/test_nvp_wo3_native_delivery.py
+      - tests/test_nvp_wo3_real_openjpeg.py
+      - tests/test_nvp_wo3_real_mxf.py
+      - .github/workflows/nvp-wo3-dcp-native.yml
+
+permissions:
+  contents: read
+
+jobs:
+  wo3-independent-dcp-structure:
+    name: WO3 independent SMPTE metadata + digest audit / ${{ matrix.os }} / Python ${{ matrix.py }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        py: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Install official OpenUSD for real frozen Take verification
+        run: python -m pip install "usd-core==26.11"
+      - name: Compile independent DCP inspector
+        run: python -m compileall -q backend/nvp_wo3_dcp_structure.py backend/nvp_wo3_j2k_audit.py backend/nvp_wo3_native_codecs.py backend/nvp_wo3_mxf_native.py backend/nvp_wo3_dcp_package.py backend/nvp_wo3_independent_essence.py backend/nvp_wo3_export_recovery.py backend/nvp_wo3_project_recovery.py backend/nvp_wo3_atomic_publish.py backend/nvp_wo3_codec_bundle_provenance.py tests/test_nvp_wo3_codec_bundle_provenance.py tests/test_nvp_wo3_atomic_publish.py tests/test_nvp_wo3_crash_publish_process.py tests/test_nvp_wo3_export_recovery.py tests/test_nvp_wo3_dcp_structure.py tests/test_nvp_wo3_native_delivery.py
+      - name: Verify SMPTE ASSETMAP PKL CPL hashes and no fake MXF acceptance
+        run: python -m unittest discover -s tests -p test_nvp_wo3_dcp_structure.py -v
+      - name: Verify approved DCI J2K/MXF/package and immutable Take admission
+        run: python -m unittest discover -s tests -p test_nvp_wo3_native_delivery.py -v
+      - name: Verify strict native codec and license-notice provenance manifests
+        run: python -m unittest discover -s tests -p test_nvp_wo3_codec_bundle_provenance.py -v
+      - name: Verify atomic no-replace publish and live destination collision
+        run: python -m unittest discover -s tests -p test_nvp_wo3_atomic_publish.py -v
+      - name: Verify abrupt child-process termination at atomic publication boundary
+        run: python -m unittest discover -s tests -p test_nvp_wo3_crash_publish_process.py -v
+      - name: Verify restart/export reconciliation never overwrites originals
+        run: python -m unittest discover -s tests -p test_nvp_wo3_export_recovery.py -v
+      - name: No FFmpeg call sites in native WO3 inspector
+        shell: python
+        run: |
+          from pathlib import Path
+          src=Path('backend/nvp_wo3_dcp_structure.py').read_text(encoding='utf-8')
+          for forbidden in ('subprocess', 'os.system(', 'shell=True'):
+              assert forbidden not in src, f'WO3 native inspector invokes {forbidden}'
+          print('WO3 read-only standard-library audit invokes no media converters')
+
+  wo3-genuine-native-openjpeg-2k:
+    name: WO3 actual installed OpenJPEG 2K DCI-profile XYZ12 codestream
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install independent distro-native OpenJPEG test executable
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libopenjp2-tools
+          command -v opj_compress
+          opj_compress -h | head -25
+      - name: Encode and decode variable 2K Scope chromatic source, record numerical errors
+        env:
+          NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+          NVP_NATIVE_OPENJPEG_DECODE: /usr/bin/opj_decompress
+        run: python -m unittest discover -s tests -p test_nvp_wo3_real_variable_quality.py -v
+      - name: Encode actual 1998x1080 XYZ12 cinema J2K (not fake frames)
+        env:
+          NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+          NVP_NATIVE_OPENJPEG_4K: '1'
+          NVP_NATIVE_OPENJPEG_DECODE: /usr/bin/opj_decompress
+        run: python -m unittest discover -s tests -p test_nvp_wo3_real_openjpeg.py -v
+
+  wo3-real-smpte-mxf-roundtrip:
+    name: WO3 REAL OpenUSD/J2K→SMPTE MXF→CPL/PKL→native full decode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: cinecert/asdcplib
+          ref: 905d6047f67c8211c2d22f29fb0e2e44c142b59b
+          path: deps/asdcplib
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare real OpenUSD, OpenJPEG and asdcplib native compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libopenjp2-tools build-essential cmake
+          python -m pip install 'usd-core==26.11'
+          test -f deps/asdcplib/COPYING
+          git -C deps/asdcplib rev-parse HEAD
+          command -v opj_compress
+          command -v opj_decompress
+      - name: Compile exact reviewed CineCert BSD native MXF wrapper/readers
+        run: |
+          cmake -S deps/asdcplib -B deps/asdcplib/build -DCMAKE_BUILD_TYPE=Release -DWITHOUT_SSL=ON -DWITHOUT_XML=ON
+          cmake --build deps/asdcplib/build --config Release --parallel 2 --target asdcp-wrap asdcp-info asdcp-unwrap
+          test -x deps/asdcplib/build/src/asdcp-wrap
+          test -x deps/asdcplib/build/src/asdcp-info
+          test -x deps/asdcplib/build/src/asdcp-unwrap
+      - name: Exercise real original film / 2-frame DCI XYZ / MXF picture+PCM / decode all
+        env:
+          NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+          NVP_NATIVE_OPENJPEG_DECODE: /usr/bin/opj_decompress
+          NVP_NATIVE_ASDCP_WRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-wrap
+          NVP_NATIVE_ASDCP_INFO: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-info
+          NVP_NATIVE_ASDCP_UNWRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-unwrap
+        run: python -m unittest discover -s tests -p test_nvp_wo3_real_mxf.py -v
