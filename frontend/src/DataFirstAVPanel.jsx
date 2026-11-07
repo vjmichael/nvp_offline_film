@@ -2,6 +2,8 @@ import React,{useEffect,useRef,useState} from 'react';
 import DataFirstWorldViewport from './DataFirstWorldViewport.jsx';
 import {runGPUSourceTextureReference} from './NativeTextureGPUReference.js';
 import {inspectOriginalTextureTiles} from './NativeTextureTileStream.js';
+import {defaultWO2Look,WO2_LOOK_FORMAT,validateWO2Look}
+  from './WO2PresentationLook.js';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -39,6 +41,11 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [error,setError]=useState('');
   const [note,setNote]=useState('');
   const [scene,setScene]=useState(null);
+  const [wo2Look,setWo2Look]=useState(defaultWO2Look);
+  const [wo2LookId,setWo2LookId]=useState('DirectorLook001');
+  const [wo2LookRevision,setWo2LookRevision]=useState(0);
+  const [wo2LookReceipt,setWo2LookReceipt]=useState(null);
+  const [wo2LookBusy,setWo2LookBusy]=useState(false);
   const [direction,setDirection]=useState('forward');
   const [originalSoundId,setOriginalSoundId]=useState('Music001');
   const [originalSoundReceipt,setOriginalSoundReceipt]=useState(null);
@@ -89,6 +96,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     tileAbortRef.current=null;
     setHighResolutionTexture(null);
     setTextureTileProgress(null);
+    setWo2Look(defaultWO2Look());
+    setWo2LookRevision(0);
+    setWo2LookReceipt(null);
   },[projectId,takeId]);
 
   useEffect(()=>{
@@ -528,6 +538,57 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     finally{setTextureApplying(false);}
   }
 
+  async function approveWO2Look(){
+    if(!item||!native?.wo2_approve_presentation_look||
+       wo2LookBusy||!projectId)return;
+    setWo2LookBusy(true);setError('');
+    try{
+      const roles=Object.fromEntries(
+        (scene?.visual?.objects||[]).map(o=>[o.path,o.semantic_role]));
+      const checked=validateWO2Look(wo2Look,roles);
+      const result=await native.wo2_approve_presentation_look({
+        project_id:projectId,look_id:wo2LookId,
+        scene_id:item.scene_id,scene_revision:item.scene_revision,
+        scene_sha256:item.scene_document_sha256,
+        expected_revision:wo2LookRevision,look:checked,
+      });
+      if(result?.status==='DENIED')return;
+      if(result?.format!==WO2_LOOK_FORMAT||
+         result.status!=='PRESENTATION_REVISION_APPROVED'||
+         result.revision!==wo2LookRevision+1||
+         result.source_scene_sha256!==item.scene_document_sha256||
+         result.original_modified!==false||result.ffmpeg_used!==false||
+         !/^[0-9a-f]{64}$/.test(result.document_sha256||''))
+        throw Error('Untrusted or stale source-bound cinematic presentation');
+      setWo2LookRevision(result.revision);
+      setWo2LookReceipt(result);
+      setNote('New immutable OpenUSD presentation look saved. Original Takes remain frozen.');
+    }catch(error){setError(error.message);}
+    finally{setWo2LookBusy(false);}
+  }
+
+  async function reopenWO2Look(){
+    if(!item||!native?.wo2_read_presentation_look||
+       !wo2LookRevision||wo2LookBusy)return;
+    setWo2LookBusy(true);setError('');
+    try{
+      const result=await native.wo2_read_presentation_look({
+        project_id:projectId,look_id:wo2LookId,
+        revision:wo2LookRevision,
+        scene_sha256:item.scene_document_sha256,
+      });
+      if(result?.format!==WO2_LOOK_FORMAT||
+         result.scene_sha256!==item.scene_document_sha256||
+         result.original_modified!==false||
+         !/^[0-9a-f]{64}$/.test(result.look_document_sha256||''))
+        throw Error('Original source presentation look identity is stale');
+      setWo2Look(validateWO2Look(result.look,Object.fromEntries(
+        (scene?.visual?.objects||[]).map(o=>[o.path,o.semantic_role]))));
+      setNote('Verified original-scene presentation look reloaded.');
+    }catch(error){setError(error.message);}
+    finally{setWo2LookBusy(false);}
+  }
+
   async function inspectHighResolutionTexture(){
     const choices=scene?.visual?.objects?.filter(obj=>
       (obj?.source_asset_binding||obj?.source_rig_binding)&&
@@ -868,9 +929,41 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
           original source SHA remains unchanged.</p>}
       </section>}
     {scene?.visual?.format==='nvp.data_av.native_visual_state.v1'&&
+      <section aria-label="Non-destructive director-approved film look">
+        <h3>Save this cinematic look</h3>
+        <p className="fineprint">Live look changes are temporary until
+          approved by the desktop host. Save a new revision tied to the
+          exact frozen OpenUSD scene; never change the source Take.</p>
+        <label>Look identity
+          <input aria-label="WO2 approved presentation look identity"
+            value={wo2LookId} maxLength={80}
+            disabled={wo2LookBusy||wo2LookRevision>0}
+            onChange={e=>setWo2LookId(e.target.value)}/>
+        </label>
+        <button type="button" disabled={wo2LookBusy||
+          !native?.wo2_approve_presentation_look||
+          item?.scene_document_sha256!==
+            scene.visual.scene_document_sha256}
+          onClick={approveWO2Look}>
+          {wo2LookBusy?'Confirming original scene…':
+            'Approve new non-destructive look revision'}
+        </button>
+        {wo2LookRevision>0&&<button type="button"
+          disabled={wo2LookBusy||!native?.wo2_read_presentation_look}
+          onClick={reopenWO2Look}>
+          Reload approved source-bound look
+        </button>}
+        {wo2LookReceipt&&<p role="status">
+          Saved look revision {wo2LookReceipt.revision} · SHA
+          {wo2LookReceipt.document_sha256.slice(0,16)}…
+        </p>}
+      </section>}
+    {scene?.visual?.format==='nvp.data_av.native_visual_state.v1'&&
       <DataFirstWorldViewport
         objects={scene.visual.objects||[]}
         upgradedTexture={highResolutionTexture}
+        presentationLook={wo2Look}
+        onLookChange={setWo2Look}
         listenerPath={listener}
         sceneSha={scene.visual.scene_document_sha256}
         tick={String(scene.visual.time_tick||'0')}
