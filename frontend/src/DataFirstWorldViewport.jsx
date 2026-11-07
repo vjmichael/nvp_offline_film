@@ -11,7 +11,8 @@ export function validateSourceTexture(surface,item){
   const descriptor=surface?.texture;
   if(!descriptor)return null;
   const packet=surface?.texture_transport;
-  if(!['mesh','skinned_mesh'].includes(item.shape)||!item.mesh_uvs||
+  if(!['mesh','skinned_mesh'].includes(item.shape)||
+     (!item.mesh_uvs&&!item.mesh_face_uvs)||
      descriptor.format!=='nvp.original.usd_texture_png.v1'||
      packet?.format!==descriptor.format||
      descriptor.source_modified!==false||packet.source_modified!==false||
@@ -76,7 +77,16 @@ export function validateMeshData(item){
       pair.every(v=>typeof v==='number'&&Number.isFinite(v)&&
         Math.abs(v)<=1024))))
     throw Error('Source mesh UV primvar is invalid or mismatched');
-  return {pts,faces,uv:uv||null};
+  const faceUV=item.mesh_face_uvs;
+  if(faceUV!=null&&(
+    item.shape!=='mesh'||uv!=null||
+    !Array.isArray(faceUV)||faceUV.length!==faces.length||
+    !faceUV.every(face=>Array.isArray(face)&&face.length===3&&
+      face.every(pair=>Array.isArray(pair)&&pair.length===2&&
+        pair.every(v=>typeof v==='number'&&Number.isFinite(v)&&
+          Math.abs(v)<=1024)))))
+    throw Error('Original face-varying USD UV topology is invalid');
+  return {pts,faces,uv:uv||null,faceUV:faceUV||null};
 }
 
 function shapeFor(item){
@@ -87,8 +97,18 @@ function shapeFor(item){
   if(item.shape==='sphere')return new THREE.SphereGeometry(
     item.size_m/2,24,16);
   if(item.shape==='mesh'||item.shape==='skinned_mesh'){
-    const {pts,faces,uv}=validateMeshData(item);
+    const {pts,faces,uv,faceUV}=validateMeshData(item);
     const geometry=new THREE.BufferGeometry();
+    if(faceUV){
+      // Preserve seams: a shared position can have different st on each
+      // authored face corner. GPU vertices are disposable duplicates only.
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(
+        faces.flatMap(face=>face.flatMap(i=>pts[i])),3));
+      geometry.setAttribute('uv',new THREE.Float32BufferAttribute(
+        faceUV.flat(2),2));
+      geometry.computeVertexNormals();
+      return geometry;
+    }
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(
       pts.flat(),3));
     geometry.setIndex(faces.flat());
