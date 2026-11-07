@@ -4,6 +4,10 @@ Historical pre-retirement camera delivery tests remain in Git history.
 The active native OpenUSD viewer does not issue still-render jobs.
 """
 import unittest
+from tempfile import TemporaryDirectory
+from pathlib import Path
+from backend.nvp_studio import Studio
+from backend.nvp_film_index import FilmIndex
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 
 
@@ -20,13 +24,16 @@ class Window:
 
 class RetiredCameraContract(unittest.TestCase):
     def setUp(self):
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.index = FilmIndex(Studio(Path(self.temp.name) / 'studio.sqlite3'))
         self.window = Window()
         self.created_hosts = []
         def factory(callback):
             self.created_hosts.append(callback)
             raise AssertionError("Retired renderer host must never be created")
         self.bridge = TrustedDesktopCameraBridge(
-            None, origin="http://127.0.0.1:7777", host_factory=factory)
+            self.index, origin="http://127.0.0.1:7777", host_factory=factory)
         self.bridge._attach_window(self.window)
         self.addCleanup(self.bridge._close)
 
