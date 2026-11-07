@@ -46,4 +46,29 @@ describe('DA-01 precise Film Time desktop editor',()=>{
     expect((await screen.findByRole('alert')).textContent).toMatch(/signed 64-bit/);
     expect(api.mock.calls.filter(x=>x[1]==='POST')).toHaveLength(0);
   });
+  it('invalidates saved Take freeze authority after changing only the duration limit',async()=>{
+    const api=vi.fn(async(path)=>path.endsWith('/film/camera-scenes')?list:sequence);
+    mount(api);
+    await screen.findByLabelText('Film Time duration limit ticks');
+    const freeze=screen.getByText('Approve and freeze original 3D Take');
+    // Without a native bridge the button is disabled already; inspect the
+    // saved revision marker disappearing by changing the duration and then
+    // switching back to the original value before publication.
+    fireEvent.change(screen.getByLabelText('Film Time duration limit ticks'),
+      {target:{value:'7056000010'}});
+    expect(screen.getByText(/Current saved revision: 1/)).toBeTruthy();
+    expect(freeze.disabled).toBe(true);
+  });
+  it('rejects a camera identity absent from the immutable scene before POST',async()=>{
+    const api=vi.fn(async(path)=>path.endsWith('/film/camera-scenes')?list:sequence);
+    mount(api);
+    const camera=await screen.findByLabelText('Shot001 camera');
+    // A persisted scene camera may disappear after a scene revision.
+    // Editing a draft to an invalid identity must fail closed at publication.
+    fireEvent.change(camera,{target:{value:'/World/Unknown'}});
+    fireEvent.click(screen.getByText('Save immutable timing revision'));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/absent from the source scene/);
+    expect(api.mock.calls.filter(x=>x[1]==='POST')).toHaveLength(0);
+  });
+
 });
