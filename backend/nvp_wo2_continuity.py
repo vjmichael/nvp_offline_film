@@ -89,3 +89,64 @@ def measure_source_continuity(*,sample,source_sha256,duration_seconds=60,
         "real_source_rendering_proven":False,
         "physical_color_calibrated":False,
     }
+
+
+def measure_native_frozen_take(index,project_id,take_id,take_sha256,
+                               camera_path,*,duration_seconds=60,
+                               sample_hz=2,approved_cancel=None):
+    """Run actual source-authoritative OpenUSD + native CPU renders at Film Time.
+
+    Unlike the generic measurement helper, every sampled frame is an actual
+    SHA-verified native scene-linear raster, not synthetic preview data.
+    This remains *CPU native* evidence: GPU/Hydra, calibrated display and
+    actual 60-second installed-device performance require separate tests.
+    """
+    from backend.nvp_data_av_scene import FrozenSceneAV
+    from backend.nvp_native_scene_linear_raster import NativeSceneLinearRaster
+    from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+    from backend.nvp_film_index import FilmIndex,_require_pid,_id,_sha
+    if not isinstance(index,FilmIndex):
+        raise TypeError("FilmIndex required for native 3D continuity acceptance")
+    _require_pid(project_id)
+    _id(take_id,"frozen USD original Take")
+    _sha(take_sha256)
+    if (type(camera_path) is not str or
+        not camera_path.startswith("/World/")):
+        raise PermissionError("Only an authored original USD camera may be used")
+    source=FrozenSceneAV(
+        index,project_id,take_id,
+        expected_take_sha256=take_sha256,listener_path=camera_path)
+    try:
+        if source.roles.get(camera_path)!="camera":
+            raise PermissionError("Native continuity requires a real source camera")
+        if (type(duration_seconds) is not int or
+            duration_seconds*TICKS_PER_SECOND>source.duration):
+            raise RuntimeError("Frozen original Take does not cover continuity interval")
+        native=NativeSceneLinearRaster(index)
+        def sample(seconds):
+            tick=round(seconds*TICKS_PER_SECOND)
+            snapshot=source.snapshot(tick)
+            _,receipt=native.render(
+                project_id,take_id,take_sha256,tick=tick,
+                camera_path=camera_path,source_session=source,
+                source_snapshot=snapshot)
+            if (receipt.get("source_modified") is not False or
+                receipt.get("ffmpeg_used") is not False or
+                not receipt.get("scene_linear_rgba_sha256")):
+                raise RuntimeError("Native source raster lost freeze provenance")
+            return {"source_sha256":take_sha256,
+                    "original_modified":False,
+                    "native_preview_sha256":
+                        receipt["scene_linear_rgba_sha256"]}
+        measurement=measure_source_continuity(
+            sample=sample,source_sha256=take_sha256,
+            duration_seconds=duration_seconds,sample_hz=sample_hz,
+            approved_cancel=approved_cancel)
+        return {**measurement,
+            "real_source_rendering_proven":measurement["status"]=="COMPLETE",
+            "native_cpu_renderer":"nvp.source_linear.GGX_preview.v1",
+            "source_immutable_take_reopened":True,
+            "physical_display_calibrated":False,
+            "gpu_hardware_verified":False}
+    finally:
+        source.close()
