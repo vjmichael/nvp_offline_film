@@ -100,3 +100,37 @@ def admit_disk(plan,output_root,*,available_bytes=None,reserve_bytes=MIN_HEADROO
         "native_disk_checked":True,
         "started_encoding":False,
     }
+
+
+MIN_STAGE_HEADROOM=64*1024**2
+MAX_STAGE_REQUEST=2*1024**4
+
+def require_stage_space(root,required_bytes,*,available_bytes=None,
+                        reserve_bytes=MIN_STAGE_HEADROOM):
+    """Fail before file creation when current scratch volume lacks capacity.
+
+    required_bytes is stage-specific and must be supplied from verified media
+    counts. It is a conservative admission guard, not an OS disk quota; disk
+    availability can change mid-operation, and atomic writes must still
+    handle ENOSPC without publishing incomplete output.
+    """
+    folder=Path(root)
+    if (not folder.is_absolute() or folder.is_symlink() or
+            not folder.is_dir()):
+        raise PermissionError("Trusted host-local scratch directory required")
+    if (type(required_bytes) is not int or
+            not 0<=required_bytes<=MAX_STAGE_REQUEST or
+            type(reserve_bytes) is not int or
+            reserve_bytes<MIN_STAGE_HEADROOM):
+        raise ValueError("Bounded native scratch budget required")
+    if available_bytes is None:
+        available_bytes=shutil.disk_usage(folder).free
+    if type(available_bytes) is not int or available_bytes<0:
+        raise ValueError("Genuine nonnegative disk space required")
+    minimum=required_bytes+reserve_bytes
+    if available_bytes<minimum:
+        raise OSError(28,"Insufficient native scratch disk for atomic stage")
+    return {"format":"nvp.wo4.disk_stage_admission.v1",
+            "status":"ADMITTED","required_bytes":minimum,
+            "available_bytes":available_bytes,
+            "feature_in_ram":False,"quota_enforced_by_os":False}
