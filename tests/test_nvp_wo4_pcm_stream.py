@@ -81,6 +81,22 @@ class StreamedPCM24Acceptance(unittest.TestCase):
         self.assertEqual(list(self.export.iterdir()),[])
         self.assertEqual(self.source.read_bytes(),self.raw)
 
+    def test_source_removed_during_consent_does_not_leave_open_stage(self):
+        def remove_source(scope):
+            self.source.unlink()
+            return True
+        with self.assertRaises(FileNotFoundError):
+            self.stream(approve=remove_source)
+        self.assertEqual(list(self.export.iterdir()),[])
+
+    def test_source_replaced_during_consent_does_not_publish(self):
+        def change_source(scope):
+            self.source.write_bytes(b"\\x00"*len(self.raw))
+            return True
+        with self.assertRaises(PermissionError):
+            self.stream(approve=change_source)
+        self.assertEqual(list(self.export.iterdir()),[])
+
     def test_existing_creator_files_survive_multiple_exports(self):
         protected=self.export/"PCM24_creator.wav"
         protected.write_bytes(b"creator-original")
