@@ -525,6 +525,33 @@ def run_visible_window_smoke():
                                 if not result["passed"]:
                                     raise RuntimeError(
                                         "Installed WO5 review IPC timed out")
+                                if os.environ.get("NVP_WO5_EXPECT_CODEC_INSTALL")=="1":
+                                    # REAL installed WebView2 -> native Python
+                                    # capability boundary, not a browser fake.
+                                    # Final feature playback still needs the
+                                    # indexed FilmIndex movie and OS consent.
+                                    window.evaluate_js(
+                                        "window.__nvpWO5Codec='PENDING';"
+                                        "window.pywebview.api.wo5_film_capabilities().then(x=>{"
+                                        "window.__nvpWO5Codec="
+                                        "x.format==='nvp.wo5.finished_dcp_pcm24_picture_review.v1'&&"
+                                        "x.native_finished_mxf_decode_configured===true&&"
+                                        "x.FFmpeg_used===false&&"
+                                        "x.production_accepted===false"
+                                        "?'PASSED':'FAILED';}).catch(()=>{"
+                                        "window.__nvpWO5Codec='FAILED';});")
+                                    until=time.monotonic()+15
+                                    while time.monotonic()<until:
+                                        seen=window.evaluate_js("window.__nvpWO5Codec")
+                                        if seen=="PASSED":
+                                            break
+                                        if seen=="FAILED":
+                                            raise RuntimeError(
+                                                "Installed WebView2 cannot reach native cinema decoder")
+                                        time.sleep(.2)
+                                    if seen!="PASSED":
+                                        raise RuntimeError(
+                                            "Installed native codec capability IPC timed out")
                                 break
                     time.sleep(.2)
                 if not result["passed"]:
