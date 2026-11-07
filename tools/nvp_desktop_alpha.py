@@ -319,10 +319,10 @@ def run_visible_window_smoke():
     result={"passed":False}
     bridge=None
     try:
-        from backend.nvp_wo5_desktop_bridge import (
-            TrustedDesktopWO5Bridge)
+        from backend.nvp_wo6_desktop_bridge import (
+            TrustedDesktopWO6Bridge)
         from backend.nvp_native_usd_texture import texture_transport
-        class InstalledWO2ProbeBridge(TrustedDesktopWO5Bridge):
+        class InstalledWO2ProbeBridge(TrustedDesktopWO6Bridge):
             """Test-only native IPC: uses one exact ephemeral smoke asset."""
             def wo2_gpu_texture_probe(self):
                 self._native_window()
@@ -572,6 +572,55 @@ def run_visible_window_smoke():
                                     if seen!="PASSED":
                                         raise RuntimeError(
                                             "Installed native codec capability IPC timed out")
+                                # WO6-07: the actual installed React
+                                # director-native tab and loopback OS host
+                                # must present source-bound preview with NO
+                                # automatic creative or native worker grant.
+                                result["passed"]=False
+                                selected=window.evaluate_js(
+                                    "(()=>{const b=[...document.querySelectorAll('nav.tabs button')]"
+                                    ".find(x=>x.textContent.includes('Native director approvals'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                if selected is not True:
+                                    raise RuntimeError(
+                                        "Installed WO6 director-native tab missing")
+                                until=time.monotonic()+20
+                                while time.monotonic()<until:
+                                    found=window.evaluate_js(
+                                        "Boolean(document.querySelector("
+                                        "'section[aria-label=\\\"Director native source operations\\\"]'))")
+                                    if found:
+                                        break
+                                    time.sleep(.2)
+                                if not found:
+                                    raise RuntimeError(
+                                        "Installed WO6 native creator panel never mounted")
+                                _native_window_stage("wo6_real_creator_panel_mounted")
+                                window.evaluate_js(
+                                    "window.__nvpWO6Catalog='PENDING';"
+                                    "window.pywebview.api.wo6_source_catalog('"+
+                                    project["id"]+"').then(x=>{"
+                                    "window.__nvpWO6Catalog="
+                                    "x.format==='nvp.wo6.director_desktop_native_consent.v1'&&"
+                                    "x.model_execute_enabled===false&&"
+                                    "x.approvals_preissued===false&&"
+                                    "x.scenes.some(s=>s.id==='smoke_scene')&&"
+                                    "x.takes.some(t=>t.id==='smoke_frozen_take')"
+                                    "?'PASSED':'FAILED';}).catch(()=>{"
+                                    "window.__nvpWO6Catalog='FAILED';});")
+                                until=time.monotonic()+15
+                                while time.monotonic()<until:
+                                    proof=window.evaluate_js("window.__nvpWO6Catalog")
+                                    if proof=="PASSED":break
+                                    if proof=="FAILED":
+                                        raise RuntimeError(
+                                            "Installed WO6 native FilmIndex catalog IPC denied")
+                                    time.sleep(.2)
+                                if proof!="PASSED":
+                                    raise RuntimeError(
+                                        "Installed WO6 native creator catalog timed out")
+                                _native_window_stage("wo6_real_film_index_read_only_catalog_passed")
+                                result["passed"]=True
                                 break
                     time.sleep(.2)
                 if not result["passed"]:
