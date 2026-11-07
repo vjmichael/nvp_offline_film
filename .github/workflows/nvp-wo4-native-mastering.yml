@@ -1,0 +1,34 @@
+name: NVP WO4 Native PCM Mastering (NO FFMPEG)
+on:
+  push:
+    branches:
+      - nvp/wo4-cinema-mastering-20261107
+    paths:
+      - backend/nvp_wo4_pcm_master.py
+      - tests/test_nvp_wo4_pcm_master.py
+      - .github/workflows/nvp-wo4-native-mastering.yml
+  pull_request:
+    paths:
+      - backend/nvp_wo4_pcm_master.py
+      - tests/test_nvp_wo4_pcm_master.py
+      - .github/workflows/nvp-wo4-native-mastering.yml
+permissions:
+  contents: read
+jobs:
+  pcm24-candidate:
+    name: WO4 trusted source PCM24 / ${{ matrix.os }} / Python ${{ matrix.py }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        py: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Compile WO4 native PCM candidate and rejection tests
+        run: python -m compileall -q backend/nvp_wo4_pcm_master.py tests/test_nvp_wo4_pcm_master.py
+      - name: Verify exact source parity, approved gain and film-time sound duration
+        run: python -m unittest discover -s tests -p test_nvp_wo4_pcm_master.py -v
