@@ -121,8 +121,8 @@ class FakeIndependentADCDevice:
         self.worker=threading.Thread(target=run,daemon=True)
         self.worker.start()
     def stop(self):
-        if self.worker is not None:self.worker.join(timeout=6)
         self.stopped=True
+        if self.worker is not None:self.worker.join(timeout=6)
     def close(self):self.closed=True
 
 
