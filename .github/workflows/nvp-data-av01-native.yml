@@ -17,6 +17,8 @@ on:
       - 'backend/nvp_native_avi_delivery.py'
       - 'backend/nvp_native_live_take.py'
       - 'backend/nvp_native_spatial_acoustics.py'
+      - 'backend/nvp_openusd_assets.py'
+      - 'tests/test_nvp_original_mesh_presentation.py'
       - 'tests/test_nvp_native_spatial_acoustics.py'
       - 'backend/nvp_native_color_eval.py'
       - 'tests/test_nvp_native_color_eval.py'
@@ -99,6 +101,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_native_avi_delivery.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_live_take.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_spatial_acoustics.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_original_mesh_presentation.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_eval.py' -v
           python -m unittest discover -s tests -p 'test_nvp_legacy_quarantine.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_decisions.py' -v
