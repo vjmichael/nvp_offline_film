@@ -272,7 +272,8 @@ def read_original_preview_surface(stage,mesh_prim,actor_path):
         inp=shader.GetInput(name)
         if not inp:
             raise RuntimeError("Authored actor shader input missing: "+name)
-        values[name]=inp.Get()
+        values[name]=inp.GetAttr().Get() if (
+            name=="diffuseColor" and inp.HasConnectedSource()) else inp.Get()
     color=[float(x) for x in values["diffuseColor"]]
     roughness=float(values["roughness"])
     metallic=float(values["metallic"])
