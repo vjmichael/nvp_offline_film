@@ -27,7 +27,7 @@ class OpenUSDAssetRegistry:
 
     def publish(self, project_id, asset_id, *, shape, size_m,
                 expected_revision=0, points=None, triangles=None,
-                preview_material=None, mesh_uvs=None):
+                preview_material=None, mesh_uvs=None, texture_png=None):
         _require_pid(project_id)
         _id(asset_id, "reusable asset ID")
         if shape not in KINDS:
@@ -87,6 +87,13 @@ class OpenUSDAssetRegistry:
                 "roughness_metallic_authored":True,
                 "texture_images_loaded":False,
                 "original_source_modified":False}
+        if texture_png is not None:
+            if shape!="mesh" or mesh_uvs is None or authored_material is None:
+                raise ValueError("Original PNG texture requires UV mesh and source material")
+            from backend.nvp_native_usd_texture import publish_texture
+            texture=publish_texture(self.index,project_id,texture_png)
+            authored_material["texture"]=texture
+            authored_material["texture_images_loaded"]=True
         Gf, Sdf, Usd, UsdGeom = _usd()
         layer = Sdf.Layer.CreateAnonymous("nvp_asset.usda")
         stage = Usd.Stage.Open(layer)
@@ -119,6 +126,22 @@ class OpenUSDAssetRegistry:
             shader.CreateIdAttr("UsdPreviewSurface")
             shader.CreateInput("diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
                 Gf.Vec3f(*authored_material["base_color_rgb"]))
+            if "texture" in authored_material:
+                tex=UsdShade.Shader.Define(stage,"/Asset/Material/Texture")
+                tex.CreateIdAttr("UsdUVTexture")
+                tex.CreateInput("file",Sdf.ValueTypeNames.Asset).Set(
+                    Sdf.AssetPath(authored_material["texture"]["usd_asset_path"]))
+                tex.CreateInput("sourceColorSpace",Sdf.ValueTypeNames.Token).Set(
+                    "sRGB")
+                tex.CreateInput("wrapS",Sdf.ValueTypeNames.Token).Set("repeat")
+                tex.CreateInput("wrapT",Sdf.ValueTypeNames.Token).Set("repeat")
+                coords=UsdShade.Shader.Define(stage,"/Asset/Material/Primvar")
+                coords.CreateIdAttr("UsdPrimvarReader_float2")
+                coords.CreateInput("varname",Sdf.ValueTypeNames.Token).Set("st")
+                tex.CreateInput("st",Sdf.ValueTypeNames.Float2).ConnectToSource(
+                    coords.CreateOutput("result",Sdf.ValueTypeNames.Float2))
+                shader.GetInput("diffuseColor").ConnectToSource(
+                    tex.CreateOutput("rgb",Sdf.ValueTypeNames.Float3))
             for name in ("roughness","metallic"):
                 shader.CreateInput(name,Sdf.ValueTypeNames.Float).Set(
                     authored_material[name])
@@ -238,7 +261,8 @@ class OpenUSDAssetRegistry:
                     "nvp.original_usd_preview_surface.v1" or
                 original_material.get("material_path")!="/Asset/Material" or
                 original_material.get("original_source_modified") is not False or
-                original_material.get("texture_images_loaded") is not False):
+                original_material.get("texture_images_loaded") is not (
+                    "texture" in original_material)):
                 raise RuntimeError("Original USD preview material scope invalid")
             from pxr import UsdShade
             binding=UsdShade.MaterialBindingAPI(geometry)
@@ -249,12 +273,39 @@ class OpenUSDAssetRegistry:
                 stage.GetPrimAtPath("/Asset/Material/PreviewSurface"))
             if not shader or shader.GetIdAttr().Get()!="UsdPreviewSurface":
                 raise RuntimeError("USD asset surface shader changed")
+            if "texture" in original_material:
+                from backend.nvp_native_usd_texture import verified_texture
+                texture=original_material["texture"]
+                verified_texture(self.index,project_id,texture)
+                node=UsdShade.Shader(
+                    stage.GetPrimAtPath("/Asset/Material/Texture"))
+                reader=UsdShade.Shader(
+                    stage.GetPrimAtPath("/Asset/Material/Primvar"))
+                if (not node or node.GetIdAttr().Get()!="UsdUVTexture" or
+                    not reader or reader.GetIdAttr().Get()!="UsdPrimvarReader_float2" or
+                    reader.GetInput("varname").Get()!="st" or
+                    str(node.GetInput("file").Get().path)!=
+                        texture["usd_asset_path"] or
+                    node.GetInput("sourceColorSpace").Get()!="sRGB" or
+                    node.GetInput("wrapS").Get()!="repeat" or
+                    node.GetInput("wrapT").Get()!="repeat"):
+                    raise RuntimeError("Frozen USD texture shader graph changed")
+                connected=shader.GetInput("diffuseColor").GetConnectedSource()
+                if not connected or str(connected[0].GetPrim().GetPath())!=(
+                        "/Asset/Material/Texture") or connected[1]!="rgb":
+                    raise RuntimeError("Texture no longer drives USD diffuseColor")
+                uv_input=node.GetInput("st").GetConnectedSource()
+                if not uv_input or str(uv_input[0].GetPrim().GetPath())!=(
+                        "/Asset/Material/Primvar") or uv_input[1]!="result":
+                    raise RuntimeError("USD texture lost original st UV binding")
             for key in ("roughness","metallic","base_color_rgb"):
                 source=("diffuseColor" if key=="base_color_rgb" else key)
                 inp=shader.GetInput(source)
                 if not inp:
                     raise RuntimeError("Original material shader input missing")
-                actual=inp.Get()
+                actual=inp.GetAttr().Get() if (
+                    key=="base_color_rgb" and "texture" in original_material
+                    ) else inp.Get()
                 expected=original_material[key]
                 actuals=(list(actual) if key=="base_color_rgb" else [actual])
                 expecteds=(expected if key=="base_color_rgb" else [expected])
