@@ -286,6 +286,35 @@ class ExactTimeShotSequence:
             duration_tick=plan["duration_tick"],shots=updated,
             expected_revision=expected_revision)
 
+    def insert_shot(self,project_id,timeline_id,expected_revision,shot):
+        """Insert a new exact-time camera observation as an immutable revision.
+
+        Existing shot identities and frozen scene references cannot change.
+        Publication revalidates all intervals, source cameras and the CAS
+        revision; overlaps and frame-derived fields fail closed.
+        """
+        _int(expected_revision,"expected camera revision",minimum=1)
+        if type(shot) is not dict or set(shot)!={
+            "shot_id","camera_path","start_tick","end_tick","pattern"
+        }:
+            raise ValueError("Inserted shot requires the exact native camera schema")
+        name=_id(shot["shot_id"],"shot ID")
+        start=_tick(shot["start_tick"],"inserted shot start")
+        _tick(shot["end_tick"],"inserted shot end",minimum=1)
+        plan=self.read(project_id,timeline_id,expected_revision)
+        if any(row["shot_id"]==name for row in plan["shots"]):
+            raise ValueError("Inserted shot identity already exists")
+        updated=[{key:row[key] for key in (
+            "shot_id","camera_path","start_tick","end_tick","pattern")}
+            for row in plan["shots"]]
+        updated.append(shot)
+        updated.sort(key=lambda row:int(row["start_tick"]))
+        return self.publish(
+            project_id,timeline_id,scene_id=plan["scene_id"],
+            scene_revision=plan["scene_revision"],
+            duration_tick=plan["duration_tick"],shots=updated,
+            expected_revision=expected_revision)
+
     def checkpoints(self,project_id,timeline_id,revision):
         plan=self.read(project_id,timeline_id,revision)
         points={0}
