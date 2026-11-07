@@ -1013,3 +1013,47 @@ operations; WO6-07 full installed first-film assistant. WO5's sustained
 installed finished-film picture/mastered audio, authentic 30-minute film,
 60-90min feature, >=3h epic and independent SMPTE Bv2.1 cinema acceptance
 are not completed by these source operations.
+
+### WO6-05/06 additional implementation: data-first native color/shot edits and authenticated status — 2026-11-07
+
+**Code committed in draft PR #93, exact-head Windows/Linux acceptance pending.**
+Added creator-approved native source-bound color and authored exact Film Time
+camera sequence/edit DATA workers; existing DA-06 `NativeColorDecisions`
+and DA-01 `ExactTimeShotSequence` are reused, not rewritten. Native
+`WO6NativeFilmDecisionHost` equivalent class `NativeFilmDecisionHost`
+performs human decision confirmation and separate native host authorization,
+seals task bytes, SHA-pins source revisions, enforces typed values, creates
+a NEW original-derived FilmIndex decision ID, runs an OS-contained native
+worker, and reopens finished decision SHA to verify its actual immutable
+receipt. It neither renders picture nor issues film delivery approval.
+
+Hardened ALL current WO6 native writer worker entrypoints (Take/shot/data)
+with independent `backend/nvp_wo6_worker_admission.py`: actual ledger
+ACTIVE + resource-reserved state, matching scheduler owner and task SHA,
+absence of durable cancel intent. Parent host still rechecks current creator
+and native policy and worker/receipt integrity. Source head is rechecked
+after successful native Take/shot/timeline action where current source
+identity is required. On Windows, worker readonly SQLite opens via a
+proper native `Path.as_uri()` file URI.
+
+WO6-06 read-only `nvp.film.read_native_task_status.v1` is now opt-in
+on the **existing** NativeAiReadHost only if the real host injects an
+existing `WO6DurableRecovery`. The per-call actor/project/turn and
+request SHA policy still runs; exact creator task ownership is checked.
+Results are bounded authentic event/cancel/recovery snapshots, never
+worker/admission/approval/cancel tools. No new model endpoint.
+
+**Tests submitted in the four-platform CI matrix:** real OpenUSD native
+color and exact Film Time camera sequence authoring, no original Take
+mutation, denied grants, stale source, queued/not-admitted task worker
+denial, mismatched owner, durable cancellation, real color decision
+committed before a missing worker receipt, and read-only task status
+actor/project refusal.
+
+**Unresolved:** GitHub Windows/Linux 3.11/3.13 exact-head execution not yet
+confirmed (latest runs queued/pending; superseded runs cancelled). Genuine
+installed source-production end to end, audio/edit/master/cinema DCP
+physical workers with real media, independent OS termination attestation
+after supervisor crash, existing installed-app desktop approval UX and
+WO6-07 actual model-in-loop 30min film remain OPEN. WO4/WO5 sustained
+installed finished A/V and cinema Bv2.1 gates are separate and OPEN.
