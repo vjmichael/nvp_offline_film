@@ -101,7 +101,7 @@ def stream_master_pcm24_candidate(source_path, *, source_sha256,
     peak_in = 0
     peak_out = 0
     try:
-        with source.open("rb") as original, os.fdopen(fd, "wb") as output:
+        with os.fdopen(fd, "wb") as output, source.open("rb") as original:
             with wave.open(output, "wb") as wav:
                 wav.setnchannels(channels)
                 wav.setsampwidth(3)
