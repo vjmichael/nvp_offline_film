@@ -53,7 +53,7 @@ class _Window:
 
 def run_installed_data_av_smoke():
     T=TICKS_PER_SECOND
-        _native_stage("enter")
+    _native_stage("enter")
     with tempfile.TemporaryDirectory(prefix="nvp-installed-data-av-") as root:
         _native_stage("before_studio")
         studio=Studio(Path(root)/"native_sound.sqlite3")
@@ -98,7 +98,7 @@ def run_installed_data_av_smoke():
         window=_Window()
         bridge._attach_window(window)
         try:
-        _native_stage("before_catalog")
+            _native_stage("before_catalog")
             catalog=bridge.data_av_catalog(pid)
             if (catalog["ffmpeg_runtime_required"] is not False or
                 len(catalog["takes"])!=1):
@@ -130,7 +130,7 @@ def run_installed_data_av_smoke():
                 mixes.append(item["audio_sha256"])
                 if bridge.data_av_stop(session)["status"]!="STOPPED":
                     raise RuntimeError("Installed native stop failed")
-        _native_stage("after_two_listeners")
+            _native_stage("after_two_listeners")
             if (mixes[0]==mixes[1] or window.prompts!=2 or
                 sha256(sources.read(
                     pid,"captured_dialogue",1,0,2048)).hexdigest()!=
