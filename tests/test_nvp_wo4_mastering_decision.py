@@ -75,6 +75,14 @@ class WO4SourceCustody(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.authorize(ordered_pictures=[self.picture,other,self.picture])
 
+    def test_forged_derived_loudness_or_pixel_qc_refused(self):
+        bogus=dict(self.qc,xyz12_component_max=[4095,4095,4095])
+        with self.assertRaises(PermissionError):
+            self.authorize(qc=bogus)
+        bogus=dict(self.qc,sound_peak_absolute_24bit=999999)
+        with self.assertRaises(PermissionError):
+            self.authorize(qc=bogus)
+
     def test_denied_decision_never_registers_presentation(self):
         result=self.authorize(approve=lambda _:False)
         self.assertEqual(result["status"],"DENIED")
