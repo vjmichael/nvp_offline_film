@@ -70,7 +70,7 @@ export function validateMeshData(item){
   }
   const uv=item.mesh_uvs;
   if(uv!=null&&(
-    item.shape!=='mesh'||
+    !['mesh','skinned_mesh'].includes(item.shape)||
     !Array.isArray(uv)||uv.length!==pts.length||
     !uv.every(pair=>Array.isArray(pair)&&pair.length===2&&
       pair.every(v=>typeof v==='number'&&Number.isFinite(v)&&
