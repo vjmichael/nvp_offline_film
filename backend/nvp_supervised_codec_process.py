@@ -181,6 +181,14 @@ def run_supervised_codec(codec,argv,*,workdir,check_cancel,
                 except subprocess.TimeoutExpired:
                     _terminate_tree(proc,job)
                     proc.wait(timeout=5)
+            if sys.platform!="win32" and proc is not None:
+                # Kill surviving codec-spawned grandchildren even when the
+                # wrapper itself returned success. A successful parent exit
+                # is not proof the entire native process group exited.
+                try:
+                    os.killpg(proc.pid,signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
             if job is not None:
                 handle,kernel=job
                 kernel.CloseHandle(handle)
