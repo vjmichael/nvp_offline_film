@@ -12,6 +12,7 @@ on:
       - frontend/src/DataFirstAVPanel.jsx
       - frontend/src/DirectorFilmReviewPanel.jsx
       - frontend/src/DirectorFilmReviewPanel.test.jsx
+      - frontend/src/WO5NativeSourcePlayback.test.jsx
       - .github/workflows/nvp-wo5-desktop-review.yml
   pull_request:
     paths:
@@ -24,6 +25,7 @@ on:
       - frontend/src/DataFirstAVPanel.jsx
       - frontend/src/DirectorFilmReviewPanel.jsx
       - frontend/src/DirectorFilmReviewPanel.test.jsx
+      - frontend/src/WO5NativeSourcePlayback.test.jsx
       - .github/workflows/nvp-wo5-desktop-review.yml
 permissions:
   contents: read
@@ -67,6 +69,6 @@ jobs:
       - name: Install desktop React dependencies
         run: npm install --no-audit --no-fund
       - name: Native-only director UI, actual source A/V control and denial
-        run: npm run test:ui -- src/DirectorFilmReviewPanel.test.jsx src/DataFirstAVPanel.test.jsx
+        run: npm run test:ui -- src/DirectorFilmReviewPanel.test.jsx src/WO5NativeSourcePlayback.test.jsx src/DataFirstAVPanel.test.jsx
       - name: Build actual installed WebView UI
         run: npm run build
