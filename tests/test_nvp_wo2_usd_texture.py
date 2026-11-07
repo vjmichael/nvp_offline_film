@@ -14,7 +14,7 @@ from backend.nvp_exact_time_shots import ExactTimeShotSequence
 from backend.nvp_native_scene_linear_raster import NativeSceneLinearRaster
 
 
-class WO2NativeTextureTests(fixture.NativeUSD02Integration):
+class WO2NativeTextureTests(unittest.TestCase):
     def _png(self, rgb=(255,32,16)):
         image=Image.new("RGB",(2,2),rgb)
         buff=BytesIO()
