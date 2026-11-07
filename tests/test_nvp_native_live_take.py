@@ -109,6 +109,57 @@ class LiveTakeMicTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"MicTake001",1)
 
+    def test_approved_crash_recovery_saves_only_unattached_pcm_source(self):
+        from backend.nvp_data_av_source import RecordedSoundSources
+        mic=self.session()
+        mic.begin()
+        mic._drain()
+        journal=OriginalCaptureJournal(
+            self.studio.db_path.parent/"native-original-capture-recovery")
+        row=journal.catalog(self.pid)["items"][0]
+        self.assertTrue(row["recoverable_sealed_mono"])
+        decisions=[]
+        result=journal.salvage_original_mono_source(
+            self.index,self.pid,row["capture_reference"],
+            "SalvagedOriginalMic",
+            native_creator_approval=lambda scope:
+                decisions.append(scope) is None)
+        self.assertEqual(result["status"],"RECOVERED_UNATTACHED_ORIGINAL_MONO")
+        self.assertFalse(result["created_frozen_take"])
+        self.assertEqual(result["recorded_samples"],4000)
+        self.assertEqual(RecordedSoundSources(self.index).read(
+            self.pid,"SalvagedOriginalMic",1,0,4000),
+            (array.array("h",[500]*4000)).tobytes())
+        self.assertEqual(decisions[0]["operation"],
+                         "nvp.original_sound.salvage_unapproved_pcm.v1")
+        self.assertEqual(journal.catalog(self.pid)["items"],[])
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"MicTake001",1)
+
+    def test_unverified_original_source_recovery_cannot_forge_a_take(self):
+        mic=self.session()
+        mic.begin()
+        mic._drain()
+        journal=OriginalCaptureJournal(
+            self.studio.db_path.parent/"native-original-capture-recovery")
+        reference=journal.catalog(self.pid)["items"][0]["capture_reference"]
+        with self.assertRaises(PermissionError):
+            journal.salvage_original_mono_source(
+                self.index,self.pid,reference,"DeclinedSource",
+                native_creator_approval=lambda scope:False)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"DeclinedSource",1)
+        original=mic._spool.read_bytes()
+        mic._spool.write_bytes(original[:-2]+b"\x01\x00")
+        with self.assertRaises(RuntimeError):
+            journal.salvage_original_mono_source(
+                self.index,self.pid,reference,"TamperedSource",
+                native_creator_approval=lambda scope:True)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"TamperedSource",1)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"MicTake001",1)
+
     def test_native_stop_flush_is_included_in_frozen_sample_source(self):
         self.device=StopFlushCaptureDevice()
         mic=self.session()
