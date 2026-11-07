@@ -453,10 +453,15 @@ class TrustedDesktopCameraBridge:
         """Create a NEW immutable mesh revision from an approved texture SHA."""
         with self._lock:
             self._native_window()
-            if type(request) is not dict or set(request)!={
-                "project_id","asset_id","asset_revision",
-                "asset_document_sha256","texture_sha256"}:
+            base_keys={"project_id","asset_id","asset_revision",
+                       "asset_document_sha256","texture_sha256"}
+            if type(request) is not dict or set(request) not in (
+                    base_keys,base_keys|{"channel"}):
                 raise ValueError("Texture application requires exact source revisions")
+            channel=request.get("channel","base_color")
+            if channel not in ("base_color","roughness","metallic",
+                               "emission","normal","opacity"):
+                raise ValueError("Only bounded original PBR channels are supported")
             pid=request["project_id"]
             _require_pid(pid)
             aid=request["asset_id"]
@@ -486,6 +491,7 @@ class TrustedDesktopCameraBridge:
                 "Source mesh: "+aid+" revision "+str(revision)+"\n"+
                 "Original mesh SHA-256: "+old["document_sha256"]+"\n"+
                 "Frozen image SHA-256: "+digest+"\n"+
+                "Material channel: "+channel+"\n"+
                 "Texture: "+str(width)+" x "+str(height)+"\n"+
                 "Existing scene, character and Digital Take revisions remain unchanged."):
                 return {"format":"nvp.native.texture_mesh_revision.v1",
@@ -494,11 +500,23 @@ class TrustedDesktopCameraBridge:
                 raise RuntimeError("Mesh changed while native approval was displayed")
             controls={key:original_material[key] for key in (
                 "base_color_rgb","roughness","metallic")}
+            from backend.nvp_native_usd_texture import verified_texture
+            existing_base=original_material.get("texture")
+            base_png=(png if channel=="base_color" else
+                      verified_texture(self.index,pid,existing_base)[0]
+                      if existing_base else None)
+            pbr_pngs={
+                name:verified_texture(self.index,pid,descriptor)[0]
+                for name,descriptor in original_material.get(
+                    "pbr_maps",{}).items()}
+            if channel!="base_color":
+                pbr_pngs[channel]=png
             published=registry.publish(
                 pid,aid,shape="mesh",size_m=doc["size_m"],
                 points=doc["points"],triangles=doc["triangles"],
                 mesh_uvs=doc.get("mesh_uvs"),face_uvs=doc.get("face_uvs"),
-                preview_material=controls,texture_png=png,
+                preview_material=controls,texture_png=base_png,
+                pbr_maps_png=(pbr_pngs or None),
                 material_slots=(
                     [{key:slot[key] for key in ("faces","base_color_rgb",
                                                 "roughness","metallic")}
@@ -509,6 +527,7 @@ class TrustedDesktopCameraBridge:
                     "status":"NEW_SOURCE_REVISION",
                     "asset_id":aid,"asset_revision":published["revision"],
                     "asset_document_sha256":published["document_sha256"],
+                    "source_material_channel":channel,
                     "original_modified":False,"ffmpeg_used":False}
 
     def data_av_import_original_texture(self,project_id):
