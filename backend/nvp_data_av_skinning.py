@@ -21,7 +21,7 @@ MAX_LIVE_SKIN_TRIANGLES=8192
 
 
 def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
-                        scene_id,scene_revision):
+                        scene_id,scene_revision,include_texture_transport=True):
     """Map authored actor paths to native, source-verified skinned geometry.
 
     Never use this on untrusted arbitrary USD paths: OpenUSDSceneBridge
@@ -94,16 +94,48 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
             any(type(n) is not int or not 3<=n<=8 for n in faces) or
             sum(faces)!=len(indices)):
             raise RuntimeError("Original USD skinned geometry topology is invalid")
+        # Preserve original UsdSkel mesh UVs when genuinely authored.
+        # Neither NVP nor Three.js may infer texture coordinates from pose.
+        st=UsdGeom.PrimvarsAPI(geometry).GetPrimvar("st")
+        source_uvs=None
+        source_face_uvs=None
+        authored_corner_uvs=None
+        if st:
+            vals=st.Get()
+            interpolation=st.GetInterpolation()
+            if vals is None:
+                raise RuntimeError("Original skinned USD st primvar is empty")
+            if interpolation=="vertex":
+                if len(vals)!=points_count:
+                    raise RuntimeError("Original rig vertex UV count differs")
+                source_uvs=[[float(u),float(v)] for u,v in vals]
+            elif interpolation=="faceVarying":
+                if len(vals)!=sum(faces):
+                    raise RuntimeError("Original rig face UV count differs")
+                authored_corner_uvs=[[float(u),float(v)] for u,v in vals]
+                source_face_uvs=[]
+            else:
+                raise RuntimeError("Unsupported original rig st interpolation")
+            all_uvs=(source_uvs if source_uvs is not None
+                     else authored_corner_uvs)
+            if any(not math.isfinite(q) or abs(q)>1024
+                   for uv in all_uvs for q in uv):
+                raise RuntimeError("Original rig UV coordinates are invalid")
         groups=[]
         offset=0
         for count in faces:
             face=indices[offset:offset+count]
+            corners=(authored_corner_uvs[offset:offset+count]
+                     if authored_corner_uvs is not None else None)
             offset+=count
             if (any(type(i) is not int or not 0<=i<points_count for i in face)
                 or len(set(face))!=count):
                 raise RuntimeError("Invalid original USD actor face")
-            groups.extend([[face[0],face[j],face[j+1]]
-                           for j in range(1,count-1)])
+            for j in range(1,count-1):
+                groups.append([face[0],face[j],face[j+1]])
+                if corners is not None:
+                    source_face_uvs.append([
+                        corners[0],corners[j],corners[j+1]])
         pose=evaluate_skin(stage,prim,path,tick)
         points=pose["deformed_points"]
         if (len(points)!=points_count or
@@ -122,6 +154,63 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
         if any(not math.isfinite(x) or not 0<=x<=1 for x in color):
             raise RuntimeError("Original USD actor has untrusted display color")
         material=pose["source_preview_material"]
+        descriptor=rig.get("texture")
+        if descriptor is not None:
+            if source_uvs is None and source_face_uvs is None:
+                raise RuntimeError("Original textured skin has no authentic UVs")
+            from pxr import UsdShade
+            from backend.nvp_native_usd_texture import (
+                verified_texture,texture_transport)
+            verified_texture(index,project_id,descriptor)
+            base=path+"/Rig/Material"
+            shader=UsdShade.Shader(
+                stage.GetPrimAtPath(base+"/PreviewSurface"))
+            tex=UsdShade.Shader(stage.GetPrimAtPath(base+"/Texture"))
+            uvreader=UsdShade.Shader(stage.GetPrimAtPath(base+"/Primvar"))
+            if (not shader or not tex or not uvreader or
+                tex.GetIdAttr().Get()!="UsdUVTexture" or
+                uvreader.GetIdAttr().Get()!="UsdPrimvarReader_float2" or
+                uvreader.GetInput("varname").Get()!="st" or
+                str(tex.GetInput("file").Get().path)!=
+                    descriptor["usd_asset_path"] or
+                tex.GetInput("sourceColorSpace").Get()!="sRGB" or
+                tex.GetInput("wrapS").Get()!="repeat" or
+                tex.GetInput("wrapT").Get()!="repeat"):
+                raise RuntimeError("Frozen rig shader texture graph changed")
+            color_source=shader.GetInput("diffuseColor").GetConnectedSource()
+            uv_source=tex.GetInput("st").GetConnectedSource()
+            if (not color_source or not uv_source or
+                str(color_source[0].GetPrim().GetPath())!=base+"/Texture" or
+                color_source[1]!="rgb" or
+                str(uv_source[0].GetPrim().GetPath())!=base+"/Primvar" or
+                uv_source[1]!="result"):
+                raise RuntimeError("Original rig texture wiring is invalid")
+            material={**material,"texture":descriptor,
+                      "texture_images_loaded":True}
+            if include_texture_transport:
+                material["texture_transport"]=texture_transport(
+                    index,project_id,descriptor)
+        elif material.get("texture_images_loaded") is True:
+            raise RuntimeError("Original rig falsely reports loaded texture")
+        maps=rig.get("pbr_maps")
+        if maps:
+            from backend.nvp_wo2_pbr_channels import (
+                verify_pbr_maps,verify_pbr_map_graph)
+            from pxr import UsdShade
+            verify_pbr_maps(index,project_id,maps)
+            material_path=path+"/Rig/Material"
+            verify_pbr_map_graph(
+                stage,material_path,
+                UsdShade.Shader(stage.GetPrimAtPath(
+                    material_path+"/PreviewSurface")),
+                UsdShade.Shader(stage.GetPrimAtPath(
+                    material_path+"/OpenPBR")),maps)
+            material={**material,"pbr_maps":maps}
+            if include_texture_transport:
+                from backend.nvp_native_usd_texture import texture_transport
+                material["pbr_map_transports"]={
+                    key:texture_transport(index,project_id,desc)
+                    for key,desc in maps.items()}
         if (any(abs(x-y)>1e-5 for x,y in
                 zip(material["base_color_rgb"],color)) or
             material["original_source_modified"] is not False):
@@ -132,6 +221,8 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
             "size_m":size,
             "mesh_points":points,
             "mesh_triangles":groups,
+            "mesh_uvs":source_uvs,
+            "mesh_face_uvs":source_face_uvs,
             "geometry_asset_sha256":layer_sha,
             "source_skinning":True,
             "source_skinning_tick":str(tick),

@@ -29,7 +29,7 @@ def _float(value):
 
 def normalize_skin(skin,joint_count):
     required={"points","faces","joint_indices","joint_weights","display_color"}
-    optional={"blend_shapes","preview_material"}
+    optional={"blend_shapes","preview_material","mesh_uvs","face_uvs","texture","pbr_maps"}
     if type(skin) is not dict or not required<=set(skin) or not set(skin)<=required|optional:
         raise ValueError("Skin requires source topology, influence fields and typed optional appearance")
     points=skin["points"]
@@ -104,6 +104,60 @@ def normalize_skin(skin,joint_count):
                 raise ValueError("Unbounded original facial mesh displacement")
             verified.append(values)
         bound_shapes.append({"name":name,"offsets":verified})
+    authored_uv=skin.get("mesh_uvs")
+    if authored_uv is not None and (
+        type(authored_uv) is not list or len(authored_uv)!=len(pts) or
+        any(type(uv) is not list or len(uv)!=2 or
+            any(type(x) not in (int,float) or not math.isfinite(x) or
+                abs(x)>1024 for x in uv) for uv in authored_uv)):
+        raise ValueError("Actor UV primvar must match original skinned vertices")
+    face_uvs=skin.get("face_uvs")
+    if authored_uv is not None and face_uvs is not None:
+        raise ValueError("Original skinned st interpolation ambiguous")
+    if face_uvs is not None and (
+        type(face_uvs) is not list or len(face_uvs)!=len(polygons) or
+        any(type(face) is not list or len(face)!=len(polygons[i]) or
+            any(type(uv) is not list or len(uv)!=2 or
+                any(type(v) not in (int,float) or
+                    not math.isfinite(v) or abs(v)>1024
+                    for v in uv) for uv in face)
+            for i,face in enumerate(face_uvs))):
+        raise ValueError("Skinned face-varying UVs must match original polygons")
+    texture=skin.get("texture")
+    if texture is not None:
+        from backend.nvp_native_usd_texture import FORMAT as TEXTURE_FORMAT,PREFIX
+        if ((authored_uv is None and face_uvs is None) or
+            type(texture) is not dict or
+            set(texture)!={"format","sha256","width","height",
+                "color_space","wrap","usd_asset_path","source_modified"} or
+            texture["format"]!=TEXTURE_FORMAT or
+            type(texture["sha256"]) is not str or
+            not re.fullmatch(r"[0-9a-f]{64}",texture["sha256"]) or
+            texture["usd_asset_path"]!=PREFIX+texture["sha256"] or
+            texture["color_space"]!="sRGB" or
+            texture["wrap"]!="repeat" or
+            texture["source_modified"] is not False or
+            type(texture["width"]) is not int or
+            type(texture["height"]) is not int or
+            not 1<=texture["width"]<=2048 or
+            not 1<=texture["height"]<=2048):
+            raise ValueError("Skinned PNG texture must reference a verified source blob")
+    pbr_maps=skin.get("pbr_maps")
+    if pbr_maps is not None:
+        from backend.nvp_wo2_pbr_channels import CHANNELS
+        from backend.nvp_native_usd_texture import FORMAT as TF,PREFIX
+        if (authored_uv is None and face_uvs is None or
+            type(pbr_maps) is not dict or not pbr_maps or
+            len(pbr_maps)>len(CHANNELS) or any(key not in CHANNELS for key in pbr_maps)):
+            raise ValueError("Skinned PBR maps require original authored UVs")
+        for descriptor in pbr_maps.values():
+            if (type(descriptor) is not dict or
+                descriptor.get("format")!=TF or
+                type(descriptor.get("sha256")) is not str or
+                not re.fullmatch(r"[0-9a-f]{64}",descriptor["sha256"]) or
+                descriptor.get("usd_asset_path")!=PREFIX+descriptor["sha256"] or
+                descriptor.get("source_modified") is not False):
+                raise ValueError("Skinned PBR source descriptor is invalid")
     material=skin.get("preview_material",{"roughness":0.8,"metallic":0.05})
     if (type(material) is not dict or
         set(material)!={"roughness","metallic"} or
@@ -113,6 +167,13 @@ def normalize_skin(skin,joint_count):
     return {"points":pts,"faces":polygons,"joint_indices":joints,
             "joint_weights":normalized_weights,"display_color":rgb,
             "blend_shapes":bound_shapes,
+            "mesh_uvs":([[float(x) for x in uv] for uv in authored_uv]
+                        if authored_uv is not None else None),
+            "face_uvs":([[[float(x) for x in uv] for uv in face]
+                          for face in face_uvs]
+                         if face_uvs is not None else None),
+            "texture":texture,
+            "pbr_maps":pbr_maps,
             "preview_material":{k:float(v) for k,v in material.items()}}
 
 
@@ -126,6 +187,15 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
     mesh.GetFaceVertexIndicesAttr().Set(Vt.IntArray(
         [i for face in bound["faces"] for i in face]))
     mesh.GetDoubleSidedAttr().Set(True)
+    if bound["mesh_uvs"] is not None:
+        st=UsdGeom.PrimvarsAPI(mesh).CreatePrimvar(
+            "st",Sdf.ValueTypeNames.TexCoord2fArray,"vertex")
+        st.Set(Vt.Vec2fArray([Gf.Vec2f(*uv) for uv in bound["mesh_uvs"]]))
+    elif bound["face_uvs"] is not None:
+        st=UsdGeom.PrimvarsAPI(mesh).CreatePrimvar(
+            "st",Sdf.ValueTypeNames.TexCoord2fArray,"faceVarying")
+        st.Set(Vt.Vec2fArray([Gf.Vec2f(*uv)
+                              for face in bound["face_uvs"] for uv in face]))
     mesh.GetDisplayColorPrimvar().Set(Vt.Vec3fArray(
         [Gf.Vec3f(*bound["display_color"])]))
     binding=UsdSkel.BindingAPI.Apply(mesh.GetPrim())
@@ -150,6 +220,21 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
     shader.CreateIdAttr("UsdPreviewSurface")
     shader.CreateInput("diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
         Gf.Vec3f(*bound["display_color"]))
+    if bound["texture"] is not None:
+        tex=UsdShade.Shader.Define(stage,material_path+"/Texture")
+        tex.CreateIdAttr("UsdUVTexture")
+        tex.CreateInput("file",Sdf.ValueTypeNames.Asset).Set(
+            Sdf.AssetPath(bound["texture"]["usd_asset_path"]))
+        tex.CreateInput("sourceColorSpace",Sdf.ValueTypeNames.Token).Set("sRGB")
+        tex.CreateInput("wrapS",Sdf.ValueTypeNames.Token).Set("repeat")
+        tex.CreateInput("wrapT",Sdf.ValueTypeNames.Token).Set("repeat")
+        st=UsdShade.Shader.Define(stage,material_path+"/Primvar")
+        st.CreateIdAttr("UsdPrimvarReader_float2")
+        st.CreateInput("varname",Sdf.ValueTypeNames.Token).Set("st")
+        tex.CreateInput("st",Sdf.ValueTypeNames.Float2).ConnectToSource(
+            st.CreateOutput("result",Sdf.ValueTypeNames.Float2))
+        shader.GetInput("diffuseColor").ConnectToSource(
+            tex.CreateOutput("rgb",Sdf.ValueTypeNames.Float3))
     shader.CreateInput("roughness",Sdf.ValueTypeNames.Float).Set(
         bound["preview_material"]["roughness"])
     shader.CreateInput("metallic",Sdf.ValueTypeNames.Float).Set(
@@ -157,6 +242,21 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
     shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
     material.CreateSurfaceOutput().ConnectToSource(
         shader.ConnectableAPI(),"surface")
+    if bound["texture"] is not None:
+        from backend.nvp_wo2_openpbr import author_openpbr_texture
+        author_openpbr_texture(stage,material_path,material,
+            bound["texture"],bound["preview_material"]["roughness"],
+            bound["preview_material"]["metallic"])
+    else:
+        from backend.nvp_wo2_openpbr import author_openpbr_scalar
+        author_openpbr_scalar(stage,material_path,material,
+            bound["display_color"],bound["preview_material"]["roughness"],
+            bound["preview_material"]["metallic"])
+    if bound.get("pbr_maps"):
+        from backend.nvp_wo2_pbr_channels import author_pbr_maps
+        author_pbr_maps(stage,material_path,shader,
+            UsdShade.Shader(stage.GetPrimAtPath(material_path+"/OpenPBR")),
+            bound["pbr_maps"])
     if not UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(material):
         raise RuntimeError("Unable to bind original actor USD PreviewSurface")
     blend_paths=[]
@@ -178,6 +278,9 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         "mesh_path":actor_path+SKIN_MESH_SUFFIX,
         "source_vertex_count":len(bound["points"]),
         "source_face_count":len(bound["faces"]),
+        "source_original_uvs_authored":(bound["mesh_uvs"] is not None or
+                                      bound["face_uvs"] is not None),
+        "source_original_png_texture_authored":bound["texture"] is not None,
         "skinning_method":"classicLinear",
         "geom_bind_transform":"identity",
         "max_influences":MAX_INFLUENCES,
@@ -223,7 +326,8 @@ def read_original_preview_surface(stage,mesh_prim,actor_path):
         inp=shader.GetInput(name)
         if not inp:
             raise RuntimeError("Authored actor shader input missing: "+name)
-        values[name]=inp.Get()
+        # Preserve the authored input value even with a shader connection.
+        values[name]=inp.GetAttr().Get()
     color=[float(x) for x in values["diffuseColor"]]
     roughness=float(values["roughness"])
     metallic=float(values["metallic"])
@@ -231,6 +335,31 @@ def read_original_preview_surface(stage,mesh_prim,actor_path):
         any(not math.isfinite(v) or not 0<=v<=1
             for v in (roughness,metallic))):
         raise RuntimeError("Original source actor material parameters untrusted")
+    openpbr=stage.GetPrimAtPath(expected+"/OpenPBR")
+    if openpbr:
+        if shader.GetInput("diffuseColor").HasConnectedSource():
+            # The source image identity is verified by the native pose reader
+            # against the original indexed rig descriptor before display.
+            image_node=UsdShade.Shader(stage.GetPrimAtPath(
+                expected+"/MtlxImage"))
+            source=image_node.GetInput("file").GetAttr().Get() if image_node else None
+            if source is None:
+                raise RuntimeError("Source rig MaterialX image missing")
+            # Verify graph node/terminal identity here; complete blob digest
+            # re-verification occurs using the exact manifest in live skins.
+            from backend.nvp_wo2_openpbr import verify_openpbr_texture
+            from backend.nvp_native_usd_texture import PREFIX,FORMAT
+            path=str(source.path)
+            if not path.startswith(PREFIX) or len(path)!=len(PREFIX)+64:
+                raise RuntimeError("Untrusted rig MaterialX image source")
+            descriptor={"format":FORMAT,"sha256":path[len(PREFIX):],
+                "usd_asset_path":path,"color_space":"sRGB","wrap":"repeat",
+                "source_modified":False}
+            verify_openpbr_texture(
+                stage,expected,bound,descriptor,roughness,metallic)
+        else:
+            from backend.nvp_wo2_openpbr import verify_openpbr_scalar
+            verify_openpbr_scalar(stage,expected,bound,color,roughness,metallic)
     return {"format":"nvp.original_usd_preview_surface.v1",
             "material_path":expected,"base_color_rgb":color,
             "roughness":roughness,"metallic":metallic,

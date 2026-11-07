@@ -1,5 +1,9 @@
 import React,{useEffect,useRef,useState} from 'react';
 import DataFirstWorldViewport from './DataFirstWorldViewport.jsx';
+import {runGPUSourceTextureReference} from './NativeTextureGPUReference.js';
+import {inspectOriginalTextureTiles} from './NativeTextureTileStream.js';
+import {defaultWO2Look,WO2_LOOK_FORMAT,validateWO2Look}
+  from './WO2PresentationLook.js';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -37,9 +41,26 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [error,setError]=useState('');
   const [note,setNote]=useState('');
   const [scene,setScene]=useState(null);
+  const [wo2Look,setWo2Look]=useState(defaultWO2Look);
+  const [wo2LookId,setWo2LookId]=useState('DirectorLook001');
+  const [wo2LookRevision,setWo2LookRevision]=useState(0);
+  const [wo2LookReceipt,setWo2LookReceipt]=useState(null);
+  const [wo2SavedLooks,setWo2SavedLooks]=useState([]);
+  const [wo2LookBusy,setWo2LookBusy]=useState(false);
   const [direction,setDirection]=useState('forward');
   const [originalSoundId,setOriginalSoundId]=useState('Music001');
   const [originalSoundReceipt,setOriginalSoundReceipt]=useState(null);
+  const [originalTextureReceipt,setOriginalTextureReceipt]=useState(null);
+  const [textureImporting,setTextureImporting]=useState(false);
+  const [textureMeshes,setTextureMeshes]=useState([]);
+  const [textureMeshId,setTextureMeshId]=useState('');
+  const [textureApplying,setTextureApplying]=useState(false);
+  const [textureChannel,setTextureChannel]=useState('base_color');
+  const [installedGPUReceipt,setInstalledGPUReceipt]=useState(null);
+  const [highResolutionTexture,setHighResolutionTexture]=useState(null);
+  const [textureTileProgress,setTextureTileProgress]=useState(null);
+  const [textureTargetPath,setTextureTargetPath]=useState('');
+  const tileAbortRef=useRef(null);
   const [presentationId,setPresentationId]=useState('NativeFilm001');
   const [aviReceipt,setAviReceipt]=useState(null);
   const [gradeChoices,setGradeChoices]=useState([]);
@@ -69,6 +90,18 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     nextAudioAt:0,working:false,active:false,stopping:false,
     sceneBusy:false,lastSceneAt:-1,exhausted:false});
   const item=takes.find(x=>x.take_id===takeId);
+
+  useEffect(()=>()=>tileAbortRef.current?.abort(),[]);
+  useEffect(()=>{
+    tileAbortRef.current?.abort();
+    tileAbortRef.current=null;
+    setHighResolutionTexture(null);
+    setTextureTileProgress(null);
+    setWo2Look(defaultWO2Look());
+    setWo2LookRevision(0);
+    setWo2LookReceipt(null);
+    setWo2SavedLooks([]);
+  },[projectId,takeId]);
 
   useEffect(()=>{
     if(nativeBridge){setNative(nativeBridge);return;}
@@ -302,6 +335,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
 
 
   async function stop(){
+    tileAbortRef.current?.abort();
+    tileAbortRef.current=null;
+    setHighResolutionTexture(null);
     const st=controller.current;
     st.generation++;
     st.active=false;st.working=false;st.exhausted=false;
@@ -463,6 +499,201 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     finally{setExporting(false);}
   }
 
+  async function refreshTextureMeshes(){
+    if(!native||!projectId||
+       typeof native.data_av_texture_mesh_catalog!=='function')return;
+    const result=await native.data_av_texture_mesh_catalog(projectId);
+    if(result?.format!=='nvp.native.texture_mesh_catalog.v1'||
+       !Array.isArray(result.assets)||result.original_modified!==false)
+      throw Error('Original mesh selection was not SHA-verified');
+    setTextureMeshes(result.assets);
+    setTextureMeshId(existing=>result.assets.some(x=>x.asset_id===existing)?
+      existing:(result.assets[0]?.asset_id||''));
+  }
+
+  async function applyOriginalTexture(){
+    const original=textureMeshes.find(x=>x.asset_id===textureMeshId);
+    if(!original||!originalTextureReceipt||
+       typeof native?.data_av_apply_original_texture!=='function'||
+       textureApplying)return;
+    setTextureApplying(true);setError('');
+    try{
+      const result=await native.data_av_apply_original_texture({
+        project_id:projectId,asset_id:original.asset_id,
+        asset_revision:original.asset_revision,
+        asset_document_sha256:original.asset_document_sha256,
+        texture_sha256:originalTextureReceipt.sha256,
+        ...(textureChannel==='base_color'?{}:{channel:textureChannel}),
+      });
+      if(result?.status==='DENIED')return;
+      if(result?.format!=='nvp.native.texture_mesh_revision.v1'||
+         result.status!=='NEW_SOURCE_REVISION'||
+         result.asset_id!==original.asset_id||
+         result.asset_revision!==original.asset_revision+1||
+         !/^[0-9a-f]{64}$/.test(result.asset_document_sha256||'')||
+         result.original_modified!==false||result.ffmpeg_used!==false)
+        throw Error('Native source mesh revision did not verify');
+      setNote('A new immutable textured mesh revision was published. '+
+        'Existing source scenes and frozen Takes still reference their old revisions.');
+      await refreshTextureMeshes();
+    }catch(e){setError(e.message);}
+    finally{setTextureApplying(false);}
+  }
+
+  useEffect(()=>{
+    if(!native?.wo2_presentation_look_catalog||!projectId||
+       !item?.scene_id||!item?.scene_document_sha256)return;
+    let live=true;
+    native.wo2_presentation_look_catalog({
+      project_id:projectId,
+      scene_id:item.scene_id,
+      scene_revision:item.scene_revision,
+      scene_sha256:item.scene_document_sha256,
+    }).then(reply=>{
+      if(!live)return;
+      if(reply?.format===WO2_LOOK_FORMAT&&
+         reply.scene_sha256===item.scene_document_sha256&&
+         reply.original_modified===false&&
+         Array.isArray(reply.looks)){
+        const approved=reply.looks.filter(x=>
+          typeof x.look_id==='string'&&
+          Number.isInteger(x.revision)&&x.revision>0&&
+          /^[0-9a-f]{64}$/.test(x.document_sha256||''));
+        setWo2SavedLooks(approved);
+      }
+    }).catch(()=>{if(live)setWo2SavedLooks([]);});
+    return ()=>{live=false;};
+  },[native,projectId,takeId,item?.scene_document_sha256]);
+
+  async function approveWO2Look(){
+    if(!item||!native?.wo2_approve_presentation_look||
+       wo2LookBusy||!projectId)return;
+    setWo2LookBusy(true);setError('');
+    try{
+      const roles=Object.fromEntries(
+        (scene?.visual?.objects||[]).map(o=>[o.path,o.semantic_role]));
+      const checked=validateWO2Look(wo2Look,roles);
+      const result=await native.wo2_approve_presentation_look({
+        project_id:projectId,look_id:wo2LookId,
+        scene_id:item.scene_id,scene_revision:item.scene_revision,
+        scene_sha256:item.scene_document_sha256,
+        expected_revision:wo2LookRevision,look:checked,
+      });
+      if(result?.status==='DENIED')return;
+      if(result?.format!==WO2_LOOK_FORMAT||
+         result.status!=='PRESENTATION_REVISION_APPROVED'||
+         result.revision!==wo2LookRevision+1||
+         result.source_scene_sha256!==item.scene_document_sha256||
+         result.original_modified!==false||result.ffmpeg_used!==false||
+         !/^[0-9a-f]{64}$/.test(result.document_sha256||''))
+        throw Error('Untrusted or stale source-bound cinematic presentation');
+      setWo2LookRevision(result.revision);
+      setWo2LookReceipt(result);
+      setWo2SavedLooks(old=>[...old.filter(x=>x.look_id!==result.look_id),{
+        look_id:result.look_id,revision:result.revision,
+        document_sha256:result.document_sha256,
+      }]);
+      setNote('New immutable OpenUSD presentation look saved. Original Takes remain frozen.');
+    }catch(error){setError(error.message);}
+    finally{setWo2LookBusy(false);}
+  }
+
+  async function reopenWO2Look(){
+    if(!item||!native?.wo2_read_presentation_look||
+       !wo2LookRevision||wo2LookBusy)return;
+    setWo2LookBusy(true);setError('');
+    try{
+      const result=await native.wo2_read_presentation_look({
+        project_id:projectId,look_id:wo2LookId,
+        revision:wo2LookRevision,
+        scene_sha256:item.scene_document_sha256,
+      });
+      if(result?.format!==WO2_LOOK_FORMAT||
+         result.scene_sha256!==item.scene_document_sha256||
+         result.original_modified!==false||
+         !/^[0-9a-f]{64}$/.test(result.look_document_sha256||''))
+        throw Error('Original source presentation look identity is stale');
+      setWo2Look(validateWO2Look(result.look,Object.fromEntries(
+        (scene?.visual?.objects||[]).map(o=>[o.path,o.semantic_role]))));
+      setNote('Verified original-scene presentation look reloaded.');
+    }catch(error){setError(error.message);}
+    finally{setWo2LookBusy(false);}
+  }
+
+  async function inspectHighResolutionTexture(){
+    const choices=scene?.visual?.objects?.filter(obj=>
+      (obj?.source_asset_binding||obj?.source_rig_binding)&&
+      obj?.source_material?.texture)||[];
+    const asset=choices.find(obj=>obj.path===textureTargetPath)||
+      choices[0];
+    const rig=asset?.source_rig_binding||null;
+    const ticket=controller.current.ticket;
+    if(!asset||!ticket||!native)return;
+    tileAbortRef.current?.abort();
+    const aborter=new AbortController();
+    tileAbortRef.current=aborter;
+    setTextureTileProgress({completed:0,total:0});
+    setHighResolutionTexture(null);
+    try{
+      const output=await inspectOriginalTextureTiles({
+        native,sessionId:ticket,
+        asset:asset.source_asset_binding,
+        rig,
+        texture:asset.source_material.texture,
+        takeSha256:scene.take_document_sha256,
+        signal:aborter.signal,
+        onProgress:setTextureTileProgress,
+      });
+      if(!aborter.signal.aborted&&controller.current.ticket===ticket)
+        setHighResolutionTexture(output);
+    }catch(e){
+      if(!aborter.signal.aborted)setError(e.message);
+    }finally{
+      if(tileAbortRef.current===aborter)tileAbortRef.current=null;
+    }
+  }
+
+  async function runInstalledOriginalGPUProbe(){
+    if(!native||typeof native.wo2_gpu_texture_probe!=='function')return;
+    setInstalledGPUReceipt(null);
+    try{
+      const response=await native.wo2_gpu_texture_probe();
+      if(response?.format!=='nvp.wo2.installed_texture_probe.v1'||
+         response.status!=='READY'||
+         response.texture?.format!=='nvp.original.usd_texture_png.v1'||
+         response.source_modified!==false)
+        throw Error('Installed native original PNG probe was not approved');
+      const result=await runGPUSourceTextureReference(response.texture);
+      setInstalledGPUReceipt(result);
+    }catch(e){
+      setInstalledGPUReceipt({passed:false,actual_gpu_readback:false,
+        reason:String(e.message)});
+    }
+  }
+
+  async function importOriginalTexture(){
+    if(!native||typeof native.data_av_import_original_texture!=='function'||
+       textureImporting)return;
+    setTextureImporting(true);setError('');setOriginalTextureReceipt(null);
+    try{
+      const result=await native.data_av_import_original_texture(projectId);
+      if(result?.status==='CANCELLED'||result?.status==='DENIED')return;
+      const desc=result?.texture;
+      if(result?.format!=='nvp.native.texture_import.v1'||
+         result.status!=='ORIGINAL_TEXTURE_IMPORTED'||
+         result.original_modified!==false||result.ffmpeg_used!==false||
+         desc?.format!=='nvp.original.usd_texture_png.v1'||
+         !/^[0-9a-f]{64}$/.test(desc.sha256||'')||
+         desc.source_modified!==false)
+        throw Error('Original texture did not pass native source verification');
+      setOriginalTextureReceipt(desc);
+      await refreshTextureMeshes();
+      setNote('PNG texture stored as an immutable source asset. Applying it to '+
+        'a scene or character requires a separate source revision.');
+    }catch(e){setError(e.message);}
+    finally{setTextureImporting(false);}
+  }
+
   async function importOriginalSound(){
     if(!native||typeof native.data_av_import_original_audio!=='function')return;
     setError('');setOriginalSoundReceipt(null);
@@ -579,6 +810,73 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       native audio permission and the OS sound device.</p>}
     {error&&<p role="alert">{error}</p>}
     {note&&<p role="status">{note}</p>}
+    {typeof native?.wo2_gpu_texture_probe==='function'&&
+      <section className="card" aria-label="Installed native GPU texture acceptance">
+        <button onClick={runInstalledOriginalGPUProbe}>
+          Run installed original PNG GPU comparison</button>
+        {installedGPUReceipt&&<p role={installedGPUReceipt.passed?'status':'alert'}>
+          {installedGPUReceipt.passed?
+            'WO2 installed source GPU texel comparison PASSED':
+            'WO2 installed source GPU texel comparison FAILED'}
+          {installedGPUReceipt.actual_gpu_readback?
+            ' · actual WebGL pixel readback':
+            ' · no accepted WebGL readback'}
+          {typeof installedGPUReceipt.max_channel_error==='number'&&
+            ' · maximum channel error '+installedGPUReceipt.max_channel_error}
+          {installedGPUReceipt.reason&&' · '+installedGPUReceipt.reason}
+          . Hardware acceleration and physical color calibration remain
+          independent acceptance gates.
+        </p>}
+      </section>}
+    <section className="card" aria-label="Original USD texture import">
+      <h3>Import an original 3D material texture</h3>
+      <p className="fineprint">Select a PNG in the native OS picker.
+        The source is SHA-verified and stored unchanged; existing actors,
+        scenes and frozen Takes are not altered. Transparent images and
+        source images over 2048 × 2048 or 8 MiB are not supported.
+        Live GPU display uses an immutable-source-verified, derived 512-pixel
+        preview for larger images; the originals remain full resolution.</p>
+      <button disabled={!native||textureImporting||
+        typeof native.data_av_import_original_texture!=='function'}
+        onClick={importOriginalTexture}>
+        {textureImporting?'Importing original texture…':'Choose original PNG texture'}
+      </button>
+      {originalTextureReceipt&&<p role="status">
+        Frozen texture {originalTextureReceipt.width} ×
+        {originalTextureReceipt.height}; SHA-256
+        {originalTextureReceipt.sha256.slice(0,16)}…
+      </p>}
+      {originalTextureReceipt&&textureMeshes.length>0&&
+        <div className="actions">
+          <label>Original PBR material channel
+            <select aria-label="Original PBR channel"
+              value={textureChannel}
+              onChange={e=>setTextureChannel(e.target.value)}>
+              <option value="base_color">Base color</option>
+              <option value="roughness">Roughness (grayscale)</option>
+              <option value="metallic">Metallic (grayscale)</option>
+              <option value="emission">Emission (sRGB color)</option>
+              <option value="normal">Normal (tangent-space RGB)</option>
+              <option value="opacity">Opacity (binary black/white)</option>
+            </select>
+          </label>
+          <label>Source UV mesh for a new material revision
+            <select aria-label="Original textured mesh selection"
+              value={textureMeshId}
+              onChange={e=>setTextureMeshId(e.target.value)}>
+              {textureMeshes.map(asset=><option key={asset.asset_id}
+                value={asset.asset_id}>{asset.asset_id} ·
+                rev {asset.asset_revision}</option>)}
+            </select>
+          </label>
+          <button disabled={textureApplying||
+            typeof native?.data_av_apply_original_texture!=='function'}
+            onClick={applyOriginalTexture}>
+            {textureApplying?'Publishing source revision…':
+              'Approve new mesh texture revision'}
+          </button>
+        </div>}
+    </section>
     <label>Frozen Digital Take
       <select aria-label="Native frozen Digital Take" value={takeId}
         disabled={playing} onChange={e=>setTakeId(e.target.value)}>
@@ -625,9 +923,107 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <button disabled={!controller.current.ticket}
         onClick={stop}>Stop and revoke native audition</button>
     </div>
+    {scene?.visual?.objects?.some(obj=>
+      (obj.source_asset_binding||obj.source_rig_binding)&&
+      obj.source_material?.texture)&&
+      <section aria-label="Source high-resolution material inspection">
+        <label>Original texture actor or source mesh
+          <select aria-label="Select original texture object"
+            value={textureTargetPath}
+            onChange={event=>{
+              tileAbortRef.current?.abort();
+              tileAbortRef.current=null;
+              setHighResolutionTexture(null);
+              setTextureTargetPath(event.target.value);
+            }}>
+            <option value="">First approved textured source</option>
+            {(scene?.visual?.objects||[]).filter(obj=>
+              (obj.source_asset_binding||obj.source_rig_binding)&&
+              obj.source_material?.texture).map(obj=>
+              <option key={obj.path} value={obj.path}>
+                {obj.path} ({obj.source_rig_binding?'original rig':'original asset'})
+              </option>)}
+          </select>
+        </label>
+        <button disabled={!native||!controller.current.ticket||
+          typeof native.data_av_original_texture_tile!=='function'&&
+          typeof native.data_av_original_rig_texture_tile!=='function'||
+          tileAbortRef.current!==null}
+          onClick={inspectHighResolutionTexture}>
+          Inspect full-resolution original texture</button>
+        {textureTileProgress&&<p role="status">
+          Original texture tiles loaded: {textureTileProgress.completed}/
+          {textureTileProgress.total}</p>}
+        {highResolutionTexture&&<p role="status">
+          Full-resolution texture {highResolutionTexture.width} ×
+          {highResolutionTexture.height} is a temporary GPU derivative;
+          original source SHA remains unchanged.</p>}
+      </section>}
+    {scene?.visual?.format==='nvp.data_av.native_visual_state.v1'&&
+      <section aria-label="Non-destructive director-approved film look">
+        <h3>Save this cinematic look</h3>
+        <p className="fineprint">Live look changes are temporary until
+          approved by the desktop host. Save a new revision tied to the
+          exact frozen OpenUSD scene; never change the source Take.</p>
+        {wo2SavedLooks.length>0&&<label>Previously approved looks for this scene
+          <select aria-label="WO2 saved OpenUSD looks" defaultValue=""
+            onChange={event=>{
+              const approved=wo2SavedLooks.find(x=>
+                x.look_id+':'+x.revision===event.target.value);
+              if(approved){
+                setWo2LookId(approved.look_id);
+                setWo2LookRevision(approved.revision);
+                setWo2LookReceipt({
+                  ...approved,format:WO2_LOOK_FORMAT,
+                });
+                setNote('Look selected. Choose Reload to verify and apply it.');
+              }
+            }}>
+            <option value="">Choose a saved source-bound look</option>
+            {wo2SavedLooks.map(x=><option key={x.look_id+':'+x.revision}
+              value={x.look_id+':'+x.revision}>
+              {x.look_id} · revision {x.revision}
+            </option>)}
+          </select>
+        </label>}
+        {wo2LookRevision>0&&<button type="button"
+          onClick={()=>{
+            setWo2LookRevision(0);
+            setWo2LookId('DirectorLook002');
+            setWo2LookReceipt(null);
+          }}>
+          Create a separate new look
+        </button>}
+        <label>Look identity
+          <input aria-label="WO2 approved presentation look identity"
+            value={wo2LookId} maxLength={80}
+            disabled={wo2LookBusy||wo2LookRevision>0}
+            onChange={e=>setWo2LookId(e.target.value)}/>
+        </label>
+        <button type="button" disabled={wo2LookBusy||
+          !native?.wo2_approve_presentation_look||
+          item?.scene_document_sha256!==
+            scene.visual.scene_document_sha256}
+          onClick={approveWO2Look}>
+          {wo2LookBusy?'Confirming original scene…':
+            'Approve new non-destructive look revision'}
+        </button>
+        {wo2LookRevision>0&&<button type="button"
+          disabled={wo2LookBusy||!native?.wo2_read_presentation_look}
+          onClick={reopenWO2Look}>
+          Reload approved source-bound look
+        </button>}
+        {wo2LookReceipt&&<p role="status">
+          Saved look revision {wo2LookReceipt.revision} · SHA
+          {wo2LookReceipt.document_sha256.slice(0,16)}…
+        </p>}
+      </section>}
     {scene?.visual?.format==='nvp.data_av.native_visual_state.v1'&&
       <DataFirstWorldViewport
         objects={scene.visual.objects||[]}
+        upgradedTexture={highResolutionTexture}
+        presentationLook={wo2Look}
+        onLookChange={setWo2Look}
         listenerPath={listener}
         sceneSha={scene.visual.scene_document_sha256}
         tick={String(scene.visual.time_tick||'0')}

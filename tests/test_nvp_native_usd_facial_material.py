@@ -36,6 +36,99 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
             ],curves=[],skeletal_rigs=[self.rig])
         return self.index.read_revision(self.pid,"face_world",1)
 
+    def test_skinned_original_png_tiles_require_frozen_rig_manifest(self):
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_native_usd_texture import publish_texture
+        from backend.nvp_data_av_desktop import TrustedDataAVController
+        stream=BytesIO()
+        Image.new("RGB",(512,257),(45,100,210)).save(stream,format="PNG")
+        desc=publish_texture(self.index,self.pid,stream.getvalue())
+        self.rig["skin"]["mesh_uvs"]=[
+            [float(i%2),float((i//2)%2)]
+            for i in range(len(self.skin["points"]))]
+        self.rig["skin"]["texture"]=desc
+        scene=self._publish()
+        take=self.takes.freeze(
+            self.pid,"rig_tile_take",scene_id="face_world",scene_revision=1,
+            timeline_id="acting",timeline_revision=1,
+            sample_ticks=[0],creator_event="freeze_take")
+        native=TrustedDataAVController(
+            self.index,native_window=lambda:None,
+            ask_native=lambda _:True)
+        self.addCleanup(native.close)
+        begun=native.begin({
+            "project_id":self.pid,"take_id":"rig_tile_take",
+            "take_document_sha256":take["document_sha256"],
+            "listener_path":"/World/Camera",
+            "first_sample":0,"direction":"forward"})
+        ticket=begun["session_id"]
+        layer_sha=scene["data"]["skeleton_layer_sha256"]
+        req={"actor_path":"/World/Actor",
+             "skeleton_layer_sha256":layer_sha,
+             "texture_sha256":desc["sha256"],
+             "mip_level":0,"tile_x":1,"tile_y":1}
+        result=native.read_original_rig_texture_tile(ticket,req)
+        self.assertEqual(result["tile_width"],256)
+        self.assertEqual(result["tile_height"],1)
+        self.assertEqual(result["actor_path"],"/World/Actor")
+        self.assertEqual(result["take_document_sha256"],
+                         take["document_sha256"])
+        for changed in (
+            {**req,"skeleton_layer_sha256":"0"*64},
+            {**req,"texture_sha256":"0"*64},
+            {**req,"actor_path":"/World/Intruder"},
+        ):
+            with self.subTest(changed=changed):
+                with self.assertRaises((PermissionError,RuntimeError)):
+                    native.read_original_rig_texture_tile(ticket,changed)
+        native.stop(ticket)
+        with self.assertRaises(PermissionError):
+            native.read_original_rig_texture_tile(ticket,req)
+
+    def test_source_rig_five_channel_pbr_material_maps_are_verified(self):
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_native_usd_texture import publish_texture
+        def image(color):
+            stream=BytesIO()
+            Image.new("RGB",(2,2),color).save(stream,format="PNG")
+            return stream.getvalue()
+        maps={
+            "roughness":(100,100,100),
+            "metallic":(200,200,200),
+            "emission":(20,60,100),
+            "normal":(128,128,255),
+            "opacity":(255,255,255),
+        }
+        self.rig["skin"]["mesh_uvs"]=[
+            [float(i%2),float((i//2)%2)]
+            for i in range(len(self.skin["points"]))]
+        self.rig["skin"]["pbr_maps"]={
+            key:publish_texture(self.index,self.pid,image(color))
+            for key,color in maps.items()}
+        self._publish()
+        _,stage=self.scene.open(self.pid,"face_world",1)
+        material_path="/World/Actor/Rig/Material"
+        shader=UsdShade.Shader(
+            stage.GetPrimAtPath(material_path+"/OpenPBR"))
+        self.assertEqual(shader.GetIdAttr().Get(),
+                         "ND_open_pbr_surface_surfaceshader")
+        self.assertEqual(float(UsdShade.Shader(
+            stage.GetPrimAtPath(material_path+"/PreviewSurface"))
+            .GetInput("opacityThreshold").GetAttr().Get()),.5)
+        snap=OpenUSDTimeState(self.index).evaluate(
+            self.pid,"face_world",1,"acting",1,tick=T)
+        live=visual_state(self.index,self.pid,snap,
+            scene_id="face_world",scene_revision=1)
+        actor=next(x for x in live["objects"] if
+                   x["path"]=="/World/Actor")
+        self.assertEqual(set(actor["source_material"]["pbr_maps"]),set(maps))
+        self.assertEqual(set(actor["source_material"]["pbr_map_transports"]),
+                         set(maps))
+        self.assertEqual(actor["shape"],"skinned_mesh")
+        self.assertFalse(live["source_modified"])
+
     def test_real_original_blendshape_and_usd_pbr_material_move_skin(self):
         record=self._publish()
         source_sha=record["document_sha256"]
@@ -49,6 +142,13 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
         self.assertEqual(shader.GetIdAttr().Get(),"UsdPreviewSurface")
         self.assertAlmostEqual(shader.GetInput("roughness").Get(),.37,places=5)
         self.assertAlmostEqual(shader.GetInput("metallic").Get(),.12,places=5)
+        openpbr=UsdShade.Shader(stage.GetPrimAtPath(
+            "/World/Actor/Rig/Material/OpenPBR"))
+        self.assertEqual(openpbr.GetIdAttr().Get(),
+                         "ND_open_pbr_surface_surfaceshader")
+        self.assertAlmostEqual(
+            float(openpbr.GetInput("specular_roughness").GetAttr().Get()),
+            .37,places=5)
         animation=UsdSkel.Animation(stage.GetPrimAtPath(
             "/World/Actor/Rig/Skeleton/Animation"))
         weights=animation.GetBlendShapeWeightsAttr().Get(
@@ -83,6 +183,128 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
             self.scene.publish(self.pid,"bad_material",prims=[
                 {"path":"/World/Actor","role":"actor","position":[0,0,0]},
             ],curves=[],skeletal_rigs=[corrupt])
+
+
+    def test_real_rig_uvs_survive_source_skinning_and_live_view(self):
+        uv=[[float(i%2),float((i//2)%2)]
+            for i in range(len(self.skin["points"]))]
+        self.rig["skin"]["mesh_uvs"]=uv
+        self._publish()
+        from pxr import UsdGeom
+        _,stage=self.scene.open(self.pid,"face_world",1)
+        mesh=UsdGeom.Mesh(
+            stage.GetPrimAtPath("/World/Actor/Rig/CharacterMesh"))
+        st=UsdGeom.PrimvarsAPI(mesh).GetPrimvar("st")
+        self.assertEqual(st.GetInterpolation(),"vertex")
+        self.assertEqual([[float(x) for x in pair] for pair in st.Get()],uv)
+        state=OpenUSDTimeState(self.index)
+        snap=state.evaluate(self.pid,"face_world",1,"acting",1,tick=T)
+        live=visual_state(self.index,self.pid,snap,
+            scene_id="face_world",scene_revision=1)
+        actor=next(x for x in live["objects"] if
+                   x["path"]=="/World/Actor")
+        self.assertEqual(actor["shape"],"skinned_mesh")
+        self.assertEqual(actor["mesh_uvs"],uv)
+        self.assertFalse(live["source_modified"])
+
+    def test_real_usd_rig_texture_is_sha_verified_and_not_a_placeholder(self):
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_native_usd_texture import publish_texture
+        png_stream=BytesIO()
+        Image.new("RGB",(2,2),(35,150,230)).save(png_stream,format="PNG")
+        texture=publish_texture(self.index,self.pid,png_stream.getvalue())
+        uv=[[float(i%2),float((i//2)%2)]
+            for i in range(len(self.skin["points"]))]
+        self.rig["skin"]["mesh_uvs"]=uv
+        self.rig["skin"]["texture"]=texture
+        self._publish()
+        _,stage=self.scene.open(self.pid,"face_world",1)
+        shader=UsdShade.Shader(stage.GetPrimAtPath(
+            "/World/Actor/Rig/Material/Texture"))
+        self.assertEqual(shader.GetIdAttr().Get(),"UsdUVTexture")
+        self.assertEqual(str(shader.GetInput("file").Get().path),
+                         texture["usd_asset_path"])
+        mtlx=UsdShade.Shader(stage.GetPrimAtPath(
+            "/World/Actor/Rig/Material/OpenPBR"))
+        image=UsdShade.Shader(stage.GetPrimAtPath(
+            "/World/Actor/Rig/Material/MtlxImage"))
+        self.assertEqual(image.GetIdAttr().Get(),"ND_image_color3")
+        self.assertEqual(mtlx.GetIdAttr().Get(),
+                         "ND_open_pbr_surface_surfaceshader")
+        self.assertEqual(str(image.GetInput("file").GetAttr().Get().path),
+                         texture["usd_asset_path"])
+        snapshot=OpenUSDTimeState(self.index).evaluate(
+            self.pid,"face_world",1,"acting",1,tick=T)
+        live=visual_state(self.index,self.pid,snapshot,
+            scene_id="face_world",scene_revision=1)
+        actor=next(x for x in live["objects"] if
+                   x["path"]=="/World/Actor")
+        self.assertEqual(actor["shape"],"skinned_mesh")
+        self.assertEqual(actor["mesh_uvs"],uv)
+        self.assertEqual(actor["source_material"]["texture"]["sha256"],
+                         texture["sha256"])
+        self.assertTrue(actor["source_material"][
+            "texture_transport"]["png_base64"].startswith("iVBORw0KGgo"))
+        self.assertFalse(live["source_modified"])
+
+    def test_unregistered_rig_texture_blob_cannot_be_published(self):
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_native_usd_texture import publish_texture
+        buf=BytesIO()
+        Image.new("RGB",(1,1),(255,255,255)).save(buf,format="PNG")
+        desc=publish_texture(self.index,self.pid,buf.getvalue())
+        self.rig["skin"]["mesh_uvs"]=[[0.,0.]
+            for _ in self.skin["points"]]
+        self.rig["skin"]["texture"]={
+            **desc,"sha256":"0"*64,
+            "usd_asset_path":"nvp-blob://texture/"+"0"*64}
+        with self.assertRaises(KeyError):
+            self._publish()
+
+    def test_skinned_quad_facevarying_seams_trianguled_without_replacement(self):
+        from pxr import UsdGeom
+        from backend.nvp_openusd_time_state import OpenUSDTimeState
+        uv=[]
+        for i,face in enumerate(self.skin["faces"]):
+            uv.append([[float(i)/10.,float(j)/10.]
+                       for j in range(len(face))])
+        self.rig["skin"]["face_uvs"]=uv
+        self._publish()
+        _,stage=self.scene.open(self.pid,"face_world",1)
+        mesh=UsdGeom.Mesh(
+            stage.GetPrimAtPath("/World/Actor/Rig/CharacterMesh"))
+        st=UsdGeom.PrimvarsAPI(mesh).GetPrimvar("st")
+        self.assertEqual(st.GetInterpolation(),"faceVarying")
+        snap=OpenUSDTimeState(self.index).evaluate(
+            self.pid,"face_world",1,"acting",1,tick=T)
+        state=visual_state(self.index,self.pid,snap,
+            scene_id="face_world",scene_revision=1)
+        actor=next(x for x in state["objects"]
+                   if x["path"]=="/World/Actor")
+        self.assertEqual(actor["shape"],"skinned_mesh")
+        self.assertIsNone(actor["mesh_uvs"])
+        self.assertEqual(len(actor["mesh_face_uvs"]),
+                         len(actor["mesh_triangles"]))
+        for actual,wanted in (
+            (actor["mesh_face_uvs"][0],
+             [uv[0][0],uv[0][1],uv[0][2]]),
+            (actor["mesh_face_uvs"][1],
+             [uv[0][0],uv[0][2],uv[0][3]]),
+        ):
+            for pair,expected in zip(actual,wanted):
+                for got,target in zip(pair,expected):
+                    self.assertAlmostEqual(got,target,places=5)
+        self.assertFalse(state["source_modified"])
+
+    def test_reject_rig_uvs_that_do_not_match_original_vertices(self):
+        self.rig["skin"]["mesh_uvs"]=[[0.,0.]]
+        with self.assertRaises(ValueError):
+            self.scene.publish(self.pid,"bad_actor_uvs",prims=[
+                {"path":"/World/Actor","role":"actor","position":[0,0,0]},
+            ],curves=[],skeletal_rigs=[self.rig])
+
 
 
 if __name__=="__main__":

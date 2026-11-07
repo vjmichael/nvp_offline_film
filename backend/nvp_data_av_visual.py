@@ -14,10 +14,13 @@ FORMAT="nvp.data_av.native_visual_state.v1"
 MAX_OBJECTS=64
 MAX_MESH_POINTS_TOTAL=4096
 MAX_MESH_TRIANGLES_TOTAL=8192
+# An audition is a bounded visual event, not a whole-project image cache.
+MAX_LIVE_TEXTURE_TRANSPORT_BYTES=8*1024*1024
 
 
 def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
-                 scene_id=None,scene_revision=None):
+                 scene_id=None,scene_revision=None,
+                 include_texture_transport=True):
     if not isinstance(index,FilmIndex):
         raise TypeError("Actual FilmIndex is required for source geometry")
     if (type(scene_snapshot) is not dict or
@@ -30,8 +33,10 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
     if scene_id is not None:
         from backend.nvp_data_av_skinning import verified_live_skins
         skins=verified_live_skins(index,project_id,scene_snapshot,
-            scene_id=scene_id,scene_revision=scene_revision)
+            scene_id=scene_id,scene_revision=scene_revision,
+            include_texture_transport=include_texture_transport)
     visual=[]
+    texture_transport_bytes=0
     mesh_points_total=0
     mesh_triangles_total=0
     assets=OpenUSDAssetRegistry(index)
@@ -41,6 +46,8 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
         size=0.4
         mesh_points=None
         mesh_triangles=None
+        mesh_uvs=None
+        mesh_face_uvs=None
         binding=obj.get("asset")
         skin=skins.get(obj["path"])
         asset_material=None
@@ -56,11 +63,27 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             shape=source["data"]["shape"]
             size=source["data"]["size_m"]
             asset_material=source["data"].get("preview_material")
+            if (include_texture_transport and asset_material is not None
+                    and asset_material.get("pbr_maps")):
+                from backend.nvp_native_usd_texture import texture_transport
+                asset_material={**asset_material,
+                    "pbr_map_transports":{
+                        channel:texture_transport(index,project_id,descriptor)
+                        for channel,descriptor in
+                        asset_material["pbr_maps"].items()}}
+            if (include_texture_transport and asset_material is not None
+                    and "texture" in asset_material):
+                from backend.nvp_native_usd_texture import texture_transport
+                asset_material={**asset_material,
+                    "texture_transport":texture_transport(
+                        index,project_id,asset_material["texture"])}
             if shape not in ("cube","sphere","mesh"):
                 raise RuntimeError("Unsupported original OpenUSD geometry")
             if shape=="mesh":
                 mesh_points=source["data"]["points"]
                 mesh_triangles=source["data"]["triangles"]
+                mesh_uvs=source["data"].get("mesh_uvs")
+                mesh_face_uvs=source["data"].get("face_uvs")
                 mesh_points_total+=len(mesh_points)
                 mesh_triangles_total+=len(mesh_triangles)
                 if (mesh_points_total>MAX_MESH_POINTS_TOTAL or
@@ -71,6 +94,8 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             size=skin["size_m"]
             mesh_points=skin["mesh_points"]
             mesh_triangles=skin["mesh_triangles"]
+            mesh_uvs=skin.get("mesh_uvs")
+            mesh_face_uvs=skin.get("mesh_face_uvs")
             if shape=="skinned_mesh":
                 mesh_points_total+=len(mesh_points)
                 mesh_triangles_total+=len(mesh_triangles)
@@ -83,6 +108,15 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
         if (type(matrix) is not list or len(matrix)!=4 or
             any(type(row) is not list or len(row)!=4 for row in matrix)):
             raise RuntimeError("Invalid native USD object transform")
+        source_surface=(skin.get("source_material") if skin else asset_material)
+        if source_surface is not None:
+            packets=([source_surface["texture_transport"]]
+                     if "texture_transport" in source_surface else [])
+            packets.extend(source_surface.get("pbr_map_transports",{}).values())
+            texture_transport_bytes+=sum(
+                len(packet["png_base64"]) for packet in packets)
+            if texture_transport_bytes>MAX_LIVE_TEXTURE_TRANSPORT_BYTES:
+                raise RuntimeError("Live source texture transfer exceeds bounded 8 MiB frame")
         visual.append({
             "path":obj["path"],"semantic_role":role,
             "shape":shape,"size_m":size,
@@ -91,9 +125,20 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             "geometry_asset_sha256":(
                 binding["asset_document_sha256"] if binding else
                 skin["geometry_asset_sha256"] if skin else None),
+            "source_asset_binding":(
+                {"asset_id":binding["asset_id"],
+                 "asset_revision":binding["asset_revision"],
+                 "asset_document_sha256":binding["asset_document_sha256"]}
+                if binding else None),
+            "source_rig_binding":(
+                {"actor_path":obj["path"],
+                 "skeleton_layer_sha256":skin["geometry_asset_sha256"]}
+                if skin and skin["shape"]=="skinned_mesh" else None),
             "gizmo_only":binding is None and skin is None,
             "mesh_points":mesh_points,
             "mesh_triangles":mesh_triangles,
+            "mesh_uvs":mesh_uvs,
+            "mesh_face_uvs":mesh_face_uvs,
             "source_skinning":shape=="skinned_mesh",
             "source_rigged_actor":skin is not None,
             "source_skinning_tick":skin["source_skinning_tick"] if skin else None,
@@ -102,6 +147,8 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
                 asset_material["base_color_rgb"] if asset_material else None),
             "source_material":(
                 skin.get("source_material") if skin else asset_material),
+            "source_material_slots":(
+                source["data"].get("material_slots") if binding else None),
             "original_blend_shape_count":(
                 skin.get("original_blend_shape_count",0) if skin else 0),
             "native_geometry_status":(

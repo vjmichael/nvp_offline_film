@@ -182,6 +182,47 @@ def run_installed_data_av_smoke():
             ],curves=[],native_schemas=True,asset_bindings=[{
                 "path":"/World/ColorActor","asset_id":"smoke_source_material",
                 "asset_revision":1}])
+            # WO2 A–E: real installed native bridge has to publish, reopen
+            # and derive an approved, SHA-bound cinematic look. An unapproved
+            # browser/editor cannot invent a new lighting or transmission
+            # revision, and existing original camera/Takes remain unchanged.
+            from backend.nvp_wo2_presentation_look import default_look
+            from backend.nvp_wo2_derived_usd_look import derived_look_stage
+            source_scene,original_stage=color_scene.open(
+                pid,"smoke_color_world",1)
+            before_scene=original_stage.GetRootLayer().ExportToString()
+            studio_look=default_look()
+            studio_look["materials"]["/World/ColorActor"]={
+                "opacity":.85,"transmission":.5,
+                "ior":1.48,"thickness_m":.02}
+            approval=bridge.wo2_approve_presentation_look({
+                "project_id":pid,"look_id":"InstalledDirectorLook",
+                "scene_id":"smoke_color_world","scene_revision":1,
+                "scene_sha256":source_scene["document_sha256"],
+                "expected_revision":0,"look":studio_look,
+            })
+            if approval.get("status")!="PRESENTATION_REVISION_APPROVED":
+                raise RuntimeError("Installed native cinematic look was not OS-approved")
+            catalog=bridge.wo2_presentation_look_catalog({
+                "project_id":pid,"scene_id":"smoke_color_world",
+                "scene_revision":1,
+                "scene_sha256":source_scene["document_sha256"],
+            })
+            if not any(x["look_id"]=="InstalledDirectorLook"
+                       for x in catalog["looks"]):
+                raise RuntimeError("Approved original-scene look cannot be rediscovered")
+            approved=bridge.wo2_read_presentation_look({
+                "project_id":pid,"look_id":"InstalledDirectorLook",
+                "revision":1,"scene_sha256":source_scene["document_sha256"],
+            })
+            derived,evidence=derived_look_stage(
+                original_stage,source_scene,approved["look"])
+            if (not evidence["original_source_unchanged"] or
+                evidence["material_count"]<1 or
+                not derived.GetPrimAtPath("/World/WO2PresentationRig/Key") or
+                original_stage.GetRootLayer().ExportToString()!=before_scene):
+                raise RuntimeError("Installed derived look modified original USD")
+            _native_checkpoint("wo2_look_approved_and_derived")
             ExactTimeShotSequence(index).publish(
                 pid,"smoke_color_shots",scene_id="smoke_color_world",
                 scene_revision=1,duration_tick=str(T),shots=[{
@@ -222,6 +263,132 @@ def run_installed_data_av_smoke():
                 index.read_revision(pid,"smoke_color_take",1)[
                     "document_sha256"]!=color_take["document_sha256"]):
                 raise RuntimeError("Installed source ACEScg EXR32 failed")
+            # WO2: the installed native application must also decode a
+            # frozen original PNG from FilmIndex, honor face-varying USD st,
+            # and rasterize the exact authored texture without FFmpeg.
+            from io import BytesIO
+            from PIL import Image
+            from backend.nvp_native_scene_linear_raster import NativeSceneLinearRaster
+            im=Image.new("RGB",(2,2),(180,50,20))
+            buffer=BytesIO()
+            im.save(buffer,format="PNG")
+            original_png=buffer.getvalue()
+            def original_pbr_png(rgb):
+                stream=BytesIO()
+                Image.new("RGB",(2,2),rgb).save(stream,format="PNG")
+                return stream.getvalue()
+            source_channels={
+                "roughness":original_pbr_png((90,90,90)),
+                "metallic":original_pbr_png((120,120,120)),
+                "emission":original_pbr_png((12,40,100)),
+                "normal":original_pbr_png((128,128,255)),
+                "opacity":original_pbr_png((255,255,255)),
+            }
+            asset=OpenUSDAssetRegistry(index).publish(
+                pid,"smoke_original_texture_mesh",shape="mesh",size_m=2.,
+                points=[[-1.,-1.,0.],[1.,-1.,0.],
+                        [1.,1.,0.],[-1.,1.,0.]],
+                triangles=[[0,1,2],[0,2,3]],
+                face_uvs=[[[0,0],[1,0],[1,1]],
+                          [[.5,0],[.5,1],[0,1]]],
+                preview_material={"base_color_rgb":[1.,1.,1.],
+                                  "roughness":.45,"metallic":.05},
+                material_slots=[{
+                    "faces":[1],"base_color_rgb":[.2,.7,.9],
+                    "roughness":.65,"metallic":.0}],
+                texture_png=original_png,
+                pbr_maps_png=source_channels)
+            texture_doc=OpenUSDAssetRegistry(index).open(
+                pid,"smoke_original_texture_mesh",1)[0]["data"]
+            from backend.nvp_native_usd_texture import verified_texture
+            from backend.nvp_wo2_materialx_resolver import resolved_materialx_probe
+            from pxr import Usd,UsdShade
+            _,original_usd_layer=OpenUSDAssetRegistry(index).open(
+                pid,"smoke_original_texture_mesh",1)
+            stage=Usd.Stage.Open(original_usd_layer)
+            before_stage=stage.GetRootLayer().ExportToString()
+            temp_shader_path=None
+            with resolved_materialx_probe(
+                    index,pid,stage,[
+                        texture_doc["preview_material"]["texture"],
+                        *texture_doc["preview_material"]["pbr_maps"].values(),
+                    ]) as (probe,manifest):
+                node=UsdShade.Shader(probe.GetPrimAtPath(
+                    "/Asset/Material/MtlxImage"))
+                temp_shader_path=Path(
+                    node.GetInput("file").GetAttr().Get().path)
+                if (not temp_shader_path.is_file() or
+                    temp_shader_path.read_bytes()!=original_png or
+                    manifest["independent_hydra_render_accepted"]):
+                    raise RuntimeError("Installed MaterialX scope invalid")
+            if (temp_shader_path.exists() or
+                stage.GetRootLayer().ExportToString()!=before_stage):
+                raise RuntimeError("Native MaterialX probe changed original USD")
+            if len(texture_doc.get("material_slots",[]))!=1:
+                raise RuntimeError("Installed USD multi-material subset absent")
+            if verified_texture(index,pid,texture_doc[
+                    "preview_material"]["texture"])[0]!=original_png:
+                raise RuntimeError("Installed PNG original did not reopen")
+            color_scene.publish(pid,"smoke_texture_world",prims=[
+                {"path":"/World/ColorActor","role":"actor","position":[0,0,0]},
+                {"path":"/World/ColorCamera","role":"camera","position":[0,0,5]},
+                {"path":"/World/ColorLight","role":"light","position":[1,2,3]},
+            ],curves=[],native_schemas=True,asset_bindings=[{
+                "path":"/World/ColorActor",
+                "asset_id":"smoke_original_texture_mesh",
+                "asset_revision":1}])
+            ExactTimeShotSequence(index).publish(
+                pid,"smoke_texture_shots",scene_id="smoke_texture_world",
+                scene_revision=1,duration_tick=str(T),shots=[{
+                    "shot_id":"TextureShot",
+                    "camera_path":"/World/ColorCamera",
+                    "start_tick":"0","end_tick":str(T),
+                    "pattern":"continuous"}])
+            texture_take=freezes.freeze(
+                pid,"smoke_texture_take",scene_id="smoke_texture_world",
+                scene_revision=1,timeline_id="smoke_texture_shots",
+                timeline_revision=1,sample_ticks=[0],
+                creator_event="approved")
+            rgb,receipt=NativeSceneLinearRaster(index).render(
+                pid,"smoke_texture_take",texture_take["document_sha256"],
+                tick=0,camera_path="/World/ColorCamera")
+            if (receipt["source_uv_texture_rasterized_triangles"]<1 or
+                receipt["ffmpeg_used"] is not False or
+                receipt["source_modified"] is not False or
+                not float(rgb[:,:,:3].max())>0):
+                raise RuntimeError("Installed source texture/seam raster failed")
+            # The same installed worker must enforce Take-scoped tiled
+            # texture reads, including immediate revocation on stop.
+            tile_session=bridge.data_av_begin({
+                "project_id":pid,"take_id":"smoke_texture_take",
+                "take_document_sha256":texture_take["document_sha256"],
+                "listener_path":"/World/ColorCamera",
+                "first_sample":0,"direction":"forward"})
+            if tile_session["status"]!="READY":
+                raise RuntimeError("Installed texture Take review not approved")
+            ticket=tile_session["session_id"]
+            request={
+                "asset_id":"smoke_original_texture_mesh","asset_revision":1,
+                "asset_document_sha256":asset["document_sha256"],
+                "texture_sha256":texture_doc["preview_material"][
+                    "texture"]["sha256"],
+                "mip_level":0,"tile_x":0,"tile_y":0,
+            }
+            preview=bridge.data_av_original_texture_tile(ticket,request)
+            if (preview["source_sha256"]!=request["texture_sha256"] or
+                preview["take_document_sha256"]!=
+                    texture_take["document_sha256"] or
+                preview["source_modified"] is not False or
+                preview["ffmpeg_used"] is not False):
+                raise RuntimeError("Installed source texture tile authorization failed")
+            bridge.data_av_stop(ticket)
+            try:
+                bridge.data_av_original_texture_tile(ticket,request)
+            except PermissionError:
+                pass
+            else:
+                raise RuntimeError("Installed texture tile grant survived revocation")
+            _native_checkpoint("installed_av_original_usd_texture_passed")
             _native_checkpoint("installed_av_aces_exr_passed")
             if __import__("sys").stdout is not None:
                 print("DATA_AV01_INSTALLED_NATIVE_SOURCE_AND_ACES_PASS",

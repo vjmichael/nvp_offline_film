@@ -423,6 +423,239 @@ class TrustedDesktopCameraBridge:
                 ask_native=self._ask)
         return self._data_av_controller
 
+    def data_av_texture_mesh_catalog(self,project_id):
+        """List eligible original mesh heads without exposing project file paths."""
+        with self._lock:
+            self._native_window()
+            _require_pid(project_id)
+            from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+            registry=OpenUSDAssetRegistry(self.index)
+            result=[]
+            for item in self.index.list_objects(project_id,kind="asset")[:128]:
+                record,_=registry.open(project_id,item["object_id"],
+                                       item["head_revision"])
+                doc=record["data"]
+                if (doc["shape"]=="mesh" and
+                    (doc.get("mesh_uvs") is not None or
+                     doc.get("face_uvs") is not None) and
+                    doc.get("preview_material") is not None):
+                    result.append({
+                        "asset_id":item["object_id"],
+                        "asset_revision":record["revision"],
+                        "asset_document_sha256":record["document_sha256"],
+                        "texture_sha256":doc["preview_material"].get(
+                            "texture",{}).get("sha256"),
+                    })
+            return {"format":"nvp.native.texture_mesh_catalog.v1",
+                    "assets":result,"original_modified":False}
+
+    def wo2_assistant_scene_brief(self,request):
+        """Trusted source-scoped film facts for a local AI planning tool."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","scene_id","scene_revision","scene_sha256"}:
+                raise PermissionError("AI planning must not broaden scene scope")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).assistant_scene_brief(
+                request["project_id"],
+                scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                scene_sha256=request["scene_sha256"])
+
+    def wo2_validate_assistant_look_proposal(self,request):
+        """Never execute, approve or persist model-authored look JSON."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","scene_id","scene_revision","scene_sha256",
+                "look","rationale"}:
+                raise PermissionError("AI look suggestions require complete USD authority")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).validate_assistant_proposal(
+                request["project_id"],
+                scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                scene_sha256=request["scene_sha256"],
+                look=request["look"],rationale=request["rationale"])
+
+    def wo2_propose_presentation_look(self,request):
+        """Generate an untrusted, non-persistent assistant-facing film look."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","scene_id","scene_revision","scene_sha256",
+                "intent"}:
+                raise PermissionError("WO2 proposals require exact USD scene scope")
+            from backend.nvp_wo2_presentation_look import (
+                OriginalSceneLook,propose_look)
+            source=OriginalSceneLook(self.index)._source(
+                request["project_id"],request["scene_id"],
+                request["scene_revision"],request["scene_sha256"])
+            return propose_look(request["intent"],source["data"]["prim_roles"])
+
+    def wo2_approve_presentation_look(self,request):
+        """OS-approved, durable presentation revision. No Take source edits."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","look_id","scene_id","scene_revision",
+                "scene_sha256","look","expected_revision"}:
+                raise PermissionError("WO2 look publication needs exact source binding")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).publish(
+                request["project_id"],request["look_id"],
+                scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                scene_sha256=request["scene_sha256"],
+                look=request["look"],
+                expected_revision=request["expected_revision"],
+                approve=lambda scope:self._ask(
+                    "Publish NEW non-destructive OpenUSD presentation look?\\n"
+                    +"Scene: "+scope["scene_id"]+" rev "
+                    +str(scope["scene_revision"])+"\\n"
+                    +"Frozen source SHA-256: "+scope["scene_sha256"]+"\\n"
+                    +"Lighting, shadows, reflections, camera, UV and material "
+                    +"decisions will be versioned. Original Takes and PNGs "
+                    +"will not be modified. No FFmpeg is required."))
+
+    def wo2_presentation_look_catalog(self,request):
+        """Exact-scene approved decisions, never global model or API inputs."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","scene_id","scene_revision","scene_sha256"}:
+                raise PermissionError("WO2 presentation list needs original source")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).catalog(
+                request["project_id"],
+                scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                scene_sha256=request["scene_sha256"])
+
+    def wo2_read_presentation_look(self,request):
+        """Read only a version pinned to the displayed OpenUSD source."""
+        with self._lock:
+            self._native_window()
+            if type(request) is not dict or set(request)!={
+                "project_id","look_id","revision","scene_sha256"}:
+                raise PermissionError("WO2 source-scoped presentation reader required")
+            from backend.nvp_wo2_presentation_look import OriginalSceneLook
+            return OriginalSceneLook(self.index).open(
+                request["project_id"],request["look_id"],
+                request["revision"],scene_sha256=request["scene_sha256"])
+
+    def data_av_apply_original_texture(self,request):
+        """Create a NEW immutable mesh revision from an approved texture SHA."""
+        with self._lock:
+            self._native_window()
+            base_keys={"project_id","asset_id","asset_revision",
+                       "asset_document_sha256","texture_sha256"}
+            if type(request) is not dict or set(request) not in (
+                    base_keys,base_keys|{"channel"}):
+                raise ValueError("Texture application requires exact source revisions")
+            channel=request.get("channel","base_color")
+            if channel not in ("base_color","roughness","metallic",
+                               "emission","normal","opacity"):
+                raise ValueError("Only bounded original PBR channels are supported")
+            pid=request["project_id"]
+            _require_pid(pid)
+            aid=request["asset_id"]
+            _id(aid,"original reusable mesh ID")
+            revision=request["asset_revision"]
+            if type(revision) is not int or revision<1:
+                raise ValueError("Original mesh revision required")
+            _sha(request["asset_document_sha256"])
+            digest=_sha(request["texture_sha256"])
+            from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+            from backend.nvp_native_usd_texture import decode_png
+            registry=OpenUSDAssetRegistry(self.index)
+            old,_=registry.open(pid,aid,revision)
+            if old["document_sha256"]!=request["asset_document_sha256"]:
+                raise PermissionError("Requested mesh source revision changed")
+            if self.index.read_revision(pid,aid)["revision"]!=revision:
+                raise RuntimeError("Original mesh was revised before selection")
+            doc=old["data"]
+            original_material=doc.get("preview_material")
+            if (doc["shape"]!="mesh" or original_material is None or
+                (doc.get("mesh_uvs") is None and doc.get("face_uvs") is None)):
+                raise ValueError("Only an original source UV mesh may use PNG")
+            png=self.index.get_blob(pid,digest)
+            width,height,_=decode_png(png)
+            if not self._ask(
+                "Publish NEW immutable mesh material revision?\n"+
+                "Source mesh: "+aid+" revision "+str(revision)+"\n"+
+                "Original mesh SHA-256: "+old["document_sha256"]+"\n"+
+                "Frozen image SHA-256: "+digest+"\n"+
+                "Material channel: "+channel+"\n"+
+                "Texture: "+str(width)+" x "+str(height)+"\n"+
+                "Existing scene, character and Digital Take revisions remain unchanged."):
+                return {"format":"nvp.native.texture_mesh_revision.v1",
+                        "status":"DENIED","original_modified":False}
+            if self.index.read_revision(pid,aid)["revision"]!=revision:
+                raise RuntimeError("Mesh changed while native approval was displayed")
+            controls={key:original_material[key] for key in (
+                "base_color_rgb","roughness","metallic")}
+            from backend.nvp_native_usd_texture import verified_texture
+            existing_base=original_material.get("texture")
+            base_png=(png if channel=="base_color" else
+                      verified_texture(self.index,pid,existing_base)[0]
+                      if existing_base else None)
+            pbr_pngs={
+                name:verified_texture(self.index,pid,descriptor)[0]
+                for name,descriptor in original_material.get(
+                    "pbr_maps",{}).items()}
+            if channel!="base_color":
+                pbr_pngs[channel]=png
+            published=registry.publish(
+                pid,aid,shape="mesh",size_m=doc["size_m"],
+                points=doc["points"],triangles=doc["triangles"],
+                mesh_uvs=doc.get("mesh_uvs"),face_uvs=doc.get("face_uvs"),
+                preview_material=controls,texture_png=base_png,
+                pbr_maps_png=(pbr_pngs or None),
+                material_slots=(
+                    [{key:slot[key] for key in ("faces","base_color_rgb",
+                                                "roughness","metallic")}
+                     for slot in doc["material_slots"]]
+                    if doc.get("material_slots") else None),
+                expected_revision=revision)
+            return {"format":"nvp.native.texture_mesh_revision.v1",
+                    "status":"NEW_SOURCE_REVISION",
+                    "asset_id":aid,"asset_revision":published["revision"],
+                    "asset_document_sha256":published["document_sha256"],
+                    "source_material_channel":channel,
+                    "original_modified":False,"ffmpeg_used":False}
+
+    def data_av_import_original_texture(self,project_id):
+        """Trusted desktop-only PNG picker. Browser passes no source paths."""
+        with self._lock:
+            window=self._native_window()
+            _require_pid(project_id)
+            from webview import FileDialog
+            if not callable(getattr(window,"create_file_dialog",None)):
+                raise PermissionError("NVP requires a real OS image picker")
+            chosen=window.create_file_dialog(
+                FileDialog.OPEN,allow_multiple=False,
+                file_types=("PNG original textures (*.png)",))
+            if not chosen:
+                return {"format":"nvp.native.texture_import.v1",
+                        "status":"CANCELLED","original_modified":False}
+            if len(chosen)!=1:
+                raise PermissionError("Original texture import selects one image")
+            from backend.nvp_native_usd_texture import import_native_selected_png
+            def approve(scope):
+                return self._ask(
+                    "Import a frozen original PNG texture?\n"+
+                    "SHA-256: "+scope["sha256"]+"\n"+
+                    "Dimensions: "+str(scope["width"])+" x "+
+                        str(scope["height"])+"\n"+
+                    "Bytes: "+str(scope["size_bytes"])+"\n"+
+                    "NVP will store immutable source bytes in this project.\n"+
+                    "No existing scene, rig, Digital Take or presentation changes.")
+            result=import_native_selected_png(
+                self.index,project_id,chosen[0],approve=approve)
+            return {"format":"nvp.native.texture_import.v1",**result}
+
     def data_av_import_original_audio(self,project_id,source_id):
         """Open a REAL native OS picker. The browser supplies IDs, never paths."""
         self._native_window()
@@ -494,6 +727,17 @@ class TrustedDesktopCameraBridge:
 
     def data_av_audio_window(self,session_id,first_sample,count):
         return self._data_av().read_audio(session_id,first_sample,count)
+
+    def data_av_original_texture_tile(self,session_id,request):
+        """Only a currently approved Take may stream one pinned source tile."""
+        self._native_window()
+        return self._data_av().read_original_texture_tile(session_id,request)
+
+    def data_av_original_rig_texture_tile(self,session_id,request):
+        """Only a frozen scene-authorized actual skinned actor may read PNG."""
+        self._native_window()
+        return self._data_av().read_original_rig_texture_tile(
+            session_id,request)
 
     def data_av_scene_at(self,session_id,tick):
         return self._data_av().scene_at(session_id,tick)

@@ -218,14 +218,47 @@ def run_visible_window_smoke():
         from backend.nvp_openusd_scene import OpenUSDSceneBridge
         project=studio.create_project("SLATE-08B Window Acceptance",
             "One native source camera scene")
-        OpenUSDSceneBridge(FilmIndex(studio)).publish(
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+        smoke_index=FilmIndex(studio)
+        tile=Image.new("RGB",(2,2))
+        tile.putdata([(0,255,0),(255,255,255),
+                      (255,0,0),(0,0,255)])
+        image_buffer=BytesIO()
+        tile.save(image_buffer,format="PNG")
+        def encode_source_map(rgb):
+            item=BytesIO()
+            Image.new("RGB",(2,2),rgb).save(item,format="PNG")
+            return item.getvalue()
+        source_material_maps={
+            "roughness":encode_source_map((80,80,80)),
+            "metallic":encode_source_map((200,200,200)),
+            "emission":encode_source_map((12,50,80)),
+            "normal":encode_source_map((128,128,255)),
+            "opacity":encode_source_map((255,255,255)),
+        }
+        OpenUSDAssetRegistry(smoke_index).publish(
+            project["id"],"smoke_gpu_original_mesh",
+            shape="mesh",size_m=2.,
+            points=[[-1.,-1.,0.],[1.,-1.,0.],[1.,1.,0.],[-1.,1.,0.]],
+            triangles=[[0,1,2],[0,2,3]],
+            mesh_uvs=[[0,0],[1,0],[1,1],[0,1]],
+            preview_material={"base_color_rgb":[1.,1.,1.],
+                              "roughness":.5,"metallic":0.},
+            texture_png=image_buffer.getvalue(),
+            pbr_maps_png=source_material_maps)
+        OpenUSDSceneBridge(smoke_index).publish(
             project["id"],"smoke_scene",
             prims=[
                 {"path":"/World/Actor","role":"actor",
                  "position":[0,0,0]},
                 {"path":"/World/Camera","role":"camera",
                  "position":[0,0,8]},
-            ],curves=[],native_schemas=True)
+            ],curves=[],native_schemas=True,
+            asset_bindings=[{
+                "path":"/World/Actor",
+                "asset_id":"smoke_gpu_original_mesh","asset_revision":1}])
         # Separate native A/V smoke from FFmpeg-backed imported video.
         # This is one real frozen OpenUSD Digital Take with a SHA-addressed
         # captured mono signal, for the actual installed WebView2 catalog.
@@ -263,7 +296,24 @@ def run_visible_window_smoke():
     result={"passed":False}
     bridge=None
     try:
-        bridge=create_trusted_camera_bridge(port)
+        from backend.nvp_slate08b_native_camera_ipc import (
+            TrustedDesktopCameraBridge)
+        from backend.nvp_native_usd_texture import texture_transport
+        class InstalledWO2ProbeBridge(TrustedDesktopCameraBridge):
+            """Test-only native IPC: uses one exact ephemeral smoke asset."""
+            def wo2_gpu_texture_probe(self):
+                self._native_window()
+                record,_=OpenUSDAssetRegistry(self.index).open(
+                    project["id"],"smoke_gpu_original_mesh",1)
+                desc=record["data"]["preview_material"]["texture"]
+                return {
+                    "format":"nvp.wo2.installed_texture_probe.v1",
+                    "status":"READY","source_modified":False,
+                    "texture":texture_transport(
+                        self.index,project["id"],desc),
+                }
+        bridge=InstalledWO2ProbeBridge(
+            FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
         window=webview.create_window("NVP Alpha Window Acceptance",
             "http://127.0.0.1:"+str(port),width=1000,height=700,
             js_api=bridge)
@@ -392,6 +442,33 @@ def run_visible_window_smoke():
                                 if not result["passed"]:
                                     raise RuntimeError(
                                         "Data-first source audition UI not mounted in installed WebView2")
+                                result["passed"]=False
+                                gpu_button=window.evaluate_js(
+                                    "(()=>{const b=[...document.querySelectorAll('button')]"
+                                    ".find(x=>x.textContent.includes("
+                                    "'Run installed original PNG GPU comparison'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                if gpu_button is not True:
+                                    raise RuntimeError(
+                                        "Installed source-GPU acceptance button missing")
+                                until=time.monotonic()+25
+                                while time.monotonic()<until:
+                                    evidence=window.evaluate_js(
+                                        "(()=>{const txt=document.body.textContent;"
+                                        "if(txt.includes('WO2 installed source GPU texel comparison PASSED'))"
+                                        "return 'PASSED';"
+                                        "if(txt.includes('WO2 installed source GPU texel comparison FAILED'))"
+                                        "return 'FAILED';return 'PENDING';})()")
+                                    if evidence=="PASSED":
+                                        result["passed"]=True
+                                        break
+                                    if evidence=="FAILED":
+                                        raise RuntimeError(
+                                            "Installed WebView2 source PNG CPU/GPU texel comparison failed")
+                                    time.sleep(.2)
+                                if not result["passed"]:
+                                    raise RuntimeError(
+                                        "Installed source PNG GPU readback timed out")
                                 break
                     time.sleep(.2)
                 if not result["passed"]:
@@ -404,6 +481,14 @@ def run_visible_window_smoke():
         if not result["passed"]:
             raise RuntimeError(
                 "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
+        # Emit independently sampled native Windows display-adapter evidence
+        # AFTER real installed WebView2 texture readback. Enumeration itself
+        # is not proof of dedicated hardware acceleration or calibration.
+        from backend.nvp_wo2_hardware_evidence import collect_windows_gpu_evidence
+        import json
+        result["native_windows_gpu_evidence"]=collect_windows_gpu_evidence()
+        print("NVP_WO2_HARDWARE_EVIDENCE="+json.dumps(
+            result["native_windows_gpu_evidence"],sort_keys=True),flush=True)
         return 0
     finally:
         try:

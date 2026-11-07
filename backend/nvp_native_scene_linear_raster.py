@@ -169,11 +169,10 @@ def _unit(v):
 
 
 def _shade(points,surface,lights,eye):
-    """Bounded GGX/Smith/Schlick source-preview microfacet approximation.
+    """Deterministic scalar GGX/Smith/Schlick source-preview shading.
 
-    No IES/texture spectral equivalence is implied: the native USD source
-    exposes material scalar inputs, but this raster is not a validated Hydra
-    shader/delegate. Working RGB is an explicitly uncalibrated derivative.
+    The untextured path deliberately uses Python scalars; per-texel maps
+    are handled separately by _shade_texture_texels with NumPy arrays.
     """
     color,roughness,metallic,_=surface
     a,b,c=points
@@ -186,14 +185,13 @@ def _shade(points,surface,lights,eye):
     center=tuple((a[i]+b[i]+c[i])/3. for i in range(3))
     view=_unit(tuple(eye[i]-center[i] for i in range(3)))
     if view is None:return None
-    # USD authored double-sided meshes are visible from either side.
     if _dot(n,view)<0:n=tuple(-x for x in n)
     nv=max(0.,_dot(n,view))
     out=[AMBIENT_REVIEW*value*(1.-metallic) for value in color]
     f0=[.04*(1.-metallic)+metallic*x for x in color]
     alpha=max(.04,roughness*roughness)
     alpha2=alpha*alpha
-    k=(roughness+1)**2/8.
+    k=(roughness+1.)**2/8.
     ggx_view=nv/(nv*(1.-k)+k+1e-8)
     for light_position,intensity in lights:
         d=tuple(light_position[i]-center[i] for i in range(3))
@@ -206,7 +204,7 @@ def _shade(points,surface,lights,eye):
         if h is None:continue
         nh=max(0.,_dot(n,h))
         vh=max(0.,_dot(view,h))
-        denom=(nh*nh*(alpha2-1.)+1.)
+        denom=nh*nh*(alpha2-1.)+1.
         distribution=alpha2/(math.pi*denom*denom+1e-8)
         ggx_light=nl/(nl*(1.-k)+k+1e-8)
         geometry=ggx_view*ggx_light
@@ -223,7 +221,100 @@ def _shade(points,surface,lights,eye):
     return tuple(out)
 
 
-def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np):
+def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
+                          roughness_texels=None,metallic_texels=None,
+                          emission_texels=None,normal_texels=None,
+                          uv_face=None):
+    """Evaluate bounded GGX/Schlick with the actual per-pixel source color.
+
+    Avoid applying the sRGB base map to the *completed lighting result*:
+    that incorrectly tints dielectric specular. This remains a source-only,
+    face-normal preview, NOT a physically calibrated Hydra renderer.
+    """
+    tint,roughness,metallic,_=surface
+    color=np.asarray(sampled_rgb,dtype=np.float64)*np.asarray(
+        tint,dtype=np.float64)
+    # Authored PBR image channels override the scalar fallback. This matches
+    # UsdPreviewSurface, MaterialX and the WebGL material (factor 1 for maps).
+    if roughness_texels is not None:
+        roughness=np.clip(roughness_texels,.04,1.)
+    if metallic_texels is not None:
+        metallic=np.clip(metallic_texels,0.,1.)
+    a,b,c=points
+    u=tuple(b[i]-a[i] for i in range(3))
+    v=tuple(c[i]-a[i] for i in range(3))
+    n=_unit((u[1]*v[2]-u[2]*v[1],
+             u[2]*v[0]-u[0]*v[2],
+             u[0]*v[1]-u[1]*v[0]))
+    center=tuple((a[i]+b[i]+c[i])/3 for i in range(3))
+    view=_unit(tuple(eye[i]-center[i] for i in range(3)))
+    if n is None or view is None:
+        raise RuntimeError("Degenerate USD source texture triangle")
+    if _dot(n,view)<0:n=tuple(-x for x in n)
+    normal=np.asarray(n,dtype=np.float64)
+    if normal_texels is not None:
+        if uv_face is None or len(uv_face)!=3:
+            raise RuntimeError("Normal map requires original USD face-corner st")
+        dp1=np.asarray(u,dtype=np.float64)
+        dp2=np.asarray(v,dtype=np.float64)
+        uv0,uv1,uv2=(np.asarray(x,dtype=np.float64) for x in uv_face)
+        du1,dv1=uv1-uv0
+        du2,dv2=uv2-uv0
+        determinant=du1*dv2-dv1*du2
+        if abs(determinant)<1e-8:
+            raise RuntimeError("Normal map has degenerate original UV tangent basis")
+        tangent=(dp1*dv2-dp2*dv1)/determinant
+        tangent=tangent-normal*np.dot(normal,tangent)
+        length=np.linalg.norm(tangent)
+        if length<1e-8:
+            raise RuntimeError("Invalid source texture tangent")
+        tangent=tangent/length
+        bitangent=np.cross(normal,tangent)*(
+            1. if determinant>=0 else -1.)
+        tangent_rgb=2.*np.asarray(normal_texels,dtype=np.float64)-1.
+        normal=(tangent_rgb[...,0,None]*tangent+
+                tangent_rgb[...,1,None]*bitangent+
+                tangent_rgb[...,2,None]*normal)
+        normal=normal/np.maximum(
+            np.linalg.norm(normal,axis=-1,keepdims=True),1e-8)
+    nv=np.maximum(0.,np.sum(normal*np.asarray(view),axis=-1))
+    metal=np.asarray(metallic,dtype=np.float64)
+    out=AMBIENT_REVIEW*color*(1.-metal[...,None])
+    f0=.04*(1.-metal[...,None])+metal[...,None]*color
+    alpha=np.maximum(.04,roughness*roughness)
+    alpha2=alpha*alpha
+    k=(roughness+1.)**2/8.
+    ggx_view=nv/(nv*(1.-k)+k+1e-8)
+    for light_position,intensity in lights:
+        d=tuple(light_position[i]-center[i] for i in range(3))
+        dsq=_dot(d,d)
+        light=_unit(d)
+        if light is None:continue
+        nl=np.maximum(0.,np.sum(normal*np.asarray(light),axis=-1))
+        if not np.any(nl>0) or not np.any(nv>0):continue
+        h=_unit(tuple(light[i]+view[i] for i in range(3)))
+        if h is None:continue
+        nh=np.maximum(0.,np.sum(normal*np.asarray(h),axis=-1))
+        vh=max(0.,_dot(view,h))
+        denom=nh*nh*(alpha2-1.)+1.
+        distribution=alpha2/(math.pi*denom*denom+1e-8)
+        ggx_light=nl/(nl*(1.-k)+k+1e-8)
+        geometry=ggx_view*ggx_light
+        fresnel=f0+(1.-f0)*(1.-vh)**5
+        strength=intensity/LIGHT_REFERENCE/(1.+dsq)
+        diffuse=color*(1.-metal[...,None])*(1.-fresnel)/math.pi
+        specular=((distribution*geometry)[...,None]*fresnel/
+                  np.maximum(1e-6,4.*nv*nl)[...,None])
+        out=out+strength*nl[...,None]*(diffuse+specular)
+    if emission_texels is not None:
+        out=out+np.asarray(emission_texels,dtype=np.float64)
+    if not np.all(np.isfinite(out)) or np.any(out<0):
+        raise RuntimeError("Invalid source USD textured microfacet shading")
+    return out.astype(np.float32)
+
+
+def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
+                   texture=None,uv_face=None,pbr_maps=None):
     a,b,c=tri
     x0,y0,z0=a;x1,y1,z1=b;x2,y2,z2=c
     if (not all(math.isfinite(v) for v in (
@@ -251,9 +342,45 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np):
     crop=depth[lo_y:hi_y+1,lo_x:hi_x+1]
     visible=inside&(zz<crop)
     if not np.any(visible):return False
-    crop[visible]=zz[visible]
     out=buffer[lo_y:hi_y+1,lo_x:hi_x+1,:3]
-    out[visible]=shade
+    if texture is None and not pbr_maps:
+        crop[visible]=zz[visible]
+        out[visible]=shade
+    else:
+        if uv_face is None or len(uv_face)!=3:
+            raise RuntimeError("Frozen source mesh texture is missing UVs")
+        inv_safe=np.where(inv>0,inv,1.)
+        u=sum(w*uv[0]/z for w,uv,z in (
+            (w0,uv_face[0],z0),(w1,uv_face[1],z1),
+            (w2,uv_face[2],z2)))/inv_safe
+        v=sum(w*uv[1]/z for w,uv,z in (
+            (w0,uv_face[0],z0),(w1,uv_face[1],z1),
+            (w2,uv_face[2],z2)))/inv_safe
+        def sample_map(image):
+            height,width=image.shape[:2]
+            xx=np.floor(np.mod(u,1.)*width).astype(np.int64)
+            yy=(height-1)-np.floor(np.mod(v,1.)*height).astype(np.int64)
+            return image[yy,xx,:3]
+        sample=(sample_map(texture) if texture is not None
+                else np.ones((*u.shape,3),dtype=np.float32))
+        maps=pbr_maps or {}
+        decoded={key:sample_map(img) for key,img in maps.items()}
+        if "opacity" in decoded:
+            visible=visible&(decoded["opacity"][...,0]>=.5)
+            if not np.any(visible):return False
+        crop[visible]=zz[visible]
+        # Per-pixel sRGB-linear texel enters source base reflectance before
+        # GGX/Schlick lighting. The HDR light/spectral model remains preview.
+        lit=_shade_texture_texels(
+            world_points,surface,lights,eye,sample,np,
+            roughness_texels=(decoded["roughness"][...,0]
+                              if "roughness" in decoded else None),
+            metallic_texels=(decoded["metallic"][...,0]
+                             if "metallic" in decoded else None),
+            emission_texels=decoded.get("emission"),
+            normal_texels=decoded.get("normal"),
+            uv_face=uv_face)
+        out[visible]=lit[visible]
     return True
 
 
@@ -308,7 +435,8 @@ class NativeSceneLinearRaster:
             visual=visual_state(
                 self.index,project_id,snapshot,
                 scene_id=original["scene_id"],
-                scene_revision=original["scene_revision"])
+                scene_revision=original["scene_revision"],
+                include_texture_transport=False)
             view,focal=_camera(snapshot,camera_path)
             eye=next(_array3(o["world_translation"])
                      for o in snapshot["objects"] if o["path"]==camera_path)
@@ -320,6 +448,8 @@ class NativeSceneLinearRaster:
             rasterized=0
             default_materials=0
             actor_shapes=0
+            textured_triangles=0
+            texture_cache={}
             for obj in visual["objects"]:
                 if obj["semantic_role"] in ("light","camera"):continue
                 if obj["shape"] in ("gizmo","missing_rig_geometry"):
@@ -332,6 +462,62 @@ class NativeSceneLinearRaster:
                 if polygons>MAX_TRIANGLES:
                     raise RuntimeError("Source-authoritative color triangle budget exceeded")
                 surface=_surface(obj)
+                face_surfaces={}
+                for slot in obj.get("source_material_slots") or []:
+                    slot_color=_array3(slot["base_color_rgb"])
+                    for face_number in slot["faces"]:
+                        if face_number in face_surfaces:
+                            raise RuntimeError("USD surface subset face overlap")
+                        face_surfaces[face_number]=(
+                            slot_color,float(slot["roughness"]),
+                            float(slot["metallic"]),False)
+                texture=None
+                uvs=obj.get("mesh_uvs")
+                face_uvs=obj.get("mesh_face_uvs")
+                descriptor=(obj.get("source_material") or {}).get("texture")
+                if descriptor is not None:
+                    if (obj["shape"] not in ("mesh","skinned_mesh") or
+                        (uvs is None and face_uvs is None) or
+                        (uvs is not None and face_uvs is not None) or
+                        (uvs is not None and len(uvs)!=len(raw)) or
+                        (face_uvs is not None and len(face_uvs)!=len(faces))):
+                        raise RuntimeError("USD texture requires original UV authority")
+                    if (face_uvs is not None and any(
+                        type(row) is not list or len(row)!=3
+                        for row in face_uvs)):
+                        raise RuntimeError("Malformed original face UV corners")
+                    from backend.nvp_native_usd_texture import verified_texture
+                    key=descriptor["sha256"]
+                    if key not in texture_cache:
+                        w,h,rgba=verified_texture(
+                            self.index,project_id,descriptor)[1]
+                        srgb=np.frombuffer(rgba,dtype=np.uint8).reshape(
+                            h,w,4)[:,:,:3].astype(np.float32)/255.
+                        texture_cache[key]=np.where(
+                            srgb<=.04045,srgb/12.92,
+                            ((srgb+.055)/1.055)**2.4).astype(np.float32)
+                    texture=texture_cache[key]
+                source_maps=(obj.get("source_material") or {}).get("pbr_maps") or {}
+                material_maps={}
+                if source_maps:
+                    if ((uvs is None and face_uvs is None) or
+                        (uvs is not None and len(uvs)!=len(raw)) or
+                        (face_uvs is not None and len(face_uvs)!=len(faces))):
+                        raise RuntimeError("PBR channel maps require real original UVs")
+                    from backend.nvp_native_usd_texture import verified_texture
+                    for channel,descriptor in source_maps.items():
+                        key=descriptor["sha256"]
+                        cache_key=("pbr",channel,key)
+                        if cache_key not in texture_cache:
+                            w,h,rgba=verified_texture(
+                                self.index,project_id,descriptor)[1]
+                            pixels=np.frombuffer(rgba,dtype=np.uint8).reshape(
+                                h,w,4)[:,:,:3].astype(np.float32)/255.
+                            texture_cache[cache_key]=(
+                                np.where(pixels<=.04045,pixels/12.92,
+                                    ((pixels+.055)/1.055)**2.4).astype(np.float32)
+                                if channel=="emission" else pixels)
+                        material_maps[channel]=texture_cache[cache_key]
                 default_materials+=int(surface[3])
                 actor_shapes+=int(obj["shape"]=="skinned_mesh")
                 transformed=[_array3(_apply(obj["world_matrix"],p)) for p in raw]
@@ -344,14 +530,24 @@ class NativeSceneLinearRaster:
                         factor=(focal/36.0)*WIDTH/(-z)
                         projected.append((WIDTH*.5+x*factor,
                                           HEIGHT*.5-y*factor,-z))
-                for face in faces:
+                for face_index,face in enumerate(faces):
                     verts=[projected[i] for i in face]
                     if any(v is None for v in verts):continue
                     original_points=[transformed[i] for i in face]
                     if _draw_triangle(
                         color,depth,verts,original_points,
-                        surface,lights,eye,np):
+                        face_surfaces.get(face_index,surface),
+                        lights,eye,np,
+                        texture=(texture if face_index not in face_surfaces
+                                 else None),
+                        uv_face=(face_uvs[face_index] if face_uvs is not None
+                                 else [uvs[i] for i in face]
+                                 if texture is not None or material_maps else None),
+                        pbr_maps=(material_maps if
+                                  face_index not in face_surfaces else None)):
                         rasterized+=1
+                        textured_triangles+=int(
+                            texture is not None and face_index not in face_surfaces)
             receipt={
                 "format":FORMAT,"time_tick":str(tick),
                 "original_take_sha256":take_sha256,
@@ -362,6 +558,8 @@ class NativeSceneLinearRaster:
                 "width":WIDTH,"height":HEIGHT,
                 "source_geometry_triangles":polygons,
                 "rasterized_triangles":rasterized,
+                "source_uv_texture_rasterized_triangles":textured_triangles,
+                "texture_shading_matches_hydra":False,
                 "actual_usd_skinned_actors":actor_shapes,
                 "original_usd_sphere_lights":len(lights),
                 "neutral_default_material_count":default_materials,

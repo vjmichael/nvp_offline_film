@@ -61,6 +61,9 @@ class TrustedDataAVController:
                 result.append({
                     "take_id":row["object_id"],
                     "take_document_sha256":rec["document_sha256"],
+                    "scene_id":data["scene_id"],
+                    "scene_revision":data["scene_revision"],
+                    "scene_document_sha256":scene["document_sha256"],
                     "duration_tick":str(data["duration_tick"]),
                     "listeners":sorted(choices)[:64],
                     "source_cameras":cameras[:64],
@@ -178,6 +181,140 @@ class TrustedDataAVController:
                 "document_sha256"]:
                 raise RuntimeError("Native audio result changed source identity")
             return {**result,"session_id":ticket}
+
+    def read_original_texture_tile(self,ticket,request):
+        """One verified PNG tile, constrained to the approved frozen Take."""
+        with self._lock:
+            active=self._session(ticket)
+            if type(request) is not dict or set(request)!={
+                "asset_id","asset_revision","asset_document_sha256",
+                "texture_sha256","mip_level","tile_x","tile_y"}:
+                raise PermissionError("Exact frozen scene asset/tile identity required")
+            aid=request["asset_id"]
+            _id(aid,"USD source texture mesh")
+            rev=request["asset_revision"]
+            if type(rev) is not int or rev<1:
+                raise ValueError("Original asset revision must be positive")
+            asset_sha=_sha(request["asset_document_sha256"])
+            texture_sha=_sha(request["texture_sha256"])
+            pid=active["pid"]
+            source=active["session"]
+            source._current_take()
+            scene=self.index.read_revision(
+                pid,source.data["scene_id"],source.data["scene_revision"])
+            if scene["document_sha256"]!=source.data["scene_document_sha256"]:
+                raise RuntimeError("Approved source scene changed")
+            grants=[entry for entry in scene["data"].get("asset_bindings",[])
+                    if entry["asset_id"]==aid and
+                    entry["asset_revision"]==rev and
+                    entry["asset_document_sha256"]==asset_sha]
+            if not grants:
+                raise PermissionError("Texture is not bound to approved Take scene")
+            key=(aid,rev,asset_sha,texture_sha)
+            asset_cache=active.get("tile_asset_cache")
+            if asset_cache is not None and asset_cache[0]==key:
+                desc=asset_cache[1]
+            else:
+                from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+                record,_=OpenUSDAssetRegistry(self.index).open(pid,aid,rev)
+                desc=(record["data"].get("preview_material") or {}).get("texture")
+                if record["document_sha256"]!=asset_sha or (
+                        desc is None or desc["sha256"]!=texture_sha):
+                    raise PermissionError("Original texture does not match frozen source")
+                active["tile_asset_cache"]=(key,desc)
+                active["tile_cache"]=None
+            from backend.nvp_native_usd_texture import (
+                verified_texture,_tile_from_verified)
+            # Bound one decoded original image to this approved Take session.
+            # Tile #2..64 never reopen/redecode the same 2K source image.
+            cached=active.get("tile_cache")
+            if cached is None or cached[0]!=texture_sha:
+                _,decoded=verified_texture(self.index,pid,desc)
+                active["tile_cache"]=(texture_sha,decoded)
+            else:
+                decoded=cached[1]
+            tile=_tile_from_verified(
+                desc,decoded,
+                mip_level=request["mip_level"],
+                tile_x=request["tile_x"],tile_y=request["tile_y"])
+            return {**tile,
+                "take_document_sha256":source.take["document_sha256"],
+                "asset_document_sha256":asset_sha,
+                "source_modified":False,"ffmpeg_used":False}
+
+    def read_original_rig_texture_tile(self,ticket,request):
+        """Authorize a rig texture by pinned USD scene layer and actor path.
+
+        The asset mesh route cannot authorize rig actors: their authority is
+        the frozen scene's skeleton manifest, not an asset registry entry.
+        """
+        with self._lock:
+            active=self._session(ticket)
+            if type(request) is not dict or set(request)!={
+                "actor_path","skeleton_layer_sha256",
+                "texture_sha256","mip_level","tile_x","tile_y"}:
+                raise PermissionError("Original rig texture request needs exact scene identity")
+            from backend.nvp_native_usd_texture import (
+                verified_texture,_tile_from_verified)
+            from backend.nvp_openusd_scene import OpenUSDSceneBridge
+            path=request["actor_path"]
+            if (type(path) is not str or not path.startswith("/World/") or
+                len(path)>256 or path.count("/")>16):
+                raise PermissionError("Rig source path must be an authored actor")
+            layer_sha=_sha(request["skeleton_layer_sha256"])
+            texture_sha=_sha(request["texture_sha256"])
+            pid=active["pid"]
+            source=active["session"]
+            source._current_take()
+            scene_record,stage=OpenUSDSceneBridge(self.index).open(
+                pid,source.data["scene_id"],source.data["scene_revision"])
+            if (scene_record["document_sha256"]!=source.data[
+                    "scene_document_sha256"] or
+                scene_record["data"].get("skeleton_layer_sha256")!=layer_sha or
+                scene_record["data"]["prim_roles"].get(path)!="actor"):
+                raise PermissionError("Rig is not in the approved frozen scene")
+            rig=next((entry for entry in
+                scene_record["data"].get("skeleton_rigs",[])
+                if entry.get("path")==path and entry.get("skin_weighted")),None)
+            if rig is None or rig.get("texture",{}).get("sha256")!=texture_sha:
+                raise PermissionError("Original rig texture not in approved scene")
+            descriptor=rig["texture"]
+            # Native USD shader/mesh authority must also match the original
+            # skeleton layer, not merely a writable user-supplied JSON digest.
+            from backend.nvp_wo2_openpbr import verify_openpbr_texture
+            from pxr import UsdShade
+            import math
+            material_path=path+"/Rig/Material"
+            bound=UsdShade.Material(stage.GetPrimAtPath(material_path))
+            preview=UsdShade.Shader(stage.GetPrimAtPath(
+                material_path+"/PreviewSurface"))
+            if not bound or not preview or preview.GetIdAttr().Get()!=(
+                    "UsdPreviewSurface"):
+                raise RuntimeError("Original rig has no valid USD source material")
+            roughness=float(preview.GetInput("roughness").GetAttr().Get())
+            metallic=float(preview.GetInput("metallic").GetAttr().Get())
+            if (not math.isfinite(roughness) or not math.isfinite(metallic)
+                or not 0<=roughness<=1 or not 0<=metallic<=1):
+                raise RuntimeError("Original rig surface scalars invalid")
+            verify_openpbr_texture(stage,material_path,bound,descriptor,
+                                   roughness,metallic)
+            # Layer, immutable rig manifest, source material graph and project
+            # PNG SHA must all agree before any tile is returned.
+            cache_key=("rig",path,layer_sha,texture_sha)
+            cached=active.get("rig_tile_cache")
+            if cached is None or cached[0]!=cache_key:
+                _,decoded=verified_texture(self.index,pid,descriptor)
+                active["rig_tile_cache"]=(cache_key,decoded)
+            else:
+                decoded=cached[1]
+            tile=_tile_from_verified(
+                descriptor,decoded,
+                mip_level=request["mip_level"],
+                tile_x=request["tile_x"],tile_y=request["tile_y"])
+            return {**tile,
+                "take_document_sha256":source.take["document_sha256"],
+                "skeleton_layer_sha256":layer_sha,
+                "actor_path":path,"source_modified":False,"ffmpeg_used":False}
 
     def scene_at(self,ticket,tick):
         with self._lock:
