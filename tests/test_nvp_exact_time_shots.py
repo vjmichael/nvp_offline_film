@@ -9,6 +9,7 @@ import unittest
 import test_nvp_data_av_native as _fixture
 from test_nvp_data_av_native import Window,T
 from backend.nvp_exact_time_shots import ExactTimeShotSequence
+from backend.nvp_temporal_ledger import TemporalLedger
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 
@@ -78,6 +79,31 @@ class ExactTimeCameraSequenceTests(unittest.TestCase):
                 scene_id="spatial_world",scene_revision=1,
                 shots=self.shots(),duration_tick="1.23",
                 expected_revision=0)
+
+    def test_persisted_camera_events_fail_closed_on_bad_pattern_or_end(self):
+        # Bypass the authoring validator to exercise the persisted-data
+        # reader, as a migration or damaged ledger may supply old events.
+        editor=ExactTimeShotSequence(self.index)
+        for name,pattern,end,duration in (
+            ("BadPatternCamera","legacy_frame_proxy",T,2*T),
+            ("OutOfRangeCamera","single",2*T,T),
+        ):
+            with self.subTest(name=name):
+                TemporalLedger(self.index).publish(
+                    self.pid,name,[{
+                        "event_id":"Shot001","event_kind":"camera",
+                        "subject_id":"Camera","start_tick":0,"end_tick":end,
+                        "source_id":"spatial_world","source_revision":1,
+                        "payload":{
+                            "format":"nvp.exact_time.usd_camera_shots.v1",
+                            "usd_prim_path":"/World/ListenerLeft",
+                            "observation_pattern":pattern,
+                            "world_duplicated":False,
+                            "picture_frames_recorded":False,
+                        },
+                    }],duration_tick=duration,expected_revision=0)
+                with self.assertRaises(RuntimeError):
+                    editor.read(self.pid,name,1)
 
     def test_os_authorization_controls_exact_scene_and_timeline_take_freeze(self):
         saved=self.publish()
