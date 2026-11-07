@@ -264,6 +264,9 @@ class ProductionJournal:
                    WHERE job_id=? ORDER BY position""",(job_id,))]
             return {
                 "format":FORMAT,"job_id":job_id,
+                "project_id":job["project_id"],
+                "assembly_id":job["assembly_id"],
+                "assembly_revision":job["assembly_revision"],
                 "state":job["state"],"task_kind":job["task_kind"],
                 "manifest_sha256":job["manifest_sha256"],
                 "assembly_sha256":job["assembly_sha256"],
