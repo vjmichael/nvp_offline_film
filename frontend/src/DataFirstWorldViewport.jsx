@@ -1,6 +1,13 @@
 import React,{useEffect,useRef,useState} from 'react';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {BokehPass} from 'three/addons/postprocessing/BokehPass.js';
+import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+import {defaultWO2Look,validateWO2Look,textureChannelLook,physicalMaterialLook,
+  suggestWO2Look,WO2_MOODS} from './WO2PresentationLook.js';
 import {runGPUTextureReference,runGPUSourceTextureReference}
   from './NativeTextureGPUReference.js';
 
@@ -261,12 +268,32 @@ function usdMatrix(m){
 
 export default function DataFirstWorldViewport({
   objects=[],listenerPath='',tick='0',sceneSha='',nativeSchemas=[],
-  upgradedTexture=null,
+  upgradedTexture=null,presentationLook=null,onLookChange=null,
 }){
   const holder=useRef(null);
   const env=useRef(null);
   const [disabled,setDisabled]=useState(false);
   const [gpuFixture,setGpuFixture]=useState(null);
+  const [localLook,setLocalLook]=useState(defaultWO2Look);
+  const [lookWarning,setLookWarning]=useState('');
+  const [selectedMaterial,setSelectedMaterial]=useState('');
+  const activeLook=presentationLook||localLook;
+  const sceneRoles=Object.fromEntries(objects.filter(o=>
+    typeof o?.path==='string'&&typeof o?.semantic_role==='string')
+    .map(o=>[o.path,o.semantic_role]));
+  const setPresentation=updated=>{
+    try{
+      const verified=validateWO2Look(updated,sceneRoles);
+      if(onLookChange)onLookChange(verified);
+      else setLocalLook(verified);
+      setLookWarning('');
+    }catch(error){setLookWarning(error.message);}
+  };
+  const changeLook=callback=>{
+    const changed=structuredClone(activeLook);
+    callback(changed);
+    setPresentation(changed);
+  };
   const [viewMode,setViewMode]=useState('orbit');
   const [selectedCamera,setSelectedCamera]=useState('');
   const cameraObjects=objects.filter(o=>o?.semantic_role==='camera');
@@ -286,6 +313,7 @@ export default function DataFirstWorldViewport({
     if(!holder.current)return;
     const root=holder.current;
     let renderer=null,resize=null,raf=0,controls=null;
+    let composer=null,renderPass=null,bokehPass=null,environmentMap=null,pmrem=null;
     let scene=null;
     let disposed=false;
     const meshes=new Map();
@@ -293,7 +321,7 @@ export default function DataFirstWorldViewport({
     const MAX_GPU_TEXTURES=16;
     const MAX_GPU_TEXELS=8*1024*1024; // 32 MiB decoded GPU texture budget
     let gpuTexels=0;
-    const acquireTexture=(transport,override=null,rawColor=false)=>{
+    const acquireTexture=(transport,override=null,rawColor=false,options=null)=>{
       const approvedFull=(override&&
         override.source_sha256===transport.sha256&&
         override.derived_preview_only===true&&
@@ -304,7 +332,8 @@ export default function DataFirstWorldViewport({
         override.canvas?.width===override.width&&
         override.canvas?.height===override.height);
       const sha=(approvedFull?transport.sha256+':full':
-        transport.sha256)+(rawColor?':raw':'');
+        transport.sha256)+(rawColor?':raw':'')+
+        (options?':'+JSON.stringify(options):'');
       const current=textureCache.get(sha);
       if(current){
         current.refs++;
@@ -323,8 +352,19 @@ export default function DataFirstWorldViewport({
       tex.colorSpace=rawColor?THREE.NoColorSpace:THREE.SRGBColorSpace;
       tex.wrapS=THREE.RepeatWrapping;
       tex.wrapT=THREE.RepeatWrapping;
-      tex.magFilter=THREE.NearestFilter;
-      tex.minFilter=THREE.NearestFilter;
+      const filter=options?.filter||'nearest';
+      tex.magFilter=filter==='nearest'?THREE.NearestFilter:THREE.LinearFilter;
+      tex.minFilter=filter==='nearest'?THREE.NearestFilter:
+        filter==='bilinear'?THREE.LinearFilter:THREE.LinearMipmapLinearFilter;
+      tex.generateMipmaps=filter==='trilinear';
+      tex.anisotropy=Math.max(1,Math.min(
+        options?.anisotropy||1,renderer.capabilities.getMaxAnisotropy()));
+      if(options?.uv){
+        tex.repeat.set(...options.uv.repeat);
+        tex.offset.set(...options.uv.offset);
+        tex.rotation=options.uv.rotation_deg*Math.PI/180;
+        tex.center.set(.5,.5);
+      }
       tex.flipY=true;
       textureCache.set(sha,{texture:tex,refs:1,pixels});
       gpuTexels+=pixels;
@@ -355,6 +395,9 @@ export default function DataFirstWorldViewport({
       renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,
         powerPreference:'low-power'});
       renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+      renderer.outputColorSpace=THREE.SRGBColorSpace;
+      renderer.shadowMap.enabled=true;
+      renderer.shadowMap.type=THREE.PCFSoftShadowMap;
       renderer.domElement.setAttribute('aria-label',
         'Live three-dimensional source Film Time world');
       renderer.domElement.setAttribute('role','img');
@@ -366,9 +409,22 @@ export default function DataFirstWorldViewport({
       const grid=new THREE.GridHelper(40,20,'#526077','#374151');
       grid.rotation.x=Math.PI/2;
       scene.add(grid);
-      scene.add(new THREE.AmbientLight(0xffffff,1.7));
+      const ambient=new THREE.HemisphereLight(0xffffff,0x394552,.7);
+      scene.add(ambient);
       const sun=new THREE.DirectionalLight(0xffffff,2.5);
-      sun.position.set(10,-6,16);scene.add(sun);
+      sun.position.set(10,-6,16);
+      sun.castShadow=true;
+      sun.shadow.camera.left=-40;sun.shadow.camera.right=40;
+      sun.shadow.camera.top=40;sun.shadow.camera.bottom=-40;
+      sun.shadow.camera.near=.1;sun.shadow.camera.far=140;
+      sun.shadow.bias=-.00015;
+      scene.add(sun);
+      pmrem=new THREE.PMREMGenerator(renderer);
+      const studio=new RoomEnvironment();
+      environmentMap=pmrem.fromScene(studio,.08).texture;
+      studio.dispose();
+      scene.environment=environmentMap;
+      scene.environmentIntensity=1;
       const camera=new THREE.PerspectiveCamera(50,2,.01,5000);
       const authoredCamera=new THREE.PerspectiveCamera(50,2,.01,5000);
       camera.up.set(0,0,1);
@@ -377,7 +433,12 @@ export default function DataFirstWorldViewport({
       const render=()=>{
         if(disposed)return;
         raf=0;
-        renderer.render(scene,env.current?.activeCamera||camera);
+        const current=env.current?.activeCamera||camera;
+        if(composer&&bokehPass){
+          renderPass.camera=current;
+          bokehPass.camera=current;
+          composer.render();
+        }else renderer.render(scene,current);
       };
       const requestRender=()=>{
         if(!disposed&&!raf)raf=requestAnimationFrame(render);
@@ -390,6 +451,7 @@ export default function DataFirstWorldViewport({
         const width=Math.max(280,Math.min(root.clientWidth||640,1900));
         const height=360;
         renderer.setSize(width,height);
+        if(composer)composer.setSize(width,height);
         camera.aspect=width/height;
         camera.updateProjectionMatrix();
         authoredCamera.aspect=width/height;
@@ -402,7 +464,26 @@ export default function DataFirstWorldViewport({
         resize.observe(root);
       }
       env.current={world,meshes,requestRender,acquireTexture,releaseMaterial,
-        orbitCamera:camera,authoredCamera,activeCamera:camera};
+        orbitCamera:camera,authoredCamera,activeCamera:camera,
+        renderer,scene,sun,ambient,
+        configureDof:(cameraLook)=>{
+          if(composer){composer.dispose();composer=null;renderPass=null;
+            bokehPass=null;}
+          if(cameraLook.depth_of_field){
+            const width=Math.max(280,Math.min(root.clientWidth||640,1900));
+            composer=new EffectComposer(renderer);
+            renderPass=new RenderPass(scene,camera);
+            composer.addPass(renderPass);
+            bokehPass=new BokehPass(scene,camera,{
+              focus:cameraLook.focus_distance_m,
+              aperture:Math.min(.05,.015/(cameraLook.f_stop*cameraLook.f_stop)),
+              maxblur:.018,width,height:360});
+            composer.addPass(bokehPass);
+            composer.addPass(new OutputPass());
+            composer.setSize(width,360);
+          }
+          requestRender();
+        }};
       const lost=event=>{event.preventDefault();setDisabled(true);};
       const restored=()=>{setDisabled(false);requestRender();};
       renderer.domElement.addEventListener('webglcontextlost',lost);
@@ -428,6 +509,9 @@ export default function DataFirstWorldViewport({
       }
       if(renderer){
         if(env.current?.detachDeviceHandlers)env.current.detachDeviceHandlers();
+        composer?.dispose();
+        environmentMap?.dispose();
+        pmrem?.dispose();
         renderer.dispose();
         if(root.contains(renderer.domElement))
           root.removeChild(renderer.domElement);
