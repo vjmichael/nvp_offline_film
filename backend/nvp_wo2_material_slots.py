@@ -70,6 +70,9 @@ def author_material_slots(stage,geometry,slots):
         shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
         material.CreateSurfaceOutput().ConnectToSource(
             shader.ConnectableAPI(),"surface")
+        from backend.nvp_wo2_openpbr import author_openpbr_scalar
+        author_openpbr_scalar(stage,spec["material_path"],material,
+            spec["base_color_rgb"],spec["roughness"],spec["metallic"])
         if not UsdShade.MaterialBindingAPI.Apply(
                 subset.GetPrim()).Bind(material):
             raise RuntimeError("Source USD face subset material binding failed")
@@ -102,6 +105,9 @@ def verify_material_slots(stage,geometry,slots,face_count):
         bound,_=UsdShade.MaterialBindingAPI(prim).ComputeBoundMaterial()
         if not bound or str(bound.GetPath())!=spec["material_path"]:
             raise RuntimeError("Frozen material subset USD binding changed")
+        from backend.nvp_wo2_openpbr import verify_openpbr_scalar
+        verify_openpbr_scalar(stage,spec["material_path"],bound,
+            spec["base_color_rgb"],spec["roughness"],spec["metallic"])
         shader=UsdShade.Shader(stage.GetPrimAtPath(
             spec["material_path"]+"/PreviewSurface"))
         if not shader or shader.GetIdAttr().Get()!="UsdPreviewSurface":
