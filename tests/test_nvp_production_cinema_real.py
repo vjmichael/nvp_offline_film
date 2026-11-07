@@ -15,13 +15,17 @@ import unittest
 
 from test_nvp_wo3_native_delivery import WO3OriginalCinemaAuthoring
 from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,digest_file
-from backend.nvp_production_cinema import CinemaJournal
+from backend.nvp_wo4_delivery_journal import CinemaDeliveryJournal
 from backend.nvp_wo4_pcm_master import master_pcm24_candidate
+from backend.nvp_wo4_pcm_stream import stream_master_pcm24_candidate
+from backend.nvp_wo3_dcp_structure import inspect_dcp_structure
+from backend.nvp_wo3_independent_essence import decode_full_dcp_candidate
 from backend.nvp_wo4_master_qc import evaluate_master_candidates
 from backend.nvp_wo4_mastering_decision import register_mastering_decision
 
 NEEDED=("NVP_NATIVE_OPENJPEG","NVP_NATIVE_ASDCP_WRAP",
-        "NVP_NATIVE_ASDCP_INFO","NVP_NATIVE_ASDCP_UNWRAP")
+        "NVP_NATIVE_ASDCP_INFO","NVP_NATIVE_ASDCP_UNWRAP",
+        "NVP_NATIVE_OPENJPEG_DECODE")
 
 
 @unittest.skipUnless(all(os.environ.get(x) for x in NEEDED),
@@ -37,7 +41,7 @@ class ActualFileBackedProductionReel(unittest.TestCase):
         fixture.setUp()
         try:
             root=Path(fixture.tmp.name).resolve()
-            journal=CinemaJournal(root/"production-journal")
+            journal=CinemaDeliveryJournal(root/"production-journal")
             sources=[]
             images=[]
             for n,code in enumerate((128,500,1200)):
@@ -110,6 +114,68 @@ class ActualFileBackedProductionReel(unittest.TestCase):
                     self.assertTrue(file.is_file())
                     self.assertEqual(digest_file(file),
                                      digest_file(source_codestream))
+            # Attach an independently approved full PCM24 master to the
+            # EXISTING picture job; the same supervisor handles both MXFs
+            # and final file-based SMPTE XML/FilmIndex transitions.
+            audio_source=root/"approved_original_pcm.pcm"
+            audio_source.write_bytes(pcm)
+            exports=root/"file_backed_dcp"
+            exports.mkdir()
+            wav=stream_master_pcm24_candidate(
+                audio_source,source_sha256=sha256(pcm).hexdigest(),
+                original_take_sha256=fixture.sha,cinema_frames=3,
+                channel_layout="stereo",output_root=exports,
+                approve=lambda _:True)
+            attached=journal.attach_delivery(
+                fixture.index,job["job_id"],
+                sound_candidate=wav,output_root=exports,
+                title="WO4 Native Supervised Film",
+                approve=lambda scope:scope["source_take_sha256"]==fixture.sha)
+            self.assertEqual(attached["status"],"SOUND_PENDING")
+            for expected in ("SOUND_READY","PUBLISHED_PENDING_INDEX","INDEXED"):
+                proc=subprocess.run([
+                    sys.executable,"-m","backend.nvp_production_supervisor",
+                    "once","--state-root",str(journal.root)],
+                    cwd=str(repo),stdin=subprocess.DEVNULL,
+                    capture_output=True,text=True,timeout=480,check=False)
+                self.assertEqual(proc.returncode,0,proc.stderr[-1200:])
+                self.assertNotIn("REVIEW_REQUIRED",proc.stdout,proc.stdout[-1200:])
+                self.assertEqual(journal.delivery(job["job_id"])["phase"],
+                                 expected,proc.stdout[-1200:])
+            d=journal.delivery(job["job_id"])
+            self.assertEqual(journal.status(job["job_id"])["state"],
+                             "DCP_INDEXED")
+            destination=exports/("DCP_"+d["cpl_uuid"])
+            audit=inspect_dcp_structure(destination)
+            self.assertEqual(audit["status"],"STRUCTURE_AND_SHA_VERIFIED")
+            self.assertEqual(audit["reel_count"],1)
+            self.assertEqual(audit["reel_durations"],[3])
+            decoder=self.codec("NVP_NATIVE_OPENJPEG_DECODE",
+                               "OpenJPEG-opj_decompress")
+            genuine=decode_full_dcp_candidate(
+                destination,unwrap=unwrap,decoder=decoder,
+                expected_picture_codestream_sha256=[
+                    digest_file(spool/"frames"/f"{i:06d}.j2c") for i in range(3)],
+                expected_sound_pcm_sha256=sha256(pcm).hexdigest(),
+                profile="2K_FLAT_24",expected_frames=3)
+            self.assertEqual(genuine["frames_decoded"],3)
+            self.assertTrue(genuine["pcm24_48000_sample_exact"])
+            record=fixture.index.read_revision(
+                fixture.pid,"WO3DCP_"+d["cpl_uuid"].replace("-",""),1)
+            self.assertEqual(record["data"]["file_sha256"],
+                             __import__("json").loads(d["dcp_files_json"]))
+            self.assertEqual(record["data"]["original_take_sha256"],fixture.sha)
+            self.assertEqual(digest_file(audio_source),sha256(pcm).hexdigest())
+            self.assertFalse(record["data"]["production_dcp_accepted"])
+            print("WO4_SUPERVISED_FULL_FILE_DCP:",{
+                "job_id":job["job_id"],"picture_sha256":reel["track_sha256"],
+                "sound_sha256":d["sound_sha256"],
+                "cpl_uuid":d["cpl_uuid"],
+                "complete_native_smpte_structure":True,
+                "independent_picture_and_sound_decode":True,
+                "filmindex_revision_recorded":True,
+                "no_full_mxf_in_ram":True,
+                "production_dcp_accepted":False},flush=True)
             for file,expected in zip(sources,images):
                 self.assertEqual(digest_file(file),expected["xyz12_sha256"])
             self.assertEqual(fixture.index.read_revision(
