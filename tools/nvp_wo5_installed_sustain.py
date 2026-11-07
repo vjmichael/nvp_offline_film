@@ -31,6 +31,19 @@ FRAME_SAMPLES=2000
 MAX_FRAMES_PER_BATCH=4
 MAX_DECODE_WORKERS=4
 
+def _native_codec_stage(label):
+    path=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+    if not path or type(label) is not str or len(label)>96:
+        return
+    target=Path(path)
+    if not target.is_absolute() or target.is_symlink() or not target.parent.is_dir():
+        return
+    with target.open("a",encoding="utf8") as log:
+        log.write("WO5_CODEC_STAGE="+label+"\\n")
+        log.flush()
+        os.fsync(log.fileno())
+
+
 def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                                  min_fps=24):
     if type(seconds) not in (int,float) or not 1<=seconds<=120 or (
@@ -86,7 +99,9 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
     bytes_output=0
     start=time.monotonic()
     reel_index=0
+    _native_codec_stage("sustained_real_codec_probe_start")
     while time.monotonic()-start<seconds:
+        _native_codec_stage(f"native_mxf_batch_begin_frames_{decoded}")
         if time.monotonic()>=deadline:
             native_failure="SUSTAINED_PROBE_EXCEEDED_WALL_BUDGET"
             break
@@ -143,6 +158,7 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
                         decode_original_published_frame,range(n)):
                     bytes_output+=actual_bytes
                     decoded+=1
+        _native_codec_stage(f"native_mxf_batch_verified_frames_{decoded}")
         reel_index=(reel_index+1)%len(reels)
     elapsed=time.monotonic()-start
     complete=(elapsed>=seconds and native_failure is None)
@@ -172,6 +188,8 @@ def run_installed_finished_probe(*,bundle_root,dcp_dir,seconds=20,
         "installed_visible_webview_playback_verified":False,
         "production_film_accepted":False,
     })
+    _native_codec_stage(
+        f"throughput_{report['status']}_frames_{decoded}")
     return report
 
 def smoke_from_installed_bundle(bundle_root):
