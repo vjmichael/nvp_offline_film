@@ -22,6 +22,35 @@ function mount(api){
     action={action} busy={false}/>);
 }
 describe('DA-01 precise Film Time desktop editor',()=>{
+  it('preserves tick-mode duration edits when switching to seconds',async()=>{
+    const api=vi.fn(async(path,method,payload)=>{
+      if(path.endsWith('/film/camera-scenes'))return list;
+      if(method==='POST')return {...sequence,...payload,revision:2,
+        document_sha256:'d'.repeat(64)};
+      return sequence;
+    });
+    mount(api);
+    await screen.findByLabelText('Film Time duration limit ticks');
+    fireEvent.change(screen.getByLabelText('Film Time duration limit ticks'),
+      {target:{value:'14112000000'}});
+    fireEvent.click(screen.getByLabelText('Author exact integer Film Time ticks'));
+    expect(screen.queryByLabelText('Film Time duration limit ticks')).toBeNull();
+    fireEvent.click(screen.getByText('Save immutable timing revision'));
+    await waitFor(()=>expect(api).toHaveBeenCalledWith(
+      expect.stringContaining('/film/native-time-shots/'),'POST',
+      expect.objectContaining({duration_tick:'14112000000'})));
+  });
+  it('refuses lossy switch from sub-microsecond draft ticks',async()=>{
+    const api=vi.fn(async(path)=>path.endsWith('/film/camera-scenes')?list:sequence);
+    mount(api);
+    await screen.findByLabelText('Film Time duration limit ticks');
+    fireEvent.change(screen.getByLabelText('Film Time duration limit ticks'),
+      {target:{value:'7056000002'}});
+    fireEvent.click(screen.getByLabelText('Author exact integer Film Time ticks'));
+    expect(screen.getByLabelText('Film Time duration limit ticks').value)
+      .toBe('7056000002');
+    expect(screen.getByRole('alert').textContent).toMatch(/Sub-microsecond/);
+  });
   it('retains sub-microsecond saved duration and republishes exact ticks',async()=>{
     const api=vi.fn(async(path,method,payload)=>{
       if(path.endsWith('/film/camera-scenes'))return list;
