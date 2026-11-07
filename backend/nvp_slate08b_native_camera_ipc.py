@@ -503,6 +503,90 @@ class TrustedDesktopCameraBridge:
 
 
 
+    def data_av_native_aces_policy(self):
+        """Exact OpenColorIO display processor pinned to installed library."""
+        self._native_window()
+        from backend.nvp_native_aces_color import policy
+        info,_=policy()
+        return info
+
+    def data_av_native_aces_review(self,request):
+        """Creator-authorized transient PNG16 derived from real original USD.
+
+        No model-provided image, scene-linear pixel buffer, camera selector,
+        local path, color-config text or imported render is accepted.
+        """
+        self._native_window()
+        required={"project_id","take_id","take_sha256",
+                  "grade_id","grade_revision","grade_sha256",
+                  "film_time_tick","expected_config_sha256"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Native ACES source color request must be exact")
+        from backend.nvp_native_color_decisions import NativeColorDecisions
+        from backend.nvp_native_aces_color import NativeACESColor,policy
+        from backend.nvp_temporal_ledger import TemporalLedger,_int
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        _require_pid(request["project_id"])
+        _id(request["take_id"],"original USD Digital Take")
+        _id(request["grade_id"],"original source color decision")
+        _sha(request["take_sha256"])
+        _sha(request["grade_sha256"])
+        _sha(request["expected_config_sha256"])
+        _int(request["film_time_tick"],"approved Film Time")
+        grade=NativeColorDecisions(self.index).read(
+            request["project_id"],request["grade_id"],
+            request["grade_revision"])
+        if (grade["take_id"]!=request["take_id"] or
+            grade["take_sha256"]!=request["take_sha256"] or
+            grade["document_sha256"]!=request["grade_sha256"]):
+            raise RuntimeError("Native ACES grade is not pinned to this frozen Take")
+        original=self.index.read_revision(
+            request["project_id"],request["take_id"],1)
+        data=original["data"]
+        if (original["document_sha256"]!=request["take_sha256"] or
+            original["kind"]!="take" or data.get("frozen") is not True or
+            data.get("format")!="nvp.digital_take.openusd_temporal.v1" or
+            request["film_time_tick"]>=data["duration_tick"]):
+            raise RuntimeError("Native color preview source Take/time is not frozen")
+        active=TemporalLedger(self.index).events_at(
+            request["project_id"],data["timeline_id"],
+            data["timeline_revision"],tick=request["film_time_tick"],
+            event_kind="camera",limit=2)
+        if len(active)!=1:
+            raise RuntimeError("Color preview needs exactly one original USD shot camera")
+        camera=active[0]["payload"].get("usd_prim_path")
+        if (type(camera) is not str or not camera.startswith("/World/")):
+            raise RuntimeError("Original active camera event has invalid source")
+        info,_=policy()
+        if info["configuration_sha256"]!=request["expected_config_sha256"]:
+            raise RuntimeError("Installed native ACES 2 config changed")
+        approved=self._ask(
+            "Create a TEMPORARY unmastered ACES 2 SDR review picture?\n"
+            f"Original frozen Take: {request['take_id']}\n"
+            f"Take SHA: {request['take_sha256']}\n"
+            f"Grade SHA: {request['grade_sha256']}\n"
+            f"ACES configuration SHA: {info['configuration_sha256']}\n"
+            f"Original Film Time tick: {request['film_time_tick']}\n"
+            f"Authored USD camera: {camera}\n"
+            "The renderer uses source USD geometry/light, not a captured 2D frame.\n"
+            "Working color/lights are NOT professionally calibrated.\n"
+            "No movie/master, FFmpeg process or source modification.")
+        if approved is not True:
+            raise PermissionError("Creator declined the native ACES review projection")
+        picture,receipt=NativeACESColor(self.index).process_verified_usd_scene(
+            request["project_id"],request["take_id"],request["take_sha256"],
+            request["grade_id"],request["grade_revision"],
+            request["grade_sha256"],
+            tick=request["film_time_tick"],camera_path=camera,
+            expected_config_sha256=request["expected_config_sha256"])
+        if len(picture)>16*1024*1024:
+            raise RuntimeError("Bounded native source color picture exceeded limit")
+        return {
+            **receipt,"png16_base64":base64.b64encode(picture).decode("ascii"),
+            "output_mime":"image/png","original_modified":False,
+            "saved_picture_files":False,"master_approved":False,
+        }
+
     def data_av_native_color_catalog(self,project_id,take_id,take_sha256):
         """List only source-bound, verified immutable grade revisions."""
         self._native_window()
@@ -527,6 +611,95 @@ class TrustedDesktopCameraBridge:
                 })
         return {"format":"nvp.data_first.native_grade_catalog.v1",
                 "status":"AVAILABLE","grades":grades,"ffmpeg_used":False}
+
+    def data_av_export_native_aces_package(self,request):
+        """Creator-approved RGB16 ACES picture + PCM from verified USD Film Time.
+
+        This is an unmastered, no-replace native 2D DERIVATIVE only.
+        The OS picker chooses the destination; browser input contains IDs.
+        """
+        self._native_window()
+        required={"project_id","take_id","take_document_sha256",
+                  "presentation_id","listener_path","fps_num","fps_den",
+                  "aces_color_grade"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Native ACES RGB16 package requires exact source/grade scope")
+        from backend.nvp_final_2d_native import Approved2DPackage,OUTPUT_CADENCES
+        from backend.nvp_native_cpu_raster import NativeSourceRaster
+        from webview import FileDialog
+        pid=request["project_id"]
+        take=request["take_id"]
+        sha=request["take_document_sha256"]
+        presentation=request["presentation_id"]
+        _require_pid(pid)
+        _id(take,"original frozen USD Digital Take")
+        _id(presentation,"new color-managed presentation identity")
+        _sha(sha)
+        if (type(request["fps_num"]) is not int or
+            type(request["fps_den"]) is not int or
+            (request["fps_num"],request["fps_den"]) not in OUTPUT_CADENCES):
+            raise ValueError("Unapproved exact native picture cadence")
+        listener=request["listener_path"]
+        if type(listener) is not str or not listener.startswith("/World/"):
+            raise ValueError("A native authored USD camera is required")
+        color=request["aces_color_grade"]
+        if type(color) is not dict or set(color)!={
+                "grade_id","revision","document_sha256","config_sha256"}:
+            raise ValueError("Native ACES package requires source-pinned grade/config")
+        for name in ("document_sha256","config_sha256"):
+            _sha(color[name])
+        original=self.index.read_revision(pid,take,1)
+        if original["document_sha256"]!=sha or original["kind"]!="take":
+            raise RuntimeError("Original frozen Digital Take identity changed")
+        window=self._native_window()
+        if not callable(getattr(window,"create_file_dialog",None)):
+            raise PermissionError("Trusted OS color package folder chooser unavailable")
+        chosen=window.create_file_dialog(FileDialog.FOLDER)
+        if not chosen:
+            return {"status":"CANCELLED","ffmpeg_used":False,
+                    "original_modified":False}
+        if type(chosen) not in (list,tuple) or len(chosen)!=1:
+            raise PermissionError("Choose one native output directory")
+        parent=Path(chosen[0])
+        if parent.is_symlink() or not parent.is_dir():
+            raise PermissionError("Native destination folder is not trusted")
+        def approve_package(scope):
+            if (scope.get("take_document_sha256")!=sha or
+                scope.get("color_pipeline")!=
+                    "ocio_aces2_scene_linear_png16_unmastered" or
+                scope.get("color_grade_sha256")!=color["document_sha256"] or
+                scope.get("aces_config_sha256")!=color["config_sha256"] or
+                scope.get("listener_path")!=listener or
+                scope.get("presentation_id")!=presentation or
+                scope.get("original_data_immutable") is not True):
+                return False
+            return self._ask(
+                "Publish a NEW ACES 2 SDR 16-bit PNG picture + PCM package?\n"
+                f"Frozen USD Take SHA: {sha}\n"
+                f"Saved non-destructive color grade SHA: {color['document_sha256']}\n"
+                f"OCIO ACES2 config SHA: {color['config_sha256']}\n"
+                f"Picture cadence: {scope['fps_num']}/{scope['fps_den']}\n"
+                f"Native authored camera/listener: {listener}\n"
+                f"Picture count: {scope['frame_count']}\n"
+                f"Destination folder: {parent}\n"
+                "Original USD and PCM never change. No AVI down-conversion, FFmpeg\n"
+                "or professional calibrated DCP/master is produced.")
+        primitive=NativeSourceRaster(self.index,pid)
+        result=Approved2DPackage(
+            self.index,native_creator_approval=approve_package,
+            render_png=primitive.render_png).export(
+                pid,take,sha,presentation,parent,
+                listener_path=listener,
+                fps_num=request["fps_num"],fps_den=request["fps_den"],
+                aces_color_grade=color)
+        if (result["color_pipeline"]!=
+                "ocio_aces2_scene_linear_png16_unmastered" or
+            result["pixel_bit_depth"]!=16):
+            raise RuntimeError("Native approved ACES2 package lost source color")
+        return {**result,
+                "format":"nvp.native_ocio.approved_source_png16_package.v1",
+                "status":"UNMASTERED_ACES2_PNG16_AUDIO_PACKAGE",
+                "original_modified":False,"master_approved":False}
 
     def data_av_export_native_avi(self,request):
         """Two native approvals and OS folder choice; browser supplies no path.

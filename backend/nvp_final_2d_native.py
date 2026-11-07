@@ -121,7 +121,8 @@ class Approved2DPackage:
 
     def export(self,project_id,take_id,expected_take_sha256,
                presentation_id,output_parent,*,listener_path,
-               fps_num=24,fps_den=1,color_grade=None):
+               fps_num=24,fps_den=1,color_grade=None,
+               aces_color_grade=None):
         _require_pid(project_id)
         _id(take_id,"original Digital Take")
         _id(presentation_id,"unique final presentation identity")
@@ -138,6 +139,40 @@ class Approved2DPackage:
         if (original["kind"]!="take" or data.get("frozen") is not True or
             data.get("format")!="nvp.digital_take.openusd_temporal.v1"):
             raise RuntimeError("Cannot flatten an old frame-proxy or unfrozen source")
+        if color_grade is not None and aces_color_grade is not None:
+            raise ValueError("Cannot mix display SDR and original scene-linear ACES")
+        aces=None
+        if aces_color_grade is not None:
+            if type(aces_color_grade) is not dict or set(aces_color_grade)!={
+                    "grade_id","revision","document_sha256","config_sha256"}:
+                raise ValueError("ACES source output needs exact grade/config pins")
+            from backend.nvp_native_color_decisions import NativeColorDecisions
+            from backend.nvp_native_aces_color import policy
+            info,_=policy()
+            _sha(aces_color_grade["config_sha256"])
+            if info["configuration_sha256"]!=aces_color_grade["config_sha256"]:
+                raise RuntimeError("Pinned native ACES2 config changed")
+            _id(aces_color_grade["grade_id"],"original source grade")
+            _sha(aces_color_grade["document_sha256"])
+            plan=NativeColorDecisions(self.index).read(
+                project_id,aces_color_grade["grade_id"],
+                aces_color_grade["revision"])
+            if (plan["document_sha256"]!=aces_color_grade["document_sha256"] or
+                plan["take_id"]!=take_id or
+                plan["take_sha256"]!=expected_take_sha256):
+                raise RuntimeError("Original ACES grade source Take is not verified")
+            aces={
+                "grade_id":plan["grade_id"],
+                "revision":plan["revision"],
+                "document_sha256":plan["document_sha256"],
+                "config_sha256":info["configuration_sha256"],
+                "configuration":info["configuration"],
+                "display":info["output_display"],
+                "view":info["output_view"],
+                "output_encoding":"RGB16_PNG_SDR",
+                "professional_calibration_accepted":False,
+                "master_approved":False,
+            }
         grade=None
         if color_grade is not None:
             if (type(color_grade) is not dict or
@@ -174,7 +209,13 @@ class Approved2DPackage:
                "scene_document_sha256":data["scene_document_sha256"],
                "timeline_document_sha256":data["timeline_document_sha256"],
                "output_kind":"png_sequence_pcm_wav_not_single_file_master",
-               "color_grade_sha256":(grade["document_sha256"] if grade else None)}
+               "color_pipeline":(
+                    "ocio_aces2_scene_linear_png16_unmastered" if aces else
+                    "display_linearized_srgb_png8_review"),
+               "color_grade_sha256":(
+                    aces["document_sha256"] if aces else
+                    grade["document_sha256"] if grade else None),
+               "aces_config_sha256":aces["config_sha256"] if aces else None}
         if self.approve(dict(scope)) is not True:
             raise PermissionError("Creator did not authorize exact final 2D sample projection")
         if self.index.read_revision(
@@ -199,6 +240,10 @@ class Approved2DPackage:
             dimensions=None
             grade_channels_clipped=0
             grade_channels_seen=0
+            aces_source_pins=[]
+            if aces:
+                from backend.nvp_native_aces_color import NativeACESColor
+                aces_renderer=NativeACESColor(self.index)
             for i in range(count):
                 tick=tick_from_frame(i,fps_num,fps_den)
                 if tick>=duration:
@@ -216,16 +261,59 @@ class Approved2DPackage:
                     raise RuntimeError("Output camera is not native OpenUSD scene camera")
                 # Gaps are real Film Time; a trusted renderer emits an actual
                 # blank picture for camera=None, never fabricates scene data.
-                encoded=self.render(
-                    scope=dict(scope),tick=tick,camera_path=camera,
-                    source_snapshot=state)
-                _png_header(encoded)
-                if grade:
-                    from backend.nvp_native_color_eval import apply_display_grade
-                    encoded,audit=apply_display_grade(
-                        encoded,grade["parameters"],return_audit=True)
-                    grade_channels_clipped+=audit["channels_clipped"]
-                    grade_channels_seen+=audit["color_channel_count"]
+                if aces:
+                    if camera is None:
+                        # Actual gap has no source camera. Explicitly
+                        # blank rather than fabricate one for a color grade.
+                        from backend.nvp_native_aces_color import png16_rgb
+                        import numpy as np
+                        encoded=png16_rgb(np.zeros((360,640,3),dtype=np.uint16))
+                        source_receipt={
+                            "scene_snapshot_sha256":state["snapshot_sha256"],
+                            "camera_path":None,"black_camera_gap":True,
+                            "clipped_channels":0,
+                            "color_channel_count":360*640*3,
+                        }
+                    else:
+                        encoded,processed=aces_renderer.process_verified_usd_scene(
+                            project_id,take_id,expected_take_sha256,
+                            aces["grade_id"],aces["revision"],
+                            aces["document_sha256"],
+                            tick=tick,camera_path=camera,
+                            expected_config_sha256=aces["config_sha256"],
+                            source_session=source,source_snapshot=state)
+                        original_source=processed["scene_linear_source"]
+                        if (original_source["scene_snapshot_sha256"]!=
+                                state["snapshot_sha256"] or
+                            original_source["scene_document_sha256"]!=
+                                state["scene_document_sha256"] or
+                            processed["grade_sha256"]!=aces["document_sha256"]):
+                            raise RuntimeError("Source ACES output changed before publication")
+                        source_receipt={
+                            "scene_snapshot_sha256":state["snapshot_sha256"],
+                            "camera_path":camera,"black_camera_gap":False,
+                            "clipped_channels":processed["clipped_channels"],
+                            "color_channel_count":processed["width"]*
+                                                   processed["height"]*3,
+                            "scene_linear_rgba_sha256":original_source[
+                                "scene_linear_rgba_sha256"],
+                        }
+                    if encoded[24:26]!=bytes((16,2)):
+                        raise RuntimeError("Native ACES picture lost RGB16 bit-depth")
+                    grade_channels_clipped+=source_receipt["clipped_channels"]
+                    grade_channels_seen+=source_receipt["color_channel_count"]
+                    aces_source_pins.append(source_receipt)
+                else:
+                    encoded=self.render(
+                        scope=dict(scope),tick=tick,camera_path=camera,
+                        source_snapshot=state)
+                    _png_header(encoded)
+                    if grade:
+                        from backend.nvp_native_color_eval import apply_display_grade
+                        encoded,audit=apply_display_grade(
+                            encoded,grade["parameters"],return_audit=True)
+                        grade_channels_clipped+=audit["channels_clipped"]
+                        grade_channels_seen+=audit["color_channel_count"]
                 width,height=_png_header(encoded)
                 if dimensions is None:
                     dimensions=(width,height)
@@ -238,7 +326,11 @@ class Approved2DPackage:
                                 "source_tick":str(tick),
                                 "camera_path":camera,
                                 "png_file":name,
-                                "sha256":sha256(encoded).hexdigest()})
+                                "sha256":sha256(encoded).hexdigest(),
+                                **({"original_scene_snapshot_sha256":
+                                    state["snapshot_sha256"],
+                                    "pixel_bit_depth":16}
+                                   if aces else {})})
             if len(receipt)!=count:
                 raise RuntimeError("Native image output cadence incomplete")
             wav_path=staged/"soundtrack.wav"
@@ -270,6 +362,22 @@ class Approved2DPackage:
                 "picture_dimensions":dimensions,
                 "pictures":receipt,
                 "color_grade":grade,
+                "aces_color_grade":aces,
+                "color_pipeline":scope["color_pipeline"],
+                "pixel_bit_depth":16 if aces else 8,
+                "aces_source_receipts":aces_source_pins if aces else None,
+                "derived_scene_linear_aces_audit":({
+                    "processor_config_sha256":aces["config_sha256"],
+                    "grade_sha256":aces["document_sha256"],
+                    "color_channel_count":grade_channels_seen,
+                    "clipped_channel_count":grade_channels_clipped,
+                    "clip_fraction":(
+                        grade_channels_clipped/grade_channels_seen
+                        if grade_channels_seen else 0),
+                    "rendered_from_original_usd":True,
+                    "original_scene_color_calibrated":False,
+                    "cinema_master_approved":False,
+                } if aces else None),
                 "derived_display_color_audit":({
                     "profile":"linearized_srgb_sdr_review_not_aces",
                     "color_channel_count":grade_channels_seen,
@@ -295,7 +403,11 @@ class Approved2DPackage:
                     "manifest_sha256":sha256(
                         (target/"manifest.json").read_bytes()).hexdigest(),
                     "take_sha256":expected_take_sha256,
-                    "color_grade_sha256":(grade["document_sha256"] if grade else None),
+                    "color_grade_sha256":(
+                        aces["document_sha256"] if aces else
+                        grade["document_sha256"] if grade else None),
+                    "color_pipeline":scope["color_pipeline"],
+                    "pixel_bit_depth":16 if aces else 8,
                     "ffmpeg_used":False,
                     "single_file_master":False}
         finally:

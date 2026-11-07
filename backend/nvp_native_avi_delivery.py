@@ -109,6 +109,12 @@ def deliver_avi(package_dir,output_file,*,expected_take_sha256,
             doc.get("conventional_single_file_master") is not False or
             doc.get("original_data_modified") is not False):
         raise RuntimeError("Only creator-approved source-pinned derived packages are accepted")
+    # A true 16-bit ACES2 image sequence must never be silently downgraded
+    # through the unrelated 8-bit BGR24 AVI delivery path.
+    if (doc.get("aces_color_grade") is not None or
+        doc.get("pixel_bit_depth",8)!=8 or
+        doc.get("color_pipeline")=="ocio_aces2_scene_linear_png16_unmastered"):
+        raise RuntimeError("Approved ACES2 RGB16 picture cannot be silently flattened to AVI BGR24")
     if type(expected_take_sha256) is not str or len(expected_take_sha256)!=64:
         raise ValueError("Exact original Digital Take digest required")
     frames=doc.get("pictures")
