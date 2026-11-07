@@ -17,6 +17,13 @@ import sys
 import time
 
 from backend.nvp_production_journal import ProductionJournal, TASK_KIND
+from backend.nvp_production_cinema import CinemaJournal, TASK_KIND as CINEMA_TASK
+from backend.nvp_supervised_codec_process import WorkerCancelled
+from backend.nvp_wo4_picture_spool import (
+    encode_disk_xyz12,wrap_disk_j2k_picture,verify_frame_file)
+from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,digest_file
+from backend.nvp_wo3_atomic_publish import _fsync_directory
+from pathlib import Path
 
 BLOCK_BYTES = 1024 * 1024
 
@@ -113,6 +120,125 @@ class ProductionSupervisor:
         self.owner = "Supervisor" + os.urandom(8).hex()
         self.pid = os.getpid()
 
+    def _picture_check(self,job_id,position=None):
+        last=[time.monotonic()]
+        def check():
+            if position is not None and time.monotonic()-last[0]>=1.0:
+                self.journal.heartbeat(self.owner,job_id,position)
+                last[0]=time.monotonic()
+            return self.journal.status(job_id)["cancel_requested"]
+        return check
+
+    def _run_cinema_frame(self,segment):
+        if not isinstance(self.journal,CinemaJournal):
+            raise PermissionError("Cinema workers need the one native cinema journal")
+        uid=segment["job_id"]
+        pos=segment["position"]
+        try:
+            reel=self.journal.reel(uid)
+            root=self.journal.spool(uid)
+            root.mkdir(mode=0o700,exist_ok=True)
+            frame_dir=root/"frames"
+            frame_dir.mkdir(mode=0o700,exist_ok=True)
+            work_parent=root/"frame-work"
+            work_parent.mkdir(mode=0o700,exist_ok=True)
+            work=work_parent/f"{pos:06d}"
+            # Never reopen or overwrite an interrupted worker stage.
+            work.mkdir(mode=0o700,exist_ok=False)
+            out=frame_dir/f"{pos:06d}.j2c"
+            codec=ApprovedCodecBinary(
+                reel["codec_path"],sha256=reel["codec_sha256"],
+                product="OpenJPEG-opj_compress")
+            check=self._picture_check(uid,pos)
+            receipt=encode_disk_xyz12(
+                codec,profile=reel["profile"],
+                source_path=segment["source_path"],
+                source_sha256=segment["expected_sha256"],
+                private_work=work,check_cancel=check)
+            if digest_file(segment["source_path"])!=segment["expected_sha256"]:
+                raise PermissionError("Approved source frame changed during worker")
+            if check():
+                raise WorkerCancelled("Creator cancelled before frame checkpoint")
+            os.link(work/"frame.j2c",out)
+            _fsync_directory(frame_dir)
+            committed=self.journal.finish_frame(self.owner,segment,receipt)
+            return {"status":"PICTURE_FRAME_CHECKPOINTED",
+                    "job_id":uid,"position":pos,
+                    "sha256":committed["codestream_sha256"],
+                    "production_dcp_accepted":False}
+        except InterruptedError:
+            if self.journal.status(uid)["cancel_requested"]:
+                self.journal.finalize_cancel(uid)
+                return {"status":"CANCELLED","job_id":uid}
+            self.journal.mark_review(self.owner,uid,pos,"SupervisorInterrupted")
+            return {"status":"REVIEW_REQUIRED","job_id":uid,
+                    "reason":"SupervisorInterrupted"}
+        except (OSError,ValueError,RuntimeError,PermissionError) as exc:
+            if self.journal.status(uid)["cancel_requested"]:
+                self.journal.finalize_cancel(uid)
+                return {"status":"CANCELLED","job_id":uid}
+            self.journal.mark_review(self.owner,uid,pos,type(exc).__name__)
+            return {"status":"REVIEW_REQUIRED","job_id":uid,
+                    "reason":type(exc).__name__,
+                    "production_dcp_accepted":False}
+
+    def _wrap_cinema_track(self,reel):
+        uid=reel["job_id"]
+        try:
+            root=self.journal.spool(uid)
+            frames=root/"frames"
+            # The journal holds one hash per frame and enforces ordered,
+            # gap-free source-to-picture mapping. Don't trust directory names.
+            with self.journal._read() as db:
+                rows=[dict(x) for x in db.execute("""
+                    SELECT f.position,f.file_sha256,f.file_bytes
+                    FROM production_cinema_frames f
+                    WHERE f.job_id=? ORDER BY f.position""",(uid,))]
+            if len(rows)!=reel["frame_count"]:
+                raise PermissionError("Picture reel frames not all committed")
+            for index,item in enumerate(rows):
+                if item["position"]!=index:
+                    raise PermissionError("Unordered picture SHA checkpoint")
+                size=verify_frame_file(
+                    frames/f"{index:06d}.j2c",item["file_sha256"],
+                    reel["profile"])
+                if size!=item["file_bytes"]:
+                    raise PermissionError("Picture frame changed since commit")
+            stage=root/"mxf-stage"
+            stage.mkdir(mode=0o700,exist_ok=False)
+            wrap=ApprovedCodecBinary(reel["wrapper_path"],
+                                    sha256=reel["wrapper_sha256"],
+                                    product="ASDCP-asdcp_wrap")
+            info=ApprovedCodecBinary(reel["info_path"],
+                                    sha256=reel["info_sha256"],
+                                    product="ASDCP-asdcp_info")
+            check=self._picture_check(uid)
+            receipt=wrap_disk_j2k_picture(
+                wrap,info,frames_dir=frames,stage_dir=stage,
+                frame_count=reel["frame_count"],profile=reel["profile"],
+                asset_uuid=reel["picture_uuid"],check_cancel=check)
+            if check():
+                raise WorkerCancelled("Explicit cancellation before MXF checkpoint")
+            target=root/"picture.mxf"
+            os.link(stage/"picture.mxf",target)
+            _fsync_directory(root)
+            return self.journal.commit_track(self.owner,uid,receipt)
+        except InterruptedError:
+            if self.journal.status(uid)["cancel_requested"]:
+                self.journal.finalize_cancel(uid)
+                return {"status":"CANCELLED","job_id":uid}
+            self.journal.track_review(self.owner,uid,"SupervisorInterrupted")
+            return {"status":"REVIEW_REQUIRED","job_id":uid,
+                    "reason":"SupervisorInterrupted"}
+        except (OSError,ValueError,RuntimeError,PermissionError) as exc:
+            if self.journal.status(uid)["cancel_requested"]:
+                self.journal.finalize_cancel(uid)
+                return {"status":"CANCELLED","job_id":uid}
+            self.journal.track_review(self.owner,uid,type(exc).__name__)
+            return {"status":"REVIEW_REQUIRED","job_id":uid,
+                    "reason":type(exc).__name__,
+                    "production_dcp_accepted":False}
+
     def run_one(self, *, after_claim=None):
         # Only the supervisor's process may claim. The singleton lock is
         # held by serve() or the parent native host; no browser entrypoint.
@@ -123,9 +249,17 @@ class ProductionSupervisor:
                     self.journal.finalize_cancel(item["job_id"])
         segment = self.journal.claim_next(self.owner, self.pid)
         if segment is None:
+            if isinstance(self.journal,CinemaJournal):
+                track=self.journal.next_track(self.owner,self.pid)
+                if track is not None:
+                    return self._wrap_cinema_track(track)
             return {"status":"IDLE","worker_kind":TASK_KIND}
         if after_claim is not None:
             after_claim(dict(segment))
+        if segment["task_kind"]==CINEMA_TASK:
+            return self._run_cinema_frame(segment)
+        if segment["task_kind"]!=TASK_KIND:
+            raise PermissionError("Unknown native worker task kind")
         job_id = segment["job_id"]
         try:
             last_heartbeat=time.monotonic()
@@ -163,7 +297,7 @@ class ProductionSupervisor:
 def serve(state_root, *, once=False, poll_seconds=0.25):
     if type(poll_seconds) not in (float,int) or not 0.05<=poll_seconds<=30:
         raise ValueError("Bounded native supervisor polling interval required")
-    journal = ProductionJournal(state_root)
+    journal = CinemaJournal(state_root)
     stop = False
 
     def stop_requested(*_):
@@ -172,6 +306,7 @@ def serve(state_root, *, once=False, poll_seconds=0.25):
 
     with SingletonSupervisor(journal.root):
         journal.reconcile_after_restart()
+        journal.cinema_reconcile()
         runner = ProductionSupervisor(journal)
         if not once:
             # Shutdown the supervisor, NOT an approved production job.
