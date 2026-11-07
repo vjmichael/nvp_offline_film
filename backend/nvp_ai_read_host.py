@@ -19,12 +19,18 @@ from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_wo6_creator_plan import (
     capability_descriptor as wo6_retake_descriptor, plan_source_retake)
+from backend.nvp_wo6_scene_context import (
+    CAPABILITY as SCENE_CREW_CAPABILITY, assemble_film_crew_context)
+from backend.nvp_wo6_tool_readiness import (
+    TrustedToolInventory, FORMAT as TOOLS_FORMAT, preflight_tool_inventory)
 
 MAX_REQUEST_BYTES = 8192
 _READ_LINES = "nvp.screenplay.read_lines.v1"
 _CONTEXT = "nvp.context.assemble.v1"
 _RETAKE_PLAN = "nvp.film.plan_retake.v1"
 _FEATURE_SOURCE = "nvp.film.resolve_published_sources.v1"
+_SCENE_CREW = "nvp.film.read_scene_crew_context.v1"
+_TOOL_PREFLIGHT = "nvp.tools.inspect_host_pinned.v1"
 
 
 def _canonical(document: dict) -> bytes:
@@ -67,21 +73,39 @@ class NativeAiReadHost:
     """
 
     def __init__(self, studio: Studio, *, authorize_read: Callable,
-                 feature_journal=None):
+                 feature_journal=None, trusted_tool_inventory=None):
         if not isinstance(studio, Studio) or not callable(authorize_read):
             raise TypeError("Studio and trusted read policy callback required")
         if feature_journal is not None:
             from backend.nvp_wo4_feature_journal import FeatureJournal
             if not isinstance(feature_journal, FeatureJournal):
                 raise TypeError("Only a host-owned native FeatureJournal is allowed")
+        if (trusted_tool_inventory is not None and
+                not isinstance(trusted_tool_inventory, TrustedToolInventory)):
+            raise TypeError("Native tool inventory must be host-built, not model JSON")
         self._studio = studio
         self._authorize_read = authorize_read
         self._feature_journal = feature_journal
+        self._trusted_tool_inventory = trusted_tool_inventory
 
     def catalog(self) -> dict:
         # Public discovery grants nothing and cannot execute handlers.
         result = discover_capabilities()
         result["capabilities"].append(wo6_retake_descriptor())
+        from copy import deepcopy
+        result["capabilities"].append(deepcopy(SCENE_CREW_CAPABILITY))
+        if self._trusted_tool_inventory is not None:
+            result["capabilities"].append({
+                "id": _TOOL_PREFLIGHT,
+                "description": "SHA and license file probe of host-pinned native "
+                               "tool installations; never executes or installs tools",
+                "effect": "read",
+                "input_schema": {"project_id": "current host-authorized project"},
+                "result_schema": TOOLS_FORMAT,
+                "requires_host_authorization": True,
+                "executable_by_model": False,
+                "tool_execution_authorized": False,
+            })
         if self._feature_journal is not None:
             from backend.nvp_wo6_feature_origins import CAPABILITY
             from copy import deepcopy
@@ -93,7 +117,9 @@ class NativeAiReadHost:
             raise PermissionError("Trusted native scope required")
         raw = _canonical(request)
         capability = request.get("capability_id")
-        allowed = {_READ_LINES, _CONTEXT, _RETAKE_PLAN}
+        allowed = {_READ_LINES, _CONTEXT, _RETAKE_PLAN, _SCENE_CREW}
+        if self._trusted_tool_inventory is not None:
+            allowed.add(_TOOL_PREFLIGHT)
         if self._feature_journal is not None:
             allowed.add(_FEATURE_SOURCE)
         if type(capability) is not str or capability not in allowed:
@@ -107,6 +133,10 @@ class NativeAiReadHost:
             _RETAKE_PLAN: {"capability_id", "project_id",
                            "object_id", "revision", "max_nodes"},
             _FEATURE_SOURCE: {"capability_id", "project_id", "feature_id"},
+            _SCENE_CREW: {"capability_id", "project_id", "take_id",
+                          "take_revision", "tick", "source_revision",
+                          "screenplay_scene_id", "max_prims", "max_events"},
+            _TOOL_PREFLIGHT: {"capability_id", "project_id"},
         }[capability]
         if set(request) - expected:
             raise ValueError("Unrecognized operation fields")
@@ -142,6 +172,26 @@ class NativeAiReadHost:
                 request["object_id"], request["revision"],
                 max_nodes=request.get("max_nodes", 64),
             )
+        elif capability == _SCENE_CREW:
+            result = assemble_film_crew_context(
+                FilmIndex(self._studio), scope.project_id,
+                request["take_id"], request["take_revision"], request["tick"],
+                source_revision=request.get("source_revision"),
+                screenplay_scene_id=request.get("screenplay_scene_id"),
+                max_prims=request.get("max_prims", 32),
+                max_events=request.get("max_events", 24),
+            )
+            if self._trusted_tool_inventory is not None:
+                result["native_tool_readiness"] = preflight_tool_inventory(
+                    self._trusted_tool_inventory)
+            else:
+                result["native_tool_readiness"] = {
+                    "status": "HOST_HAS_NOT_PINNED_NATIVE_TOOL_INSTALLATIONS",
+                    "tools": [], "tool_execution_authorized": False,
+                    "missing_tools_assumed_available": False,
+                }
+        elif capability == _TOOL_PREFLIGHT:
+            result = preflight_tool_inventory(self._trusted_tool_inventory)
         else:
             # Heavy source/essence re-verification is available only when a
             # trusted native host injected the real durable FeatureJournal.
