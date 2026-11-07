@@ -52,9 +52,12 @@ def normalize_material_slots(slots,face_count):
 
 def author_material_slots(stage,geometry,slots):
     from pxr import Gf,Sdf,UsdGeom,UsdShade,Vt
-    for spec in slots or []:
-        subset=UsdShade.MaterialBindingAPI(
-            geometry.GetPrim()).CreateMaterialBindSubset(
+    if not slots:return
+    binding=UsdShade.MaterialBindingAPI.Apply(geometry.GetPrim())
+    if not binding:
+        raise RuntimeError("Real USD geometry material binding API missing")
+    for spec in slots:
+        subset=binding.CreateMaterialBindSubset(
                 "MaterialSlot"+str(slots.index(spec)),
                 Vt.IntArray(spec["faces"]),UsdGeom.Tokens.face)
         if str(subset.GetPrim().GetPath())!=spec["subset_path"]:
