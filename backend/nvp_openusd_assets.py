@@ -201,9 +201,9 @@ class OpenUSDAssetRegistry:
         if authored_material is not None:
             document["preview_material"]=authored_material
         if texture_info is not None:
-            original=self.index.put_blob(
+            original_sha=self.index.put_blob(
                 project_id,preview_texture_png,media_type="image/png")
-            if original["sha256"]!=texture_info["blob_sha256"]:
+            if original_sha!=texture_info["blob_sha256"]:
                 raise RuntimeError("Immutable RGB texture blob digest changed")
             document["preview_texture"]=texture_info
             document["uvs"]=original_uvs
