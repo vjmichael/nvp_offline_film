@@ -104,6 +104,8 @@ class WO2NativeTextureTests(unittest.TestCase):
         self.assertEqual(coords.GetIdAttr().Get(),"ND_texcoord_vector2")
         self.assertEqual(str(image.GetInput("file").GetAttr().Get().path),
                          desc["usd_asset_path"])
+        self.assertEqual(image.GetInput("file").GetAttr().GetColorSpace(),
+                         "srgb_texture")
         self.assertEqual(
             str(mtlx.GetInput("base_color").GetConnectedSource()[0]
                 .GetPrim().GetPath()),"/Asset/Material/MtlxImage")
