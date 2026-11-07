@@ -94,6 +94,43 @@ class WO2NativeTextureTests(fixture.NativeUSD02Integration):
         self.assertNotEqual(old["document_sha256"],new["document_sha256"])
         self.assertEqual(self.takes.verify_take(
             self.pid,"texture_take")["status"],"VERIFIED_FROZEN_DATA_TAKE")
+        self.scene.publish(
+            self.pid,"texture_scene",
+            prims=[
+                {"path":"/World/Actor","role":"actor","position":[0,0,0]},
+                {"path":"/World/Camera","role":"camera","position":[0,0,5]},
+                {"path":"/World/Light","role":"light","position":[1,2,3]},
+            ],curves=[],native_schemas=True,expected_revision=1,
+            asset_bindings=[{"path":"/World/Actor",
+                             "asset_id":"textured_mesh",
+                             "asset_revision":2}])
+        ExactTimeShotSequence(self.index).publish(
+            self.pid,"texture_shots_v2",scene_id="texture_scene",
+            scene_revision=2,duration_tick=str(fixture.T),
+            shots=[{"shot_id":"tex_new",
+                    "camera_path":"/World/Camera",
+                    "start_tick":"0","end_tick":str(fixture.T),
+                    "pattern":"continuous"}])
+        later=self.takes.freeze(
+            self.pid,"texture_take_v2",scene_id="texture_scene",
+            scene_revision=2,timeline_id="texture_shots_v2",
+            timeline_revision=1,sample_ticks=[0],
+            creator_event="director_confirms")
+        new_image,new_receipt=NativeSceneLinearRaster(self.index).render(
+            self.pid,"texture_take_v2",later["document_sha256"],
+            tick=0,camera_path="/World/Camera")
+        self.assertNotEqual(
+            receipt["scene_linear_rgba_sha256"],
+            new_receipt["scene_linear_rgba_sha256"])
+        self.assertNotEqual(image.tobytes(),new_image.tobytes())
+        # Repeating the old Take still samples its original source pixels.
+        old_again,old_receipt=NativeSceneLinearRaster(self.index).render(
+            self.pid,"texture_take",take["document_sha256"],
+            tick=0,camera_path="/World/Camera")
+        self.assertEqual(old_receipt["scene_linear_rgba_sha256"],
+                         receipt["scene_linear_rgba_sha256"])
+        self.assertEqual(old_again.tobytes(),image.tobytes())
+
 
     def test_reject_invalid_png_or_unbound_texture_mesh(self):
         for bad in (b"not a png",b"",b"\x89PNG\r\n\x1a\ncorrupt"):
