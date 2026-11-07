@@ -92,11 +92,16 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                 for x in independent_device_ids) or
             len(set(independent_device_ids))!=2):
             raise ValueError("Two different native input device IDs required")
+        self.device_descriptors=None
         if device_factory is None:
             catalog=native_input_devices()
-            known={entry["device_id"] for entry in catalog}
-            if not set(independent_device_ids)<=known:
+            known={entry["device_id"]:entry for entry in catalog}
+            if not set(independent_device_ids)<=set(known):
                 raise RuntimeError("One or both physical sound devices disconnected")
+            # Selection scope includes the OS endpoint identity, not merely a
+            # transient index that could be reassigned after hot-unplug.
+            self.device_descriptors=[
+                dict(known[d]) for d in independent_device_ids]
         self.device_ids=independent_device_ids[:]
         self.second_source_id=second_source_id
         self.second_emitter_path=second_emitter_path
@@ -171,6 +176,7 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             "second_emitter_path":self.second_emitter_path,
             "second_source_id":self.second_source_id,
             "independent_device_ids":self.device_ids[:],
+            "independent_device_descriptors":self.device_descriptors,
             "sample_rate":RATE,"max_samples":self.max_samples,
             "independent_device_clock_calibration_required":True,
             "output_is_original_source":True,"flattened_soundtrack":False}
@@ -178,6 +184,13 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
         if self.approve_start(scope) is not True:
             self._state="DENIED"
             raise PermissionError("Creator denied independent microphone devices")
+        if self.device_descriptors is not None:
+            current={d["device_id"]:d for d in native_input_devices()}
+            if any(current.get(d["device_id"])!=d
+                   for d in self.device_descriptors):
+                self._state="FAILED"
+                raise RuntimeError(
+                    "Native audio endpoint identity changed during creator approval")
         self._tmp=Path(tempfile.mkdtemp(
             prefix="nvp-live-original-",dir=str(self._journal.root)))
         self._spool=self._tmp/"independent_0.pcm"
