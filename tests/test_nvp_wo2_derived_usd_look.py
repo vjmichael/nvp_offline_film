@@ -78,9 +78,16 @@ class WO2DerivedUSDLookAcceptance(unittest.TestCase):
         transforms=[node for node in shaders if node.GetIdAttr().Get()==
                     "UsdTransform2d"]
         mtlx=[node for node in shaders if node.GetIdAttr().Get()==
-              "ND_UsdTransform2d"]
+              "ND_place2d_vector2"]
         self.assertEqual(len(transforms),2)
         self.assertEqual(len(mtlx),2)
+        selected=next(x for x in mtlx if "Roughness" in str(x.GetPath()))
+        scale=selected.GetInput("scale").GetAttr().Get()
+        offset=selected.GetInput("offset").GetAttr().Get()
+        self.assertAlmostEqual(float(scale[0]),.5,5)
+        self.assertAlmostEqual(float(scale[1]),1./3.,5)
+        self.assertAlmostEqual(float(offset[0]),-.25,5)
+        self.assertAlmostEqual(float(offset[1]),-.1,5)
         self.assertEqual(self.stage.GetRootLayer().ExportToString(),
                          self.source_layer)
         original_again,_=self.scene.open(self.pid,"look_world",1)
