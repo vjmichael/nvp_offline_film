@@ -170,6 +170,13 @@ class OpenUSDAssetRegistry:
             shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
             material.CreateSurfaceOutput().ConnectToSource(
                 shader.ConnectableAPI(),"surface")
+            if "texture" not in authored_material:
+                from backend.nvp_wo2_openpbr import author_openpbr_scalar
+                author_openpbr_scalar(
+                    stage,"/Asset/Material",material,
+                    authored_material["base_color_rgb"],
+                    authored_material["roughness"],
+                    authored_material["metallic"])
             if not UsdShade.MaterialBindingAPI.Apply(
                     obj.GetPrim()).Bind(material):
                 raise RuntimeError("Cannot bind real original USD PreviewSurface")
@@ -333,6 +340,18 @@ class OpenUSDAssetRegistry:
                 stage.GetPrimAtPath("/Asset/Material/PreviewSurface"))
             if not shader or shader.GetIdAttr().Get()!="UsdPreviewSurface":
                 raise RuntimeError("USD asset surface shader changed")
+            # New scalar-only source graphs carry both universal PreviewSurface
+            # and MaterialX OpenPBR terminal. Legacy frozen layers remain valid.
+            openpbr=stage.GetPrimAtPath("/Asset/Material/OpenPBR")
+            if openpbr:
+                if "texture" in original_material:
+                    raise RuntimeError("Textured original cannot advertise flat OpenPBR")
+                from backend.nvp_wo2_openpbr import verify_openpbr_scalar
+                verify_openpbr_scalar(
+                    stage,"/Asset/Material",bound,
+                    original_material["base_color_rgb"],
+                    original_material["roughness"],
+                    original_material["metallic"])
             if "texture" in original_material:
                 from backend.nvp_native_usd_texture import verified_texture
                 texture=original_material["texture"]
