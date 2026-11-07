@@ -99,3 +99,9 @@ feature or mark a partial export complete.
 **After CI:** If all four variants pass, close the full-duration
 synthetic-native export stress gate only. Keep full original unique-frame
 render performance and installed-app external cinema acceptance open.
+
+## NVP 17 verified long-form packaging CI evidence (2026-11-07)
+
+GitHub run [42392709339](https://github.com/vjmichael/nvp_offline_film/actions/runs/42392709339) passed all four 2h/3h × 2K/4K native hosted tests at exact head `0d140d1578bbc9bcf1c860adf90aab1d69d595ea`. Real picture/sound MXF wrap, 24/36 five-minute reels and SMPTE XML/asset SHA structure passed; synthetic image codestreams were reused and long-form complete essence decoding was **not** run. Measured peak per-job disk usage was about 4.8–8.1 GB; those hosted runner figures are not workstation budgets or full original-footage compression rates. Full distinct-frame film render and installed desktop verification are still open.
+
+A new separate native OpenJPEG **12-unique-frame 2K/4K sample** is now submitted to GitHub CI; it measures real different-source short sample encoding without claiming feature-length throughput. Independent specialist SMPTE/DCI validation, projector/audio mastering, and distribution LICENSE/NOTICE/SBOM collection remain deferred-but-required exactly as before. No FFmpeg.
