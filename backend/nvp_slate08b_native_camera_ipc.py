@@ -623,6 +623,30 @@ class TrustedDesktopCameraBridge:
                 "recovery_automatic_freeze":False,
                 "ffmpeg_used":False}
 
+    def data_av_live_recover_original(self,request):
+        """Consent-gated recovery of a durable mono source, never a Take."""
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","capture_reference","new_source_id"}:
+            raise ValueError("Original microphone salvage requires exact source scope")
+        from backend.nvp_capture_recovery import OriginalCaptureJournal
+        with self._lock:
+            if self._live_sound_session is not None:
+                raise RuntimeError("Stop live recording before reconciling captured signal")
+            journal=OriginalCaptureJournal(
+                self.index.studio.db_path.parent/"native-original-capture-recovery")
+            return journal.salvage_original_mono_source(
+                self.index,request["project_id"],
+                request["capture_reference"],request["new_source_id"],
+                native_creator_approval=lambda scope:self._ask(
+                    "RECOVER verified original microphone PCM as UNATTACHED sound source?\n"
+                    f"Recovery reference: {scope['capture_reference']}\n"
+                    f"New source: {scope['new_source_id']}\n"
+                    f"Original PCM SHA-256: {scope['pcm_sha256']}\n"
+                    f"Recorded samples: {scope['recorded_samples']}\n"
+                    "This does NOT freeze a Digital Take or create a soundtrack. "
+                    "The original staged recording remains separately preserved."))
+
     def data_av_live_begin(self,request):
         """Start a real OS microphone; no browser-provided executable/path."""
         self._native_window()
