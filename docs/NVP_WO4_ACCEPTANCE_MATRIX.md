@@ -125,3 +125,18 @@ Note that LF02's `OUTPUT_READY` is **only a verified disk-backed picture MXF can
 | Native installed 2–3 h feature and independent theatrical mastering | Multi-reel/4K performance, OS service deployment, trusted desktop binding, Win suspended-first-job containment, installed binary licenses, independent SMPTE schema/true peak/color/projector validator | **OPEN** |
 
 The full DCP output is still a **source-bound structural candidate**. Correct native MXF wrapping/decoding and SMPTE PKL consistency do not establish formal DCI certification, projector calibration or physical exhibition acceptance. An orphaned final DCP published before journal commit requires a future trusted, creator-approved review disposition rather than automatic overwrite or removal.
+
+
+## WO4 seven-task closeout — native evidence status 2026-11-07
+
+| Work package | New committed implementation and tests | Native/installed acceptance still open |
+| --- | --- | --- |
+| 01 Recovery matrix | RUNNING-only interrupted segment reporting; correct existing PENDING suppression | Current four-platform Windows/Linux Python 3.11/3.13 success required |
+| 02 Orphan final DCP | Creator-approved complete single/multi-reel source/UUID/hash audit and adoption, no deletion or overwrite; partial output refuses | Exact-head failure injection and physical interrupted export |
+| 03 Multi-reel | FilmIndex frozen ordered-reel assembly, SAME supervisor SQLite state, real multi-reel CPL/PKL/AssetMap, checked source MXFs, idempotent feature indexing, 2-reel structural tests | Genuine full 2–3-hour end-to-end 2K/4K encode/performance and independent verifier |
+| 04 Resource budget | 2/3h metadata planner; 4K sample staging; 64MiB scratch reserve before each codec/DCP stage | Physical 2–3h CPU/GPU/RAM/disk and repeated crash metrics; current 4K pilot native run |
+| 05 Background host | NativeProductionHost detached child, OS singleton, native project-scope read-only reconnect, simulated exiting editor process tests | Actual Lu DLC authenticated native IPC, installer startup, real installed GUI |
+| 06 Windows/license | Windows suspended-first process, assign Job Object before ResumeThread, child-side membership test; complete declared binary/license/notice SHA BOM | Current Windows process-tree CI, restricted handle inheritance, protected installer, actual exact upstream transitive notices/legal review |
+| 07 Installed E2E | Test procedure docs/NVP_WO4_INSTALLED_ACCEPTANCE.md + backend process tests and manual-lock frontend tests | Actual guided installed Windows/Linux acceptance, human AFK lock/unlock and physical cinema compliance |
+
+**Previously verified native baselines:** real complete single-reel 2K OpenJPEG/CineCert PCM24 DCP Linux run 42359312665 SUCCESS; prior Win/Linux Python 3.11/3.13 supervisor run 42386494179 SUCCESS. Both predate the current seven-package head. **Do not count latest suspended Windows launch, actual 4K pilot or two/three-hour encoding as accepted until completed exact-head receipts arrive.** No FFmpeg, no runtime cloud/AI requirement, no source Take mutation.
