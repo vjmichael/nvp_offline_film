@@ -36,6 +36,9 @@ export default function NativeColorGradePanel({project,api,action,busy}){
   const [packageReceipt,setPackageReceipt]=useState(null);
   const [exrPresentationId,setExrPresentationId]=useState('ACEScgScene001');
   const [exrReceipt,setExrReceipt]=useState(null);
+  const [cinemaTarget,setCinemaTarget]=useState('SMPTE_2K_FLAT_24');
+  const [cinemaReceipt,setCinemaReceipt]=useState(null);
+  const [cinemaBusy,setCinemaBusy]=useState(false);
   const take=takes.find(t=>t.take_id===takeId);
 
   useEffect(()=>{
@@ -281,6 +284,35 @@ export default function NativeColorGradePanel({project,api,action,busy}){
     finally{setExportBusy(false);}
   }
 
+  async function inspectCinemaReadiness(){
+    if(!take||!native||cinemaBusy||exportBusy||busy||
+       typeof native.data_av_cinema_readiness!=='function')return;
+    setCinemaBusy(true);setCinemaReceipt(null);setError('');setMessage('');
+    try{
+      const result=await native.data_av_cinema_readiness({
+        project_id:project.id,take_id:take.take_id,
+        take_document_sha256:take.take_document_sha256,
+        target:cinemaTarget,
+      });
+      if(result.status==='CANCELLED'){
+        setMessage('Native cinema package inspection cancelled.');return;
+      }
+      if(result.format!=='nvp.native_data_first.cinema_preflight.v1'||
+         result.status!=='NO_CINEMA_OR_HDR_MASTER_AUTHORIZED'||
+         result.target!==cinemaTarget||
+         result.source_take_sha256!==take.take_document_sha256||
+         result.source_integrity_verified!==true||
+         result.dcp_delivered!==false||
+         result.hdr10_master_approved!==false||
+         result.source_original_modified!==false||
+         result.ffmpeg_used!==false||
+         !Array.isArray(result.required_master_color_and_delivery_capabilities))
+        throw Error('Native cinema/master readiness could not verify original source');
+      setCinemaReceipt(result);
+    }catch(e){setError(e.message);}
+    finally{setCinemaBusy(false);}
+  }
+
   return <section className="card" aria-label="Native data-first color decisions">
     <h2>Color and lighting presentation decisions</h2>
     <p className="fineprint">Set presentation intent for an original 3D
@@ -417,8 +449,38 @@ export default function NativeColorGradePanel({project,api,action,busy}){
         No frozen Take, source file or color decision was modified.
       </p>}
     </fieldset>
+    <fieldset disabled={!take||cinemaBusy||exportBusy||busy||
+        typeof native?.data_av_cinema_readiness!=='function'}>
+      <legend>Independent cinema and HDR readiness review</legend>
+      <p className="fineprint">Select an actual derived source package
+        with the native OS folder picker. NVP audits every original
+        picture and PCM SHA and explains what is still required.
+        It will not label an uncalibrated PNG/EXR folder as a DCP.</p>
+      <label>Requested delivery profile
+        <select aria-label="Native cinema/HDR delivery target"
+          value={cinemaTarget} onChange={e=>{
+            setCinemaTarget(e.target.value);setCinemaReceipt(null);
+          }}>
+          <option value="SMPTE_2K_FLAT_24">SMPTE 2K Flat 24 fps</option>
+          <option value="SMPTE_2K_SCOPE_24">SMPTE 2K Scope 24 fps</option>
+          <option value="HDR10_REC2100_PQ">HDR10 Rec.2100 PQ</option>
+        </select>
+      </label>
+      <button onClick={inspectCinemaReadiness}>
+        {cinemaBusy?'Checking original picture/audio integrity…':
+          'Inspect cinema/HDR readiness'}
+      </button>
+      {cinemaReceipt&&<div role="status">
+        <p>Original derived picture/audio checksums verified.
+          This output is <strong>not</strong> an approved cinema or HDR master.</p>
+        <p>Unmet native and physical delivery requirements:</p>
+        <ul>{cinemaReceipt.required_master_color_and_delivery_capabilities
+          .map(entry=><li key={entry}>{entry.replaceAll('_',' ')}</li>)}
+        </ul>
+      </div>}
+    </fieldset>
     {message&&<p role="status">{message}</p>}
-    {error&&<p role="alert">{error}</p>
+    {error&&<p role="alert">{error}</p>}
     <p className="fineprint">No FFmpeg, intermediate picture,
       flattened sound or color decision is written to the frozen original.
       Verified OpenEXR and PNG16 output are separate, explicitly authorized
