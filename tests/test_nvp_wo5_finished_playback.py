@@ -77,7 +77,7 @@ class NativePublishedViewerTests(unittest.TestCase):
         self.sound=self.root/"PUBLISHED_sound.mxf"
         self.picture.write_bytes(b"final published picture MXF bytes")
         self.sound.write_bytes(b"final published sound MXF bytes")
-        self.codestream=b"J2K-FINAL-CODESTREAM"
+        self.codestream=b"J2K-FINAL-CODESTREAM"+b"\x00"*80
         self.expected=sha256(self.codestream).hexdigest()
         picture_sha=sha256(self.picture.read_bytes()).hexdigest()
         sound_sha=sha256(self.sound.read_bytes()).hexdigest()
