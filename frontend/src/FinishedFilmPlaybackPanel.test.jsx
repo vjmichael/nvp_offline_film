@@ -3,7 +3,8 @@ import React from 'react';
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {render,screen,cleanup,fireEvent,waitFor} from '@testing-library/react';
 import FinishedFilmPlaybackPanel,{
-  checkFinishedFrame,requireAheadOfAudioClock,requireContinuousPicture
+  checkFinishedFrame,checkFinishedWindow,
+  requireAheadOfAudioClock,requireContinuousPicture
 } from './FinishedFilmPlaybackPanel.jsx';
 
 const FORMAT='nvp.wo5.finished_dcp_pcm24_picture_review.v1';
@@ -31,6 +32,24 @@ describe('WO5 finished published picture/mastered sound playback',()=>{
     expect(()=>requireContinuousPicture(23,25))
       .toThrow(/skipped a required presentation frame/);
   });
+  it('accepts only ordered bounded final-MXF batches within the same reel',()=>{
+    const first={...packet(2),reel_index:0};
+    const second={...packet(3),reel_index:0};
+    const batch={format:FORMAT,status:'DECODED_PUBLISHED_FINAL_WINDOW',
+      start_frame:2,frame_count:2,reel_index:0,
+      frames:[first,second],no_reel_crossing:true,production_accepted:false};
+    expect(checkFinishedWindow(batch,2).map(x=>x.frame_index)).toEqual([2,3]);
+    expect(()=>checkFinishedWindow({...batch,frames:[second,first]},2))
+      .toThrow(/receipt rejected/);
+    expect(()=>checkFinishedWindow({...batch,
+      frames:[first,{...second,reel_index:1}]},2))
+      .toThrow(/unapproved reel/);
+    expect(()=>checkFinishedWindow({...batch,frame_count:5},2))
+      .toThrow(/omitted a complete/);
+    expect(()=>checkFinishedWindow({...batch,production_accepted:true},2))
+      .toThrow(/omitted a complete/);
+  });
+
   it('rejects stale audio indices, missing picture, forged production approval',()=>{
     expect(checkFinishedFrame(packet(12),12).frame_index).toBe(12);
     for(const forged of [
