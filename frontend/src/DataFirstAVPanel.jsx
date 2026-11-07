@@ -38,6 +38,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [direction,setDirection]=useState('forward');
   const [originalSoundId,setOriginalSoundId]=useState('Music001');
   const [originalSoundReceipt,setOriginalSoundReceipt]=useState(null);
+  const [presentationId,setPresentationId]=useState('NativeFilm001');
+  const [aviReceipt,setAviReceipt]=useState(null);
+  const [exporting,setExporting]=useState(false);
   const controller=useRef({ticket:null,context:null,scheduled:[],
     presentationMarks:[],generation:0,cursor:0,last:0,first:0,
     nextAudioAt:0,working:false,active:false,stopping:false,
@@ -192,6 +195,35 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     }finally{
       st.working=false;
     }
+  }
+
+  async function exportDerivedAvi(){
+    if(!native||typeof native.data_av_export_native_avi!=='function')return;
+    setError('');setAviReceipt(null);
+    if(playing){setError('Stop playback before authorizing final output.');return;}
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/.test(presentationId)){
+      setError('Enter a valid new derived-presentation identity.');return;
+    }
+    setExporting(true);
+    try{
+      const r=await native.data_av_export_native_avi({
+        project_id:projectId,take_id:item.take_id,
+        take_document_sha256:item.take_document_sha256,
+        presentation_id:presentationId,listener_path:listener,
+        fps_num:24,fps_den:1,
+      });
+      if(r?.status==='CANCELLED'){setNote('Native destination selection cancelled.');return;}
+      if(r?.format!=='nvp.final_2d.avi_rgb_pcm.v1'||
+         r.status!=='DERIVED_SINGLE_FILE_AVI'||
+         r.take_sha256!==item.take_document_sha256||
+         r.source_modified!==false||r.ffmpeg_used!==false||
+         r.master_approved!==false||
+         typeof r.output_sha256!=='string')
+        throw Error('Derived AVI failed native approval and SHA validation');
+      setAviReceipt(r);
+      setNote('New derived AVI and picture/PCM package published. Original 3D Take unchanged.');
+    }catch(e){setError(e.message);}
+    finally{setExporting(false);}
   }
 
   async function importOriginalSound(){
@@ -351,6 +383,30 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <p className="fineprint">{scene.spatial_audio?.bindings?.length||0}
         spatial audio source(s) active at this moment.</p>
     </section>}
+    <section className="card" aria-label="Creator-approved FFmpeg-free 2D film delivery">
+      <h3>Render a 2D version from the frozen 3D world</h3>
+      <p className="fineprint">Choose a new presentation name, then select the
+        output folder using the native OS picker. NVP requires separate native
+        confirmations to render the original Take as a derived picture/PCM
+        package and publish an AVI. No original film data is rewritten.
+        First native CPU output is 640×360 uncompressed AVI/PCM, not a
+        cinema-quality final master.</p>
+      <label>Derived presentation identity
+        <input aria-label="Native derived presentation identity"
+          value={presentationId} maxLength={80}
+          disabled={playing||exporting}
+          onChange={e=>setPresentationId(e.target.value)}/>
+      </label>
+      <button disabled={playing||exporting||!native||!item||!listener||
+        typeof native.data_av_export_native_avi!=='function'}
+        onClick={exportDerivedAvi}>
+        {exporting?'Rendering approved 2D derivative…':
+          'Approve native 2D picture + sound export'}
+      </button>
+      {aviReceipt&&<p role="status">AVI saved as {aviReceipt.output_file}.
+        Output SHA-256: <code>{aviReceipt.output_sha256.slice(0,16)}…</code>
+        {' '}Original Digital Take remains immutable.</p>}
+    </section>
     <section className="card" aria-label="Add creator-supplied original music">
       <h3>Bring in background music or sound effects</h3>
       <p className="fineprint">The OS file picker accepts the original MP3,
