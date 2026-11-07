@@ -17,7 +17,7 @@ from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_resource_supervisor import NativeCancelRequested
 from backend.nvp_worker_host_lease import WorkerHostLease
 
-ID_RE = re.compile(r"wo6(?:take|shot)_[0-9a-f]{24}\Z")
+ID_RE = re.compile(r"wo6(?:take|shot|data)_[0-9a-f]{24}\Z")
 TAKE_OP = "nvp.film.create_frozen_take.v1"
 SHOT_OP = "nvp.film.author_director_shot.v1"
 DATA_OP = "nvp.film.author_data_decision.v1"
