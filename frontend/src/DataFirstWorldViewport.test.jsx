@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import * as THREE from 'three';
-import {validateMeshData,updateSkinnedGeometry,validateSourceTexture}
+import {validateMeshData,updateSkinnedGeometry,validateSourceTexture,validateMaterialSlots}
   from './DataFirstWorldViewport.jsx';
 
 const actor={
@@ -165,5 +165,37 @@ describe('WO2 animated face-varying rig seam stability',()=>{
       ],
     })).toThrow(/UV seams changed/);
     g.dispose();
+  });
+});
+
+describe('WO2 original USD materialBind face subsets',()=>{
+  const slot={
+    format:'nvp.original.usd_material_subsets.v1',
+    material_path:'/Asset/Materials/Slot0',
+    subset_path:'/Asset/Geometry/MaterialSlot0',
+    faces:[0],base_color_rgb:[1,0,0],
+    roughness:.2,metallic:0,source_modified:false,
+  };
+  const mesh={
+    shape:'mesh',mesh_triangles:[[0,1,2],[0,2,3]],
+    source_material_slots:[slot],
+  };
+  it('accepts genuine bounded source material subset faces',()=>{
+    expect(validateMaterialSlots(mesh)).toEqual([slot]);
+    expect(validateMaterialSlots({...mesh,
+      source_material_slots:null})).toBeNull();
+  });
+  it('rejects duplicate, wrong material path and unsupported scalars',()=>{
+    expect(()=>validateMaterialSlots({...mesh,
+      source_material_slots:[slot,{...slot,
+        material_path:'/Asset/Materials/Slot1',
+        subset_path:'/Asset/Geometry/MaterialSlot1'}]}))
+      .toThrow(/Overlapping/);
+    expect(()=>validateMaterialSlots({...mesh,
+      source_material_slots:[{...slot,faces:[7]}]}))
+      .toThrow(/Malformed/);
+    expect(()=>validateMaterialSlots({...mesh,
+      source_material_slots:[{...slot,roughness:NaN}]}))
+      .toThrow(/Malformed/);
   });
 });
