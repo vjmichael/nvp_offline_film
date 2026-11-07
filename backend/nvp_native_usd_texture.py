@@ -126,7 +126,7 @@ def import_native_selected_png(index: FilmIndex, project_id, selected_path, *,
     from pathlib import Path
     import os
     import stat
-    if not callable(approve) or type(selected_path) not in (str, Path):
+    if not callable(approve) or not isinstance(selected_path, (str, Path)):
         raise PermissionError("Trusted native picker and approval required")
     selected=Path(selected_path)
     if not selected.is_absolute() or selected.is_symlink():
