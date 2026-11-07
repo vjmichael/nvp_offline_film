@@ -91,6 +91,8 @@ def validate_rigs(roles, rigs):
                 "facial_animation_rendered":bool(shapes),
                 "source_preview_material":True,
             })
+            if skin.get("texture") is not None:
+                descriptor["texture"]=skin["texture"]
         result.append(descriptor)
     return result
 
