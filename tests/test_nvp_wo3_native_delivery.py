@@ -22,6 +22,7 @@ from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,_ppm_xyz12
 from backend.nvp_wo3_mxf_native import _frame_receipts,FORMAT as MXF_FORMAT
 from backend.nvp_wo3_dcp_package import publish_dcp_candidate
 from backend.nvp_wo3_dcp_structure import inspect_dcp_structure
+from backend.nvp_wo3_project_recovery import reconcile_project_dcp_exports
 
 
 def synthetic_header(*,width=1998,height=1080,bits=12,progression=4,rsiz=3):
@@ -115,6 +116,32 @@ class WO3OriginalCinemaAuthoring(unittest.TestCase):
         self.assertEqual(saved["dependencies"][0]["role"],"source_take")
         self.assertEqual(self.index.read_revision(
             self.pid,"FrozenFixture",1)["document_sha256"],self.sha)
+
+    def test_restart_reloads_actual_film_index_and_verifies_published_package(self):
+        receipt=publish_dcp_candidate(
+            self.index,self.pid,take_id="FrozenFixture",take_revision=1,
+            take_sha256=self.sha,picture=self.pic,sound=self.snd,
+            output_root=self.output,title="Cinema Original",
+            approve=lambda _:True)
+        report=reconcile_project_dcp_exports(self.index,self.pid,self.output)
+        self.assertTrue(report["trusted_project_ledger_loaded"])
+        matches=[x for x in report["exports"] if x["status"]==
+                 "PUBLISHED_LEDGER_AND_STRUCTURE_VERIFIED"]
+        self.assertEqual(len(matches),1)
+        self.assertEqual(matches[0]["name"],Path(receipt["destination"]).name)
+        self.assertFalse(matches[0]["production_dcp_accepted"])
+
+    def test_postpublish_metadata_tamper_detected_from_real_film_index(self):
+        receipt=publish_dcp_candidate(
+            self.index,self.pid,take_id="FrozenFixture",take_revision=1,
+            take_sha256=self.sha,picture=self.pic,sound=self.snd,
+            output_root=self.output,title="Cinema Original",
+            approve=lambda _:True)
+        (Path(receipt["destination"])/"VOLINDEX.xml").write_bytes(
+            b"attacker changed volume metadata")
+        report=reconcile_project_dcp_exports(self.index,self.pid,self.output)
+        self.assertEqual(report["exports"][0]["status"],
+                         "LEDGER_HASH_MISMATCH")
 
     def test_denied_and_tampered_source_never_publish(self):
         request=lambda **kw:publish_dcp_candidate(
