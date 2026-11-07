@@ -164,6 +164,26 @@ class ExactTimeCameraSequenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             editor.camera_at_tick(self.pid,"ExactCameraEdits",1,1.0)
 
+    def test_camera_segments_partition_exact_window_without_frame_rounding(self):
+        saved=self.publish()
+        editor=ExactTimeShotSequence(self.index)
+        def segments(a,b):
+            return editor.camera_segments(self.pid,"ExactCameraEdits",1,str(a),str(b))
+        window=segments(1,3*T)
+        self.assertEqual(window["document_sha256"],saved["document_sha256"])
+        self.assertFalse(window["video_frames_created"])
+        self.assertEqual(
+            [(s["status"],int(s["start_tick"]),int(s["end_tick"])) for s in window["segments"]],
+            [("CAMERA",1,T),("GAP",T,T+T//4),
+             ("CAMERA",T+T//4,2*T),("GAP",2*T,3*T)])
+        self.assertEqual(segments(T,T+1)["segments"][0]["status"],"GAP")
+        self.assertEqual(segments(T+T//4-1,T+T//4+1)["segments"][1]["shot_id"],"Shot002")
+        for a,b in ((0,0),(T,T),(2*T,T),(0,3*T+1)):
+            with self.assertRaises(ValueError):
+                segments(a,b)
+        with self.assertRaises(ValueError):
+            editor.camera_segments(self.pid,"ExactCameraEdits",1,0.5,"1")
+
     def test_os_authorization_controls_exact_scene_and_timeline_take_freeze(self):
         saved=self.publish()
         bridge=TrustedDesktopCameraBridge(
