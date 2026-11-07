@@ -21,7 +21,7 @@ MAX_LIVE_SKIN_TRIANGLES=8192
 
 
 def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
-                        scene_id,scene_revision):
+                        scene_id,scene_revision,include_texture_transport=True):
     """Map authored actor paths to native, source-verified skinned geometry.
 
     Never use this on untrusted arbitrary USD paths: OpenUSDSceneBridge
@@ -168,9 +168,10 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
                 uv_source[1]!="result"):
                 raise RuntimeError("Original rig texture wiring is invalid")
             material={**material,"texture":descriptor,
-                      "texture_images_loaded":True,
-                      "texture_transport":texture_transport(
-                          index,project_id,descriptor)}
+                      "texture_images_loaded":True}
+            if include_texture_transport:
+                material["texture_transport"]=texture_transport(
+                    index,project_id,descriptor)
         elif material.get("texture_images_loaded") is True:
             raise RuntimeError("Original rig falsely reports loaded texture")
         if (any(abs(x-y)>1e-5 for x,y in
