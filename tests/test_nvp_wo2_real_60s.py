@@ -61,7 +61,16 @@ class WO2RealSixtySecondNativeContinuity(unittest.TestCase):
                          r"^[0-9a-f]{64}$")
         self.assertGreater(receipt["actual_wall_seconds"],0)
         self.assertGreaterEqual(receipt["latency_p95_ms"],0)
-        print("WO2_REAL_60S_NATIVE_CPU_RECEIPT:",receipt,flush=True)
+        # Machine-readable CI artifact is a measured source receipt, not
+        # a synthesized GPU/Hydra or physical color calibration pass.
+        import json
+        from pathlib import Path
+        output=Path("wo2-native-60s-receipt.json")
+        output.write_text(
+            json.dumps(receipt,sort_keys=True,indent=2)+"\\n",
+            encoding="utf-8")
+        print("WO2_REAL_60S_NATIVE_CPU_RECEIPT:",
+              json.dumps(receipt,sort_keys=True),flush=True)
 
 
 if __name__=="__main__":
