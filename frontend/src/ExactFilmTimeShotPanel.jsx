@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 
 // DA-01/DA-02: author one continuous 3D scene by exact integer Film Time.
 // Camera shots are observations of that world, not recorded picture frames.
@@ -37,6 +37,7 @@ const SHAPES=['continuous','master','single','two_shot',
  'over_shoulder','reaction','insert','tracking'];
 
 export default function ExactFilmTimeShotPanel({project,api,action,busy}){
+  const draftEpoch=useRef(0);
   const [scenes,setScenes]=useState([]);
   const [sceneId,setSceneId]=useState('');
   const [cameraPath,setCameraPath]=useState('');
@@ -116,12 +117,14 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
   },[project.id,source?.scene_id,source?.document_sha256,timelineId,api]);
 
   function editDraftShot(shotId, field, value){
+    draftEpoch.current++;
     setTimelineSha(''); // Any edit revokes authority to freeze the saved revision.
     setShots(previous=>previous.map(s=>s.shot_id===shotId?{...s,[field]:value}:s));
     setNotice('Unsaved camera revision; freeze requires publication.');
   }
 
   function removeDraftShot(shotId){
+    draftEpoch.current++;
     setTimelineSha('');
     setShots(previous=>previous.filter(s=>s.shot_id!==shotId));
     setNotice('Draft observation removed; prior immutable revisions are preserved.');
@@ -139,6 +142,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
       if(shots.length>=128)throw Error('Maximum 128 shot observations per sequence.');
       if(shots.length&&BigInt(first)<BigInt(shots.at(-1).end_tick))
         throw Error('Shots must not overlap; intentional empty-time gaps are supported.');
+      draftEpoch.current++;
       setTimelineSha(''); // Draft edits must never authorize freezing a stale saved revision.
       const used=new Set(shots.map(s=>s.shot_id));
       let number=1;
@@ -176,6 +180,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
         BigInt(s.end_tick):a,0n);
       const end=far>BigInt(requested)?far:BigInt(requested);
       exactTick(end.toString());
+      const publishingEpoch=draftEpoch.current;
       await action(async()=>{
         const next=await api('/projects/'+encodeURIComponent(project.id)+
           '/film/native-time-shots/'+encodeURIComponent(timelineId),'POST',{
@@ -188,7 +193,10 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
            next.video_frames_created!==false||
            next.shots.length!==shots.length)
           throw Error('Published timeline did not preserve source identity.');
-        setRevision(next.revision);setTimelineSha(next.document_sha256);
+        setRevision(next.revision);
+        // An in-flight publication must not authorize a newer unsaved draft.
+        if(draftEpoch.current===publishingEpoch)setTimelineSha(next.document_sha256);
+        else setTimelineSha('');
         setDurationTick(next.duration_tick);setExactDuration(null);
         setNotice('Saved exact-time source revision '+next.revision+
           '. No frames, audio master or Digital Take generated.');
@@ -276,14 +284,14 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
       <button disabled={busy||!source} onClick={appendShot}>Add timed camera observation</button>
       {tickMode?<label>Film Time duration limit (exact ticks)
         <input aria-label="Film Time duration limit ticks" value={durationTick}
-          onChange={e=>{setDurationTick(e.target.value);setTimelineSha('');}}/></label>:
+          onChange={e=>{draftEpoch.current++;setDurationTick(e.target.value);setTimelineSha('');}}/></label>:
         <label>Film Time duration limit (seconds)
-          <input value={duration} onChange={e=>{setDuration(e.target.value);setTimelineSha('');}}/></label>}
+          <input value={duration} onChange={e=>{draftEpoch.current++;setDuration(e.target.value);setTimelineSha('');}}/></label>}
       <div className="actions">
         <button disabled={busy||!shots.length||!source||(!tickMode&&exactDuration!==null)} onClick={save}>
           Save immutable timing revision</button>
         <button disabled={busy||!shots.length} onClick={()=>{
-          setShots(s=>s.slice(0,-1));setTimelineSha('');
+          draftEpoch.current++;setShots(s=>s.slice(0,-1));setTimelineSha('');
         }}>Undo last draft shot</button>
       </div>
       <p className="fineprint">Current saved revision: {revision||'not saved'}.
