@@ -44,6 +44,41 @@ class NativeWO2MeshUVTests(fixture.NativeUSD02Integration):
         self.assertNotEqual(prior["document_sha256"],changed["document_sha256"])
         self.assertEqual(visual_state(self.index,self.pid,state)["objects"][0]["mesh_uvs"],uv)
 
+    def test_real_face_varying_seam_is_immutable(self):
+        points=[[0.,0.,0.],[1.,0.,0.],[1.,1.,0.],[0.,1.,0.]]
+        triangles=[[0,1,2],[0,2,3]]
+        corners=[[[0,0],[1,0],[1,1]],
+                 [[.5,0],[.5,1],[0,1]]]
+        rec=self.assets.publish(
+            self.pid,"seam_uv",shape="mesh",size_m=2.,
+            points=points,triangles=triangles,face_uvs=corners)
+        _,layer=self.assets.open(self.pid,"seam_uv",1)
+        from pxr import Usd
+        stage=Usd.Stage.Open(layer)
+        mesh=UsdGeom.Mesh(stage.GetPrimAtPath("/Asset/Geometry"))
+        st=UsdGeom.PrimvarsAPI(mesh).GetPrimvar("st")
+        self.assertEqual(st.GetInterpolation(),"faceVarying")
+        self.assertEqual([[float(x) for x in pair] for pair in st.Get()],
+                         [pair for face in corners for pair in face])
+        self.scene.publish(
+            self.pid,"seam_scene",prims=[
+                {"path":"/World/Actor","role":"actor","position":[0,0,0]}
+            ],curves=[],asset_bindings=[
+                {"path":"/World/Actor","asset_id":"seam_uv",
+                 "asset_revision":1}])
+        snapshot=self.state.evaluate(
+            self.pid,"seam_scene",1,"event_timeline",1,tick=0)
+        visual=visual_state(self.index,self.pid,snapshot)
+        self.assertEqual(visual["objects"][0]["mesh_face_uvs"],corners)
+        self.assertIsNone(visual["objects"][0]["mesh_uvs"])
+        self.assertEqual(self.assets.open(self.pid,"seam_uv",1)[0][
+            "document_sha256"],rec["document_sha256"])
+        with self.assertRaises(ValueError):
+            self.assets.publish(
+                self.pid,"bad_seam",shape="mesh",size_m=2.,
+                points=points,triangles=triangles,
+                mesh_uvs=[[0,0]]*4,face_uvs=corners)
+
     def test_reject_untrusted_or_non_mesh_uv(self):
         pts=[[0,0,0],[1,0,0],[0,1,0]]
         faces=[[0,1,2]]
