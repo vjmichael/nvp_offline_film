@@ -14,6 +14,7 @@ import time
 from backend.nvp_ai_read_host import TrustedReadScope
 from backend.nvp_approved_tasks import canonical_bytes
 from backend.nvp_resource_ledger import TaskLedger
+from backend.nvp_resource_supervisor import NativeCancelRequested
 from backend.nvp_worker_host_lease import WorkerHostLease
 
 ID_RE = re.compile(r"wo6(?:take|shot)_[0-9a-f]{24}\Z")
@@ -255,6 +256,36 @@ class WO6DurableRecovery:
                 (task_id,time.time(),proof_sha,canonical_bytes(receipt).decode("ascii")))
             db.commit()
         return {**receipt, "evidence_sha256": proof_sha}
+
+    def finish_verified(self, task_id, *, detail):
+        """Finalize only after native proof; atomically fence late cancel intent.
+
+        This closes the small window between checking a cancel flag and the
+        ledger's terminal state transition. No AI caller can invoke this as
+        a capability; it is a first-party host operation after source proof.
+        """
+        if type(detail) is not str or len(detail) > 240:
+            raise ValueError("Native completion detail must fit durable ledger")
+        self._approved_spec(task_id)
+        with self.ledger._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT state FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row is None or row[0] != "ACTIVE":
+                raise RuntimeError("Only an active verified native task can finish")
+            pending = db.execute(
+                "SELECT 1 FROM wo6_cancel_intents WHERE task_id=?",
+                (task_id,)).fetchone()
+            if pending is not None:
+                raise NativeCancelRequested(
+                    "Creator cancellation outran native success publication")
+            now = time.time()
+            db.execute("""UPDATE tasks SET state='SUCCEEDED',phase='finished',
+                detail=?,completed_fraction=1.0,reserved=0,updated_at=?
+                WHERE id=? AND state='ACTIVE'""", (detail, now, task_id))
+            self.ledger._event(
+                db, task_id, "SUCCEEDED", "finished", detail, 1.0)
+            db.commit()
 
     def status(self, task_id, *, owner_key):
         row, spec = self._approved_spec(task_id, owner=owner_key)
