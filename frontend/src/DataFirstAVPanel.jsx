@@ -527,7 +527,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
 
   async function inspectHighResolutionTexture(){
     const asset=scene?.visual?.objects?.find(obj=>
-      obj?.source_asset_binding&&obj?.source_material?.texture);
+      (obj?.source_asset_binding||obj?.source_rig_binding)&&
+      obj?.source_material?.texture);
+    const rig=asset?.source_rig_binding||null;
     const ticket=controller.current.ticket;
     if(!asset||!ticket||!native)return;
     tileAbortRef.current?.abort();
@@ -539,6 +541,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       const output=await inspectOriginalTextureTiles({
         native,sessionId:ticket,
         asset:asset.source_asset_binding,
+        rig,
         texture:asset.source_material.texture,
         takeSha256:scene.take_document_sha256,
         signal:aborter.signal,
@@ -812,10 +815,12 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         onClick={stop}>Stop and revoke native audition</button>
     </div>
     {scene?.visual?.objects?.some(obj=>
-      obj.source_asset_binding&&obj.source_material?.texture)&&
+      (obj.source_asset_binding||obj.source_rig_binding)&&
+      obj.source_material?.texture)&&
       <section aria-label="Source high-resolution material inspection">
         <button disabled={!native||!controller.current.ticket||
-          typeof native.data_av_original_texture_tile!=='function'||
+          typeof native.data_av_original_texture_tile!=='function'&&
+          typeof native.data_av_original_rig_texture_tile!=='function'||
           tileAbortRef.current!==null}
           onClick={inspectHighResolutionTexture}>
           Inspect full-resolution original texture</button>
