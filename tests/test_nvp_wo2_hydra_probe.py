@@ -1,5 +1,6 @@
 """WO2 independent Hydra execution is required, never simulated as accepted."""
 import unittest
+import shutil
 from unittest.mock import patch
 import test_nvp_openusd_reusable_assets as fixture
 from backend.nvp_wo2_hydra_probe import capture_hydra_evidence
@@ -29,6 +30,21 @@ class WO2IndependentHydraGate(unittest.TestCase):
         self.assertFalse(receipt["hydra_shader_parity_accepted"])
         self.assertFalse(receipt["physical_display_calibrated"])
         self.assertFalse(receipt["original_modified"])
+
+    @unittest.skipUnless(shutil.which("usdrecord"),
+                         "Independent Hydra usdrecord is not installed")
+    def test_actual_hydra_frame_is_rendered_by_external_binary(self):
+        receipt=capture_hydra_evidence(
+            self.index,self.pid,"hydra_scene",1,
+            camera_path="/World/Camera",renderer="Embree",
+            require_gpu=False,timeout_seconds=60)
+        self.assertEqual(receipt["status"],"HYDRA_FRAME_RENDERED",
+                         receipt)
+        self.assertTrue(receipt["real_independent_frame_rendered"])
+        self.assertRegex(receipt["rendered_rgb_sha256"],r"^[0-9a-f]{64}$")
+        self.assertGreater(receipt["rendered_width"],0)
+        self.assertFalse(receipt["hydra_shader_parity_accepted"])
+        self.assertFalse(receipt["physical_gpu_accepted"])
 
     def test_unapproved_camera_and_arbitrary_renderer_refused(self):
         with self.assertRaises(PermissionError):
