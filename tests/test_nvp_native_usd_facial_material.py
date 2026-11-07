@@ -107,6 +107,53 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
         self.assertEqual(actor["mesh_uvs"],uv)
         self.assertFalse(live["source_modified"])
 
+    def test_real_usd_rig_texture_is_sha_verified_and_not_a_placeholder(self):
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_native_usd_texture import publish_texture
+        png_stream=BytesIO()
+        Image.new("RGB",(2,2),(35,150,230)).save(png_stream,format="PNG")
+        texture=publish_texture(self.index,self.pid,png_stream.getvalue())
+        uv=[[float(i%2),float((i//2)%2)]
+            for i in range(len(self.skin["points"]))]
+        self.rig["skin"]["mesh_uvs"]=uv
+        self.rig["skin"]["texture"]=texture
+        self._publish()
+        _,stage=self.scene.open(self.pid,"face_world",1)
+        shader=UsdShade.Shader(stage.GetPrimAtPath(
+            "/World/Actor/Rig/Material/Texture"))
+        self.assertEqual(shader.GetIdAttr().Get(),"UsdUVTexture")
+        self.assertEqual(str(shader.GetInput("file").Get().path),
+                         texture["usd_asset_path"])
+        snapshot=OpenUSDTimeState(self.index).evaluate(
+            self.pid,"face_world",1,"acting",1,tick=T)
+        live=visual_state(self.index,self.pid,snapshot,
+            scene_id="face_world",scene_revision=1)
+        actor=next(x for x in live["objects"] if
+                   x["path"]=="/World/Actor")
+        self.assertEqual(actor["shape"],"skinned_mesh")
+        self.assertEqual(actor["mesh_uvs"],uv)
+        self.assertEqual(actor["source_material"]["texture"]["sha256"],
+                         texture["sha256"])
+        self.assertTrue(actor["source_material"][
+            "texture_transport"]["png_base64"].startswith("iVBORw0KGgo"))
+        self.assertFalse(live["source_modified"])
+
+    def test_unregistered_rig_texture_blob_cannot_be_published(self):
+        from io import BytesIO
+        from PIL import Image
+        from backend.nvp_native_usd_texture import publish_texture
+        buf=BytesIO()
+        Image.new("RGB",(1,1),(255,255,255)).save(buf,format="PNG")
+        desc=publish_texture(self.index,self.pid,buf.getvalue())
+        self.rig["skin"]["mesh_uvs"]=[[0.,0.]
+            for _ in self.skin["points"]]
+        self.rig["skin"]["texture"]={
+            **desc,"sha256":"0"*64,
+            "usd_asset_path":"nvp-blob://texture/"+"0"*64}
+        with self.assertRaises(KeyError):
+            self._publish()
+
     def test_reject_rig_uvs_that_do_not_match_original_vertices(self):
         self.rig["skin"]["mesh_uvs"]=[[0.,0.]]
         with self.assertRaises(ValueError):
