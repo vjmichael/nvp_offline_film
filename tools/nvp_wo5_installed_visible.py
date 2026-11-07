@@ -208,6 +208,8 @@ def run_installed_visible_finished_smoke(bundle_root):
                     receipt["first"]!=0 or
                     receipt["last"]!=fixture.total-1 or
                     receipt["continuousCanvasTimeline"] is not True or
+                    receipt["webAudioNonSilentRenderCallbacks"]<1 or
+                    receipt["maxPictureAudioOffsetMs"]>100 or
                     receipt["audioContextElapsedSeconds"]<
                         fixture.total/24-0.002 or
                     receipt["audibleSpeakersIndependentlyVerified"] is not False or
