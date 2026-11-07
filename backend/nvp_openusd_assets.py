@@ -170,7 +170,14 @@ class OpenUSDAssetRegistry:
             shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
             material.CreateSurfaceOutput().ConnectToSource(
                 shader.ConnectableAPI(),"surface")
-            if "texture" not in authored_material:
+            if "texture" in authored_material:
+                from backend.nvp_wo2_openpbr import author_openpbr_texture
+                author_openpbr_texture(
+                    stage,"/Asset/Material",material,
+                    authored_material["texture"],
+                    authored_material["roughness"],
+                    authored_material["metallic"])
+            else:
                 from backend.nvp_wo2_openpbr import author_openpbr_scalar
                 author_openpbr_scalar(
                     stage,"/Asset/Material",material,
@@ -345,13 +352,19 @@ class OpenUSDAssetRegistry:
             openpbr=stage.GetPrimAtPath("/Asset/Material/OpenPBR")
             if openpbr:
                 if "texture" in original_material:
-                    raise RuntimeError("Textured original cannot advertise flat OpenPBR")
-                from backend.nvp_wo2_openpbr import verify_openpbr_scalar
-                verify_openpbr_scalar(
-                    stage,"/Asset/Material",bound,
-                    original_material["base_color_rgb"],
-                    original_material["roughness"],
-                    original_material["metallic"])
+                    from backend.nvp_wo2_openpbr import verify_openpbr_texture
+                    verify_openpbr_texture(
+                        stage,"/Asset/Material",bound,
+                        original_material["texture"],
+                        original_material["roughness"],
+                        original_material["metallic"])
+                else:
+                    from backend.nvp_wo2_openpbr import verify_openpbr_scalar
+                    verify_openpbr_scalar(
+                        stage,"/Asset/Material",bound,
+                        original_material["base_color_rgb"],
+                        original_material["roughness"],
+                        original_material["metallic"])
             if "texture" in original_material:
                 from backend.nvp_native_usd_texture import verified_texture
                 texture=original_material["texture"]
