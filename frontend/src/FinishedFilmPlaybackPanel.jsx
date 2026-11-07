@@ -82,7 +82,8 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
   useEffect(()=>{
     let live=true;
     setCapability(null);
-    if(native&&projectId){
+    if(native&&projectId&&
+       typeof native.wo5_film_capabilities==='function'){
       Promise.resolve(native.wo5_film_capabilities()).then(c=>{
         if(live&&c?.format===FORMAT)setCapability(c);
       }).catch(e=>{if(live)setError(e.message);});
