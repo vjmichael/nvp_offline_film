@@ -27,7 +27,7 @@ class OpenUSDAssetRegistry:
 
     def publish(self, project_id, asset_id, *, shape, size_m,
                 expected_revision=0, points=None, triangles=None,
-                preview_material=None):
+                preview_material=None, mesh_uvs=None):
         _require_pid(project_id)
         _id(asset_id, "reusable asset ID")
         if shape not in KINDS:
@@ -53,8 +53,16 @@ class OpenUSDAssetRegistry:
                    any(type(i) is not int or i<0 or i>=len(points)
                        for i in t) or len(set(t))!=3 for t in triangles):
                 raise ValueError("Mesh needs nondegenerate triangle indices")
-        elif points is not None or triangles is not None:
+        elif points is not None or triangles is not None or mesh_uvs is not None:
             raise ValueError("Procedural cube/sphere does not accept mesh data")
+        if mesh_uvs is not None:
+            if (shape!="mesh" or type(mesh_uvs) is not list or
+                len(mesh_uvs)!=len(points) or
+                any(type(uv) is not list or len(uv)!=2 or
+                    any(type(v) not in (int,float) or
+                        not math.isfinite(v) or abs(v)>1024
+                        for v in uv) for uv in mesh_uvs)):
+                raise ValueError("Authored mesh UVs must be bounded per-vertex coordinates")
         authored_material=None
         if preview_material is not None:
             if (type(preview_material) is not dict or
@@ -98,6 +106,11 @@ class OpenUSDAssetRegistry:
                 v for triangle in triangles for v in triangle])
             obj.CreateSubdivisionSchemeAttr().Set("none")
             obj.CreateDoubleSidedAttr().Set(True)
+            if mesh_uvs is not None:
+                # Source-stable USD primvar, not a browser-generated UV proxy.
+                st=UsdGeom.PrimvarsAPI(obj).CreatePrimvar(
+                    "st",Sdf.ValueTypeNames.TexCoord2fArray,"vertex")
+                st.Set([Gf.Vec2f(*uv) for uv in mesh_uvs])
         if authored_material is not None:
             from pxr import UsdShade
             material=UsdShade.Material.Define(stage,"/Asset/Material")
@@ -132,6 +145,8 @@ class OpenUSDAssetRegistry:
             # original USD layer for the ephemeral native WebGL renderer.
             document["points"]=[[float(x) for x in p] for p in points]
             document["triangles"]=[list(t) for t in triangles]
+            if mesh_uvs is not None:
+                document["mesh_uvs"]=[[float(x) for x in uv] for uv in mesh_uvs]
         def guard(db):
             row = db.execute("""SELECT 1 FROM film_blob_refs
                 WHERE project_id=? AND sha256=?""",
@@ -190,6 +205,25 @@ class OpenUSDAssetRegistry:
                             for v,expected in zip(actual,p))
                         for actual,p in zip(actual_points,points))):
                 raise RuntimeError("Frozen USD triangle topology differs from indexed source")
+            uv=doc.get("mesh_uvs")
+            primvar=UsdGeom.PrimvarsAPI(mesh).GetPrimvar("st")
+            if uv is not None:
+                if (type(uv) is not list or len(uv)!=len(points) or
+                    any(type(p) is not list or len(p)!=2 or
+                        any(type(x) not in (int,float) or
+                            not math.isfinite(x) or abs(x)>1024 for x in p)
+                        for p in uv) or
+                    not primvar or primvar.GetInterpolation()!="vertex"):
+                    raise RuntimeError("Original USD mesh UV source missing")
+                observed_uv=primvar.Get()
+                if (observed_uv is None or len(observed_uv)!=len(uv) or
+                    any(not all(math.isclose(float(x),float(y),
+                        rel_tol=1e-5,abs_tol=1e-5)
+                        for x,y in zip(u,v))
+                        for u,v in zip(observed_uv,uv))):
+                    raise RuntimeError("Original USD UV primvar differs from FilmIndex")
+            elif primvar:
+                raise RuntimeError("Unindexed source USD UV primvar detected")
         else:
             observed = (UsdGeom.Cube(geometry).GetSizeAttr().Get()
                         if doc["shape"] == "cube" else
