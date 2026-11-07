@@ -45,6 +45,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [wo2LookId,setWo2LookId]=useState('DirectorLook001');
   const [wo2LookRevision,setWo2LookRevision]=useState(0);
   const [wo2LookReceipt,setWo2LookReceipt]=useState(null);
+  const [wo2SavedLooks,setWo2SavedLooks]=useState([]);
   const [wo2LookBusy,setWo2LookBusy]=useState(false);
   const [direction,setDirection]=useState('forward');
   const [originalSoundId,setOriginalSoundId]=useState('Music001');
@@ -99,6 +100,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     setWo2Look(defaultWO2Look());
     setWo2LookRevision(0);
     setWo2LookReceipt(null);
+    setWo2SavedLooks([]);
   },[projectId,takeId]);
 
   useEffect(()=>{
@@ -538,6 +540,31 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     finally{setTextureApplying(false);}
   }
 
+  useEffect(()=>{
+    if(!native?.wo2_presentation_look_catalog||!projectId||
+       !item?.scene_id||!item?.scene_document_sha256)return;
+    let live=true;
+    native.wo2_presentation_look_catalog({
+      project_id:projectId,
+      scene_id:item.scene_id,
+      scene_revision:item.scene_revision,
+      scene_sha256:item.scene_document_sha256,
+    }).then(reply=>{
+      if(!live)return;
+      if(reply?.format===WO2_LOOK_FORMAT&&
+         reply.scene_sha256===item.scene_document_sha256&&
+         reply.original_modified===false&&
+         Array.isArray(reply.looks)){
+        const approved=reply.looks.filter(x=>
+          typeof x.look_id==='string'&&
+          Number.isInteger(x.revision)&&x.revision>0&&
+          /^[0-9a-f]{64}$/.test(x.document_sha256||''));
+        setWo2SavedLooks(approved);
+      }
+    }).catch(()=>{if(live)setWo2SavedLooks([]);});
+    return ()=>{live=false;};
+  },[native,projectId,takeId,item?.scene_document_sha256]);
+
   async function approveWO2Look(){
     if(!item||!native?.wo2_approve_presentation_look||
        wo2LookBusy||!projectId)return;
@@ -562,6 +589,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         throw Error('Untrusted or stale source-bound cinematic presentation');
       setWo2LookRevision(result.revision);
       setWo2LookReceipt(result);
+      setWo2SavedLooks(old=>[...old.filter(x=>x.look_id!==result.look_id),{
+        look_id:result.look_id,revision:result.revision,
+        document_sha256:result.document_sha256,
+      }]);
       setNote('New immutable OpenUSD presentation look saved. Original Takes remain frozen.');
     }catch(error){setError(error.message);}
     finally{setWo2LookBusy(false);}
@@ -934,6 +965,35 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         <p className="fineprint">Live look changes are temporary until
           approved by the desktop host. Save a new revision tied to the
           exact frozen OpenUSD scene; never change the source Take.</p>
+        {wo2SavedLooks.length>0&&<label>Previously approved looks for this scene
+          <select aria-label="WO2 saved OpenUSD looks" defaultValue=""
+            onChange={event=>{
+              const approved=wo2SavedLooks.find(x=>
+                x.look_id+':'+x.revision===event.target.value);
+              if(approved){
+                setWo2LookId(approved.look_id);
+                setWo2LookRevision(approved.revision);
+                setWo2LookReceipt({
+                  ...approved,format:WO2_LOOK_FORMAT,
+                });
+                setNote('Look selected. Choose Reload to verify and apply it.');
+              }
+            }}>
+            <option value="">Choose a saved source-bound look</option>
+            {wo2SavedLooks.map(x=><option key={x.look_id+':'+x.revision}
+              value={x.look_id+':'+x.revision}>
+              {x.look_id} · revision {x.revision}
+            </option>)}
+          </select>
+        </label>}
+        {wo2LookRevision>0&&<button type="button"
+          onClick={()=>{
+            setWo2LookRevision(0);
+            setWo2LookId('DirectorLook002');
+            setWo2LookReceipt(null);
+          }}>
+          Create a separate new look
+        </button>}
         <label>Look identity
           <input aria-label="WO2 approved presentation look identity"
             value={wo2LookId} maxLength={80}
