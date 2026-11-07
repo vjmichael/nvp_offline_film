@@ -130,6 +130,7 @@ class ExactTimeShotSequence:
         sid=first["source_id"];srev=first["source_revision"]
         source,cameras=self._scene(project_id,sid,srev)
         last=0
+        seen_ids=set()
         shots=[]
         for ev in entries:
             data=ev["payload"]
@@ -137,6 +138,10 @@ class ExactTimeShotSequence:
                 ev["source_id"]!=sid or
                 ev["source_revision"]!=srev or
                 ev["source_document_sha256"]!=source["document_sha256"] or
+                type(data) is not dict or
+                set(data)!={"format","usd_prim_path","observation_pattern",
+                            "world_duplicated","picture_frames_recorded"} or
+                ev["event_id"] in seen_ids or
                 data.get("format")!=FORMAT or
                 data.get("observation_pattern") not in PATTERNS or
                 data.get("usd_prim_path") not in cameras or
@@ -145,6 +150,7 @@ class ExactTimeShotSequence:
                 ev["start_tick"]<last or ev["end_tick"]<=ev["start_tick"] or
                 ev["end_tick"]>doc["duration_tick"]):
                 raise RuntimeError("Old frame-scoped/cross-scene timeline is not native")
+            seen_ids.add(ev["event_id"])
             last=ev["end_tick"]
             shots.append({
                 "shot_id":ev["event_id"],
