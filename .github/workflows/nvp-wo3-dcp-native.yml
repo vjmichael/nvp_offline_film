@@ -11,6 +11,7 @@ on:
       - backend/nvp_wo3_mxf_native.py
       - backend/nvp_wo3_dcp_package.py
       - tests/test_nvp_wo3_native_delivery.py
+      - tests/test_nvp_wo3_real_openjpeg.py
       - .github/workflows/nvp-wo3-dcp-native.yml
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       - backend/nvp_wo3_mxf_native.py
       - backend/nvp_wo3_dcp_package.py
       - tests/test_nvp_wo3_native_delivery.py
+      - tests/test_nvp_wo3_real_openjpeg.py
       - .github/workflows/nvp-wo3-dcp-native.yml
 
 permissions:
@@ -55,3 +57,23 @@ jobs:
           for forbidden in ('subprocess', 'os.system(', 'shell=True'):
               assert forbidden not in src, f'WO3 native inspector invokes {forbidden}'
           print('WO3 read-only standard-library audit invokes no media converters')
+
+  wo3-genuine-native-openjpeg-2k:
+    name: WO3 actual installed OpenJPEG 2K DCI-profile XYZ12 codestream
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install independent distro-native OpenJPEG test executable
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libopenjp2-tools
+          command -v opj_compress
+          opj_compress -h | head -25
+      - name: Encode actual 1998x1080 XYZ12 cinema J2K (not fake frames)
+        env:
+          NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+        run: python -m unittest discover -s tests -p test_nvp_wo3_real_openjpeg.py -v
