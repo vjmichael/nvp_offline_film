@@ -107,3 +107,46 @@ Production quality, novice-friendly native desktop usability and a
 capability-aware **AI execution layer that understands and securely operates
 NVP's actual tools** are first-class end goals, not optional polish.
 Full decision: [NVP theatrical Bv2.1 and product end state](NVP_THEATRICAL_BV21_AND_PRODUCT_ENDSTATE.md).
+
+## WO5-01 — 30-minute native multi-reel source-custody implementation (2026-11-07)
+
+**IMPLEMENTED ON DRAFT PR #91, CURRENT NATIVE CI PENDING:**
+`backend/nvp_wo5_original_feature.py` introduces
+`inspect_original_feature_readiness(index, journal, project_id, feature_id)`.
+It accepts only an actual `FeatureJournal` and `FilmIndex`, an **INDEXED**
+feature (not an interrupted/orphan stage), the exact same native project DB,
+a frozen FilmIndex multi-reel assembly and final indexed feature DCP receipt.
+The existing feature journal independently verifies all source XYZ12/J2K/PCM24
+and picture/sound MXF checkpoint bytes and the published multi-reel package.
+WO5 then checks each ordered reel against the original source Take,
+source-authorized mastering decision and per-frame ordered picture SHA,
+re-opens the frozen OpenUSD Take, verifies source DCP FilmIndex receipts, and
+streams per-position evidence through bounded SQLite cursors. Reels must have
+continuous Film Time, 24 fps, and an aggregate of 24–43,200 frames. Exactly
+six 7,200-frame reels represent 30 minutes. A separate bounded SHA-diversity
+pilot rejects three repeated synthetic frames, but **SHA uniqueness never
+proves movie quality, real camera/actor action or human creative intent**.
+
+The host-side audit returns
+`SOURCE_CUSTODY_READY_FOR_HUMAN_FILM_REVIEW_NOT_ACCEPTED` only, with all
+creator review, installed hardware, independent decode, SMPTE DCP Bv2.1,
+theatrical and WO4/WO5 production-acceptance flags **FALSE**. It does not
+create the film, repair a production failure, approve scenes, overwrite
+sources, grant model authority, spawn a duplicate supervisor or use FFmpeg.
+
+Added `tests/test_nvp_wo5_original_feature.py` with 43,200-frame metadata
+and per-position identity coverage, intentional three-frame-repeat rejection,
+missing/altered/out-of-order source receipt denial, immutable original
+FilmIndex vs journal ownership checks, and 30-minute bound. The
+`nvp-wo5-original-short.yml` workflow now runs both the old narrow 30-second
+sample tests and the new 30-minute bounded admission tests on Windows/Linux
+Python 3.11/3.13. **These tests are contract checks using synthetic SHA
+receipts, NOT a 30-minute original film or a full real feature integration.**
+
+**Still OPEN:** actual fully approved 30-minute six-reel native source film and
+complete independent picture+sound decode; deeper installed GUI/creator-intent
+review flow; real native feature restart/cancel/error tests; Bv2.1-specific
+interoperability validation; calibrated external theater playback; actual
+licensed packaging. The original single-reel sample API is unchanged and
+remains explicitly limited to 720 frames; future source-unified single-
+reel >30-second review is still a separate integration gap.
