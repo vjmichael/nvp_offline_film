@@ -100,13 +100,13 @@ class WO6DurableRecovery:
                 scope.actor_id != doc["actor_id"] or
                 authorize_cancel(scope, task_id, dict(doc)) is not True):
             raise PermissionError("Creator/host denied cancellation for this task")
-        if row["state"] in ("SUCCEEDED", "FAILED", "CANCELLED"):
-            raise RuntimeError("Cannot retroactively cancel a terminal native task")
+        if row["state"] not in ("QUEUED", "ACTIVE"):
+            raise RuntimeError("Only queued or active native work can be cancelled")
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
             current = db.execute(
                 "SELECT state FROM tasks WHERE id=?", (task_id,)).fetchone()
-            if current is None or current[0] in ("SUCCEEDED","FAILED","CANCELLED"):
+            if current is None or current[0] not in ("QUEUED","ACTIVE"):
                 raise RuntimeError("Native task finished before cancellation was recorded")
             db.execute("""INSERT OR IGNORE INTO wo6_cancel_intents
                 (task_id,requested_at,actor_id,project_id,turn_id,reason)
