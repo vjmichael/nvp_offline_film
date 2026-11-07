@@ -419,8 +419,10 @@ export default function DataFirstWorldViewport({
         state.meshes.delete(obj.path);mesh=null;
       }
       if(!mesh){
+        let pendingGeometry=null,pendingMaterial=null;
         try{
           const geometry=shapeFor(obj);
+          pendingGeometry=geometry;
           const color=obj.gizmo_only?
             (obj.semantic_role==='camera'?0x38bdf8:
              obj.semantic_role==='actor'?0xc084fc:0xf59e0b):
@@ -446,6 +448,7 @@ export default function DataFirstWorldViewport({
             metalness:surface?surface.metallic:.05,
             side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
               THREE.DoubleSide:THREE.FrontSide});
+          pendingMaterial=material;
           if(transport){
             material.map=state.acquireTexture(transport);
             material.userData.originalTextureSha=transport.sha256;
@@ -501,13 +504,19 @@ export default function DataFirstWorldViewport({
               offset+=count;
             }
             materialSet=[material,...others];
+            pendingMaterial=materialSet;
           }
           mesh=new THREE.Mesh(geometry,materialSet);
           mesh.matrixAutoUpdate=false;
           mesh.userData.sourceGeometry=fingerprint;
           state.world.add(mesh);
           state.meshes.set(obj.path,mesh);
-        }catch{incoming.delete(obj.path);continue;}
+          pendingGeometry=null;pendingMaterial=null;
+        }catch{
+          pendingGeometry?.dispose();
+          if(pendingMaterial)state.releaseMaterial(pendingMaterial);
+          incoming.delete(obj.path);continue;
+        }
       }
       if(obj.source_material){
         const surface=obj.source_material;
