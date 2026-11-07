@@ -253,7 +253,16 @@ class FeatureJournal(CinemaDeliveryJournal):
                 audit["reel_durations"]!=[part["frames"] for part in manifest["reels"]] or
                 audit["cpl_uuid"]!=manifest["ids"]["cpl"]):
             raise PermissionError("Committed feature CPL duration/UUID changed")
-        for part in manifest["reels"]:
+        for job_id,part in zip(manifest["ordered_reel_job_ids"],
+                               manifest["reels"]):
+            reel_status=self.status(job_id)
+            delivery=self.delivery(job_id)
+            if (reel_status["project_id"]!=f["project_id"] or
+                    reel_status["state"]!="DCP_INDEXED" or
+                    delivery["phase"]!="INDEXED"):
+                raise PermissionError("Original source reel job no longer indexed")
+            self._verify_all_production_sources(job_id)
+            self._check_published(job_id)
             for kind in ("picture","sound"):
                 track=part[kind]
                 file=Path(track["file_path"])
