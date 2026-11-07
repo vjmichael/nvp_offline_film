@@ -282,6 +282,50 @@ def _impact_chain(index, project_id, source, limit):
     return results, partial
 
 
+def _required_approval_gates(change_kind, affected_kinds, bible_available):
+    """UI-ready gate topology. Never a bearer grant or a permission token."""
+    gates = []
+    def add(gate_id, authority, subject):
+        gates.append({
+            "gate_id": gate_id,
+            "authority": authority,
+            "subject": subject,
+            "state": "NOT_REQUESTED",
+            "approval_token": None,
+            "approval_issued_by_ai": False,
+            "condition_automatically_satisfied": False,
+        })
+    add("director_creative_change", "human_director",
+        "Review the actual changed scene, performance, timing and intent")
+    if change_kind == "revise_bible_fact" or not bible_available:
+        add("creator_canon_and_continuity", "human_creator",
+            "Confirm approved Story Bible facts and knowledge scope")
+    if change_kind in ("retake", "revise_scene", "revise_actor_performance",
+                       "revise_camera", "revise_bible_fact"):
+        add("new_immutable_take", "human_director",
+            "Approve creation of a new source revision and Digital Take ID")
+    if "edit" in affected_kinds or change_kind in (
+            "revise_edit", "retake", "revise_scene"):
+        add("editorial_cut_review", "human_director",
+            "Approve revised cut and source/derived timeline references")
+    if change_kind in ("revise_sound", "remaster", "retake", "revise_edit") or (
+            "master" in affected_kinds):
+        add("sound_mix_and_master_review", "human_director",
+            "Hear original and remastered soundtrack before delivery")
+    if change_kind == "revise_color" or "presentation" in affected_kinds:
+        add("picture_color_and_reel_review", "human_director",
+            "Watch independently rendered picture/color across cuts/reels")
+    if change_kind in ("republish_dcp","remaster") or (
+            "presentation" in affected_kinds):
+        add("final_delivery_and_cinema_qc", "human_director_and_independent_qc",
+            "Approve a NEW publication, independent theater ingest and DCP QC")
+    add("native_tool_permission", "trusted_native_host",
+        "Grant exact per-turn worker operations after creator review")
+    add("native_capacity_and_recovery", "trusted_native_host",
+        "Recheck real disk/RAM/VRAM, durable job cancel/restart and rollback")
+    return gates
+
+
 def preview_source_impact(index: FilmIndex, project_id: str, source_id: str,
                           source_revision: int, source_sha256: str,
                           change_kind: str, *, scene_id=None,
@@ -386,6 +430,10 @@ def preview_source_impact(index: FilmIndex, project_id: str, source_id: str,
             "Reassembly: new editorial/presentation revisions and revision custody",
             "DCP: new native picture/PCM24 MXF, CPL/PKL/AssetMap and QC",
         ],
+        "approval_gate_preview": _required_approval_gates(
+            change_kind, affected_kinds,
+            bible["status"] == "APPROVED_SCENE_PRODUCTION_BIBLE_SNAPSHOT"),
+        "native_execution_admissible_from_this_preview": False,
         "required_director_decisions": [
             "Review exact proposed creative difference and approved Bible scope",
             "Approve whether to create a NEW original Take or source revision",
