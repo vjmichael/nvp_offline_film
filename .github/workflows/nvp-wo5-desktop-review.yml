@@ -43,7 +43,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install pinned native OpenUSD
-        run: python -m pip install --only-binary=:all: "usd-core==26.11"
+        run: 'python -m pip install --only-binary=:all: "usd-core==26.11"'
       - name: Compile native trusted review and actual desktop bridge
         run: python -m compileall -q backend/nvp_wo5_original_feature.py backend/nvp_wo5_director_review.py backend/nvp_wo5_desktop_bridge.py tools/nvp_desktop_alpha.py tests/test_nvp_wo5_desktop_bridge.py
       - name: Verify native OS approval source identity and denied browser writes
