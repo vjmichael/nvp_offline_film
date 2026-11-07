@@ -283,6 +283,7 @@ class OpenUSDAssetRegistry:
             if not math.isclose(float(observed),float(size),
                                 rel_tol=0,abs_tol=1e-7):
                 raise RuntimeError("USD asset dimensions disagree with FilmIndex")
+        original_material=doc.get("preview_material")
         original_texture=doc.get("preview_texture")
         if original_texture is not None:
             if (doc["shape"]!="mesh" or
@@ -340,7 +341,6 @@ class OpenUSDAssetRegistry:
             # No general USD resolver or filesystem path can access it.
         elif "uvs" in doc:
             raise RuntimeError("USD source UVs without an original image")
-        original_material=doc.get("preview_material")
         if original_material is not None:
             if (type(original_material) is not dict or
                 original_material.get("format")!=
