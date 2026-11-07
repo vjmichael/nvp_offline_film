@@ -43,6 +43,7 @@ def fake_track(kind,asset_id,take_sha,frames=3):
         "format":MXF_FORMAT,"kind":kind,"asset_uuid":asset_id,
         "bytes":raw,"sha256":hashlib.sha256(raw).hexdigest(),
         "frame_count":frames,"edit_rate":[24,1],
+        "profile":"2K_FLAT_24" if kind=="picture" else None,
         "original_approved_presentation_sha256":take_sha,
         "dci_compliance_verified":False,
         "independent_essence_decode_verified":False,
