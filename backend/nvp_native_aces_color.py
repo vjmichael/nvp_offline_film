@@ -137,7 +137,8 @@ class NativeACESColor:
     def process_verified_usd_scene(
             self,project_id,take_id,take_sha256,
             grade_id,grade_revision,grade_sha256,*,
-            tick,camera_path,expected_config_sha256):
+            tick,camera_path,expected_config_sha256,
+            source_session=None,source_snapshot=None):
         """Real source scene, not caller-provided fictitious linear pixels.
 
         The Take, scene, camera, skin and light USD source are re-read under
@@ -146,7 +147,8 @@ class NativeACESColor:
         from backend.nvp_native_scene_linear_raster import NativeSceneLinearRaster
         linear,source=NativeSceneLinearRaster(self.index).render(
             project_id,take_id,take_sha256,tick=tick,
-            camera_path=camera_path)
+            camera_path=camera_path,
+            source_session=source_session,source_snapshot=source_snapshot)
         if source["scene_linear_rgba_sha256"]!=sha256(
                 linear.tobytes()).hexdigest():
             raise RuntimeError("Native scene-linear pixel source changed")
