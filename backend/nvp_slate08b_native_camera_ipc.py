@@ -691,7 +691,7 @@ class TrustedDesktopCameraBridge:
                 pid,take,sha,presentation,parent,
                 listener_path=listener,
                 fps_num=request["fps_num"],fps_den=request["fps_den"],
-                aces_color_grade=color)
+                aces_color_grade=color,resumable=True)
         if (result["color_pipeline"]!=
                 "ocio_aces2_scene_linear_png16_unmastered" or
             result["pixel_bit_depth"]!=16):
@@ -780,7 +780,7 @@ class TrustedDesktopCameraBridge:
                 pid,take,sha,presentation,parent,
                 listener_path=listener,
                 fps_num=request["fps_num"],fps_den=request["fps_den"],
-                linear_exr_grade=color)
+                linear_exr_grade=color,resumable=True)
         if (result["color_pipeline"]!=
             "ocio_scene_linear_acescg_exr32_unmastered" or
             result["pixel_bit_depth"]!=32 or
