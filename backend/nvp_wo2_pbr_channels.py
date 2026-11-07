@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 from backend.nvp_native_usd_texture import publish_texture,verified_texture
 
-CHANNELS=("roughness","metallic","emission","normal")
+CHANNELS=("roughness","metallic","emission","normal","opacity")
 FORMAT="nvp.wo2.original_pbr_maps.v1"
 
 def publish_pbr_maps(index,pid,maps,*,has_uv):
@@ -16,17 +16,36 @@ def publish_pbr_maps(index,pid,maps,*,has_uv):
         len(maps)>len(CHANNELS) or
         any(k not in CHANNELS for k in maps)):
         raise ValueError("Original PBR images require bounded authored USD UVs")
-    return {key:publish_texture(index,pid,maps[key])
-            for key in CHANNELS if key in maps}
+    result={}
+    from backend.nvp_native_usd_texture import decode_png
+    for key in CHANNELS:
+        if key not in maps:continue
+        _,_,rgba=decode_png(maps[key])
+        if key in ("roughness","metallic","opacity"):
+            rgb=memoryview(rgba)
+            for i in range(0,len(rgb),4):
+                r,g,b=rgb[i],rgb[i+1],rgb[i+2]
+                if not (r==g==b and
+                        (key!="opacity" or r in (0,255))):
+                    raise ValueError(
+                        "Scalar PBR maps must be grayscale; opacity is binary")
+        result[key]=publish_texture(index,pid,maps[key])
+    return result
 
 def verify_pbr_maps(index,pid,maps):
     if maps is None:return None
-    if (type(maps) is not dict or not maps or len(maps)>4 or
+    if (type(maps) is not dict or not maps or len(maps)>len(CHANNELS) or
         any(k not in CHANNELS for k in maps)):
         raise RuntimeError("Unsupported original PBR image channel")
     for key in CHANNELS:
         if key in maps:
-            verified_texture(index,pid,maps[key])
+            _,(_,_,rgba)=verified_texture(index,pid,maps[key])
+            if key in ("roughness","metallic","opacity"):
+                for i in range(0,len(rgba),4):
+                    r,g,b=rgba[i:i+3]
+                    if not (r==g==b and (
+                        key!="opacity" or r in (0,255))):
+                        raise RuntimeError("Original scalar PBR pixel contract changed")
     return maps
 
 def author_pbr_maps(stage,material_path,preview,openpbr,maps):
@@ -54,7 +73,7 @@ def author_pbr_maps(stage,material_path,preview,openpbr,maps):
                 Gf.Vec4f(2,2,2,1))
             shader.CreateInput("bias",Sdf.ValueTypeNames.Float4).Set(
                 Gf.Vec4f(-1,-1,-1,0))
-        output=("r" if key in ("roughness","metallic") else "rgb")
+        output=("r" if key in ("roughness","metallic","opacity") else "rgb")
         typ=(Sdf.ValueTypeNames.Float if output=="r" else
              Sdf.ValueTypeNames.Float3)
         preview_type=(
@@ -65,12 +84,16 @@ def author_pbr_maps(stage,material_path,preview,openpbr,maps):
             "metallic":"metallic",
             "emission":"emissiveColor",
             "normal":"normal",
+            "opacity":"opacity",
         }[key]
         preview.CreateInput(preview_input,preview_type).ConnectToSource(
             shader.CreateOutput(output,typ))
+        if key=="opacity":
+            preview.CreateInput(
+                "opacityThreshold",Sdf.ValueTypeNames.Float).Set(.5)
         mtlx=UsdShade.Shader.Define(stage,material_path+"/MtlxMap_"+suffix)
         mtlx.CreateIdAttr(
-            "ND_image_float" if key in ("roughness","metallic")
+            "ND_image_float" if key in ("roughness","metallic","opacity")
             else "ND_image_color3")
         attr=mtlx.CreateInput("file",Sdf.ValueTypeNames.Asset)
         attr.Set(Sdf.AssetPath(desc["usd_asset_path"]))
@@ -85,7 +108,7 @@ def author_pbr_maps(stage,material_path,preview,openpbr,maps):
         texcoord.CreateInput("index",Sdf.ValueTypeNames.Int).Set(0)
         mtlx.CreateInput("texcoord",Sdf.ValueTypeNames.Float2).ConnectToSource(
             texcoord.CreateOutput("out",Sdf.ValueTypeNames.Float2))
-        out_type=(Sdf.ValueTypeNames.Float if key in ("roughness","metallic")
+        out_type=(Sdf.ValueTypeNames.Float if key in ("roughness","metallic","opacity")
                   else Sdf.ValueTypeNames.Color3f)
         out=mtlx.CreateOutput("out",out_type)
         if key=="normal":
@@ -103,6 +126,7 @@ def author_pbr_maps(stage,material_path,preview,openpbr,maps):
                 "roughness":"specular_roughness",
                 "metallic":"base_metalness",
                 "emission":"emission_color",
+                "opacity":"geometry_opacity",
             }[key]
             openpbr.CreateInput(target,out_type).ConnectToSource(out)
             if key=="emission":
@@ -129,6 +153,9 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
         for axis in ("wrapS","wrapT"):
             if shader.GetInput(axis).GetAttr().Get()!="repeat":
                 raise RuntimeError("Original PBR map wrapping changed")
+        if key=="opacity" and not abs(
+            float(preview.GetInput("opacityThreshold").GetAttr().Get())-.5)<1e-6:
+            raise RuntimeError("Original cutout opacity threshold changed")
         if key=="normal":
             scale=shader.GetInput("scale").GetAttr().Get()
             bias=shader.GetInput("bias").GetAttr().Get()
@@ -154,7 +181,8 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
                 raise RuntimeError("Original PBR UV input disconnected: "+key)
         target={
             "roughness":"roughness","metallic":"metallic",
-            "emission":"emissiveColor","normal":"normal"}[key]
+            "emission":"emissiveColor","normal":"normal",
+            "opacity":"opacity"}[key]
         connection=preview.GetInput(target).GetConnectedSource()
         if not connection or str(connection[0].GetPrim().GetPath())!=path:
             raise RuntimeError("PreviewSurface PBR input rewired: "+key)
@@ -174,7 +202,8 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
                 raise RuntimeError("Original OpenPBR emission disabled")
             input_name={"roughness":"specular_roughness",
                         "metallic":"base_metalness",
-                        "emission":"emission_color"}[key]
+                        "emission":"emission_color",
+                        "opacity":"geometry_opacity"}[key]
             connected=openpbr.GetInput(input_name).GetConnectedSource()
             if not connected or str(connected[0].GetPrim().GetPath())!=(
                 material_path+"/MtlxMap_"+suffix):
