@@ -423,6 +423,36 @@ class TrustedDesktopCameraBridge:
                 ask_native=self._ask)
         return self._data_av_controller
 
+    def data_av_import_original_texture(self,project_id):
+        """Trusted desktop-only PNG picker. Browser passes no source paths."""
+        with self._lock:
+            window=self._native_window()
+            _require_pid(project_id)
+            from webview import FileDialog
+            if not callable(getattr(window,"create_file_dialog",None)):
+                raise PermissionError("NVP requires a real OS image picker")
+            chosen=window.create_file_dialog(
+                FileDialog.OPEN,allow_multiple=False,
+                file_types=("PNG original textures (*.png)",))
+            if not chosen:
+                return {"format":"nvp.native.texture_import.v1",
+                        "status":"CANCELLED","original_modified":False}
+            if len(chosen)!=1:
+                raise PermissionError("Original texture import selects one image")
+            from backend.nvp_native_usd_texture import import_native_selected_png
+            def approve(scope):
+                return self._ask(
+                    "Import a frozen original PNG texture?\\n"+
+                    "SHA-256: "+scope["sha256"]+"\\n"+
+                    "Dimensions: "+str(scope["width"])+" x "+
+                        str(scope["height"])+"\\n"+
+                    "Bytes: "+str(scope["size_bytes"])+"\\n"+
+                    "NVP will store immutable source bytes in this project.\\n"+
+                    "No existing scene, rig, Digital Take or presentation changes.")
+            result=import_native_selected_png(
+                self.index,project_id,chosen[0],approve=approve)
+            return {"format":"nvp.native.texture_import.v1",**result}
+
     def data_av_import_original_audio(self,project_id,source_id):
         """Open a REAL native OS picker. The browser supplies IDs, never paths."""
         self._native_window()
