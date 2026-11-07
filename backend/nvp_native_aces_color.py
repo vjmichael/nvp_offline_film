@@ -134,6 +134,42 @@ class NativeACESColor:
             raise TypeError("Real original FilmIndex required for managed color")
         self.index=index
 
+    def process_verified_usd_scene(
+            self,project_id,take_id,take_sha256,
+            grade_id,grade_revision,grade_sha256,*,
+            tick,camera_path,expected_config_sha256):
+        """Real source scene, not caller-provided fictitious linear pixels.
+
+        The Take, scene, camera, skin and light USD source are re-read under
+        exact Film Time and original FilmIndex SHA before any color decision.
+        """
+        from backend.nvp_native_scene_linear_raster import NativeSceneLinearRaster
+        linear,source=NativeSceneLinearRaster(self.index).render(
+            project_id,take_id,take_sha256,tick=tick,
+            camera_path=camera_path)
+        if source["scene_linear_rgba_sha256"]!=sha256(
+                linear.tobytes()).hexdigest():
+            raise RuntimeError("Native scene-linear pixel source changed")
+        picture,receipt=self.process_scene_linear(
+            project_id,take_id,take_sha256,
+            grade_id,grade_revision,grade_sha256,linear,
+            expected_config_sha256=expected_config_sha256)
+        if receipt["declared_source_rgb_sha256"]!=source[
+                "scene_linear_rgba_sha256"]:
+            raise RuntimeError("Native ACES view diverged from original USD source")
+        return picture,{
+            **receipt,
+            "format":"nvp.native_ocio.source_pinned_aces2_review.v1",
+            "status":"VERIFIED_SOURCE_UNMASTERED_ACES2_SDR_DERIVATIVE",
+            "film_time_tick":str(tick),
+            "original_camera_path":camera_path,
+            "scene_linear_source":source,
+            "real_original_usd_geometry":True,
+            "real_original_usd_light_parameter_sampling":True,
+            "unverified_camera_display_colorimetry":True,
+            "cinema_master_approved":False,
+        }
+
     def process_scene_linear(self,project_id,take_id,take_sha256,
                              grade_id,grade_revision,grade_sha256,
                              scene_linear_rgba,*,expected_config_sha256):
