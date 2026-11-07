@@ -23,6 +23,7 @@ from backend.nvp_film_index import FilmIndex,_id,_sha
 from backend.nvp_wo3_dcp_structure import (
     inspect_dcp_structure,NS_AM,NS_PKL,NS_CPL)
 from backend.nvp_wo3_mxf_native import FORMAT as MXF_FORMAT
+from backend.nvp_wo3_j2k_audit import PROFILES
 
 FORMAT="nvp.wo3.source_bound_dcp_candidate.v1"
 MAX_REEL_BYTES=1024*1024*1024*1024
@@ -57,6 +58,8 @@ def _asset(track,kind,source_sha):
         not 1<=track["frame_count"]<=144000 or
         track.get("dci_compliance_verified") is not False):
         raise PermissionError("Only honest approved native MXF receipts accepted")
+    if kind=="picture" and track.get("profile") not in PROFILES:
+        raise ValueError("Native MXF needs a verified 2K/4K source picture profile")
     value=track.get("asset_uuid")
     try:
         ident=uuid.UUID(value)
@@ -96,7 +99,8 @@ def _compose_xml(picture,sound,*,title,issued):
         _tag(node,NS_CPL,"EntryPoint",0)
         _tag(node,NS_CPL,"Duration",frames)
         if tag=="MainPicture":
-            _tag(node,NS_CPL,"ScreenAspectRatio","1998 1080")
+            width,height,_=PROFILES[picture["profile"]]
+            _tag(node,NS_CPL,"ScreenAspectRatio",f"{width} {height}")
     cpl_bytes=_xml(cpl)
     files={
         "picture.mxf":picture["bytes"],
