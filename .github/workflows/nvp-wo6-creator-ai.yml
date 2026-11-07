@@ -21,6 +21,8 @@ on:
       - tests/test_nvp_wo6_native_take_action.py
       - tests/test_nvp_wo6_native_shot_action.py
       - tests/test_nvp_wo6_recovery.py
+      - docs/NVP_WO6_AI_FIRST_FILM_ASSISTANT.md
+      - docs/NVP_DATA_ALL_TASK_LEDGER.md
       - .github/workflows/nvp-wo6-creator-ai.yml
   pull_request:
     paths:
@@ -42,6 +44,8 @@ on:
       - tests/test_nvp_wo6_native_take_action.py
       - tests/test_nvp_wo6_native_shot_action.py
       - tests/test_nvp_wo6_recovery.py
+      - docs/NVP_WO6_AI_FIRST_FILM_ASSISTANT.md
+      - docs/NVP_DATA_ALL_TASK_LEDGER.md
       - .github/workflows/nvp-wo6-creator-ai.yml
   workflow_dispatch:
 concurrency:
