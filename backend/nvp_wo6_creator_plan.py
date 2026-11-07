@@ -20,7 +20,9 @@ from hashlib import sha256
 import json
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
-from backend.nvp_openusd_take import FORMAT as USD_TAKE_FORMAT
+# Pure FilmIndex reads must not import the native USD renderer dependency.
+# This is the existing nvp_openusd_take frozen-manifest version string.
+USD_TAKE_FORMAT = "nvp.digital_take.openusd_temporal.v1"
 
 FORMAT = "nvp.wo6.source_bound_creator_retake_preview.v1"
 MAX_GRAPH_NODES = 64
