@@ -62,9 +62,8 @@ class PersistentMultiReelFeatureTests(unittest.TestCase):
     def test_approved_two_reels_published_and_indexed_by_single_supervisor(self):
         refused=self.submit(approve=lambda _:False)
         self.assertEqual(refused["status"],"DENIED")
-        self.assertEqual(self.submit(ordered_job_ids=self.ids[::-1],
-                                     approve=lambda _:True)["status"]
-                         if False else "DENIED","DENIED")
+        with self.assertRaises(PermissionError):
+            self.submit(ordered_job_ids=self.ids[::-1])
         job=self.submit()
         fid=job["feature_id"]
         self.assertEqual(job["reel_count"],2)
