@@ -40,6 +40,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [direction,setDirection]=useState('forward');
   const [originalSoundId,setOriginalSoundId]=useState('Music001');
   const [originalSoundReceipt,setOriginalSoundReceipt]=useState(null);
+  const [originalTextureReceipt,setOriginalTextureReceipt]=useState(null);
+  const [textureImporting,setTextureImporting]=useState(false);
   const [presentationId,setPresentationId]=useState('NativeFilm001');
   const [aviReceipt,setAviReceipt]=useState(null);
   const [gradeChoices,setGradeChoices]=useState([]);
@@ -463,6 +465,28 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     finally{setExporting(false);}
   }
 
+  async function importOriginalTexture(){
+    if(!native||typeof native.data_av_import_original_texture!=='function'||
+       textureImporting)return;
+    setTextureImporting(true);setError('');setOriginalTextureReceipt(null);
+    try{
+      const result=await native.data_av_import_original_texture(projectId);
+      if(result?.status==='CANCELLED'||result?.status==='DENIED')return;
+      const desc=result?.texture;
+      if(result?.format!=='nvp.native.texture_import.v1'||
+         result.status!=='ORIGINAL_TEXTURE_IMPORTED'||
+         result.original_modified!==false||result.ffmpeg_used!==false||
+         desc?.format!=='nvp.original.usd_texture_png.v1'||
+         !/^[0-9a-f]{64}$/.test(desc.sha256||'')||
+         desc.source_modified!==false)
+        throw Error('Original texture did not pass native source verification');
+      setOriginalTextureReceipt(desc);
+      setNote('PNG texture stored as an immutable source asset. Applying it to '+
+        'a scene or character requires a separate source revision.');
+    }catch(e){setError(e.message);}
+    finally{setTextureImporting(false);}
+  }
+
   async function importOriginalSound(){
     if(!native||typeof native.data_av_import_original_audio!=='function')return;
     setError('');setOriginalSoundReceipt(null);
@@ -579,6 +603,23 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       native audio permission and the OS sound device.</p>}
     {error&&<p role="alert">{error}</p>}
     {note&&<p role="status">{note}</p>}
+    <section className="card" aria-label="Original USD texture import">
+      <h3>Import an original 3D material texture</h3>
+      <p className="fineprint">Select a PNG in the native OS picker.
+        The source is SHA-verified and stored unchanged; existing actors,
+        scenes and frozen Takes are not altered. Transparent images and
+        images over 512 × 512 are not yet supported.</p>
+      <button disabled={!native||textureImporting||
+        typeof native.data_av_import_original_texture!=='function'}
+        onClick={importOriginalTexture}>
+        {textureImporting?'Importing original texture…':'Choose original PNG texture'}
+      </button>
+      {originalTextureReceipt&&<p role="status">
+        Frozen texture {originalTextureReceipt.width} ×
+        {originalTextureReceipt.height}; SHA-256
+        {originalTextureReceipt.sha256.slice(0,16)}…
+      </p>}
+    </section>
     <label>Frozen Digital Take
       <select aria-label="Native frozen Digital Take" value={takeId}
         disabled={playing} onChange={e=>setTakeId(e.target.value)}>
