@@ -3,6 +3,23 @@
  * Never opens a URL or filesystem path. Only the approved native Take session
  * may return a tile, and no tile becomes an authoritative new source.
  */
+export async function verifyOriginalTileDigest(packet){
+  if(!packet||typeof packet.png_base64!=='string'||
+     !/^[0-9a-f]{64}$/.test(packet.tile_sha256||'')||
+     !globalThis.crypto?.subtle?.digest)
+    throw Error('WebView2 native SHA-256 validation unavailable');
+  const binary=atob(packet.png_base64);
+  if(binary.length>1024*1024)
+    throw Error('Original tile exceeds one MiB transport budget');
+  const bytes=Uint8Array.from(binary,ch=>ch.charCodeAt(0));
+  const digest=await globalThis.crypto.subtle.digest('SHA-256',bytes);
+  const actual=Array.from(new Uint8Array(digest),
+    x=>x.toString(16).padStart(2,'0')).join('');
+  if(actual!==packet.tile_sha256)
+    throw Error('Original PNG tile bytes changed after native authorization');
+  return true;
+}
+
 export async function inspectOriginalTextureTiles({
   native,sessionId,asset,rig,texture,takeSha256,
   mipLevel=0,signal,onProgress,
@@ -81,6 +98,9 @@ export async function inspectOriginalTextureTiles({
                width!==reply.level_width||height!==reply.level_height){
         throw Error('Source texture tile dimensions changed mid-inspection');
       }
+      await verifyOriginalTileDigest(reply);
+      if(signal?.aborted)
+        throw Error('Original texture inspection cancelled');
       const tile=await new Promise((resolve,reject)=>{
         const image=new Image();
         image.onload=()=>resolve(image);
