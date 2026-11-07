@@ -68,8 +68,10 @@ on:
       - 'tests/test_nvp_wo2_pbr_channels.py'
       - 'backend/nvp_wo2_hydra_probe.py'
       - 'tests/test_nvp_wo2_hydra_probe.py'
-      - 'backend/nvp_wo2_hardware_evidence.py'
+      - 'backend/nvp_wo2_hardware_evidence.py backend/nvp_wo2_renderer_comparison.py'
       - 'tests/test_nvp_wo2_hardware_evidence.py'
+      - 'backend/nvp_wo2_renderer_comparison.py'
+      - 'tests/test_nvp_wo2_renderer_comparison.py'
       - 'tests/test_nvp_wo2_material_subsets.py'
       - 'frontend/src/NativeTextureGPUReference.js'
       - 'frontend/src/NativeTextureGPUReference.test.js'
@@ -181,6 +183,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_wo2_pbr_channels.py' -v
           python -m unittest discover -s tests -p 'test_nvp_wo2_hydra_probe.py' -v
           python -m unittest discover -s tests -p 'test_nvp_wo2_hardware_evidence.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_wo2_renderer_comparison.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_acescg_exr.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_export_recovery.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_cinema_master_gate.py' -v
@@ -249,7 +252,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all sounddevice --collect-all _sounddevice_data --collect-all PIL --collect-all PyOpenColorIO --collect-all OpenEXR --collect-all numpy --collect-submodules pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_native_avi_delivery --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_native_spatial_acoustics --hidden-import backend.nvp_native_color_eval --hidden-import backend.nvp_native_aces_color --hidden-import backend.nvp_native_usd_texture --hidden-import backend.nvp_wo2_material_slots --hidden-import backend.nvp_wo2_openpbr --hidden-import backend.nvp_wo2_materialx_resolver --hidden-import backend.nvp_wo2_pbr_channels --hidden-import backend.nvp_wo2_hydra_probe --hidden-import backend.nvp_wo2_hardware_evidence --hidden-import backend.nvp_native_scene_linear_raster --hidden-import backend.nvp_native_scene_linear_exr --hidden-import backend.nvp_native_color_export_journal --hidden-import backend.nvp_native_cinema_master_gate --hidden-import backend.nvp_native_dcp_toolchain --hidden-import backend.nvp_legacy_quarantine --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all sounddevice --collect-all _sounddevice_data --collect-all PIL --collect-all PyOpenColorIO --collect-all OpenEXR --collect-all numpy --collect-submodules pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_native_avi_delivery --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_native_spatial_acoustics --hidden-import backend.nvp_native_color_eval --hidden-import backend.nvp_native_aces_color --hidden-import backend.nvp_native_usd_texture --hidden-import backend.nvp_wo2_material_slots --hidden-import backend.nvp_wo2_openpbr --hidden-import backend.nvp_wo2_materialx_resolver --hidden-import backend.nvp_wo2_pbr_channels --hidden-import backend.nvp_wo2_hydra_probe --hidden-import backend.nvp_wo2_hardware_evidence --hidden-import backend.nvp_wo2_renderer_comparison --hidden-import backend.nvp_native_scene_linear_raster --hidden-import backend.nvp_native_scene_linear_exr --hidden-import backend.nvp_native_color_export_journal --hidden-import backend.nvp_native_cinema_master_gate --hidden-import backend.nvp_native_dcp_toolchain --hidden-import backend.nvp_legacy_quarantine --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
