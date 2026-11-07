@@ -215,7 +215,20 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
         </select>
       </label>
       <label><input type="checkbox" checked={tickMode}
-        onChange={e=>setTickMode(e.target.checked)}/> Author exact integer Film Time ticks</label>
+        onChange={e=>{
+          if(e.target.checked){
+            // Convert convenience seconds to ticks only when no finer-than-us
+            // persisted duration exists; that original tick value is authoritative.
+            try{
+              setStartTick(ticks(start));setLengthTick(ticks(seconds));
+              if(exactDuration===null)setDurationTick(ticks(duration));
+            }catch(err){setError(err.message);return;}
+          }else if(exactDuration!==null){
+            setError("Sub-microsecond saved duration requires exact tick mode.");
+            return;
+          }
+          setTickMode(e.target.checked);setError("");
+        }}/> Author exact integer Film Time ticks</label>
       {tickMode?<>
         <label>Start Film Time tick
           <input aria-label="Start Film Time tick" value={startTick} onChange={e=>setStartTick(e.target.value)}/></label>
