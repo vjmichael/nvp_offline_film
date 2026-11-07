@@ -149,6 +149,8 @@ def deliver_avi(package_dir,output_file,*,expected_take_sha256,
            "picture_count":len(frames),"audio_samples":doc["audio_samples"],
            "fps_num":fps_num,"fps_den":fps_den,
            "width":width,"height":height,
+           "color_grade_sha256":(doc["color_grade"]["document_sha256"]
+                if doc.get("color_grade") else None),
            "output_name":target.name,"source_mutated":False}
     if approve_delivery(dict(grant)) is not True:
         raise PermissionError("Creator denied derived AVI publication")
@@ -226,6 +228,7 @@ def deliver_avi(package_dir,output_file,*,expected_take_sha256,
         return {"format":FORMAT,"status":"DERIVED_SINGLE_FILE_AVI",
                 "output_file":str(target),"output_sha256":_sha(target),
                 "take_sha256":expected_take_sha256,
+                "color_grade_sha256":grant["color_grade_sha256"],
                 "source_modified":False,"ffmpeg_used":False,
                 "cinema_master_accepted":False}
     finally:
