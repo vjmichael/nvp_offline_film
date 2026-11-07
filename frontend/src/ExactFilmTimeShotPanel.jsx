@@ -159,6 +159,16 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
     setError('');setNotice('');
     try{
       const requested=(tickMode?exactTick(durationTick):exactTick(ticks(duration))).toString();
+      let previousEnd=0n;
+      const identities=new Set();
+      for(const shot of shots){
+        const first=exactTick(shot.start_tick),last=exactTick(shot.end_tick);
+        if(first<previousEnd||last<=first)
+          throw Error('Camera observations must be ordered, non-overlapping and positive.');
+        if(identities.has(shot.shot_id))throw Error('Duplicate camera shot identity.');
+        identities.add(shot.shot_id);
+        previousEnd=last;
+      }
       const far=shots.reduce((a,s)=>BigInt(s.end_tick)>a?
         BigInt(s.end_tick):a,0n);
       const end=far>BigInt(requested)?far:BigInt(requested);
