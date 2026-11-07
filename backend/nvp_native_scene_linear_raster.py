@@ -286,7 +286,7 @@ class NativeSceneLinearRaster:
                 source.project_id!=project_id or
                 source.take_id!=take_id or
                 source.take["document_sha256"]!=take_sha256 or
-                source.listener_path!=camera_path or
+                source.roles.get(camera_path)!="camera" or
                 not isinstance(source_snapshot,dict)):
                 raise PermissionError("Only trusted native Take session may reuse USD frame")
         try:
