@@ -5,11 +5,25 @@ on:
       - nvp/wo4-cinema-mastering-20261107
     paths:
       - backend/nvp_wo4_pcm_master.py
+      - backend/nvp_wo4_xyz12_master.py
+      - backend/nvp_wo4_master_qc.py
+      - backend/nvp_wo4_mastering_decision.py
+      - backend/nvp_wo4_master_delivery.py
+      - tests/test_nvp_wo4_xyz12_master.py
+      - tests/test_nvp_wo4_master_qc.py
+      - tests/test_nvp_wo4_mastering_decision.py
       - tests/test_nvp_wo4_pcm_master.py
       - .github/workflows/nvp-wo4-native-mastering.yml
   pull_request:
     paths:
       - backend/nvp_wo4_pcm_master.py
+      - backend/nvp_wo4_xyz12_master.py
+      - backend/nvp_wo4_master_qc.py
+      - backend/nvp_wo4_mastering_decision.py
+      - backend/nvp_wo4_master_delivery.py
+      - tests/test_nvp_wo4_xyz12_master.py
+      - tests/test_nvp_wo4_master_qc.py
+      - tests/test_nvp_wo4_mastering_decision.py
       - tests/test_nvp_wo4_pcm_master.py
       - .github/workflows/nvp-wo4-native-mastering.yml
 permissions:
@@ -28,7 +42,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.py }}
-      - name: Compile WO4 native PCM candidate and rejection tests
-        run: python -m compileall -q backend/nvp_wo4_pcm_master.py tests/test_nvp_wo4_pcm_master.py
+      - name: Install exact OpenUSD for real source-Take approval tests
+        run: python -m pip install 'usd-core==26.11'
+      - name: Compile WO4 cinema candidates and rejection tests
+        run: python -m compileall -q backend/nvp_wo4_pcm_master.py backend/nvp_wo4_xyz12_master.py backend/nvp_wo4_master_qc.py backend/nvp_wo4_mastering_decision.py backend/nvp_wo4_master_delivery.py tests/test_nvp_wo4_pcm_master.py tests/test_nvp_wo4_xyz12_master.py tests/test_nvp_wo4_master_qc.py tests/test_nvp_wo4_mastering_decision.py
       - name: Verify exact source parity, approved gain and film-time sound duration
         run: python -m unittest discover -s tests -p test_nvp_wo4_pcm_master.py -v
+      - name: Verify 12-bit XYZ conversion, source-color guard and deterministic color receipt
+        run: python -m unittest discover -s tests -p test_nvp_wo4_xyz12_master.py -v
+      - name: Verify measured picture/audio QC without false calibration
+        run: python -m unittest discover -s tests -p test_nvp_wo4_master_qc.py -v
+      - name: Verify actual FilmIndex mastering decisions and tampered delivery refusal
+        run: python -m unittest discover -s tests -p test_nvp_wo4_mastering_decision.py -v
