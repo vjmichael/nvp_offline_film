@@ -45,6 +45,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [exporting,setExporting]=useState(false);
   const [cameraPlans,setCameraPlans]=useState([]);
   const [unapprovedCaptures,setUnapprovedCaptures]=useState([]);
+  const [recoveryRef,setRecoveryRef]=useState('');
+  const [recoveredSourceId,setRecoveredSourceId]=useState('RecoveredSound001');
+  const [recoverBusy,setRecoverBusy]=useState(false);
+  const [recoverReceipt,setRecoverReceipt]=useState(null);
   const [cameraPlanIndex,setCameraPlanIndex]=useState('0');
   const [liveEmitter,setLiveEmitter]=useState('');
   const [secondLiveEmitter,setSecondLiveEmitter]=useState('');
@@ -102,8 +106,11 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
          result.status!=='AVAILABLE'||!Array.isArray(result.camera_timelines))
         throw Error('Live source camera catalog is unverified');
       setCameraPlans(result.camera_timelines);
-      setUnapprovedCaptures(Array.isArray(result.unapproved_capture_recovery)?
-        result.unapproved_capture_recovery.slice(0,128):[]);
+      const unapproved=Array.isArray(result.unapproved_capture_recovery)?
+        result.unapproved_capture_recovery.slice(0,128):[];
+      setUnapprovedCaptures(unapproved);
+      setRecoveryRef(unapproved.find(x=>x.recoverable_sealed_mono===true)
+        ?.capture_reference||'');
       setCameraPlanIndex('0');
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
@@ -134,6 +141,41 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     setLiveEmitter(livePlan?.emitters?.[0]||'');
     setSecondLiveEmitter(livePlan?.emitters?.[1]||'');
   },[cameraPlanIndex,cameraPlans]);
+
+  async function recoverOriginalMono(){
+    if(!native||typeof native.data_av_live_recover_original!=='function'||
+       recoverBusy||liveBusy||liveTicket||!recoveryRef)return;
+    const target=unapprovedCaptures.find(x=>x.capture_reference===recoveryRef&&
+      x.recoverable_sealed_mono===true);
+    if(!target)return;
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,60}$/.test(recoveredSourceId)){
+      setError('Choose a unique original mono audio source identity.');return;
+    }
+    setRecoverBusy(true);setRecoverReceipt(null);setError('');
+    try{
+      const recovered=await native.data_av_live_recover_original({
+        project_id:projectId,capture_reference:recoveryRef,
+        new_source_id:recoveredSourceId,
+      });
+      if(recovered?.format!=='nvp.data_av.capture_recovery.v1'||
+         recovered.status!=='RECOVERED_UNATTACHED_ORIGINAL_MONO'||
+         recovered.source_id!==recoveredSourceId||
+         recovered.created_frozen_take!==false||
+         recovered.original_source_modified!==false)
+        throw Error('Unattached original microphone source recovery not verified');
+      setRecoverReceipt(recovered);
+      const updated=await native.data_av_live_catalog(projectId);
+      if(updated?.status==='AVAILABLE'&&
+         Array.isArray(updated.unapproved_capture_recovery)){
+        const entries=updated.unapproved_capture_recovery;
+        setUnapprovedCaptures(entries);
+        setRecoveryRef(entries.find(x=>x.recoverable_sealed_mono===true)
+          ?.capture_reference||'');
+      }
+      setNote('Original PCM recovered as a standalone source. No Digital Take was frozen.');
+    }catch(e){setError(e.message);}
+    finally{setRecoverBusy(false);}
+  }
 
   async function beginLiveCapture(){
     if(!native||!livePlan||liveTicket||liveBusy||playing||exporting)return;
@@ -543,6 +585,40 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
           These files were not frozen as Digital Takes. NVP preserves them
           for trusted host reconciliation after a crash; it never approves
           incomplete audio or deletes it automatically.</p>}
+      {unapprovedCaptures.some(x=>x.recoverable_sealed_mono===true)&&
+        <section aria-label="Original microphone source recovery">
+          <p>Only durable, checksum-sealed original mono PCM can be
+            recovered. Native OS confirmation is required. This creates an
+            unattached source, <strong>not</strong> a Digital Take.</p>
+          <label>Recoverable original capture
+            <select aria-label="Recoverable original microphone capture"
+              disabled={recoverBusy||!!liveTicket}
+              value={recoveryRef} onChange={e=>setRecoveryRef(e.target.value)}>
+              {unapprovedCaptures.filter(x=>x.recoverable_sealed_mono===true)
+                .map(x=><option key={x.capture_reference}
+                  value={x.capture_reference}>
+                  {x.take_id} · {x.durable_sample_count} samples
+                </option>)}
+            </select>
+          </label>
+          <label>New unattached original audio source identity
+            <input aria-label="Recovered original audio source identity"
+              maxLength={61} value={recoveredSourceId}
+              disabled={recoverBusy||!!liveTicket}
+              onChange={e=>setRecoveredSourceId(e.target.value)}/>
+          </label>
+          <button disabled={!recoveryRef||recoverBusy||!!liveTicket||
+              typeof native?.data_av_live_recover_original!=='function'}
+            onClick={recoverOriginalMono}>
+            {recoverBusy?'Reconciling original PCM…':
+              'Approve recovery of original sound only'}
+          </button>
+          {recoverReceipt&&<p role="status">
+            Recovered original source {recoverReceipt.source_id}, SHA
+            {recoverReceipt.source_document_sha256.slice(0,16)}…
+            No Take created.
+          </p>}
+        </section>}
       <label>Exact-time 3D camera timeline
         <select aria-label="Native live camera timeline"
           value={cameraPlanIndex} disabled={!!liveTicket||liveBusy}
