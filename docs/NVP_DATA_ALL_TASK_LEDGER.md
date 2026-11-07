@@ -806,3 +806,13 @@ exercise, (4) independent SMPTE Bv2.1 DCP verification and cinema ingest,
 performance proof, and (7) release notices/SBOM and installed packaging
 when due. WO4 remains **OPEN/DEFERRED**. No FFmpeg, source mutation
 or fabricated acceptance.
+
+### WO5 desktop review and production-scale tiers — 2026-11-07
+
+**Creator clarification:** A real original film of up to 30 minutes is only the initial *does NVP work?* pilot. The principal feature-film test is a genuinely produced **60–90 minute** original (86,400–129,600 frames at 24fps). The extended epic test is **at least 3 hours** (259,200+ frames at 24fps), with distinctive original picture, story, actors/camera, editing, sound, realistic sustained performance and recovery. Repeated-source synthetic DCP packaging is not either creative test. WO4 acceptance is deferred pending original-film evidence and remains OPEN.
+
+**WO5 native desktop work committed (not yet installed-accepted):** The existing Windows WebView2 entry now uses TrustedDesktopWO5Bridge, a subclass retaining all original data-first source camera and spatial PCM functions. Native-only wo5_review_catalog/read_intent/save_intent/inspect_feature/save_observations perform scoped FilmIndex/journal reads and real OS-dialog-confirmed creator writes; no FastAPI write route, fabricated approval or separate supervisor. App.jsx now has **19 · Watch & review film**, whose DirectorFilmReviewPanel allows shot-by-shot intended action/camera/sound authoring, native immutable approval, real indexed feature custody review, approved reel Take audition and explicit creator-only observed-results recording. Native source playback is connected by reusing the real OpenUSD world and spatial PCM DataFirstAVPanel at the selected Take and approved source sample; the panel fails closed if the Take is absent.
+
+**Important open playback difference:** Real original **Take** A/V playback is not yet continuous, independently decoded full **finished SMPTE DCP** playback with final color, cuts and soundtrack. The full movie player, Win/Linux installed real OS-device/source review, creator's genuine original films, SMPTE DCP Bv2.1 compliance and 60–90min/3h acceptance remain OPEN. Unit tests and CI cannot stand in for the physical GUI or full feature film.
+
+**Verification:** New six-job Win/Linux Python+React workflow nvp-wo5-desktop-review.yml submitted, with native desktop permission tests and exact Take/time frontend controls. See docs/NVP_WO5_DESKTOP_DIRECTOR_WORKFLOW.md for scope/evidence. No FFmpeg; no source Take mutation.
