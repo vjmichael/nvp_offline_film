@@ -19,6 +19,8 @@ import struct
 
 from backend.nvp_data_av_source import (
     RecordedSoundSources,SAMPLE_RATE,MAX_READ_SAMPLES)
+from backend.nvp_native_spatial_acoustics import (
+    spatial_gains,verified_occluders,obstruction_gain)
 from backend.nvp_film_index import FilmIndex,_id,_require_pid,_sha
 from backend.nvp_openusd_take import OpenUSDTakeCapture,FORMAT as TAKE_FORMAT
 from backend.nvp_openusd_time_state import OpenUSDTimeState
@@ -137,6 +139,12 @@ class FrozenSceneAV:
                      for o in at_start["objects"]}
         positions_b={o["path"]:o["world_translation"]
                      for o in at_end["objects"]}
+        orientations_a={o["path"]:o["world_matrix"]
+                        for o in at_start["objects"]}
+        orientations_b={o["path"]:o["world_matrix"]
+                        for o in at_end["objects"]}
+        # Coarse, SHA-verified original USD solids; no simulated room mix.
+        obstacles=verified_occluders(self.index,self.project_id,at_start)
         if self.listener_path not in positions_a:
             raise RuntimeError("Virtual listener no longer exists")
         page=self.timeline.events_in(
@@ -180,6 +188,9 @@ class FrozenSceneAV:
                 self.project_id,event["source_id"],
                 event["source_revision"],first_src,n)
             samples=struct.unpack("<"+str(n)+"h",raw)
+            obstruction=obstruction_gain(
+                positions_a[path],positions_a[self.listener_path],obstacles,
+                source_path=path,listener_path=self.listener_path)
             for i,val in enumerate(samples):
                 cursor=first_active+i-first_sample
                 # Interpolate native USD emitter/listener positions across
@@ -190,7 +201,12 @@ class FrozenSceneAV:
                 la=positions_a[self.listener_path]
                 lb=positions_b[self.listener_path]
                 listener=[la[j]+(lb[j]-la[j])*fraction for j in range(3)]
-                l,r=_pan(emitter,listener,gain)
+                ma=orientations_a[self.listener_path]
+                mb=orientations_b[self.listener_path]
+                listener_basis=[[ma[u][v]+(mb[u][v]-ma[u][v])*fraction
+                                 for v in range(4)] for u in range(4)]
+                l,r=spatial_gains(emitter,listener,listener_basis,
+                                  gain,obstruction)
                 left[cursor]+=val*l
                 right[cursor]+=val*r
         pcm=bytearray(count*4)
@@ -216,5 +232,9 @@ class FrozenSceneAV:
             "audible_event_ids":[x["event_id"] for x in events],
             "source_modified":False,"film_master_approved":False,
             "frame_based_playback":False,
-            "renderer":"native_time_usd_pcm_dry_spatial_v1",
+            "renderer":"native_time_usd_pcm_scene_spatial_v2",
+            "acoustics_model":"orientation_and_coarse_usd_obstruction",
+            "high_fidelity_hrtf":False,
+            "frequency_selective_absorption":False,
+            "measured_room_acoustics":False,
         }
