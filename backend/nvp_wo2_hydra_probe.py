@@ -88,53 +88,55 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                 if descriptors else nullcontext((stage,{
                     "original_layer_mutated":False})))
     original_layer=stage.GetRootLayer().ExportToString()
-    with source_ctx as (copy,evidence):
-        with TemporaryDirectory(prefix="nvp-wo2-hydra-") as directory:
-            root=Path(directory)
-            scene_path=root/"approved_derived_scene.usda"
-            image_path=root/"independent_hydra.png"
-            if not copy.GetRootLayer().Export(str(scene_path)):
-                raise RuntimeError("Approved USD probe layer export failed")
-            args=[usdrecord,"--camera",camera_path,
-                  "--renderer",renderer,"--imageWidth",str(width),
-                  "--colorCorrectionMode","disabled","--abortOnError"]
-            if not require_gpu:args.append("--disableGpu")
-            args.extend((str(scene_path),str(image_path)))
-            began=time.monotonic()
-            try:
-                run=subprocess.run(
-                    args,cwd=root,capture_output=True,text=True,
-                    timeout=timeout_seconds,check=False)
-            except subprocess.TimeoutExpired:
-                return {**base,"status":"HYDRA_RENDER_TIMEOUT",
-                        "requested_gpu":bool(require_gpu)}
-            elapsed=round(time.monotonic()-began,4)
-            if run.returncode!=0 or not image_path.is_file():
-                return {**base,"status":"HYDRA_RENDER_FAILED",
-                        "requested_gpu":bool(require_gpu),
-                        "render_wall_seconds":elapsed,
-                        "exit_code":run.returncode,
-                        "stderr_tail":(run.stderr or "")[-600:]}
-            from PIL import Image
-            with Image.open(image_path) as result:
-                if (result.width>width*4 or result.height>width*4 or
-                    result.width<1 or result.height<1):
-                    raise RuntimeError("Independent rendered frame size out of bounds")
-                result.load()
-                w,h=result.size
-                rgb=result.convert("RGB").tobytes()
-            return {**base,
-                "status":"HYDRA_FRAME_RENDERED",
-                "real_independent_frame_rendered":True,
-                "requested_gpu":bool(require_gpu),
-                "render_wall_seconds":elapsed,
-                "rendered_width":w,"rendered_height":h,
-                "rendered_rgb_sha256":sha256(rgb).hexdigest(),
-                "rendered_rgb_mean":round(sum(rgb)/len(rgb),4),
-                "renderer_executable_sha256":sha256(
-                    Path(usdrecord).read_bytes()).hexdigest(),
-                "derived_source_scope":True,
-                "original_modified":False,
-            }
-    if stage.GetRootLayer().ExportToString()!=original_layer:
-        raise RuntimeError("Independent renderer modified original scene layer")
+    try:
+        with source_ctx as (copy,evidence):
+            with TemporaryDirectory(prefix="nvp-wo2-hydra-") as directory:
+                root=Path(directory)
+                scene_path=root/"approved_derived_scene.usda"
+                image_path=root/"independent_hydra.png"
+                if not copy.GetRootLayer().Export(str(scene_path)):
+                    raise RuntimeError("Approved USD probe layer export failed")
+                args=[usdrecord,"--camera",camera_path,
+                      "--renderer",renderer,"--imageWidth",str(width),
+                      "--colorCorrectionMode","disabled","--abortOnError"]
+                if not require_gpu:args.append("--disableGpu")
+                args.extend((str(scene_path),str(image_path)))
+                began=time.monotonic()
+                try:
+                    run=subprocess.run(
+                        args,cwd=root,capture_output=True,text=True,
+                        timeout=timeout_seconds,check=False)
+                except subprocess.TimeoutExpired:
+                    return {**base,"status":"HYDRA_RENDER_TIMEOUT",
+                            "requested_gpu":bool(require_gpu)}
+                elapsed=round(time.monotonic()-began,4)
+                if run.returncode!=0 or not image_path.is_file():
+                    return {**base,"status":"HYDRA_RENDER_FAILED",
+                            "requested_gpu":bool(require_gpu),
+                            "render_wall_seconds":elapsed,
+                            "exit_code":run.returncode,
+                            "stderr_tail":(run.stderr or "")[-600:]}
+                from PIL import Image
+                with Image.open(image_path) as result:
+                    if (result.width>width*4 or result.height>width*4 or
+                        result.width<1 or result.height<1):
+                        raise RuntimeError("Independent rendered frame size out of bounds")
+                    result.load()
+                    w,h=result.size
+                    rgb=result.convert("RGB").tobytes()
+                return {**base,
+                    "status":"HYDRA_FRAME_RENDERED",
+                    "real_independent_frame_rendered":True,
+                    "requested_gpu":bool(require_gpu),
+                    "render_wall_seconds":elapsed,
+                    "rendered_width":w,"rendered_height":h,
+                    "rendered_rgb_sha256":sha256(rgb).hexdigest(),
+                    "rendered_rgb_mean":round(sum(rgb)/len(rgb),4),
+                    "renderer_executable_sha256":sha256(
+                        Path(usdrecord).read_bytes()).hexdigest(),
+                    "derived_source_scope":True,
+                    "original_modified":False,
+                }
+    finally:
+        if stage.GetRootLayer().ExportToString()!=original_layer:
+            raise RuntimeError("Independent renderer modified original scene layer")
