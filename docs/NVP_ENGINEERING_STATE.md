@@ -6,7 +6,11 @@
 
 **Status:** Initial ledger, manually reconciled 2026-11-05. A future automation/CI gate must populate SHA, test and artifact evidence reliably; do not treat this file as self-updating.
 
-## LATEST DIRECTIVE: ZERO-FFMPEG + ordered DA-00–DA-07 closeout (2026-11-06)\n\nNVP no longer uses FFmpeg **anywhere**. This prohibition covers native recording/playback, conventional media import, editing, rendering, mastering, conversion, and final 2D/DCP export, not just the embedded scene engine. Earlier clauses allowing FFmpeg at boundaries are superseded. Prohibited paths remain historical or disabled until rewritten with non-FFmpeg components. Main ordered engineering tasks and independent acceptance statuses: [DA-00–DA-07](NVP_DATA_ALL_TASK_LEDGER.md). Implement tasks in order; do not mark a gate accepted merely because code or a CI test exists.\n\n## MOST RECENT creator priority — DATA-AV-01 full native migration (2026-11-06)
+## LATEST DIRECTIVE: ZERO-FFMPEG + ordered DA-00–DA-07 closeout (2026-11-06)
+
+NVP no longer uses FFmpeg **anywhere**. This prohibition covers native recording/playback, conventional media import, editing, rendering, mastering, conversion, and final 2D/DCP export, not just the embedded scene engine. Earlier clauses allowing FFmpeg at boundaries are superseded. Prohibited paths remain historical or disabled until rewritten with non-FFmpeg components. Main ordered engineering tasks and independent acceptance statuses: [DA-00–DA-07](NVP_DATA_ALL_TASK_LEDGER.md). Implement tasks in order; do not mark a gate accepted merely because code or a CI test exists.
+
+## MOST RECENT creator priority — DATA-AV-01 full native migration (2026-11-06)
 
 **Supersedes previous AV/indexing/FFmpeg native playback tasks and old
 Windows NSIS pause only for a new native data-first installed-app gate.**
@@ -120,3 +124,7 @@ Record: date; actor/source (human decision, tool observation, AI hypothesis); br
 - Active draft PR #74, branch `nvp/data-av01-native-scene-playback-20261106`, stacked on SLATE-08B PR #67. Original observed head `440b40f121bf7e1dfa6be24b19c4a90c643f7b06`; eight associated native workflows were **queued**, not completed (DATA-AV-01 `42307456319` plus seven USD/SLATE runs). No job logs, React acceptance, Linux/Windows OpenUSD/PCM acceptance or installed Windows `NVP.exe` acceptance could be certified at this checkpoint. Documentation update advances the head, so previous queued run statuses are not evidence for the new head.
 - Authoritative source remains frozen OpenUSD Digital Take + exact Film Time + semantic emitter events + SHA-indexed original PCM, with bounded native device buffers. FFmpeg runtime, BWF, MP4 proxy, video-frame authority and whole-film RAM loading are excluded from the native path. Legacy indexed-video PRs #47, #53–57, #68–73 remain retired; do not revive their CI.
 - Still open: actual filming capture, high-fidelity interactive 3D graphics, HRTF/acoustic environment, real synchronized device playback and approved 2D flattening. Native source tests or a packaged binary self-test alone cannot close these gates. See `docs/NVP_DATA_AV01_NATIVE_MIGRATION.md` for run IDs and detailed boundary.
+
+## 2026-11-06 — DATA-AV native OpenUSD type repair
+
+DATA-AV workflow [42307683019](https://github.com/vjmichael/nvp_offline_film/actions/runs/42307683019) at historical source SHA `06546564941b319ccea436be59427d213db480ab` completed **failure**. Windows/Linux Python tests hit `UsdMedia.SpatialAudio.startTime` value-type mismatch (`GfTimeCode` expected, `TfPyObjWrapper` supplied). Commit [`e50029b`](https://github.com/vjmichael/nvp_offline_film/commit/e50029bbd4f0e4a762012f7482c01911643088ac) changes the native USD adapter to author `Sdf.TimeCode` start/end values. This is a code repair, **not yet a verified test pass**. Two permission tests and one React camera test also failed. Installed Windows NVP.exe acceptance was skipped. Do not approve DA-03, DA-07 or any overall migration gate until fresh exact-head evidence and real installed A/V acceptance exist. No FFmpeg fallback is authorized.
