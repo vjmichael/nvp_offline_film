@@ -155,7 +155,7 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                     stream=dev.stream_time_ns
                     after=self.host_clock_ns()
                     self.tracks[channel].calibrate(before,stream,after)
-                time.sleep(.05)
+                time.sleep(.20)
         except Exception as exc:
             self.errors[0]=exc
 
@@ -267,7 +267,12 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             source_doc={**alignment,
                         "original_mono_pcm_sha256":hashes,
                         "source_ids":[self.source_id,self.second_source_id],
-                        "host_timestamp_uncertainty_accepted":True,
+                        "native_anchor_evidence":[{
+                            "device_id":track.device_id,
+                            "adc_stream_anchors":track.anchors,
+                            "host_calibration_samples":track.calibrations,
+                        } for track in self.tracks],
+                        "timing_physically_certified":False,
                         "creator_approved_recording":False}
             evidence=self.index.register_revision(
                 self.project_id,evidence_id,"audio",
@@ -335,6 +340,9 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                     "take_created":self._state=="FROZEN"}
         self._state="CANCELLING"
         try:self._stop()
+        except Exception:
+            self._state="FAILED"
+            raise
         finally:
             if any(w.is_alive() for w in self.workers):
                 self._state="RECOVERY_REQUIRED"
