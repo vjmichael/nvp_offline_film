@@ -8,7 +8,7 @@ import uuid
 from xml.etree import ElementTree as ET
 
 from backend.nvp_wo3_dcp_structure import (
-    inspect_dcp_structure,NS_AM,NS_PKL,NS_CPL)
+    inspect_dcp_structure,NS_AM,NS_PKL,NS_CPL,_xml)
 
 
 def field(root,ns,name,value):
@@ -114,6 +114,10 @@ class SMPTEIntegrityTests(unittest.TestCase):
             b'<!DOCTYPE x [<!ENTITY leak SYSTEM "file:///etc/passwd">]>'+
             self.files["CPL.xml"])
         with self.assertRaises(ValueError):
+            _xml(self.root,"CPL.xml",NS_CPL,"CompositionPlaylist")
+        # The complete DCP scanner must independently reject the modified
+        # CPL by PKL hash even before it reaches XML/DTD inspection.
+        with self.assertRaises(RuntimeError):
             inspect_dcp_structure(self.root)
 
     def test_unknown_pkl_asset_fails(self):
