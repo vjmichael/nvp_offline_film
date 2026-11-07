@@ -12,6 +12,7 @@ if __name__ == "__main__" and not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.nvp_approved_tasks import canonical_bytes
+from backend.nvp_wo6_worker_admission import verify_admitted_worker
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_openusd_shot_overrides import OpenUSDShotOverrides
 from backend.nvp_studio import Studio
@@ -26,6 +27,8 @@ def main(argv=None):
     parser.add_argument("--spec", required=True)
     parser.add_argument("--studio-db", required=True)
     parser.add_argument("--expected-sha", required=True)
+    parser.add_argument("--ledger-db", required=True)
+    parser.add_argument("--owner-key", required=True)
     args = parser.parse_args(argv)
     target = Path(args.spec)
     if (not target.is_absolute() or target.is_symlink() or
@@ -39,6 +42,7 @@ def main(argv=None):
             spec.get("operation") != "nvp.film.author_director_shot.v1" or
             spec.get("kind") != "compositing"):
         raise PermissionError("Invalid canonical native shot task")
+    verify_admitted_worker(spec, ledger_db=args.ledger_db, owner_key=args.owner_key)
     index = FilmIndex(Studio(Path(args.studio_db)))
     _check_shot_source(index, spec)
     def verified_host_only(event, request):
