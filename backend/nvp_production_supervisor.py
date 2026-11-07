@@ -139,8 +139,11 @@ class ProductionSupervisor:
             root=self.journal.spool(uid)
             root.mkdir(mode=0o700,exist_ok=True)
             frame_dir=root/"frames"
-            frame_dir.mkdir(mode=0o700,exist_ok=True)
             work_parent=root/"frame-work"
+            if (root.is_symlink() or frame_dir.is_symlink()
+                    or work_parent.is_symlink()):
+                raise PermissionError("Native spool directory was redirected")
+            frame_dir.mkdir(mode=0o700,exist_ok=True)
             work_parent.mkdir(mode=0o700,exist_ok=True)
             work=work_parent/f"{pos:06d}"
             # Never reopen or overwrite an interrupted worker stage.
@@ -205,6 +208,8 @@ class ProductionSupervisor:
                 if size!=item["file_bytes"]:
                     raise PermissionError("Picture frame changed since commit")
             stage=root/"mxf-stage"
+            if root.is_symlink() or frames.is_symlink() or stage.is_symlink():
+                raise PermissionError("Native MXF spool was redirected")
             stage.mkdir(mode=0o700,exist_ok=False)
             wrap=ApprovedCodecBinary(reel["wrapper_path"],
                                     sha256=reel["wrapper_sha256"],
