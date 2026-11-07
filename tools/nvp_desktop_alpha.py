@@ -470,4 +470,23 @@ def main(argv=None):
 
 
 if __name__=="__main__":
-    raise SystemExit(main())
+    # Windowed PyInstaller executables have no visible stdout/stderr.
+    # A trusted CI/desktop administrator can opt into a local one-run
+    # traceback receipt for smoke commands. Never accept this path from
+    # browser IPC, a model tool or normal interactive application launch.
+    try:
+        raise SystemExit(main())
+    except Exception:
+        if any(flag in sys.argv for flag in (
+                "--smoke","--smoke-create","--smoke-reopen",
+                "--smoke-window","--smoke-data-av")):
+            report=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+            if report:
+                import traceback
+                file=Path(report)
+                if (file.parent.is_dir() and not file.is_symlink() and
+                    not file.exists()):
+                    with file.open("x",encoding="utf8") as sink:
+                        traceback.print_exc(file=sink)
+                        sink.flush();os.fsync(sink.fileno())
+        raise

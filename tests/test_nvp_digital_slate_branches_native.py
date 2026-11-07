@@ -376,7 +376,11 @@ class SlateBranchNativeTests(unittest.TestCase):
         graph=self.publish(nodes,graph_id="large_slate")
         view=self.slate.view(self.pid,"large_slate",1)
         self.assertEqual(len(view["parallel_groups"]["reaction_beat"]),64)
-        self.assertEqual(graph["data"]["source_take_count"],3)
+        # publish_graph returns an immutable FilmIndex revision receipt;
+        # the actual graph document is retrieved by exact revision/SHA.
+        saved=self.index.read_revision(self.pid,"large_slate",1)
+        self.assertEqual(saved["document_sha256"],graph["document_sha256"])
+        self.assertEqual(saved["data"]["source_take_count"],3)
         self.assertEqual(sum(1 for item in
             view["parallel_groups"]["reaction_beat"] if item["selected"]),1)
 
