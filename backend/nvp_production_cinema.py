@@ -477,7 +477,8 @@ class CinemaJournal(ProductionJournal):
             jobs=[dict(x) for x in db.execute("""SELECT j.job_id,j.state,
                 r.profile,r.reel_state,r.track_sha256,r.track_bytes
                 FROM production_jobs j JOIN production_cinema_reels r
-                ON j.job_id=r.job_id WHERE j.state!='CANCELLED'""")]
+                ON j.job_id=r.job_id WHERE j.state NOT IN (
+                 'CANCELLED','DELIVERY_RUNNING','DCP_PUBLISHED','DCP_INDEXED')""")]
         for job in jobs:
             uid=job["job_id"]
             root=self.spool(uid)
