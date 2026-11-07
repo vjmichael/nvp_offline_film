@@ -1,5 +1,6 @@
 import {describe,it,expect,vi,afterEach} from 'vitest';
-import {inspectOriginalTextureTiles} from './NativeTextureTileStream.js';
+import {inspectOriginalTextureTiles,verifyOriginalTileDigest}
+  from './NativeTextureTileStream.js';
 
 const asset={asset_id:'OriginalMesh',asset_revision:1,
   asset_document_sha256:'a'.repeat(64)};
@@ -10,8 +11,15 @@ const context=()=>({drawImage:vi.fn()});
 
 afterEach(()=>{
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   globalThis.Image=originalImage;
 });
+
+function mockNativeDigest(){
+  vi.stubGlobal('crypto',{subtle:{
+    digest:vi.fn(async()=>new Uint8Array(32).fill(0xdd).buffer),
+  }});
+}
 
 function nativeTile(overrides={}){
   return {
@@ -32,6 +40,7 @@ function nativeTile(overrides={}){
 
 describe('WO2 Take-scoped native mip tile stream',()=>{
   it('requests one original asset tile and assembles only an ephemeral image',async()=>{
+    mockNativeDigest();
     const drawn=context();
     vi.spyOn(HTMLCanvasElement.prototype,'getContext')
       .mockReturnValue(drawn);
@@ -60,6 +69,7 @@ describe('WO2 Take-scoped native mip tile stream',()=>{
   });
 
   it('uses the distinct approved rig-layer IPC instead of mesh asset authority',async()=>{
+    mockNativeDigest();
     const drawn=context();
     vi.spyOn(HTMLCanvasElement.prototype,'getContext')
       .mockReturnValue(drawn);
@@ -88,6 +98,7 @@ describe('WO2 Take-scoped native mip tile stream',()=>{
   });
 
   it('rejects forged original SHA, unbounded tile grid and cancellation',async()=>{
+    mockNativeDigest();
     const drawn=context();
     vi.spyOn(HTMLCanvasElement.prototype,'getContext')
       .mockReturnValue(drawn);
@@ -107,5 +118,19 @@ describe('WO2 Take-scoped native mip tile stream',()=>{
       native:bridge,sessionId:'s'.repeat(24),
       asset,texture,takeSha256,signal:aborter.signal,
     })).rejects.toThrow(/cancelled/);
+  });
+});
+
+describe('WO2 WebView2 tile payload integrity',()=>{
+  it('requires native SHA-256 support and refuses mismatched tile bytes',async()=>{
+    mockNativeDigest();
+    await expect(verifyOriginalTileDigest(nativeTile()))
+      .resolves.toBe(true);
+    await expect(verifyOriginalTileDigest(nativeTile({
+      tile_sha256:'0'.repeat(64),
+    }))).rejects.toThrow(/changed after native authorization/);
+    vi.stubGlobal('crypto',{});
+    await expect(verifyOriginalTileDigest(nativeTile()))
+      .rejects.toThrow(/validation unavailable/);
   });
 });
