@@ -5,6 +5,26 @@ Branch: `nvp/wo5-production-proof-20261107`, stacked on WO4 draft PR #90.
 WO4 is **deferred, not closed**. The creator explicitly distinguishes passing a
 synthetic pipeline benchmark from proving that NVP creates a film as intended.
 
+## Creator production-scale milestones — revised 2026-11-07
+
+**The <=30-minute original is the initial functional/workflow pilot**, not
+the ultimate feature-film acceptance. The real production proof will be
+an original **60–90-minute feature film** (86,400–129,600 frames at 24fps).
+The extended endurance and creative-scale proof will be an **epic at least
+3 hours long** (259,200+ frames at 24fps). Each must be NVP-authored with
+varied authentic source scenes, real acting/camera/sound and editing,
+creator inspection, correction iterations, genuine final AV playback and
+delivery. The 2–3h *synthetic repeated-source native packaging CI* is NOT
+the epic-film acceptance. Do not artificially extend Bv2.1 DCP coding rules
+when producing higher-fidelity outputs outside the theatrical profile.
+
+Current 30-minute FilmIndex original-feature checker is scoped intentionally
+to the first pilot. The later 60–90-minute/3h tiers need explicit
+end-to-end source scopes, playback and workflow evidence; multi-reel
+resource planning alone does not certify them.
+Full desktop handoff:
+[NVP WO5 desktop director workflow](NVP_WO5_DESKTOP_DIRECTOR_WORKFLOW.md).
+
 ## Creator correction — original means up to 30 MINUTES, not 30 seconds
 
 **Creator corrected the initial proof to a genuine NVP-produced original
@@ -190,3 +210,46 @@ picture/audio and non-synthetic scene performance; full creative/artistic
 comparison with corrections, Bv2.1 independent DCP validation and real
 theater ingest. A developer callback used by tests is not a verified
 desktop creator grant.
+
+## WO5 actual native desktop integration — implementation 2026-11-07
+
+**Code committed; current six-job Windows/Linux native/React CI pending.**
+The existing Windows `tools/nvp_desktop_alpha.py` window now instantiates
+`TrustedDesktopWO5Bridge` (which subclasses the original
+`TrustedDesktopCameraBridge`) via the same pywebview `js_api`;
+original native camera and FFmpeg-free OpenUSD A/V functions are retained.
+No creator authorization was exposed through FastAPI and no second
+supervisor was introduced. All WO5 project reads are tied to exact
+first-party native window origin plus real Studio project identity.
+
+The NVP project's React navigation includes `19 · Watch & review film`
+wired to `DirectorFilmReviewPanel.jsx`. The filmmaker can select a
+real frozen FilmIndex cut, author the original action/camera/sound of
+each exact-time shot, request real native OS confirmation and freeze
+immutable director intent, select the authentic production feature
+and run its complete source/package SHA audit, audition the exact
+source OpenUSD Take plus native spatial audio at approved source Film
+Time through the pre-existing DataFirst A/V viewer, and record specific
+director observations per shot through another OS-confirmed native
+FilmIndex presentation revision. No model-generated response counts as
+execution or creative approval.
+
+**Explicit playback qualification:** The linked A/V viewer is a real
+source-Take 3D scene/spatial-sound audition, **not a full continuous
+finished-film/DCP decoded playback**. Human checks claiming the creator
+saw and heard the entire finished film must NOT be derived from source
+preview alone. Complete delivered movie playback, exact multi-reel AV
+sync/seek, OS hardware verification, actual 30-minute real original,
+60–90-minute real feature, 3h epic and external SMPTE Bv2.1/theatrical
+acceptance remain OPEN. The native Take chooser fails closed if the
+approved source is missing; it never switches to another Take.
+
+Tests:
+`test_nvp_wo5_desktop_bridge.py` and
+`DirectorFilmReviewPanel.test.jsx`/
+`WO5NativeSourcePlayback.test.jsx`; 6-job
+`nvp-wo5-desktop-review.yml` on Windows/Linux.
+Exact installed WebView2 tests are separately required, as unit
+tests/mock WebView windows do not prove that the shipped installed
+NVP executable works end to end. See
+[NVP WO5 desktop workflow](NVP_WO5_DESKTOP_DIRECTOR_WORKFLOW.md).
