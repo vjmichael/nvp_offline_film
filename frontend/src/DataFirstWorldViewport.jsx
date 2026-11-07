@@ -508,6 +508,7 @@ export default function DataFirstWorldViewport({
         orbitCamera:camera,authoredCamera,activeCamera:camera,
         renderer,scene,sun,ambient,sourceLights,
         configureDof:(cameraLook)=>{
+          let unavailable=false;
           if(composer){composer.dispose();composer=null;renderPass=null;
             bokehPass=null;}
           if(cameraLook.depth_of_field){
@@ -526,10 +527,11 @@ export default function DataFirstWorldViewport({
             }catch{
               composer?.dispose();
               composer=null;renderPass=null;bokehPass=null;
-              setLookWarning('Optical DOF unavailable on this device; normal 3D preview remains usable.');
+              unavailable=true;
             }
           }
           requestRender();
+          return unavailable;
         }};
       const lost=event=>{event.preventDefault();setDisabled(true);};
       const restored=()=>{setDisabled(false);requestRender();};
@@ -896,8 +898,9 @@ export default function DataFirstWorldViewport({
       state.renderer.toneMapping=camera.tone_curve==='filmic_preview'?
         THREE.ACESFilmicToneMapping:THREE.NoToneMapping;
       state.renderer.toneMappingExposure=Math.pow(2,camera.exposure_ev);
-      state.configureDof(camera);
-      setLookWarning('');
+      const dofUnavailable=state.configureDof(camera);
+      setLookWarning(dofUnavailable?
+        'Optical DOF unavailable on this device; normal 3D preview remains usable.':'');
       state.requestRender();
     }catch(error){setLookWarning(error.message);}
   },[activeLook]);
