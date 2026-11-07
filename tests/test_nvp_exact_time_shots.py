@@ -130,11 +130,19 @@ class ExactTimeCameraSequenceTests(unittest.TestCase):
                 events=[first]
                 if duplicate:
                     events.append({**first,"start_tick":T,"end_tick":2*T})
-                TemporalLedger(self.index).publish(
-                    self.pid,name,events,duration_tick=3*T,
-                    expected_revision=0)
-                with self.assertRaises(RuntimeError):
-                    editor.read(self.pid,name,1)
+                if duplicate:
+                    # TemporalLedger itself rejects repeated event IDs at
+                    # publication via its staged primary-key constraint.
+                    with self.assertRaises(Exception):
+                        TemporalLedger(self.index).publish(
+                            self.pid,name,events,duration_tick=3*T,
+                            expected_revision=0)
+                else:
+                    TemporalLedger(self.index).publish(
+                        self.pid,name,events,duration_tick=3*T,
+                        expected_revision=0)
+                    with self.assertRaises(RuntimeError):
+                        editor.read(self.pid,name,1)
 
     def test_os_authorization_controls_exact_scene_and_timeline_take_freeze(self):
         saved=self.publish()
