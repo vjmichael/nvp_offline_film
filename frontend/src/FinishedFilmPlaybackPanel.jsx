@@ -46,6 +46,25 @@ export function checkFinishedFrame(packet,expected){
   return packet;
 }
 
+export function checkFinishedWindow(batch,first){
+  if(!batch || batch.format!==FORMAT ||
+     batch.status!=='DECODED_PUBLISHED_FINAL_WINDOW' ||
+     batch.start_frame!==first ||
+     batch.no_reel_crossing!==true ||
+     batch.production_accepted!==false ||
+     !Number.isSafeInteger(batch.frame_count) ||
+     batch.frame_count<1 || batch.frame_count>4 ||
+     !Array.isArray(batch.frames) ||
+     batch.frames.length!==batch.frame_count)
+    throw Error('Final DCP batch omitted a complete published picture/sound window.');
+  for(let n=0;n<batch.frame_count;n++){
+    checkFinishedFrame(batch.frames[n],first+n);
+    if(batch.frames[n].reel_index!==batch.reel_index)
+      throw Error('Final DCP batch crossed an unapproved reel boundary.');
+  }
+  return batch.frames;
+}
+
 function sampleChannels(base64){
   const binary=atob(base64);
   if(binary.length!==SAMPLES*4)
@@ -260,17 +279,27 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
             await sleep(12);continue;
           }
           const n=c.requested;
-          const frame=checkFinishedFrame(
-            await native.wo5_film_frame(c.ticket,n),n);
-          if(!remain())return;
-          const image=await decodedPicture(frame.picture_png_base64);
-          const audio=sampleChannels(frame.stereo_pcm16_base64);
-          if(!remain())return;
-          c.loaded.set(n,{image,audio,scheduled:false,
-                          width:frame.picture_width,
-                          height:frame.picture_height});
-          c.requested++;
-          schedule();
+          // The native worker can unwrap <=4 final picture and PCM frames
+          // per bounded invocation. It clips at reel boundaries itself.
+          // The original one-frame native path remains real MXF decoding,
+          // never simulated browser video, if the optional batch API is old.
+          const frames=typeof native.wo5_film_window==='function'
+            ? checkFinishedWindow(
+                await native.wo5_film_window(c.ticket,n,
+                  Math.min(4,BUFFER-c.loaded.size)),n)
+            : [checkFinishedFrame(
+                await native.wo5_film_frame(c.ticket,n),n)];
+          for(const frame of frames){
+            if(!remain())return;
+            const image=await decodedPicture(frame.picture_png_base64);
+            const audio=sampleChannels(frame.stereo_pcm16_base64);
+            if(!remain())return;
+            c.loaded.set(frame.frame_index,{
+              image,audio,scheduled:false,width:frame.picture_width,
+              height:frame.picture_height});
+            c.requested++;
+            schedule();
+          }
         }
       }
       c.animation=requestAnimationFrame(tick);
