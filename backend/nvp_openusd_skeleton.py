@@ -93,6 +93,8 @@ def validate_rigs(roles, rigs):
             })
             if skin.get("texture") is not None:
                 descriptor["texture"]=skin["texture"]
+            if skin.get("pbr_maps"):
+                descriptor["pbr_maps"]=skin["pbr_maps"]
         result.append(descriptor)
     return result
 
