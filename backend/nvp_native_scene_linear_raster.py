@@ -134,47 +134,96 @@ def _lights(snapshot):
     return light
 
 
-def _base_color(obj):
-    if obj["shape"]=="skinned_mesh":
-        mat=obj.get("source_material")
-        if (type(mat) is not dict or
-            mat.get("original_source_modified") is not False or
-            mat.get("format") not in (
-                "nvp.original_usd_preview_surface.v1",
-                "nvp.original_usd_displaycolor_preview.v1")):
-            raise RuntimeError("Actor material must come from original USD")
-        color=_array3(mat["base_color_rgb"])
-        if any(not 0<=v<=1 for v in color):
-            raise RuntimeError("Unbounded original USD surface reflectance")
-        return color,False
-    return DEFAULT_MATERIAL,True
+def _surface(obj):
+    """Read actual authored USD material. Defaults are labeled uncalibrated."""
+    mat=obj.get("source_material")
+    if mat is None:
+        if obj["shape"]=="skinned_mesh":
+            raise RuntimeError("Skinned source actor has no verified material")
+        return DEFAULT_MATERIAL,.8,.05,True
+    if (type(mat) is not dict or
+        mat.get("original_source_modified") is not False or
+        mat.get("format") not in (
+            "nvp.original_usd_preview_surface.v1",
+            "nvp.original_usd_displaycolor_preview.v1")):
+        raise RuntimeError("Original USD surface was not SHA-bound")
+    color=_array3(mat.get("base_color_rgb"))
+    r=mat.get("roughness")
+    m=mat.get("metallic")
+    if (any(not 0<=x<=1 for x in color) or
+        type(r) not in (int,float) or type(m) not in (int,float) or
+        not math.isfinite(r) or not math.isfinite(m) or
+        not 0<=r<=1 or not 0<=m<=1):
+        raise RuntimeError("USD material shader parameters invalid")
+    return color,float(r),float(m),False
 
 
-def _shade(points,color,lights):
+def _dot(a,b):
+    return sum(x*y for x,y in zip(a,b))
+
+
+def _unit(v):
+    length=math.sqrt(_dot(v,v))
+    if length<1e-12:return None
+    return tuple(x/length for x in v)
+
+
+def _shade(points,surface,lights,eye):
+    """Bounded GGX/Smith/Schlick source-preview microfacet approximation.
+
+    No IES/texture spectral equivalence is implied: the native USD source
+    exposes material scalar inputs, but this raster is not a validated Hydra
+    shader/delegate. Working RGB is an explicitly uncalibrated derivative.
+    """
+    color,roughness,metallic,_=surface
     a,b,c=points
-    u=[b[i]-a[i] for i in range(3)]
-    v=[c[i]-a[i] for i in range(3)]
-    n=(u[1]*v[2]-u[2]*v[1],
-       u[2]*v[0]-u[0]*v[2],
-       u[0]*v[1]-u[1]*v[0])
-    length=math.sqrt(sum(x*x for x in n))
-    if length<1e-9:return None
-    n=tuple(x/length for x in n)
+    u=tuple(b[i]-a[i] for i in range(3))
+    v=tuple(c[i]-a[i] for i in range(3))
+    n=_unit((u[1]*v[2]-u[2]*v[1],
+             u[2]*v[0]-u[0]*v[2],
+             u[0]*v[1]-u[1]*v[0]))
+    if n is None:return None
     center=tuple((a[i]+b[i]+c[i])/3. for i in range(3))
-    value=AMBIENT_REVIEW
-    for loc,intensity in lights:
-        vector=[loc[i]-center[i] for i in range(3)]
-        dist2=sum(x*x for x in vector)
-        if dist2<=1e-9:continue
-        # Two-sided original USD geometry is not a Lambert backface:
-        # this bounded neutral preview is not photometric simulation.
-        value+=intensity/LIGHT_REFERENCE*max(
-            0.,abs(sum(n[i]*vector[i] for i in range(3)))/math.sqrt(dist2)
-        )/(1.+dist2)
-    return tuple(x*value for x in color)
+    view=_unit(tuple(eye[i]-center[i] for i in range(3)))
+    if view is None:return None
+    # USD authored double-sided meshes are visible from either side.
+    if _dot(n,view)<0:n=tuple(-x for x in n)
+    nv=max(0.,_dot(n,view))
+    out=[AMBIENT_REVIEW*value*(1.-metallic) for value in color]
+    f0=[.04*(1.-metallic)+metallic*x for x in color]
+    alpha=max(.04,roughness*roughness)
+    alpha2=alpha*alpha
+    k=(roughness+1)**2/8.
+    ggx_view=nv/(nv*(1.-k)+k+1e-8)
+    for light_position,intensity in lights:
+        d=tuple(light_position[i]-center[i] for i in range(3))
+        dsq=_dot(d,d)
+        light=_unit(d)
+        if light is None:continue
+        nl=max(0.,_dot(n,light))
+        if nl<=0 or nv<=0:continue
+        h=_unit(tuple(light[i]+view[i] for i in range(3)))
+        if h is None:continue
+        nh=max(0.,_dot(n,h))
+        vh=max(0.,_dot(view,h))
+        denom=(nh*nh*(alpha2-1.)+1.)
+        distribution=alpha2/(math.pi*denom*denom+1e-8)
+        ggx_light=nl/(nl*(1.-k)+k+1e-8)
+        geometry=ggx_view*ggx_light
+        fresnel=[f+(1.-f)*(1.-vh)**5 for f in f0]
+        strength=intensity/LIGHT_REFERENCE/(1.+dsq)
+        for channel in range(3):
+            diffuse=color[channel]*(1.-metallic)*(
+                1.-fresnel[channel])/math.pi
+            specular=(distribution*geometry*fresnel[channel]/
+                      max(1e-6,4.*nv*nl))
+            out[channel]+=strength*nl*(diffuse+specular)
+    if any(not math.isfinite(x) or x<0 for x in out):
+        raise RuntimeError("Source USD microfacet preview produced invalid light")
+    return tuple(out)
 
 
-def _draw_triangle(buffer,depth,tri,world_points,color,lights,np):
+def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np):
     a,b,c=tri
     x0,y0,z0=a;x1,y1,z1=b;x2,y2,z2=c
     if (not all(math.isfinite(v) for v in (
@@ -188,7 +237,7 @@ def _draw_triangle(buffer,depth,tri,world_points,color,lights,np):
     if lo_x>hi_x or lo_y>hi_y:return False
     denom=(y1-y2)*(x0-x2)+(x2-x1)*(y0-y2)
     if abs(denom)<1e-8:return False
-    shade=_shade(world_points,color,lights)
+    shade=_shade(world_points,surface,lights,eye)
     if shade is None:return False
     xs=np.arange(lo_x,hi_x+1,dtype=np.float64)+.5
     ys=np.arange(lo_y,hi_y+1,dtype=np.float64)+.5
@@ -261,6 +310,8 @@ class NativeSceneLinearRaster:
                 scene_id=original["scene_id"],
                 scene_revision=original["scene_revision"])
             view,focal=_camera(snapshot,camera_path)
+            eye=next(_array3(o["world_translation"])
+                     for o in snapshot["objects"] if o["path"]==camera_path)
             lights=_lights(snapshot)
             color=np.zeros((HEIGHT,WIDTH,4),dtype=np.float32)
             color[:,:,3]=1.
@@ -280,8 +331,8 @@ class NativeSceneLinearRaster:
                 polygons+=len(faces)
                 if polygons>MAX_TRIANGLES:
                     raise RuntimeError("Source-authoritative color triangle budget exceeded")
-                source_color,default=_base_color(obj)
-                default_materials+=int(default)
+                surface=_surface(obj)
+                default_materials+=int(surface[3])
                 actor_shapes+=int(obj["shape"]=="skinned_mesh")
                 transformed=[_array3(_apply(obj["world_matrix"],p)) for p in raw]
                 projected=[]
@@ -299,7 +350,7 @@ class NativeSceneLinearRaster:
                     original_points=[transformed[i] for i in face]
                     if _draw_triangle(
                         color,depth,verts,original_points,
-                        source_color,lights,np):
+                        surface,lights,eye,np):
                         rasterized+=1
             receipt={
                 "format":FORMAT,"time_tick":str(tick),
@@ -314,6 +365,8 @@ class NativeSceneLinearRaster:
                 "actual_usd_skinned_actors":actor_shapes,
                 "original_usd_sphere_lights":len(lights),
                 "neutral_default_material_count":default_materials,
+                "usd_roughness_metallic_microfacet_evaluated":True,
+                "ggx_microfacet_preview_calibrated":False,
                 "source_working_space":"Linear Rec.709 (sRGB)",
                 "source_color_appearance_calibrated":False,
                 "actual_usd_light_spectrum_calibrated":False,
