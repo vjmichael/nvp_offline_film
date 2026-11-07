@@ -816,3 +816,42 @@ or fabricated acceptance.
 **Important open playback difference:** Real original **Take** A/V playback is not yet continuous, independently decoded full **finished SMPTE DCP** playback with final color, cuts and soundtrack. The full movie player, Win/Linux installed real OS-device/source review, creator's genuine original films, SMPTE DCP Bv2.1 compliance and 60–90min/3h acceptance remain OPEN. Unit tests and CI cannot stand in for the physical GUI or full feature film.
 
 **Verification:** New six-job Win/Linux Python+React workflow nvp-wo5-desktop-review.yml submitted, with native desktop permission tests and exact Take/time frontend controls. See docs/NVP_WO5_DESKTOP_DIRECTOR_WORKFLOW.md for scope/evidence. No FFmpeg; no source Take mutation.
+
+### WO5 final picture/sound DCP playback / coding and genuine reel test (2026-11-07)
+
+**Implemented source code in draft PR #91:** NVP WebView2
+FinishedFilmPlaybackPanel obtains native OS-granted project/feature
+view permission from the same original TrustedDesktopWO5Bridge and
+supervised OpenJPEG/asdcplib codec process system. It reads
+SHA-audited **published DCP picture MXF and mastered sound MXF**,
+decodes exact real 24fps XYZ12 picture/48kHz PCM24 at the selected
+global Film Time (including across indexed reel cuts), presents bounded
+uncalibrated sRGB PNG to the screen and original-master-derived 48kHz
+stereo monitoring via one WebAudio hardware clock. Exact seek,
+buffered playback, stop/revoke and fail-closed handling of missing
+frames, audio deadline misses and device underflow implemented. Does
+NOT use original Take source preview as a fake finished film and
+does NOT alter any original or derived asset.
+
+**Real codec evidence:** Native six-frame/two-reel SMPTE DCP
+picture+sound encode/wrap/final publish/unwrap/decode test passed on
+GitHub [42408366415](https://github.com/vjmichael/nvp_offline_film/actions/runs/42408366415),
+including distinct 2K frames/PCM across reel edge frame 2->3 and
+exact 48k sound sample mapping. Linux/Windows React UI jobs in this
+run passed. Mock-unit tests failed only on a synthetic undersized
+J2K fixture; fixed on a later commit, exact-head CI pending.
+
+**Still OPEN (WO5 not production-ready):** measured sustained actual
+24fps without picture/audio underrun, native installed NSIS executable
+WebView2 playback, legally bundled/pinned native decoder tools and
+notices/SBOM, real sound-device drift and full channel mapping,
+real 30-minute original pilot, 60-90-minute original feature, >=3h
+original epic and independent cinema-calibrated SMPTE DCP Bv2.1
+validation/projector ingest. The release codec pin is intentionally
+blank until a real installer build produces the vetted manifest;
+unconfigured player fails closed. Three native subprocesses per
+frame need optimization before assuming full realtime performance.
+Previous visible WebView2 smoke failed OpenUSD MaterialX scalar map
+verification; the exact-authorized-PBR-connection fix was committed
+and native verification is pending. WO4 remains deferred/open,
+and no production acceptance flag has been set.
