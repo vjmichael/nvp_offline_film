@@ -8,3 +8,9 @@ pydantic>=2,<3
 miniaudio>=1.71,<2
 # DA-05: HPND-licensed native CPU PNG raster for limited OpenUSD geometry.
 Pillow>=11.0,<13
+
+# DA-06C: pinned BSD-3-Clause official OpenColorIO ACES 2 scene-linear
+# display/view transform. Native package supplies this; no runtime pip install.
+# NumPy is used for bounded in-memory FLOAT32 RGB, not a media decoder.
+opencolorio==2.5.2
+numpy>=2.1,<3
