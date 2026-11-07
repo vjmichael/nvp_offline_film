@@ -49,6 +49,13 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
         self.assertEqual(shader.GetIdAttr().Get(),"UsdPreviewSurface")
         self.assertAlmostEqual(shader.GetInput("roughness").Get(),.37,places=5)
         self.assertAlmostEqual(shader.GetInput("metallic").Get(),.12,places=5)
+        openpbr=UsdShade.Shader(stage.GetPrimAtPath(
+            "/World/Actor/Rig/Material/OpenPBR"))
+        self.assertEqual(openpbr.GetIdAttr().Get(),
+                         "ND_open_pbr_surface_surfaceshader")
+        self.assertAlmostEqual(
+            float(openpbr.GetInput("specular_roughness").GetAttr().Get()),
+            .37,places=5)
         animation=UsdSkel.Animation(stage.GetPrimAtPath(
             "/World/Actor/Rig/Skeleton/Animation"))
         weights=animation.GetBlendShapeWeightsAttr().Get(
