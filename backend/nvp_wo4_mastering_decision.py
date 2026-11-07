@@ -7,7 +7,7 @@ approve the exact SHA-scoped operation separately from UI/network prompts.
 from __future__ import annotations
 from backend.nvp_film_index import FilmIndex,_id,_sha
 from backend.nvp_openusd_take import OpenUSDTakeCapture
-from backend.nvp_wo4_master_qc import FORMAT as QC_FORMAT
+from backend.nvp_wo4_master_qc import FORMAT as QC_FORMAT, evaluate_master_candidates
 from backend.nvp_wo4_xyz12_master import FORMAT as PICTURE_FORMAT
 from backend.nvp_wo4_pcm_master import FORMAT as SOUND_FORMAT
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
@@ -75,6 +75,15 @@ def register_mastering_decision(index:FilmIndex,pid,*,take_id,take_revision,
         frame_shas.append(frame["xyz12_sha256"])
     if frame_shas[0]!=picture["xyz12_sha256"]:
         raise PermissionError("QC reference must bind sequence first picture")
+    measured=evaluate_master_candidates(picture,sound)
+    # A caller cannot fabricate convenient QC statistics while keeping
+    # source identity correct. Recompute from the actual candidate bytes.
+    for key in ("picture_xyz12_sha256","sound_pcm24_sha256",
+                "xyz12_component_min","xyz12_component_max",
+                "xyz12_component_mean","sound_peak_absolute_24bit",
+                "sound_peak_dbfs","sound_rms_fraction_full_scale"):
+        if qc.get(key)!=measured.get(key):
+            raise PermissionError("Mastering QC receipt differs from original bytes")
     approved={
         "format":FORMAT,
         "operation":"nvp.wo4.authorize_frozen_take_master_candidate.v1",
