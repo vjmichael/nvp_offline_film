@@ -357,7 +357,7 @@ class NativeSceneLinearRaster:
                 uvs=obj.get("mesh_uvs")
                 descriptor=(obj.get("source_material") or {}).get("texture")
                 if descriptor is not None:
-                    if obj["shape"]!="mesh" or uvs is None or (
+                    if obj["shape"] not in ("mesh","skinned_mesh") or uvs is None or (
                         len(uvs)!=len(raw)):
                         raise RuntimeError("USD texture requires original mesh UV primvar")
                     from backend.nvp_native_usd_texture import verified_texture
