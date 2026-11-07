@@ -28,7 +28,7 @@ class OpenUSDAssetRegistry:
     def publish(self, project_id, asset_id, *, shape, size_m,
                 expected_revision=0, points=None, triangles=None,
                 preview_material=None, mesh_uvs=None, face_uvs=None,
-                texture_png=None):
+                texture_png=None,material_slots=None):
         _require_pid(project_id)
         _id(asset_id, "reusable asset ID")
         if shape not in KINDS:
@@ -76,6 +76,11 @@ class OpenUSDAssetRegistry:
                         not math.isfinite(v) or abs(v)>1024
                         for v in uv) for uv in mesh_uvs)):
                 raise ValueError("Authored mesh UVs must be bounded per-vertex coordinates")
+        if material_slots is not None and shape!="mesh":
+            raise ValueError("Only original triangle meshes accept material subsets")
+        from backend.nvp_wo2_material_slots import normalize_material_slots
+        authored_slots=normalize_material_slots(
+            material_slots,len(triangles)) if material_slots is not None else None
         authored_material=None
         if preview_material is not None:
             if (type(preview_material) is not dict or
@@ -168,6 +173,9 @@ class OpenUSDAssetRegistry:
             if not UsdShade.MaterialBindingAPI.Apply(
                     obj.GetPrim()).Bind(material):
                 raise RuntimeError("Cannot bind real original USD PreviewSurface")
+        if authored_slots is not None:
+            from backend.nvp_wo2_material_slots import author_material_slots
+            author_material_slots(stage,obj,authored_slots)
         payload = layer.ExportToString().encode("utf-8")
         if not 0 < len(payload) <= MAX_USD_LAYER_BYTES:
             raise RuntimeError("NVP-owned asset exceeds bounded USD layer size")
@@ -180,6 +188,8 @@ class OpenUSDAssetRegistry:
         }
         if authored_material is not None:
             document["preview_material"]=authored_material
+        if authored_slots is not None:
+            document["material_slots"]=authored_slots
         if shape=="mesh":
             # Keep canonical, bounded source topology alongside the verified
             # original USD layer for the ephemeral native WebGL renderer.
@@ -297,6 +307,13 @@ class OpenUSDAssetRegistry:
             if not math.isclose(float(observed),float(size),
                                 rel_tol=0,abs_tol=1e-7):
                 raise RuntimeError("USD asset dimensions disagree with FilmIndex")
+        original_slots=doc.get("material_slots")
+        if original_slots is not None:
+            if doc["shape"]!="mesh":
+                raise RuntimeError("Nonmesh cannot bind USD material face subsets")
+            from backend.nvp_wo2_material_slots import verify_material_slots
+            verify_material_slots(stage,geometry,original_slots,
+                                  len(doc["triangles"]))
         original_material=doc.get("preview_material")
         if original_material is not None:
             if (type(original_material) is not dict or
