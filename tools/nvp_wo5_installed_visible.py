@@ -259,7 +259,12 @@ def run_installed_visible_finished_smoke(bundle_root):
         else:os.environ["NVP_HOME"]=old_home
         shutil.rmtree(root,ignore_errors=True)
         report=json.dumps(result,indent=2,sort_keys=True)+"\n"
-        print("NVP_WO5_VISIBLE_INSTALLED_AV_EVIDENCE="+report,flush=True)
+        # Real installed NVP.exe is a windowed PyInstaller executable,
+        # where sys.stdout can be None. Never let diagnostic printing
+        # prevent an independently inspectable JSON acceptance receipt.
+        import sys
+        if sys.stdout is not None:
+            print("NVP_WO5_VISIBLE_INSTALLED_AV_EVIDENCE="+report,flush=True)
         if target:
             target.write_text(report,encoding="utf8")
     if result["status"]!="VISIBLE_INSTALLED_PUBLISHED_DCP_CANVAS_AUDIO_CLOCK_PASSED":
