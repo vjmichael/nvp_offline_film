@@ -27,6 +27,7 @@ from backend.nvp_wo3_dcp_structure import (
 from backend.nvp_wo3_atomic_publish import atomic_publish_directory,_fsync_directory
 from backend.nvp_wo3_native_codecs import digest_file
 from backend.nvp_wo3_j2k_audit import PROFILES
+from backend.nvp_wo4_resource_budget import require_stage_space
 
 FORMAT="nvp.wo4.file_backed_smpte_dcp.v1"
 MAX_ASSET_BYTES=1024*1024*1024*1024
@@ -190,6 +191,10 @@ def publish_file_backed_dcp(*,job_id,picture,sound,title,profile,frames,
         raise PermissionError("Original Take and MXF asset identities disagree")
     pic,_=_track(picture,"picture",picture["source_take_sha256"],profile,frames)
     snd,_=_track(sound,"sound",picture["source_take_sha256"],profile,frames)
+    # Only the bounded file-copy stage is admitted here; the whole feature
+    # film is never materialized in RAM. An ENOSPC mid-copy keeps evidence.
+    require_stage_space(root,
+        picture["file_bytes"]+sound["file_bytes"]+2*1024*1024)
     stage=root/(".nvp-wo4-dcp-stage-"+job_id)
     target=root/("DCP_"+ids["cpl"])
     if stage.is_symlink() or stage.exists() or target.is_symlink() or target.exists():
