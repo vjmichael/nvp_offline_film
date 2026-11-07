@@ -31,7 +31,8 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
     if scene_id is not None:
         from backend.nvp_data_av_skinning import verified_live_skins
         skins=verified_live_skins(index,project_id,scene_snapshot,
-            scene_id=scene_id,scene_revision=scene_revision)
+            scene_id=scene_id,scene_revision=scene_revision,
+            include_texture_transport=include_texture_transport)
     visual=[]
     mesh_points_total=0
     mesh_triangles_total=0
