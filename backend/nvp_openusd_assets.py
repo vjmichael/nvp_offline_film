@@ -283,6 +283,63 @@ class OpenUSDAssetRegistry:
             if not math.isclose(float(observed),float(size),
                                 rel_tol=0,abs_tol=1e-7):
                 raise RuntimeError("USD asset dimensions disagree with FilmIndex")
+        original_texture=doc.get("preview_texture")
+        if original_texture is not None:
+            if (doc["shape"]!="mesh" or
+                type(original_texture) is not dict or
+                set(original_texture)!={
+                    "format","blob_sha256","width","height",
+                    "source_encoding","uv_interpolation",
+                    "original_source_modified"} or
+                original_texture["format"]!=
+                    "nvp.original_png_rgb8_uv_texture.v1" or
+                original_texture["source_encoding"]!="sRGB" or
+                original_texture["uv_interpolation"]!="vertex" or
+                original_texture["original_source_modified"] is not False or
+                original_material is None):
+                raise RuntimeError("Frozen source UV/texture authority malformed")
+            pixels=self.index.get_blob(project_id,original_texture["blob_sha256"])
+            w,h=_source_rgb_texture(pixels)
+            if (w!=original_texture["width"] or h!=original_texture["height"] or
+                sha256(pixels).hexdigest()!=original_texture["blob_sha256"]):
+                raise RuntimeError("Original RGB PNG source texture changed")
+            uv=doc.get("uvs")
+            if (type(uv) is not list or len(uv)!=len(doc["points"]) or
+                any(type(pair) is not list or len(pair)!=2 or
+                    any(type(v) not in (int,float) or
+                        not math.isfinite(v) or not 0<=v<=1 for v in pair)
+                    for pair in uv)):
+                raise RuntimeError("Original source UV coordinates invalid")
+            primvar=UsdGeom.PrimvarsAPI(geometry).GetPrimvar("st")
+            if (not primvar or
+                primvar.GetInterpolation()!=UsdGeom.Tokens.vertex):
+                raise RuntimeError("Frozen USD mesh lost original UV primvar")
+            source_uv=primvar.Get()
+            if (source_uv is None or len(source_uv)!=len(uv) or
+                any(not all(math.isclose(float(actual),float(exp),
+                    rel_tol=1e-5,abs_tol=1e-5)
+                    for actual,exp in zip(pair,expected))
+                    for pair,expected in zip(source_uv,uv))):
+                raise RuntimeError("Original USD UV values changed after capture")
+            from pxr import UsdShade
+            tex=UsdShade.Shader(
+                stage.GetPrimAtPath("/Asset/Material/BaseColorTexture"))
+            reader=UsdShade.Shader(
+                stage.GetPrimAtPath("/Asset/Material/SourceUV"))
+            if (not tex or not reader or
+                tex.GetIdAttr().Get()!="UsdUVTexture" or
+                reader.GetIdAttr().Get()!="UsdPrimvarReader_float2" or
+                reader.GetInput("varname").Get()!="st" or
+                tex.GetInput("sourceColorSpace").Get()!="sRGB"):
+                raise RuntimeError("Original USD source texture shader graph changed")
+            authored_file=tex.GetInput("file").Get()
+            if (not authored_file or
+                authored_file.path!="nvpblob:"+original_texture["blob_sha256"]):
+                raise RuntimeError("Source texture shader has untrusted asset URI")
+            # The only permitted URI is project-scoped FilmIndex data.
+            # No general USD resolver or filesystem path can access it.
+        elif "uvs" in doc:
+            raise RuntimeError("USD source UVs without an original image")
         original_material=doc.get("preview_material")
         if original_material is not None:
             if (type(original_material) is not dict or
