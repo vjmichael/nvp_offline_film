@@ -148,3 +148,14 @@ The full DCP output is still a **source-bound structural candidate**. Correct na
 **Accepted narrow gate:** full-duration native repeated-source MXF wrapping, SMPTE structural packaging and basic hosted Linux disk/memory pressure. **Not accepted:** all-distinct picture render, full independent essence decode in the long-form jobs, real source-feature custody to FilmIndex at full length, installed Windows/Linux export, independent theatrical certification.
 
 **New genuine unique-frame sampling gate (CI pending):** 2K and 4K native OpenJPEG, 12 synthetic *different* XYZ12 inputs each, source/j2k SHA uniqueness, original source unchanged and measured encoding/resource figures in `nvp-wo4-unique-frame-pilot.yml`. Passing this is a bounded encoding pilot, not evidence that 172,800 or 259,200 unique frames can be rendered on physical hardware. Theatrical, native installer, Lu IPC/host and licenses remain open as before.
+
+#### NVP 17 native distinct-frame pilot — **BOTH PROFILES PASS**
+
+GitHub Actions [42395210102](https://github.com/vjmichael/nvp_offline_film/actions/runs/42395210102) completed successfully at test code commit `58c09e1a05155dd3401f1d219740f2c57751d3c7` (later documentation-only edits do not change the tested pilot). Verified **12 different original XYZ12 samples and 12 different native OpenJPEG J2K outputs per profile**, all original hashes unchanged, with both JSON SHA custody receipts archived.
+
+| Native genuine-source pilot | Sample result | Measured encode time (mean) | Total pilot elapsed |
+| --- | --- | --- | --- |
+| 2K Flat 24fps | **PASS**, 12/12 distinct | **1.0904 s/frame** | **13.806 s** |
+| 4K Scope 24fps | **PASS**, 12/12 distinct | **3.9297 s/frame** | **48.968 s** |
+
+These **specific patterned low-complexity synthetic source frames** are a short sample on Ubuntu-hosted CPU hardware, not representative full camera/image-generation scenes and not proof of 172,800/259,200 distinct-frame production throughput, GPU acceleration, long-form FilmIndex authorization, DCI theatrical acceptance, or physical installed NVP. NVP must not multiply this mean into a definitive film export forecast. The full-duration repeated-source structural packaging gate and this short distinct-frame encoding pilot are now separately verified; *real varied full-feature and installed-machine acceptance remain OPEN*. No FFmpeg.
