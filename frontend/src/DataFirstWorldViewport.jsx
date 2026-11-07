@@ -25,6 +25,26 @@ export function validateMeshData(item){
        new Set(f).size===3&&f.every(i=>
          Number.isInteger(i)&&i>=0&&i<pts.length)))
     throw Error('Untrusted frozen USD triangle topology or dynamic pose');
+  const texture=item.source_material?.source_texture;
+  if(texture){
+    const uv=item.mesh_uvs;
+    if(item.shape!=='mesh'||item.source_material?.original_source_modified!==false||
+       texture.format!=='nvp.original_png_rgb8_uv_texture.v1'||
+       texture.source_encoding!=='sRGB'||
+       texture.uv_interpolation!=='vertex'||
+       texture.original_source_modified!==false||
+       !/^[a-f0-9]{64}$/.test(texture.blob_sha256||'')||
+       !Number.isInteger(texture.width)||texture.width<1||texture.width>256||
+       !Number.isInteger(texture.height)||texture.height<1||texture.height>256||
+       typeof texture.png_base64!=='string'||texture.png_base64.length>400000||
+       !/^[a-zA-Z0-9+/]*={0,2}$/.test(texture.png_base64)||
+       !Array.isArray(uv)||uv.length!==pts.length||
+       !uv.every(pair=>Array.isArray(pair)&&pair.length===2&&
+         pair.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)))
+      throw Error('Original USD vertex UV/texture SHA binding untrusted');
+  }else if(item.mesh_uvs){
+    throw Error('No verified source texture for authored UVs');
+  }
   if(item.shape==='skinned_mesh'){
     const mat=item.source_material;
     if(item.source_skinning!==true||
@@ -61,6 +81,9 @@ function shapeFor(item){
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(
       pts.flat(),3));
     geometry.setIndex(faces.flat());
+    if(item.mesh_uvs)
+      geometry.setAttribute('uv',
+        new THREE.Float32BufferAttribute(item.mesh_uvs.flat(),2));
     geometry.computeVertexNormals();
     return geometry;
   }
@@ -245,7 +268,9 @@ export default function DataFirstWorldViewport({
       let mesh=state.meshes.get(obj.path);
       if(mesh&&mesh.userData.sourceGeometry!==fingerprint){
         state.world.remove(mesh);
-        mesh.geometry.dispose();mesh.material.dispose();
+        mesh.geometry.dispose();
+        if(mesh.material.map)mesh.material.map.dispose();
+        mesh.material.dispose();
         state.meshes.delete(obj.path);mesh=null;
       }
       if(!mesh){
@@ -269,8 +294,21 @@ export default function DataFirstWorldViewport({
             throw Error('Original USD material has invalid source provenance');
           const surfaceColor=surface?
             new THREE.Color().setRGB(...surface.base_color_rgb):color;
+          let map=null;
+          if(surface?.source_texture){
+            // Original image bytes are obtained only through FilmIndex SHA
+            // authorization. This is an ephemeral GPU texture, never an
+            // external URI, flattened movie frame or revised source Take.
+            validateMeshData(obj);
+            map=new THREE.TextureLoader().load(
+              'data:image/png;base64,'+surface.source_texture.png_base64);
+            map.colorSpace=THREE.SRGBColorSpace;
+            map.wrapS=THREE.ClampToEdgeWrapping;
+            map.wrapT=THREE.ClampToEdgeWrapping;
+          }
           const material=new THREE.MeshStandardMaterial({
             color:surfaceColor,
+            map,
             roughness:surface?surface.roughness:.8,
             metalness:surface?surface.metallic:.05,
             side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
@@ -316,7 +354,9 @@ export default function DataFirstWorldViewport({
     for(const [path,mesh] of state.meshes){
       if(!incoming.has(path)){
         state.world.remove(mesh);
-        mesh.geometry.dispose();mesh.material.dispose();
+        mesh.geometry.dispose();
+        if(mesh.material.map)mesh.material.map.dispose();
+        mesh.material.dispose();
         state.meshes.delete(path);
       }
     }
