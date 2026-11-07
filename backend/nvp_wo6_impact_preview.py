@@ -200,6 +200,19 @@ def _fact_impact(studio, project_id, scene_id, bible_fact_id):
     }
 
 
+def _source_lifecycle_state(index, project_id, oid):
+    # FilmSourceLifecycle.__init__ creates schema, so a read-only impact
+    # preview queries the existing lifecycle table directly instead.
+    with index.studio._connection() as db:
+        exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                            "AND name='nvp_film_source_retirements'").fetchone()
+        if not exists:
+            return "ACTIVE_LEGACY_UNTRACKED"
+        row = db.execute("""SELECT state FROM nvp_film_source_retirements
+            WHERE project_id=? AND object_id=?""",(project_id,oid)).fetchone()
+        return row["state"] if row else "ACTIVE"
+
+
 def _indexed_consumers(index, project_id, oid, revision, doc_sha, limit):
     """Bound reads on all three existing FilmIndex consumer edge surfaces."""
     if type(limit) is not int or limit < 1 or limit > MAX_NODES:
@@ -358,6 +371,8 @@ def preview_source_impact(index: FilmIndex, project_id: str, source_id: str,
     # Read exact historical source and current head separately. Old Takes
     # stay valid, but a new proposed edit cannot be "approved current".
     current = index.read_revision(project_id, source_id)
+    lifecycle = _source_lifecycle_state(index, project_id, source_id)
+    retired = lifecycle in ("RETIRED", "PURGED")
     current_head = current["revision"] == source_revision
     graph, partial = _impact_chain(index, project_id, source, max_nodes)
     bible = _bible_snapshot(index.studio, project_id, scene_id,
@@ -395,12 +410,13 @@ def preview_source_impact(index: FilmIndex, project_id: str, source_id: str,
                   "This preview did not reopen a finished DCP or inspect media",
                   "FilmIndex changes do not infer character story knowledge",
                   "A proposed change is not an approved creative decision"]
-    needs_refresh = not current_head
+    needs_refresh = not current_head or retired
     if bible["status"] != "APPROVED_SCENE_PRODUCTION_BIBLE_SNAPSHOT":
         boundaries.append("Full approved scene Production Bible unavailable")
     result = {
         "format": FORMAT,
-        "status": ("HISTORICAL_SOURCE_REFRESH_REQUIRED"
+        "status": ("RETIRED_SOURCE_NOT_ADMISSIBLE_FOR_NEW_WORK"
+                   if retired else "HISTORICAL_SOURCE_REFRESH_REQUIRED"
                    if needs_refresh else
                    "READ_ONLY_IMPACT_PREVIEW_NO_CREATOR_GRANT"),
         "project_id": project_id,
@@ -411,6 +427,8 @@ def preview_source_impact(index: FilmIndex, project_id: str, source_id: str,
             "head_revision_observed": current["revision"],
             "current_head_sha256": current["document_sha256"],
             "is_current_head": current_head,
+            "lifecycle_state": lifecycle,
+            "retired_or_purged": retired,
         },
         "potentially_affected_domains": list(DOMAIN_EFFECTS[change_kind]),
         "indexed_downstream": graph,
@@ -447,8 +465,10 @@ def preview_source_impact(index: FilmIndex, project_id: str, source_id: str,
             "Durable worker journal, cancellation/restart and rollback policy",
         ],
         "approval_blockers": (
-            (["Original source is not the current working head"]
-             if needs_refresh else [])
+            (["Original source is retired or purged; restore through native creator policy first"]
+             if retired else [])
+            + (["Original source is not the current working head"]
+               if not current_head else [])
             + (["Approved scene Bible is missing/incomplete or unselected"]
                if bible["status"] != "APPROVED_SCENE_PRODUCTION_BIBLE_SNAPSHOT"
                else [])
@@ -471,6 +491,8 @@ def preview_source_impact(index: FilmIndex, project_id: str, source_id: str,
     # Read-only race guard. If the old source was already superseded, the
     # historical preview remains explicitly stale, never executable.
     again = index.read_revision(project_id, source_id)
+    if _source_lifecycle_state(index, project_id, source_id) != lifecycle:
+        raise RuntimeError("Film source lifecycle changed during impact preview")
     if (again["revision"] != current["revision"] or
             again["document_sha256"] != current["document_sha256"]):
         raise RuntimeError("Selected original source head changed during preview")
