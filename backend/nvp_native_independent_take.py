@@ -252,6 +252,7 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
         self._state="FINALIZING"
         try:
             self._stop()
+            self._count=min(self.written)
             models=[track.seal() for track in self.tracks]
             alignment=align_devices(
                 *models,camera_duration_tick=int(self.plan["duration_tick"]))
@@ -284,12 +285,16 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                  self.second_emitter_path,self.second_subject_id),
             )):
                 mapping=alignment["sample_maps"][i]
-                def chunks(p=self.spools[i]):
+                def chunks(p=self.spools[i],expected_sha=hashes[i]):
+                    digest=sha256()
                     with p.open("rb") as fp:
                         while part:=fp.read(CHUNK_BYTES):
                             if len(part)%2:
                                 raise RuntimeError("Invalid original device PCM source")
+                            digest.update(part)
                             yield part
+                    if digest.hexdigest()!=expected_sha:
+                        raise RuntimeError("Independent raw PCM spool changed during freeze")
                 recordings.append({
                     "event_id":event_id,"event_kind":"dialogue",
                     "subject_id":subject,"source_id":source_id,
