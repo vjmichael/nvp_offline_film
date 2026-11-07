@@ -469,5 +469,21 @@ def main(argv=None):
             sock.close()
 
 
+def installed_smoke_entry():
+    """Report packaged --windowed smoke exceptions through an opt-in CI file."""
+    try:
+        return main()
+    except Exception:
+        import traceback
+        diagnostic = os.environ.get("NVP_SMOKE_DIAGNOSTIC_PATH")
+        if diagnostic:
+            path = Path(diagnostic)
+            if path.is_symlink():
+                raise RuntimeError("Refusing symlink diagnostic target")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(traceback.format_exc(), encoding="utf-8")
+        raise
+
+
 if __name__=="__main__":
-    raise SystemExit(main())
+    raise SystemExit(installed_smoke_entry())
