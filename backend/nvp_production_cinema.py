@@ -511,7 +511,9 @@ class CinemaJournal(ProductionJournal):
                     if (filename.exists() or filename.is_symlink() or
                             work.exists() or work.is_symlink()):
                         needs_review=True
-                    else:
+                    elif item["state"]=="RUNNING":
+                        # Only interrupted claims are being requeued; segments
+                        # already PENDING have no interrupted worker to recover.
                         resumed.append(pos)
                 elif item["state"]=="REVIEW_REQUIRED":
                     needs_review=True
