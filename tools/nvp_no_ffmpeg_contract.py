@@ -26,6 +26,13 @@ ENTRYPOINTS=(
     "backend/nvp_data_av_usd.py",
     "backend/nvp_data_av_desktop.py",
     "backend/nvp_slate08b_native_camera_ipc.py",
+    "backend/nvp_native_avi_delivery.py",
+    "backend/nvp_final_2d_native.py",
+    "backend/nvp_native_cpu_raster.py",
+    "backend/nvp_data_first_filming.py",
+    "backend/nvp_native_color_decisions.py",
+    "backend/nvp_imported_audio.py",
+    "backend/nvp_legacy_quarantine.py",
 )
 BAN=re.compile(r"(?:^|[._/\\])(?:ffmpeg|ffprobe|imageio_ffmpeg|libavcodec|"
                r"libavformat|libavutil)(?:$|[._/\\-])",re.I)
