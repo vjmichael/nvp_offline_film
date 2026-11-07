@@ -49,8 +49,17 @@ def verify_openpbr_scalar(stage,material_path,material,color,roughness,metallic)
     }
     for name,expected in expectations.items():
         inp=shader.GetInput(name)
-        if not inp or inp.HasConnectedSource():
-            raise RuntimeError("Unexpected arbitrary MaterialX input connection")
+        if not inp:
+            raise RuntimeError("Original OpenPBR scalar input missing")
+        if inp.HasConnectedSource():
+            channel={"base_metalness":"Metallic",
+                     "specular_roughness":"Roughness"}.get(name)
+            connected=inp.GetConnectedSource()
+            if (not channel or not connected or
+                str(connected[0].GetPrim().GetPath())!=
+                    material_path+"/MtlxMap_"+channel or
+                connected[1]!="out"):
+                raise RuntimeError("Untrusted MaterialX scalar channel connection")
         value=inp.GetAttr().Get()
         actual=(list(value) if name=="base_color" else [value])
         if (len(actual)!=len(expected) or
