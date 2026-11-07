@@ -855,3 +855,26 @@ Previous visible WebView2 smoke failed OpenUSD MaterialX scalar map
 verification; the exact-authorized-PBR-connection fix was committed
 and native verification is pending. WO4 remains deferred/open,
 and no production acceptance flag has been set.
+
+### WO5 published-MXF player verified technical contract — exact CI 2026-11-07
+
+**Source-code player/GUI integration verified on six platform-matrix
+checks plus the genuine Linux codec/essence acceptance, 7/7 success:**
+[42409121482](https://github.com/vjmichael/nvp_offline_film/actions/runs/42409121482).
+True two-reel SMPTE DCP package, picture J2K and actual final PCM24
+sound native decode passed across global frame 2->3 and native
+multi-frame 4-maximum batch requests clipped at the reel boundary.
+24fps/48k contiguous sample indices and exact native J2K source SHA,
+OS-scoped permission, modified MXF refusal, bounded source preview,
+real WebAudio scheduling and skipped-frame/no-audio-deadline fail
+closed tests passed on applicable platforms.
+
+**Status:** technical native finished-DCP decoder, batching, and
+desktop review UI code: IMPLEMENTED + REGRESSION PASS. Continuous
+hardware playback in the installed app, real authentic 30-minute
+original, 60-90-minute feature, >=3h epic, legal codec bundle
+manifest, true calibrated multichannel cinema playback, and SMPTE
+DCP Bv2.1 expert/projection review: **OPEN**, not production accepted.
+Old preexisting Native MaterialX source scalar failure patched with
+strict exact-map source verification; installed WebView2 reenactment
+remains a separate pending gate. WO4 deferred/open.
