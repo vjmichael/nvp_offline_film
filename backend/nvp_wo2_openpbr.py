@@ -87,8 +87,9 @@ def author_openpbr_texture(stage,material_path,material,
         float(roughness))
     image=UsdShade.Shader.Define(stage,material_path+"/MtlxImage")
     image.CreateIdAttr("ND_image_color3")
-    image.CreateInput("file",Sdf.ValueTypeNames.Asset).Set(
-        Sdf.AssetPath(descriptor["usd_asset_path"]))
+    source_file=image.CreateInput("file",Sdf.ValueTypeNames.Asset)
+    source_file.Set(Sdf.AssetPath(descriptor["usd_asset_path"]))
+    source_file.GetAttr().SetColorSpace("srgb_texture")
     image.CreateInput("uaddressmode",Sdf.ValueTypeNames.String).Set(
         "periodic")
     image.CreateInput("vaddressmode",Sdf.ValueTypeNames.String).Set(
@@ -123,6 +124,7 @@ def verify_openpbr_texture(stage,material_path,material,
         uv.GetInput("index").GetAttr().Get()!=0 or
         str(image.GetInput("file").GetAttr().Get().path)!=
             descriptor["usd_asset_path"] or
+        image.GetInput("file").GetAttr().GetColorSpace()!="srgb_texture" or
         image.GetInput("uaddressmode").GetAttr().Get()!="periodic" or
         image.GetInput("vaddressmode").GetAttr().Get()!="periodic" or
         image.GetInput("filtertype").GetAttr().Get()!="closest"):
