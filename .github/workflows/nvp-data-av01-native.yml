@@ -219,6 +219,14 @@ jobs:
       - name: Measure real sixty-second frozen USD / 60 native CPU frames
         run: |
           python -m unittest discover -s tests -p 'test_nvp_wo2_real_60s.py' -v
+      - name: Upload actual WO2 native 60s source measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wo2-real-native-60s-${{ github.sha }}
+          path: wo2-native-60s-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
 
   native-react:
     needs: [zero-ffmpeg-policy]
