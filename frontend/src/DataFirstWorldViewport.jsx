@@ -11,7 +11,7 @@ export function validateSourceTexture(surface,item){
   const descriptor=surface?.texture;
   if(!descriptor)return null;
   const packet=surface?.texture_transport;
-  if(item.shape!=='mesh'||!item.mesh_uvs||
+  if(!['mesh','skinned_mesh'].includes(item.shape)||!item.mesh_uvs||
      descriptor.format!=='nvp.original.usd_texture_png.v1'||
      packet?.format!==descriptor.format||
      descriptor.source_modified!==false||packet.source_modified!==false||
