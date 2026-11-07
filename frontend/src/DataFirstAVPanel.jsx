@@ -892,6 +892,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null,initialTak
       <select aria-label="Native frozen Digital Take" value={takeId}
         disabled={playing} onChange={e=>setTakeId(e.target.value)}>
         {!takes.length&&<option value="">No frozen Digital Takes in this project</option>}
+        {!!initialTakeId&&!takeId&&takes.length>0&&
+          <option value="">Exact approved Take or SHA unavailable — playback blocked</option>}
         {takes.map(x=><option key={x.take_id} value={x.take_id}>
           {x.take_id}</option>)}
       </select>
