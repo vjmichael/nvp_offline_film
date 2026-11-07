@@ -30,8 +30,9 @@ def quarantined(path,method):
     if tail[0] in ("sequence","rig-motion"):
         # Immutable legacy metadata may still be read for migration.
         # Old "package" is never safe: it renders output on GET.
-        return (method.upper() not in ("GET","HEAD") or
-                (len(tail)>1 and tail[1] not in ("history",)))
+        safe_metadata=(len(tail)==1 or
+                       (len(tail)==2 and tail[1]=="history"))
+        return not (method.upper() in ("GET","HEAD") and safe_metadata)
     return False
 
 
