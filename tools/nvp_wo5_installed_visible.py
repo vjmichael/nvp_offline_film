@@ -83,6 +83,58 @@ class InstalledRealFinishedCIHost(TrustedDesktopWO5Bridge):
         super()._close()
 
 
+def _native_os_user_click_finished_play(window,title):
+    """Genuine OS mouse input into real Windows WebView2, not JS .click().
+
+    Programmatic DOM .click() does NOT grant Chromium transient user
+    activation for WebAudio; NVP's real creator button must be clicked
+    through the visible OS window. The host-selected UI test owns this
+    disposable desktop window. This is not a human creative approval.
+    """
+    import win32api
+    import win32con
+    import win32gui
+    rectangle=window.evaluate_js(
+        "(()=>{const b=[...document.querySelectorAll('button')]"
+        ".find(x=>x.textContent.includes('Request native permission and play finished DCP'));"
+        "if(!b||b.disabled)return null;"
+        "b.scrollIntoView({block:'center'});"
+        "const r=b.getBoundingClientRect();"
+        "return {x:r.x,y:r.y,w:r.width,h:r.height,"
+        "vw:window.innerWidth,vh:window.innerHeight};})()")
+    if (not isinstance(rectangle,dict) or
+            any(type(rectangle.get(k)) not in (int,float)
+                for k in ("x","y","w","h","vw","vh")) or
+            rectangle["w"]<20 or rectangle["h"]<10):
+        return False
+    if (rectangle["x"]<0 or rectangle["y"]<0 or
+            rectangle["x"]+rectangle["w"]>rectangle["vw"]+2 or
+            rectangle["y"]+rectangle["h"]>rectangle["vh"]+2):
+        raise RuntimeError("Actual WebView2 film play button not on screen")
+    hwnd=win32gui.FindWindow(None,title)
+    if not hwnd:
+        raise RuntimeError("Could not find real NVP WebView2 top-level window")
+    win32gui.ShowWindow(hwnd,win32con.SW_SHOWNORMAL)
+    try:win32gui.SetForegroundWindow(hwnd)
+    except Exception:
+        # Windows foreground focus policy is outside NVP's control.
+        # If the user-gesture click is refused, the WebAudio gate fails.
+        pass
+    client=win32gui.GetClientRect(hwnd)
+    origin=win32gui.ClientToScreen(hwnd,(0,0))
+    scale=(client[2]-client[0])/rectangle["vw"]
+    if not .7<=scale<=3:
+        raise RuntimeError("Native window CSS-pixel/desktop-pixel mapping invalid")
+    x=round(origin[0]+(rectangle["x"]+rectangle["w"]/2)*scale)
+    y=round(origin[1]+(rectangle["y"]+rectangle["h"]/2)*scale)
+    win32api.SetCursorPos((x,y))
+    time.sleep(.12)
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN,0,0,0,0)
+    time.sleep(.09)
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP,0,0,0,0)
+    return True
+
+
 def run_installed_visible_finished_smoke(bundle_root):
     import webview
     folder=os.environ.get("NVP_WO5_SMOKE_DCP_DIR")
@@ -156,16 +208,15 @@ def run_installed_visible_finished_smoke(bundle_root):
                 until=time.monotonic()+30
                 clicked=False
                 while time.monotonic()<until:
-                    clicked=window.evaluate_js(
-                        "(()=>{const b=[...document.querySelectorAll('button')]"
-                        ".find(x=>x.textContent.includes('Request native permission and play finished DCP'));"
-                        "if(!b||b.disabled)return false;b.click();return true;})()")
+                    clicked=_native_os_user_click_finished_play(
+                        window,"NVP Installed — Published MXF Picture and Audio Device Clock")
                     if clicked:
                         break
                     time.sleep(.15)
                 if not clicked:
                     raise RuntimeError("Installed real film player not enabled after native codec admission")
                 result["real_player_button_invoked_in_visible_window"]=True
+                result["os_native_mouse_user_gesture_not_programmatic_dom_click"]=True
                 # NVP's actual WebAudio clock drives all presented film
                 # positions. This checks continuous real Canvas draw count,
                 # not elapsed wall time or just native decoding speed.
