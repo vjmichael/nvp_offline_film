@@ -46,6 +46,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [cameraPlans,setCameraPlans]=useState([]);
   const [cameraPlanIndex,setCameraPlanIndex]=useState('0');
   const [liveEmitter,setLiveEmitter]=useState('');
+  const [secondLiveEmitter,setSecondLiveEmitter]=useState('');
+  const [sharedStereo,setSharedStereo]=useState(false);
   const [newLiveTake,setNewLiveTake]=useState('LiveTake001');
   const [liveTicket,setLiveTicket]=useState(null);
   const [liveBusy,setLiveBusy]=useState(false);
@@ -127,10 +129,15 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const livePlan=cameraPlans[Number(cameraPlanIndex)];
   useEffect(()=>{
     setLiveEmitter(livePlan?.emitters?.[0]||'');
+    setSecondLiveEmitter(livePlan?.emitters?.[1]||'');
   },[cameraPlanIndex,cameraPlans]);
 
   async function beginLiveCapture(){
     if(!native||!livePlan||liveTicket||liveBusy||playing||exporting)return;
+    if(sharedStereo&&(!secondLiveEmitter||secondLiveEmitter===liveEmitter)){
+      setError('Two distinct authored 3D emitters are required for shared-clock stereo.');
+      return;
+    }
     if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,60}$/.test(newLiveTake)){
       setError('Choose a unique native Take ID with letters and digits.');return;
     }
@@ -146,6 +153,12 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         emitter_path:liveEmitter,
         event_id:newLiveTake+'.Speech',
         subject_id:liveEmitter.split('/').pop(),
+        ...(sharedStereo?{
+          second_source_id:newLiveTake+'.Mic2',
+          second_emitter_path:secondLiveEmitter,
+          second_event_id:newLiveTake+'.Speech2',
+          second_subject_id:secondLiveEmitter.split('/').pop(),
+        }:{}),
       });
       if(result?.format!=='nvp.data_av.live_mic_take.v1'||
          result.status!=='RECORDING'||
@@ -171,6 +184,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
            result.original_scene_modified!==false||
            result.audio_mix_flattened!==false)
           throw Error('Native captured source was not immutably frozen');
+        if(sharedStereo&&(result.native_input_channels!==2||
+            result.shared_capture_clock!==true||
+            result.original_mono_source_count!==2))
+          throw Error('Native source channel alignment was not verified');
         setLiveReceipt(result);
         const updated=await native.data_av_catalog(projectId);
         if(updated?.format===FORMAT&&Array.isArray(updated.takes)){
@@ -532,6 +549,23 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
           {(livePlan?.emitters||[]).map(p=><option key={p} value={p}>{p}</option>)}
         </select>
       </label>
+      <label>
+        <input type="checkbox" aria-label="Record two independent mono sources on one stereo input"
+          checked={sharedStereo} disabled={!!liveTicket||liveBusy}
+          onChange={e=>setSharedStereo(e.target.checked)}/>
+        Two original mono sources from one shared-clock stereo input
+      </label>
+      {sharedStereo&&<label>Second authored source emitter
+        <select aria-label="Second original source emitter"
+          value={secondLiveEmitter} disabled={!!liveTicket||liveBusy}
+          onChange={e=>setSecondLiveEmitter(e.target.value)}>
+          {(livePlan?.emitters||[]).filter(p=>p!==liveEmitter)
+            .map(p=><option key={p} value={p}>{p}</option>)}
+        </select>
+      </label>}
+      {sharedStereo&&<p className="fineprint">Both source channels are independently
+        preserved with the same capture-device sample clock. Separate USB
+        microphones or unrelated audio devices are not synchronized.</p>}
       <label>New immutable Digital Take identity
         <input aria-label="New live Digital Take name" value={newLiveTake}
           disabled={!!liveTicket||liveBusy} maxLength={61}
@@ -539,7 +573,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       </label>
       <div className="actions">
         <button onClick={beginLiveCapture}
-          disabled={!livePlan||!liveEmitter||!!liveTicket||liveBusy||playing||exporting||
+          disabled={!livePlan||!liveEmitter||
+            (sharedStereo&&(!secondLiveEmitter||secondLiveEmitter===liveEmitter))||
+            !!liveTicket||liveBusy||playing||exporting||
             typeof native?.data_av_live_begin!=='function'}>
           Approve native microphone recording
         </button>
@@ -552,7 +588,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         not been frozen. Closing this window cancels capture.</p>}
       {liveReceipt&&<p role="status">Frozen Take {liveReceipt.take_id} ·
         original source SHA <code>{liveReceipt.take_document_sha256.slice(0,16)}…</code> ·
-        {liveReceipt.actual_recorded_samples} captured samples.</p>}
+        {liveReceipt.actual_recorded_samples} captured frames ·
+        {liveReceipt.original_mono_source_count||1} original mono source(s).</p>}
     </section>
     <section className="card" aria-label="Creator-approved FFmpeg-free 2D film delivery">
       <h3>Render a 2D version from the frozen 3D world</h3>
