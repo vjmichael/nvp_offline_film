@@ -701,6 +701,49 @@ class TrustedDesktopCameraBridge:
                 "status":"UNMASTERED_ACES2_PNG16_AUDIO_PACKAGE",
                 "original_modified":False,"master_approved":False}
 
+    def data_av_cinema_readiness(self,request):
+        """Read-only native folder inspection: never make fake DCP deliveries.
+
+        The browser never specifies an OS path, validator binary, mastering
+        grant, codec executable or output directory. The native OS folder
+        selector gives access to one producer-owned derived package only.
+        """
+        self._native_window()
+        fields={"project_id","take_id","take_document_sha256","target"}
+        if type(request) is not dict or set(request)!=fields:
+            raise ValueError("Native cinema/HDR readiness requires exact source")
+        from webview import FileDialog
+        from backend.nvp_native_cinema_master_gate import (
+            assess_unmastered_source_package,TARGETS)
+        pid=request["project_id"];take=request["take_id"]
+        sha=request["take_document_sha256"]
+        _require_pid(pid);_id(take,"frozen original Digital Take");_sha(sha)
+        if request["target"] not in TARGETS:
+            raise ValueError("No verified native output target")
+        source=self.index.read_revision(pid,take,1)
+        if (source["kind"]!="take" or
+            source["document_sha256"]!=sha or
+            source["data"].get("frozen") is not True):
+            raise RuntimeError("Cinema readiness original Take is not frozen")
+        win=self._native_window()
+        if not callable(getattr(win,"create_file_dialog",None)):
+            raise PermissionError("Native folder selection for source inspection unavailable")
+        selected=win.create_file_dialog(FileDialog.FOLDER)
+        if not selected:
+            return {"format":"nvp.native_data_first.cinema_preflight.v1",
+                    "status":"CANCELLED","dcp_delivered":False,
+                    "source_original_modified":False,"ffmpeg_used":False}
+        if type(selected) not in (tuple,list) or len(selected)!=1:
+            raise PermissionError("Select exactly one native original-derived package")
+        path=Path(selected[0])
+        if path.is_symlink() or not path.is_dir():
+            raise PermissionError("Unsafe source-derived color package folder")
+        receipt=assess_unmastered_source_package(
+            path,target=request["target"],expected_take_sha256=sha)
+        if receipt["dcp_delivered"] is not False:
+            raise RuntimeError("Unvalidated theatrical package is forbidden")
+        return receipt
+
     def data_av_export_native_acescg_exr(self,request):
         """Produce approved source-linear ACEScg RGB32 OpenEXR and PCM.
 
