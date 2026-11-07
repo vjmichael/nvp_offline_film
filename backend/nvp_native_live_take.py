@@ -105,7 +105,12 @@ class NativeLiveSoundSession:
         return scene["data"]["prim_roles"]
 
     def _append(self,samples):
-        if self._error is not None or self._state not in ("AUTHORIZING","RECORDING"):
+        # Device stop() can synchronously flush a final valid PCM callback.
+        # FINALIZING remains writable until stop() returns, after which the
+        # writer's sentinel is queued. Silently dropping tail samples there
+        # would violate the exact sound-source sample ledger.
+        if self._error is not None or self._state not in (
+                "AUTHORIZING","RECORDING","FINALIZING"):
             return
         if not isinstance(samples,array.array) or samples.typecode!="h":
             self._error=RuntimeError("Capture callback returned non-PCM16 frames")
