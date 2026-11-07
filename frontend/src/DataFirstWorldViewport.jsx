@@ -19,6 +19,24 @@ function shapeFor(item){
     item.size_m,item.size_m,item.size_m);
   if(item.shape==='sphere')return new THREE.SphereGeometry(
     item.size_m/2,24,16);
+  if(item.shape==='mesh'){
+    const pts=item.mesh_points,faces=item.mesh_triangles;
+    if(!Array.isArray(pts)||pts.length<3||pts.length>2048||
+       !Array.isArray(faces)||faces.length<1||faces.length>4096||
+       !pts.every(p=>Array.isArray(p)&&p.length===3&&
+         p.every(v=>typeof v==='number'&&Number.isFinite(v)&&
+           Math.abs(v)<=item.size_m))||
+       !faces.every(f=>Array.isArray(f)&&f.length===3&&
+         new Set(f).size===3&&f.every(i=>
+           Number.isInteger(i)&&i>=0&&i<pts.length)))
+      throw Error('Untrusted frozen USD triangle mesh');
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(
+      pts.flat(),3));
+    geometry.setIndex(faces.flat());
+    geometry.computeVertexNormals();
+    return geometry;
+  }
   if(item.shape==='gizmo'){
     if(item.semantic_role==='camera')return new THREE.ConeGeometry(.25,.6,8);
     if(item.semantic_role==='light')return new THREE.OctahedronGeometry(.25);
@@ -167,7 +185,8 @@ export default function DataFirstWorldViewport({
              obj.semantic_role==='actor'?0xc084fc:0xf59e0b):
             0x94a3b8;
           const material=new THREE.MeshStandardMaterial({
-            color,roughness:.8,metalness:.05});
+            color,roughness:.8,metalness:.05,
+            side:obj.shape==='mesh'?THREE.DoubleSide:THREE.FrontSide});
           mesh=new THREE.Mesh(geometry,material);
           mesh.matrixAutoUpdate=false;
           mesh.userData.sourceGeometry=fingerprint;
@@ -250,13 +269,13 @@ export default function DataFirstWorldViewport({
       {bounded.map(item=><li key={item.path}>
         <strong>{item.path}</strong> ·
         {item.gizmo_only?'scene-location gizmo':
-          'authored USD '+item.shape+' ('+item.size_m+' m)'} ·
+          'verified authored USD '+item.shape+' ('+item.size_m+' m)'} ·
         {(item.world_translation||[]).map(n=>Number(n).toFixed(2)).join(', ')} m
       </li>)}
     </ul>
     <p className="fineprint">This WebGL scene uses validated native
-      OpenUSD transforms and procedural geometry. Full character meshes,
-      textures, physical materials, Hydra parity and cinema-quality
-      lighting still require separate acceptance.</p>
+      OpenUSD transforms and source-verified procedural/triangle geometry.
+      Skinned actor playback, textures, physical materials, Hydra parity
+      and cinema-quality lighting still require separate acceptance.</p>
   </section>;
 }
