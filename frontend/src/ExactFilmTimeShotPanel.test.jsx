@@ -71,4 +71,22 @@ describe('DA-01 precise Film Time desktop editor',()=>{
     expect(api.mock.calls.filter(x=>x[1]==='POST')).toHaveLength(0);
   });
 
+  it('never authorizes an unsaved edit after a delayed publication resolves',async()=>{
+    let release;
+    const delayed=new Promise(resolve=>{release=resolve;});
+    const api=vi.fn(async(path,method)=>{
+      if(path.endsWith('/film/camera-scenes'))return list;
+      if(method==='POST')return delayed;
+      return sequence;
+    });
+    mount(api);
+    await screen.findByLabelText('Film Time duration limit ticks');
+    fireEvent.click(screen.getByText('Save immutable timing revision'));
+    await waitFor(()=>expect(api.mock.calls.some(x=>x[1]==='POST')).toBe(true));
+    fireEvent.change(screen.getByLabelText('Film Time duration limit ticks'),
+      {target:{value:'7056000020'}});
+    release({...sequence,revision:2,document_sha256:'d'.repeat(64)});
+    await waitFor(()=>expect(screen.getByText(/Current saved revision: 2/)).toBeTruthy());
+    expect(screen.getByText('Approve and freeze original 3D Take').disabled).toBe(true);
+  });
 });
