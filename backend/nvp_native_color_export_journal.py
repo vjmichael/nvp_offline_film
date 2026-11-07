@@ -70,7 +70,10 @@ class NativeColorOutputJournal:
             self.staged.mkdir(mode=0o700)
         if not self.staged.is_dir():
             raise PermissionError("Native scene-linear recovery workspace unavailable")
-        self.lock=self.staged/"owner.lock"
+        # Keep the lock outside the directory being renamed: Windows
+        # denies directory renames while a contained file remains open.
+        # Retain one permanent sibling inode to prevent lock-swap races.
+        self.lock=self.parent/(".nvp-color-owner-"+presentation_id+".lock")
         self.fd=None
         self.locked=False
         self.records=[]
