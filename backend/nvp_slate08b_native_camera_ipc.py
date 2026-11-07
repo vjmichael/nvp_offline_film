@@ -613,6 +613,11 @@ class TrustedDesktopCameraBridge:
     def data_av_audio_window(self,session_id,first_sample,count):
         return self._data_av().read_audio(session_id,first_sample,count)
 
+    def data_av_original_texture_tile(self,session_id,request):
+        """Only a currently approved Take may stream one pinned source tile."""
+        self._native_window()
+        return self._data_av().read_original_texture_tile(session_id,request)
+
     def data_av_scene_at(self,session_id,tick):
         return self._data_av().scene_at(session_id,tick)
 
