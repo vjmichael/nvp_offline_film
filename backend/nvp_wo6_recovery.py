@@ -104,6 +104,10 @@ class WO6DurableRecovery:
             raise RuntimeError("Cannot retroactively cancel a terminal native task")
         with self.ledger._db() as db:
             db.execute("BEGIN IMMEDIATE")
+            current = db.execute(
+                "SELECT state FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if current is None or current[0] in ("SUCCEEDED","FAILED","CANCELLED"):
+                raise RuntimeError("Native task finished before cancellation was recorded")
             db.execute("""INSERT OR IGNORE INTO wo6_cancel_intents
                 (task_id,requested_at,actor_id,project_id,turn_id,reason)
                 VALUES (?,?,?,?,?,?)""",
@@ -223,9 +227,14 @@ class WO6DurableRecovery:
         if not path.is_file() or path.is_symlink():
             raise RuntimeError("Missing or symlinked original Studio database")
         if row["state"] == "ACTIVE":
-            self.ledger.finish(
-                task_id, "INTERRUPTED",
-                "Host verified no running worker; output requires reconciliation")
+            if self.cancel_requested(task_id):
+                self.ledger.finish(
+                    task_id, "CANCELLED",
+                    "Host verified cancelled worker stopped; output still requires reconciliation")
+            else:
+                self.ledger.finish(
+                    task_id, "INTERRUPTED",
+                    "Host verified no running worker; output requires reconciliation")
         record_path = folder / "task.json"
         raw = canonical_bytes(spec)
         if (record_path.is_symlink() or not record_path.is_file() or
