@@ -48,8 +48,10 @@ class NativeCodecWorkerProcessTests(unittest.TestCase):
             "print('INSIDE_JOB_BEFORE_FIRST_INSTRUCTION' "
             "if result.value else 'NOT_IN_JOB')"
         )
+        probe=self.root/"win_job_probe.py"
+        probe.write_text(script)
         record=run_supervised_codec(
-            self.codec,["-c",script],workdir=self.root,
+            self.codec,[str(probe)],workdir=self.root,
             check_cancel=lambda:False,timeout=8,read_stdout=True)
         self.assertIn(b"INSIDE_JOB_BEFORE_FIRST_INSTRUCTION",record["stdout"])
         self.assertTrue(record["windows_assignment_race_eliminated"])
