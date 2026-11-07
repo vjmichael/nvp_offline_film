@@ -90,8 +90,7 @@ class WO6NativeDurability(unittest.TestCase):
             "cancel_requested"])
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"new_take")
-        with self.assertRaises(RuntimeError):
-            self.host.run_next()
+        self.assertIsNone(self.host.run_next())
         # No model-visible source or final film was made.
 
     def test_different_actor_cannot_cancel_or_recover_unattested_worker(self):
