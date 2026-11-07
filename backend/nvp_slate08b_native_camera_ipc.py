@@ -738,7 +738,16 @@ class TrustedDesktopCameraBridge:
                     f"Take: {scope['take_id']}\n"
                     f"Scene SHA-256: {scope['scene_document_sha256']}\n"
                     f"Events SHA-256: {scope['timeline_document_sha256']}\n"
-                    "This seals an immutable Digital Take, not a movie export.")
+                    + (("Independent clock proof SHA: "+
+                        scope["independent_clock_evidence_sha256"]+"\n"+
+                        "Measured device drift (ppm): "+
+                        str(scope["independent_clock_drift_ppm"])+"\n"+
+                        "Worst ADC timing residuals (ns): "+
+                        str(scope["independent_adc_max_residual_ns"])+"\n"+
+                        "No hardware genlock. Both original PCM sources stay untouched.\n")
+                       if scope.get("independent_original_pcm_unmodified") is True
+                       else "")
+                    + "This seals an immutable Digital Take, not a movie export.")
             session=recorder_class(
                 self.index,project_id=request["project_id"],
                 take_id=request["take_id"],scene_id=request["scene_id"],
