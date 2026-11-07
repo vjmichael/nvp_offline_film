@@ -192,6 +192,25 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
                     index,project_id,descriptor)
         elif material.get("texture_images_loaded") is True:
             raise RuntimeError("Original rig falsely reports loaded texture")
+        maps=rig.get("pbr_maps")
+        if maps:
+            from backend.nvp_wo2_pbr_channels import (
+                verify_pbr_maps,verify_pbr_map_graph)
+            from pxr import UsdShade
+            verify_pbr_maps(index,project_id,maps)
+            material_path=path+"/Rig/Material"
+            verify_pbr_map_graph(
+                stage,material_path,
+                UsdShade.Shader(stage.GetPrimAtPath(
+                    material_path+"/PreviewSurface")),
+                UsdShade.Shader(stage.GetPrimAtPath(
+                    material_path+"/OpenPBR")),maps)
+            material={**material,"pbr_maps":maps}
+            if include_texture_transport:
+                from backend.nvp_native_usd_texture import texture_transport
+                material["pbr_map_transports"]={
+                    key:texture_transport(index,project_id,desc)
+                    for key,desc in maps.items()}
         if (any(abs(x-y)>1e-5 for x,y in
                 zip(material["base_color_rgb"],color)) or
             material["original_source_modified"] is not False):
