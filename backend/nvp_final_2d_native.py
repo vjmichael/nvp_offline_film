@@ -197,6 +197,8 @@ class Approved2DPackage:
             pictures.mkdir()
             receipt=[]
             dimensions=None
+            grade_channels_clipped=0
+            grade_channels_seen=0
             for i in range(count):
                 tick=tick_from_frame(i,fps_num,fps_den)
                 if tick>=duration:
@@ -220,7 +222,10 @@ class Approved2DPackage:
                 _png_header(encoded)
                 if grade:
                     from backend.nvp_native_color_eval import apply_display_grade
-                    encoded=apply_display_grade(encoded,grade["parameters"])
+                    encoded,audit=apply_display_grade(
+                        encoded,grade["parameters"],return_audit=True)
+                    grade_channels_clipped+=audit["channels_clipped"]
+                    grade_channels_seen+=audit["color_channel_count"]
                 width,height=_png_header(encoded)
                 if dimensions is None:
                     dimensions=(width,height)
@@ -265,6 +270,13 @@ class Approved2DPackage:
                 "picture_dimensions":dimensions,
                 "pictures":receipt,
                 "color_grade":grade,
+                "derived_display_color_audit":({
+                    "profile":"linearized_srgb_sdr_review_not_aces",
+                    "color_channel_count":grade_channels_seen,
+                    "clipped_channel_count":grade_channels_clipped,
+                    "clip_fraction":grade_channels_clipped/grade_channels_seen,
+                    "professional_color_managed_master":False,
+                } if grade else None),
                 "audio_file":"soundtrack.wav",
                 "audio_sample_rate":SAMPLE_RATE,
                 "audio_samples":samples,
