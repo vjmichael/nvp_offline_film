@@ -252,6 +252,8 @@ class NativeTakeActionHost:
                 str(self.python), str(self.worker), "--spec", str(spec_path),
                 "--studio-db", str(self.index.studio.db_path),
                 "--expected-sha", hashlib.sha256(canonical_bytes(spec)).hexdigest(),
+                "--ledger-db", str(self.ledger.db_path),
+                "--owner-key", self.owner,
             ]
             with (folder / "stdout.log").open("wb") as out, (
                     folder / "stderr.log").open("wb") as err:
