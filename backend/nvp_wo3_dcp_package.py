@@ -24,6 +24,7 @@ from backend.nvp_wo3_dcp_structure import (
     inspect_dcp_structure,NS_AM,NS_PKL,NS_CPL)
 from backend.nvp_wo3_mxf_native import FORMAT as MXF_FORMAT
 from backend.nvp_wo3_j2k_audit import PROFILES
+from backend.nvp_wo3_atomic_publish import atomic_publish_directory, _fsync_directory
 
 FORMAT="nvp.wo3.source_bound_dcp_candidate.v1"
 MAX_REEL_BYTES=1024*1024*1024*1024
@@ -216,11 +217,10 @@ def publish_dcp_candidate(index:FilmIndex,pid,*,take_id,take_revision,
         reviewed=inspect_dcp_structure(stage)
         if reviewed["status"]!="STRUCTURE_AND_SHA_VERIFIED":
             raise RuntimeError("Independent output package integrity rejected")
-        # No existing project, user file or previous package may be
-        # overwritten by NVP. Final release locks the destination parent.
-        if target.exists() or target.is_symlink():
-            raise FileExistsError("DCP package already exists")
-        stage.rename(target)
+        # Flush stage directory entries before OS-enforced atomic no-replace.
+        # Never use check-then-rename, which can replace a concurrent export.
+        _fsync_directory(stage)
+        atomic_publish_directory(stage,target)
         promoted=True
         rec=index.register_revision(
             pid,"WO3DCP_"+identifiers["composition_uuid"][9:].replace("-",""),
