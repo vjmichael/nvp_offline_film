@@ -13,6 +13,8 @@ import json
 
 from backend.nvp_ai_context import assemble_task_context
 from backend.nvp_data_av_source import RecordedSoundSources
+from backend.nvp_exact_time_shots import ExactTimeShotSequence
+from backend.nvp_story_bible import sha_scene
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_openusd_scene import OpenUSDSceneBridge, _evaluate, _usd
 from backend.nvp_openusd_take import OpenUSDTakeCapture, FORMAT as TAKE_FORMAT
@@ -23,6 +25,7 @@ FORMAT = "nvp.wo6.verified_scene_crew_context.v1"
 MAX_PRIMS = 64
 MAX_EVENTS = 48
 MAX_AUDIO_SOURCES = 16
+MAX_APPROVED_FACTS = 32
 MAX_PACKET_BYTES = 240000
 CAPABILITY = {
     "id": "nvp.film.read_scene_crew_context.v1",
@@ -39,6 +42,8 @@ CAPABILITY = {
         "screenplay_scene_id": "optional scene ID, requires source_revision",
         "max_prims": "integer 1..64",
         "max_events": "integer 1..48",
+        "shot_sequence_id": "optional authored camera shot timeline",
+        "shot_sequence_revision": "exact revision, required with shot_sequence_id",
     },
     "result_schema": FORMAT,
     "requires_host_authorization": True,
@@ -55,6 +60,7 @@ def _canonical(record):
 def assemble_film_crew_context(
     index: FilmIndex, project_id: str, take_id: str, take_revision: int,
     tick: int, *, source_revision=None, screenplay_scene_id=None,
+    shot_sequence_id=None, shot_sequence_revision=None,
     max_prims: int = 32, max_events: int = 24,
 ) -> dict:
     if not isinstance(index, FilmIndex):
@@ -69,6 +75,12 @@ def assemble_film_crew_context(
         raise ValueError("Bounded scene prim/event limits required")
     if (source_revision is None) != (screenplay_scene_id is None):
         raise ValueError("Screenplay scene and exact revision must be selected together")
+    if (shot_sequence_id is None) != (shot_sequence_revision is None):
+        raise ValueError("Shot timeline ID and exact revision must be selected together")
+    if shot_sequence_id is not None:
+        _id(shot_sequence_id, "shot timeline")
+        if type(shot_sequence_revision) is not int or shot_sequence_revision < 1:
+            raise ValueError("Shot timeline revision must be an exact positive integer")
     take = index.read_revision(project_id, take_id, take_revision)
     doc = take["data"]
     if (take["kind"] != "take" or doc.get("format") != TAKE_FORMAT or
@@ -168,13 +180,106 @@ def assemble_film_crew_context(
                 "sample_count": samples,
             })
         known_sound.append(item)
+    shot_selection = None
+    if shot_sequence_id is not None:
+        authored = ExactTimeShotSequence(index).read(
+            project_id, shot_sequence_id, shot_sequence_revision)
+        if (authored["scene_id"] != doc["scene_id"] or
+                authored["scene_revision"] != doc["scene_revision"] or
+                authored["scene_document_sha256"] != doc["scene_document_sha256"]):
+            raise PermissionError("Selected authored shots belong to a different OpenUSD scene")
+        if tick >= int(authored["duration_tick"]):
+            raise ValueError("Selected authored camera shots do not cover this Take time")
+        selected_shots = [
+            shot for shot in authored["shots"]
+            if int(shot["start_tick"]) <= tick < int(shot["end_tick"])
+        ]
+        if len(selected_shots) > 1:
+            raise RuntimeError("Conflicting creator shots overlap at this Film Time")
+        shot_selection = {
+            "shot_timeline_id": shot_sequence_id,
+            "shot_timeline_revision": shot_sequence_revision,
+            "shot_timeline_document_sha256": authored["document_sha256"],
+            "authored_shot_count": len(authored["shots"]),
+            "camera_coverage_status": ("SELECTED_AUTHORED_CAMERA"
+                if selected_shots else "INTENTIONAL_CAMERA_GAP"),
+            "selected_shot": selected_shots[0] if selected_shots else None,
+            "camera_selected_by_source_not_ai_guess": True,
+            "rendered_output_proven": False,
+        }
     screenplay = None
+    approved_facts = []
+    bible_status = "NO_SCREENPLAY_SCENE_SELECTED"
+    approved_fact_omitted = 0
     if source_revision is not None:
         if type(source_revision) is not int or source_revision < 0:
             raise ValueError("Select an exact nonnegative screenplay revision")
         screenplay = assemble_task_context(
             index.studio, project_id, source_revision, "scene_coverage",
             scene_id=screenplay_scene_id, max_lines=50)
+        # The Story Bible is *optional* and creator-owned. A read must not
+        # initialize it (which would CREATE TABLEs), turn proposals into canon,
+        # or match a character merely by a similar USD prim name.
+        project = index.studio.get_project(project_id)
+        if project["revision"] != source_revision:
+            raise RuntimeError("Screenplay changed while collecting actor canon")
+        selected_story_scene = next(
+            (row for row in project["scenes"]
+             if row["id"] == screenplay_scene_id), None)
+        if selected_story_scene is None:
+            raise RuntimeError("Selected screenplay scene disappeared")
+        scene_sha = sha_scene(selected_story_scene)
+        with index.studio._connection() as db:
+            present = {row[0] for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND "
+                "name IN ('bible_entities','bible_scene_links','bible_facts')")}
+            if len(present) != 3:
+                bible_status = "STORY_BIBLE_NOT_CREATED"
+            else:
+                accepted = db.execute("""
+                    SELECT e.id AS entity_id,e.name AS entity_name,
+                      e.kind AS entity_kind,e.revision AS entity_revision,
+                      f.id AS fact_id,f.fact_key,f.fact_value,f.story_scope,
+                      l.scene_sha,l.screenplay_revision
+                    FROM bible_entities e
+                    JOIN bible_scene_links l ON
+                      l.project_id=e.project_id AND l.entity_id=e.id
+                    JOIN bible_facts f ON
+                      f.project_id=e.project_id AND f.entity_id=e.id
+                    WHERE e.project_id=? AND l.scene_id=?
+                      AND f.status='accepted'
+                    ORDER BY e.kind,e.name,e.id,f.fact_key,f.id
+                    LIMIT ?
+                """,(project_id,screenplay_scene_id,MAX_APPROVED_FACTS+1)).fetchall()
+                stale_links = 0
+                for row in accepted:
+                    fact = dict(row)
+                    if (fact["scene_sha"] != scene_sha or
+                            fact["screenplay_revision"] != source_revision):
+                        stale_links += 1
+                        continue
+                    if len(approved_facts) < MAX_APPROVED_FACTS:
+                        approved_facts.append({
+                            "entity_id":fact["entity_id"],
+                            "entity_name":fact["entity_name"],
+                            "entity_kind":fact["entity_kind"],
+                            "entity_revision":fact["entity_revision"],
+                            "fact_id":fact["fact_id"],
+                            "key":fact["fact_key"],
+                            "value":fact["fact_value"],
+                            "scope":fact["story_scope"],
+                            "screenplay_scene_id":screenplay_scene_id,
+                            "scene_text_sha256":scene_sha,
+                            "creator_accepted":True,
+                            "usd_actor_binding_proven":False,
+                        })
+                approved_fact_omitted = max(
+                    0,len(accepted)-stale_links-len(approved_facts))
+                bible_status = ("HAS_STALE_SCENE_LINKS_OMITTED"
+                    if stale_links else "SCENE_LINKED_ACCEPTED_FACTS_ONLY")
+        # A matching character name is not a proven binding to a rig or
+        # OpenUSD actor. The actor/scene semantic link requires separate
+        # source-authorized registry data.
     # An immutable Take can remain historically valid when a new scene
     # revision exists; never describe an old Take as the current edit.
     heads = {r["object_id"]: r["head_revision"]
@@ -216,7 +321,12 @@ def assemble_film_crew_context(
         "active_events_truncated": truncated_events,
         "sound_events": known_sound,
         "sound_events_omitted": max(0, len(relevant_sound)-len(known_sound)),
+        "authored_camera_selection": shot_selection,
         "screenplay_scene_context": screenplay,
+        "approved_story_facts": approved_facts,
+        "approved_story_facts_omitted": approved_fact_omitted,
+        "story_bible_status": bible_status,
+        "screenplay_to_usd_actor_identity_verified": False,
         "no_unlisted_actors_or_sound_assumed": True,
         "visual_frames_rendered": False,
         "mastered_soundtrack_replayed": False,
