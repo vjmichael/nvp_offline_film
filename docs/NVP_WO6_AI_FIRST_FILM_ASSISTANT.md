@@ -19,8 +19,8 @@ A director requesting a different Take from the final DCP must preserve: `publis
 | **WO6-02** | Native FeatureJournal-backed origin resolver: reruns WO5's full indexed DCP/Take/PCM/J2K source audit, reports original per-reel Take/scene/temporal SHA and Film Time; host-injected only, read-only. Missing/retired/altered sources are refused. | **IMPLEMENTED, CI verdict pending; genuine 30m film still open.** |
 | **WO6-03** | Trusted-host scene/actor/camera/sound/shot/script/accepted-canon context from reopened frozen Takes, exact Film Time, bounded SHA provenance and omissions; native installed binary/license pin preflight. Full model/runtime readiness and installed app integration are later gates. | **IMPLEMENTED, exact-head native CI verdict pending.** |
 | **WO6-04** | Read-only SHA-pinned source-to-Take/edit/master/DCP impact graph, exact accepted Production Bible digest and typed fact continuity, separate director grants, optional 2K/4K 2/6/8ch capacity estimate, source-race/truncation refusal. | **IMPLEMENTED; exact-head CI verdict pending; installed creator UI remains WO6-07.** |
-| **WO6-05** | Native creator-confirmed operation bridges: new immutable OpenUSD Take plus distinct camera, blocking and lighting shot-local opinions. Separate human/host grants and contained workers. Sound/edit/color/DCP operations later. | **IMPLEMENTED FOR FOUR OPERATION CLASSES; CI AND INSTALLED ACCEPTANCE OPEN.** |
-| **WO6-06** | Durable per-task cancellation, atomic success/cancel fencing, single-supervisor lease, snapshot/events and restart/source-commit reconciliation receipts. | **INITIAL IMPLEMENTATION COMMITTED; NATIVE CI, INDEPENDENT PROCESS-TREE ATTESTATION AND INSTALLED RESTART GATES OPEN.** |
+| **WO6-05** | Creator-confirmed first-party operations: new immutable OpenUSD Take, camera/blocking/light shot opinions, non-destructive color decisions and exact Film Time camera-shot sequence. Sound/master/DCP physical operations remain. | **SIX SOURCE/DATA OPERATION CLASSES IMPLEMENTED; CI AND INSTALLED ACCEPTANCE OPEN.** |
+| **WO6-06** | Durable cancellation and atomic terminal transitions, source/receipt reconciliation, kernel-host lease, worker-side durable admission and authorized read-only task status. | **IMPLEMENTED FOR CURRENT NATIVE WORKERS; EXACT-HEAD CI, OS PROCESS-TREE ATTESTATION AND INSTALLED RESTART GATES OPEN.** |
 | **WO6-07** | End-to-end novice-and-professional desktop/installed AI-assisted scene/Take/edit/sound/render/review workflow with actual local model tests, camera/actor direction and performance/film-quality review. | **OPEN; depends on previous gates and real film assets.** |
 
 WO4 and WO5 remain independently **OPEN** for genuine full-resolution 30-minute original film, sustained installed picture and mastered audio, 60–90-minute actual feature, >=3-hour epic, native legally bundled release and independently validated SMPTE DCP Bv2.1/theater ingest.
@@ -250,3 +250,66 @@ host; release-grade per-turn policy adapters and creator GUI; durable
 crash/restart reconciliation against real installed NVP.exe; native editing,
 sound/PCM mastering, color and DCP action bridges; model-in-the-loop end-to-end
 filmmaking. The real WO5 cinema/film gates are unchanged and OPEN.
+
+## WO6-05/06 additional native operation and task-status closeout work (2026-11-07)
+
+**Implementation submitted; current exact-head native CI result is QUEUED/PENDING.
+Do not mark acceptance based on workflow creation.**
+
+**Additional actual first-party operations:** `backend/nvp_wo6_native_data_action.py`
+and `tools/nvp_wo6_data_worker.py` add a separate creator-confirmed,
+native-host-authorized worker for (1) non-destructive native color decisions
+using existing DA-06 `NativeColorDecisions` and (2) creator-authored exact
+Film Time camera-shot sequence/edit planning using existing DA-01
+`ExactTimeShotSequence`. Both require a new FilmIndex ID, currently
+SHA-verified source, exact typed immutable parameters, creator-confirmed
+creative payload, source-impact preview digest and independent native host
+tool grant. `revise_color` impact previews now accept a pinned frozen Take
+as the selected source, without suggesting that the original Take was graded
+or changed. The Film Time camera-shot operation preserves gaps and source
+camera paths; it is *not* a flat video editor/export, audible mix or completed
+film. The native worker verifies its result by reopening the actual
+content-addressed FilmIndex/TemporalLedger data.
+
+**Durable worker admission hardening:** all three host-owned worker types
+(Take, director shot, data decision) now also receive the true native
+TaskLedger SQLite path and host scheduler owner. The separate worker process
+read-only verifies the exact canonical approved spec SHA, active task,
+resource reservation, matching scheduler owner, and *absence* of durable
+cancellation before it can write a FilmIndex revision. The parent still
+rechecks fresh creator/native policy, source identity and final receipt.
+A copied task file, queued task, wrong owner, or cancelled task is not
+sufficient authority. Windows file URI construction now uses the trusted
+local Path URI rather than Linux-specific string escaping.
+
+**Read-only creator-facing status:** the existing `NativeAiReadHost`
+optionally accepts an actual host-injected `WO6DurableRecovery`. It then
+advertises `nvp.film.read_native_task_status.v1` and enforces the same
+per-turn authenticated read-policy digest plus exact creator/project task
+ownership. It returns bounded real TaskLedger event history, current
+state/phase, cancellation and latest append-only reconciliation evidence.
+Discovery and status reads issue *no* worker, edit, cancellation, approval,
+reservation, native file or release permissions. Without an injected
+native recovery host the capability is not advertised.
+
+**Expanded tests:** `tests/test_nvp_wo6_native_data_action.py` executes
+actual source-bound color and Film Time camera-timeline workers and checks
+new immutable revisions, preserved source Takes, denied/revoked grants,
+invalid color values, stale camera source, model catalog isolation, and an
+injected crash **after an actual DA-06 source commit but before worker
+receipt**. `tests/test_nvp_wo6_recovery.py` checks that queued/cancelled
+unadmitted workers are refused, exact SQLite owner/lease enforcement,
+authorized read-only task status and restarted ledger evidence, and
+post-commit receipt reconciliation. CI matrix includes Linux/Windows
+Python 3.11/3.13 with real `usd-core==26.11`, and Windows pywin32
+worker Job Object support.
+
+**Still blocked:** GitHub Actions exact-head native run is not yet a pass;
+repair must be based on real logs rather than guessed errors. Full installed
+NVP GUI/tool-identity integration, actual Windows/Linux process-tree
+termination attestation after hard host death, true multi-stage file-backed
+edit/sound/PCM/color/render/DCP creator-approved worker execution and
+independent source/media QC remain open. A data decision is not substitute
+evidence for two-hour 2K/4K render, genuine picture/audio screening, or
+SMPTE Bv2.1 theater ingest. The original 30-minute film and WO5 theatrical
+gates remain independent.
