@@ -146,6 +146,18 @@ class ProductionJournal:
         finally:
             db.close()
 
+    @contextmanager
+    def _read(self):
+        """WAL snapshot readers never acquire the production write lease."""
+        db=sqlite3.connect(str(self.db_path), timeout=15, isolation_level=None)
+        db.row_factory=sqlite3.Row
+        try:
+            db.execute("PRAGMA query_only=ON")
+            db.execute("PRAGMA busy_timeout=15000")
+            yield db
+        finally:
+            db.close()
+
     def _event(self, db, job_id, kind, detail):
         db.execute("""INSERT INTO production_events
                       (job_id,event_kind,detail,recorded_at) VALUES(?,?,?,?)""",
@@ -250,7 +262,7 @@ class ProductionJournal:
                 "segment_count":len(ordered),"production_dcp_accepted":False}
 
     def status(self, job_id):
-        with self._tx() as db:
+        with self._read() as db:
             job=db.execute("SELECT * FROM production_jobs WHERE job_id=?",
                            (job_id,)).fetchone()
             if job is None:
@@ -282,7 +294,7 @@ class ProductionJournal:
     def events(self, job_id, *, limit=200):
         if type(limit) is not int or not 1<=limit<=1000:
             raise ValueError("Bounded production event history required")
-        with self._tx() as db:
+        with self._read() as db:
             exists=db.execute("SELECT 1 FROM production_jobs WHERE job_id=?",
                               (job_id,)).fetchone()
             if exists is None:
@@ -314,7 +326,7 @@ class ProductionJournal:
     def list_jobs(self, project_id=None):
         if project_id is not None and not PROJECT_RE.fullmatch(project_id):
             raise ValueError("Invalid job project ID")
-        with self._tx() as db:
+        with self._read() as db:
             rows=db.execute(
                 """SELECT job_id,state,task_kind,updated_at FROM production_jobs
                    WHERE (? IS NULL OR project_id=?) ORDER BY created_at,job_id""",
