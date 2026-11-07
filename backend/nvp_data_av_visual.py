@@ -43,6 +43,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
         mesh_triangles=None
         binding=obj.get("asset")
         skin=skins.get(obj["path"])
+        asset_material=None
         if skin is not None and binding is not None:
             raise RuntimeError("Ambiguous original actor mesh and reusable asset")
         if binding is not None:
@@ -54,6 +55,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
                 raise RuntimeError("Live geometry does not match frozen USD asset SHA")
             shape=source["data"]["shape"]
             size=source["data"]["size_m"]
+            asset_material=source["data"].get("preview_material")
             if shape not in ("cube","sphere","mesh"):
                 raise RuntimeError("Unsupported original OpenUSD geometry")
             if shape=="mesh":
@@ -95,8 +97,11 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             "source_skinning":shape=="skinned_mesh",
             "source_rigged_actor":skin is not None,
             "source_skinning_tick":skin["source_skinning_tick"] if skin else None,
-            "source_color_rgb":skin["source_color_rgb"] if skin else None,
-            "source_material":skin.get("source_material") if skin else None,
+            "source_color_rgb":(
+                skin["source_color_rgb"] if skin else
+                asset_material["base_color_rgb"] if asset_material else None),
+            "source_material":(
+                skin.get("source_material") if skin else asset_material),
             "original_blend_shape_count":(
                 skin.get("original_blend_shape_count",0) if skin else 0),
             "native_geometry_status":(
