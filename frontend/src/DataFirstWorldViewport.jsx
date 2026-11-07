@@ -277,6 +277,7 @@ export default function DataFirstWorldViewport({
   const [localLook,setLocalLook]=useState(defaultWO2Look);
   const [lookWarning,setLookWarning]=useState('');
   const [selectedMaterial,setSelectedMaterial]=useState('');
+  const [selectedUvChannel,setSelectedUvChannel]=useState('base_color');
   const activeLook=presentationLook||localLook;
   const sceneRoles=Object.fromEntries(objects.filter(o=>
     typeof o?.path==='string'&&typeof o?.semantic_role==='string')
@@ -765,6 +766,47 @@ export default function DataFirstWorldViewport({
   useEffect(()=>{
     const state=env.current;
     if(!state)return;
+    try{
+      validateWO2Look(activeLook,sceneRoles);
+      const {lighting,environment,camera}=activeLook;
+      const colors={
+        neutral_studio:{sun:0xffffff,sky:0xffffff,ground:0x394552,
+                        background:0x121a2a},
+        soft_daylight:{sun:0xfff6e5,sky:0xeaf4ff,ground:0x536476,
+                       background:0x26364c},
+        golden_hour:{sun:0xffbb75,sky:0xffdbad,ground:0x6f4b41,
+                     background:0x47352e},
+        moonlight:{sun:0x92b9ff,sky:0x657ca5,ground:0x1d293b,
+                   background:0x0b1020},
+      };
+      const preset=colors[environment.preset];
+      state.sun.color.setHex(preset.sun);
+      state.sun.intensity=lighting.direct_intensity;
+      state.sun.castShadow=lighting.shadows;
+      state.sun.shadow.mapSize.set(
+        lighting.shadow_resolution,lighting.shadow_resolution);
+      state.sun.shadow.radius=lighting.shadow_softness;
+      state.sun.shadow.map?.dispose();
+      state.sun.shadow.map=null;
+      state.ambient.color.setHex(preset.sky);
+      state.ambient.groundColor.setHex(preset.ground);
+      state.ambient.intensity=lighting.ambient_intensity*
+        environment.intensity;
+      state.scene.background.setHex(preset.background);
+      state.scene.environmentIntensity=environment.reflections*
+        environment.intensity;
+      state.renderer.toneMapping=camera.tone_curve==='filmic_preview'?
+        THREE.ACESFilmicToneMapping:THREE.NoToneMapping;
+      state.renderer.toneMappingExposure=Math.pow(2,camera.exposure_ev);
+      state.configureDof(camera);
+      setLookWarning('');
+      state.requestRender();
+    }catch(error){setLookWarning(error.message);}
+  },[activeLook]);
+
+  useEffect(()=>{
+    const state=env.current;
+    if(!state)return;
     if(viewMode!=='authored'||!cameraPath){
       state.activeCamera=state.orbitCamera;
       state.requestRender();
@@ -798,6 +840,156 @@ export default function DataFirstWorldViewport({
       {sceneSha&&<> Immutable scene SHA: <code>{sceneSha.slice(0,16)}…</code></>}
       {viewMode==='orbit'?' Drag to orbit, scroll to inspect.':
         ' Looking through an authored OpenUSD scene camera.'} Live data, not a movie.</p>
+    <section aria-label="Creator cinematic presentation look">
+      <h3>Film look and material direction</h3>
+      <p className="fineprint">Change how the approved USD scene is presented,
+        not its original camera, actor, mesh or source images.
+        Filmic preview is an interactive look, not a certified ACES master.
+        Suggestions are editable and never automatically committed.</p>
+      <div className="actions">
+        {WO2_MOODS.map(mood=><button type="button" key={mood}
+          onClick={()=>setPresentation(suggestWO2Look(
+            mood,sceneRoles).look)}>
+          {mood.charAt(0).toUpperCase()+mood.slice(1)} lighting
+        </button>)}
+      </div>
+      <div className="actions">
+        <label>Lighting environment
+          <select aria-label="WO2 environment" value={activeLook.environment.preset}
+            onChange={e=>changeLook(x=>{x.environment.preset=e.target.value;})}>
+            <option value="neutral_studio">Neutral studio</option>
+            <option value="soft_daylight">Soft daylight</option>
+            <option value="golden_hour">Golden hour</option>
+            <option value="moonlight">Moonlight</option>
+          </select>
+        </label>
+        <label><input type="checkbox" checked={activeLook.lighting.shadows}
+          onChange={e=>changeLook(x=>{x.lighting.shadows=e.target.checked;})}/>
+          Cast and receive soft shadows</label>
+        <label>Shadow quality
+          <select aria-label="WO2 shadow resolution"
+            value={activeLook.lighting.shadow_resolution}
+            onChange={e=>changeLook(x=>{
+              x.lighting.shadow_resolution=Number(e.target.value);})}>
+            <option value={512}>Balanced</option>
+            <option value={1024}>High</option>
+            <option value={2048}>Very high</option>
+          </select>
+        </label>
+        <label>Shadow softness
+          <input type="range" min="0" max="12" step=".5"
+            aria-label="WO2 shadow softness"
+            value={activeLook.lighting.shadow_softness}
+            onChange={e=>changeLook(x=>{
+              x.lighting.shadow_softness=Number(e.target.value);})}/>
+        </label>
+        <label>Environment reflection strength
+          <input type="range" min="0" max="3" step=".1"
+            aria-label="WO2 reflection strength"
+            value={activeLook.environment.reflections}
+            onChange={e=>changeLook(x=>{
+              x.environment.reflections=Number(e.target.value);})}/>
+        </label>
+        <label>Exposure (stops)
+          <input type="range" min="-8" max="8" step=".1"
+            aria-label="WO2 camera exposure"
+            value={activeLook.camera.exposure_ev}
+            onChange={e=>changeLook(x=>{
+              x.camera.exposure_ev=Number(e.target.value);})}/>
+          {activeLook.camera.exposure_ev.toFixed(1)} EV
+        </label>
+        <label>Image view
+          <select aria-label="WO2 tone curve"
+            value={activeLook.camera.tone_curve}
+            onChange={e=>changeLook(x=>{
+              x.camera.tone_curve=e.target.value;})}>
+            <option value="filmic_preview">Filmic working preview</option>
+            <option value="linear">Neutral linear working preview</option>
+          </select>
+        </label>
+        <label><input type="checkbox"
+          checked={activeLook.camera.depth_of_field}
+          onChange={e=>changeLook(x=>{
+            x.camera.depth_of_field=e.target.checked;})}/>
+          Show optical depth of field</label>
+        {activeLook.camera.depth_of_field&&<>
+          <label>F-stop
+            <input type="range" min="1" max="22" step=".5"
+              aria-label="WO2 f-stop" value={activeLook.camera.f_stop}
+              onChange={e=>changeLook(x=>{
+                x.camera.f_stop=Number(e.target.value);})}/>
+            f/{activeLook.camera.f_stop.toFixed(1)}
+          </label>
+          <label>Focus distance (meters)
+            <input type="number" min=".1" max="10000" step=".1"
+              aria-label="WO2 focus distance"
+              value={activeLook.camera.focus_distance_m}
+              onChange={e=>changeLook(x=>{
+                x.camera.focus_distance_m=Number(e.target.value);})}/>
+          </label>
+        </>}
+        <label>Texture clarity
+          <select aria-label="WO2 texture filtering"
+            value={activeLook.textures.filter}
+            onChange={e=>changeLook(x=>{x.textures.filter=e.target.value;})}>
+            <option value="nearest">Pixel accurate</option>
+            <option value="bilinear">Smooth</option>
+            <option value="trilinear">Mipmapped (recommended)</option>
+          </select>
+        </label>
+      </div>
+      <div className="actions">
+        <label>Character or prop material
+          <select aria-label="WO2 physical material actor"
+            value={selectedMaterial}
+            onChange={e=>setSelectedMaterial(e.target.value)}>
+            <option value="">Select source actor or prop</option>
+            {bounded.filter(o=>['actor','prop','environment'].includes(
+              o.semantic_role)&&!o.gizmo_only).map(o=>
+              <option value={o.path} key={o.path}>{o.path}</option>)}
+          </select>
+        </label>
+        {selectedMaterial&&['actor','prop','environment'].includes(
+          sceneRoles[selectedMaterial])&&(()=>{
+          const physical=physicalMaterialLook(activeLook,selectedMaterial);
+          return <>
+            <label>Opacity
+              <input aria-label="WO2 material opacity" type="range"
+                min="0" max="1" step=".05" value={physical.opacity}
+                onChange={e=>changeLook(x=>{
+                  x.materials[selectedMaterial]={...physical,
+                    opacity:Number(e.target.value)};})}/>
+            </label>
+            <label>Glass / transmission
+              <input aria-label="WO2 material transmission" type="range"
+                min="0" max="1" step=".05" value={physical.transmission}
+                onChange={e=>changeLook(x=>{
+                  x.materials[selectedMaterial]={...physical,
+                    transmission:Number(e.target.value)};})}/>
+            </label>
+            <label>Refraction index
+              <input aria-label="WO2 material IOR" type="number"
+                min="1" max="2.5" step=".05" value={physical.ior}
+                onChange={e=>changeLook(x=>{
+                  x.materials[selectedMaterial]={...physical,
+                    ior:Number(e.target.value)};})}/>
+            </label>
+            <label>Thickness (m)
+              <input aria-label="WO2 material thickness" type="number"
+                min="0" max="10" step=".01" value={physical.thickness_m}
+                onChange={e=>changeLook(x=>{
+                  x.materials[selectedMaterial]={...physical,
+                    thickness_m:Number(e.target.value)};})}/>
+            </label>
+            <button type="button" onClick={()=>changeLook(x=>{
+              delete x.materials[selectedMaterial];})}>
+              Reset material presentation
+            </button>
+          </>;
+        })()}
+      </div>
+      {lookWarning&&<p role="alert">Presentation look: {lookWarning}</p>}
+    </section>
     <div className="actions">
       <button type="button" disabled={disabled}
         onClick={()=>{
