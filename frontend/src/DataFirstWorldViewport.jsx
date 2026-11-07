@@ -5,11 +5,35 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 // DA-04: evaluate OpenUSD source geometry IN THREE DIMENSIONS at the actual
 // audio presentation Film Time. There is no MP4, frame sequencer, texture
 // proxy, video transcoding or persistent picture. SHA-bound NVP procedural
-// cubes/spheres are exact assets; other objects remain clearly-marked gizmos.
+// meshes and UsdSkel actors are source-verified; unbound actors stay gizmos.
 function validMatrix(m){
   return Array.isArray(m)&&m.length===4&&
     m.every(r=>Array.isArray(r)&&r.length===4&&
       r.every(x=>typeof x==='number'&&Number.isFinite(x)));
+}
+
+function validateMeshData(item){
+  if(!Number.isFinite(item.size_m)||item.size_m<=0||item.size_m>10000)
+    throw Error('Untrusted USD mesh size');
+  const pts=item.mesh_points,faces=item.mesh_triangles;
+  if(!Array.isArray(pts)||pts.length<3||pts.length>2048||
+     !Array.isArray(faces)||faces.length<1||faces.length>4096||
+     !pts.every(p=>Array.isArray(p)&&p.length===3&&
+       p.every(v=>typeof v==='number'&&Number.isFinite(v)&&
+         Math.abs(v)<=item.size_m))||
+     !faces.every(f=>Array.isArray(f)&&f.length===3&&
+       new Set(f).size===3&&f.every(i=>
+         Number.isInteger(i)&&i>=0&&i<pts.length)))
+    throw Error('Untrusted frozen USD triangle topology or dynamic pose');
+  if(item.shape==='skinned_mesh'&&(
+      item.source_skinning!==true||
+      !/^(0|[1-9][0-9]*)$/.test(item.source_skinning_tick||'')||
+      !Array.isArray(item.source_color_rgb)||
+      item.source_color_rgb.length!==3||
+      !item.source_color_rgb.every(v=>
+        typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)))
+    throw Error('Skinned actor pose is not bound to original USD source');
+  return {pts,faces};
 }
 
 function shapeFor(item){
@@ -19,17 +43,8 @@ function shapeFor(item){
     item.size_m,item.size_m,item.size_m);
   if(item.shape==='sphere')return new THREE.SphereGeometry(
     item.size_m/2,24,16);
-  if(item.shape==='mesh'){
-    const pts=item.mesh_points,faces=item.mesh_triangles;
-    if(!Array.isArray(pts)||pts.length<3||pts.length>2048||
-       !Array.isArray(faces)||faces.length<1||faces.length>4096||
-       !pts.every(p=>Array.isArray(p)&&p.length===3&&
-         p.every(v=>typeof v==='number'&&Number.isFinite(v)&&
-           Math.abs(v)<=item.size_m))||
-       !faces.every(f=>Array.isArray(f)&&f.length===3&&
-         new Set(f).size===3&&f.every(i=>
-           Number.isInteger(i)&&i>=0&&i<pts.length)))
-      throw Error('Untrusted frozen USD triangle mesh');
+  if(item.shape==='mesh'||item.shape==='skinned_mesh'){
+    const {pts,faces}=validateMeshData(item);
     const geometry=new THREE.BufferGeometry();
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(
       pts.flat(),3));
@@ -43,6 +58,30 @@ function shapeFor(item){
     return new THREE.SphereGeometry(.22,12,8);
   }
   throw Error('Untrusted native geometry shape');
+}
+
+// Updates only disposable Three.js vertex buffers. Original USD binding,
+// weights and animation remain on the trusted native scene side.
+function updateSkinnedGeometry(geometry,item){
+  const {pts,faces}=validateMeshData(item);
+  const attr=geometry.getAttribute('position');
+  const index=geometry.getIndex();
+  if(!attr||attr.count!==pts.length||!index||
+     index.count!==faces.length*3)
+    throw Error('Frozen actor topology changed during native live pose');
+  let n=0;
+  for(const face of faces){
+    for(const vertex of face){
+      if(index.getX(n++)!==vertex)
+        throw Error('Live actor face indices changed without source revision');
+    }
+  }
+  for(let i=0;i<pts.length;i++){
+    attr.setXYZ(i,pts[i][0],pts[i][1],pts[i][2]);
+  }
+  attr.needsUpdate=true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
 }
 
 function usdMatrix(m){
@@ -168,9 +207,19 @@ export default function DataFirstWorldViewport({
     const incoming=new Set();
     for(const obj of bounded){
       if(typeof obj.path!=='string'||!validMatrix(obj.world_matrix))continue;
+      if(obj.shape==='skinned_mesh'){
+        // Never display a pose from a previous Film Time sample as current.
+        // A source update is allowed only for the requested exact tick.
+        try{
+          if(obj.source_skinning_tick!==String(tick))
+            throw Error('Stale source skinning result');
+          validateMeshData(obj);
+        }catch{continue;}
+      }
       incoming.add(obj.path);
-      const fingerprint=[obj.shape,obj.size_m,obj.semantic_role,
-        obj.geometry_asset_sha256||''].join(':');
+      const fingerprint=[obj.shape,
+        obj.shape==='skinned_mesh'?'skinned-source':obj.size_m,
+        obj.semantic_role,obj.geometry_asset_sha256||''].join(':');
       let mesh=state.meshes.get(obj.path);
       if(mesh&&mesh.userData.sourceGeometry!==fingerprint){
         state.world.remove(mesh);
@@ -184,15 +233,28 @@ export default function DataFirstWorldViewport({
             (obj.semantic_role==='camera'?0x38bdf8:
              obj.semantic_role==='actor'?0xc084fc:0xf59e0b):
             0x94a3b8;
+          const originalSkinColor=obj.shape==='skinned_mesh'?
+            new THREE.Color().setRGB(...obj.source_color_rgb):color;
           const material=new THREE.MeshStandardMaterial({
-            color,roughness:.8,metalness:.05,
-            side:obj.shape==='mesh'?THREE.DoubleSide:THREE.FrontSide});
+            color:originalSkinColor,roughness:.8,metalness:.05,
+            side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
+              THREE.DoubleSide:THREE.FrontSide});
           mesh=new THREE.Mesh(geometry,material);
           mesh.matrixAutoUpdate=false;
           mesh.userData.sourceGeometry=fingerprint;
           state.world.add(mesh);
           state.meshes.set(obj.path,mesh);
         }catch{incoming.delete(obj.path);continue;}
+      }
+      if(obj.shape==='skinned_mesh'){
+        try{
+          updateSkinnedGeometry(mesh.geometry,obj);
+          mesh.material.color.setRGB(...obj.source_color_rgb);
+        }catch{
+          // Malformed/late pose must never leave stale actor geometry visible.
+          incoming.delete(obj.path);
+          continue;
+        }
       }
       mesh.matrix.copy(usdMatrix(obj.world_matrix));
       mesh.matrixWorldNeedsUpdate=true;
@@ -275,7 +337,8 @@ export default function DataFirstWorldViewport({
     </ul>
     <p className="fineprint">This WebGL scene uses validated native
       OpenUSD transforms and source-verified procedural/triangle geometry.
-      Skinned actor playback, textures, physical materials, Hydra parity
-      and cinema-quality lighting still require separate acceptance.</p>
+      Original USD-skinned actor motion is a bounded live GPU derivative.
+      Facial blend shapes, texture/material fidelity, Hydra parity,
+      cinema lighting and installed GPU acceptance still require verification.</p>
   </section>;
 }
