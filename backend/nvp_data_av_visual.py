@@ -127,6 +127,8 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
                 asset_material["base_color_rgb"] if asset_material else None),
             "source_material":(
                 skin.get("source_material") if skin else asset_material),
+            "source_material_slots":(
+                source["data"].get("material_slots") if binding else None),
             "original_blend_shape_count":(
                 skin.get("original_blend_shape_count",0) if skin else 0),
             "native_geometry_status":(
