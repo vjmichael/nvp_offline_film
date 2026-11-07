@@ -44,7 +44,7 @@ def _original_texture_descriptors(index,pid,scene):
 
 
 def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
-                           camera_path,renderer="Storm",width=256,
+                           camera_path,renderer="Embree",width=256,
                            timeout_seconds=90,require_gpu=False,
                            native_take=None):
     if not isinstance(index,FilmIndex):
@@ -60,6 +60,9 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
         not camera_path.startswith("/World/") or
         len(camera_path)>256):
         raise ValueError("Unsafe independent renderer acceptance request")
+    if (renderer=="Storm" and not require_gpu) or (
+            renderer=="Embree" and require_gpu):
+        raise ValueError("Hydra renderer and GPU admission must agree")
     if native_take is not None:
         if (type(native_take) is not dict or
             set(native_take)!={"take_id","take_sha256","tick"} or
