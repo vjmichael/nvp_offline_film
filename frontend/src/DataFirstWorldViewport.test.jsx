@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import * as THREE from 'three';
-import {validateMeshData,updateSkinnedGeometry,validateSourceTexture,validateMaterialSlots}
+import {validateMeshData,updateSkinnedGeometry,validateSourceTexture,validateMaterialSlots,validatePBRChannelPackets}
   from './DataFirstWorldViewport.jsx';
 
 const actor={
@@ -221,5 +221,52 @@ describe('WO2 high-resolution original and derived viewport LOD',()=>{
   it('rejects a preview claiming a different source image',()=>{
     expect(()=>validateSourceTexture({...mat,texture_transport:{
       ...mat.texture_transport,original_width:512}},mesh)).toThrow();
+  });
+});
+
+describe('WO2 original PBR channel identity admission',()=>{
+  const sha='e'.repeat(64);
+  const image={
+    format:'nvp.original.usd_texture_png.v1',sha256:sha,
+    width:2,height:2,color_space:'sRGB',wrap:'repeat',
+    source_modified:false,
+  };
+  const packet={
+    ...image,original_width:2,original_height:2,
+    derived_preview:false,preview_sha256:sha,
+    png_base64:'iVBORw0KGgoAAAA',
+  };
+  const item={
+    shape:'mesh',mesh_uvs:[[0,0],[1,0],[0,1]],
+  };
+  const channels=['roughness','metallic','emission','normal','opacity'];
+  const material={
+    pbr_maps:Object.fromEntries(channels.map(ch=>[ch,image])),
+    pbr_map_transports:Object.fromEntries(
+      channels.map(ch=>[ch,packet])),
+  };
+  it('accepts five native source-verified channel transports',()=>{
+    const verified=validatePBRChannelPackets(material,item);
+    expect(Object.keys(verified)).toEqual(channels);
+    expect(verified.normal.sha256).toBe(sha);
+    expect(verified.opacity.preview_sha256).toBe(sha);
+  });
+  it('rejects missing channel, forged source hash and arbitrary shader',()=>{
+    const changed={...material,pbr_map_transports:{
+      ...material.pbr_map_transports,
+      normal:{...packet,sha256:'0'.repeat(64)},
+    }};
+    expect(()=>validatePBRChannelPackets(changed,item))
+      .toThrow(/Unverified/);
+    const missing={...material,pbr_map_transports:{
+      roughness:packet,
+    }};
+    expect(()=>validatePBRChannelPackets(missing,item))
+      .toThrow(/incomplete/);
+    const injected={...material,pbr_maps:{
+      ...material.pbr_maps,evilShader:image,
+    }};
+    expect(()=>validatePBRChannelPackets(injected,item))
+      .toThrow(/Unsupported/);
   });
 });
