@@ -33,7 +33,7 @@ describe('WO5 selected original source native A/V viewer',()=>{
     try{
       render(<DataFirstAVPanel projectId={project}
         nativeBridge={native} initialTakeId="ApprovedWO5SourceTake"
-        initialSourceSample={2000}/>);
+        initialTakeSha256={shaB} initialSourceSample={2000}/>);
       await waitFor(()=>expect(screen.getByLabelText(
         'Native frozen Digital Take').value).toBe('ApprovedWO5SourceTake'));
       expect(screen.getByLabelText('Native source sample seek').value).toBe('2000');
@@ -60,10 +60,27 @@ describe('WO5 selected original source native A/V viewer',()=>{
     };
     render(<DataFirstAVPanel projectId={project}
       nativeBridge={native} initialTakeId="ApprovedWO5SourceTake"
-      initialSourceSample={2000}/>);
+      initialTakeSha256={shaB} initialSourceSample={2000}/>);
     await waitFor(()=>expect(screen.getByLabelText(
       'Native frozen Digital Take').value).toBe(''));
-    expect(screen.getByText(/exact approved original Take is missing/)).toBeTruthy();
+    expect(screen.getByText(/exact approved original Take or source SHA is missing/)).toBeTruthy();
     expect(native.data_av_begin).not.toHaveBeenCalled();
   });
+  it('rejects a same-named original Take when its native FilmIndex SHA changed',async()=>{
+    const native={
+      data_av_catalog:vi.fn(async()=>({
+        format:'nvp.data_av.native_session.v1',status:'AVAILABLE',
+        ffmpeg_runtime_required:false,takes:[sources[1]]
+      })),
+      data_av_begin:vi.fn(),data_av_audio_window:vi.fn(),
+      data_av_scene_at:vi.fn(),data_av_stop:vi.fn()
+    };
+    render(<DataFirstAVPanel projectId={project}
+      nativeBridge={native} initialTakeId="ApprovedWO5SourceTake"
+      initialTakeSha256={shaA} initialSourceSample={2000}/>);
+    await waitFor(()=>expect(screen.getByLabelText(
+      'Native frozen Digital Take').value).toBe(''));
+    expect(native.data_av_begin).not.toHaveBeenCalled();
+  });
+
 });
