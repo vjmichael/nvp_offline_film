@@ -144,6 +144,52 @@ def derived_look_stage(stage,scene_record,look):
         if found!=set(channels):
             raise RuntimeError(
                 "Original source UV image unavailable for requested channel")
+    # The director's camera/aperture choices remain non-destructive source
+    # presentation. USD fStop=0 explicitly disables depth of field.
+    camera_count=0
+    for path,role in roles.items():
+        if role!="camera":continue
+        camera=UsdGeom.Camera(derived.GetPrimAtPath(path))
+        if not camera:
+            raise RuntimeError("Authored USD camera missing from look stage")
+        camera.GetFStopAttr().Set(
+            clean["camera"]["f_stop"]
+            if clean["camera"]["depth_of_field"] else 0.)
+        camera.GetFocusDistanceAttr().Set(
+            clean["camera"]["focus_distance_m"])
+        camera.GetPrim().CreateAttribute(
+            "nvp:lookExposureEV",Sdf.ValueTypeNames.Float).Set(
+            clean["camera"]["exposure_ev"])
+        camera.GetPrim().CreateAttribute(
+            "nvp:lookViewCurve",Sdf.ValueTypeNames.String).Set(
+            clean["camera"]["tone_curve"])
+        camera_count+=1
+
+    # Mip filter policy is used by a renderer when generating source-image
+    # samples. USD PreviewSurface has no standard anisotropy input; keep
+    # that value as declared presentation metadata rather than silently
+    # claiming that each Hydra delegate must implement it.
+    image_count=0
+    for prim in derived.Traverse():
+        image=UsdShade.Shader(prim)
+        if not image:continue
+        identifier=image.GetIdAttr().Get()
+        if identifier not in ("UsdUVTexture","ND_image_color3","ND_image_float"):
+            continue
+        if not image.GetInput("file"):continue
+        image.GetPrim().CreateAttribute(
+            "nvp:lookTextureFilter",
+            Sdf.ValueTypeNames.String).Set(clean["textures"]["filter"])
+        image.GetPrim().CreateAttribute(
+            "nvp:lookMaxAnisotropy",
+            Sdf.ValueTypeNames.Int).Set(clean["textures"]["anisotropy"])
+        if identifier.startswith("ND_image_"):
+            image.CreateInput(
+                "filtertype",Sdf.ValueTypeNames.String).Set(
+                    "closest" if clean["textures"]["filter"]=="nearest"
+                    else "linear")
+        image_count+=1
+
     # An explicit *derived* lighting rig is distinct from original lights.
     # The source scene's light elements are not moved or rewritten.
     rig=UsdGeom.Xform.Define(derived,"/World/WO2PresentationRig")
@@ -176,6 +222,8 @@ def derived_look_stage(stage,scene_record,look):
         "original_source_unchanged":True,
         "material_count":len(material_paths),
         "uv_transform_count":uv_count,
+        "derived_camera_count":camera_count,
+        "derived_texture_filter_count":image_count,
         "derived_lights":["UsdLux.DistantLight","UsdLux.DomeLight"],
         "environment_reflection_hdr_verified":False,
         "optical_dof_physically_calibrated":False,
