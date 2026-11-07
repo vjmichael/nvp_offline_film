@@ -6,6 +6,15 @@ import React,{useEffect,useMemo,useState} from 'react';
 // uses exact *integer decimal strings* to avoid JS number rounding errors.
 const T=7056000000n;
 const US=7056n;
+const MAX_TICK=(1n<<63n)-1n;
+
+function exactTick(value){
+  if(typeof value!=='string'||!/^(0|[1-9][0-9]*)$/.test(value))
+    throw Error('Use a canonical nonnegative integer Film Time tick.');
+  const n=BigInt(value);
+  if(n>MAX_TICK)throw Error('Film Time exceeds signed 64-bit tick range.');
+  return n;
+}
 
 function secondsFromTicks(value){
   const n=BigInt(value);
@@ -36,6 +45,10 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
   const [exactDuration,setExactDuration]=useState(null);
   const [start,setStart]=useState('0');
   const [seconds,setSeconds]=useState('3');
+  const [tickMode,setTickMode]=useState(false);
+  const [startTick,setStartTick]=useState('0');
+  const [lengthTick,setLengthTick]=useState((3n*T).toString());
+  const [durationTick,setDurationTick]=useState((60n*T).toString());
   const [pattern,setPattern]=useState('continuous');
   const [revision,setRevision]=useState(0);
   const [timelineSha,setTimelineSha]=useState('');
@@ -72,7 +85,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
 
   useEffect(()=>{
     setCameraPath(source?.cameras?.[0]?.path||'');
-    setShots([]);setRevision(0);setTimelineSha('');setExactDuration(null);setNotice('');
+    setShots([]);setRevision(0);setTimelineSha('');setExactDuration(null);setTickMode(false);setNotice('');
     if(!source)return;
     let active=true;
     api('/projects/'+encodeURIComponent(project.id)+
@@ -90,7 +103,9 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
         setRevision(x.revision);setTimelineSha(x.document_sha256);
         const display=secondsFromTicks(x.duration_tick);
         setExactDuration(display===null?x.duration_tick:null);
+        setDurationTick(x.duration_tick);
         if(display!==null)setDuration(display);
+        else setTickMode(true);
       }).catch(e=>{
         // A new scene has no timeline yet; do not convert/read old 24-fps
         // sequences as native source data by guessing their timing.
@@ -104,7 +119,10 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
     setError('');
     if(!source||!cameraPath)return;
     try{
-      const first=ticks(start),last=(BigInt(first)+BigInt(ticks(seconds))).toString();
+      const first=(tickMode?exactTick(startTick):exactTick(ticks(start))).toString();
+      const length=tickMode?exactTick(lengthTick):exactTick(ticks(seconds));
+      const last=(exactTick(first)+length).toString();
+      exactTick(last);
       if(BigInt(first)>=BigInt(last))throw Error('Shot duration must be positive.');
       if(shots.length>=128)throw Error('Maximum 128 shot observations per sequence.');
       if(shots.length&&BigInt(first)<BigInt(shots.at(-1).end_tick))
@@ -113,6 +131,7 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
       setShots(a=>[...a,{shot_id:'Shot'+String(a.length+1).padStart(3,'0'),
         camera_path:cameraPath,pattern,start_tick:first,end_tick:last}]);
       const micros=BigInt(last)/US;
+      setStartTick(last);
       setStart((micros/1000000n).toString()+
         ((micros%1000000n)!==0n?'.'+(micros%1000000n).toString()
           .padStart(6,'0').replace(/0+$/,''):''));
@@ -124,11 +143,11 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
     if(!source||!shots.length||busy)return;
     setError('');setNotice('');
     try{
-      if(exactDuration!==null)throw Error('Exact sub-microsecond sequence duration is read-only until a precise-tick editor is available.');
-      const requested=ticks(duration);
+      const requested=(tickMode?exactTick(durationTick):exactTick(ticks(duration))).toString();
       const far=shots.reduce((a,s)=>BigInt(s.end_tick)>a?
         BigInt(s.end_tick):a,0n);
       const end=far>BigInt(requested)?far:BigInt(requested);
+      exactTick(end.toString());
       await action(async()=>{
         const next=await api('/projects/'+encodeURIComponent(project.id)+
           '/film/native-time-shots/'+encodeURIComponent(timelineId),'POST',{
@@ -141,7 +160,8 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
            next.video_frames_created!==false||
            next.shots.length!==shots.length)
           throw Error('Published timeline did not preserve source identity.');
-        setRevision(next.revision);setTimelineSha(next.document_sha256);setExactDuration(null);
+        setRevision(next.revision);setTimelineSha(next.document_sha256);
+        setDurationTick(next.duration_tick);setExactDuration(null);
         setNotice('Saved exact-time source revision '+next.revision+
           '. No frames, audio master or Digital Take generated.');
       });
@@ -194,20 +214,32 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
             {c.label}</option>)}
         </select>
       </label>
-      <label>Start at Film Time (seconds, up to 6 decimal places)
-        <input value={start} onChange={e=>setStart(e.target.value)}/></label>
-      <label>Observation duration (seconds)
-        <input value={seconds} onChange={e=>setSeconds(e.target.value)}/></label>
+      <label><input type="checkbox" checked={tickMode}
+        onChange={e=>setTickMode(e.target.checked)}/> Author exact integer Film Time ticks</label>
+      {tickMode?<>
+        <label>Start Film Time tick
+          <input aria-label="Start Film Time tick" value={startTick} onChange={e=>setStartTick(e.target.value)}/></label>
+        <label>Observation duration ticks
+          <input aria-label="Observation duration ticks" value={lengthTick} onChange={e=>setLengthTick(e.target.value)}/></label>
+      </>:<>
+        <label>Start at Film Time (seconds, up to 6 decimal places)
+          <input value={start} onChange={e=>setStart(e.target.value)}/></label>
+        <label>Observation duration (seconds)
+          <input value={seconds} onChange={e=>setSeconds(e.target.value)}/></label>
+      </>}
       <label>Camera coverage
         <select value={pattern} onChange={e=>setPattern(e.target.value)}>
           {SHAPES.map(x=><option key={x} value={x}>{x.replaceAll('_',' ')}</option>)}
         </select>
       </label>
       <button disabled={busy||!source} onClick={appendShot}>Add timed camera observation</button>
-      <label>Film Time duration limit (seconds)
-        <input value={duration} onChange={e=>setDuration(e.target.value)}/></label>
+      {tickMode?<label>Film Time duration limit (exact ticks)
+        <input aria-label="Film Time duration limit ticks" value={durationTick}
+          onChange={e=>setDurationTick(e.target.value)}/></label>:
+        <label>Film Time duration limit (seconds)
+          <input value={duration} onChange={e=>setDuration(e.target.value)}/></label>}
       <div className="actions">
-        <button disabled={busy||!shots.length||!source||exactDuration!==null} onClick={save}>
+        <button disabled={busy||!shots.length||!source||(!tickMode&&exactDuration!==null)} onClick={save}>
           Save immutable timing revision</button>
         <button disabled={busy||!shots.length} onClick={()=>{
           setShots(s=>s.slice(0,-1));setTimelineSha('');
