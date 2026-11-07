@@ -493,6 +493,27 @@ class NativeSceneLinearRaster:
                             srgb<=.04045,srgb/12.92,
                             ((srgb+.055)/1.055)**2.4).astype(np.float32)
                     texture=texture_cache[key]
+                source_maps=(obj.get("source_material") or {}).get("pbr_maps") or {}
+                material_maps={}
+                if source_maps:
+                    if ((uvs is None and face_uvs is None) or
+                        (uvs is not None and len(uvs)!=len(raw)) or
+                        (face_uvs is not None and len(face_uvs)!=len(faces))):
+                        raise RuntimeError("PBR channel maps require real original UVs")
+                    from backend.nvp_native_usd_texture import verified_texture
+                    for channel,descriptor in source_maps.items():
+                        key=descriptor["sha256"]
+                        cache_key=("pbr",channel,key)
+                        if cache_key not in texture_cache:
+                            w,h,rgba=verified_texture(
+                                self.index,project_id,descriptor)[1]
+                            pixels=np.frombuffer(rgba,dtype=np.uint8).reshape(
+                                h,w,4)[:,:,:3].astype(np.float32)/255.
+                            texture_cache[cache_key]=(
+                                np.where(pixels<=.04045,pixels/12.92,
+                                    ((pixels+.055)/1.055)**2.4).astype(np.float32)
+                                if channel=="emission" else pixels)
+                        material_maps[channel]=texture_cache[cache_key]
                 default_materials+=int(surface[3])
                 actor_shapes+=int(obj["shape"]=="skinned_mesh")
                 transformed=[_array3(_apply(obj["world_matrix"],p)) for p in raw]
@@ -517,7 +538,9 @@ class NativeSceneLinearRaster:
                                  else None),
                         uv_face=(face_uvs[face_index] if face_uvs is not None
                                  else [uvs[i] for i in face]
-                                 if texture is not None else None)):
+                                 if texture is not None or material_maps else None),
+                        pbr_maps=(material_maps if
+                                  face_index not in face_surfaces else None)):
                         rasterized+=1
                         textured_triangles+=int(
                             texture is not None and face_index not in face_surfaces)
