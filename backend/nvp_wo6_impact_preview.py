@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections import deque
 from hashlib import sha256
 import json
+import re
 
 from backend.nvp_bible_context import canon_snapshot
 from backend.nvp_film_index import FilmIndex, _id, _require_pid, _sha
@@ -80,7 +81,8 @@ BIBLE_CORE = frozenset({
 BIBLE_FULL = BIBLE_CORE | frozenset({
     "timeline_edges", "timeline_scene_marks", "timeline_knowledge",
     "scene_mind_beats", "scene_mind_changes", "scene_mind_statements",
-    "scene_mind_reviews",
+    "scene_mind_suggestion_reviews",
+    "timeline_state", "scene_mind_state",
 })
 
 
@@ -123,6 +125,8 @@ def _bible_snapshot(studio, project_id, scene_id, revision, expected_digest):
         names = {row[0] for row in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         if not BIBLE_FULL.issubset(names):
+            if expected_digest is not None:
+                raise RuntimeError("Approved Bible digest cannot be verified without initialized Bible")
             return {
                 "status": "PRODUCTION_BIBLE_NOT_FULLY_INITIALIZED",
                 "digest": None, "screenplay_scene_id": scene_id,
@@ -160,7 +164,8 @@ def _fact_impact(studio, project_id, scene_id, bible_fact_id):
         return None
     if scene_id is None:
         raise ValueError("Bible fact impact requires an exact screenplay scene")
-    _id(bible_fact_id, "approved Story Bible fact")
+    if type(bible_fact_id) is not str or not re.fullmatch(r"[0-9a-f]{32}", bible_fact_id):
+        raise ValueError("Approved Story Bible fact ID must be a stable 32-hex UUID")
     with studio._connection() as db:
         existing = {row[0] for row in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
