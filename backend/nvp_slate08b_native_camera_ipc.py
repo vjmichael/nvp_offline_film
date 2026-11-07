@@ -499,6 +499,11 @@ class TrustedDesktopCameraBridge:
                 points=doc["points"],triangles=doc["triangles"],
                 mesh_uvs=doc.get("mesh_uvs"),face_uvs=doc.get("face_uvs"),
                 preview_material=controls,texture_png=png,
+                material_slots=(
+                    [{key:slot[key] for key in ("faces","base_color_rgb",
+                                                "roughness","metallic")}
+                     for slot in doc["material_slots"]]
+                    if doc.get("material_slots") else None),
                 expected_revision=revision)
             return {"format":"nvp.native.texture_mesh_revision.v1",
                     "status":"NEW_SOURCE_REVISION",
