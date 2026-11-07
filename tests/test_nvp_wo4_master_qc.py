@@ -11,7 +11,7 @@ class MasterQCTests(unittest.TestCase):
             self.source,source_sha256=sha256(self.source).hexdigest(),
             original_take_sha256="a"*64,cinema_frames=3,
             channel_layout="stereo",creator_approved=True)
-        self.rgb=b"\x00\x00\x00\x00\x0f\x00\x00\x00\xff\x0f\x00\x00"
+        self.rgb=b"\x00\x00\x00\x0f\x00\x00\x0f\xff\x00\x00\x00\x00"
         self.picture={
             "format":"nvp.wo4.xyz12_master_candidate.v1",
             "original_take_sha256":"a"*64,"xyz12":self.rgb,
