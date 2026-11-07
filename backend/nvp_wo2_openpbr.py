@@ -154,9 +154,25 @@ def verify_openpbr_texture(stage,material_path,material,
         ("specular_roughness",roughness),
     ):
         value=shader.GetInput(key)
-        if (not value or value.HasConnectedSource() or
-            not math.isclose(float(value.GetAttr().Get()),
-                float(expected),rel_tol=1e-5,abs_tol=1e-5)):
+        if not value:
+            raise RuntimeError("MaterialX source scalar changed")
+        # PBR channel maps intentionally connect the exact immutable
+        # MaterialX image output. The prior check rejected ALL connected
+        # scalar inputs and prevented native WebView2 source scene loading.
+        # Preserve source custody by allowing ONLY the expected typed
+        # bounded MaterialX channel path, never arbitrary shader rewiring.
+        if value.HasConnectedSource():
+            expected_channel={
+                "base_metalness":"Metallic",
+                "specular_roughness":"Roughness"}[key]
+            connection=value.GetConnectedSource()
+            if (not connection or
+                    str(connection[0].GetPrim().GetPath())!=
+                    material_path+"/MtlxMap_"+expected_channel or
+                    connection[1]!="out"):
+                raise RuntimeError("MaterialX source scalar changed")
+        if not math.isclose(float(value.GetAttr().Get()),
+                            float(expected),rel_tol=1e-5,abs_tol=1e-5):
             raise RuntimeError("MaterialX source scalar changed")
     return {"format":FORMAT,
             "materialx_image_graph_authored":True,
