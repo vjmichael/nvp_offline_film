@@ -25,6 +25,8 @@ def register_mastering_decision(index:FilmIndex,pid,*,take_id,take_revision,
     _id(take_id,"source Take")
     _id(decision_id,"new mastering presentation")
     _sha(take_sha256)
+    if index.history(pid,decision_id):
+        raise FileExistsError("Mastering decision IDs cannot be revised or reused")
     take=index.read_revision(pid,take_id,take_revision)
     if (take["kind"]!="take" or take["document_sha256"]!=take_sha256
             or take["data"].get("frozen") is not True):
@@ -107,6 +109,8 @@ def register_mastering_decision(index:FilmIndex,pid,*,take_id,take_revision,
             !=take_sha256 or
             verifier.verify_take(pid,take_id)["take_document_sha256"]!=take_sha256):
         raise PermissionError("Original Take changed during creator approval")
+    if index.history(pid,decision_id):
+        raise FileExistsError("Mastering decision was committed during consent")
     # Register a bounded JSON receipt only. Real XYZ/PCM are derivatives,
     # not source-of-truth film takes or mutable original recording blobs.
     data=dict(approved)
