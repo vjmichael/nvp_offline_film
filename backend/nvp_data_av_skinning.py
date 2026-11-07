@@ -136,6 +136,43 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
         if any(not math.isfinite(x) or not 0<=x<=1 for x in color):
             raise RuntimeError("Original USD actor has untrusted display color")
         material=pose["source_preview_material"]
+        descriptor=rig.get("texture")
+        if descriptor is not None:
+            if source_uvs is None:
+                raise RuntimeError("Original textured skin has no authentic UVs")
+            from pxr import UsdShade
+            from backend.nvp_native_usd_texture import (
+                verified_texture,texture_transport)
+            verified_texture(index,project_id,descriptor)
+            base=path+"/Rig/Material"
+            shader=UsdShade.Shader(
+                stage.GetPrimAtPath(base+"/PreviewSurface"))
+            tex=UsdShade.Shader(stage.GetPrimAtPath(base+"/Texture"))
+            uvreader=UsdShade.Shader(stage.GetPrimAtPath(base+"/Primvar"))
+            if (not shader or not tex or not uvreader or
+                tex.GetIdAttr().Get()!="UsdUVTexture" or
+                uvreader.GetIdAttr().Get()!="UsdPrimvarReader_float2" or
+                uvreader.GetInput("varname").Get()!="st" or
+                str(tex.GetInput("file").Get().path)!=
+                    descriptor["usd_asset_path"] or
+                tex.GetInput("sourceColorSpace").Get()!="sRGB" or
+                tex.GetInput("wrapS").Get()!="repeat" or
+                tex.GetInput("wrapT").Get()!="repeat"):
+                raise RuntimeError("Frozen rig shader texture graph changed")
+            color_source=shader.GetInput("diffuseColor").GetConnectedSource()
+            uv_source=tex.GetInput("st").GetConnectedSource()
+            if (not color_source or not uv_source or
+                str(color_source[0].GetPrim().GetPath())!=base+"/Texture" or
+                color_source[1]!="rgb" or
+                str(uv_source[0].GetPrim().GetPath())!=base+"/Primvar" or
+                uv_source[1]!="result"):
+                raise RuntimeError("Original rig texture wiring is invalid")
+            material={**material,"texture":descriptor,
+                      "texture_images_loaded":True,
+                      "texture_transport":texture_transport(
+                          index,project_id,descriptor)}
+        elif material.get("texture_images_loaded") is True:
+            raise RuntimeError("Original rig falsely reports loaded texture")
         if (any(abs(x-y)>1e-5 for x,y in
                 zip(material["base_color_rgb"],color)) or
             material["original_source_modified"] is not False):
