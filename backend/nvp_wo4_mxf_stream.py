@@ -105,7 +105,7 @@ def wrap_streamed_pcm_mxf(wrap:ApprovedCodecBinary,info:ApprovedCodecBinary,
         if (after!=source_sha or size_after!=source_size or
                 _pcm_digest(path,frames,len(channels))!=candidate["master_pcm_sha256"]):
             raise PermissionError("Approved sound changed during native MXF encoding")
-        with file.open("rb") as stream:
+        with file.open("rb+") as stream:
             os.fsync(stream.fileno())
         os.link(file,target)
         _fsync_directory(root)
