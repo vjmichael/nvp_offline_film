@@ -223,7 +223,8 @@ def _shade(points,surface,lights,eye):
     return tuple(out)
 
 
-def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np):
+def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
+                   texture=None,uv_face=None):
     a,b,c=tri
     x0,y0,z0=a;x1,y1,z1=b;x2,y2,z2=c
     if (not all(math.isfinite(v) for v in (
@@ -253,7 +254,24 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np):
     if not np.any(visible):return False
     crop[visible]=zz[visible]
     out=buffer[lo_y:hi_y+1,lo_x:hi_x+1,:3]
-    out[visible]=shade
+    if texture is None:
+        out[visible]=shade
+    else:
+        if uv_face is None or len(uv_face)!=3:
+            raise RuntimeError("Frozen source mesh texture is missing UVs")
+        inv_safe=np.where(inv>0,inv,1.)
+        u=sum(w*uv[0]/z for w,uv,z in (
+            (w0,uv_face[0],z0),(w1,uv_face[1],z1),
+            (w2,uv_face[2],z2)))/inv_safe
+        v=sum(w*uv[1]/z for w,uv,z in (
+            (w0,uv_face[0],z0),(w1,uv_face[1],z1),
+            (w2,uv_face[2],z2)))/inv_safe
+        tex_h,tex_w=texture.shape[:2]
+        xx=np.floor(np.mod(u,1.)*tex_w).astype(np.int64)
+        yy=np.floor((1.-np.mod(v,1.))*tex_h).astype(np.int64)%tex_h
+        sample=texture[yy,xx,:3]
+        # Approximate source-light response, not full Hydra equivalence.
+        out[visible]=np.asarray(shade,dtype=np.float32)*sample[visible]
     return True
 
 
@@ -320,6 +338,8 @@ class NativeSceneLinearRaster:
             rasterized=0
             default_materials=0
             actor_shapes=0
+            textured_triangles=0
+            texture_cache={}
             for obj in visual["objects"]:
                 if obj["semantic_role"] in ("light","camera"):continue
                 if obj["shape"] in ("gizmo","missing_rig_geometry"):
@@ -332,6 +352,24 @@ class NativeSceneLinearRaster:
                 if polygons>MAX_TRIANGLES:
                     raise RuntimeError("Source-authoritative color triangle budget exceeded")
                 surface=_surface(obj)
+                texture=None
+                uvs=obj.get("mesh_uvs")
+                descriptor=(obj.get("source_material") or {}).get("texture")
+                if descriptor is not None:
+                    if obj["shape"]!="mesh" or uvs is None or (
+                        len(uvs)!=len(raw)):
+                        raise RuntimeError("USD texture requires original mesh UV primvar")
+                    from backend.nvp_native_usd_texture import verified_texture
+                    key=descriptor["sha256"]
+                    if key not in texture_cache:
+                        w,h,rgba=verified_texture(
+                            self.index,project_id,descriptor)[1]
+                        srgb=np.frombuffer(rgba,dtype=np.uint8).reshape(
+                            h,w,4)[:,:,:3].astype(np.float32)/255.
+                        texture_cache[key]=np.where(
+                            srgb<=.04045,srgb/12.92,
+                            ((srgb+.055)/1.055)**2.4).astype(np.float32)
+                    texture=texture_cache[key]
                 default_materials+=int(surface[3])
                 actor_shapes+=int(obj["shape"]=="skinned_mesh")
                 transformed=[_array3(_apply(obj["world_matrix"],p)) for p in raw]
@@ -350,8 +388,11 @@ class NativeSceneLinearRaster:
                     original_points=[transformed[i] for i in face]
                     if _draw_triangle(
                         color,depth,verts,original_points,
-                        surface,lights,eye,np):
+                        surface,lights,eye,np,texture=texture,
+                        uv_face=([uvs[i] for i in face]
+                                 if texture is not None else None)):
                         rasterized+=1
+                        textured_triangles+=int(texture is not None)
             receipt={
                 "format":FORMAT,"time_tick":str(tick),
                 "original_take_sha256":take_sha256,
@@ -362,6 +403,8 @@ class NativeSceneLinearRaster:
                 "width":WIDTH,"height":HEIGHT,
                 "source_geometry_triangles":polygons,
                 "rasterized_triangles":rasterized,
+                "source_uv_texture_rasterized_triangles":textured_triangles,
+                "texture_shading_matches_hydra":False,
                 "actual_usd_skinned_actors":actor_shapes,
                 "original_usd_sphere_lights":len(lights),
                 "neutral_default_material_count":default_materials,
