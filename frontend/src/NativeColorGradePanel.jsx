@@ -29,6 +29,11 @@ export default function NativeColorGradePanel({project,api,action,busy}){
   const [reviewTick,setReviewTick]=useState('0');
   const [preview,setPreview]=useState(null);
   const [reviewBusy,setReviewBusy]=useState(false);
+  const [exportBusy,setExportBusy]=useState(false);
+  const [presentationId,setPresentationId]=useState('ACESPresentation001');
+  const [outputFps,setOutputFps]=useState('24');
+  const [outputCamera,setOutputCamera]=useState('');
+  const [packageReceipt,setPackageReceipt]=useState(null);
   const take=takes.find(t=>t.take_id===takeId);
 
   useEffect(()=>{
@@ -66,6 +71,7 @@ export default function NativeColorGradePanel({project,api,action,busy}){
          !Array.isArray(result.takes))throw Error('Native source catalog rejected');
       setTakes(result.takes);
       setTakeId(result.takes[0]?.take_id||'');
+      setOutputCamera(result.takes[0]?.source_cameras?.[0]||'');
     }).catch(e=>{if(valid)setError(e.message);});
     return ()=>{valid=false;};
   },[native,project.id]);
@@ -73,8 +79,14 @@ export default function NativeColorGradePanel({project,api,action,busy}){
   useEffect(()=>{
     setRevision(0);setParams(DEFAULTS);
     setSavedDirty(false);setPreview(null);setReviewTick('0');
+    setPackageReceipt(null);
     setMessage('');
   },[takeId,gradeId]);
+
+  useEffect(()=>{
+    setOutputCamera(take?.source_cameras?.[0]||'');
+    setPackageReceipt(null);
+  },[takeId,takes]);
 
   async function reopen(){
     if(!gradeId)return;
@@ -169,6 +181,55 @@ export default function NativeColorGradePanel({project,api,action,busy}){
     finally{setReviewBusy(false);}
   }
 
+  async function publishACESPackage(){
+    if(!take||!acesPolicy||!native||exportBusy||reviewBusy||
+       busy||!revision||savedDirty||!outputCamera)return;
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,60}$/.test(presentationId)){
+      setError('Choose a unique, safe non-destructive presentation ID.');
+      return;
+    }
+    setExportBusy(true);setError('');setMessage('');setPackageReceipt(null);
+    try{
+      const saved=await api('/projects/'+encodeURIComponent(project.id)+
+        '/film/native-color/'+encodeURIComponent(gradeId));
+      if(saved?.format!=='nvp.data_first.color_decision.v1'||
+         saved.take_sha256!==take.take_document_sha256||
+         saved.revision!==revision||
+         saved.source_modified!==false||
+         saved.ffmpeg_used!==false)
+        throw Error('Only the exact saved source-bound grade can be exported');
+      const packaged=await native.data_av_export_native_aces_package({
+        project_id:project.id,take_id:take.take_id,
+        take_document_sha256:take.take_document_sha256,
+        presentation_id:presentationId,listener_path:outputCamera,
+        fps_num:Number(outputFps),fps_den:1,
+        aces_color_grade:{
+          grade_id:gradeId,revision,
+          document_sha256:saved.document_sha256,
+          config_sha256:acesPolicy.configuration_sha256,
+        },
+      });
+      if(packaged?.status==='CANCELLED'){
+        setMessage('Native ACES package destination selection cancelled.');
+        return;
+      }
+      if(packaged?.format!=='nvp.native_ocio.approved_source_png16_package.v1'||
+         packaged.status!=='UNMASTERED_ACES2_PNG16_AUDIO_PACKAGE'||
+         packaged.take_sha256!==take.take_document_sha256||
+         packaged.color_grade_sha256!==saved.document_sha256||
+         packaged.pixel_bit_depth!==16||
+         packaged.color_pipeline!=='ocio_aces2_scene_linear_png16_unmastered'||
+         packaged.ffmpeg_used!==false||
+         packaged.original_modified!==false||
+         packaged.master_approved!==false)
+        throw Error('Native 16-bit source color package receipt was not verified');
+      setPackageReceipt(packaged);
+      setMessage('Approved new 16-bit ACES2 + PCM source package. '+
+        'Original Digital Take is unchanged; output is not a cinema master.');
+    }catch(e){setError(e.message);}
+    finally{setExportBusy(false);}
+  }
+
   return <section className="card" aria-label="Native data-first color decisions">
     <h2>Color and lighting presentation decisions</h2>
     <p className="fineprint">Set presentation intent for an original 3D
@@ -240,8 +301,47 @@ export default function NativeColorGradePanel({project,api,action,busy}){
         </figcaption>
       </figure>}
     </fieldset>
+    <fieldset disabled={!take||busy||exportBusy||reviewBusy||!native||
+        !acesPolicy||!revision||savedDirty}>
+      <legend>Creator-approved derived ACES2 16-bit picture + PCM</legend>
+      <p className="fineprint">Export a new SHA-verified RGB16 PNG sequence
+        and a native synchronized WAV from the original frozen 3D Take.
+        The OS asks where to save it and separately confirms publication.
+        This is never an AVI/FFmpeg export or a cinema-calibrated master.</p>
+      <label>New presentation identity
+        <input aria-label="Native ACES presentation identity"
+          value={presentationId} maxLength={61}
+          onChange={e=>setPresentationId(e.target.value)}/>
+      </label>
+      <label>Original authored USD camera
+        <select aria-label="Native ACES output source camera"
+          value={outputCamera} onChange={e=>setOutputCamera(e.target.value)}>
+          {(take?.source_cameras||[]).map(camera=>
+            <option key={camera} value={camera}>{camera}</option>)}
+        </select>
+      </label>
+      <label>Derived picture cadence
+        <select aria-label="Native ACES output frames per second"
+          value={outputFps} onChange={e=>setOutputFps(e.target.value)}>
+          {['24','25','30','60'].map(value=>
+            <option key={value} value={value}>{value} frames/sec</option>)}
+        </select>
+      </label>
+      <button disabled={!outputCamera||exportBusy||
+          typeof native?.data_av_export_native_aces_package!=='function'}
+        onClick={publishACESPackage}>
+        {exportBusy?'Rendering approved RGB16/PCM package…':
+          'Approve ACES2 16-bit picture and PCM package'}
+      </button>
+      {packageReceipt&&<p role="status">
+        Saved a new immutable derived package:
+        {packageReceipt.directory}. Manifest SHA
+        {packageReceipt.manifest_sha256?.slice(0,16)}….
+        The original scene, Takes, grades and recordings are unchanged.
+      </p>}
+    </fieldset>
     {message&&<p role="status">{message}</p>}
-    {error&&<p role="alert">{error}</p>}
+    {error&&<p role="alert">{error}</p>
     <p className="fineprint">No FFmpeg, EXR decoder, flattened
       frames, proxy or color grade is written to the original.
       Applying and measuring the chosen grade in final output is
