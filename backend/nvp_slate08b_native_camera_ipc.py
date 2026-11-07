@@ -738,11 +738,49 @@ class TrustedDesktopCameraBridge:
         path=Path(selected[0])
         if path.is_symlink() or not path.is_dir():
             raise PermissionError("Unsafe source-derived color package folder")
+        # The OS folder selection alone is not production provenance:
+        # require exact immutable FilmIndex producer receipt from the
+        # original approved color export, including original Take/grade.
+        name=path.name
+        if not name.startswith("NVP2D_"):
+            raise PermissionError("Native DCP review needs NVP-approved source derivative")
+        presentation_id=name[len("NVP2D_"):]
+        _id(presentation_id,"NVP-approved original source presentation")
+        proof=self.index.read_revision(
+            pid,"NativePackage_"+presentation_id,1)
+        manifest=path/"manifest.json"
+        if (manifest.is_symlink() or not manifest.is_file() or
+            manifest.stat().st_size>16*1024*1024):
+            raise RuntimeError("No authentic native produced color manifest")
+        digest=sha256(manifest.read_bytes()).hexdigest()
+        data=proof["data"]
+        if (proof["kind"]!="presentation" or
+            data.get("format")!="nvp.data_first.native_color_package.v1" or
+            data.get("manifest_sha256")!=digest or
+            data.get("output_directory_name")!=name or
+            data.get("source_take_id")!=take or
+            data.get("source_take_sha256")!=sha or
+            data.get("original_data_modified") is not False or
+            data.get("ffmpeg_used") is not False or
+            data.get("dcp_delivered") is not False or
+            proof["dependencies"][0]!={
+                "object_id":take,"revision":1,"role":"source_take"}):
+            raise RuntimeError("Selected package lacks original native publisher authority")
+        original_grade=self.index.read_revision(
+            pid,data["color_grade_id"],data["color_grade_revision"])
+        if (original_grade["document_sha256"]!=data["color_grade_sha256"] or
+            proof["dependencies"][1]!={
+                "object_id":data["color_grade_id"],
+                "revision":data["color_grade_revision"],"role":"style"}):
+            raise RuntimeError("Original NVP color decision receipt changed")
         receipt=assess_unmastered_source_package(
             path,target=request["target"],expected_take_sha256=sha)
         if receipt["dcp_delivered"] is not False:
             raise RuntimeError("Unvalidated theatrical package is forbidden")
-        return receipt
+        return {**receipt,
+                "authenticated_native_presentation_sha256":
+                    proof["document_sha256"],
+                "authenticated_approved_source_derivative":True}
 
     def data_av_export_native_acescg_exr(self,request):
         """Produce approved source-linear ACEScg RGB32 OpenEXR and PCM.
