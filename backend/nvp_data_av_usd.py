@@ -21,7 +21,7 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
                      timeline_id,timeline_revision,tick,*,limit=32):
     if not isinstance(index,FilmIndex):
         raise TypeError("Authoritative NVP FilmIndex required")
-    from pxr import Sdf,Usd,UsdMedia,Gf
+    from pxr import Sdf,Usd,UsdMedia
     record,stage=OpenUSDSceneBridge(index).open(
         project_id,scene_id,scene_revision)
     timeline=TemporalLedger(index)
@@ -60,8 +60,8 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
         prim.CreateAuralModeAttr("spatial")
         prim.CreatePlaybackModeAttr("onceFromStartToEnd")
         prim.CreateGainAttr(float(gain))
-        prim.CreateStartTimeAttr(Gf.TimeCode(float(event["start_tick"])))
-        prim.CreateEndTimeAttr(Gf.TimeCode(float(event["end_tick"])))
+        prim.CreateStartTimeAttr(Sdf.TimeCode(float(event["start_tick"])))
+        prim.CreateEndTimeAttr(Sdf.TimeCode(float(event["end_tick"])))
         descriptors.append({
             "event_id":event["event_id"],
             "usd_schema":"UsdMediaSpatialAudio",
