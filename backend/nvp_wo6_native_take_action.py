@@ -139,7 +139,7 @@ class NativeTakeActionHost:
                        timeline_id, timeline_revision, timeline_sha256,
                        new_take_id, sample_ticks, expected_preview_sha256,
                        screenplay_scene_id=None, screenplay_revision=None,
-                       expected_bible_digest=None, ram_mb=2048,
+                       expected_bible_digest=None, ram_mb=4096,
                        expires_in_seconds=1800):
         if not isinstance(scope, TrustedReadScope):
             raise PermissionError("Host-created actor/project/turn scope required")
@@ -285,6 +285,13 @@ class NativeTakeActionHost:
                     receipt.get("rendered_frames") is not False or
                     receipt.get("existing_dcp_replaced") is not False):
                 raise RuntimeError("Native Take output cannot be independently verified")
+            # A human or trusted host may revoke during native execution.
+            # A completed Take is immutable, but its job must not be called
+            # creator-accepted after a revocation or expiry.
+            if not self._check(spec["native_approval_id"],
+                               hashlib.sha256(canonical_bytes(spec)).hexdigest(),
+                               spec):
+                raise PermissionError("Creator or native grant revoked before acceptance")
             self.ledger.update(task_id, "verifying_output",
                                "Reopened original scene, timed events and frozen Take")
             self.ledger.finish(task_id, "SUCCEEDED",
