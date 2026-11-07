@@ -1,34 +1,9 @@
+# HISTORICAL SLATE-07: older Blender external still/proxy worker is retired.
+# The native DATA-AV workflow accepts real source-bound UsdSkel actor poses.
+# This remains manual-only for archival comparison and is NOT a release gate.
 name: NVP SLATE-07 Skeletal Character Geometry and CAM-01 Virtual Lenses
 
 on:
-  push:
-    branches:
-      - nvp/slate07-skinning-live-camera-20261106
-    paths:
-      - "backend/nvp_openusd_skinning.py"
-      - "backend/nvp_openusd_skeleton.py"
-      - "backend/nvp_slate06_geometry.py"
-      - "backend/nvp_camera_workbench.py"
-      - "backend/nvp_openusd_shot_overrides.py"
-      - "backend/nvp_slate_preview_host.py"
-      - "tests/test_nvp_slate07_skinned_camera.py"
-      - "frontend/src/CameraLensWorkbench*"
-      - "frontend/src/SlateBranchTimelinePane*"
-      - "docs/NVP_SLATE07_CAMERA_SKINNING.md"
-      - ".github/workflows/nvp-slate07-camera-skinning.yml"
-  pull_request:
-    paths:
-      - "backend/nvp_openusd_skinning.py"
-      - "backend/nvp_openusd_skeleton.py"
-      - "backend/nvp_slate06_geometry.py"
-      - "backend/nvp_camera_workbench.py"
-      - "backend/nvp_openusd_shot_overrides.py"
-      - "backend/nvp_slate_preview_host.py"
-      - "tests/test_nvp_slate07_skinned_camera.py"
-      - "frontend/src/CameraLensWorkbench*"
-      - "frontend/src/SlateBranchTimelinePane*"
-      - "docs/NVP_SLATE07_CAMERA_SKINNING.md"
-      - ".github/workflows/nvp-slate07-camera-skinning.yml"
   workflow_dispatch:
 
 concurrency:
