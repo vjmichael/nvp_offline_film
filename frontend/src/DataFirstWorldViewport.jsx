@@ -33,7 +33,9 @@ export function validateMeshData(item){
        item.source_color_rgb.length!==3||
        !item.source_color_rgb.every(v=>
          typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)||
-       !mat||mat.format!=='nvp.original_usd_preview_surface.v1'||
+       !mat||!['nvp.original_usd_preview_surface.v1',
+                 'nvp.original_usd_displaycolor_preview.v1'].includes(
+                   mat.format)||
        mat.original_source_modified!==false||
        !Array.isArray(mat.base_color_rgb)||mat.base_color_rgb.length!==3||
        mat.base_color_rgb.some((v,i)=>
@@ -377,8 +379,9 @@ export default function DataFirstWorldViewport({
     <p className="fineprint">This WebGL scene uses validated native
       OpenUSD transforms and source-verified procedural/triangle geometry.
       Original USD-skinned actor motion, bounded facial blend shapes and
-      USD PreviewSurface color/roughness/metallic are live GPU derivatives.
-      Texture networks, advanced materials, Hydra parity, calibrated lighting
-      and installed GPU acceptance still require verification.</p>
+      USD PreviewSurface parameters are live GPU derivatives. Older immutable
+      Takes still display their actual original USD mesh/displayColor rather
+      than a fake avatar. Texture networks, advanced materials, Hydra parity,
+      calibrated lighting and installed GPU acceptance remain unverified.</p>
   </section>;
 }
