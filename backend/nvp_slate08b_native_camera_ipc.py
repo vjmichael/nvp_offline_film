@@ -620,13 +620,23 @@ class TrustedDesktopCameraBridge:
     def data_av_live_begin(self,request):
         """Start a real OS microphone; no browser-provided executable/path."""
         self._native_window()
-        if type(request) is not dict or set(request)!={
-                "project_id","take_id","scene_id","scene_revision",
-                "camera_timeline_id","camera_timeline_revision",
-                "sound_timeline_id","source_id","emitter_path",
-                "event_id","subject_id"}:
-            raise ValueError("Native microphone capture requires exact identity")
+        mono={
+            "project_id","take_id","scene_id","scene_revision",
+            "camera_timeline_id","camera_timeline_revision",
+            "sound_timeline_id","source_id","emitter_path",
+            "event_id","subject_id"}
+        dual=mono|{"second_source_id","second_emitter_path",
+                   "second_event_id","second_subject_id"}
+        if type(request) is not dict or set(request) not in (mono,dual):
+            raise ValueError("Native microphone source identity/sync scope invalid")
         from backend.nvp_native_live_take import NativeLiveSoundSession
+        if set(request)==dual:
+            from backend.nvp_native_stereo_take import NativeStereoOriginalSession
+            recorder_class=NativeStereoOriginalSession
+            extra={k:request[k] for k in dual-mono}
+        else:
+            recorder_class=NativeLiveSoundSession
+            extra={}
         with self._lock:
             if self._live_sound_session is not None:
                 raise RuntimeError("Native microphone capture already in progress")
@@ -638,6 +648,8 @@ class TrustedDesktopCameraBridge:
                     f"Camera Film Time SHA-256: {scope['camera_timeline_sha256']}\n"
                     f"Source emitter: {scope['emitter_path']}\n"
                     f"At most {scope['max_samples']//48000} seconds at 48 kHz.\n"
+                    + ("Two synchronized original mono sources on one shared-clock stereo audio interface.\n"
+                       if extra else "One original mono audio source.\n")
                     "This records original source PCM only. No picture movie,\n"
                     "FFmpeg, flattened soundtrack, or master is produced.")
             def freeze(event,scope):
@@ -647,7 +659,7 @@ class TrustedDesktopCameraBridge:
                     f"Scene SHA-256: {scope['scene_document_sha256']}\n"
                     f"Events SHA-256: {scope['timeline_document_sha256']}\n"
                     "This seals an immutable Digital Take, not a movie export.")
-            session=NativeLiveSoundSession(
+            session=recorder_class(
                 self.index,project_id=request["project_id"],
                 take_id=request["take_id"],scene_id=request["scene_id"],
                 scene_revision=request["scene_revision"],
@@ -658,7 +670,8 @@ class TrustedDesktopCameraBridge:
                 emitter_path=request["emitter_path"],
                 event_id=request["event_id"],
                 subject_id=request["subject_id"],
-                native_approve_start=start,native_approve_freeze=freeze)
+                native_approve_start=start,native_approve_freeze=freeze,
+                **extra)
             started=session.begin()
             ticket=secrets.token_urlsafe(32)
             self._live_sound_session=session
