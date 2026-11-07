@@ -45,7 +45,15 @@ export function validateMeshData(item){
          typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1))
       throw Error('Skinned actor pose/material not bound to original USD source');
   }
-  return {pts,faces};
+  const uv=item.mesh_uvs;
+  if(uv!=null&&(
+    item.shape!=='mesh'||
+    !Array.isArray(uv)||uv.length!==pts.length||
+    !uv.every(pair=>Array.isArray(pair)&&pair.length===2&&
+      pair.every(v=>typeof v==='number'&&Number.isFinite(v)&&
+        Math.abs(v)<=1024))))
+    throw Error('Source mesh UV primvar is invalid or mismatched');
+  return {pts,faces,uv:uv||null};
 }
 
 function shapeFor(item){
@@ -56,11 +64,13 @@ function shapeFor(item){
   if(item.shape==='sphere')return new THREE.SphereGeometry(
     item.size_m/2,24,16);
   if(item.shape==='mesh'||item.shape==='skinned_mesh'){
-    const {pts,faces}=validateMeshData(item);
+    const {pts,faces,uv}=validateMeshData(item);
     const geometry=new THREE.BufferGeometry();
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(
       pts.flat(),3));
     geometry.setIndex(faces.flat());
+    if(uv)geometry.setAttribute('uv',new THREE.Float32BufferAttribute(
+      uv.flat(),2));
     geometry.computeVertexNormals();
     return geometry;
   }
