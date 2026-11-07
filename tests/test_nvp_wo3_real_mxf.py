@@ -44,7 +44,7 @@ class WO3RealASDCPIntegration(unittest.TestCase):
         return ApprovedCodecBinary(
             executable,sha256=h.hexdigest(),product=product)
 
-    def test_real_two_frame_native_smpte_dcp_roundtrip(self):
+    def test_real_three_frame_native_smpte_dcp_roundtrip(self):
         with TemporaryDirectory(prefix="nvp-wo3-real-") as tmp:
             root=Path(tmp)
             studio=Studio(root/"real_source.sqlite")
@@ -82,18 +82,18 @@ class WO3RealASDCPIntegration(unittest.TestCase):
             frames=[encode_xyz12_frame(
                 encoder,raw,profile="2K_FLAT_24",
                 source_presentation_sha256=source,
-                creator_approved=True) for _ in range(2)]
+                creator_approved=True) for _ in range(3)]
             pic=wrap_cinema_picture(
                 wrapper,info,frames,profile="2K_FLAT_24",
                 asset_uuid=str(uuid.uuid4()))
-            audio_bytes=b"\x00\x00\x00"*(4000*2)
+            audio_bytes=b"\x00\x00\x00"*(6000*2)
             buffer=BytesIO()
             with wave.open(buffer,"wb") as wf:
                 wf.setnchannels(2);wf.setsampwidth(3);wf.setframerate(48000)
                 wf.writeframes(audio_bytes)
             sound=wrap_cinema_pcm(
                 wrapper,info,buffer.getvalue(),
-                asset_uuid=str(uuid.uuid4()),frame_count=2,
+                asset_uuid=str(uuid.uuid4()),frame_count=3,
                 origin_sha256=source)
             destination=root/"export";destination.mkdir()
             published=publish_dcp_candidate(
@@ -108,8 +108,8 @@ class WO3RealASDCPIntegration(unittest.TestCase):
                 expected_picture_codestream_sha256=[
                     x["codestream_sha256"] for x in frames],
                 expected_sound_pcm_sha256=sha256(audio_bytes).hexdigest(),
-                profile="2K_FLAT_24",expected_frames=2)
-            self.assertEqual(roundtrip["frames_decoded"],2)
+                profile="2K_FLAT_24",expected_frames=3)
+            self.assertEqual(roundtrip["frames_decoded"],3)
             self.assertTrue(roundtrip["picture_exact_codestream_sha_verified"])
             self.assertTrue(roundtrip["pcm24_48000_sample_exact"])
             self.assertFalse(roundtrip["production_dcp_accepted"])
