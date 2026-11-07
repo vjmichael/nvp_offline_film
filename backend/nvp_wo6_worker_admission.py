@@ -10,6 +10,7 @@ policy in the parent before/after the contained process.
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import closing
 import hashlib
 import json
 import sqlite3
@@ -29,17 +30,18 @@ def verify_admitted_worker(spec:dict, *, ledger_db, owner_key:str) -> None:
     # schema from worker entrypoint. URI escape permits spaces in native path.
     from urllib.parse import quote
     uri="file:"+quote(str(path.resolve()),safe="/:")+"?mode=ro"
-    with sqlite3.connect(uri,uri=True,timeout=10) as db:
+    with closing(sqlite3.connect(uri,uri=True,timeout=10)) as db:
         row=db.execute("""SELECT t.state,t.reserved,t.kind,
                                  a.owner_key,a.spec_sha256,a.spec_json,
-                                 s.owner_key
+                                 s.owner_key,c.task_id
             FROM tasks t
             JOIN authorized_task_specs a ON a.task_id=t.id
             JOIN task_schedule s ON s.task_id=t.id
+            LEFT JOIN wo6_cancel_intents c ON c.task_id=t.id
             WHERE t.id=?""",(spec.get("task_id"),)).fetchone()
     if (row is None or row[0]!="ACTIVE" or row[1]!=1 or
             row[2]!=spec.get("kind") or row[3]!=owner_key or
             row[4]!=expected or row[5].encode("ascii")!=raw or
-            row[6]!=owner_key):
+            row[6]!=owner_key or row[7] is not None):
         raise PermissionError(
             "WO6 worker is not admitted under an exact trusted native host grant")
