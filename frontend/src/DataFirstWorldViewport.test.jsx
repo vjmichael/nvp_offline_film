@@ -57,3 +57,37 @@ describe('DA-04B bounded source-verified live skinned actor',()=>{
     geometry.dispose();
   });
 });
+
+describe('Batch 3D SHA-bound original USD UV image vertex data',()=>{
+  const original={
+    path:'/World/OriginalMesh',shape:'mesh',size_m:2,
+    mesh_points:[[0,0,0],[1,0,0],[0,1,0]],
+    mesh_triangles:[[0,1,2]],
+    mesh_uvs:[[0,0],[1,0],[0,1]],
+    source_material:{
+      format:'nvp.original_usd_preview_surface.v1',
+      base_color_rgb:[1,1,1],roughness:.4,metallic:0,
+      original_source_modified:false,
+      source_texture:{
+        format:'nvp.original_png_rgb8_uv_texture.v1',
+        blob_sha256:'a'.repeat(64),
+        width:8,height:8,source_encoding:'sRGB',
+        uv_interpolation:'vertex',
+        original_source_modified:false,
+        png_base64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
+      },
+    },
+  };
+  it('retains exact original source UVs without a frame proxy',()=>{
+    expect(validateMeshData(original).pts).toHaveLength(3);
+  });
+  it('rejects altered vertex UVs, invalid source image or external URI',()=>{
+    expect(()=>validateMeshData({...original,
+      mesh_uvs:[[0,0],[1,0],[1,2]]})).toThrow(/UV/);
+    expect(()=>validateMeshData({...original,
+      source_material:{...original.source_material,
+        source_texture:{...original.source_material.source_texture,
+          blob_sha256:'https://example.com/image.png'}}})).toThrow(/UV/);
+    expect(()=>validateMeshData({...original,mesh_uvs:null})).toThrow(/UV/);
+  });
+});
