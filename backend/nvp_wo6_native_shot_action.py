@@ -126,8 +126,13 @@ class NativeShotActionHost:
         self.index, self.ledger = index, ledger
         self.creator, self.authorize = confirm_creator, authorize_native
         self.python = Path(sys.executable).resolve()
-        self.worker = (Path(__file__).resolve().parents[1] /
-                       "tools" / "nvp_wo6_shot_worker.py").resolve()
+        self.frozen_worker = bool(getattr(sys, "frozen", False))
+        # The installer bundles NVP.exe, not an independent python.exe or
+        # loose .py tool. Its private --nvp-wo6-worker entrypoint performs
+        # the same durable admission checks in a separate contained process.
+        self.worker = (self.python if self.frozen_worker else
+                       (Path(__file__).resolve().parents[1] /
+                        "tools" / "nvp_wo6_shot_worker.py").resolve())
         self.owner = "wo6shot_" + hashlib.sha256(
             str(self.root).encode()).hexdigest()[:16]
         self.binding = ApprovedTaskBindings(ledger, approval_check=self._check)
@@ -266,12 +271,13 @@ class NativeShotActionHost:
             with (folder / "stdout.log").open("wb") as out, (
                     folder / "stderr.log").open("wb") as err:
                 worker = launch_contained(
-                    [str(self.python), str(self.worker),
-                     "--spec", str(spec_path),
+                    (([str(self.python), "--nvp-wo6-worker", "shot"] if
+                      self.frozen_worker else [str(self.python), str(self.worker)])
+                     + ["--spec", str(spec_path),
                      "--studio-db", str(self.index.studio.db_path),
                      "--expected-sha", hashlib.sha256(raw).hexdigest(),
                      "--ledger-db", str(self.ledger.db_path),
-                     "--owner-key", self.owner],
+                     "--owner-key", self.owner]),
                     cwd=str(folder), stdout=out, stderr=err,
                     memory_mb=spec["ram_mb"])
                 self.ledger.update(task_id, "building_scene",
