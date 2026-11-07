@@ -11,6 +11,7 @@ on:
       - frontend/src/DirectorFilmReviewPanel.jsx
       - tests/test_nvp_wo5_finished_playback.py
       - tests/test_nvp_wo5_codec_binding.py
+      - tests/nvp_wo5_finished_real_dcp_ci.py
       - tools/nvp_desktop_alpha.py
       - .github/workflows/nvp-wo5-finished-playback.yml
   pull_request:
@@ -23,10 +24,11 @@ on:
       - frontend/src/DirectorFilmReviewPanel.jsx
       - tests/test_nvp_wo5_finished_playback.py
       - tests/test_nvp_wo5_codec_binding.py
+      - tests/nvp_wo5_finished_real_dcp_ci.py
       - tools/nvp_desktop_alpha.py
       - .github/workflows/nvp-wo5-finished-playback.yml
 concurrency:
-  group: nvp-wo5-finished-${{ github.head_ref || github.ref_name }}
+  group: nvp-wo5-finished-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 permissions:
   contents: read
@@ -75,3 +77,37 @@ jobs:
         run: npm run test:ui -- src/FinishedFilmPlaybackPanel.test.jsx src/DirectorFilmReviewPanel.test.jsx
       - name: Build native NVP desktop review frontend
         run: npm run build
+
+  native-two-reel-real-codec-acceptance:
+    name: Real OpenJPEG/CineCert SMPTE 2-reel final picture+PCM decode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: cinecert/asdcplib
+          ref: 905d6047f67c8211c2d22f29fb0e2e44c142b59b
+          path: deps/asdcplib
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native OpenJPEG and original source runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libopenjp2-tools build-essential cmake
+          python -m pip install --only-binary=:all: "usd-core==26.11" "numpy>=2.1,<3" "Pillow>=11,<13"
+      - name: Compile exact pinned CineCert SMPTE MXF writer and decoder
+        run: |
+          test "$(git -C deps/asdcplib rev-parse HEAD)" = 905d6047f67c8211c2d22f29fb0e2e44c142b59b
+          cmake -S deps/asdcplib -B deps/asdcplib/build -DCMAKE_BUILD_TYPE=Release -DWITHOUT_SSL=ON -DWITHOUT_XML=ON
+          cmake --build deps/asdcplib/build --parallel 2 --target asdcp-wrap asdcp-info asdcp-unwrap
+      - name: Decode real published two-reel DCP picture and audio across its boundary
+        env:
+          NVP_NATIVE_OPENJPEG: /usr/bin/opj_compress
+          NVP_NATIVE_OPENJPEG_DECODE: /usr/bin/opj_decompress
+          NVP_NATIVE_ASDCP_WRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-wrap
+          NVP_NATIVE_ASDCP_INFO: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-info
+          NVP_NATIVE_ASDCP_UNWRAP: ${{ github.workspace }}/deps/asdcplib/build/src/asdcp-unwrap
+        run: python -m unittest discover -s tests -p nvp_wo5_finished_real_dcp_ci.py -v
