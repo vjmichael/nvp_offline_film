@@ -24,8 +24,9 @@ from backend.nvp_openusd_shot_overrides import (
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
-from backend.nvp_resource_supervisor import wait_guarded
+from backend.nvp_resource_supervisor import wait_guarded, NativeCancelRequested
 from backend.nvp_worker_containment import launch_contained
+from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_wo6_impact_preview import preview_source_impact
 from backend.nvp_wo6_native_take_action import digest_file, _exact_source
 
@@ -129,6 +130,7 @@ class NativeShotActionHost:
         self.owner = "wo6shot_" + hashlib.sha256(
             str(self.root).encode()).hexdigest()[:16]
         self.binding = ApprovedTaskBindings(ledger, approval_check=self._check)
+        self.recovery = WO6DurableRecovery(ledger)
 
     def _check(self, approval_id, digest, doc):
         try:
@@ -270,6 +272,8 @@ class NativeShotActionHost:
                 self.ledger.update(task_id, "building_scene",
                                    "Authoring contained director shot-local OpenUSD layer")
                 def cancelled():
+                    if self.recovery.cancel_requested(task_id):
+                        return True
                     try:
                         self.binding.verified_spec(task_id, owner_key=self.owner)
                         return False
@@ -302,6 +306,8 @@ class NativeShotActionHost:
                     record["data"]["original_performance_modified"] is not False or
                     record["data"]["frames_rendered"] is not False):
                 raise RuntimeError("Director shot native receipt does not match actual layer")
+            if self.recovery.cancel_requested(task_id):
+                raise NativeCancelRequested("Creator cancelled completed shot operation")
             if not self._check(spec["native_approval_id"],
                                hashlib.sha256(raw).hexdigest(), spec):
                 raise PermissionError("Director or host approval revoked after shot worker")
@@ -313,7 +319,7 @@ class NativeShotActionHost:
                     "shot_id": spec["shot_id"],
                     "shot_document_sha256": record["document_sha256"],
                     "new_take_created": False, "film_delivered": False}
-        except BaseException:
+        except BaseException as error:
             if worker is not None:
                 try:
                     if worker.poll() is None:
@@ -326,6 +332,7 @@ class NativeShotActionHost:
                 state = self.ledger.get_task(task_id)
                 if state and state["state"] == "ACTIVE":
                     self.ledger.finish(
-                        task_id, "INTERRUPTED",
+                        task_id, "CANCELLED" if isinstance(error, NativeCancelRequested) else "INTERRUPTED",
+                        "Cancelled after worker cleanup; shot revision may still exist" if isinstance(error, NativeCancelRequested) else
                         "Native shot interrupted; immutable commit needs reconciliation")
             raise
