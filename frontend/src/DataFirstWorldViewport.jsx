@@ -68,6 +68,18 @@ export function validatePBRChannelPackets(surface,item){
   return result;
 }
 
+export function approximateKelvinRGB(kelvin){
+  if(!Number.isFinite(kelvin)||kelvin<1000||kelvin>20000)
+    throw Error('Untrusted authored USD light temperature');
+  const k=kelvin/100;
+  const r=k<=66?255:329.698727446*Math.pow(k-60,-.1332047592);
+  const g=k<=66?99.4708025861*Math.log(k)-161.1195681661:
+    288.1221695283*Math.pow(k-60,-.0755148492);
+  const b=k>=66?255:k<=19?0:
+    138.5177312231*Math.log(k-10)-305.0447927307;
+  return [r,g,b].map(n=>Math.max(0,Math.min(255,n))/255);
+}
+
 function validMatrix(m){
   return Array.isArray(m)&&m.length===4&&
     m.every(r=>Array.isArray(r)&&r.length===4&&
@@ -319,6 +331,7 @@ export default function DataFirstWorldViewport({
     let disposed=false;
     const meshes=new Map();
     const textureCache=new Map();
+    const sourceLights=new Map();
     const MAX_GPU_TEXTURES=16;
     const MAX_GPU_TEXELS=8*1024*1024; // 32 MiB decoded GPU texture budget
     let gpuTexels=0;
@@ -466,7 +479,7 @@ export default function DataFirstWorldViewport({
       }
       env.current={world,meshes,requestRender,acquireTexture,releaseMaterial,
         orbitCamera:camera,authoredCamera,activeCamera:camera,
-        renderer,scene,sun,ambient,
+        renderer,scene,sun,ambient,sourceLights,
         configureDof:(cameraLook)=>{
           if(composer){composer.dispose();composer=null;renderPass=null;
             bokehPass=null;}
@@ -508,6 +521,12 @@ export default function DataFirstWorldViewport({
         if(mesh.geometry)mesh.geometry.dispose();
         releaseMaterial(mesh.material);
       }
+      for(const light of sourceLights.values()){
+        scene?.remove(light);
+        light.shadow?.map?.dispose();
+        light.dispose?.();
+      }
+      sourceLights.clear();
       if(renderer){
         if(env.current?.detachDeviceHandlers)env.current.detachDeviceHandlers();
         composer?.dispose();
@@ -762,6 +781,52 @@ export default function DataFirstWorldViewport({
     state.requestRender();
   },[objects,listenerPath,tick,upgradedTexture,activeLook]);
 
+
+  useEffect(()=>{
+    const state=env.current;
+    if(!state)return;
+    const desired=new Set();
+    for(const obj of bounded){
+      if(obj?.semantic_role!=='light'||typeof obj.path!=='string'||
+         !Array.isArray(obj.world_translation)||
+         obj.world_translation.length!==3||
+         !obj.world_translation.every(n=>Number.isFinite(n)&&
+           Math.abs(n)<=100000))
+        continue;
+      const source=nativeSchemas.find(s=>
+        s?.prim_path===obj.path&&s.schema==='UsdLux.SphereLight');
+      if(!source||!Number.isFinite(source.intensity)||
+         source.intensity<0||source.intensity>1000000)
+        continue;
+      desired.add(obj.path);
+      let light=state.sourceLights.get(obj.path);
+      if(!light){
+        light=new THREE.PointLight(0xffffff,1,0,2);
+        light.castShadow=true;
+        light.shadow.mapSize.set(512,512);
+        light.shadow.bias=-.0002;
+        state.scene.add(light);
+        state.sourceLights.set(obj.path,light);
+      }
+      light.position.set(...obj.world_translation);
+      light.intensity=Math.min(100,source.intensity/100);
+      light.castShadow=activeLook.lighting.shadows;
+      try{
+        const rgb=source.temperature_enabled?
+          approximateKelvinRGB(source.temperature_kelvin):[1,1,1];
+        light.color.setRGB(...rgb);
+      }catch{light.color.setRGB(1,1,1);}
+    }
+    for(const [path,light] of state.sourceLights){
+      if(!desired.has(path)){
+        state.scene.remove(light);
+        light.shadow.map?.dispose();
+        light.dispose?.();
+        state.sourceLights.delete(path);
+      }
+    }
+    state.requestRender();
+  },[objects,nativeSchemas,activeLook]);
 
   useEffect(()=>{
     const state=env.current;
