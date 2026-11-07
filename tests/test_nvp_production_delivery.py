@@ -167,6 +167,22 @@ class DurableCinemaDeliveryTests(unittest.TestCase):
         self.assertEqual(sha256(self.pcm.read_bytes()).hexdigest(),
                          self.original_pcm_sha)
 
+    def test_published_dcp_cannot_be_retroactively_cancelled(self):
+        job=self.finish_picture()
+        self.attach(job)
+        self.run_sound_mock()
+        self.assertEqual(self.run_package()["status"],"PUBLISHED_PENDING_INDEX")
+        with self.assertRaises(RuntimeError):
+            self.journal.request_cancel(job,lambda _:True)
+        with self.assertRaises(PermissionError):
+            self.journal.request_delivery_cancel(job,lambda _:True)
+        self.assertFalse(self.journal.status(job)["cancel_requested"])
+        self.assertEqual(self.run_package()["status"],
+                         "STRUCTURAL_DCP_FILMINDEX_RECORDED")
+        with self.assertRaises(RuntimeError):
+            self.journal.request_cancel(job,lambda _:True)
+        self.assertEqual(self.journal.status(job)["state"],"DCP_INDEXED")
+
     def test_crash_after_dcp_promotion_without_ledger_commit_needs_review(self):
         job=self.finish_picture()
         self.attach(job)
