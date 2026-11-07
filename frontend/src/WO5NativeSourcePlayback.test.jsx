@@ -62,7 +62,8 @@ describe('WO5 selected original source native A/V viewer',()=>{
       nativeBridge={native} initialTakeId="ApprovedWO5SourceTake"
       initialSourceSample={2000}/>);
     await waitFor(()=>expect(screen.getByLabelText(
-      'Native frozen Digital Take').value).toBe('OtherFrozenTake'));
+      'Native frozen Digital Take').value).toBe(''));
+    expect(screen.getByText(/exact approved original Take is missing/)).toBeTruthy();
     expect(native.data_av_begin).not.toHaveBeenCalled();
   });
 });
