@@ -272,7 +272,7 @@ export default function DataFirstWorldViewport({
     const MAX_GPU_TEXTURES=16;
     const MAX_GPU_TEXELS=8*1024*1024; // 32 MiB decoded GPU texture budget
     let gpuTexels=0;
-    const acquireTexture=(transport,override=null)=>{
+    const acquireTexture=(transport,override=null,rawColor=false)=>{
       const approvedFull=(override&&
         override.source_sha256===transport.sha256&&
         override.derived_preview_only===true&&
@@ -282,7 +282,8 @@ export default function DataFirstWorldViewport({
         override.width<=2048&&override.height<=2048&&
         override.canvas?.width===override.width&&
         override.canvas?.height===override.height);
-      const sha=approvedFull?transport.sha256+':full':transport.sha256;
+      const sha=(approvedFull?transport.sha256+':full':
+        transport.sha256)+(rawColor?':raw':'');
       const current=textureCache.get(sha);
       if(current){
         current.refs++;
@@ -298,7 +299,7 @@ export default function DataFirstWorldViewport({
         new THREE.TextureLoader().load(
           'data:image/png;base64,'+transport.png_base64,
           ()=>{if(!disposed)requestRender();});
-      tex.colorSpace=THREE.SRGBColorSpace;
+      tex.colorSpace=rawColor?THREE.NoColorSpace:THREE.SRGBColorSpace;
       tex.wrapS=THREE.RepeatWrapping;
       tex.wrapT=THREE.RepeatWrapping;
       tex.magFilter=THREE.NearestFilter;
@@ -309,13 +310,24 @@ export default function DataFirstWorldViewport({
       return tex;
     };
     const releaseMaterial=material=>{
-      const keys=Array.isArray(material)?material:[material];
-      for(const entry of keys){
-        const digest=entry?.userData?.originalTextureSha;
-        const current=digest?textureCache.get(digest):null;
-        const pixels=(current?.refs===1)?current.pixels:0;
-        disposeMeshMaterial(entry,textureCache);
-        gpuTexels-=pixels;
+      for(const entry of Array.isArray(material)?material:[material]){
+        if(!entry)continue;
+        const keys=entry.userData?.textureCacheKeys||{
+          map:entry.userData?.originalTextureSha,
+        };
+        for(const [channel,key] of Object.entries(keys)){
+          if(!key)continue;
+          const current=textureCache.get(key);
+          if(current&&current.texture===entry[channel]){
+            current.refs--;
+            if(current.refs<=0){
+              current.texture.dispose();
+              textureCache.delete(key);
+              gpuTexels-=current.pixels;
+            }
+          }else entry[channel]?.dispose();
+        }
+        entry.dispose();
       }
     };
     try{
@@ -469,11 +481,33 @@ export default function DataFirstWorldViewport({
             side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
               THREE.DoubleSide:THREE.FrontSide});
           pendingMaterial=material;
+          material.userData.textureCacheKeys={};
           if(transport){
             material.map=state.acquireTexture(
               transport,isFullResolution?upgradedTexture:null);
-            material.userData.originalTextureSha=
+            material.userData.textureCacheKeys.map=
               isFullResolution?transport.sha256+':full':transport.sha256;
+            material.needsUpdate=true;
+          }
+          for(const [channel,desc] of Object.entries(surface?.pbr_maps||{})){
+            if(!['roughness','metallic','emission','normal'].includes(channel))
+              throw Error('Unsupported original PBR map channel');
+            const channelTransport=surface?.pbr_map_transports?.[channel];
+            validateSourceTexture({
+              texture:desc,texture_transport:channelTransport,
+            },obj);
+            const raw=channel!=='emission';
+            const key=desc.sha256+(raw?':raw':'');
+            const tex=state.acquireTexture(channelTransport,null,raw);
+            const field={
+              roughness:'roughnessMap',
+              metallic:'metalnessMap',
+              emission:'emissiveMap',
+              normal:'normalMap',
+            }[channel];
+            material[field]=tex;
+            material.userData.textureCacheKeys[field]=key;
+            if(channel==='emission')material.emissive.setRGB(1,1,1);
             material.needsUpdate=true;
           }
           const slots=validateMaterialSlots(obj);
@@ -573,7 +607,9 @@ export default function DataFirstWorldViewport({
       const allMaterials=Array.isArray(mesh.material)?
         mesh.material:[mesh.material];
       for(const current of allMaterials){
-        current.emissive.setHex(obj.path===listenerPath?0x065f46:0);
+        if(current.emissiveMap)
+          current.emissive.setRGB(1,1,1);
+        else current.emissive.setHex(obj.path===listenerPath?0x065f46:0);
         current.needsUpdate=true;
       }
     }
