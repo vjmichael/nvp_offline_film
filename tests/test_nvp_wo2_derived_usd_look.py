@@ -16,6 +16,10 @@ class WO2DerivedUSDLookAcceptance(unittest.TestCase):
         data=BytesIO()
         Image.new("RGB",(2,2),(190,120,50)).save(data,format="PNG")
         png=data.getvalue()
+        scalar=BytesIO()
+        Image.new("RGB",(2,2),(120,120,120)).save(
+            scalar,format="PNG")
+        roughness_png=scalar.getvalue()
         self.assets.publish(
             self.pid,"look_mesh",shape="mesh",size_m=2.,
             points=[[-1,-1,0],[1,-1,0],[1,1,0],[-1,1,0]],
@@ -24,7 +28,7 @@ class WO2DerivedUSDLookAcceptance(unittest.TestCase):
             preview_material={"base_color_rgb":[.8,.7,.6],
                               "roughness":.3,"metallic":0.},
             texture_png=png,
-            pbr_maps_png={"roughness":png})
+            pbr_maps_png={"roughness":roughness_png})
         self.scene.publish(
             self.pid,"look_world",
             prims=[
