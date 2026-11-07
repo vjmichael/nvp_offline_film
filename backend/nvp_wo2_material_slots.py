@@ -57,7 +57,7 @@ def author_material_slots(stage,geometry,slots):
             geometry.GetPrim()).CreateMaterialBindSubset(
                 "MaterialSlot"+str(slots.index(spec)),
                 Vt.IntArray(spec["faces"]),UsdGeom.Tokens.face)
-        if str(subset.GetPath())!=spec["subset_path"]:
+        if str(subset.GetPrim().GetPath())!=spec["subset_path"]:
             raise RuntimeError("Source face subset has an unexpected path")
         material=UsdShade.Material.Define(stage,spec["material_path"])
         shader=UsdShade.Shader.Define(stage,
@@ -87,7 +87,7 @@ def verify_material_slots(stage,geometry,slots,face_count):
     found=UsdShade.MaterialBindingAPI(
         geometry).GetMaterialBindSubsets()
     if len(found)!=len(slots) or {
-            str(item.GetPath()) for item in found}!={
+            str(item.GetPrim().GetPath()) for item in found}!={
             spec["subset_path"] for spec in slots}:
         raise RuntimeError("Unexpected original USD material subset inserted")
     for spec in slots:
