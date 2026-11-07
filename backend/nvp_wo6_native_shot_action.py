@@ -26,6 +26,7 @@ from backend.nvp_resource_guard import AdmissionRequest
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_resource_supervisor import wait_guarded, NativeCancelRequested
 from backend.nvp_worker_containment import launch_contained
+from backend.nvp_worker_host_lease import exclusive_worker_host
 from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_wo6_impact_preview import preview_source_impact
 from backend.nvp_wo6_native_take_action import digest_file, _exact_source
@@ -242,6 +243,7 @@ class NativeShotActionHost:
                 "new_shot_id": shot_id, "native_worker_started": False,
                 "human_and_host_permission_required": True}
 
+    @exclusive_worker_host
     def run_next(self, *, timeout_seconds=900):
         claim = self.binding.claim_next(owner_key=self.owner)
         if not claim or not claim["admitted"]:
