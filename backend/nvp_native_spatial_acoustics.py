@@ -55,7 +55,13 @@ def spatial_gains(emitter,listener,listener_matrix,gain,obstruction=1.0):
 
 def verified_occluders(index,project_id,snapshot):
     """Read only real bound source assets, never actor position gizmos."""
-    shown=visual_state(index,project_id,snapshot)
+    candidates=[obj for obj in snapshot["objects"]
+                if obj["semantic_role"] in ("prop","environment")
+                and obj.get("asset") is not None]
+    if not candidates:return []
+    if len(candidates)>64:
+        raise ValueError("Too many source geometry solids for bounded acoustics")
+    shown=visual_state(index,project_id,{**snapshot,"objects":candidates})
     return [{
         "path":obj["path"],
         "center":_xyz(obj["world_translation"]),
