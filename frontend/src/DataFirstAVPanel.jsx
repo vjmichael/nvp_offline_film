@@ -50,6 +50,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [installedGPUReceipt,setInstalledGPUReceipt]=useState(null);
   const [highResolutionTexture,setHighResolutionTexture]=useState(null);
   const [textureTileProgress,setTextureTileProgress]=useState(null);
+  const [textureTargetPath,setTextureTargetPath]=useState('');
   const tileAbortRef=useRef(null);
   const [presentationId,setPresentationId]=useState('NativeFilm001');
   const [aviReceipt,setAviReceipt]=useState(null);
@@ -526,9 +527,11 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   }
 
   async function inspectHighResolutionTexture(){
-    const asset=scene?.visual?.objects?.find(obj=>
+    const choices=scene?.visual?.objects?.filter(obj=>
       (obj?.source_asset_binding||obj?.source_rig_binding)&&
-      obj?.source_material?.texture);
+      obj?.source_material?.texture)||[];
+    const asset=choices.find(obj=>obj.path===textureTargetPath)||
+      choices[0];
     const rig=asset?.source_rig_binding||null;
     const ticket=controller.current.ticket;
     if(!asset||!ticket||!native)return;
@@ -818,6 +821,24 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       (obj.source_asset_binding||obj.source_rig_binding)&&
       obj.source_material?.texture)&&
       <section aria-label="Source high-resolution material inspection">
+        <label>Original texture actor or source mesh
+          <select aria-label="Select original texture object"
+            value={textureTargetPath}
+            onChange={event=>{
+              tileAbortRef.current?.abort();
+              tileAbortRef.current=null;
+              setHighResolutionTexture(null);
+              setTextureTargetPath(event.target.value);
+            }}>
+            <option value="">First approved textured source</option>
+            {(scene?.visual?.objects||[]).filter(obj=>
+              (obj.source_asset_binding||obj.source_rig_binding)&&
+              obj.source_material?.texture).map(obj=>
+              <option key={obj.path} value={obj.path}>
+                {obj.path} ({obj.source_rig_binding?'original rig':'original asset'})
+              </option>)}
+          </select>
+        </label>
         <button disabled={!native||!controller.current.ticket||
           typeof native.data_av_original_texture_tile!=='function'&&
           typeof native.data_av_original_rig_texture_tile!=='function'||
