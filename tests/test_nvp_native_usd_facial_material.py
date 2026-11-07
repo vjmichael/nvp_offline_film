@@ -85,5 +85,36 @@ class NativeOriginalFaceAndMaterial(unittest.TestCase):
             ],curves=[],skeletal_rigs=[corrupt])
 
 
+    def test_real_rig_uvs_survive_source_skinning_and_live_view(self):
+        uv=[[float(i%2),float((i//2)%2)]
+            for i in range(len(self.skin["points"]))]
+        self.rig["skin"]["mesh_uvs"]=uv
+        self._publish()
+        from pxr import UsdGeom
+        _,stage=self.scene.open(self.pid,"face_world",1)
+        mesh=UsdGeom.Mesh(
+            stage.GetPrimAtPath("/World/Actor/Rig/CharacterMesh"))
+        st=UsdGeom.PrimvarsAPI(mesh).GetPrimvar("st")
+        self.assertEqual(st.GetInterpolation(),"vertex")
+        self.assertEqual([[float(x) for x in pair] for pair in st.Get()],uv)
+        state=OpenUSDTimeState(self.index)
+        snap=state.evaluate(self.pid,"face_world",1,"acting",1,tick=T)
+        live=visual_state(self.index,self.pid,snap,
+            scene_id="face_world",scene_revision=1)
+        actor=next(x for x in live["objects"] if
+                   x["path"]=="/World/Actor")
+        self.assertEqual(actor["shape"],"skinned_mesh")
+        self.assertEqual(actor["mesh_uvs"],uv)
+        self.assertFalse(live["source_modified"])
+
+    def test_reject_rig_uvs_that_do_not_match_original_vertices(self):
+        self.rig["skin"]["mesh_uvs"]=[[0.,0.]]
+        with self.assertRaises(ValueError):
+            self.scene.publish(self.pid,"bad_actor_uvs",prims=[
+                {"path":"/World/Actor","role":"actor","position":[0,0,0]},
+            ],curves=[],skeletal_rigs=[self.rig])
+
+
+
 if __name__=="__main__":
     unittest.main()
