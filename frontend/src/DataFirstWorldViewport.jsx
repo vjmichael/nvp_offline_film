@@ -12,7 +12,7 @@ function validMatrix(m){
       r.every(x=>typeof x==='number'&&Number.isFinite(x)));
 }
 
-function validateMeshData(item){
+export function validateMeshData(item){
   if(!Number.isFinite(item.size_m)||item.size_m<=0||item.size_m>10000)
     throw Error('Untrusted USD mesh size');
   const pts=item.mesh_points,faces=item.mesh_triangles;
@@ -62,7 +62,7 @@ function shapeFor(item){
 
 // Updates only disposable Three.js vertex buffers. Original USD binding,
 // weights and animation remain on the trusted native scene side.
-function updateSkinnedGeometry(geometry,item){
+export function updateSkinnedGeometry(geometry,item){
   const {pts,faces}=validateMeshData(item);
   const attr=geometry.getAttribute('position');
   const index=geometry.getIndex();
