@@ -181,7 +181,7 @@ def run_installed_visible_finished_smoke(bundle_root):
             FilmIndex(studio),base,fixture,project["id"])
         window=webview.create_window(
             "NVP Installed — Published MXF Picture and Audio Device Clock",
-            base+"/?nvp_wo5_installed_real_published_mxf=1",
+            base+"/",
             width=1280,height=800,min_size=(960,600),
             js_api=bridge)
         bridge._attach_window(window)
