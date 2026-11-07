@@ -16,7 +16,9 @@ def publish_pbr_maps(index,pid,maps,*,has_uv):
         len(maps)>len(CHANNELS) or
         any(k not in CHANNELS for k in maps)):
         raise ValueError("Original PBR images require bounded authored USD UVs")
-    result={}
+    # Validate *every* channel before publishing *any* FilmIndex blob.
+    # An invalid final opacity/normal PNG must not partially admit previous
+    # channels or create an incomplete original material revision.
     from backend.nvp_native_usd_texture import decode_png
     for key in CHANNELS:
         if key not in maps:continue
@@ -29,8 +31,8 @@ def publish_pbr_maps(index,pid,maps,*,has_uv):
                         (key!="opacity" or r in (0,255))):
                     raise ValueError(
                         "Scalar PBR maps must be grayscale; opacity is binary")
-        result[key]=publish_texture(index,pid,maps[key])
-    return result
+    return {key:publish_texture(index,pid,maps[key])
+            for key in CHANNELS if key in maps}
 
 def verify_pbr_maps(index,pid,maps):
     if maps is None:return None
