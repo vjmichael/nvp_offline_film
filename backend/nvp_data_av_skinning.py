@@ -98,26 +98,44 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
         # Neither NVP nor Three.js may infer texture coordinates from pose.
         st=UsdGeom.PrimvarsAPI(geometry).GetPrimvar("st")
         source_uvs=None
+        source_face_uvs=None
+        authored_corner_uvs=None
         if st:
-            if st.GetInterpolation()!="vertex":
-                raise RuntimeError("Original rig UV primvar is not vertex-scoped")
             vals=st.Get()
-            if vals is None or len(vals)!=points_count:
-                raise RuntimeError("Original rig UV count differs from skin topology")
-            source_uvs=[[float(u),float(v)] for u,v in vals]
+            interpolation=st.GetInterpolation()
+            if vals is None:
+                raise RuntimeError("Original skinned USD st primvar is empty")
+            if interpolation=="vertex":
+                if len(vals)!=points_count:
+                    raise RuntimeError("Original rig vertex UV count differs")
+                source_uvs=[[float(u),float(v)] for u,v in vals]
+            elif interpolation=="faceVarying":
+                if len(vals)!=sum(faces):
+                    raise RuntimeError("Original rig face UV count differs")
+                authored_corner_uvs=[[float(u),float(v)] for u,v in vals]
+                source_face_uvs=[]
+            else:
+                raise RuntimeError("Unsupported original rig st interpolation")
+            all_uvs=(source_uvs if source_uvs is not None
+                     else authored_corner_uvs)
             if any(not math.isfinite(q) or abs(q)>1024
-                   for uv in source_uvs for q in uv):
-                raise RuntimeError("Original rig UV data is not finite")
+                   for uv in all_uvs for q in uv):
+                raise RuntimeError("Original rig UV coordinates are invalid")
         groups=[]
         offset=0
         for count in faces:
             face=indices[offset:offset+count]
+            corners=(authored_corner_uvs[offset:offset+count]
+                     if authored_corner_uvs is not None else None)
             offset+=count
             if (any(type(i) is not int or not 0<=i<points_count for i in face)
                 or len(set(face))!=count):
                 raise RuntimeError("Invalid original USD actor face")
-            groups.extend([[face[0],face[j],face[j+1]]
-                           for j in range(1,count-1)])
+            for j in range(1,count-1):
+                groups.append([face[0],face[j],face[j+1]])
+                if corners is not None:
+                    source_face_uvs.append([
+                        corners[0],corners[j],corners[j+1]])
         pose=evaluate_skin(stage,prim,path,tick)
         points=pose["deformed_points"]
         if (len(points)!=points_count or
@@ -138,7 +156,7 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
         material=pose["source_preview_material"]
         descriptor=rig.get("texture")
         if descriptor is not None:
-            if source_uvs is None:
+            if source_uvs is None and source_face_uvs is None:
                 raise RuntimeError("Original textured skin has no authentic UVs")
             from pxr import UsdShade
             from backend.nvp_native_usd_texture import (
@@ -185,6 +203,7 @@ def verified_live_skins(index:FilmIndex,project_id,scene_snapshot, *,
             "mesh_points":points,
             "mesh_triangles":groups,
             "mesh_uvs":source_uvs,
+            "mesh_face_uvs":source_face_uvs,
             "geometry_asset_sha256":layer_sha,
             "source_skinning":True,
             "source_skinning_tick":str(tick),
