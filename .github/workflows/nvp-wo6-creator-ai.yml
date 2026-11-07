@@ -8,6 +8,9 @@ on:
       - backend/nvp_wo6_scene_context.py
       - backend/nvp_wo6_impact_preview.py
       - backend/nvp_wo6_native_take_action.py
+      - backend/nvp_wo6_native_shot_action.py
+      - backend/nvp_wo6_recovery.py
+      - tools/nvp_wo6_shot_worker.py
       - tools/nvp_wo6_take_worker.py
       - backend/nvp_wo6_tool_readiness.py
       - backend/nvp_ai_read_host.py
@@ -16,6 +19,8 @@ on:
       - tests/test_nvp_wo6_scene_tool_context.py
       - tests/test_nvp_wo6_impact_preview.py
       - tests/test_nvp_wo6_native_take_action.py
+      - tests/test_nvp_wo6_native_shot_action.py
+      - tests/test_nvp_wo6_recovery.py
       - .github/workflows/nvp-wo6-creator-ai.yml
   pull_request:
     paths:
@@ -24,6 +29,9 @@ on:
       - backend/nvp_wo6_scene_context.py
       - backend/nvp_wo6_impact_preview.py
       - backend/nvp_wo6_native_take_action.py
+      - backend/nvp_wo6_native_shot_action.py
+      - backend/nvp_wo6_recovery.py
+      - tools/nvp_wo6_shot_worker.py
       - tools/nvp_wo6_take_worker.py
       - backend/nvp_wo6_tool_readiness.py
       - backend/nvp_ai_read_host.py
@@ -32,6 +40,8 @@ on:
       - tests/test_nvp_wo6_scene_tool_context.py
       - tests/test_nvp_wo6_impact_preview.py
       - tests/test_nvp_wo6_native_take_action.py
+      - tests/test_nvp_wo6_native_shot_action.py
+      - tests/test_nvp_wo6_recovery.py
       - .github/workflows/nvp-wo6-creator-ai.yml
   workflow_dispatch:
 concurrency:
@@ -59,8 +69,8 @@ jobs:
       - name: Install protected Windows native worker dependency
         if: runner.os == 'Windows'
         run: 'python -m pip install "pywin32>=310"'
-      - name: Compile WO6-05 action, contained worker and native tests
-        run: python -m compileall -q backend/nvp_wo6_native_take_action.py tools/nvp_wo6_take_worker.py tests/test_nvp_wo6_native_take_action.py
+      - name: Compile WO6-05/06 actions, contained workers, durable recovery and tests
+        run: python -m compileall -q backend/nvp_wo6_native_take_action.py backend/nvp_wo6_native_shot_action.py backend/nvp_wo6_recovery.py tools/nvp_wo6_take_worker.py tools/nvp_wo6_shot_worker.py tests/test_nvp_wo6_native_take_action.py tests/test_nvp_wo6_native_shot_action.py tests/test_nvp_wo6_recovery.py
       - name: Compile new and existing trusted read-only host
         run: python -m compileall -q backend/nvp_wo6_creator_plan.py backend/nvp_wo6_feature_origins.py backend/nvp_wo6_scene_context.py backend/nvp_wo6_impact_preview.py backend/nvp_wo6_tool_readiness.py backend/nvp_ai_read_host.py tests/test_nvp_wo6_creator_plan.py tests/test_nvp_wo6_feature_origins.py tests/test_nvp_wo6_scene_tool_context.py tests/test_nvp_wo6_impact_preview.py
       - name: Run WO6 original FilmIndex source-to-Take planning, negative and trusted-host tests
@@ -73,5 +83,9 @@ jobs:
         run: python -m unittest discover -s tests -p test_nvp_wo6_impact_preview.py -v
       - name: Verify actual creator-approved and OS-contained immutable OpenUSD Take worker
         run: python -m unittest discover -s tests -p test_nvp_wo6_native_take_action.py -v
+      - name: Verify director-approved camera, blocking, and lighting OS-contained native OpenUSD operations
+        run: python -m unittest discover -s tests -p test_nvp_wo6_native_shot_action.py -v
+      - name: Verify durable cancellation, crash-after-commit, and independent native recovery receipts
+        run: python -m unittest discover -s tests -p test_nvp_wo6_recovery.py -v
       - name: Preserve existing AI-01/02/03 read-only reference contracts
         run: python -m pytest -q tests/test_nvp_ai_read_host.py tests/test_nvp_ai_context.py tests/test_nvp_ai_refs.py
