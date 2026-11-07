@@ -27,7 +27,7 @@ class TrustedDesktopWO5Bridge(TrustedDesktopCameraBridge):
     """Use the actual OS-confirmed WebView2 bridge; not FastAPI routes."""
 
     def __init__(self, index: FilmIndex, *, origin, production_root=None,
-                 host_factory=None):
+                 host_factory=None, finished_codec_provider=None):
         super().__init__(index, origin=origin, host_factory=host_factory)
         if production_root is None:
             home = Path(os.environ.get("NVP_HOME", str(
@@ -38,6 +38,8 @@ class TrustedDesktopWO5Bridge(TrustedDesktopCameraBridge):
             raise PermissionError("Host-owned native production state root required")
         self._wo5_state = root.resolve()
         self._wo5_journal = None
+        self._finished_codec_provider = finished_codec_provider
+        self._finished_player = None
 
     def _wo5_project(self, project_id):
         self._native_window()  # exact current first-party pywebview origin
@@ -192,3 +194,74 @@ class TrustedDesktopWO5Bridge(TrustedDesktopCameraBridge):
             watched_entire_film=payload["watched_entire_film"],
             heard_entire_sound=payload["heard_entire_sound"],
             approve=self._wo5_approve)
+
+
+    def wo5_film_capabilities(self):
+        """Desktop only; native binaries must be verified by installed host."""
+        self._native_window()
+        return {
+            "format":"nvp.wo5.finished_dcp_pcm24_picture_review.v1",
+            "native_finished_mxf_decode_configured":
+                callable(self._finished_codec_provider),
+            "FFmpeg_used":False,
+            "source_take_only":False,
+            "finished_picture_and_sound_from_published_mxf":True,
+            "actual_sustained_24fps_verified":False,
+            "installed_codec_bundle_verified":
+                self._finished_player is not None,
+            "production_accepted":False,
+        }
+
+    def _wo5_finished(self):
+        self._native_window()
+        if self._finished_player is None:
+            if not callable(self._finished_codec_provider):
+                raise RuntimeError(
+                    "Native finished-DCP viewer requires installed, build-SHA-pinned "
+                    "OpenJPEG/asdcplib codec bundle; no fallback to FFmpeg")
+            from backend.nvp_wo5_finished_playback import FinishedFilmPlayer
+            unwrap,decoder=self._finished_codec_provider()
+            self._finished_player=FinishedFilmPlayer(
+                self.index,self._wo5_journal_for_review(),
+                unwrap=unwrap,decoder=decoder,
+                private_root=self._wo5_state/".review-scratch",
+                native_window=self._native_window,
+                ask_native=self._wo5_confirm_finished_viewing)
+        return self._finished_player
+
+    def _wo5_confirm_finished_viewing(self,scope):
+        self._native_window()
+        if scope.get("operation")!="nvp.wo5.approve_readonly_finished_mxf_playback.v1":
+            return False
+        message=(
+            "Review published FINISHED picture MXF and mastered PCM24 sound.\n"
+            "This is NOT the original Take's live 3D scene.\n"
+            "Feature: "+str(scope["feature_id"])+"\n"
+            "FilmIndex SHA: "+str(scope["feature_filmindex_sha256"])+"\n"
+            "Approved picture SHA: "+str(scope["picture_custody_sha256"])+"\n"
+            "Frame count: "+str(scope["frames"])+"\n"
+            "Verified CineCert decoder: "+str(scope["unwrap_binary_sha256"])+"\n"
+            "Verified OpenJPEG decoder: "+str(scope["openjpeg_binary_sha256"])+"\n"
+            "No file or original Take will be modified.\n"
+            "Screen-preview color, 2-channel monitoring and cinema compliance "
+            "are NOT independently certified.\n"
+            "Authorize read-only playback of this exact published film?")
+        return self._native_window().create_confirmation_dialog(
+            "NVP — Authorize Finished-Film Playback",message) is True
+
+    def wo5_film_begin(self,project_id,feature_id):
+        self._wo5_project(project_id)
+        return self._wo5_finished().begin(project_id,feature_id)
+
+    def wo5_film_frame(self,session_id,frame_index):
+        self._native_window()
+        return self._wo5_finished().frame(session_id,frame_index)
+
+    def wo5_film_stop(self,session_id):
+        self._native_window()
+        return self._wo5_finished().stop(session_id)
+
+    def _close(self):
+        if self._finished_player is not None:
+            self._finished_player.close()
+        super()._close()
