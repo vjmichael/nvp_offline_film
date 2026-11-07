@@ -225,12 +225,28 @@ class WO6DurableRecovery:
         row, spec = self._approved_spec(task_id, owner=owner_key)
         if row["state"] not in ("ACTIVE", "INTERRUPTED", "CANCELLED"):
             raise RuntimeError("Only interrupted or safely stopped native work can reconcile")
-        if self._attest is None or self._attest(task_id) is not True:
-            raise PermissionError("Native OS process-tree cleanup not independently verified")
         folder = Path(job_root).resolve() / task_id
         if (not folder.is_dir() or folder.is_symlink() or
                 type(studio_db) not in (Path, str)):
             raise RuntimeError("Native job folder/database path is unavailable")
+        if self._attest is not None:
+            # Tests and specialized existing strict-cgroup native hosts may
+            # inject independent OS proof. No identity or model access alone
+            # is accepted as proof of stopped processes.
+            if self._attest(task_id) is not True:
+                raise PermissionError("Native worker tree not independently stopped")
+            attestation_kind="HOST_INJECTED_OS_TREE_ATTESTOR"
+        else:
+            import os
+            if os.name!="nt":
+                raise PermissionError("No delegated Linux cgroup tree attestation; work remains ACTIVE")
+            from backend.nvp_wo6_kernel_attestation import attest_windows_job_stopped
+            if not attest_windows_job_stopped(
+                    folder, task_id=task_id,
+                    spec_sha256=hashlib.sha256(canonical_bytes(spec)).hexdigest(),
+                    owner=owner_key):
+                raise PermissionError("Windows Job Object still exists; worker tree not stopped")
+            attestation_kind="WINDOWS_NAMED_JOB_OBJECT_ABSENT_KERNEL"
         path = Path(studio_db)
         if path.is_symlink():
             raise RuntimeError("Untrusted symlinked Studio database")
@@ -264,6 +280,7 @@ class WO6DurableRecovery:
             "immutable_artifact_sha256": (
                 artifact["document_sha256"] if artifact else None),
             "native_worker_tree_verified_stopped": True,
+            "native_os_attestation_kind": attestation_kind,
             "source_commit_rolled_back": False,
             "auto_retry_performed": False, "new_director_approval_issued": False,
             "film_delivered": False, "release_approved": False,
