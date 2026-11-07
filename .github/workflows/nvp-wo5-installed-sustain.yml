@@ -191,7 +191,14 @@ jobs:
           $env:NVP_WO5_SMOKE_SECONDS='30'
           $env:NVP_WO5_SMOKE_REPORT=Join-Path $env:RUNNER_TEMP 'wo5-installed-throughput.json'
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'wo5-installed-diagnostic.txt'
-          $result=Start-Process -FilePath $installed -ArgumentList '--smoke-finished-playback' -PassThru -Wait
+          $result=Start-Process -FilePath $installed -ArgumentList '--smoke-finished-playback' -PassThru
+          try {
+            Wait-Process -Id $result.Id -Timeout 180 -ErrorAction Stop
+          } catch {
+            & taskkill.exe /PID $result.Id /T /F 2>$null
+            throw 'Installed decoder exceeded 180s bounded 30s workload; real 24fps speed not proven'
+          }
+          $result.Refresh()
           if ($result.ExitCode -ne 0) { throw 'Installed real decoder did not achieve sustained 24fps; report is a failed release gate' }
           if (-not (Test-Path $env:NVP_WO5_SMOKE_REPORT)) { throw 'No measured native decode evidence' }
       - name: Actual installed visible WebView2 complete 30s published SMPTE DCP picture+mastered PCM presentation
@@ -202,7 +209,14 @@ jobs:
           $env:NVP_WO5_SMOKE_DCP_DIR=Join-Path $env:RUNNER_TEMP 'wo5-genuine-test-dcp'
           $env:NVP_WO5_VISIBLE_AV_REPORT=Join-Path $env:RUNNER_TEMP 'wo5-visible-webview2-av.json'
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'wo5-visible-webview2-diagnostics.txt'
-          $result=Start-Process -FilePath $installed -ArgumentList '--smoke-visible-finished-av' -PassThru -Wait
+          $result=Start-Process -FilePath $installed -ArgumentList '--smoke-visible-finished-av' -PassThru
+          try {
+            Wait-Process -Id $result.Id -Timeout 600 -ErrorAction Stop
+          } catch {
+            & taskkill.exe /PID $result.Id /T /F 2>$null
+            throw 'Installed visible WebView2 playback exceeded 600s; no verified 30s film completion'
+          }
+          $result.Refresh()
           if ($result.ExitCode -ne 0) {
             throw 'Installed visible WebView2 failed complete picture/PCM clock presentation; see separate report'
           }
@@ -214,7 +228,14 @@ jobs:
         run: |
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           $env:NVP_WO5_EXPECT_CODEC_INSTALL='1'
-          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru -Wait
+          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru
+          try {
+            Wait-Process -Id $window.Id -Timeout 180 -ErrorAction Stop
+          } catch {
+            & taskkill.exe /PID $window.Id /T /F 2>$null
+            throw 'Installed WebView2 source review exceeded 180s; window gate not proven'
+          }
+          $window.Refresh()
           if ($window.ExitCode -ne 0) { throw 'Installed WebView2/native decoder capability not proven' }
       - name: Independently enforce actual installed visible Canvas+WebAudio frame-completion gate
         shell: pwsh
