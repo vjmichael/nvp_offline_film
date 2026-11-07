@@ -63,6 +63,7 @@ class ReviewCodecAdmissionTests(unittest.TestCase):
                 }
             digest=sha256(json.dumps(manifest,sort_keys=True,
                 separators=(",",":"),ensure_ascii=True).encode("ascii")).hexdigest()
+            (root/"nvp-codec-manifest.json").write_text(json.dumps(manifest,sort_keys=True,separators=(",",":"),ensure_ascii=True),encoding="ascii")
             with self.assertRaises(PermissionError):
                 pinned_codec_pair(root,manifest,"f"*64)
             unwrap,decoder=pinned_codec_pair(root,manifest,digest)
