@@ -226,6 +226,12 @@ class OriginalCaptureJournal:
                     "take_id":row["take_id"],
                     "phase":row["phase"],
                     "durable_sample_count":row["durable_sample_count"],
+                    "recoverable_sealed_mono":(
+                        row["phase"] in ("DRAINED","FAILED_UNAPPROVED")
+                        and row["source_pcm_sha256"] is not None
+                        and row["durable_sample_count"]>0
+                        and (directory/"recording.pcm").is_file()
+                        and not (directory/"recording.pcm").is_symlink()),
                     "source_verified_for_freeze":False,
                     "take_approved":False,
                     "requires_native_owner_reconciliation":True,
