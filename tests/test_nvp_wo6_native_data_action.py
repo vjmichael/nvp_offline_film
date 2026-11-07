@@ -18,6 +18,7 @@ from backend.nvp_studio import Studio
 from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND
 from backend.nvp_wo6_impact_preview import preview_source_impact
 from backend.nvp_wo6_native_data_action import NativeFilmDecisionHost
+from backend.nvp_wo6_recovery import WO6DurableRecovery
 
 T=TICKS_PER_SECOND
 GRADE={
@@ -130,6 +131,32 @@ class NativeFilmDecisionAcceptance(unittest.TestCase):
                 self.pid,"old_take",1)["document_sha256"],original_sha)
         self.assertEqual(len(self.creator_reviews)>1,True)
         self.assertEqual(len(self.native_reviews)>1,True)
+
+    def test_crash_after_true_color_commit_before_receipt_is_reconciled(self):
+        request=self._request("color","graded_without_receipt")
+        task=self.host.queue_decision(self.scope,**request)["task_id"]
+        self.host.binding.claim_next(owner_key=self.host.owner)
+        # Real DA-06 writer commits an immutable FilmIndex decision.
+        created=NativeColorDecisions(self.index).publish(
+            self.pid,request["decision_id"],
+            take_id=request["source_id"],
+            take_sha256=request["source_sha256"],
+            parameters=request["payload"])
+        recovery=WO6DurableRecovery(
+            self.ledger,attest_worker_tree_stopped=lambda _:True)
+        verified=recovery.reconcile_interrupted(
+            task,owner_key=self.host.owner,
+            job_root=self.host.root,studio_db=self.studio.db_path)
+        self.assertEqual(
+            verified["evidence_status"],"COMMITTED_SOURCE_WITHOUT_WORKER_RECEIPT")
+        self.assertEqual(verified["immutable_artifact_sha256"],
+                         created["document_sha256"])
+        self.assertEqual(self.ledger.get_task(task)["state"],"INTERRUPTED")
+        self.assertFalse(verified["film_delivered"])
+        self.assertFalse(verified["auto_retry_performed"])
+        self.assertEqual(NativeColorDecisions(self.index).read(
+            self.pid,request["decision_id"],1)["document_sha256"],
+            created["document_sha256"])
 
     def test_grants_revocation_bad_fields_and_ai_call_rejected(self):
         request=self._request("color","unapproved_grade")
