@@ -110,75 +110,91 @@ class InstalledPublishedDCPFixture:
             raise PermissionError("Fixture decoder preparation is one-shot")
         for ri,reel in enumerate(self.reels):
             self._checked_asset(reel)
-            for local in range(0,reel["frames"],MAX_UNWRAP_FRAMES):
-                count=min(MAX_UNWRAP_FRAMES,reel["frames"]-local)
-                if self.progress is not None:
-                    self.progress(ri,local,count,self.total)
-                with TemporaryDirectory(prefix="nvp-real-visible-mxf-") as temp:
-                    work=Path(temp)
-                    run_supervised_codec(self.unwrap,
-                        ["-f",str(local),"-d",str(count),
-                         "-b",str(MAX_J2K_BYTES),str(reel["picture"]),"p_"],
-                        workdir=work,check_cancel=lambda:False,timeout=240)
-                    run_supervised_codec(self.unwrap,
-                        ["-f",str(local),"-d",str(count),
-                         str(reel["sound"]),"snd"],
-                        workdir=work,check_cancel=lambda:False,timeout=240)
-                    with wave.open(str(work/"snd"),"rb") as wav:
-                        if (wav.getframerate()!=RATE or
-                            wav.getnchannels()!=2 or
-                            wav.getsampwidth()!=3 or
-                            wav.getnframes()!=count*SAMPLES_PER_FRAME):
-                            raise PermissionError("Final mastered PCM24 has incorrect clock/sample count")
-                        sound=wav.readframes(count*SAMPLES_PER_FRAME)
-                    if len(sound)!=count*SAMPLES_PER_FRAME*6:
-                        raise PermissionError("Native final sound sample window incomplete")
-                    for n in range(count):
-                        file=work/f"p_{local+n:06d}.j2c"
-                        if (file.is_symlink() or not file.is_file() or
-                                file.stat().st_size>MAX_J2K_BYTES):
-                            raise PermissionError("Native finished picture frame missing")
-                        j2k=file.read_bytes()
-                        digest=sha256(j2k).hexdigest()
-                        inspect_j2k_header(j2k,self.profile)
-                        if digest not in self._picture_cache:
-                            dest=f"review_{local+n:06d}.ppm"
-                            run_supervised_codec(self.decode,
-                                ["-i",file.name,"-o",dest],
-                                workdir=work,check_cancel=lambda:False,timeout=240)
-                            rgb=_ppm_header(work/dest,
-                                width=PROFILES[self.profile][0],
-                                height=PROFILES[self.profile][1])
-                            preview,(width,height)=_display_png(rgb,self.profile)
-                            self._picture_cache[digest]=(
-                                base64.b64encode(preview).decode("ascii"),
-                                width,height)
-                            self.decode_calls+=1
-                        picture,w,h=self._picture_cache[digest]
-                        self.picture_unique_hashes.add(digest)
-                        part=sound[n*SAMPLES_PER_FRAME*6:
-                                   (n+1)*SAMPLES_PER_FRAME*6]
-                        stereo=_stereo_pcm16(part,("L","R"))
-                        absolute=reel["first"]+local+n
-                        self.frames[absolute]={
-                            "format":FORMAT,
-                            "status":"DECODED_PUBLISHED_FINAL_FRAME",
-                            "frame_index":absolute,
-                            "reel_index":ri,
-                            "reel_frame_index":local+n,
-                            "picture_24fps_film_time_tick":absolute*FRAME_TICKS,
-                            "audio_start_sample":absolute*SAMPLES_PER_FRAME,
-                            "audio_samples":SAMPLES_PER_FRAME,
-                            "picture_png_base64":picture,
-                            "picture_width":w,"picture_height":h,
-                            "stereo_pcm16_base64":base64.b64encode(stereo).decode("ascii"),
-                            "source_j2k_sha256":digest,
-                            "picture_and_sound_from_final_published_mxf":True,
-                            "screen_display_calibrated":False,
-                            "original_multichannel_master_preserved":True,
-                            "finished_film_complete_viewing_verified":False,
-                            "production_accepted":False,
-                        }
+            # Whole original PCM24 reel is a few MiB in this explicitly
+            # bounded <=720-frame CI fixture. Unwrap once per reel and
+            # read exact sample windows for each picture chunk. Full SHA
+            # and final published MXF identity remain checked by _checked_asset.
+            with TemporaryDirectory(prefix="nvp-real-pcm-reel-") as pcm_temp:
+                sound_dir=Path(pcm_temp)
+                run_supervised_codec(self.unwrap,
+                    ["-f","0","-d",str(reel["frames"]),
+                     str(reel["sound"]),"snd"],
+                    workdir=sound_dir,check_cancel=lambda:False,timeout=240)
+                reel_pcm=sound_dir/"snd"
+                if reel_pcm.is_symlink() or not reel_pcm.is_file():
+                    raise PermissionError("Published SMPTE reel PCM24 unwrap missing")
+                with wave.open(str(reel_pcm), "rb") as original_pcm:
+                    if (original_pcm.getframerate()!=RATE or
+                        original_pcm.getnchannels()!=2 or
+                        original_pcm.getsampwidth()!=3 or
+                        original_pcm.getnframes()!=reel["frames"]*SAMPLES_PER_FRAME):
+                        raise PermissionError("Actual sound reel PCM24 duration and channels changed")
+                for local in range(0,reel["frames"],MAX_UNWRAP_FRAMES):
+                    count=min(MAX_UNWRAP_FRAMES,reel["frames"]-local)
+                    if self.progress is not None:
+                        self.progress(ri,local,count,self.total)
+                    with TemporaryDirectory(prefix="nvp-real-visible-mxf-") as temp:
+                        work=Path(temp)
+                        run_supervised_codec(self.unwrap,
+                            ["-f",str(local),"-d",str(count),
+                             "-b",str(MAX_J2K_BYTES),str(reel["picture"]),"p_"],
+                            workdir=work,check_cancel=lambda:False,timeout=240)
+                        with wave.open(str(reel_pcm), "rb") as wav:
+                            if (wav.getframerate()!=RATE or
+                                wav.getnchannels()!=2 or
+                                wav.getsampwidth()!=3 or
+                                wav.getnframes()!=reel["frames"]*SAMPLES_PER_FRAME):
+                                raise PermissionError("Complete reel PCM24 original sample clock changed")
+                            wav.setpos(local*SAMPLES_PER_FRAME)
+                            sound=wav.readframes(count*SAMPLES_PER_FRAME)
+                        if len(sound)!=count*SAMPLES_PER_FRAME*6:
+                            raise PermissionError("Native final sound sample window incomplete")
+                        for n in range(count):
+                            file=work/f"p_{local+n:06d}.j2c"
+                            if (file.is_symlink() or not file.is_file() or
+                                    file.stat().st_size>MAX_J2K_BYTES):
+                                raise PermissionError("Native finished picture frame missing")
+                            j2k=file.read_bytes()
+                            digest=sha256(j2k).hexdigest()
+                            inspect_j2k_header(j2k,self.profile)
+                            if digest not in self._picture_cache:
+                                dest=f"review_{local+n:06d}.ppm"
+                                run_supervised_codec(self.decode,
+                                    ["-i",file.name,"-o",dest],
+                                    workdir=work,check_cancel=lambda:False,timeout=240)
+                                rgb=_ppm_header(work/dest,
+                                    width=PROFILES[self.profile][0],
+                                    height=PROFILES[self.profile][1])
+                                preview,(width,height)=_display_png(rgb,self.profile)
+                                self._picture_cache[digest]=(
+                                    base64.b64encode(preview).decode("ascii"),
+                                    width,height)
+                                self.decode_calls+=1
+                            picture,w,h=self._picture_cache[digest]
+                            self.picture_unique_hashes.add(digest)
+                            part=sound[n*SAMPLES_PER_FRAME*6:
+                                       (n+1)*SAMPLES_PER_FRAME*6]
+                            stereo=_stereo_pcm16(part,("L","R"))
+                            absolute=reel["first"]+local+n
+                            self.frames[absolute]={
+                                "format":FORMAT,
+                                "status":"DECODED_PUBLISHED_FINAL_FRAME",
+                                "frame_index":absolute,
+                                "reel_index":ri,
+                                "reel_frame_index":local+n,
+                                "picture_24fps_film_time_tick":absolute*FRAME_TICKS,
+                                "audio_start_sample":absolute*SAMPLES_PER_FRAME,
+                                "audio_samples":SAMPLES_PER_FRAME,
+                                "picture_png_base64":picture,
+                                "picture_width":w,"picture_height":h,
+                                "stereo_pcm16_base64":base64.b64encode(stereo).decode("ascii"),
+                                "source_j2k_sha256":digest,
+                                "picture_and_sound_from_final_published_mxf":True,
+                                "screen_display_calibrated":False,
+                                "original_multichannel_master_preserved":True,
+                                "finished_film_complete_viewing_verified":False,
+                                "production_accepted":False,
+                            }
             self._checked_asset(reel)
         if any(f is None for f in self.frames):
             raise RuntimeError("Published DCP pictures/audio incomplete")
@@ -188,6 +204,8 @@ class InstalledPublishedDCPFixture:
             "frames":self.total,"reels":len(self.reels),
             "unique_j2k_codestreams":len(self.picture_unique_hashes),
             "native_openjpeg_decodes":self.decode_calls,
+            "real_full_reel_pcm24_native_unwraps":len(self.reels),
+            "reused_identical_published_sound_track_windows":True,
             "all_sound_windows_from_final_pcm24":True,
             "cache_decoded_before_webview_play":True,
             "uninterrupted_playback_verified":False,
