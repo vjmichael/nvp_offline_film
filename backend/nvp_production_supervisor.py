@@ -18,6 +18,9 @@ import time
 
 from backend.nvp_production_journal import ProductionJournal, TASK_KIND
 from backend.nvp_production_cinema import CinemaJournal, TASK_KIND as CINEMA_TASK
+from backend.nvp_wo4_delivery_journal import CinemaDeliveryJournal
+from backend.nvp_wo4_supervised_sound import wrap_supervised_sound
+from backend.nvp_wo4_file_dcp import publish_file_backed_dcp
 from backend.nvp_supervised_codec_process import WorkerCancelled
 from backend.nvp_wo4_picture_spool import (
     encode_disk_xyz12,wrap_disk_j2k_picture,verify_frame_file)
@@ -251,6 +254,108 @@ class ProductionSupervisor:
                     "reason":type(exc).__name__,
                     "production_dcp_accepted":False}
 
+    def _delivery_check(self,uid):
+        last=[time.monotonic()]
+        def check():
+            if time.monotonic()-last[0]>=1:
+                self.journal.delivery_heartbeat(self.owner,uid)
+                last[0]=time.monotonic()
+            return self.journal.status(uid)["cancel_requested"]
+        return check
+
+    def _run_delivery(self,step):
+        uid=step["job_id"]
+        check=self._delivery_check(uid)
+        try:
+            root=self.journal.spool(uid)
+            if root.is_symlink():
+                raise PermissionError("Native production spool was redirected")
+            if step["stage"]=="SOUND_RUNNING":
+                work=root/"sound-stage"
+                if work.is_symlink() or work.exists():
+                    raise FileExistsError("Existing native sound stage requires review")
+                work.mkdir(mode=0o700)
+                reel=self.journal.reel(uid)
+                wrap=ApprovedCodecBinary(
+                    reel["wrapper_path"],sha256=reel["wrapper_sha256"],
+                    product="ASDCP-asdcp_wrap")
+                info=ApprovedCodecBinary(
+                    reel["info_path"],sha256=reel["info_sha256"],
+                    product="ASDCP-asdcp_info")
+                receipt=wrap_supervised_sound(
+                    wrap,info,candidate=self.journal.approved_sound_candidate(uid),
+                    source_take_sha=reel["take_sha256"],
+                    frames=reel["frame_count"],
+                    sound_uuid=step["sound_uuid"],stage_dir=work,
+                    check_cancel=check)
+                if check():
+                    raise WorkerCancelled("Creator cancelled before sound checkpoint")
+                os.link(work/"sound.mxf",root/"sound.mxf")
+                _fsync_directory(root)
+                return self.journal.commit_sound(self.owner,uid,receipt)
+            if step["stage"]=="PACKAGE_RUNNING":
+                reel=self.journal.reel(uid)
+                sound=root/"sound.mxf"
+                pic=root/"picture.mxf"
+                if (pic.is_symlink() or not pic.is_file() or
+                        digest_file(pic)!=reel["track_sha256"] or
+                        sound.is_symlink() or not sound.is_file() or
+                        digest_file(sound)!=step["sound_sha256"]):
+                    raise PermissionError("Verified picture/sound MXF source changed")
+                origin=reel["take_sha256"]
+                picture={
+                    "kind":"picture","asset_uuid":reel["picture_uuid"],
+                    "source_take_sha256":origin,
+                    "file_path":str(pic),"file_sha256":reel["track_sha256"],
+                    "file_bytes":reel["track_bytes"],
+                    "profile":reel["profile"],
+                    "frame_count":reel["frame_count"],"edit_rate":[24,1],
+                    "source_modified":False,"production_dcp_accepted":False}
+                snd={
+                    "kind":"sound","asset_uuid":step["sound_uuid"],
+                    "source_take_sha256":origin,
+                    "file_path":str(sound),
+                    "file_sha256":step["sound_sha256"],
+                    "file_bytes":step["sound_bytes"],
+                    "frame_count":reel["frame_count"],"edit_rate":[24,1],
+                    "source_modified":False,"production_dcp_accepted":False}
+                ids={
+                    "picture":reel["picture_uuid"],
+                    "sound":step["sound_uuid"],"cpl":step["cpl_uuid"],
+                    "pkl":step["pkl_uuid"],"assetmap":step["assetmap_uuid"],
+                    "reel":step["reel_uuid"]}
+                receipt=publish_file_backed_dcp(
+                    job_id=uid,picture=picture,sound=snd,
+                    title=step["title"],profile=reel["profile"],
+                    frames=reel["frame_count"],output_root=step["output_root"],
+                    ids=ids,check_cancel=check)
+                return self.journal.commit_package(self.owner,uid,receipt)
+            raise PermissionError("Unsupported native cinema delivery phase")
+        except InterruptedError:
+            if self.journal.status(uid)["cancel_requested"]:
+                self.journal.finalize_cancel(uid)
+                return {"status":"CANCELLED","job_id":uid}
+            self.journal.delivery_review(self.owner,uid,"SupervisorInterrupted")
+            return {"status":"REVIEW_REQUIRED","job_id":uid,
+                    "reason":"SupervisorInterrupted"}
+        except (OSError,RuntimeError,PermissionError,ValueError) as exc:
+            if self.journal.status(uid)["cancel_requested"]:
+                self.journal.finalize_cancel(uid)
+                return {"status":"CANCELLED","job_id":uid}
+            self.journal.delivery_review(self.owner,uid,type(exc).__name__)
+            return {"status":"REVIEW_REQUIRED","job_id":uid,
+                    "reason":type(exc).__name__,
+                    "production_dcp_accepted":False}
+
+    def _run_index_commit(self,uid):
+        try:
+            return self.journal.commit_filmindex(uid)
+        except (OSError,RuntimeError,PermissionError,ValueError,KeyError) as exc:
+            self.journal._mark_delivery_restart_review(uid,type(exc).__name__)
+            return {"status":"REVIEW_REQUIRED","job_id":uid,
+                    "reason":type(exc).__name__,
+                    "production_dcp_accepted":False}
+
     def run_one(self, *, after_claim=None):
         # Only the supervisor's process may claim. The singleton lock is
         # held by serve() or the parent native host; no browser entrypoint.
@@ -265,6 +370,13 @@ class ProductionSupervisor:
                 track=self.journal.next_track(self.owner,self.pid)
                 if track is not None:
                     return self._wrap_cinema_track(track)
+            if isinstance(self.journal,CinemaDeliveryJournal):
+                pending=self.journal.next_pending_index()
+                if pending is not None:
+                    return self._run_index_commit(pending)
+                delivery=self.journal.next_delivery(self.owner,self.pid)
+                if delivery is not None:
+                    return self._run_delivery(delivery)
             return {"status":"IDLE","worker_kind":TASK_KIND}
         if after_claim is not None:
             after_claim(dict(segment))
@@ -309,7 +421,7 @@ class ProductionSupervisor:
 def serve(state_root, *, once=False, poll_seconds=0.25):
     if type(poll_seconds) not in (float,int) or not 0.05<=poll_seconds<=30:
         raise ValueError("Bounded native supervisor polling interval required")
-    journal = CinemaJournal(state_root)
+    journal = CinemaDeliveryJournal(state_root)
     stop = False
 
     def stop_requested(*_):
@@ -319,6 +431,7 @@ def serve(state_root, *, once=False, poll_seconds=0.25):
     with SingletonSupervisor(journal.root):
         journal.reconcile_after_restart()
         journal.cinema_reconcile()
+        journal.delivery_reconcile()
         runner = ProductionSupervisor(journal)
         if not once:
             # Shutdown the supervisor, NOT an approved production job.
