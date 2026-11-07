@@ -1,6 +1,7 @@
 import React from 'react';
 import {describe,it,expect,vi} from 'vitest';
-import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import {render,screen,fireEvent,waitFor,cleanup} from '@testing-library/react';
+import {afterEach} from 'vitest';
 import ExactFilmTimeShotPanel from './ExactFilmTimeShotPanel.jsx';
 
 const project={id:'a'.repeat(32)};
@@ -15,6 +16,7 @@ const sequence={format:'nvp.exact_time.usd_camera_shots.v1',
   shots:[{shot_id:'Shot001',camera_path:'/World/Camera',pattern:'continuous',
     start_tick:'0',end_tick:'7056000001'}]};
 const action=fn=>fn();
+afterEach(()=>{cleanup();delete window.pywebview;});
 function mount(api){
   return render(<ExactFilmTimeShotPanel project={project} api={api}
     action={action} busy={false}/>);
@@ -69,6 +71,20 @@ describe('DA-01 precise Film Time desktop editor',()=>{
     fireEvent.click(screen.getByText('Save immutable timing revision'));
     expect((await screen.findByRole('alert')).textContent).toMatch(/absent from the source scene/);
     expect(api.mock.calls.filter(x=>x[1]==='POST')).toHaveLength(0);
+  });
+
+  it('never calls the real native freeze bridge after a draft mutation',async()=>{
+    const freeze=vi.fn(async()=>({status:'FROZEN_DATA_FIRST_TAKE'}));
+    window.pywebview={api:{data_av_freeze_timed_take:freeze}};
+    const api=vi.fn(async(path)=>path.endsWith('/film/camera-scenes')?list:sequence);
+    mount(api);
+    const duration=await screen.findByLabelText('Film Time duration limit ticks');
+    const approve=screen.getByText('Approve and freeze original 3D Take');
+    await waitFor(()=>expect(approve.disabled).toBe(false));
+    fireEvent.change(duration,{target:{value:'7056000002'}});
+    expect(approve.disabled).toBe(true);
+    fireEvent.click(approve);
+    expect(freeze).not.toHaveBeenCalled();
   });
 
   it('never authorizes an unsaved edit after a delayed publication resolves',async()=>{
