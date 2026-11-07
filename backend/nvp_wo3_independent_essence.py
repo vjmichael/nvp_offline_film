@@ -30,7 +30,11 @@ def _sha(blob):return hashlib.sha256(blob).hexdigest()
 def _ppm_header(file,*,width,height):
     with file.open("rb") as handle:
         line1=handle.readline(20)
-        line2=handle.readline(40)
+        line2=handle.readline(100)
+        # Official OpenJPEG PPM exporter inserts a bounded version line.
+        # It is not part of the image data or a color transform.
+        if line2.startswith(b"# OpenJPEG-"):
+            line2=handle.readline(40)
         line3=handle.readline(20)
         rest=handle.read()
     if (line1!=b"P6\n" or
