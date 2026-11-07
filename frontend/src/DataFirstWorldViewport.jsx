@@ -507,6 +507,8 @@ export default function DataFirstWorldViewport({
             }[channel];
             material[field]=tex;
             material.userData.textureCacheKeys[field]=key;
+            if(channel==='roughness')material.roughness=1;
+            if(channel==='metallic')material.metalness=1;
             if(channel==='emission')material.emissive.setRGB(1,1,1);
             material.needsUpdate=true;
           }
@@ -590,8 +592,8 @@ export default function DataFirstWorldViewport({
         const base=Array.isArray(mesh.material)?
           mesh.material[0]:mesh.material;
         base.color.setRGB(...surface.base_color_rgb);
-        base.roughness=surface.roughness;
-        base.metalness=surface.metallic;
+        base.roughness=base.roughnessMap?1:surface.roughness;
+        base.metalness=base.metalnessMap?1:surface.metallic;
       }
       if(obj.shape==='skinned_mesh'){
         try{
