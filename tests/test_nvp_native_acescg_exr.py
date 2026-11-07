@@ -132,7 +132,8 @@ class SceneLinearEXRTests(unittest.TestCase):
         self.assertTrue(workspace.is_dir())
         self.assertFalse((self.root/"NVP2D_CancelUnmastered").exists())
         self.assertEqual(len(list((workspace/"pictures").glob("*.exr"))),2)
-        self.assertFalse(self.take["data"].get("master_approved",False))
+        self.assertFalse(self.index.read_revision(
+            self.pid,"SourceColorTake",1)["data"].get("master_approved",False))
 
     def test_invalid_source_or_config_and_existing_destination_refused(self):
         path=self.root/"refuse.exr"
