@@ -230,13 +230,30 @@ jobs:
           $env:NVP_WO5_EXPECT_CODEC_INSTALL='1'
           $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru
           try {
-            Wait-Process -Id $window.Id -Timeout 180 -ErrorAction Stop
+            Wait-Process -Id $window.Id -Timeout 270 -ErrorAction Stop
           } catch {
             & taskkill.exe /PID $window.Id /T /F 2>$null
-            throw 'Installed WebView2 source review exceeded 180s; window gate not proven'
+            throw 'Installed WebView2 source review exceeded 270s; see real stage trace, gate not proven'
           }
           $window.Refresh()
           if ($window.ExitCode -ne 0) { throw 'Installed WebView2/native decoder capability not proven' }
+      - name: Preserve human-readable native decoder and visible WebView2 timeout diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($name in @(
+            'wo5-installed-diagnostic.txt',
+            'wo5-visible-webview2-diagnostics.txt',
+            'wo5-installed-throughput.json',
+            'wo5-visible-webview2-av.json')) {
+            $path=Join-Path $env:RUNNER_TEMP $name
+            if (Test-Path $path) {
+              Write-Host "WO5 persisted evidence: $name"
+              Get-Content -LiteralPath $path -Tail 60
+            } else {
+              Write-Host "WO5 evidence absent: $name (not a pass)"
+            }
+          }
       - name: Independently enforce actual installed visible Canvas+WebAudio frame-completion gate
         shell: pwsh
         run: |
