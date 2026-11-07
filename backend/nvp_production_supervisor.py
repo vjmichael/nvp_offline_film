@@ -19,6 +19,8 @@ import time
 from backend.nvp_production_journal import ProductionJournal, TASK_KIND
 from backend.nvp_production_cinema import CinemaJournal, TASK_KIND as CINEMA_TASK
 from backend.nvp_wo4_delivery_journal import CinemaDeliveryJournal
+from backend.nvp_wo4_feature_journal import FeatureJournal
+from backend.nvp_wo4_multireel import publish_multireel_dcp
 from backend.nvp_wo4_supervised_sound import wrap_supervised_sound
 from backend.nvp_wo4_file_dcp import publish_file_backed_dcp
 from backend.nvp_supervised_codec_process import WorkerCancelled
@@ -356,6 +358,41 @@ class ProductionSupervisor:
                     "reason":type(exc).__name__,
                     "production_dcp_accepted":False}
 
+    def _run_multireel_feature(self,task):
+        fid=task["feature_id"]
+        manifest=task["manifest"]
+        try:
+            result=publish_multireel_dcp(
+                reels=manifest["reels"],ids=manifest["ids"],
+                title=manifest["title"],profile=manifest["profile"],
+                output_root=manifest["output_root"],
+                check_cancel=lambda:self.journal.feature_cancel_requested(
+                    fid,self.owner))
+            if self.journal.feature_cancel_requested(fid,self.owner):
+                raise WorkerCancelled("Authorized cancellation before feature checkpoint")
+            receipt=self.journal.commit_feature(self.owner,fid,result)
+            return {"status":"FEATURE_PUBLISHED_PENDING_INDEX",
+                    "feature_id":fid,"destination":receipt["destination"],
+                    "production_dcp_accepted":False}
+        except InterruptedError:
+            if self.journal.feature_cancel_requested(fid,self.owner):
+                self.journal.finalize_feature_cancel(fid,self.owner)
+                return {"status":"CANCELLED","feature_id":fid}
+            self.journal.feature_review(self.owner,fid,"SupervisorInterrupted")
+            return {"status":"REVIEW_REQUIRED","feature_id":fid}
+        except (OSError,ValueError,PermissionError,RuntimeError) as exc:
+            self.journal.feature_review(self.owner,fid,type(exc).__name__)
+            return {"status":"REVIEW_REQUIRED","feature_id":fid,
+                    "reason":type(exc).__name__,"production_dcp_accepted":False}
+
+    def _run_feature_index(self,fid):
+        try:
+            return self.journal.commit_feature_index(fid)
+        except (OSError,ValueError,PermissionError,RuntimeError) as exc:
+            self.journal._mark_feature_restart_review(fid)
+            return {"status":"REVIEW_REQUIRED","feature_id":fid,
+                    "reason":type(exc).__name__,"production_dcp_accepted":False}
+
     def run_one(self, *, after_claim=None):
         # Only the supervisor's process may claim. The singleton lock is
         # held by serve() or the parent native host; no browser entrypoint.
@@ -377,6 +414,13 @@ class ProductionSupervisor:
                 delivery=self.journal.next_delivery(self.owner,self.pid)
                 if delivery is not None:
                     return self._run_delivery(delivery)
+            if isinstance(self.journal,FeatureJournal):
+                feature_index=self.journal.next_feature_index()
+                if feature_index is not None:
+                    return self._run_feature_index(feature_index)
+                feature=self.journal.next_feature(self.owner)
+                if feature is not None:
+                    return self._run_multireel_feature(feature)
             return {"status":"IDLE","worker_kind":TASK_KIND}
         if after_claim is not None:
             after_claim(dict(segment))
@@ -421,7 +465,7 @@ class ProductionSupervisor:
 def serve(state_root, *, once=False, poll_seconds=0.25):
     if type(poll_seconds) not in (float,int) or not 0.05<=poll_seconds<=30:
         raise ValueError("Bounded native supervisor polling interval required")
-    journal = CinemaDeliveryJournal(state_root)
+    journal = FeatureJournal(state_root)
     stop = False
 
     def stop_requested(*_):
@@ -432,6 +476,7 @@ def serve(state_root, *, once=False, poll_seconds=0.25):
         journal.reconcile_after_restart()
         journal.cinema_reconcile()
         journal.delivery_reconcile()
+        journal.reconcile_features()
         runner = ProductionSupervisor(journal)
         if not once:
             # Shutdown the supervisor, NOT an approved production job.
