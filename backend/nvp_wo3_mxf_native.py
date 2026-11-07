@@ -61,13 +61,13 @@ def _read_info(info:ApprovedCodecBinary,filename,workdir):
     if info.product!="ASDCP-asdcp_info":
         raise PermissionError("Pinned independent MXF info binary required")
     # asdcp-info takes a single MXF file argument; never arbitrary options.
-    result=info.run([filename],cwd=workdir,include_stdout=True)
+    result=info.run(["-i","-d",filename],cwd=workdir,include_stdout=True)
     text=result.pop("stdout")
     if len(text)>64*1024:
         raise ValueError("Unbounded native MXF metadata")
     props={k.strip().lower().replace(" ","_"):v.strip()
            for k,v in INFO_RE.findall(text.decode("utf-8","replace"))}
-    if props.get("label_set_type")!="SMPTE":
+    if not props.get("label_set_type","").startswith("SMPTE"):
         raise RuntimeError("Native wrapper produced Interop, not SMPTE MXF")
     return props,result
 
@@ -104,6 +104,7 @@ def wrap_cinema_picture(wrap:ApprovedCodecBinary,info:ApprovedCodecBinary,
         return {"format":FORMAT,"kind":"picture","asset_uuid":uid,
                 "bytes":raw,"sha256":hashlib.sha256(raw).hexdigest(),
                 "frame_count":len(frames),"edit_rate":[24,1],
+                "profile":profile,
                 "original_approved_presentation_sha256":origin,
                 "wrapper_sha256":wrap.sha256,"info_sha256":info.sha256,
                 "native_wrap_receipt":result,
