@@ -195,12 +195,12 @@ def create_trusted_camera_bridge(port):
     """Desktop-only pywebview IPC; never registered as an HTTP route."""
     from backend.nvp_api import studio
     from backend.nvp_film_index import FilmIndex
-    from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+    from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
     from backend.nvp_wo5_codec_binding import desktop_finished_decoder_provider
     # Original DataFirst A/V remains active; finished DCP decoding requires
     # separately SHA-pinned native OpenJPEG/CineCert binaries installed by
     # the trusted host. Ordinary browser/AI callers cannot supply paths.
-    return TrustedDesktopWO5Bridge(
+    return TrustedDesktopWO6Bridge(
         FilmIndex(studio),origin="http://127.0.0.1:"+str(port),
         finished_codec_provider=desktop_finished_decoder_provider(bundle_root()))
 
