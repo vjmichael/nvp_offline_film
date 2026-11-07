@@ -170,8 +170,23 @@ export async function runGPUSourceTextureReference(packet){
     renderer.render(scene,camera);
     const actual=new Uint8Array(64);
     renderer.readRenderTargetPixels(target,0,0,4,4,actual);
+    const gl=renderer.getContext();
+    const debug=gl.getExtension('WEBGL_debug_renderer_info');
+    const gpuVendor=debug?String(gl.getParameter(debug.UNMASKED_VENDOR_WEBGL)):'';
+    const gpuRenderer=debug?String(gl.getParameter(
+      debug.UNMASKED_RENDERER_WEBGL)):'';
+    const advertised=(gpuVendor+' '+gpuRenderer).trim();
+    const software=/swiftshader|llvmpipe|softpipe|warp|software|basic render/i
+      .test(advertised);
     return {...compareGPUSourcePixels(actual,packet),
-      webgl_context_created:true};
+      webgl_context_created:true,
+      webgl_vendor_claim:gpuVendor||null,
+      webgl_renderer_claim:gpuRenderer||null,
+      webgl_software_renderer_detected:software,
+      hardware_classification:software?'SOFTWARE_RENDERER':
+        advertised?'ADVERTISED_GPU_UNVERIFIED':'UNKNOWN_GPU',
+      physical_gpu_accepted:false,
+      independent_hydra_parity_accepted:false};
   }finally{
     renderer.setRenderTarget(null);
     geometry?.dispose();material?.dispose();texture?.dispose();
