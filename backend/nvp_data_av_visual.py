@@ -78,6 +78,7 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot,*,
             size=skin["size_m"]
             mesh_points=skin["mesh_points"]
             mesh_triangles=skin["mesh_triangles"]
+            mesh_uvs=skin.get("mesh_uvs")
             if shape=="skinned_mesh":
                 mesh_points_total+=len(mesh_points)
                 mesh_triangles_total+=len(mesh_triangles)
