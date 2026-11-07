@@ -53,7 +53,7 @@ KIND_ACCEPTS = {
     "revise_camera": {"scene", "camera", "temporal"},
     "revise_sound": {"audio", "dialogue", "temporal"},
     "revise_edit": {"edit"},
-    "revise_color": {"style", "presentation", "master"},
+    "revise_color": {"take", "style", "presentation", "master"},
     "retake": {"scene", "take"},
     "remaster": {"master", "audio", "presentation"},
     "republish_dcp": {"presentation", "master"},
