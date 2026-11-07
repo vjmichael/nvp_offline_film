@@ -54,7 +54,7 @@ class OriginalThirtyMinuteAuthoring(unittest.TestCase):
         shot=ExactTimeShotSequence(self.index).read(
             self.pid,"RelayNineShotEdit",1)
         self.assertEqual(len(shot["shots"]),60)
-        self.assertEqual(shot["duration_tick"],1800*T)
+        self.assertEqual(shot["duration_tick"],str(1800*T))
         for entry in r["original_audio_sources"]:
             desc=RecordedSoundSources(self.index).describe(
                 self.pid,entry["source_id"],1)
