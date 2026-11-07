@@ -52,7 +52,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const controller=useRef({ticket:null,context:null,scheduled:[],
     presentationMarks:[],generation:0,cursor:0,last:0,first:0,
     nextAudioAt:0,working:false,active:false,stopping:false,
-    sceneBusy:false,lastSceneAt:-1});
+    sceneBusy:false,lastSceneAt:-1,exhausted:false});
   const item=takes.find(x=>x.take_id===takeId);
 
   useEffect(()=>{
@@ -170,7 +170,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   async function stop(){
     const st=controller.current;
     st.generation++;
-    st.active=false;st.working=false;
+    st.active=false;st.working=false;st.exhausted=false;
     for(const node of st.scheduled){
       try{node.stop();}catch{}
       try{node.disconnect();}catch{}
@@ -228,7 +228,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
 
   async function queueAudio(gen){
     const st=controller.current;
-    if(!st.active||!st.context||!st.ticket||st.generation!==gen||
+    if(!st.active||st.exhausted||!st.context||!st.ticket||st.generation!==gen||
        st.working)return;
     st.working=true;
     try{
@@ -241,9 +241,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         const first=reverse?Math.max(st.first,st.cursor-WINDOW):st.cursor;
         const count=reverse?st.cursor-first:Math.min(WINDOW,st.last-first);
         if(count<=0){
-          st.active=false;
-          setPlaying(false);
-          setNote('Reached the end of this creator-approved Film Time interval.');
+          st.exhausted=true;
+          setNote('Final source samples queued; native permission closes after the sound finishes.');
+          if(st.scheduled.length===0)void stop();
           break;
         }
         const response=await native.data_av_audio_window(st.ticket,first,count);
@@ -275,7 +275,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         });
         if(st.presentationMarks.length>32)st.presentationMarks.shift();
         node.onended=()=>{const k=st.scheduled.indexOf(node);
-          if(k>=0)st.scheduled.splice(k,1);};
+          if(k>=0)st.scheduled.splice(k,1);
+          if(st.exhausted&&st.scheduled.length===0&&st.generation===gen)
+            void stop();
+        };
         st.nextAudioAt=startAt+count/RATE;
         st.cursor=reverse?first:first+count;
       }
@@ -284,6 +287,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         setError(e.message);setPlaying(false);st.active=false;
         for(const node of st.scheduled)try{node.stop();}catch{}
         st.scheduled=[];
+        void stop(); // Fail closed: revoke the native source grant too.
       }
     }finally{
       st.working=false;
@@ -375,7 +379,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       st.nextAudioAt=st.context.currentTime+0.08;
       st.presentationMarks=[];
       st.lastSceneAt=-1;
-      st.active=true;setPlaying(true);
+      st.active=true;st.exhausted=false;setPlaying(true);
       queueAudio(st.generation);
     }catch(e){setError(e.message);await stop();}
   }
@@ -461,7 +465,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         objects={scene.visual.objects||[]}
         listenerPath={listener}
         sceneSha={scene.visual.scene_document_sha256}
-        tick={String(scene.visual.time_tick||'0')}/>}
+        tick={String(scene.visual.time_tick||'0')}
+        nativeSchemas={scene.scene?.native_scene_schemas||[]}/>}
     {scene&&!scene.visual&&<p role="status">Native source geometry
       is not verified; spatial sound may still be inspected.</p>}
     {scene&&<section aria-label="Current frozen USD scene state">
