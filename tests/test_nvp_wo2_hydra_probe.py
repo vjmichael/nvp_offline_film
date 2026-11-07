@@ -78,6 +78,16 @@ class WO2IndependentHydraGate(unittest.TestCase):
             capture_hydra_evidence(
                 self.index,self.pid,"hydra_scene",1,
                 camera_path="/World/Camera",renderer="evil;rm -rf /")
+        with self.assertRaises(ValueError):
+            capture_hydra_evidence(
+                self.index,self.pid,"hydra_scene",1,
+                camera_path="/World/Camera",
+                renderer="Storm",require_gpu=False)
+        with self.assertRaises(ValueError):
+            capture_hydra_evidence(
+                self.index,self.pid,"hydra_scene",1,
+                camera_path="/World/Camera",
+                renderer="Embree",require_gpu=True)
 
 
 if __name__=="__main__":
