@@ -413,10 +413,11 @@ class ProductionJournal:
             self._event(db,job_id,"SEGMENT_REVIEW_REQUIRED",reason)
 
     def authorize_review_retry(self, job_id, authorize):
-        """Only a trusted host can requeue an inspected read-only source check.
+        """Exact host-approved reviewed-source retry with short SQLite lease.
 
-        An output-producing native stage must not use this shortcut: it
-        requires an explicit reconciliation of staged/committed media.
+        The expensive original SHA verification runs OUTSIDE the write lease.
+        The final transaction compares the same reviewed segment identities
+        and leaves real media untouched. Next worker verifies bytes again.
         """
         if not callable(authorize):
             raise PermissionError("Native host retry authorization required")
@@ -428,6 +429,30 @@ class ProductionJournal:
                "assembly_sha256":snap["assembly_sha256"]}
         if authorize(deepcopy(scope)) is not True:
             return {"status":"DENIED","job_id":job_id}
+        with self._read() as db:
+            segments=[dict(r) for r in db.execute(
+                """SELECT position,source_path,expected_sha256,expected_bytes
+                   FROM production_segments WHERE job_id=?
+                   AND state='REVIEW_REQUIRED' ORDER BY position""",
+                (job_id,))]
+        if not segments:
+            raise RuntimeError("No source segment requires review")
+        import hashlib
+        for segment in segments:
+            file=Path(segment["source_path"])
+            if file.is_symlink() or not file.is_file():
+                raise PermissionError("Reviewed original media unavailable")
+            digest=hashlib.sha256()
+            size=0
+            with file.open("rb") as handle:
+                while chunk:=handle.read(1024*1024):
+                    digest.update(chunk)
+                    size+=len(chunk)
+                    if size>segment["expected_bytes"]:
+                        raise PermissionError("Original media grew during review")
+            if (digest.hexdigest()!=segment["expected_sha256"] or
+                    size!=segment["expected_bytes"]):
+                raise PermissionError("Source still differs from approved SHA")
         with self._tx() as db:
             job=db.execute("""SELECT state,task_kind,manifest_sha256,
                                cancel_requested FROM production_jobs
@@ -437,28 +462,13 @@ class ProductionJournal:
                     job["manifest_sha256"]!=scope["manifest_sha256"] or
                     job["cancel_requested"]):
                 raise PermissionError("Source review changed during authorization")
-            segments=db.execute("""SELECT position,source_path,
-                    expected_sha256,expected_bytes FROM production_segments
-                    WHERE job_id=? AND state='REVIEW_REQUIRED'""",
-                    (job_id,)).fetchall()
-            if not segments:
-                raise RuntimeError("No source segment requires review")
-            import hashlib
-            for segment in segments:
-                file=Path(segment["source_path"])
-                if file.is_symlink() or not file.is_file():
-                    raise PermissionError("Reviewed original media unavailable")
-                digest=hashlib.sha256()
-                size=0
-                with file.open("rb") as handle:
-                    while chunk:=handle.read(1024*1024):
-                        digest.update(chunk)
-                        size+=len(chunk)
-                        if size>segment["expected_bytes"]:
-                            raise PermissionError("Original media grew during review")
-                if (digest.hexdigest()!=segment["expected_sha256"] or
-                        size!=segment["expected_bytes"]):
-                    raise PermissionError("Source still differs from approved SHA")
+            current=[dict(r) for r in db.execute(
+                """SELECT position,source_path,expected_sha256,expected_bytes
+                   FROM production_segments WHERE job_id=?
+                   AND state='REVIEW_REQUIRED' ORDER BY position""",
+                (job_id,))]
+            if current!=segments:
+                raise PermissionError("Review segment identity changed during source check")
             for segment in segments:
                 db.execute("""UPDATE production_segments SET state='PENDING',
                     verified_sha256=NULL,verified_bytes=NULL,verified_at=NULL,
@@ -468,7 +478,7 @@ class ProductionJournal:
                 owner_token=NULL,owner_pid=NULL,updated_at=? WHERE job_id=?""",
                 (_now(),job_id))
             self._event(db,job_id,"SOURCE_RETRY_APPROVED",
-                        str(len(segments))+" verified restored source segments")
+                        str(len(segments))+" restored source segments verified")
         return {"status":"QUEUED","job_id":job_id,
                 "segments_requeued":len(segments)}
 
