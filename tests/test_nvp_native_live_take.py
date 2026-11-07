@@ -88,6 +88,27 @@ class LiveTakeMicTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"MicTake001",1)
 
+    def test_microphone_sample_overrun_cannot_publish_an_original_take(self):
+        self.device=FakeCaptureDevice(overrun=True)
+        mic=self.session()
+        mic.begin()
+        self.assertTrue(mic.status["failed"])
+        with self.assertRaises(RuntimeError):
+            mic.finish()
+        self.assertEqual(mic.status["state"],"FAILED")
+        self.assertTrue(self.device.closed)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"MicTake001",1)
+
+    def test_cancellation_after_failed_recording_is_source_safe(self):
+        self.device=FakeCaptureDevice(overrun=True)
+        mic=self.session()
+        mic.begin()
+        self.assertEqual(mic.cancel()["status"],"CANCELLED")
+        self.assertFalse(mic.status["flattened_soundtrack"])
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"MicTake001",1)
+
 
 if __name__=="__main__":
     unittest.main()
