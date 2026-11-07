@@ -414,7 +414,8 @@ class NativeSceneLinearRaster:
                                  else [uvs[i] for i in face]
                                  if texture is not None else None)):
                         rasterized+=1
-                        textured_triangles+=int(texture is not None)
+                        textured_triangles+=int(
+                            texture is not None and face_index not in face_surfaces)
             receipt={
                 "format":FORMAT,"time_tick":str(tick),
                 "original_take_sha256":take_sha256,
