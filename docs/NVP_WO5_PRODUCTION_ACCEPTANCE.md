@@ -16,20 +16,22 @@ proof. Full separate two/three-hour diverse-feature and calibrated theatrical
 evidence remain later gates. WO5 cannot close WO4 solely from synthetic
 OpenJPEG/CineCert MXF/DCP CI.
 
-**Implementation mismatch, explicitly OPEN:** WO5-01's current
-`backend/nvp_wo5_original_short.py` hard-stops at 720 frames/30 seconds and
-only verifies one indexed reel. This is an *existing narrow engineering sample
-gate*, not the requested 30-minute production proof. Extending the host
-validation to an authentic multi-reel FilmIndex assembly with streaming
-verification is required before attempting or accepting the new full proof.
-The correction is a documentation decision; no code changes were made here.
+**Implementation update — 30-minute source-admission checks exist; real
+production proof still OPEN:** The historical one-reel sample API
+`backend/nvp_wo5_original_short.py` remains limited to 720 frames/30 seconds.
+WO5-01 now also includes `backend/nvp_wo5_original_feature.py` to audit
+multi-reel features of up to 43,200 frames/30 minutes against real indexed
+FilmIndex assembly and native journal evidence. This has passed *contract
+regressions only*. It has **NOT** been proven with an NVP-authored 30-minute
+original, nor is the physical/creative/theatrical acceptance complete.
+Single-reel originals over 30 seconds still need a unified review route.
 
 ## Work packages and truthful status
 
 | ID | Work | Status |
 | --- | --- | --- |
-| WO5-01 | Define an original-film evidence boundary: exact FilmIndex source Take, mastering decision, source XYZ12/J2K frame custody, PCM24/MXF, FilmIndex-indexed DCP. 30-minute multi-reel source-bound sequence (existing 1–30-second implementation is insufficient), reject three-frame repeated synthetic stand-ins, never elevate SHA uniqueness to artwork validation | **Existing read-only 30-second sample gate only; real 30-minute multi-reel audit OPEN**; four-platform sample tests do not prove the corrected target |
-| WO5-02 | Define director's intent and human comparison receipt: approved script/shot intention, performed action/actor blocking, camera motion, scene continuity, audible dialogue/environment, final cut timing, explicit mismatch and correction notes; no independent SHA-based creative assertions | **Acceptance protocol documented; real NVP UI and authored film pending** |
+| WO5-01 | Define an original-film evidence boundary: exact FilmIndex source Take, mastering decision, source XYZ12/J2K frame custody, PCM24/MXF, FilmIndex-indexed DCP. 30-minute multi-reel source-bound sequence (existing 1–30-second implementation is insufficient), reject three-frame repeated synthetic stand-ins, never elevate SHA uniqueness to artwork validation | **Multi-reel bounded source-audit IMPLEMENTED; 4/4 Windows/Linux Python 3.11/3.13 contract tests PASS in run 42401400107.** Genuine 30-minute NVP media/render/playback acceptance OPEN |
+| WO5-02 | Define director's intent and human comparison receipt: approved script/shot intention, performed action/actor blocking, camera motion, scene continuity, audible dialogue/environment, final cut timing, explicit mismatch and correction notes; no independent SHA-based creative assertions | **Immutable FilmIndex director-intent/observation code IMPLEMENTED** (`nvp_wo5_director_review.py`) with host-confirmed scope and new native tests; real creator UI and creative review of original film OPEN; new CI pending |
 | WO5-03 | Author, film, edit, render and inspect one genuine <=30-minute original using near-production scene+rigged actor+camera+native spatial audio, immutable Digital Takes and source-bound editing; compare full video/audio playback to director's intended outcome | **DEFERRED until NVP is near-production ready** |
 | WO5-04 | Native installed Windows and Linux tests: trusted editor/project grant to independent supervisor, manual NVP lock, close/reopen, cancellation and crash recovery, actual 30-minute output, controlled disk/RAM/CPU/GPU/power evidence | **DEFERRED physical installed acceptance** |
 | WO5-05 | External calibrated picture/sound specialist, independent SMPTE/DCP verifier, projector/cinema-server ingest and relevant distribution/encryption tests | **DEFERRED specialist acceptance, mandatory before theatrical claim** |
@@ -110,7 +112,7 @@ Full decision: [NVP theatrical Bv2.1 and product end state](NVP_THEATRICAL_BV21_
 
 ## WO5-01 — 30-minute native multi-reel source-custody implementation (2026-11-07)
 
-**IMPLEMENTED ON DRAFT PR #91, CURRENT NATIVE CI PENDING:**
+**IMPLEMENTED ON DRAFT PR #91; native 30-minute admission contract CI PASS (4/4, run 42401400107):**
 `backend/nvp_wo5_original_feature.py` introduces
 `inspect_original_feature_readiness(index, journal, project_id, feature_id)`.
 It accepts only an actual `FeatureJournal` and `FilmIndex`, an **INDEXED**
@@ -138,9 +140,9 @@ Added `tests/test_nvp_wo5_original_feature.py` with 43,200-frame metadata
 and per-position identity coverage, intentional three-frame-repeat rejection,
 missing/altered/out-of-order source receipt denial, immutable original
 FilmIndex vs journal ownership checks, and 30-minute bound. The
-`nvp-wo5-original-short.yml` workflow now runs both the old narrow 30-second
+`nvp-wo5-original-short.yml` workflow runs both the old narrow 30-second
 sample tests and the new 30-minute bounded admission tests on Windows/Linux
-Python 3.11/3.13. **These tests are contract checks using synthetic SHA
+Python 3.11/3.13, all four passed in [run 42401400107](https://github.com/vjmichael/nvp_offline_film/actions/runs/42401400107). **These tests are contract checks using synthetic SHA
 receipts, NOT a 30-minute original film or a full real feature integration.**
 
 **Still OPEN:** actual fully approved 30-minute six-reel native source film and
@@ -150,3 +152,41 @@ interoperability validation; calibrated external theater playback; actual
 licensed packaging. The original single-reel sample API is unchanged and
 remains explicitly limited to 720 frames; future source-unified single-
 reel >30-second review is still a separate integration gap.
+
+## WO5-02 — Immutable director-intent versus viewed-result records (2026-11-07)
+
+**NATIVE IMPLEMENTATION COMMITTED; exact-head CI for this addition pending.**
+`backend/nvp_wo5_director_review.py` provides two distinct FilmIndex
+`presentation` records and strict native-approval scopes:
+
+1. `register_director_intent` freezes the filmmaker's intended camera,
+   subject/action and sound for each ordered 24fps shot over the approved
+   immutable FilmIndex edit/assembly. Bounded full-coverage 1–512 shot
+   identities and exact nonoverlapping Film Time are required. Records are
+   read-only/new-object revisions; they do not create a film and cannot
+   replace the original Take or revised cut.
+2. `record_director_review` first reopens the trusted WO5-01 source-custody
+   auditor for the **same** published film, then captures exactly ordered
+   host-authorized human observations and `MATCHED`,
+   `NEEDS_REVISION`, or `NOT_OBSERVED` judgments. It binds the
+   review via immutable FilmIndex dependencies to both the earlier intent
+   and exact published feature presentation. Review completeness and
+   whether the director requests revisions are attributed to the human
+   report, not inferred by the model or from files. The return remains
+   **production_acceptance=False** and **independent creative/technical/
+   SMPTE Bv2.1/theatrical acceptance FALSE**.
+
+`tests/test_nvp_wo5_director_review.py` includes actual local FilmIndex
+intent/observation persistence, refused consent, shot scope and timing
+validation, original-assembly nonmutation, malformed report refusal,
+and distinct self-report vs certification. One review test stubs the
+WO5-01 audit result *solely to test document transaction semantics*;
+it is NOT evidence of rendered media. Windows/Linux 3.11/3.13 CI queued
+against the new exact head.
+
+**Still OPEN:** installed native graphical shot-review UI and actual
+authentication implementation; independent observed real 30-minute
+picture/audio and non-synthetic scene performance; full creative/artistic
+comparison with corrections, Bv2.1 independent DCP validation and real
+theater ingest. A developer callback used by tests is not a verified
+desktop creator grant.
