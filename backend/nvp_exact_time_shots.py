@@ -133,7 +133,8 @@ class ExactTimeShotSequence:
         shots=[]
         for ev in entries:
             data=ev["payload"]
-            if (ev["event_kind"]!="camera" or ev["source_id"]!=sid or
+            if (ev["event_kind"]!="camera" or ev["subject_id"]!="Camera" or
+                ev["source_id"]!=sid or
                 ev["source_revision"]!=srev or
                 ev["source_document_sha256"]!=source["document_sha256"] or
                 data.get("format")!=FORMAT or
