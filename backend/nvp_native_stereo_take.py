@@ -11,6 +11,7 @@ They require separate timestamp/clock-drift calibration and acceptance.
 from __future__ import annotations
 
 import array
+from hashlib import sha256
 import os
 from pathlib import Path
 import queue
@@ -78,8 +79,8 @@ class NativeStereoOriginalSession(NativeLiveSoundSession):
 
     def _writer(self):
         try:
-            self._left_spool=Path(self._tmp.name)/"source_channel_0.pcm"
-            self._right_spool=Path(self._tmp.name)/"source_channel_1.pcm"
+            self._left_spool=self._tmp/"source_channel_0.pcm"
+            self._right_spool=self._tmp/"source_channel_1.pcm"
             with self._left_spool.open("xb") as left, \
                     self._right_spool.open("xb") as right:
                 while True:
@@ -94,6 +95,18 @@ class NativeStereoOriginalSession(NativeLiveSoundSession):
                     fp.flush();os.fsync(fp.fileno())
         except Exception as exc:
             self._error=exc
+
+    def _source_checksum(self):
+        # Both original signals have a single hardware clock. The journal
+        # pins a distinct SHA for each, wrapped into one source-manifest SHA.
+        hashes=[]
+        for path in (self._left_spool,self._right_spool):
+            h=sha256()
+            with path.open("rb") as fp:
+                while part:=fp.read(CHUNK_BYTES):
+                    h.update(part)
+            hashes.append(h.hexdigest())
+        return sha256(("stereo-v1:"+":".join(hashes)).encode("ascii")).hexdigest()
 
     @staticmethod
     def _file_chunks(path):
@@ -142,6 +155,9 @@ class NativeStereoOriginalSession(NativeLiveSoundSession):
                 camera_timeline_revision=self.camera_revision,
                 sound_timeline_id=self.sound_id,
                 recordings=recordings)
+            self._journal.update(
+                self._tmp,phase="FROZEN",recorded_samples=self._count,
+                take_sha256=receipt["take_document_sha256"])
             self._state="FROZEN"
             return {**receipt,"status":"FROZEN_ORIGINAL_LIVE_TAKE",
                     "actual_recorded_samples":self._count,
