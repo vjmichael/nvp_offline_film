@@ -236,10 +236,12 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
     tint,roughness,metallic,_=surface
     color=np.asarray(sampled_rgb,dtype=np.float64)*np.asarray(
         tint,dtype=np.float64)
+    # Authored PBR image channels override the scalar fallback. This matches
+    # UsdPreviewSurface, MaterialX and the WebGL material (factor 1 for maps).
     if roughness_texels is not None:
-        roughness=np.clip(float(roughness)*roughness_texels,.04,1.)
+        roughness=np.clip(roughness_texels,.04,1.)
     if metallic_texels is not None:
-        metallic=np.clip(float(metallic)*metallic_texels,0.,1.)
+        metallic=np.clip(metallic_texels,0.,1.)
     a,b,c=points
     u=tuple(b[i]-a[i] for i in range(3))
     v=tuple(c[i]-a[i] for i in range(3))
