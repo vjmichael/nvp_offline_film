@@ -207,12 +207,19 @@ class TrustedDataAVController:
                     entry["asset_document_sha256"]==asset_sha]
             if not grants:
                 raise PermissionError("Texture is not bound to approved Take scene")
-            from backend.nvp_openusd_assets import OpenUSDAssetRegistry
-            record,_=OpenUSDAssetRegistry(self.index).open(pid,aid,rev)
-            desc=(record["data"].get("preview_material") or {}).get("texture")
-            if record["document_sha256"]!=asset_sha or (
-                    desc is None or desc["sha256"]!=texture_sha):
-                raise PermissionError("Original texture does not match frozen source")
+            key=(aid,rev,asset_sha,texture_sha)
+            asset_cache=active.get("tile_asset_cache")
+            if asset_cache is not None and asset_cache[0]==key:
+                desc=asset_cache[1]
+            else:
+                from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+                record,_=OpenUSDAssetRegistry(self.index).open(pid,aid,rev)
+                desc=(record["data"].get("preview_material") or {}).get("texture")
+                if record["document_sha256"]!=asset_sha or (
+                        desc is None or desc["sha256"]!=texture_sha):
+                    raise PermissionError("Original texture does not match frozen source")
+                active["tile_asset_cache"]=(key,desc)
+                active["tile_cache"]=None
             from backend.nvp_native_usd_texture import (
                 verified_texture,_tile_from_verified)
             # Bound one decoded original image to this approved Take session.
