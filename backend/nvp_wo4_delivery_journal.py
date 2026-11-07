@@ -534,6 +534,102 @@ class CinemaDeliveryJournal(CinemaJournal):
                 "uncommitted_outputs_deleted":False,
                 "production_dcp_accepted":False}
 
+    def approve_orphan_dcp_adoption(self,job_id,authorize):
+        """Explicitly adopt a fully verified DCP stranded after OS promotion.
+
+        This never moves, deletes, or rewrites the published folder. The
+        original approved picture/sound MXF bytes, UUIDs, durations, Film Time,
+        and all source custody must match before authorizing the operation.
+        Staged/partial folders are *not* eligible for adoption.
+        """
+        if not callable(authorize):
+            raise PermissionError("Trusted native creator recovery approval required")
+        d=self.delivery(job_id)
+        reel=self.reel(job_id)
+        state=self.status(job_id)
+        if (state["state"]!="REVIEW_REQUIRED" or
+                d["phase"]!="REVIEW_REQUIRED" or
+                d["dcp_files_json"] is not None or
+                d["filmindex_sha256"] is not None or
+                d["sound_sha256"] is None or
+                state["cancel_requested"]):
+            raise PermissionError("Only uncommitted published DCP may be reviewed")
+        output=Path(d["output_root"])
+        folder=output/("DCP_"+d["cpl_uuid"])
+        stage=output/(".nvp-wo4-dcp-stage-"+job_id)
+        if (output.is_symlink() or not output.is_dir() or
+                folder.is_symlink() or not folder.is_dir() or
+                stage.exists() or stage.is_symlink()):
+            raise PermissionError("Only a complete unmixed published DCP is eligible")
+        # Inspect all original/derived media and reject any altered source.
+        self._verify_all_production_sources(job_id)
+        audit=inspect_dcp_structure(folder)
+        expected_files={"picture.mxf","sound.mxf","CPL.xml","PKL.xml",
+                        "ASSETMAP.xml","VOLINDEX.xml"}
+        if ({p.name for p in folder.iterdir()}!=expected_files or
+                audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
+                audit["reel_count"]!=1 or
+                audit["reel_durations"]!=[reel["frame_count"]] or
+                audit["cpl_uuid"]!=d["cpl_uuid"] or
+                audit["pkl_uuid"]!=d["pkl_uuid"] or
+                {(x["kind"],x["asset_id"]) for x in audit["tracks"]}!={
+                    ("picture",reel["picture_uuid"]),
+                    ("sound",d["sound_uuid"])} or
+                digest_file(folder/"picture.mxf")!=reel["track_sha256"] or
+                digest_file(folder/"sound.mxf")!=d["sound_sha256"]):
+            raise PermissionError("Orphan DCP does not match approved native MXF receipts")
+        from backend.nvp_wo3_dcp_structure import (
+            _xml, _value, NS_CPL, NS_AM)
+        cpl=_xml(folder,"CPL.xml",NS_CPL,"CompositionPlaylist")
+        reels=cpl.find("{"+NS_CPL+"}ReelList")
+        nodes=[] if reels is None else reels.findall("{"+NS_CPL+"}Reel")
+        if (len(nodes)!=1 or
+                _value(nodes[0],"Id",NS_CPL)!="urn:uuid:"+d["reel_uuid"]):
+            raise PermissionError("Orphan DCP reel UUID changed")
+        amap=_xml(folder,"ASSETMAP.xml",NS_AM,"AssetMap")
+        if _value(amap,"Id",NS_AM)!="urn:uuid:"+d["assetmap_uuid"]:
+            raise PermissionError("Orphan DCP asset-map UUID changed")
+        file_hashes={name:digest_file(folder/name) for name in sorted(expected_files)}
+        scope={"operation":"nvp.supervisor.adopt_verified_orphan_dcp.v1",
+               "job_id":job_id,"manifest_sha256":state["manifest_sha256"],
+               "approved_take_sha256":reel["take_sha256"],
+               "cpl_uuid":d["cpl_uuid"],
+               "file_sha256":file_hashes,"preserve_published_directory":True}
+        if authorize(deepcopy(scope)) is not True:
+            return {"status":"DENIED","job_id":job_id}
+        # Consent is not a shortcut around source or output verification.
+        self._verify_all_production_sources(job_id)
+        if (inspect_dcp_structure(folder)["status"]!="STRUCTURE_AND_SHA_VERIFIED"
+                or {p.name for p in folder.iterdir()}!=expected_files or
+                any(digest_file(folder/name)!=expected for name,expected
+                    in file_hashes.items()) or
+                digest_file(folder/"picture.mxf")!=reel["track_sha256"] or
+                digest_file(folder/"sound.mxf")!=d["sound_sha256"]):
+            raise PermissionError("Approved orphan DCP changed during review")
+        with self._tx() as db:
+            row=db.execute("""SELECT d.phase,d.dcp_files_json,d.sound_sha256,
+                    j.state,j.manifest_sha256,j.cancel_requested
+                    FROM production_cinema_delivery d JOIN production_jobs j
+                    ON j.job_id=d.job_id WHERE j.job_id=?""",(job_id,)).fetchone()
+            if (row is None or row["phase"]!="REVIEW_REQUIRED" or
+                    row["dcp_files_json"] is not None or
+                    row["sound_sha256"]!=d["sound_sha256"] or
+                    row["state"]!="REVIEW_REQUIRED" or row["cancel_requested"] or
+                    row["manifest_sha256"]!=scope["manifest_sha256"]):
+                raise PermissionError("Delivery review status changed before receipt")
+            db.execute("""UPDATE production_cinema_delivery SET
+                    phase='PUBLISHED_PENDING_INDEX',dcp_files_json=?,updated_at=?
+                    WHERE job_id=?""",
+                    (json.dumps(file_hashes,sort_keys=True),_now(),job_id))
+            db.execute("""UPDATE production_jobs SET state='DCP_PUBLISHED',
+                    owner_token=NULL,owner_pid=NULL,updated_at=? WHERE job_id=?""",
+                    (_now(),job_id))
+            self._event(db,job_id,"ORPHAN_DCP_ADOPTED_AFTER_EXACT_REVIEW",
+                        d["cpl_uuid"])
+        return {"status":"PUBLISHED_PENDING_INDEX","job_id":job_id,
+                "destination":str(folder),"file_sha256":file_hashes,
+                "filesystem_mutated":False,"production_dcp_accepted":False}
+
     def _mark_delivery_restart_review(self,job_id,reason):
         with self._tx() as db:
             db.execute("""UPDATE production_cinema_delivery SET
