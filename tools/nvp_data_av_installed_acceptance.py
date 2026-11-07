@@ -241,10 +241,15 @@ def run_installed_data_av_smoke():
                           [[.5,0],[.5,1],[0,1]]],
                 preview_material={"base_color_rgb":[1.,1.,1.],
                                   "roughness":.45,"metallic":.05},
+                material_slots=[{
+                    "faces":[1],"base_color_rgb":[.2,.7,.9],
+                    "roughness":.65,"metallic":.0}],
                 texture_png=original_png)
             texture_doc=OpenUSDAssetRegistry(index).open(
                 pid,"smoke_original_texture_mesh",1)[0]["data"]
             from backend.nvp_native_usd_texture import verified_texture
+            if len(texture_doc.get("material_slots",[]))!=1:
+                raise RuntimeError("Installed USD multi-material subset absent")
             if verified_texture(index,pid,texture_doc[
                     "preview_material"]["texture"])[0]!=original_png:
                 raise RuntimeError("Installed PNG original did not reopen")
