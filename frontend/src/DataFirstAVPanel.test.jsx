@@ -226,3 +226,48 @@ describe('WO2 creator-picked original PNG texture',()=>{
     expect(screen.queryByLabelText(/texture file path/i)).toBeNull();
   });
 });
+
+describe('WO2 approve separate original textured mesh revision',()=>{
+  it('uses original asset SHA and imported texture SHA without a path or mutation',async()=>{
+    const textureHash='c'.repeat(64);
+    const meshHash='d'.repeat(64);
+    const bridge={
+      data_av_catalog:vi.fn(async()=>({
+        format:'nvp.data_av.native_session.v1',status:'AVAILABLE',
+        ffmpeg_runtime_required:false,takes:[],
+      })),
+      data_av_import_original_texture:vi.fn(async()=>({
+        format:'nvp.native.texture_import.v1',
+        status:'ORIGINAL_TEXTURE_IMPORTED',
+        original_modified:false,ffmpeg_used:false,
+        texture:{format:'nvp.original.usd_texture_png.v1',
+          sha256:textureHash,width:2,height:2,source_modified:false},
+      })),
+      data_av_texture_mesh_catalog:vi.fn(async()=>({
+        format:'nvp.native.texture_mesh_catalog.v1',
+        assets:[{asset_id:'OriginalMesh',asset_revision:1,
+          asset_document_sha256:meshHash}],
+        original_modified:false,
+      })),
+      data_av_apply_original_texture:vi.fn(async()=>({
+        format:'nvp.native.texture_mesh_revision.v1',
+        status:'NEW_SOURCE_REVISION',asset_id:'OriginalMesh',
+        asset_revision:2,
+        asset_document_sha256:'e'.repeat(64),
+        original_modified:false,ffmpeg_used:false,
+      })),
+    };
+    render(<DataFirstAVPanel projectId={pid} nativeBridge={bridge}/>);
+    fireEvent.click(screen.getByText('Choose original PNG texture'));
+    expect(await screen.findByText('Approve new mesh texture revision'))
+      .toBeTruthy();
+    fireEvent.click(screen.getByText('Approve new mesh texture revision'));
+    await waitFor(()=>expect(bridge.data_av_apply_original_texture)
+      .toHaveBeenCalledWith({
+        project_id:pid,asset_id:'OriginalMesh',asset_revision:1,
+        asset_document_sha256:meshHash,texture_sha256:textureHash,
+      }));
+    expect(await screen.findByText(/Existing source scenes and frozen Takes/))
+      .toBeTruthy();
+  });
+});
