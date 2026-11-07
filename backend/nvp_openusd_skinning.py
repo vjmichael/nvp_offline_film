@@ -148,7 +148,7 @@ def normalize_skin(skin,joint_count):
         from backend.nvp_native_usd_texture import FORMAT as TF,PREFIX
         if (authored_uv is None and face_uvs is None or
             type(pbr_maps) is not dict or not pbr_maps or
-            len(pbr_maps)>4 or any(key not in CHANNELS for key in pbr_maps)):
+            len(pbr_maps)>len(CHANNELS) or any(key not in CHANNELS for key in pbr_maps)):
             raise ValueError("Skinned PBR maps require original authored UVs")
         for descriptor in pbr_maps.values():
             if (type(descriptor) is not dict or
