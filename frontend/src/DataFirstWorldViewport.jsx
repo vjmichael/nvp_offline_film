@@ -547,6 +547,8 @@ export default function DataFirstWorldViewport({
         obj.shape==='skinned_mesh'?'skinned-source':obj.size_m,
         obj.semantic_role,obj.geometry_asset_sha256||'',
         obj.source_material?.texture?.sha256||'',
+        JSON.stringify(activeLook.materials[obj.path]||null),
+        JSON.stringify(activeLook.textures),
         isFullResolution?'full-resolution':'bounded-preview'].join(':');
       let mesh=state.meshes.get(obj.path);
       if(mesh&&mesh.userData.sourceGeometry!==fingerprint){
@@ -579,19 +581,36 @@ export default function DataFirstWorldViewport({
           const surfaceColor=surface?
             new THREE.Color().setRGB(...surface.base_color_rgb):color;
           const transport=validateSourceTexture(surface,obj);
-          const material=new THREE.MeshStandardMaterial({
+          const physical=physicalMaterialLook(activeLook,obj.path);
+          const material=new THREE.MeshPhysicalMaterial({
             color:surfaceColor,
             roughness:surface?surface.roughness:.8,
             metalness:surface?surface.metallic:.05,
+            opacity:physical.opacity,
+            transparent:physical.opacity<1,
+            depthWrite:physical.opacity>=1,
+            transmission:physical.transmission,
+            thickness:physical.thickness_m,
+            ior:physical.ior,
             side:obj.shape==='mesh'||obj.shape==='skinned_mesh'?
               THREE.DoubleSide:THREE.FrontSide});
           pendingMaterial=material;
           material.userData.textureCacheKeys={};
+          const sourceOptions=channel=>({
+            filter:activeLook.textures.filter,
+            anisotropy:activeLook.textures.anisotropy,
+            uv:textureChannelLook(activeLook,obj.path,channel),
+          });
+          const originalKey=(packet,raw,channel,full=false)=>
+            packet.sha256+(full?':full':'')+(raw?':raw':'')+
+            ':'+JSON.stringify(sourceOptions(channel));
           if(transport){
+            const full=isFullResolution&&!!upgradedTexture;
             material.map=state.acquireTexture(
-              transport,isFullResolution?upgradedTexture:null);
+              transport,full?upgradedTexture:null,false,
+              sourceOptions('base_color'));
             material.userData.textureCacheKeys.map=
-              isFullResolution?transport.sha256+':full':transport.sha256;
+              originalKey(transport,false,'base_color',full);
             material.needsUpdate=true;
           }
           const verifiedPBR=validatePBRChannelPackets(surface,obj)||{};
@@ -600,8 +619,9 @@ export default function DataFirstWorldViewport({
               throw Error('Unsupported original PBR map channel');
             const channelTransport=verifiedPBR[channel];
             const raw=channel!=='emission';
-            const key=desc.sha256+(raw?':raw':'');
-            const tex=state.acquireTexture(channelTransport,null,raw);
+            const key=originalKey(channelTransport,raw,channel);
+            const tex=state.acquireTexture(
+              channelTransport,null,raw,sourceOptions(channel));
             const field={
               roughness:'roughnessMap',
               metallic:'metalnessMap',
@@ -616,17 +636,21 @@ export default function DataFirstWorldViewport({
             if(channel==='emission')material.emissive.setRGB(1,1,1);
             if(channel==='opacity'){
               material.alphaTest=.5;
-              material.transparent=false;
-              material.depthWrite=true;
+              material.transparent=physical.opacity<1;
+              material.depthWrite=physical.opacity>=1;
             }
             material.needsUpdate=true;
           }
           const slots=validateMaterialSlots(obj);
           let materialSet=material;
           if(slots){
-            const others=slots.map(slot=>new THREE.MeshStandardMaterial({
+            const others=slots.map(slot=>new THREE.MeshPhysicalMaterial({
               color:new THREE.Color().setRGB(...slot.base_color_rgb),
               roughness:slot.roughness,metalness:slot.metallic,
+              opacity:physical.opacity,transparent:physical.opacity<1,
+              depthWrite:physical.opacity>=1,
+              transmission:physical.transmission,
+              thickness:physical.thickness_m,ior:physical.ior,
               side:THREE.DoubleSide,
             }));
             const faceMaterial=new Array(obj.mesh_triangles.length).fill(0);
@@ -674,6 +698,8 @@ export default function DataFirstWorldViewport({
             pendingMaterial=materialSet;
           }
           mesh=new THREE.Mesh(geometry,materialSet);
+          mesh.castShadow=!obj.gizmo_only;
+          mesh.receiveShadow=!obj.gizmo_only;
           mesh.matrixAutoUpdate=false;
           mesh.userData.sourceGeometry=fingerprint;
           state.world.add(mesh);
@@ -733,7 +759,7 @@ export default function DataFirstWorldViewport({
       }
     }
     state.requestRender();
-  },[objects,listenerPath,tick,upgradedTexture]);
+  },[objects,listenerPath,tick,upgradedTexture,activeLook]);
 
 
   useEffect(()=>{
