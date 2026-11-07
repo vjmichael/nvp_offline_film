@@ -81,6 +81,14 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     sceneBusy:false,lastSceneAt:-1,exhausted:false});
   const item=takes.find(x=>x.take_id===takeId);
 
+  useEffect(()=>()=>tileAbortRef.current?.abort(),[]);
+  useEffect(()=>{
+    tileAbortRef.current?.abort();
+    tileAbortRef.current=null;
+    setHighResolutionTexture(null);
+    setTextureTileProgress(null);
+  },[projectId,takeId]);
+
   useEffect(()=>{
     if(nativeBridge){setNative(nativeBridge);return;}
     const discover=()=>{
@@ -536,7 +544,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         signal:aborter.signal,
         onProgress:setTextureTileProgress,
       });
-      if(!aborter.signal.aborted)
+      if(!aborter.signal.aborted&&controller.current.ticket===ticket)
         setHighResolutionTexture(output);
     }catch(e){
       if(!aborter.signal.aborted)setError(e.message);
