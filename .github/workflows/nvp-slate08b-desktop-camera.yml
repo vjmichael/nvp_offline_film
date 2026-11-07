@@ -1,18 +1,9 @@
+# HISTORICAL SLATE-08B: retired by DATA-AV migration.
+# Manual-only snapshot of superseded Blender proxy acceptance.
+# DO NOT use as a release gate; native OpenUSD DATA-AV CI supersedes it.
 name: NVP SLATE-08B Trusted Desktop Camera Render IPC
 
 on:
-  push:
-    branches:
-      - nvp/slate08b-trusted-desktop-optics-20261106
-  pull_request:
-    paths:
-      - "backend/nvp_slate08b_native_camera_ipc.py"
-      - "tools/nvp_desktop_alpha.py"
-      - "frontend/src/FilmCameraSourcePanel.jsx"
-      - "frontend/src/CameraLensWorkbench.jsx"
-      - "frontend/src/FilmCameraNativeBridge.test.jsx"
-      - "tests/test_nvp_slate08b_native_camera_ipc.py"
-      - ".github/workflows/nvp-slate08b-desktop-camera.yml"
   workflow_dispatch:
 
 concurrency:
