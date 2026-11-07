@@ -280,15 +280,23 @@ class TrustedDataAVController:
             # skeleton layer, not merely a writable user-supplied JSON digest.
             from backend.nvp_wo2_openpbr import verify_openpbr_texture
             from pxr import UsdShade
+            import math
             material_path=path+"/Rig/Material"
             bound=UsdShade.Material(stage.GetPrimAtPath(material_path))
-            verify_openpbr_texture(
-                stage,material_path,bound,descriptor,
-                float(rig.get("preview_material",{}).get("roughness",.8)),
-                float(rig.get("preview_material",{}).get("metallic",.05))
-            ) if False else None
-            # Layer, signed scene manifest and project PNG SHA were already
-            # independently verified by stage.open and verified_texture.
+            preview=UsdShade.Shader(stage.GetPrimAtPath(
+                material_path+"/PreviewSurface"))
+            if not bound or not preview or preview.GetIdAttr().Get()!=(
+                    "UsdPreviewSurface"):
+                raise RuntimeError("Original rig has no valid USD source material")
+            roughness=float(preview.GetInput("roughness").GetAttr().Get())
+            metallic=float(preview.GetInput("metallic").GetAttr().Get())
+            if (not math.isfinite(roughness) or not math.isfinite(metallic)
+                or not 0<=roughness<=1 or not 0<=metallic<=1):
+                raise RuntimeError("Original rig surface scalars invalid")
+            verify_openpbr_texture(stage,material_path,bound,descriptor,
+                                   roughness,metallic)
+            # Layer, immutable rig manifest, source material graph and project
+            # PNG SHA must all agree before any tile is returned.
             cache_key=("rig",path,layer_sha,texture_sha)
             cached=active.get("rig_tile_cache")
             if cached is None or cached[0]!=cache_key:
