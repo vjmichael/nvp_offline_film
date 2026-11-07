@@ -182,7 +182,9 @@ def run_installed_visible_finished_smoke(bundle_root):
     try:
         _native_stage("fixture_initializing")
         fixture=InstalledPublishedDCPFixture(
-            Path(folder),provider,max_frames=720)
+            Path(folder),provider,max_frames=720,
+            progress=lambda reel,local,count,total:_native_stage(
+                f"fixture_real_mxf_reel_{reel}_offset_{local}_count_{count}_total_{total}"))
         _native_stage("fixture_predecode_start")
         rehearsal=fixture.prepare()
         _native_stage("fixture_predecode_complete")
