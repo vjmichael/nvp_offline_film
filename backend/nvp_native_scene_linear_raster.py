@@ -278,8 +278,9 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
         normal=normal/np.maximum(
             np.linalg.norm(normal,axis=-1,keepdims=True),1e-8)
     nv=np.maximum(0.,np.sum(normal*np.asarray(view),axis=-1))
-    out=AMBIENT_REVIEW*color*(1.-metallic)
-    f0=.04*(1.-metallic)+metallic*color
+    metal=np.asarray(metallic,dtype=np.float64)
+    out=AMBIENT_REVIEW*color*(1.-metal[...,None])
+    f0=.04*(1.-metal[...,None])+metal[...,None]*color
     alpha=max(.04,roughness*roughness)
     alpha2=alpha*alpha
     k=(roughness+1.)**2/8.
@@ -301,9 +302,9 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
         geometry=ggx_view*ggx_light
         fresnel=f0+(1.-f0)*(1.-vh)**5
         strength=intensity/LIGHT_REFERENCE/(1.+dsq)
-        diffuse=color*(1.-metallic)*(1.-fresnel)/math.pi
-        specular=(distribution*geometry*fresnel/
-                  max(1e-6,4.*nv*nl))
+        diffuse=color*(1.-metal[...,None])*(1.-fresnel)/math.pi
+        specular=((distribution*geometry)[...,None]*fresnel/
+                  np.maximum(1e-6,4.*nv*nl)[...,None])
         out=out+strength*nl[...,None]*(diffuse+specular)
     if emission_texels is not None:
         out=out+np.asarray(emission_texels,dtype=np.float64)
