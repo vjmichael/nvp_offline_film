@@ -463,9 +463,43 @@ export default function DataFirstWorldViewport({
             slots.forEach((slot,slotIndex)=>slot.faces.forEach(face=>{
               faceMaterial[face]=slotIndex+1;
             }));
+            // Reorder only disposable GPU triangles by source material.
+            // This keeps <= 9 draw groups, even for 4,096 alternating faces.
+            // FilmIndex/USD face indices and original UVs never change.
+            const groups=new Map();
+            faceMaterial.forEach((mat,faceIndex)=>{
+              if(!groups.has(mat))groups.set(mat,[]);
+              groups.get(mat).push(faceIndex);
+            });
+            const order=[...groups.keys()].sort((a,b)=>a-b);
+            const faces=obj.mesh_triangles;
+            const faceUV=obj.mesh_face_uvs;
+            if(faceUV){
+              const positions=[];
+              const coordinates=[];
+              for(const materialId of order)
+                for(const face of groups.get(materialId))
+                  for(let corner=0;corner<3;corner++){
+                    positions.push(...obj.mesh_points[faces[face][corner]]);
+                    coordinates.push(...faceUV[face][corner]);
+                  }
+              geometry.setAttribute('position',
+                new THREE.Float32BufferAttribute(positions,3));
+              geometry.setAttribute('uv',
+                new THREE.Float32BufferAttribute(coordinates,2));
+              geometry.computeVertexNormals();
+            }else{
+              geometry.setIndex(order.flatMap(mat=>
+                groups.get(mat).flatMap(face=>faces[face])));
+              geometry.computeVertexNormals();
+            }
             geometry.clearGroups();
-            faceMaterial.forEach((index,faceIndex)=>
-              geometry.addGroup(faceIndex*3,3,index));
+            let offset=0;
+            for(const materialId of order){
+              const count=groups.get(materialId).length*3;
+              geometry.addGroup(offset,count,materialId);
+              offset+=count;
+            }
             materialSet=[material,...others];
           }
           mesh=new THREE.Mesh(geometry,materialSet);
