@@ -292,6 +292,24 @@ class SlateBranchNativeTests(unittest.TestCase):
                  x["branch_id"]=="camera_A")["display_color"],"gray")
         self.assertEqual(len(active["sequence"]),2)
         self.assertFalse(active["render_approved"])
+        first=assembly.source_at(self.pid,"assembled_cut",1,
+            timeline_tick=0,expected_edit_sha256=committed["document_sha256"])
+        second=assembly.source_at(self.pid,"assembled_cut",1,
+            timeline_tick=T,expected_edit_sha256=committed["document_sha256"])
+        self.assertEqual(first["source_take_id"],"take_3")
+        self.assertEqual(first["source_tick"],str(T))
+        self.assertEqual(second["source_take_id"],"take_2")
+        self.assertEqual(second["source_tick"],str(T))
+        self.assertEqual(second["source_shot_id"],"take2_camera_b")
+        self.assertFalse(second["rendered_picture_frames"])
+        self.assertFalse(second["final_render_approved"])
+        with self.assertRaises(RuntimeError):
+            assembly.source_at(self.pid,"assembled_cut",1,
+                timeline_tick=T,expected_edit_sha256="f"*64)
+        with self.assertRaises(ValueError):
+            assembly.source_at(self.pid,"assembled_cut",1,
+                timeline_tick=2*T,
+                expected_edit_sha256=committed["document_sha256"])
 
     def test_copy_paste_before_move_and_trim_do_not_change_old_cut(self):
         assembly=self._source_for_assembly()
