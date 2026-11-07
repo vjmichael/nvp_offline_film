@@ -40,6 +40,27 @@ export function validateSourceTexture(surface,item){
   return packet;
 }
 
+export function validatePBRChannelPackets(surface,item){
+  const maps=surface?.pbr_maps;
+  if(maps==null)return null;
+  if(typeof maps!=='object'||Array.isArray(maps)||
+     !Object.keys(maps).length||Object.keys(maps).length>5||
+     Object.keys(maps).some(ch=>
+       !['roughness','metallic','emission','normal','opacity'].includes(ch)))
+    throw Error('Unsupported original PBR channel manifest');
+  if(!surface.pbr_map_transports||
+     Object.keys(surface.pbr_map_transports).length!==Object.keys(maps).length)
+    throw Error('Original PBR channel image transport incomplete');
+  const result={};
+  for(const [channel,descriptor] of Object.entries(maps)){
+    const packet=surface.pbr_map_transports[channel];
+    result[channel]=validateSourceTexture({
+      texture:descriptor,texture_transport:packet,
+    },item);
+  }
+  return result;
+}
+
 function validMatrix(m){
   return Array.isArray(m)&&m.length===4&&
     m.every(r=>Array.isArray(r)&&r.length===4&&
@@ -489,13 +510,11 @@ export default function DataFirstWorldViewport({
               isFullResolution?transport.sha256+':full':transport.sha256;
             material.needsUpdate=true;
           }
+          const verifiedPBR=validatePBRChannelPackets(surface,obj)||{};
           for(const [channel,desc] of Object.entries(surface?.pbr_maps||{})){
             if(!['roughness','metallic','emission','normal','opacity'].includes(channel))
               throw Error('Unsupported original PBR map channel');
-            const channelTransport=surface?.pbr_map_transports?.[channel];
-            validateSourceTexture({
-              texture:desc,texture_transport:channelTransport,
-            },obj);
+            const channelTransport=verifiedPBR[channel];
             const raw=channel!=='emission';
             const key=desc.sha256+(raw?':raw':'');
             const tex=state.acquireTexture(channelTransport,null,raw);
