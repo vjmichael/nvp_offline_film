@@ -107,3 +107,33 @@ describe('WO2 SHA-bound native PNG source transport',()=>{
         png_base64:'https://host/asset.png'}},mesh)).toThrow(/texture/);
   });
 });
+
+describe('WO2 authentic face-varying USD UV seams',()=>{
+  const mesh={
+    shape:'mesh',size_m:2,
+    mesh_points:[[0,0,0],[1,0,0],[1,1,0],[0,1,0]],
+    mesh_triangles:[[0,1,2],[0,2,3]],
+    mesh_uvs:null,
+    mesh_face_uvs:[
+      [[0,0],[1,0],[1,1]],
+      [[.5,0],[.5,1],[0,1]],
+    ],
+  };
+  it('accepts two st values for a shared geometric vertex',()=>{
+    const result=validateMeshData(mesh);
+    expect(result.faceUV).toHaveLength(2);
+    expect(result.faceUV[0][0]).not.toEqual(result.faceUV[1][0]);
+    expect(result.uv).toBeNull();
+  });
+  it('rejects ambiguous interpolation or mismatched face corners',()=>{
+    expect(()=>validateMeshData({...mesh,
+      mesh_uvs:[[0,0],[1,0],[1,1],[0,1]]})).toThrow(/face-varying/);
+    expect(()=>validateMeshData({...mesh,
+      mesh_face_uvs:[[[0,0],[1,0],[1,1]]]})).toThrow(/face-varying/);
+    expect(()=>validateMeshData({...mesh,
+      mesh_face_uvs:[
+        [[0,0],[1,0],[Infinity,1]],
+        [[0,0],[1,1],[0,1]],
+      ]})).toThrow(/face-varying/);
+  });
+});
