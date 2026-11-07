@@ -64,6 +64,7 @@ on:
       - 'tests/test_nvp_wo2_texture_tiles.py'
       - 'tests/test_nvp_wo2_continuity.py'
       - 'tests/test_nvp_wo2_real_60s.py'
+      - 'tests/test_nvp_wo2_mixed_60s.py'
       - 'backend/nvp_wo2_continuity.py'
       - 'backend/nvp_wo2_pbr_channels.py'
       - 'backend/nvp_wo2_presentation_look.py'
@@ -229,12 +230,15 @@ jobs:
       - name: Measure real sixty-second frozen USD / 60 native CPU frames
         run: |
           python -m unittest discover -s tests -p 'test_nvp_wo2_real_60s.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_wo2_mixed_60s.py' -v
       - name: Upload actual WO2 native 60s source measurements
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wo2-real-native-60s-${{ github.sha }}
-          path: wo2-native-60s-receipt.json
+          path: |
+            wo2-native-60s-receipt.json
+            wo2-mixed-60s-receipt.json
           if-no-files-found: warn
           retention-days: 14
 
