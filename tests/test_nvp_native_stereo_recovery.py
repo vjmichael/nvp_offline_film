@@ -10,6 +10,7 @@ import unittest
 import test_nvp_native_live_take as fixture
 from backend.nvp_capture_recovery import OriginalCaptureJournal
 from backend.nvp_native_stereo_take import NativeStereoOriginalSession
+from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
 
 
 class SharedClockDevice:
