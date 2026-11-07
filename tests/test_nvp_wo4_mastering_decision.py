@@ -83,6 +83,13 @@ class WO4SourceCustody(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.authorize(qc=bogus)
 
+    def test_second_attempt_cannot_revise_approved_decision_identity(self):
+        self.authorize()
+        with self.assertRaises(FileExistsError):
+            self.authorize()
+        self.assertEqual(len(self.f.index.history(
+            self.f.pid,"ApprovedCinemaMaster")),1)
+
     def test_denied_decision_never_registers_presentation(self):
         result=self.authorize(approve=lambda _:False)
         self.assertEqual(result["status"],"DENIED")
