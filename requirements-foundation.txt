@@ -17,4 +17,7 @@ Pillow>=11.0,<13
 # display/view transform. Native package supplies this; no runtime pip install.
 # NumPy is used for bounded in-memory FLOAT32 RGB, not a media decoder.
 opencolorio==2.5.2
+# Batch 3: official BSD-3-Clause OpenEXR native wheels. True 32-bit
+# floating-point ACEScg scene-linear picture interchange; no FFmpeg.
+OpenEXR==3.4.17
 numpy>=2.1,<3
