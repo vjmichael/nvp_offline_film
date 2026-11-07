@@ -19,6 +19,7 @@ from backend.nvp_wo3_mxf_native import INFO_RE,_verify_info
 from backend.nvp_wo3_atomic_publish import _fsync_directory
 from backend.nvp_wo4_mxf_stream import _pcm_digest
 from backend.nvp_wo4_pcm_stream import FORMAT as STREAM_FORMAT
+from backend.nvp_wo4_resource_budget import require_stage_space
 
 FORMAT="nvp.wo4.supervised_pcm_sound_mxf.v1"
 BUFFER=1024*1024
@@ -65,6 +66,7 @@ def wrap_supervised_sound(wrap,info,*,candidate,source_take_sha,frames,
     stage=Path(stage_dir)
     if not stage.is_absolute() or not stage.is_dir() or stage.is_symlink():
         raise PermissionError("Private sound stage required")
+    require_stage_space(stage,source.stat().st_size*2+1024*1024)
     if any((stage/name).exists() or (stage/name).is_symlink()
            for name in ("sound.wav","sound.mxf")):
         raise FileExistsError("Interrupted sound stage requires explicit recovery")
