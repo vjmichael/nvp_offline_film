@@ -105,6 +105,37 @@ class ExactTimeCameraSequenceTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     editor.read(self.pid,name,1)
 
+    def test_persisted_camera_revision_rejects_frame_metadata_and_duplicate_ids(self):
+        editor=ExactTimeShotSequence(self.index)
+        for name,extra,duplicate in (
+            ("FrameCountCamera",{"frame_count":24},False),
+            ("StartFrameCamera",{"start_frame":0},False),
+            ("DuplicateShotCamera",{},True),
+        ):
+            with self.subTest(name=name):
+                payload={
+                    "format":"nvp.exact_time.usd_camera_shots.v1",
+                    "usd_prim_path":"/World/ListenerLeft",
+                    "observation_pattern":"single",
+                    "world_duplicated":False,
+                    "picture_frames_recorded":False,
+                    **extra,
+                }
+                first={
+                    "event_id":"Shot001","event_kind":"camera",
+                    "subject_id":"Camera","start_tick":0,"end_tick":T,
+                    "source_id":"spatial_world","source_revision":1,
+                    "payload":payload,
+                }
+                events=[first]
+                if duplicate:
+                    events.append({**first,"start_tick":T,"end_tick":2*T})
+                TemporalLedger(self.index).publish(
+                    self.pid,name,events,duration_tick=3*T,
+                    expected_revision=0)
+                with self.assertRaises(RuntimeError):
+                    editor.read(self.pid,name,1)
+
     def test_os_authorization_controls_exact_scene_and_timeline_take_freeze(self):
         saved=self.publish()
         bridge=TrustedDesktopCameraBridge(
