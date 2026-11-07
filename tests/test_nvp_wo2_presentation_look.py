@@ -62,6 +62,33 @@ class WO2PresentationLookAuthority(unittest.TestCase):
             self.pid,"scene_reusable",1)[0]["document_sha256"],
             source_before["document_sha256"])
 
+    def test_ai_receives_verified_scene_facts_but_never_inherits_grants(self):
+        brief=self.looks.assistant_scene_brief(
+            self.pid,scene_id="scene_reusable",scene_revision=1,
+            scene_sha256=self.sha)
+        self.assertEqual(brief["scene_sha256"],self.sha)
+        self.assertEqual(len(brief["material_sources"]),3)
+        self.assertFalse(brief["source_mutation_permitted"])
+        proposal=self.looks.validate_assistant_proposal(
+            self.pid,scene_id="scene_reusable",scene_revision=1,
+            scene_sha256=self.sha,look=propose_look(
+                "dramatic",self.roles)["look"],
+            rationale="Lower ambient and place attention on the actor")
+        self.assertEqual(proposal["changed_areas"],["lighting","camera"])
+        self.assertFalse(proposal["creator_approved"])
+        self.assertFalse(proposal["persisted"])
+        self.assertFalse(proposal["may_execute_native_tools"])
+        self.assertFalse(proposal["may_author_shader_code"])
+        with self.assertRaises(ValueError):
+            self.looks.validate_assistant_proposal(
+                self.pid,scene_id="scene_reusable",scene_revision=1,
+                scene_sha256=self.sha,look=default_look(),
+                rationale="malformed\\x00instruction")
+        with self.assertRaises(PermissionError):
+            self.looks.assistant_scene_brief(
+                self.pid,scene_id="scene_reusable",scene_revision=1,
+                scene_sha256="0"*64)
+
     def test_invalid_source_paths_and_arbitrary_look_properties_fail_closed(self):
         bad=default_look()
         bad["materials"]["/Other/Intruder"]={
