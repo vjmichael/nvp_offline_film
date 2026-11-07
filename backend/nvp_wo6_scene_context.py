@@ -324,7 +324,7 @@ def assemble_film_crew_context(
         "authored_camera_selection": shot_selection,
         "screenplay_scene_context": screenplay,
         "approved_story_facts": approved_facts,
-        "approved_story_facts_omitted": approved_fact_omitted,
+        "approved_story_facts_omitted_at_least": approved_fact_omitted,
         "story_bible_status": bible_status,
         "screenplay_to_usd_actor_identity_verified": False,
         "no_unlisted_actors_or_sound_assumed": True,
