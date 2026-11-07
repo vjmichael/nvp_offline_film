@@ -81,7 +81,8 @@ def register_mastering_decision(index:FilmIndex,pid,*,take_id,take_revision,
     for key in ("picture_xyz12_sha256","sound_pcm24_sha256",
                 "xyz12_component_min","xyz12_component_max",
                 "xyz12_component_mean","sound_peak_absolute_24bit",
-                "sound_peak_dbfs","sound_rms_fraction_full_scale"):
+                "sound_peak_dbfs","sound_rms_fraction_full_scale",
+                "sound_loudness_lufs_measured","sound_integrated_lufs"):
         if qc.get(key)!=measured.get(key):
             raise PermissionError("Mastering QC receipt differs from original bytes")
     approved={
@@ -113,7 +114,9 @@ def register_mastering_decision(index:FilmIndex,pid,*,take_id,take_revision,
         "xyz12_component_min":qc["xyz12_component_min"],
         "xyz12_component_max":qc["xyz12_component_max"],
         "sound_peak_dbfs":qc["sound_peak_dbfs"],
-        "loudness_lufs_measured":False,
+        "loudness_lufs_measured":qc["sound_loudness_lufs_measured"],
+        "integrated_lufs":qc["sound_integrated_lufs"],
+        "true_peak_measured":False,
         "calibrated_projector_verified":False,
     }
     rec=index.register_revision(pid,decision_id,"presentation",data,
