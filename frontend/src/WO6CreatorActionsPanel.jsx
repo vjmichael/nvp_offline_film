@@ -198,6 +198,9 @@ export default function WO6CreatorActionsPanel({projectId}){
       throw new Error('Choose a native recorded sound timeline or slate graph');
     if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(newId))
       throw new Error('Choose a new immutable native sound/edit ID');
+    if(!directorReason.trim()||directorReason.trim().length<12||
+        directorReason.trim().length>512)
+      throw new Error('Enter your independent sound/editorial creative reason');
     let payload,duration_tick;
     if(kind==='sound_cue'){
       if(!currentTake||!currentTakeTimeline||!currentSound||
@@ -238,6 +241,7 @@ export default function WO6CreatorActionsPanel({projectId}){
       project_id:projectId,decision_kind:kind,decision_id:newId,
       source_id:selectedOriginal.id,source_revision:selectedOriginal.revision,
       source_sha256:selectedOriginal.sha256,payload,duration_tick,
+      director_reason:directorReason.trim(),
     };
   }
   function shotOpinions(){
@@ -578,16 +582,17 @@ export default function WO6CreatorActionsPanel({projectId}){
       value={endTick} disabled={busy} onChange={e=>setEndTick(e.target.value)}/></label>}
     {kind!=='color'&&kind!=='take'&&kind!=='camera_sequence'&&kind!=='editorial_cut'&&<label>Start tick<input
       value={startTick} disabled={busy} onChange={e=>setStartTick(e.target.value)}/></label>}
-    {aiReview&&<div aria-label="Human-reviewed AI consultation for manual source change">
-      <h3>Director's independent shot decision</h3>
-      <p>AI consultation {aiReview.proposal_id} was reviewed but granted
-      no native permission. The model suggestion is linked by SHA;
-      it cannot choose your numeric values or your new shot identity.</p>
-      <p>Model text SHA: {aiReview.model_text_sha256}</p>
+    {(aiReview||typedOperation)&&<div aria-label="Human-reviewed AI consultation for manual source change">
+      <h3>Director's independent source decision</h3>
+      {aiReview&&<><p>AI consultation {aiReview.proposal_id} was reviewed but
+      granted no native permission. The model suggestion is linked by SHA;
+      it cannot choose your values or your new source identity.</p>
+      <p>Model text SHA: {aiReview.model_text_sha256}</p></>}
       <label>Director-written creative reason<textarea value={directorReason}
         maxLength={512} disabled={busy}
         placeholder="Explain my independently selected camera, actor, sound or editorial change"
-        onChange={e=>setDirectorReason(e.target.value)}/></label>
+        onChange={e=>{setDirectorReason(e.target.value);setImpact(null);
+          if(aiReview)setDirectorTypedChange(true)}}/></label>
       <p>After entering your own source values, new object ID and reason,
       inspect both source-impact and exact typed-preview receipts before
       requesting both OS confirmations.</p>
