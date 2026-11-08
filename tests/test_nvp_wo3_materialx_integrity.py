@@ -232,6 +232,19 @@ class WO3NativeMaterialXIntegrity(unittest.TestCase):
         self.assertEqual(self.assets.open(self.pid,"wo3_pbr",1)[0]["document_sha256"],
                          self.sha)
 
+    def test_materialx_resolver_refuses_oversized_post_render_source(self):
+        # The native worker cannot force post-render SHA verification to
+        # read an arbitrarily inflated image into the host process RAM.
+        with self.assertRaisesRegex(RuntimeError,"changed a verified"):
+            with resolved_materialx_probe(
+                    self.index,self.pid,self.stage(),
+                    [self.texture]+list(self.maps.values())) as (copy,_):
+                dest=Path(self.shader(copy,"MtlxImage").GetInput(
+                    "file").Get().path)
+                dest.chmod(0o600)
+                with dest.open("ab") as writer:
+                    writer.write(b"oversized"*(1024*128))
+
     def test_materialx_resolver_rejects_unapproved_shader_file_path(self):
         stage=self.stage()
         self.shader(stage,"MtlxImage").GetInput("file").Set(
