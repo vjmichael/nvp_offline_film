@@ -145,6 +145,13 @@ def verify_openpbr_texture(stage,material_path,material,
     from backend.nvp_wo3_materialx_integrity import (
         verify_output_connection,verify_literal_input)
     verify_literal_input(uv,"index",0,type_name=Sdf.ValueTypeNames.Int)
+    # A USD input can retain its expected literal value *and* carry an
+    # upstream connection. The renderer would use that connection instead
+    # of the authorized source URI or filter mode. Reject both forms.
+    for setting in ("file","uaddressmode","vaddressmode","filtertype"):
+        input_=image.GetInput(setting)
+        if not input_ or input_.HasConnectedSource():
+            raise RuntimeError("Frozen MaterialX image setting has upstream override")
     if (image.GetInput("file").GetTypeName()!=Sdf.ValueTypeNames.Asset or
         shader.GetInput("base_color").GetTypeName()!=Sdf.ValueTypeNames.Color3f):
         raise RuntimeError("Frozen MaterialX image or base color type changed")
