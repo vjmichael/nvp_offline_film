@@ -47,3 +47,12 @@ NVP already has these source components; they should be reused and separately te
 **Next after audit:** USD-FILM-01, project-scoped content-addressed resolver plus referenced assets, variants, payload lazy loading and measured large-world resource behavior. The initial temporary test asset paths are intentionally not production-authorized scene data.
 
 References: docs/NVP_USD_FILM_WORLD_FULL_INTEGRATION_MASTERPLAN.md; docs/NVP_DATA_ALL_TASK_LEDGER.md; Blender 5.2 Python API https://docs.blender.org/api/5.2/bpy.ops.wm.html ; OpenUSD instancing reference https://openusd.org/release/user_guides/schemas/usdGeom/overview.html
+
+
+## Third audit stream: current first-party NVP adapter behavior
+
+The workflow now runs **actual-nvp-adapter-regressions** on Windows 2025 and Ubuntu 24.04, Python 3.11. This is separate from generic pxr capability and separate from Blender. The reviewed tools/nvp_usd_film00_adapter_smoke.py invokes each of five *existing* source tests independently and records exit codes, elapsed time, bounded actual stdout/stderr evidence, missing tests, and per-suite failures into existing_nvp_adapter_matrix.json; later suites still run even after an earlier suite fails.
+
+Existing tests invoked: test_nvp_openusd_take_native.py, test_nvp_openusd_reusable_assets.py, test_nvp_openusd_native_schemas.py, test_nvp_native_usd_facial_material.py, and test_nvp_wo3_materialx_integrity.py. They cover original scene/Take source integrity, reused assets, true USD camera/light/skeleton timing, native facial/material data and hostile MaterialX source graph cases. All must complete successfully on an exact source head before native adapter integration may be claimed accepted.
+
+This closes an audit **coverage gap** in the initial plan: merely proving that USD supports an API is not proof our current NVP source adopts it correctly. Installed physical Windows, original authoring UI, Hydra delegate pixels and cinematic human visual acceptance remain separate.
