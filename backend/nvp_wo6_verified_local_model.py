@@ -46,7 +46,7 @@ class ProvenLocalModelWriter:
             url=urlsplit(endpoint)
             if (url.scheme!="http" or url.hostname not in
                     ("127.0.0.1","localhost","::1") or
-                    not 1<=url.port<=65535 or
+                    type(url.port) is not int or not 1<=url.port<=65535 or
                     url.username is not None or url.password is not None or
                     url.query or url.fragment or
                     url.path!="/v1/chat/completions"):
