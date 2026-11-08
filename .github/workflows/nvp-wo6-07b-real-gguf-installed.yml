@@ -1,0 +1,168 @@
+name: NVP WO6-07B Genuine GGUF Inference and Installed Windows EXE (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/wo6-real-model-installed-director-20261107]
+  pull_request:
+    paths:
+      - backend/nvp_wo6_verified_local_model.py
+      - backend/nvp_wo6_director_model_proposal.py
+      - backend/nvp_wo6_desktop_bridge.py
+      - tools/nvp_wo6_07b_real_gguf_smoke.py
+      - tools/nvp_wo6_07b_ci_model_download.py
+      - tools/nvp_wo6_07b_locate_server.py
+      - tools/nvp_desktop_alpha.py
+      - tests/test_nvp_wo6_verified_local_model.py
+      - .github/workflows/nvp-wo6-07b-real-gguf-installed.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-wo6-07b-real-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-real-gguf-original-source:
+    name: Real 135M GGUF native OpenUSD-to-local-model completion / Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: master
+          path: deps/llama.cpp
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD and CI-only model transport
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install 'huggingface_hub>=0.28,<2'
+      - name: Compile native llama.cpp server CPU-only (never shipped inside NVP)
+        run: |
+          git -C deps/llama.cpp rev-parse HEAD
+          cmake -S deps/llama.cpp -B deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_CURL=OFF
+          cmake --build deps/llama.cpp/build --config Release --target llama-server --parallel 2
+          python -m tools.nvp_wo6_07b_locate_server deps/llama.cpp/build
+      - name: Resolve exact revision + SHA of tiny Apache-2.0 test model
+        run: python -m tools.nvp_wo6_07b_ci_model_download --directory "${{ runner.temp }}/wo6-gguf" --manifest "${{ runner.temp }}/wo6-model-source.json"
+      - name: Verify actual loopback HTTP completion receipts, spoofing refusal and strict source scope
+        run: python -m unittest discover -s tests -p test_nvp_wo6_verified_local_model.py -v
+      - name: REAL GGUF model inference from an authentic newly frozen USD Take (NO MOCK/SKIP)
+        run: |
+          python -m tools.nvp_wo6_07b_real_gguf_smoke --model "$NVP_TEST_GGUF_PATH" --llama-server "$NVP_TEST_LLAMA_SERVER" --report "${{ runner.temp }}/wo6-real-gguf-linux.json" --consent I_APPROVE_DISPOSABLE_LOCAL_GGUF_TEST
+          python -c "import json,pathlib; d=json.loads(pathlib.Path('${{ runner.temp }}/wo6-real-gguf-linux.json').read_text()); assert d['status']=='LOCAL_GGUF_COMPLETION_OBSERVED' and d['completed_provider_receipt']['provider_reported_completion_tokens']>0 and not d['native_worker_authorized']"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wo6-07b-native-linux-real-gguf-evidence
+          path: |
+            ${{ runner.temp }}/wo6-model-source.json
+            ${{ runner.temp }}/wo6-real-gguf-linux.json
+          if-no-files-found: warn
+
+  installed-windows-real-gguf:
+    name: Real GGUF completion in installed NSIS NVP.exe + WebView2 window / Windows
+    runs-on: windows-2025
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: master
+          path: deps/llama.cpp
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install NVP native installation + test-only model dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { throw 'NVP native dependencies unavailable' }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { throw 'Real OpenUSD unavailable' }
+          python -m pip install 'huggingface_hub>=0.28,<2' 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native test build dependencies unavailable' }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS unavailable' }
+      - name: Compile actual Windows llama.cpp CPU server outside the NVP installer
+        shell: pwsh
+        run: |
+          git -C deps/llama.cpp rev-parse HEAD
+          cmake -S deps/llama.cpp -B deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_CURL=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Real native llama.cpp configure failed' }
+          cmake --build deps/llama.cpp/build --config Release --target llama-server --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Real native llama.cpp build failed' }
+          python -m tools.nvp_wo6_07b_locate_server deps/llama.cpp/build
+          if ($LASTEXITCODE -ne 0) { throw 'Could not identify exactly one native llama-server binary' }
+      - name: Download exact test-only GGUF commit + source receipt
+        shell: pwsh
+        run: |
+          python -m tools.nvp_wo6_07b_ci_model_download --directory "$env:RUNNER_TEMP/wo6-gguf" --manifest "$env:RUNNER_TEMP/wo6-model-source-win.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Real model download/provenance failed' }
+      - name: Build genuine offline installed React/PyInstaller desktop
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --no-audit --no-fund --package-lock=false
+          if ($LASTEXITCODE -ne 0) { throw 'React dependencies unavailable' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Actual director panel build failed' }
+          Pop-Location
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-submodules backend --hidden-import tools.nvp_wo6_07b_real_gguf_smoke tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { throw 'Actual native Windows NVP.exe build failed' }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/wo6-installed-bundle.json"
+          if ($LASTEXITCODE -ne 0) { throw 'NVP binary payload audit failed' }
+          $nsis = Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installer build failed' }
+          $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
+          $install=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw 'NSIS installed NVP.exe failed' }
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          if (-not (Test-Path $installed)) { throw 'Installed native executable missing' }
+          if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) { throw 'Installed NVP.exe differs from vetted build' }
+      - name: Actual installed NVP.exe launches native llama-server, infers scene-bound suggestion and writes receipt
+        shell: pwsh
+        run: |
+          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'wo6-07b-disposable-projects'
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $model=$env:NVP_TEST_GGUF_PATH
+          $server=$env:NVP_TEST_LLAMA_SERVER
+          & $installed --smoke-wo6-real-gguf --gguf-path $model --llama-server-path $server --gguf-report "$env:RUNNER_TEMP/wo6-installed-real-gguf.json" --gguf-test-consent I_APPROVE_DISPOSABLE_LOCAL_GGUF_TEST
+          if ($LASTEXITCODE -ne 0) { throw 'Installed real GGUF/Take model acceptance process failed' }
+          python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'wo6-installed-real-gguf.json').read_text()); assert d['installed_windows_app_verified'] and d['status']=='LOCAL_GGUF_COMPLETION_OBSERVED' and d['completed_provider_receipt']['provider_reported_completion_tokens']>0 and not d['native_worker_authorized']"
+          if ($LASTEXITCODE -ne 0) { throw 'Missing or counterfeit installed GGUF completion evidence' }
+      - name: Actual installed WebView2 source panel launches and closes cleanly (separate session)
+        shell: pwsh
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          & $installed --smoke-window
+          if ($LASTEXITCODE -ne 0) { throw 'Actual installed WebView2 source panel failed' }
+      - name: Verify test-only model and server excluded from installed NVP files
+        shell: pwsh
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP'
+          if (@(Get-ChildItem $installed -Recurse -File -Filter '*.gguf').Count -ne 0) { throw 'CI test model incorrectly shipped in installer' }
+          if (@(Get-ChildItem $installed -Recurse -File -Filter 'llama-server.exe').Count -ne 0) { throw 'CI model server incorrectly shipped in installer' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wo6-07b-installed-windows-model-and-source-proof
+          path: |
+            ${{ runner.temp }}/wo6-installed-real-gguf.json
+            ${{ runner.temp }}/wo6-model-source-win.json
+            ${{ runner.temp }}/wo6-installed-bundle.json
+          if-no-files-found: warn
