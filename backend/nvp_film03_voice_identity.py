@@ -129,6 +129,43 @@ class ProductionBibleVoiceIdentity:
             "effect": "read",
         }
 
+    def performance_candidates(self, pid, actor_id):
+        """Read-only list: original actor performances needing voice review."""
+        self._actor(pid,actor_id)
+        entries=[]
+        for item in self.index.list_objects(pid,kind="performance")[:512]:
+            original=self.index.read_revision(
+                pid,item["object_id"],item["head_revision"])
+            doc=original["data"]
+            if (original["kind"]!="performance" or
+                    doc.get("format")!=PERFORMANCE_FORMAT or
+                    doc.get("production_bible",{}).get("actor_id")!=actor_id or
+                    not doc.get("recorded_voice_source")):
+                continue
+            sound=doc["recorded_voice_source"]
+            source=self.index.read_revision(
+                pid,sound["audio_id"],sound["audio_revision"])
+            if source["kind"]!="audio" or source["document_sha256"]!=sound["audio_sha256"]:
+                raise PermissionError("Original candidate voice source no longer resolves")
+            entries.append({
+                "performance_id":item["object_id"],
+                "performance_document_sha256":original["document_sha256"],
+                "source_audio_id":sound["audio_id"],
+                "source_audio_revision":sound["audio_revision"],
+                "source_audio_sha256":sound["audio_sha256"],
+                "script_line_id":doc["script_line_id"],
+                "script_line_text":doc["script_line_text"],
+                "source_take_id":doc["source_take_id"],
+                "source_take_sha256":doc["source_take_sha256"],
+                "recorded_source_not_approved_voice":True,
+            })
+        return {
+            "format":"nvp.film03.voice_candidate_audition_catalog.v1",
+            "project_id":pid,"actor_id":actor_id,"candidates":entries,
+            "unlisted_sources_may_exist_beyond_first_512":len(entries)>=512,
+            "no_automatic_voice_approval":True,
+        }
+
     def _original_audio(self, pid, source_id, revision):
         _id(source_id, "original reference/recorded audio identity")
         if _rev(revision, "audio source") < 1:
