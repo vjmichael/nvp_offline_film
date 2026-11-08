@@ -349,6 +349,36 @@ def compose_usd_facial_overlay(index: FilmIndex, rig, *, phonemes,
     }
 
 
+def validate_stored_acoustic_output(index: FilmIndex, pid, record):
+    """Verify real stored model JSON exactly matches the claimed word/phone rows.
+
+    This proves bytes/structured labels are preserved, not that a microphone
+    actor spoke those words or an external model truly executed.
+    """
+    if not isinstance(index, FilmIndex) or type(record) is not dict:
+        raise TypeError("Original FilmIndex and typed native output required")
+    _require_pid(pid)
+    plan = record.get("source_plan")
+    if type(plan) is not dict:
+        raise PermissionError("Original audio/source alignment plan missing")
+    native_sha = record.get("native_output_blob_sha256")
+    if type(native_sha) is not str or native_sha != record.get("native_output_sha256"):
+        raise PermissionError("No independently reopenable native acoustic output")
+    _sha(native_sha)
+    raw = index.get_blob(pid, native_sha)
+    if sha256(raw).hexdigest() != native_sha:
+        raise PermissionError("Native acoustic bytes changed")
+    rederived = import_mfa_json(
+        raw, exact_script_text=plan["exact_script_text"],
+        pcm_sample_count=plan["sample_count"])
+    if any(record.get(field) != rederived[field] for field in (
+        "word_intervals", "phoneme_intervals", "viseme_candidates",
+        "ticks_per_sample", "source_sample_count", "sample_rate_hz",
+    )):
+        raise PermissionError("Stored phonemes do not match actual native output")
+    return rederived
+
+
 def publish_verified_alignment_overlay(index: FilmIndex, pid,
                                        alignment_id, face_id, actor_path,
                                        *, controls, candidate_id):
@@ -380,25 +410,9 @@ def publish_verified_alignment_overlay(index: FilmIndex, pid,
     if candidate_id in {alignment_id, face_id, plan["audio_source_id"],
                         plan["source_take_id"]}:
         raise ValueError("Cannot overwrite an original actor, Take, voice or alignment")
-    # Reopen the REAL original native MFA output bytes as an immutable film
-    # blob, then independently rederive word/phone/viseme candidates.
-    # Mere "native_acoustic_model_executed=true" JSON is insufficient.
-    native_sha = s.get("native_output_blob_sha256")
-    if (type(native_sha) is not str or
-        native_sha != s.get("native_output_sha256")):
-        raise PermissionError("No independently reopenable native acoustic output")
-    _sha(native_sha)
-    raw = index.get_blob(pid, native_sha)
-    if sha256(raw).hexdigest() != native_sha:
-        raise PermissionError("Native acoustic source bytes changed")
-    rederived = import_mfa_json(
-        raw, exact_script_text=plan["exact_script_text"],
-        pcm_sample_count=plan["sample_count"])
-    if any(s.get(field) != rederived[field] for field in (
-        "word_intervals", "phoneme_intervals", "viseme_candidates",
-        "ticks_per_sample", "source_sample_count", "sample_rate_hz"
-    )):
-        raise PermissionError("Stored phonemes do not match actual native acoustic output")
+    # Never trust a "model executed" flag without independently reparsing
+    # the original SHA-addressed native output from FilmIndex.
+    validate_stored_acoustic_output(index, pid, s)
     sound = verified_guide_signal(
         index, pid, plan["audio_source_id"], plan["audio_source_revision"])
     if (sound["pcm16le_sha256"] != plan["original_pcm_sha256"] or
