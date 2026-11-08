@@ -1,0 +1,123 @@
+name: NVP FILM01 REAL Three-Actor Donut Occlusion and 3s Motion (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film01-donut-three-actor-occlusion-20261108]
+  pull_request:
+    paths:
+      - backend/nvp_native_scene_linear_raster.py
+      - tools/nvp_film01_original_30s.py
+      - tools/nvp_film01_donut_light_probe.py
+      - tools/nvp_film01_donut_three_actor_motion.py
+      - tests/test_nvp_film01_donut_lighting.py
+      - tests/test_nvp_film01_donut_three_actor_motion.py
+      - tests/test_nvp_film01_original_30s.py
+      - .github/workflows/nvp-film01-donut-three-actor-occlusion.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-donut-three-actors-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  genuine-three-object-actor-windows-linux:
+    name: Actual frozen USD torus+box+sphere native depth/lighting/sample original 30s / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP real first-party USD CPU source and image raster dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Compile actual 3D source/raster/motion and all native proof tests
+        run: |
+          python -m compileall -q backend/nvp_native_scene_linear_raster.py backend/nvp_film01_donut_actor.py tools/nvp_film01_donut_light_probe.py tools/nvp_film01_donut_three_actor_motion.py tools/nvp_film01_original_30s.py tests/test_nvp_film01_donut_lighting.py tests/test_nvp_film01_donut_three_actor_motion.py tests/test_nvp_film01_original_30s.py
+      - name: Prove torus 3D shaded by neutral/silver/gold/sun and box appears through hole
+        run: python -m unittest discover -s tests -p test_nvp_film01_donut_lighting.py -v
+      - name: Prove exact center pixel native depth owner moves sphere→box→sphere across true torus hole
+        run: python -m unittest discover -s tests -p test_nvp_film01_donut_three_actor_motion.py -v
+      - name: Verify all three original 30-second frozen film shots, including final actor/sound choreography
+        run: python -m unittest discover -s tests -p test_nvp_film01_original_30s.py -v
+
+  real-source-72-frame-animated-donut-film-probe:
+    name: Actual 72 authored USD 24fps frames, 6 key PNGs and 3s source-derived GIF / real actor depth proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD image source renderer
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Render full three-second genuine native OpenUSD torus, passing sphere and behind-box animation
+        shell: bash
+        run: |
+          python -m tools.nvp_film01_donut_three_actor_motion \
+            --root "$RUNNER_TEMP/nvp-real-donut-three-actor-source" \
+            --output "$RUNNER_TEMP/nvp-real-donut-three-actor-motion" \
+            --full-72 \
+            --consent I_APPROVE_DISPOSABLE_DONUT_SOURCE \
+            | tee "$RUNNER_TEMP/nvp-three-actor-export-log.json"
+      - name: Independently reopen 72 genuine scene PNGs, full animation and exact depth/actor SHA receipt
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          from PIL import Image
+          root=Path(os.environ["RUNNER_TEMP"])/"nvp-real-donut-three-actor-motion"
+          report=json.loads((root/"donut_three_actor_original_source_receipts.json").read_text())
+          assert report["genuine_raster_source_frames"]==72
+          assert report["full_72_frames_and_gif"] is True
+          assert report["actual_three_original_usd_object_actors"] is True
+          assert report["native_depth_occlusion_computed"] is True
+          assert report["real_interobject_cast_shadows_computed"] is False
+          assert report["real_interobject_reflections_computed"] is False
+          assert report["through_hole_mechanical_clearance_m"]>.2
+          assert report["center_depth_owner_at_key_frames"]=={
+            "0":"/World/SphereActor",
+            "24":"/World/BoxActor",
+            "48":"/World/SphereActor"}
+          assert len(report["source_pose_and_visibility_receipts"])==72
+          for row in report["source_pose_and_visibility_receipts"]:
+              name=root/f"original_usd_frame_{row['frame_zero']:03d}.png"
+              data=name.read_bytes()
+              assert hashlib.sha256(data).hexdigest()==row["depth_tested_native_picture_sha256"]
+              assert row["box_physically_behind_torus"] is True
+              assert row["source_original_modified"] is False
+              assert row["real_shadow_ray_tracing_performed"] is False
+              assert row["interobject_reflection_ray_tracing_performed"] is False
+              with Image.open(name) as im:
+                  im.load()
+                  assert im.format=="PNG" and im.size==(640,360)
+          with Image.open(root/"donut_box_sphere_actual_3sec_NVP.gif") as gif:
+              assert gif.format=="GIF" and gif.n_frames==72
+          with Image.open(root/"donut_box_sphere_real_NVP_6_moments.png") as img:
+              img.load()
+              assert img.format=="PNG" and img.size==(1968,816)
+          print("REAL_72_FRAME_NATIVE_OPENUSD_DONUT_BOX_SPHERE_DEPTH_PROOF_PASS")
+          PY
+      - name: Upload only a complete actually rendered NVP 3s object actor GIF, original 72 PNGs and native source receipts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-real-donut-box-behind-sphere-through-hole-3second-motion
+          path: |
+            ${{ runner.temp }}/nvp-real-donut-three-actor-motion/
+            ${{ runner.temp }}/nvp-three-actor-export-log.json
+          if-no-files-found: error
+          retention-days: 14
