@@ -157,3 +157,36 @@ UsdPreviewSurface fallback; absolute reference ΔE76/ΔE2000 versus known
 color-managed expected pixels; ACES/OCIO transform, target gamut transfer
 function, HDR/film mastering, physical GPU and calibrated projection. A successful
 Mesa software-OpenGL Storm run does not count as physical GPU acceptance.
+
+## WO3 further native gates — isolated MaterialX terminal and real pixel receipt
+
+Implementation follow-up: material-graph fidelity can no longer be inferred
+from a successful dual-context Storm image. The required color workflow now
+renders **four real external Storm images**: red/blue in the authored dual
+context, then red/blue with the universal PreviewSurface disconnected on a
+**disposable** resolved USD stage. The actual FilmIndex source stage and all
+original PNGs remain unchanged. This isolates the `mtlx` OpenPBR terminal
+rather than relying on an ambiguous fallback, and records each disposable
+render-stage SHA. The isolated mode is permitted only for approved Storm
+probes without an alternate Take/look, requires indexed source textures, and
+requires a connected, typed OpenPBR shader output.
+
+A native regression proves the fallback disappears only from the derived
+layer; another refuses a missing MaterialX terminal. The color verifier
+refuses mismatched renderer hashes, repeated image hashes, gray/incorrect
+swatches, missing output/stage provenance and any purported `mtlx_only`
+receipt without an explicitly isolated OpenPBR graph. Separate synthetic
+contract tests **do not count as real renderer evidence**. The earlier
+real-render fixture contained a duplicate emission/metallic PNG, making its
+six-unique-SHA expectation incorrect; these sources are now intentionally
+distinct.
+
+**Acceptance remains OPEN** until the exact-head workflow produces a
+successful native Storm run, uploaded `wo3-hydra-color-evidence.json`,
+verified full four-image provenance and explicit `dual` + `mtlx_only`
+measurements. This still establishes only relative color differentiation,
+not absolute ΔE against reference color, reference display management,
+shader parity to other backends, physical GPU or theatrical mastering.
+Conda OpenUSD 26.08 image tests and main OpenUSD 26.11 native tests must
+remain identified separately. If tests fail, inspect real logs and fix the
+specific error without removing the material-only isolation gate.
