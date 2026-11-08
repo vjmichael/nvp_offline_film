@@ -1,12 +1,10 @@
-"""FILM03-06 actual native voice synthesis AND reviewed Blender actor gait.
+"""FILM03-06 source-bound actor identity and real Blender motion acceptance.
 
-Genuine source: the original three-shot FilmIndex/OpenUSD scene and
-production-bible cast (donut, box, sphere, service craft). The reference
-VoiceID source is a clearly labelled TEST-ONLY PCM anchor, not actual
-actor speech. Generated WAV is REAL local offline eSpeak-NG synthesis.
-The animated .blend/PNG are REAL Blender Cycles outputs when configured.
-
-No real source Take is overwritten. No candidate is director approved.
+Genuine OpenUSD/StoryBible donut, box and sphere cast. Voice ID
+source validation remains mandatory, but film speech generation is
+DISABLED until expressive/neural performance quality is proven.
+The Blender .blend/PNG are real Cycles outputs when configured.
+No original Take or audio is overwritten; no candidate automatically approved.
 """
 from __future__ import annotations
 
@@ -20,7 +18,6 @@ import unittest
 
 from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
 from backend.nvp_film03_actor_animation_host import ReviewedActorAnimationHost,PRESETS
-from backend.nvp_film03_actor_voice_worker import ReviewedActorVoiceWorker,wav_info,ENGINE
 from backend.nvp_film03_actor_identity_core import ActorIdentityCore,digest
 from test_nvp_film03_actor_identity_core import (
     identity_profile,real_unrecorded_actor_with_voice,ACTION,
@@ -30,22 +27,14 @@ def approval(event,scope):
     return (event==ACTION and
             scope["operation"] in (
                 "film03_publish_actor_identity_profile",
-                "film03_generate_actor_voice_candidate",
-                "film03_run_source_locked_actor_animation"))
+                        "film03_run_source_locked_actor_animation"))
 
 def prepared_source(root):
     s=real_unrecorded_actor_with_voice(root)
     profile=identity_profile()
     profile["movement"]["gait_preset"]="lopsided_roll"
-    # This is a real offline speech engine, NOT a neural cloned actor voice.
-    profile["voice_generation"]={
-        "engine_id":"NvpEspeakNG",
-        "model_id":"EspeakNG",
-        "model_revision":"EspeakNG_1_51",
-        "engine_voice_id":"en-us",
-        "seed":0,"rate":1,"pitch_shift":0,
-        "stability":1,"language":"en",
-    }
+    # An unqualified model selector is never permission to synthesize
+    # a film performance; source VoiceID and profile can still be audited.
     core=ActorIdentityCore(s["index"],verify_creator_action=approval)
     aid=s["people"]["DONUT"]
     s["profile"]=core.publish(
@@ -79,7 +68,7 @@ class ActorSourceWorkerContracts(unittest.TestCase):
             self.assertEqual(src["source_take_sha256"],
                              s["original_take"]["document_sha256"])
             self.assertEqual(src["profile"]["voice_generation"]["engine_voice_id"],
-                             "en-us")
+                             "DonutEngineVoice2026")
             self.assertEqual(len(src["frames"]),4)
             self.assertEqual(len(src["assets"]),5)
             self.assertEqual(packet["source_sha256"],digest(src))
@@ -118,7 +107,8 @@ class ActorSourceWorkerContracts(unittest.TestCase):
             core=s["core"];pid=s["pid"];aid=s["people"]["DONUT"]
             correct=core.prepare_generated_voice(pid,s["request"],profile_revision=1)
             self.assertEqual(correct["voice_id"],"Voice_Donut_ActorIdentity")
-            self.assertEqual(correct["generation_settings"]["engine_id"],ENGINE)
+            self.assertEqual(correct["generation_settings"]["model_id"],
+                             "TestModelNotInstalled")
             self.assertFalse(correct["audio_generation_executed"])
             self.assertFalse(correct["tts_worker_authorized"])
             for change in (
@@ -152,58 +142,35 @@ class ActorSourceWorkerContracts(unittest.TestCase):
                     profile_revision=1,take_id="RelayRekindleTake")
 
 class NativeRealActorWorkerExecution(unittest.TestCase):
-    @unittest.skipUnless(os.environ.get("NVP_FILM03_ESPEAK_BIN"),
-                         "Actual eSpeak NG native executable required for spoken WAV acceptance")
-    def test_real_contained_espeak_produces_unapproved_but_verified_actor_wav(self):
+    def test_unqualified_film_speech_worker_is_unavailable_in_trusted_host(self):
+        import os
+        from unittest.mock import patch
+        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+
+        class HumanWindow:
+            def get_current_url(self):
+                return "http://127.0.0.1:43231/"
+            def create_confirmation_dialog(self,*_):
+                raise AssertionError("No cinematic voice engine should launch or ask consent")
         with TemporaryDirectory() as d:
             s=prepared_source(Path(d).resolve())
-            exe=Path(os.environ["NVP_FILM03_ESPEAK_BIN"]).resolve(strict=True)
-            worker=ReviewedActorVoiceWorker(s["index"],Path(d)/"voice",
-                executable=exe,executable_sha256=sha_file(exe),
-                engine_revision="EspeakNG_1_51",
-                verify_creator_action=approval)
-            with self.assertRaises(PermissionError):
-                worker.run(s["pid"],s["request"],profile_revision=1,
-                           job_id="DonutNotApproved",creator_event="FAKE_AI_CONSENT")
-            result=worker.run(s["pid"],s["request"],profile_revision=1,
-                              job_id="DonutOriginalSpeech01",creator_event=ACTION)
-            self.assertEqual(result["actor_id"],s["people"]["DONUT"])
-            self.assertEqual(result["voice_id"],"Voice_Donut_ActorIdentity")
-            self.assertTrue(result["voice_output_generated_in_contained_real_process"])
-            self.assertTrue(result["worker_exited_and_closed"])
-            self.assertFalse(result["voice_approved_for_film"])
-            self.assertFalse(result["acoustic_identity_independently_verified"])
-            self.assertGreater(result["wav_info"]["sample_count"],1000)
-            candidate=s["index"].read_revision(
-                s["pid"],result["candidate_id"],1)
-            self.assertFalse(candidate["data"]["director_audition_approved"])
-            self.assertFalse(candidate["data"]["film_dialogue_take_published"])
-            self.assertTrue(candidate["data"]["voice_is_offline_rule_based_tts"])
-            self.assertEqual(candidate["data"]["source_pcm_wav_blob_sha256"],
-                             result["wav_info"]["wav_sha256"])
-            self.assertEqual(worker.verify(
-                s["pid"],"DonutOriginalSpeech01")["actor_id"],
-                s["people"]["DONUT"])
-            with self.assertRaises(RuntimeError):
-                worker.run(s["pid"],s["request"],profile_revision=1,
-                    job_id="DonutOriginalSpeech01",creator_event=ACTION)
-            other=dict(s["request"],actor_id=s["people"]["SPHERE"])
-            with self.assertRaises((PermissionError,KeyError,ValueError)):
-                worker.run(s["pid"],other,profile_revision=1,
-                           job_id="SphereStealsDonutVoice",
-                           creator_event=ACTION)
-            if os.environ.get("NVP_FILM03_ARTIFACT_DIR"):
-                dest=Path(os.environ["NVP_FILM03_ARTIFACT_DIR"])/"real-voice"
-                dest.mkdir(parents=True,exist_ok=True)
-                for rel in ("voice.wav","receipt.json","contract.json","source.txt",
-                            "worker_stdout.log","worker_stderr.log"):
-                    shutil.copy2(worker.root/"DonutOriginalSpeech01"/rel,dest/rel)
-                (dest/"filmindex_candidate.json").write_text(
-                    json.dumps(candidate["data"],sort_keys=True,indent=2),"utf8")
-            with open(worker.root/"DonutOriginalSpeech01"/"voice.wav","ab") as f:
-                f.write(b"altered")
-            with self.assertRaises((PermissionError,RuntimeError)):
-                worker.verify(s["pid"],"DonutOriginalSpeech01")
+            with patch.dict(os.environ,{
+                "NVP_HOME":str(Path(d).resolve()/"desktop")}):
+                host=TrustedDesktopWO6Bridge(
+                    s["index"],origin="http://127.0.0.1:43231",
+                    host_factory=lambda *_:None)
+                self.addCleanup(host._close)
+                host._attach_window(HumanWindow())
+                with self.assertRaisesRegex(PermissionError,
+                                             "no expressive, film-qualified"):
+                    host.film03_run_actor_voice_candidate({
+                        "project_id":s["pid"],"source_route":s["request"],
+                        "profile_revision":1,"job_id":"NoUnqualifiedVoice"})
+                self.assertFalse(
+                    (Path(d)/"desktop"/".creator-native-actions"/"actor-tts").exists())
+                self.assertIsNone(s["index"].read_revision(
+                    s["pid"],"DonutAuthoredOriginalLine",1)["data"][
+                    "recorded_voice_source"])
 
     @unittest.skipUnless(os.environ.get("NVP_FILM03_BLENDER_BIN"),
                          "Real Blender 5.2.3 binary required for actual Cycles gait acceptance")
