@@ -92,6 +92,36 @@ class PrioritySchedulerTests(unittest.TestCase):
             self.assertTrue(other["admitted"])
             self.assertEqual(other["task_id"],"survivor")
 
+    def test_exact_approved_binding_notice_checks_same_head_and_policy(self):
+        from backend.nvp_approved_tasks import ApprovedTaskBindings
+        with TemporaryDirectory() as root:
+            ledger=TaskLedger(root,sampler=sample)
+            seen=[]
+            def policy(approval_id,digest,document):
+                seen.append(document["task_id"])
+                return True
+            binding=ApprovedTaskBindings(ledger,approval_check=policy)
+            for task,lane in (("first","interactive"),("second","standard")):
+                binding.enqueue(
+                    self.req(task),owner_key="producer",lane=lane,
+                    approval_id="director_"+task,
+                    document={"task_id":task,"kind":"blender"})
+            denied=binding.claim_next(
+                owner_key="producer",expected_task_id="second")
+            self.assertEqual(denied["state"],"NOT_CLAIMED")
+            self.assertFalse(denied["admitted"])
+            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],0)
+            first=binding.claim_next(
+                owner_key="producer",expected_task_id="first")
+            self.assertEqual(first["task_id"],"first")
+            self.assertTrue(first["admitted"])
+            second=binding.claim_next(
+                owner_key="producer",expected_task_id="second")
+            self.assertEqual(second["task_id"],"second")
+            self.assertTrue(second["admitted"])
+            self.assertIn("first",seen)
+            self.assertIn("second",seen)
+
     def test_wrong_producer_cannot_claim_or_cancel(self):
         with TemporaryDirectory() as root:
             ledger=TaskLedger(root,sampler=sample)
