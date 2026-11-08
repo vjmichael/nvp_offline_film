@@ -159,6 +159,26 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"FilmingSoundTimeline",1)
 
+    def test_existing_sound_timeline_preflight_does_not_publish_pcm(self):
+        req=self.payload()
+        TemporalLedger(self.index).publish(
+            self.pid,"FilmingSoundTimeline",[],duration_tick=3*T,
+            expected_revision=0)
+        with self.assertRaisesRegex(ValueError,"output identity already published"):
+            self.capture.capture(**req)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"NewRecordedSpeech",1)
+
+    def test_existing_take_identity_preflight_does_not_publish_pcm(self):
+        req=self.payload()
+        # An occupied identity is enough to prevent a fresh Take at revision 1.
+        self.capture.sources.publish(
+            self.pid,"FilmedTake",[self.original],expected_revision=0)
+        with self.assertRaisesRegex(ValueError,"output identity already published"):
+            self.capture.capture(**req)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"NewRecordedSpeech",1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
