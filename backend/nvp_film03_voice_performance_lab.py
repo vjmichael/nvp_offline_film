@@ -251,6 +251,9 @@ def compare_auditions(candidates, reviews):
     seen = set()
     rows = []
     for candidate in candidates:
+        if candidate.get("candidate_sha256") != digest({
+                k: v for k, v in candidate.items() if k != "candidate_sha256"}):
+            raise PermissionError("Audition candidate receipt was altered")
         if candidate["case_sha256"] != first_case:
             raise PermissionError("Do not compare different ActorIDs, words or directions")
         sha = candidate["candidate_sha256"]
@@ -258,6 +261,12 @@ def compare_auditions(candidates, reviews):
             raise ValueError("Repeated audition evidence")
         seen.add(sha)
         qualified = [r for r in reviews if r.get("candidate_sha256") == sha]
+        for review in qualified:
+            if review.get("review_sha256") != digest({
+                    k: v for k, v in review.items() if k != "review_sha256"}):
+                raise PermissionError("Listening review SHA did not match its content")
+            if review.get("reviewer_identity_authenticated") is not False:
+                raise PermissionError("Unauthenticated review cannot claim authentication")
         if len({r.get("reviewer_id") for r in qualified}) != len(qualified):
             raise ValueError("Repeated reviewer is not independent evidence")
         rows.append({
