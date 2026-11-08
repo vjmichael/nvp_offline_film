@@ -459,6 +459,36 @@ class ProductionBibleActors:
             by_id[row["link_id"]] = row
         current = sorted((row for row in by_id.values() if row["status"] == "active"),
                          key=lambda r:(r["role"],r["link_id"]))
+        # Audit whether a historically valid source link still follows the
+        # current screenplay/Bible revision. A stale link is never deleted or
+        # silently remapped to the newly written scene or costume.
+        screenplay = self.studio.get_project(project_id)
+        for entry in current:
+            family = entry["source_family"]
+            needs_review = False
+            if family == "screenplay_scene":
+                source = next((s for s in screenplay["scenes"]
+                               if s["id"] == entry["target_id"]), None)
+                needs_review = (
+                    source is None or
+                    entry["target_revision"] != screenplay["revision"] or
+                    source is not None and sha_scene(source) !=
+                    entry["source_snapshot"]["scene_sha256"])
+            elif family == "bible_prop":
+                try:
+                    source = self.bible.get_entity(project_id, entry["target_id"])
+                    needs_review = source["revision"] != entry["target_revision"]
+                except KeyError:
+                    needs_review = True
+            elif family == "filmindex":
+                try:
+                    source = self.index.read_revision(
+                        project_id, entry["target_id"])
+                    needs_review = source["revision"] != entry["target_revision"]
+                except KeyError:
+                    needs_review = True
+            entry["needs_director_source_review"] = bool(needs_review)
+            entry["historical_original_link_retained"] = True
         return {
             "format": FORMAT,
             "project_id": project_id, "actor_id": actor["id"],
