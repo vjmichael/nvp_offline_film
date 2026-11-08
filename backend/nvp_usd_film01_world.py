@@ -310,6 +310,7 @@ class WorldSession:
         self.initially_staged_sources = initially_staged_sources
         self.materialized_set_names = set()
         self.loaded_stage_prepared_bytes = 0
+        self.sealed_cache_hits = 0
 
     def __enter__(self):
         return self
@@ -347,6 +348,7 @@ class WorldSession:
                     raise RuntimeError("Lazy film-world set resolver is missing")
                 info = self._materialize_set(name)
                 self.loaded_stage_prepared_bytes += info["new_staged_bytes"]
+                self.sealed_cache_hits += int(info.get("sealed_cache_hit",False))
                 self.materialized_set_names.add(name)
             self.stage.Load(path)
             prim = self.stage.GetPrimAtPath(path)
@@ -465,6 +467,7 @@ class WorldSession:
             "initial_eager_source_count": self.initially_staged_sources,
             "materialized_scene_set_names": sorted(self.materialized_set_names),
             "eager_original_scene_flatten_count": 0,
+            "sha_verified_cached_set_loads": self.sealed_cache_hits,
             "source_staging_bytes": self.staged_bytes +
                                     self.loaded_stage_prepared_bytes,
             "usd_stage_load_none_ms": self.stage_initial_ms,
@@ -524,6 +527,7 @@ class OpenUSDWorldComposer:
         (staging / "textures").mkdir()
         from backend.nvp_usd_film01c_texture import write_verified_texture_files
         written = set()
+        staged_texture_shas = set()
         total_bytes = 0
         paths = {}
         for key, src in sorted(sources.items()):
@@ -534,14 +538,20 @@ class OpenUSDWorldComposer:
             if rel not in written:
                 data = src["bytes"]
                 if data is not None:
-                    total_bytes += len(data)
+                    textures = src.get("texture_files",{})
+                    new_texture_bytes = sum(
+                        len(png) for tex_sha,png in textures.items()
+                        if tex_sha not in staged_texture_shas)
+                    total_bytes += len(data)+new_texture_bytes
                     if total_bytes > MAX_STAGING_BYTES:
                         raise RuntimeError("Bounded private world staging budget exceeded")
                     with dest.open("xb") as output:
                         output.write(data)
+                    dest.chmod(0o400)
                     written.add(rel)
                     write_verified_texture_files(
-                        staging / "textures",src.get("texture_files",{}))
+                        staging / "textures",textures)
+                    staged_texture_shas.update(textures)
             paths[key] = "./" + rel
         dest = staging / "world.usda"
         stage = Usd.Stage.CreateNew(str(dest))
@@ -760,6 +770,7 @@ class OpenUSDWorldComposer:
                     new_bytes = len(data)
                     with dest.open("xb") as out:
                         out.write(data)
+                    dest.chmod(0o400)
                 from backend.nvp_usd_film01c_texture import (
                     write_verified_texture_files,
                 )
