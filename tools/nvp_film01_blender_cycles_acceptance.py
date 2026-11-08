@@ -60,7 +60,7 @@ def original_take_manifest(source):
     mesh={
         "points":asset["data"]["points"],
         "faces":asset["data"]["triangles"],
-        "uvs":asset["data"]["mesh_face_uvs"],
+        "uvs":asset["data"]["face_uvs"],
     }
     original_sha=sha256(_json({
         "points":geometry["mesh_points"],
