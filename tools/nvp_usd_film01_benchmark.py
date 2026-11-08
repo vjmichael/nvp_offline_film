@@ -89,8 +89,10 @@ def exercise(instance_count=1200):
         with reopen.open(pid,"City",1) as world:
             open_total_s=round(perf_counter()-start,5)
             before=world.receipt()
-            if before["loaded_set_names"]:
-                raise RuntimeError("World did not start with all source sets unloaded")
+            if before["loaded_set_names"] or before["materialized_scene_set_names"]:
+                raise RuntimeError("World eagerly prepared a source scene before LoadNone")
+            if before["eager_original_scene_flatten_count"] != 0:
+                raise RuntimeError("World still flattened unopened original scene")
             first=world.load(["Exterior"])
             if not world.stage.GetPrimAtPath(
                     "/World/Sets/Exterior/Camera").IsA(UsdGeom.Camera):
@@ -105,6 +107,8 @@ def exercise(instance_count=1200):
                 raise RuntimeError("Original scene instancer changed on restart")
             second=world.load(["Interior"])
             both=world.receipt()
+            if both["sha_verified_cached_set_loads"] != 2:
+                raise RuntimeError("Native project source cache failed to serve both sets")
             world.unload(["Exterior","Interior"])
             after=world.receipt()
             if after["loaded_set_names"]:
@@ -120,6 +124,13 @@ def exercise(instance_count=1200):
                 "original_asset_prototype_count":1,
                 "source_staging_bytes":before["source_staging_bytes"],
                 "source_staging_files":before["source_staging_file_count"],
+                "source_cache_hits":both["sha_verified_cached_set_loads"],
+                "stage_set_count_before_materialization":
+                    len(before["materialized_scene_set_names"]),
+                "materialized_set_count_after_both_loads":
+                    len(both["materialized_scene_set_names"]),
+                "staged_bytes_after_both_payloads":
+                    both["source_staging_bytes"],
                 "native_usd_stage_load_none_ms":before["usd_stage_load_none_ms"],
                 "first_set_load_ms":first["elapsed_ms"],
                 "second_set_load_ms":second["elapsed_ms"],

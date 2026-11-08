@@ -1,0 +1,102 @@
+name: NVP USD-FILM-01C Native FilmIndex Layer Cache and Scoped MaterialX Resolver
+
+on:
+  push:
+    branches: [nvp/usd-film01c-scoped-lazy-resolver-20261108]
+  pull_request:
+    branches: [nvp/usd-film01-scalable-world-composition-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-usd-film01c-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  first-party-source-and-scoped-images:
+    name: Real USD cached scene load / FilmIndex PNG+MaterialX / ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install first-party real OpenUSD, PNG and NVP studio dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+      - name: Compile all new and earlier USD-FILM-01 source and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01_world.py backend/nvp_usd_film01c_texture.py tools/nvp_usd_film01_benchmark.py tests/test_nvp_usd_film01_world.py tests/test_nvp_usd_film01c_lazy_resolver.py
+      - name: Real native sealed FilmIndex source cache, on-demand payloads and hostile texture refusals
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01c_lazy_resolver.py" -v
+      - name: Preserve original asset-world and frozen-Take contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01_world.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_reusable_assets.py" -v
+
+  real-cached-world-benchmark:
+    name: Two original USD sets from sealed cache and 1200 repeated assets / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual OpenUSD and project source dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Produce real first-party lazy-set and process-memory evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p usd-film01c-evidence
+          python tools/nvp_usd_film01_benchmark.py \
+            --instances 1200 \
+            --output usd-film01c-evidence/world_cached_loads.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          item=json.loads(Path("usd-film01c-evidence/world_cached_loads.json").read_text())
+          assert item["actual_instanced_prop_count"] == 1200
+          assert item["source_cache_hits"] == 2
+          assert item["stage_set_count_before_materialization"] == 0
+          assert item["materialized_set_count_after_both_loads"] == 2
+          assert item["original_source_hash_reopened"] is True
+          assert item["renderer_pixels_generated"] is False
+          assert item["gpu_vram_bytes"] is None
+          print("Verified genuine original USD cache, not photoreal rendering or GPU performance")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-usd-film01c-SHA-CACHED-WORLD-${{ matrix.os }}-NATIVE-EVIDENCE
+          path: usd-film01c-evidence/
+          if-no-files-found: warn
+          retention-days: 14
