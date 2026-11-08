@@ -97,6 +97,31 @@ class IndependentOriginalFilmDecoderContracts(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 scan_actual_movie(video,sound,expected_frames=3, director_frames=[])
 
+    def test_movie_clock_and_video_stream_header_tamper_rejected(self):
+        with TemporaryDirectory() as d:
+            video,sound=create_disposable_mock_film(d)
+            raw=video.read_bytes()
+            changed=bytearray(raw)
+            avih=raw.index(b"avih")
+            # The native AVI main header starts after tag + length.
+            struct.pack_into("<I",changed,avih+8,50000)  # 20fps, not 24fps
+            video.write_bytes(changed)
+            with self.assertRaises(RuntimeError):
+                scan_actual_movie(video,sound,expected_frames=3,director_frames=[])
+        with TemporaryDirectory() as d:
+            video,sound=create_disposable_mock_film(d)
+            raw=video.read_bytes()
+            changed=bytearray(raw)
+            # strh/vids stream metadata must independently declare
+            # scale=1, rate=24, zero start and exactly three frames.
+            pos=raw.index(b"strh")
+            self.assertEqual(raw[pos+8:pos+12],b"vids")
+            # the strh scale starts at +8 header, then 20 bytes
+            struct.pack_into("<I",changed,pos+8+20+4,25)
+            video.write_bytes(changed)
+            with self.assertRaises(RuntimeError):
+                scan_actual_movie(video,sound,expected_frames=3,director_frames=[])
+
     def test_truncated_and_wrong_audio_fail_closed(self):
         with TemporaryDirectory() as d:
             video,sound=create_disposable_mock_film(d)
