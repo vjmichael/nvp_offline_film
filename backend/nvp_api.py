@@ -52,6 +52,8 @@ def run(action):
         raise HTTPException(status_code=422, detail=str(error)) from error
     except RuntimeError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
 
 
 @app.get("/api/status")
@@ -341,6 +343,11 @@ def production_bible_actor_catalog(project_id: str):
 @app.get("/api/projects/{project_id}/production-bible/actors/{actor_id}")
 def production_bible_actor(project_id: str, actor_id: str):
     return run(lambda: _ProductionActors(studio).actor(project_id, actor_id))
+
+
+@app.get("/api/projects/{project_id}/production-bible/takes/{take_id}/cast-coverage")
+def production_bible_cast_coverage(project_id: str, take_id: str):
+    return run(lambda: _ProductionActors(studio).casting_coverage(project_id,take_id))
 
 
 @app.post("/api/projects/{project_id}/production-bible/actors/{actor_id}/links", status_code=201)
