@@ -61,8 +61,8 @@ class RequiredRealHydraTextureColor(unittest.TestCase):
         scene,_=self.scene.open(self.pid,sid,1)
         observed=capture_hydra_evidence(
             self.index,self.pid,sid,1,camera_path="/World/Camera",
-            renderer="Embree",width=320,timeout_seconds=150,
-            require_gpu=False)
+            renderer="Storm",width=320,timeout_seconds=150,
+            require_gpu=True)
         self.assertEqual(observed["status"],"HYDRA_FRAME_RENDERED",
                          "REAL usdrecord/Embree unavailable or failed: "
                          +str(observed))
