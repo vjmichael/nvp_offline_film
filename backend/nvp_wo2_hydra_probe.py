@@ -135,16 +135,19 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
     original_layer=stage.GetRootLayer().ExportToString()
     try:
         with source_ctx as (copy,evidence):
+            isolated_material_count=0
             if material_context_probe=="mtlx_only":
                 if evidence.get("derived_probe_only") is not True:
                     raise RuntimeError("MaterialX-only isolation forbidden on source stage")
                 from backend.nvp_wo3_materialx_integrity import (
                     isolate_materialx_only_on_derived_stage)
-                isolate_materialx_only_on_derived_stage(copy)
+                isolated_material_count=isolate_materialx_only_on_derived_stage(copy)
             with TemporaryDirectory(prefix="nvp-wo2-hydra-") as directory:
                 root=Path(directory)
                 scene_path=root/"approved_derived_scene.usda"
                 image_path=root/"independent_hydra.png"
+                derived_scene_sha=sha256(
+                    copy.GetRootLayer().ExportToString().encode("utf-8")).hexdigest()
                 if not copy.GetRootLayer().Export(str(scene_path)):
                     raise RuntimeError("Approved USD probe layer export failed")
                 args=[str(native_tool),"--camera",camera_path,
@@ -248,6 +251,10 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                     "rendered_center_patch_mean_rgb8":center_rgb,
                     "rendered_center_patch_pixels":center_pixels,
                     "renderer_executable_sha256":native_tool_sha,
+                    "derived_render_layer_sha256":derived_scene_sha,
+                    "materialx_only_terminal_isolated":(
+                        material_context_probe=="mtlx_only" and
+                        isolated_material_count>0),
                     "derived_source_scope":True,
                     "original_modified":False,
                 }
