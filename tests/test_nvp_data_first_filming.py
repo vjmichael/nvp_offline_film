@@ -249,6 +249,29 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(later["payload"]["usd_prim_path"],"/World/Actor")
         self.assertEqual(later["payload"]["gain"],1.0)
 
+
+    def test_later_streaming_shortfall_does_not_publish_earlier_source(self):
+        req=self.payload()
+        req["recordings"][0]["pcm_chunks"]=iter([self.original])
+        second=dict(req["recordings"][0])
+        second.update(event_id="Speech002",source_id="SecondSpeech",
+                      pcm_chunks=iter([b"\\x00\\x00"]))
+        req["recordings"].append(second)
+        with self.assertRaisesRegex(ValueError,"shorter than"):
+            self.capture.capture(**req)
+        for identity in ("NewRecordedSpeech","SecondSpeech","FilmingSoundTimeline"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+
+    def test_streaming_chunks_are_replayed_from_validated_spool(self):
+        req=self.payload()
+        req["recordings"][0]["pcm_chunks"]=iter(
+            [self.original[:24000],self.original[24000:]])
+        receipt=self.capture.capture(**req)
+        self.assertEqual(receipt["original_sound_count"],1)
+        self.assertEqual(self.index.read_revision(
+            self.pid,"NewRecordedSpeech",1)["data"]["sample_count"],48000)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
