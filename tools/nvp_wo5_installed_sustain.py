@@ -39,7 +39,7 @@ def _native_codec_stage(label):
     if not target.is_absolute() or target.is_symlink() or not target.parent.is_dir():
         return
     with target.open("a",encoding="utf8") as log:
-        log.write("WO5_CODEC_STAGE="+label+"\\n")
+        log.write("WO5_CODEC_STAGE="+label+"\n")
         log.flush()
         os.fsync(log.fileno())
 
