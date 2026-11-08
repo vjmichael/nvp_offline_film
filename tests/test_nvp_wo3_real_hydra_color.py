@@ -64,7 +64,7 @@ class RequiredRealHydraTextureColor(unittest.TestCase):
             renderer="Storm",width=320,timeout_seconds=150,
             require_gpu=True)
         self.assertEqual(observed["status"],"HYDRA_FRAME_RENDERED",
-                         "REAL usdrecord/Embree unavailable or failed: "
+                         "REAL usdrecord/Storm unavailable or failed: "
                          +str(observed))
         self.assertEqual(
             observed["scene_document_sha256"],scene["document_sha256"])
