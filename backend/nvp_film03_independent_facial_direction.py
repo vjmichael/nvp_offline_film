@@ -124,8 +124,8 @@ class FilmIndependentActingDirection:
     def plan(self, project_id, route, *, profile_revision, direction_id,
              direction_revision, dialogue_audio_id, dialogue_audio_revision,
              contributor_id, contributor_role, contributor_consent_sha256,
-             articulation, mouth_events, face_events, body_events,
-             start_tick, emotional_relationship="match_voice_default"):
+             articulation, mouth_events, body_events, start_tick,
+             face_events=None, emotional_relationship="match_voice_default"):
         _require_pid(project_id)
         case = frozen_case(
             self.index, project_id, route, profile_revision=profile_revision,
@@ -150,7 +150,8 @@ class FilmIndependentActingDirection:
             raise ValueError("Spoken performance exceeds the representable Film Time")
         total = pcm["sample_count"]
         mouth = _mouth_events(mouth_events, total, articulation)
-        face = _time_events(face_events, total, FACES, "face")
+        face = _time_events([] if face_events is None else face_events,
+                            total, FACES, "face")
         body = _time_events(body_events, total, BODIES, "body")
         # Director-authored facial keyframes ALWAYS take priority, even when
         # the caller leaves the default mode selected. No untrusted audio model
