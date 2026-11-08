@@ -272,6 +272,27 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(self.index.read_revision(
             self.pid,"NewRecordedSpeech",1)["data"]["sample_count"],48000)
 
+    def test_spool_mutation_after_preflight_fails_closed_before_take(self):
+        req=self.payload()
+        original_publish=self.capture.sources.publish
+        def tamper_spool(project_id,source_id,chunks,**kwargs):
+            # The trusted worker's temporary spool is not authoritative:
+            # replay must detect a changed byte before publishing its source.
+            spool=chunks.gi_frame.f_locals["spool"]
+            spool.seek(4)
+            byte=spool.read(1)
+            spool.seek(4)
+            spool.write(bytes([byte[0]^1]))
+            spool.flush()
+            return original_publish(project_id,source_id,chunks,**kwargs)
+        self.capture.sources.publish=tamper_spool
+        with self.assertRaisesRegex(RuntimeError,"spool changed after validation"):
+            self.capture.capture(**req)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"FilmedTake",1)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"NewRecordedSpeech",1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
