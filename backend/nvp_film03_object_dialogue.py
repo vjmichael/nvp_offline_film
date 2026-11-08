@@ -316,6 +316,7 @@ class ObjectActorDialogue:
                 "format": "nvp.film03.readonly_script_dialogue_impact.v1",
                 "screenplay_revision": source_revision,
                 "last_published_script_snapshot_revision": rev,
+                "previous_revision_indexed_production_dependents": self.index.impact(pid, script_id, rev),
                 "new_or_changed_script_lines": [],
                 "impacted_historical_performances": [],
                 "production_bible": self.bible.report(pid),
@@ -359,6 +360,8 @@ class ObjectActorDialogue:
             "format": "nvp.film03.readonly_script_dialogue_impact.v1",
             "screenplay_revision": source_revision,
             "last_published_script_snapshot_revision": rev,
+            "previous_revision_indexed_production_dependents": (
+                self.index.impact(pid, script_id, rev) if previous else []),
             "new_or_changed_script_lines": data["changes_from_previous_snapshot"],
             "impacted_historical_performances": impacted,
             "production_bible": self.bible.report(pid),
