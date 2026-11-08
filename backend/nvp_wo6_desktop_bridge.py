@@ -405,7 +405,7 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         self._wo6_require(request,{
             "project_id","decision_kind","decision_id",
             "source_id","source_revision","source_sha256",
-            "payload","duration_tick"})
+            "payload","duration_tick","director_reason"})
         return preview_typed_decision(self.index,request)
 
     def _wo6_require(self,request,expected):
@@ -592,7 +592,7 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                    request.get("decision_kind") in ("sound_cue","editorial_cut"))
         scope=self._wo6_require(
             request,required|({"reviewed_proposal_id"} if has_review else set())|
-                    ({"typed_preview_sha256"} if has_typed else set()))
+                    ({"typed_preview_sha256","director_reason"} if has_typed else set()))
         context=None
         take_id=None
         proposal_id=request.get("reviewed_proposal_id") if has_review else None
@@ -646,6 +646,8 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                 expected_preview_sha256=request["preview_sha256"],
                 expected_typed_preview_sha256=(
                     request["typed_preview_sha256"] if has_typed else None),
+                director_reason=(
+                    request["director_reason"] if has_typed else None),
                 ai_review_context=context,
                 reviewed_original_take_id=take_id)
         except BaseException:
