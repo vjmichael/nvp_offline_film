@@ -243,6 +243,36 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
         self.assertEqual(failure,"PermissionError")
         self.assertFalse(receipt["native_worker_success_verified"])
 
+    def test_restart_keeps_queued_task_durable_but_never_auto_dispatches(self):
+        request=self._request()
+        self.window.answers=[True,True]
+        # Native source ledger is genuine; only the dispatcher loop is
+        # suspended to simulate desktop close after QUEUED was committed.
+        with patch.object(self.bridge,"_wo6_worker_loop"):
+            queued=self.bridge.wo6_create_take(request)
+        self.assertEqual(queued["state"],"QUEUED")
+        task=queued["queued_task_id"]
+        self.bridge._close()
+        fresh=TrustedDesktopWO6Bridge(
+            self.index,origin="http://127.0.0.1:43231",
+            host_factory=lambda _:None)
+        self.addCleanup(fresh._close)
+        new_window=Window()
+        fresh._attach_window(new_window)
+        evidence=fresh.wo6_task_status(self.pid,task)
+        self.assertEqual(evidence["state"],"QUEUED")
+        self.assertEqual(new_window.prompts,[])
+        self.assertEqual(fresh._wo6_dispatch_queues,{})
+        # Recovery is an explicit fresh human cancellation, not an
+        # automatic retry of stale, formerly consented source writes.
+        new_window.answers=[True]
+        cancelled=fresh.wo6_cancel_native_task(self.pid,task)
+        self.assertEqual(cancelled["state"],"CANCELLED")
+        self.assertTrue(cancelled["cancel_intent_durable"])
+        self.assertEqual(len(new_window.prompts),1)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"human_new_take")
+
     def test_foreign_origin_model_supplied_consent_and_bad_project_denied(self):
         request=self._request()
         with self.assertRaises(ValueError):
