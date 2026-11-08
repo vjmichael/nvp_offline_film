@@ -443,6 +443,23 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             with self.assertRaises(KeyError):
                 self.index.read_revision(self.pid,identity,1)
 
+    def test_streaming_pcm_cannot_rewrite_frozen_sound_metadata(self):
+        req=self.payload()
+        event=req["recordings"][0]
+        def mutating_pcm():
+            event["gain"]=0.0
+            event["subject_id"]="TamperedActor"
+            yield self.original
+        event["pcm_chunks"]=mutating_pcm()
+        self.capture.capture(**req)
+        events=TemporalLedger(self.index).events_in(
+            self.pid,"FilmingSoundTimeline",1,
+            start_tick=0,end_tick=3*T,limit=20)["events"]
+        recorded=next(e for e in events if e["event_id"]=="Speech001")
+        self.assertEqual(recorded["subject_id"],"Actor")
+        self.assertEqual(recorded["payload"]["gain"],1.0)
+        self.assertEqual(event["gain"],0.0)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
