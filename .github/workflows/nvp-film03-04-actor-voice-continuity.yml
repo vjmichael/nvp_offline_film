@@ -1,0 +1,81 @@
+name: NVP FILM03-04 ActorID VoiceID Reference, Audition, Retake Consistency (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film03-04-actor-voice-continuity-20261108]
+  pull_request:
+    branches: [nvp/film03-03-actorid-dialogue-routing-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film03-04-voice-consistency-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-source-voiceid-os:
+    name: Canonical ActorID VoiceID original PCM audition consent / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native OpenUSD, Studio, PCM and Starlette test prerequisites
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx2
+      - name: Compile actual voice production Bible, native trusted host and speaker router
+        run: |
+          python -m compileall -q backend/nvp_film03_voice_identity.py backend/nvp_film03_dialogue_manager.py backend/nvp_film03_object_dialogue.py backend/nvp_production_bible_actors.py backend/nvp_wo6_desktop_bridge.py tests/test_nvp_film03_dialogue_manager.py
+      - name: Verify genuine source ActorID/VoiceID, original PCM voice SHA, alternate approved Take and wrong-voice refusal
+        run: python -m unittest discover -s tests -p test_nvp_film03_dialogue_manager.py -v
+      - name: Verify existing actual StoryBible actor/asset/script and original OpenUSD scene contracts
+        run: |
+          python -m unittest discover -s tests -p test_nvp_film03_actor_bible.py -v
+          python -m unittest discover -s tests -p test_nvp_film03_object_dialogue.py -v
+          python -m unittest discover -s tests -p test_nvp_temporal_ledger.py -v
+      - name: Explicitly reject false acoustic biometric proof/voice generation
+        shell: python
+        run: |
+          from pathlib import Path
+          source=Path("backend/nvp_film03_voice_identity.py").read_text("utf8")
+          assert "acoustic_same_speaker_automatically_verified" in source
+          assert "director_reviewed_against_reference" in source
+          assert "No director authorization" in source
+          assert "A recording already approved for another VoiceID" in source
+          assert "voice_recast_reason" in source
+          print("FILM03-04 voice original source contract tests only; no false voice synthesis, acoustic biometric assurance or installed film release")
+
+  real-director-voice-ui:
+    name: Actual NVP React StoryBible VoiceID consent and original auditions / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install the actual NVP pinned React/Vitest toolchain
+        run: npm install --no-audit --no-fund
+      - name: Test actual source-voice director UI, VoiceID recast and read-only old Bible source
+        run: |
+          npm run test:ui -- Film03ActorVoicePanel.test.jsx
+          npm run test:ui -- Film03ProductionBiblePanel.test.jsx
+      - name: Build real NVP desktop UI with ActorID plus voice continuity
+        run: npm run build

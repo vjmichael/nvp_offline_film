@@ -128,6 +128,8 @@ class ProductionBibleActors:
                 "family": "filmindex", "target_id": item["object_id"],
                 "target_revision": item["head_revision"],
                 "kind": item["kind"], "sha256": rec["document_sha256"],
+                "sample_count": (rec["data"].get("sample_count")
+                                 if item["kind"]=="audio" else None),
             })
         props = [
             {"family": "bible_prop", "target_id": e["id"],
@@ -489,6 +491,115 @@ class ProductionBibleActors:
             raise RuntimeError("Cannot accept scene cast with missing/ambiguous StoryBible ActorIDs")
         return proof
 
+    def audit_actor_asset_package(self, project_id, actor_id, *, take_id=None,
+                                  performance_id=None):
+        """Read every current ActorID resource source, not only its labels.
+
+        A reused generic mesh or shared prop is not necessarily an identity
+        violation; relationships are per-ActorID, while actual actor casting,
+        recorded voice approval and script binding have stricter ownership.
+        Stale but immutable source revisions remain as history and trigger
+        a director review, not destructive relinking.
+        """
+        self._actor(project_id,actor_id)
+        current=self.actor(project_id,actor_id)
+        details=[]
+        failures=[]
+        needs_review=[]
+        for link in current["active_links"]:
+            item={
+                "link_id":link["link_id"],
+                "link_revision":link["link_revision"],
+                "actor_id":actor_id,"role":link["role"],
+                "source_family":link["source_family"],
+                "source_id":link["target_id"],
+                "source_revision":link["target_revision"],
+                "recorded_sha256":link["source_sha256"],
+                "source_verified_now":False,
+                "historical_source_preserved":True,
+                "needs_director_review":bool(
+                    link.get("needs_director_source_review")),
+            }
+            if item["needs_director_review"]:
+                needs_review.append({
+                    "link_id":item["link_id"],"role":item["role"],
+                    "reason":"Source head changed; historical link cannot be silently updated"})
+            else:
+                try:
+                    sha,_=self._target(
+                        project_id,link["role"],link["source_family"],
+                        link["target_id"],link["target_revision"],
+                        link["actor_prim_path"])
+                    if sha!=link["source_sha256"]:
+                        raise RuntimeError("Saved ActorID source SHA disagrees with original bytes")
+                    item["source_verified_now"]=True
+                except (KeyError,ValueError,PermissionError,RuntimeError,OSError) as exc:
+                    failures.append({
+                        "link_id":item["link_id"],"role":item["role"],
+                        "reason":"Verified original asset source missing/changed",
+                        "error_kind":type(exc).__name__,
+                    })
+            details.append(item)
+        casting=None
+        if take_id is not None:
+            casting=self.casting_coverage(project_id,take_id)
+            if (not casting["complete"] or
+                    actor_id not in casting["actor_id_by_prim"].values()):
+                failures.append({
+                    "role":"actor_prim","link_id":None,
+                    "reason":"This ActorID is not unambiguously cast into the real source Take",
+                })
+        voice=None
+        if performance_id is not None:
+            from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
+            voice=ProductionBibleVoiceIdentity(
+                self.index,verify_creator_action=lambda *_:False
+            ).verify_delivery(
+                project_id,actor_id,performance_id,require_current_cast=True)
+            perf=self.index.read_revision(project_id,performance_id,1)["data"]
+            required_links=(
+                ("performance",performance_id,1),
+                ("dialogue",perf["script_id"],perf["script_revision"]),
+                ("voice",voice["original_audio_id"],voice["original_audio_revision"]),
+            )
+            for role,oid,rev in required_links:
+                if not any(x["role"]==role and
+                           x["source_family"]=="filmindex" and
+                           x["target_id"]==oid and
+                           x["target_revision"]==rev and
+                           x["source_verified_now"] for x in details):
+                    failures.append({
+                        "role":role,"link_id":None,
+                        "reason":"Approved voice delivery lacks this ActorID's active verified original source link",
+                    })
+            # The VoiceID only authorizes a candidate source; final speech
+            # still needs the exact scripted selection/time in dialogue router.
+        elif current["current_voice_identity"] is None:
+            needs_review.append({
+                "role":"voice","link_id":None,
+                "reason":"ActorID has no approved current VoiceID; generic audio asset link is not voice identity"})
+        result={
+            "format":"nvp.film03.actor_asset_source_audit.v1",
+            "project_id":project_id,"actor_id":actor_id,
+            "actor_bible_revision":current["bible_revision"],
+            "all_current_sources_physically_verified":
+                not failures and not needs_review and bool(details),
+            "links":[*details],
+            "source_failures":failures,
+            "director_review_required":needs_review,
+            "source_take_casting":casting,
+            "approved_voice_take":voice,
+            "current_voice_id":(
+                current["current_voice_identity"]["voice_id"]
+                if current["current_voice_identity"] else None),
+            "generic_voice_source_not_identity_approval":True,
+            "cross_actor_generic_prop_reuse_not_automatically_forbidden":True,
+            "acoustic_timbre_same_speaker_not_machine_proven":True,
+            "no_assets_or_takes_modified":True,
+            "effect":"read_only_verified_actor_package",
+        }
+        return result
+
     def actor(self, project_id, actor_id):
         actor = self._actor(project_id, actor_id)
         with self.studio._connection() as db:
@@ -533,9 +644,24 @@ class ProductionBibleActors:
                     needs_review = True
             entry["needs_director_source_review"] = bool(needs_review)
             entry["historical_original_link_retained"] = True
+        # The voice registry belongs to the SAME production Bible actor,
+        # and is independent of per-recording "voice" asset links. A source
+        # WAV link alone never establishes a consistent character VoiceID.
+        with self.studio._connection() as db:
+            voice_table=db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='nvp_bible_voice_casts'").fetchone()
+            voice_history=([dict(x) for x in db.execute(
+                """SELECT * FROM nvp_bible_voice_casts
+                   WHERE project_id=? AND actor_id=?
+                   ORDER BY cast_revision""", (project_id, actor_id))]
+                if voice_table else [])
         return {
             "format": FORMAT,
             "project_id": project_id, "actor_id": actor["id"],
+            "current_voice_identity": (voice_history[-1] if voice_history else None),
+            "immutable_voice_cast_history": voice_history,
+            "audio_asset_link_alone_cannot_approve_actors_voice": True,
             "actor_name": actor["name"], "bible_revision": actor["revision"],
             "aliases": actor["aliases"], "production_bible_entity_id": actor["id"],
             "character_canon_revision": actor["revision"],
