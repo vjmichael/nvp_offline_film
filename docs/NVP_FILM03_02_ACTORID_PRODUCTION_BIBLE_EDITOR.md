@@ -76,8 +76,19 @@ frontend/src/Film03ScriptChangeImpactPanel.jsx appears in Screenplay and
 Story Bible screens. It reads existing Studio screenplay history against
 FILM03 source snapshots and reports changed lines, prior performance
 references, StoryBible continuity warnings and indexed downstream source
-consumers, without a mutation or automatic rerecording. This is NOT
-implicit host approval for a model, worker or new recorded Take.
+consumers, without an automatic mutation or rerecording.
+
+For a director to CREATE a new immutable script source snapshot, the UI
+requires installed NVP's first-party pywebview host. The native method
+film03_publish_script_snapshot in backend/nvp_wo6_desktop_bridge.py
+checks exact Studio script revision/SHA, exact FilmIndex manifest head
+and the creator's OS confirmation dialog. It then invokes FILM03-01's
+trusted creator-action verifier, which checks the exact approval scope
+again inside the FilmIndex/Studio transaction. Denial creates no source,
+and stale revisions are refused before prompting. This does not authorize
+any Blender process, AI model, voice generator, or recorded audio mutation.
+No untrusted HTTP endpoint can publish a script source with an invented
+approval flag. Read-only preview remains available without native consent.
 
 backend/nvp_api.py serves local actor catalog, read-only source and
 casting reports, explicit-creator-metadata link and retire endpoints,
