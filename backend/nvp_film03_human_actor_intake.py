@@ -270,6 +270,18 @@ class VoiceActorPerformanceIntake:
             """,(pid,plan["source_selection_id"])).fetchone()
             if not current or current["head_revision"] != plan["source_selection_revision"]:
                 raise PermissionError("Director changed active screenplay selection")
+            duplicate = db.execute("""
+                SELECT session_id FROM nvp_film03_human_voice_audio_custody
+                WHERE project_id=? AND (
+                    (audio_id=? AND audio_revision=?) OR pcm_sha256=?
+                )
+            """, (
+                pid, audio_id, audio_revision,
+                plan["recorded_original_signal"]["pcm16le_sha256"],
+            )).fetchone()
+            if duplicate is not None:
+                raise PermissionError(
+                    "Original performer recording already belongs to another session")
             db.execute("""
                 INSERT INTO nvp_film03_human_voice_audio_custody
                 (project_id,audio_id,audio_revision,pcm_sha256,actor_id,performer_id,session_id)
