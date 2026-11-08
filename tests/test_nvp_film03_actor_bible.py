@@ -230,7 +230,7 @@ class ActorIDSourceProductionBible(unittest.TestCase):
             other = bible.create_entity(p2["id"], "prop", "Hat")
             with self.assertRaises((KeyError, PermissionError)):
                 registry.actor(p1["id"], other["id"])
-            with self.assertRaises(PermissionError):
+            with self.assertRaises(KeyError):
                 registry.actor(p2["id"], actor["id"])
             with self.assertRaises(KeyError):
                 registry.link(p1["id"], actor["actor_id"],
@@ -281,7 +281,7 @@ class NativeFilm03ScriptDirectorApproval(unittest.TestCase):
             home = Path(d).resolve()
             with patch.dict(os.environ, {"NVP_HOME": str(home / "Projects")}):
                 studio = Studio(home / "source.sqlite3")
-                pid = studio.create_project("FILM03 canonical script", "Original object-actor voice")
+                pid = studio.create_project("FILM03 canonical script", "Original object-actor voice")["id"]
                 index = FilmIndex(studio)
                 studio.save_screenplay(pid, SCRIPT_ONE, expected_revision=0)
                 bridge = TrustedDesktopWO6Bridge(
