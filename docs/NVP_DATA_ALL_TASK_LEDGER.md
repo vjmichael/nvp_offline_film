@@ -1247,3 +1247,12 @@ regressions, and negative **synthetic verdict** contract tests kept separate
 from genuine renderer acceptance. OpenUSD 26.08 imaging and 26.11 source
 matrix remain distinct. **All acceptance still OPEN** pending final exact-head
 native jobs; no GPU/calibrated or production rendering claim.
+
+
+## WO5 — Full XYZ12 and terminal PCM24 preview cache custody (2026-11-07)
+
+- New WO5 follow-up branch `nvp/wo5-preview-pcm-custody-closeout-20261107` stacked on WO3 PR #96; historical WO1 PCM region 23/24 repair remains inherited from PR #94.
+- Native DCP XYZ12 2K/4K display conversion previously checked only decimated preview samples; an out-of-range `0x1000` original XYZ12 word at an unsampled position could be silently missed. Repair scans **every** original 12-bit word with bounded `raw.max()` before downsampling; adds negative 2K fixture at x=1,y=1 that would have been skipped.
+- Adds original sample-preservation test for 4-frame window 22–25 of a 26-frame terminal 5.1 PCM24 reel, including exact 2000 samples/frame/channel, uniquely labelled six-channel samples, two unwrap regions (0–23,24–25), reuse and eviction.
+- Native four-cell Ubuntu/Windows 3.11/3.13 suite: `.github/workflows/nvp-wo5-preview-pcm-custody.yml`; exact-head completion **OPEN**. See `docs/NVP_WO5_PREVIEW_PCM_CACHE_CLOSEOUT.md`.
+- Genuine installed NVP.exe 24fps A/V continuous playback, full original 30-minute film, hardware, independent theater and Bv2.1 remain **OPEN**, not implied by source fixes or unit tests.

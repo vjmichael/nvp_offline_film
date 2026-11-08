@@ -89,9 +89,14 @@ def _display_png(xyz12,profile):
     # Select bounded pixels BEFORE expensive floating point transforms.
     stride=max(1,(width+MAX_PREVIEW_WIDTH-1)//MAX_PREVIEW_WIDTH)
     raw=np.frombuffer(xyz12,dtype=">u2").reshape(height,width,3)
-    sample=raw[::stride,::stride,:]
-    if np.any(sample>4095):
+    # Authenticate the numeric range of the ENTIRE decoded DCP image before
+    # constructing a lower-resolution preview. A bad XYZ12 word at a pixel
+    # skipped by downsampling must not be silently accepted as valid essence.
+    # max() scans the contiguous full-resolution array without allocating
+    # a second full-resolution boolean mask.
+    if int(raw.max())>4095:
         raise PermissionError("Out-of-range delivered cinema XYZ12 values")
+    sample=raw[::stride,::stride,:]
     xyz=np.power(sample.astype(np.float32)/4095.0,2.6)
     matrix=np.array([[3.2406,-1.5372,-0.4986],
                      [-0.9689,1.8758,0.0415],
