@@ -181,7 +181,13 @@ class USDFilm01CLazyResolution(unittest.TestCase):
             root=Path(scratch)
             external=root/"external.png"
             external.write_bytes(b"not-the-right-source")
-            (root/(sha256(png_bytes()).hexdigest()+".png")).symlink_to(external)
+            target = root/(sha256(png_bytes()).hexdigest()+".png")
+            try:
+                target.symlink_to(external)
+            except OSError:
+                # Symlink creation on Windows often requires an additional
+                # OS privilege; the unsafe AssetPath test above remains real.
+                return
             with self.assertRaises(PermissionError):
                 write_verified_texture_files(
                     root,{sha256(png_bytes()).hexdigest():png_bytes()})
