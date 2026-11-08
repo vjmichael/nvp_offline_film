@@ -14,6 +14,8 @@ the trusted, supervised recording host.
 from __future__ import annotations
 
 import math
+import tempfile
+import struct
 
 from backend.nvp_data_av_source import (RecordedSoundSources,SAMPLE_RATE,MAX_CHUNK_BYTES,MAX_CHUNKS)
 from backend.nvp_exact_time_shots import ExactTimeShotSequence,MAX_SHOTS
@@ -81,6 +83,7 @@ class NativeSceneSoundCapture:
         source_ids=set()
         event_ids=set()
         prepared_chunks={}
+        spooled=[]
         prepared_entries=[]
         camera_events=self.timeline.events_in(
             project_id,camera_timeline_id,camera_timeline_revision,
@@ -89,157 +92,180 @@ class NativeSceneSoundCapture:
             raise RuntimeError("Partial camera observation history cannot be filmed")
         camera_ids={ev["event_id"] for ev in camera_events["events"]}
         duration=int(plan["duration_tick"])
-        for entry in recordings:
-            if type(entry) is not dict or set(entry)!={
-                "event_id","event_kind","subject_id","source_id",
-                "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
-            }:
-                raise ValueError("Recorded sound requires typed source/evidence/Film Time")
-            eid=_id(entry["event_id"],"recorded sound event")
-            sid=_id(entry["source_id"],"original audio source")
-            if (eid==sid or eid in event_ids or eid in camera_ids or eid in ids or
-                sid in source_ids or sid in ids or sid in camera_ids or
-                sid in event_ids or eid in source_ids):
-                raise ValueError("Duplicate or reserved recording identity")
-            if entry["event_kind"] not in ("sound","dialogue"):
-                raise ValueError("Captured audio must be a sound or dialogue event")
-            _id(entry["subject_id"],"sound source subject")
-            if entry["usd_prim_path"] not in source["data"]["prim_roles"]:
-                raise RuntimeError("Sound emitter is not part of original 3D scene")
-            start=_int(entry["start_tick"],"captured sound start")
-            end=_int(entry["end_tick"],"captured sound end",minimum=1)
-            gain=entry["gain"]
-            if (end<=start or end>duration or
-                type(gain) not in (int,float) or not math.isfinite(gain) or
-                not 0<=gain<=2):
-                raise ValueError("Captured sound has invalid timing/gain")
-            # An existing immutable source ID cannot be republished at revision 1.
-            # Check all IDs before writing any new source in this batch.
-            try:
-                self.index.read_revision(project_id,sid,1)
-            except KeyError:
-                pass
-            else:
-                raise ValueError("Original audio source identity already published")
-            # Validate materialized host chunks across the entire batch before
-            # writing any source. Iterators remain streaming and bounded.
-            chunks=entry["pcm_chunks"]
-            if type(chunks) in (list,tuple):
-                if not 1<=len(chunks)<=MAX_CHUNKS:
-                    raise ValueError("Invalid captured PCM chunk count")
+        try:
+            for entry in recordings:
+                if type(entry) is not dict or set(entry)!={
+                    "event_id","event_kind","subject_id","source_id",
+                    "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
+                }:
+                    raise ValueError("Recorded sound requires typed source/evidence/Film Time")
+                eid=_id(entry["event_id"],"recorded sound event")
+                sid=_id(entry["source_id"],"original audio source")
+                if (eid==sid or eid in event_ids or eid in camera_ids or eid in ids or
+                    sid in source_ids or sid in ids or sid in camera_ids or
+                    sid in event_ids or eid in source_ids):
+                    raise ValueError("Duplicate or reserved recording identity")
+                if entry["event_kind"] not in ("sound","dialogue"):
+                    raise ValueError("Captured audio must be a sound or dialogue event")
+                _id(entry["subject_id"],"sound source subject")
+                if entry["usd_prim_path"] not in source["data"]["prim_roles"]:
+                    raise RuntimeError("Sound emitter is not part of original 3D scene")
+                start=_int(entry["start_tick"],"captured sound start")
+                end=_int(entry["end_tick"],"captured sound end",minimum=1)
+                gain=entry["gain"]
+                if (end<=start or end>duration or
+                    type(gain) not in (int,float) or not math.isfinite(gain) or
+                    not 0<=gain<=2):
+                    raise ValueError("Captured sound has invalid timing/gain")
+                # An existing immutable source ID cannot be republished at revision 1.
+                # Check all IDs before writing any new source in this batch.
+                try:
+                    self.index.read_revision(project_id,sid,1)
+                except KeyError:
+                    pass
+                else:
+                    raise ValueError("Original audio source identity already published")
+                # Spool even one-shot streaming iterators before publishing ANY
+                # immutable source. A later truncated iterator must not leave
+                # earlier source revisions behind. Disk spill keeps RAM bounded.
+                chunks=entry["pcm_chunks"]
+                spool=tempfile.SpooledTemporaryFile(max_size=MAX_CHUNK_BYTES,mode="w+b")
+                spooled.append(spool)
                 samples=0
+                count=0
                 for chunk in chunks:
                     if (type(chunk) is not bytes or
-                        not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2):
+                        not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2 or
+                        count>=MAX_CHUNKS):
                         raise ValueError("Invalid captured PCM16LE chunk")
+                    spool.write(struct.pack("<I",len(chunk)))
+                    spool.write(chunk)
                     samples+=len(chunk)//2
+                    count+=1
                 required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
-                if samples<required:
+                if not count or samples<required:
                     raise ValueError("Captured PCM is shorter than its Film Time event")
-                # Snapshot mutable caller lists before publication: a host must
-                # not alter a validated batch while earlier sources are saved.
-                prepared_chunks[sid]=tuple(chunks)
-            # Freeze validated metadata as well as materialized PCM. A native
-            # callback must not be able to rewrite a later event mid-batch.
-            frozen=dict(entry)
-            if sid in prepared_chunks:
+                spool.seek(0)
+                prepared_chunks[sid]=spool
+                # Freeze validated metadata as well as materialized PCM. A native
+                # callback must not be able to rewrite a later event mid-batch.
+                frozen=dict(entry)
                 frozen["pcm_chunks"]=prepared_chunks[sid]
-            prepared_entries.append(frozen)
-            event_ids.add(eid)
-            source_ids.add(sid)
-        events=[]
-        seen=set(ev["event_id"] for ev in camera_events["events"])
-        for ev in camera_events["events"]:
-            events.append({"event_id":ev["event_id"],
-                           "event_kind":"camera",
-                           "subject_id":ev["subject_id"],
-                           "start_tick":ev["start_tick"],
-                           "end_tick":ev["end_tick"],
-                           "source_id":ev["source_id"],
-                           "source_revision":ev["source_revision"],
-                           "payload":ev["payload"]})
-        # Original mono source signal is stored independently, not a room mix.
-        # Exact per-emitter timing and the scene geometry remain authoritative.
-        for entry in prepared_entries:
-            eid=_id(entry["event_id"],"recorded sound event")
-            if eid in seen:
-                raise ValueError("Collision with a camera or sound event")
-            seen.add(eid)
-            if entry["event_kind"] not in ("sound","dialogue"):
-                raise ValueError("Captured audio must be a sound or dialogue event")
-            _id(entry["subject_id"],"sound source subject")
-            audio_id=_id(entry["source_id"],"original audio source")
-            if audio_id in ids:
-                raise ValueError("Sound may not replace the scene, timeline or Take")
-            path=entry["usd_prim_path"]
-            if path not in source["data"]["prim_roles"]:
-                raise RuntimeError("Sound emitter is not part of original 3D scene")
-            start=_int(entry["start_tick"],"captured sound start")
-            end=_int(entry["end_tick"],"captured sound end",minimum=1)
-            gain=entry["gain"]
-            if (end<=start or end>duration or
-                type(gain) not in (int,float) or not math.isfinite(gain) or
-                not 0<=gain<=2):
-                raise ValueError("Captured sound has invalid timing/gain")
-            receipt=self.sources.publish(
-                project_id,audio_id,prepared_chunks.get(audio_id,entry["pcm_chunks"]),expected_revision=0)
-            source_record=self.index.read_revision(
-                project_id,audio_id,receipt["revision"])
-            available=source_record["data"]["sample_count"]
-            required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
-            if available<required:
-                raise RuntimeError("Actual recorded source contains fewer samples than its event")
-            events.append({
-                "event_id":eid,
-                "event_kind":entry["event_kind"],
-                "subject_id":entry["subject_id"],
-                "start_tick":start,"end_tick":end,
-                "source_id":audio_id,
-                "source_revision":receipt["revision"],
-                "payload":{"format":FORMAT,
-                           "usd_prim_path":path,
-                           "gain":float(gain),
-                           "source_sample_rate":SAMPLE_RATE,
-                           "original_recording":True,
-                           "acoustic_mix_frozen":False}})
-        combined=self.timeline.publish(
-            project_id,sound_timeline_id,events,
-            duration_tick=duration,expected_revision=0)
-        timestamps={0}
-        for item in events:
-            if item["start_tick"]<duration:
-                timestamps.add(item["start_tick"])
-            if item["end_tick"]<duration:
-                timestamps.add(item["end_tick"])
-        checkpoints=sorted(timestamps)[:MAX_CHECKPOINTS]
-        def approve(event,scope):
-            if (scope.get("operation")!="nvp.freeze.usd_temporal_take.v1" or
-                scope.get("scene_document_sha256")!=source["document_sha256"] or
-                scope.get("timeline_document_sha256")!=
-                    combined["document_sha256"] or
-                scope.get("take_id")!=take_id):
-                return False
-            return self.approve_take(event,scope) is True
-        take=OpenUSDTakeCapture(
-            self.index,verify_creator_action=approve).freeze(
-                project_id,take_id,
-                scene_id=scene_id,scene_revision=scene_revision,
-                timeline_id=sound_timeline_id,
-                timeline_revision=1,sample_ticks=checkpoints,
-                creator_event={"kind":"trusted_native_filming_host",
-                               "source_scene_sha256":source["document_sha256"],
-                               "event_manifest_sha256":combined["document_sha256"]})
-        return {
-            "format":FORMAT,"status":"FROZEN_ORIGINAL_SCENE_SOUND_TAKE",
-            "take_id":take_id,
-            "take_document_sha256":take["document_sha256"],
-            "timeline_document_sha256":combined["document_sha256"],
-            "camera_timeline_document_sha256":plan["document_sha256"],
-            "original_sound_count":len(prepared_entries),
-            "duration_tick":str(duration),
-            "original_scene_modified":False,
-            "original_sound_modified":False,
-            "audio_mix_flattened":False,
-            "picture_frames_generated":False,
-            "master_approved":False,
-        }
+                prepared_entries.append(frozen)
+                event_ids.add(eid)
+                source_ids.add(sid)
+            def replay(spool):
+                spool.seek(0)
+                while True:
+                    size=spool.read(4)
+                    if not size:
+                        return
+                    if len(size)!=4:
+                        raise RuntimeError("Damaged captured PCM spool header")
+                    n=struct.unpack("<I",size)[0]
+                    if not 0<n<=MAX_CHUNK_BYTES or n%2:
+                        raise RuntimeError("Damaged captured PCM spool size")
+                    chunk=spool.read(n)
+                    if len(chunk)!=n:
+                        raise RuntimeError("Truncated captured PCM spool")
+                    yield chunk
+            events=[]
+            seen=set(ev["event_id"] for ev in camera_events["events"])
+            for ev in camera_events["events"]:
+                events.append({"event_id":ev["event_id"],
+                               "event_kind":"camera",
+                               "subject_id":ev["subject_id"],
+                               "start_tick":ev["start_tick"],
+                               "end_tick":ev["end_tick"],
+                               "source_id":ev["source_id"],
+                               "source_revision":ev["source_revision"],
+                               "payload":ev["payload"]})
+            # Original mono source signal is stored independently, not a room mix.
+            # Exact per-emitter timing and the scene geometry remain authoritative.
+            for entry in prepared_entries:
+                eid=_id(entry["event_id"],"recorded sound event")
+                if eid in seen:
+                    raise ValueError("Collision with a camera or sound event")
+                seen.add(eid)
+                if entry["event_kind"] not in ("sound","dialogue"):
+                    raise ValueError("Captured audio must be a sound or dialogue event")
+                _id(entry["subject_id"],"sound source subject")
+                audio_id=_id(entry["source_id"],"original audio source")
+                if audio_id in ids:
+                    raise ValueError("Sound may not replace the scene, timeline or Take")
+                path=entry["usd_prim_path"]
+                if path not in source["data"]["prim_roles"]:
+                    raise RuntimeError("Sound emitter is not part of original 3D scene")
+                start=_int(entry["start_tick"],"captured sound start")
+                end=_int(entry["end_tick"],"captured sound end",minimum=1)
+                gain=entry["gain"]
+                if (end<=start or end>duration or
+                    type(gain) not in (int,float) or not math.isfinite(gain) or
+                    not 0<=gain<=2):
+                    raise ValueError("Captured sound has invalid timing/gain")
+                receipt=self.sources.publish(
+                    project_id,audio_id,replay(prepared_chunks[audio_id]),expected_revision=0)
+                source_record=self.index.read_revision(
+                    project_id,audio_id,receipt["revision"])
+                available=source_record["data"]["sample_count"]
+                required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
+                if available<required:
+                    raise RuntimeError("Actual recorded source contains fewer samples than its event")
+                events.append({
+                    "event_id":eid,
+                    "event_kind":entry["event_kind"],
+                    "subject_id":entry["subject_id"],
+                    "start_tick":start,"end_tick":end,
+                    "source_id":audio_id,
+                    "source_revision":receipt["revision"],
+                    "payload":{"format":FORMAT,
+                               "usd_prim_path":path,
+                               "gain":float(gain),
+                               "source_sample_rate":SAMPLE_RATE,
+                               "original_recording":True,
+                               "acoustic_mix_frozen":False}})
+            combined=self.timeline.publish(
+                project_id,sound_timeline_id,events,
+                duration_tick=duration,expected_revision=0)
+            timestamps={0}
+            for item in events:
+                if item["start_tick"]<duration:
+                    timestamps.add(item["start_tick"])
+                if item["end_tick"]<duration:
+                    timestamps.add(item["end_tick"])
+            checkpoints=sorted(timestamps)[:MAX_CHECKPOINTS]
+            def approve(event,scope):
+                if (scope.get("operation")!="nvp.freeze.usd_temporal_take.v1" or
+                    scope.get("scene_document_sha256")!=source["document_sha256"] or
+                    scope.get("timeline_document_sha256")!=
+                        combined["document_sha256"] or
+                    scope.get("take_id")!=take_id):
+                    return False
+                return self.approve_take(event,scope) is True
+            take=OpenUSDTakeCapture(
+                self.index,verify_creator_action=approve).freeze(
+                    project_id,take_id,
+                    scene_id=scene_id,scene_revision=scene_revision,
+                    timeline_id=sound_timeline_id,
+                    timeline_revision=1,sample_ticks=checkpoints,
+                    creator_event={"kind":"trusted_native_filming_host",
+                                   "source_scene_sha256":source["document_sha256"],
+                                   "event_manifest_sha256":combined["document_sha256"]})
+            return {
+                "format":FORMAT,"status":"FROZEN_ORIGINAL_SCENE_SOUND_TAKE",
+                "take_id":take_id,
+                "take_document_sha256":take["document_sha256"],
+                "timeline_document_sha256":combined["document_sha256"],
+                "camera_timeline_document_sha256":plan["document_sha256"],
+                "original_sound_count":len(prepared_entries),
+                "duration_tick":str(duration),
+                "original_scene_modified":False,
+                "original_sound_modified":False,
+                "audio_mix_flattened":False,
+                "picture_frames_generated":False,
+                "master_approved":False,
+            }
+    
+        finally:
+            for spool in spooled:
+                spool.close()
