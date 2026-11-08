@@ -58,6 +58,56 @@ describe('FILM03-02 director ActorID and screenplay impact UI',()=>{
     expect(await screen.findByText(/Linked at a new durable production-bible revision/)).toBeTruthy();
   });
 
+  it('requires actual trusted desktop host confirmation for immutable script source capture',async()=>{
+    const original=window.pywebview;
+    const oldConfirm=window.confirm;
+    try{
+      window.confirm=vi.fn(()=>true);
+      const native=vi.fn(async request=>({
+        format:'nvp.film03.native_director_script_snapshot_result.v1',
+        project_id:request.project_id,object_id:request.script_id,
+        revision:1,host_native_director_confirmation:true,
+        original_spoken_voice_mutated:false,
+        original_visual_take_mutated:false,
+        film_or_native_worker_execution_authorized:false,
+      }));
+      window.pywebview={api:{film03_publish_script_snapshot:native}};
+      let captured=false;
+      const api=vi.fn(async(url,method)=>{
+        expect(method===undefined||method==='GET').toBe(true);
+        if(url.endsWith('/script-sources'))return {
+          sources:captured?[{script_id:'NvpFilm03MainDialogue',revision:1,
+                             screenplay_revision:2,source_sha256:'f'.repeat(64)}]:[]};
+        throw new Error('Unexpected HTTP write or unknown route '+url);
+      });
+      native.mockImplementationOnce(async request=>{
+        captured=true;
+        return {
+          format:'nvp.film03.native_director_script_snapshot_result.v1',
+          project_id:request.project_id,object_id:request.script_id,
+          revision:1,host_native_director_confirmation:true,
+          original_spoken_voice_mutated:false,
+          original_visual_take_mutated:false,
+          film_or_native_worker_execution_authorized:false,
+        };
+      });
+      render(<Film03ScriptChangeImpactPanel
+        project={{...project,screenplay:'INT. RELAY - NIGHT\n\nDONUT\nI hear the relay.'}} api={api}/>);
+      const button=await screen.findByRole('button',{name:/Capture script revision/});
+      expect(button.disabled).toBe(false);
+      fireEvent.click(button);
+      await waitFor(()=>expect(native).toHaveBeenCalledTimes(1));
+      expect(native.mock.calls[0][0]).toEqual({
+        project_id:pid,script_id:'NvpFilm03MainDialogue',
+        expected_screenplay_revision:2,expected_manifest_revision:0});
+      expect(await screen.findByText(/captured under desktop director confirmation/)).toBeTruthy();
+      expect(api.mock.calls.every(([,method])=>!method||method==='GET')).toBe(true);
+    }finally{
+      window.pywebview=original;
+      window.confirm=oldConfirm;
+    }
+  });
+
   it('shows existing dialogue impact but never grants editor approval or silently rerecords',async()=>{
     const api=vi.fn(async(url,method)=>{
       if(url.endsWith('/script-sources'))return {sources:[
