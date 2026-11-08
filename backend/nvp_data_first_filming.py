@@ -71,6 +71,13 @@ class NativeSceneSoundCapture:
         # recording had already been published, leaving avoidable orphans.
         source_ids=set()
         event_ids=set()
+        camera_events=self.timeline.events_in(
+            project_id,camera_timeline_id,camera_timeline_revision,
+            start_tick=0,end_tick=int(plan["duration_tick"]),limit=MAX_SHOTS+1)
+        if camera_events["next_cursor"] is not None:
+            raise RuntimeError("Partial camera observation history cannot be filmed")
+        camera_ids={ev["event_id"] for ev in camera_events["events"]}
+        duration=int(plan["duration_tick"])
         for entry in recordings:
             if type(entry) is not dict or set(entry)!={
                 "event_id","event_kind","subject_id","source_id",
@@ -79,17 +86,25 @@ class NativeSceneSoundCapture:
                 raise ValueError("Recorded sound requires typed source/evidence/Film Time")
             eid=_id(entry["event_id"],"recorded sound event")
             sid=_id(entry["source_id"],"original audio source")
-            if eid in event_ids or sid in source_ids or sid in ids:
+            if (eid in event_ids or eid in camera_ids or eid in ids or
+                sid in source_ids or sid in ids or sid in camera_ids or
+                sid in event_ids or eid in source_ids):
                 raise ValueError("Duplicate or reserved recording identity")
+            if entry["event_kind"] not in ("sound","dialogue"):
+                raise ValueError("Captured audio must be a sound or dialogue event")
+            _id(entry["subject_id"],"sound source subject")
+            if entry["usd_prim_path"] not in source["data"]["prim_roles"]:
+                raise RuntimeError("Sound emitter is not part of original 3D scene")
+            start=_int(entry["start_tick"],"captured sound start")
+            end=_int(entry["end_tick"],"captured sound end",minimum=1)
+            gain=entry["gain"]
+            if (end<=start or end>duration or
+                type(gain) not in (int,float) or not math.isfinite(gain) or
+                not 0<=gain<=2):
+                raise ValueError("Captured sound has invalid timing/gain")
             event_ids.add(eid)
             source_ids.add(sid)
-        duration=int(plan["duration_tick"])
         events=[]
-        camera_events=self.timeline.events_in(
-            project_id,camera_timeline_id,camera_timeline_revision,
-            start_tick=0,end_tick=duration,limit=MAX_SHOTS+1)
-        if camera_events["next_cursor"] is not None:
-            raise RuntimeError("Partial camera observation history cannot be filmed")
         seen=set(ev["event_id"] for ev in camera_events["events"])
         for ev in camera_events["events"]:
             events.append({"event_id":ev["event_id"],
