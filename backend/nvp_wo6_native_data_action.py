@@ -33,6 +33,7 @@ from backend.nvp_wo6_impact_preview import preview_source_impact, _source_lifecy
 from backend.nvp_wo6_native_take_action import digest_file, _exact_source
 from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_wo6_native_shot_action import _validate_ai_review_context
+from backend.nvp_wo6_scene_context import assemble_film_crew_context
 from backend.nvp_wo6_sound_editorial_decisions import (
     preflight_sound_cue,preflight_editorial_cut,
     verify_sound_cue,verify_editorial_cut,typed_decision_sha)
@@ -115,8 +116,15 @@ def _preflight(index, spec):
         if (spec.get("creative_scope",{}).get("reviewed_ai_consultation")!=reviewed
                 or spec["creative_scope"].get("model_text_is_authority") is not False):
             raise PermissionError("Original sealed human AI consultation differs")
+        take_id=spec["reviewed_original_take_id"]
+        packet=assemble_film_crew_context(
+            index,pid,take_id,1,int(reviewed["film_time_tick"]),
+            max_prims=16,max_events=12)
+        if (packet["context_sha256"]!=reviewed["verified_source_context_sha256"] or
+                packet["historical_take_not_current_scene"] or
+                any(not row["is_current_head"] for row in packet["source_heads"])):
+            raise PermissionError("Reviewed original scene/timeline changed before native sound/edit")
         if spec["decision_kind"]=="sound_cue":
-            take_id=spec["reviewed_original_take_id"]
             take=index.read_revision(pid,take_id,1)
             if (take["document_sha256"]!=reviewed["take_sha256"] or
                     take["data"].get("timeline_id")!=spec["source_id"] or
@@ -128,6 +136,7 @@ def _preflight(index, spec):
                 index,verify_editor_action=lambda *_:False).open_graph(
                 pid,spec["source_id"],spec["source_revision"])
             if not any(
+                    n["take_id"]==take_id and
                     n["take_document_sha256"]==reviewed["take_sha256"]
                     for n in graph["data"]["nodes"]):
                 raise PermissionError("Reviewed original Take absent from the actual edit graph")
