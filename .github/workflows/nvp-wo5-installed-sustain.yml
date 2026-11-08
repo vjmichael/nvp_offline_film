@@ -1,7 +1,7 @@
 name: NVP WO5 Installed Windows Real MXF Playback Acceptance (NO FFMPEG)
 on:
   push:
-    branches: [nvp/wo5-installed-sustained-original30-20261107]
+    branches: [nvp/wo5-installed-sustained-original30-20261107, nvp/wo6-ai-creator-guidance-20261107]
     paths:
       - tools/nvp_wo5_release_codecs.py
       - tools/nvp_wo5_installed_sustain.py
@@ -12,6 +12,17 @@ on:
       - frontend/src/App.jsx
       - frontend/src/FinishedFilmPlaybackPanel.jsx
       - tools/nvp_desktop_alpha.py
+      - tools/nvp_wo6_installed_action_smoke.py
+      - backend/nvp_wo6_native_take_action.py
+      - backend/nvp_wo6_native_shot_action.py
+      - backend/nvp_wo6_native_data_action.py
+      - backend/nvp_wo6_kernel_attestation.py
+      - backend/nvp_wo6_desktop_bridge.py
+      - frontend/src/WO6CreatorActionsPanel.jsx
+      - frontend/src/WO6CreatorActionsPanel.test.jsx
+      - tests/test_nvp_wo6_desktop_bridge.py
+      - docs/NVP_WO6_AI_FIRST_FILM_ASSISTANT.md
+      - docs/NVP_DATA_ALL_TASK_LEDGER.md
       - backend/nvp_wo5_codec_binding.py
       - backend/_nvp_wo5_release_pin.py
       - tests/test_nvp_wo5_release_codecs.py
@@ -28,6 +39,17 @@ on:
       - frontend/src/App.jsx
       - frontend/src/FinishedFilmPlaybackPanel.jsx
       - tools/nvp_desktop_alpha.py
+      - tools/nvp_wo6_installed_action_smoke.py
+      - backend/nvp_wo6_native_take_action.py
+      - backend/nvp_wo6_native_shot_action.py
+      - backend/nvp_wo6_native_data_action.py
+      - backend/nvp_wo6_kernel_attestation.py
+      - backend/nvp_wo6_desktop_bridge.py
+      - frontend/src/WO6CreatorActionsPanel.jsx
+      - frontend/src/WO6CreatorActionsPanel.test.jsx
+      - tests/test_nvp_wo6_desktop_bridge.py
+      - docs/NVP_WO6_AI_FIRST_FILM_ASSISTANT.md
+      - docs/NVP_DATA_ALL_TASK_LEDGER.md
       - backend/nvp_wo5_codec_binding.py
       - backend/_nvp_wo5_release_pin.py
       - tests/test_nvp_wo5_release_codecs.py
@@ -186,6 +208,25 @@ jobs:
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) {
             throw 'Installed executable differs from SHA-reviewed binary'
           }
+      - name: Actually installed NVP.exe runs six contained first-party source and Film Time workers
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $env:NVP_WO6_INSTALLED_REPORT=Join-Path $env:RUNNER_TEMP 'wo6-installed-source-workers.json'
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'wo6-installed-workers-diagnostic.txt'
+          $result=Start-Process -FilePath $installed -ArgumentList '--smoke-wo6-native-actions' -PassThru
+          try {
+            Wait-Process -Id $result.Id -Timeout 420 -ErrorAction Stop
+          } catch {
+            & taskkill.exe /PID $result.Id /T /F 2>$null
+            throw 'Installed NVP.exe WO6 native action supervisor exceeded 420s; no completed action proof'
+          }
+          $result.Refresh()
+          if ($result.ExitCode -ne 0) { throw 'Installed WO6 source-native workers failed; inspect durable report and native diagnostics' }
+          if (-not (Test-Path $env:NVP_WO6_INSTALLED_REPORT)) {
+            throw 'No real installed WO6 native FilmIndex worker evidence'
+          }
       - name: Actually installed NVP.exe decodes final SMPTE MXF + mastered PCM and measures sustained speed
         shell: pwsh
         continue-on-error: true
@@ -279,6 +320,24 @@ jobs:
           if (-not $data.throughput_target_met) {
             throw "Release gate: installed real native JPEG2000 decoder below 24fps: $($data.picture_decode_frames_per_second)"
           }
+      - name: Enforce real installed NVP.exe source-native worker proof (no film-release claims)
+        if: always()
+        shell: pwsh
+        run: |
+          $file=Join-Path $env:RUNNER_TEMP 'wo6-installed-source-workers.json'
+          if (-not (Test-Path $file)) {
+            throw 'WO6 installed-worker release gate: no persisted native worker evidence'
+          }
+          $report=Get-Content $file -Raw | ConvertFrom-Json
+          if ($report.status -ne 'INSTALLED_NATIVE_WORKER_SOURCES_VERIFIED_NO_FILM' -or
+              -not $report.installed_executable_worker_mode -or
+              $report.worker_operation_count -ne 6 -or
+              -not $report.all_original_filminindex_revisions_preserved -or
+              -not $report.durable_task_status_reopened -or
+              $report.film_delivered -ne $false -or
+              $report.director_human_consent_verified -ne $false) {
+            throw 'WO6 installed-worker release gate: source proof invalid or fabricated as creative film acceptance'
+          }
       - name: Uninstall real app and retain NVP creator data
         if: always()
         shell: pwsh
@@ -293,6 +352,8 @@ jobs:
         with:
           name: nvp-wo5-real-installed-decoder-and-reel-speed
           path: |
+            ${{ runner.temp }}/wo6-installed-source-workers.json
+            ${{ runner.temp }}/wo6-installed-workers-diagnostic.txt
             ${{ runner.temp }}/wo5-installed-throughput.json
             ${{ runner.temp }}/wo5-visible-webview2-av.json
             ${{ runner.temp }}/wo5-visible-webview2-diagnostics.txt

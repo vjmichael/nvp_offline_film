@@ -16,10 +16,25 @@ from typing import Callable
 from backend.nvp_ai_context import assemble_task_context, discover_capabilities
 from backend.nvp_ai_refs import read_screenplay_lines
 from backend.nvp_studio import Studio
+from backend.nvp_film_index import FilmIndex
+from backend.nvp_wo6_creator_plan import (
+    capability_descriptor as wo6_retake_descriptor, plan_source_retake)
+from backend.nvp_wo6_impact_preview import (
+    CAPABILITY as IMPACT_PREVIEW_CAPABILITY, preview_source_impact)
+from backend.nvp_wo6_scene_context import (
+    CAPABILITY as SCENE_CREW_CAPABILITY, assemble_film_crew_context)
+from backend.nvp_wo6_tool_readiness import (
+    TrustedToolInventory, FORMAT as TOOLS_FORMAT, preflight_tool_inventory)
 
 MAX_REQUEST_BYTES = 8192
 _READ_LINES = "nvp.screenplay.read_lines.v1"
 _CONTEXT = "nvp.context.assemble.v1"
+_RETAKE_PLAN = "nvp.film.plan_retake.v1"
+_FEATURE_SOURCE = "nvp.film.resolve_published_sources.v1"
+_SCENE_CREW = "nvp.film.read_scene_crew_context.v1"
+_TOOL_PREFLIGHT = "nvp.tools.inspect_host_pinned.v1"
+_IMPACT_PREVIEW = "nvp.film.preview_source_impact.v1"
+_TASK_STATUS = "nvp.film.read_native_task_status.v1"
 
 
 def _canonical(document: dict) -> bytes:
@@ -61,22 +76,81 @@ class NativeAiReadHost:
     literal boolean True. An LLM must never supply this callback.
     """
 
-    def __init__(self, studio: Studio, *, authorize_read: Callable):
+    def __init__(self, studio: Studio, *, authorize_read: Callable,
+                 feature_journal=None, trusted_tool_inventory=None,
+                 durable_recovery=None):
         if not isinstance(studio, Studio) or not callable(authorize_read):
             raise TypeError("Studio and trusted read policy callback required")
+        if feature_journal is not None:
+            from backend.nvp_wo4_feature_journal import FeatureJournal
+            if not isinstance(feature_journal, FeatureJournal):
+                raise TypeError("Only a host-owned native FeatureJournal is allowed")
+        if (trusted_tool_inventory is not None and
+                not isinstance(trusted_tool_inventory, TrustedToolInventory)):
+            raise TypeError("Native tool inventory must be host-built, not model JSON")
+        if durable_recovery is not None:
+            from backend.nvp_wo6_recovery import WO6DurableRecovery
+            if not isinstance(durable_recovery, WO6DurableRecovery):
+                raise TypeError("Trusted native task recovery must be host-injected")
+        self._durable_recovery = durable_recovery
         self._studio = studio
         self._authorize_read = authorize_read
+        self._feature_journal = feature_journal
+        self._trusted_tool_inventory = trusted_tool_inventory
 
     def catalog(self) -> dict:
         # Public discovery grants nothing and cannot execute handlers.
-        return discover_capabilities()
+        result = discover_capabilities()
+        result["capabilities"].append(wo6_retake_descriptor())
+        from copy import deepcopy
+        result["capabilities"].append(deepcopy(SCENE_CREW_CAPABILITY))
+        result["capabilities"].append(deepcopy(IMPACT_PREVIEW_CAPABILITY))
+        if self._durable_recovery is not None:
+            result["capabilities"].append({
+                "id": _TASK_STATUS,
+                "description": "Read verified native task events, cancellation "
+                               "and crash evidence for this creator/project only",
+                "effect": "read", "requires_host_authorization": True,
+                "executable_by_model": False,
+                "input_schema": {
+                    "project_id": "current host-authorized project",
+                    "task_id": "exact existing creator-owned WO6 native job"},
+                "result_schema": "nvp.wo6.native_creator_task_status.v1",
+                "worker_admission_authorized": False,
+                "cancellation_authorized": False,
+                "release_approved": False,
+            })
+        if self._trusted_tool_inventory is not None:
+            result["capabilities"].append({
+                "id": _TOOL_PREFLIGHT,
+                "description": "SHA and license file probe of host-pinned native "
+                               "tool installations; never executes or installs tools",
+                "effect": "read",
+                "input_schema": {"project_id": "current host-authorized project"},
+                "result_schema": TOOLS_FORMAT,
+                "requires_host_authorization": True,
+                "executable_by_model": False,
+                "tool_execution_authorized": False,
+            })
+        if self._feature_journal is not None:
+            from backend.nvp_wo6_feature_origins import CAPABILITY
+            from copy import deepcopy
+            result["capabilities"].append(deepcopy(CAPABILITY))
+        return result
 
     def execute_read(self, scope: TrustedReadScope, request: dict) -> dict:
         if not isinstance(scope, TrustedReadScope):
             raise PermissionError("Trusted native scope required")
         raw = _canonical(request)
         capability = request.get("capability_id")
-        allowed = {_READ_LINES, _CONTEXT}
+        allowed = {_READ_LINES, _CONTEXT, _RETAKE_PLAN, _SCENE_CREW,
+                   _IMPACT_PREVIEW}
+        if self._durable_recovery is not None:
+            allowed.add(_TASK_STATUS)
+        if self._trusted_tool_inventory is not None:
+            allowed.add(_TOOL_PREFLIGHT)
+        if self._feature_journal is not None:
+            allowed.add(_FEATURE_SOURCE)
         if type(capability) is not str or capability not in allowed:
             raise ValueError("Unknown or non-read capability")
         expected = {
@@ -85,6 +159,20 @@ class NativeAiReadHost:
                           "require_current"},
             _CONTEXT: {"capability_id", "project_id", "source_revision",
                        "task", "scene_id", "max_lines"},
+            _RETAKE_PLAN: {"capability_id", "project_id",
+                           "object_id", "revision", "max_nodes"},
+            _FEATURE_SOURCE: {"capability_id", "project_id", "feature_id"},
+            _SCENE_CREW: {"capability_id", "project_id", "take_id",
+                          "take_revision", "tick", "source_revision",
+                          "screenplay_scene_id", "max_prims", "max_events",
+                          "shot_sequence_id", "shot_sequence_revision"},
+            _TOOL_PREFLIGHT: {"capability_id", "project_id"},
+            _TASK_STATUS: {"capability_id", "project_id", "task_id"},
+            _IMPACT_PREVIEW: {"capability_id", "project_id", "source_id",
+                              "source_revision", "source_sha256",
+                              "change_kind", "scene_id", "screenplay_revision",
+                              "bible_fact_id", "expected_bible_digest",
+                              "max_nodes", "delivery"},
         }[capability]
         if set(request) - expected:
             raise ValueError("Unrecognized operation fields")
@@ -105,11 +193,80 @@ class NativeAiReadHost:
                 max_lines=request.get("max_lines", 120),
                 require_current=True,
             )
-        else:
+        elif capability == _CONTEXT:
             result = assemble_task_context(
                 self._studio, scope.project_id, request["source_revision"],
                 request["task"], scene_id=request.get("scene_id"),
                 max_lines=request.get("max_lines", 120),
+            )
+        elif capability == _RETAKE_PLAN:
+            # Same trusted per-turn read-policy callback and exact-project
+            # scope as existing screenplay/crew context: NOT a new model
+            # tool executor or independent permission authority.
+            result = plan_source_retake(
+                FilmIndex(self._studio), scope.project_id,
+                request["object_id"], request["revision"],
+                max_nodes=request.get("max_nodes", 64),
+            )
+        elif capability == _SCENE_CREW:
+            result = assemble_film_crew_context(
+                FilmIndex(self._studio), scope.project_id,
+                request["take_id"], request["take_revision"], request["tick"],
+                source_revision=request.get("source_revision"),
+                screenplay_scene_id=request.get("screenplay_scene_id"),
+                shot_sequence_id=request.get("shot_sequence_id"),
+                shot_sequence_revision=request.get("shot_sequence_revision"),
+                max_prims=request.get("max_prims", 32),
+                max_events=request.get("max_events", 24),
+            )
+            if self._trusted_tool_inventory is not None:
+                result["native_tool_readiness"] = preflight_tool_inventory(
+                    self._trusted_tool_inventory)
+            else:
+                result["native_tool_readiness"] = {
+                    "status": "HOST_HAS_NOT_PINNED_NATIVE_TOOL_INSTALLATIONS",
+                    "tools": [], "tool_execution_authorized": False,
+                    "missing_tools_assumed_available": False,
+                }
+        elif capability == _TOOL_PREFLIGHT:
+            result = preflight_tool_inventory(self._trusted_tool_inventory)
+        elif capability == _TASK_STATUS:
+            # The native host owns the recovery ledger. Even after general
+            # current-turn read authorization, the exact task must belong
+            # to this creator and project. The model cannot supply an owner
+            # key, call cancellation or write any recovery/worker record.
+            task_id = request["task_id"]
+            row, task_spec = self._durable_recovery._approved_spec(task_id)
+            if (task_spec["project_id"] != scope.project_id or
+                    task_spec["actor_id"] != scope.actor_id):
+                raise PermissionError("Native task is not owned by current creator")
+            result = self._durable_recovery.status(
+                task_id, owner_key=row["owner_key"])
+        elif capability == _IMPACT_PREVIEW:
+            # Read-only, digest bound and scoped like all existing internal
+            # AI reads. The returned approval checklist is descriptive; it
+            # cannot approve or start any native operation.
+            result = preview_source_impact(
+                FilmIndex(self._studio), scope.project_id,
+                request["source_id"], request["source_revision"],
+                request["source_sha256"], request["change_kind"],
+                scene_id=request.get("scene_id"),
+                screenplay_revision=request.get("screenplay_revision"),
+                bible_fact_id=request.get("bible_fact_id"),
+                expected_bible_digest=request.get("expected_bible_digest"),
+                max_nodes=request.get("max_nodes", 32),
+                delivery=request.get("delivery"),
+            )
+        else:
+            # Heavy source/essence re-verification is available only when a
+            # trusted native host injected the real durable FeatureJournal.
+            # Merely guessing a feature ID or discovering this read method
+            # grants no rights. The same per-call policy callback runs.
+            from backend.nvp_wo6_feature_origins import (
+                resolve_published_feature_origins)
+            result = resolve_published_feature_origins(
+                FilmIndex(self._studio), self._feature_journal,
+                scope.project_id, request["feature_id"],
             )
         result_sha = hashlib.sha256(_canonical_result(result)).hexdigest()
         return {

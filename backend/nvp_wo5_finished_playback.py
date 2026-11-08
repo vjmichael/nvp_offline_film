@@ -40,7 +40,7 @@ FORMAT="nvp.wo5.finished_dcp_pcm24_picture_review.v1"
 RATE=48000
 FPS=24
 SAMPLES_PER_FRAME=RATE//FPS
-PCM_CACHE_FRAMES=24  # At most one actual finished-MXF sound second.
+PCM_CACHE_FRAMES=24  # At most one genuine final-MXF audio second.
 SESSION_SECONDS=7200
 MAX_PREVIEW_WIDTH=1024
 MAX_PNG_BYTES=3*1024*1024
@@ -317,12 +317,11 @@ class FinishedFilmPlayer:
                     self._state["ticket"]!=ticket)
 
     def _pcm24_window(self,ticket,reel,reel_index,local,count,work,cancel):
-        """Read verified real sound essence with a bounded 24-frame cache.
+        """Verified 24-frame reel-scoped sound cache, not synthesized output.
 
-        The first use of each one-second/reel region invokes the approved
-        native MXF unwrap; adjacent frames reuse those SAME published PCM24
-        samples. No synthetic sound, transcoded source, or complete-reel
-        audio is retained. Caller holds _decode_lock and checks MXF identity.
+        Only the published native MXF is read. The exact PCM24 sample window
+        is reused for adjacent picture requests and evicted on seek/reel
+        change, new session, stop or close. Caller holds _decode_lock.
         """
         if (type(local) is not int or type(count) is not int or
                 not 0<=local<reel.frames or
@@ -350,7 +349,7 @@ class FinishedFilmPlayer:
                 pcm=wav.readframes(frames*SAMPLES_PER_FRAME)
             if len(pcm)!=frames*bytes_per_frame:
                 raise PermissionError("Incomplete mastered PCM24 source region")
-            self._get(ticket)  # Reject revoked playback before caching.
+            self._get(ticket)
             cache={"key":key,"pcm":pcm}
             self._pcm_cache=cache
         start=(local-segment)*bytes_per_frame

@@ -85,7 +85,8 @@ class WindowsJobProcess:
             self._process = None
 
 
-def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False):
+def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0,
+                     linux_cgroup_tree_required=False, windows_job_name=None):
     """Trusted host launches pinned absolute executable with OS containment."""
     if not isinstance(command, list) or not command or not Path(command[0]).is_absolute():
         raise ValueError("Containment requires an absolute executable path")
@@ -93,8 +94,16 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
         raise ValueError("Invalid OS memory limit")
     if type(linux_cgroup_tree_required) is not bool:
         raise ValueError("Linux whole-tree containment mode must be boolean")
+    if windows_job_name is not None:
+        import re
+        if type(windows_job_name) is not str or not re.fullmatch(
+                r"NVP-WO6-[0-9a-f]{32}", windows_job_name):
+            raise ValueError("Exact immutable native WO6 Windows job name required")
     if os.name == "nt":
-        return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr, memory_mb=memory_mb)
+        return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr,
+                               memory_mb=memory_mb, job_name=windows_job_name)
+    if windows_job_name is not None:
+        raise RuntimeError("Windows kernel Job Object cannot attest Linux workers")
     if sys.platform == "linux":
         if linux_cgroup_tree_required:
             from backend.nvp_worker_linux_cgroup import launch_cgroup_tree
@@ -109,14 +118,22 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
     raise RuntimeError("Unsupported OS containment platform")
 
 
-def _launch_windows(command, *, cwd, stdout, stderr, memory_mb):
+def _launch_windows(command, *, cwd, stdout, stderr, memory_mb, job_name=None):
     """Suspended Win32 creation: no Blender instruction runs outside the job."""
     import msvcrt
+    import win32api
     import win32job
     import win32process
     import uuid
 
-    job = win32job.CreateJobObject(None, "NVP-Worker-"+uuid.uuid4().hex)
+    job = win32job.CreateJobObject(None, job_name or
+                                 "NVP-Worker-"+uuid.uuid4().hex)
+    # A known name must refer only to the fresh suspended child. Reopening an
+    # existing named kernel Job Object risks joining an unrelated process
+    # tree; fail closed rather than inheriting an old access authority.
+    if job_name is not None and win32api.GetLastError()==183:
+        job.Close()
+        raise RuntimeError("Named WO6 Windows worker Job Object already exists")
     info = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
     basic = info["BasicLimitInformation"]
     basic["LimitFlags"] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE

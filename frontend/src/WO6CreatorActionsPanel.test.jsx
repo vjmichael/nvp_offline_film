@@ -1,0 +1,123 @@
+// @vitest-environment jsdom
+import React from 'react';
+import {afterEach, describe, expect, it, vi} from 'vitest';
+import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
+import WO6CreatorActionsPanel from './WO6CreatorActionsPanel.jsx';
+
+const pid='a'.repeat(32);
+const sceneSha='b'.repeat(64);
+const timelineSha='c'.repeat(64);
+const takeSha='d'.repeat(64);
+const previewSha='e'.repeat(64);
+const catalog={
+  format:'nvp.wo6.director_desktop_native_consent.v1',
+  project_id:pid,model_execute_enabled:false,
+  finished_film_accepted:false,approvals_preissued:false,
+  scenes:[{id:'SceneA',kind:'scene',revision:1,sha256:sceneSha,
+    data:{format:'nvp.scene.openusd.composition.v1',
+      prim_roles:{'/World/Actor':'actor','/World/Camera':'camera',
+        '/World/Light':'light'}}}],
+  timelines:[{id:'TimelineA',kind:'temporal',revision:1,
+    sha256:timelineSha,data:{duration_tick:7056000000*3}}],
+  takes:[{id:'TakeA',kind:'take',revision:1,sha256:takeSha,
+    data:{scene_id:'SceneA',scene_revision:1,
+      scene_document_sha256:sceneSha}}],
+  grades:[],
+};
+const impact={
+  status:'READ_ONLY_IMPACT_PREVIEW_NO_CREATOR_GRANT',
+  indexed_downstream_truncated:false,preview_sha256:previewSha,
+  approval_not_granted:true,
+};
+
+function native(overrides={}){
+  const api={
+    wo6_source_catalog:vi.fn(async()=>catalog),
+    wo6_source_impact:vi.fn(async()=>impact),
+    wo6_create_take:vi.fn(async()=>({
+      format:'nvp.wo6.director_desktop_native_consent.v1',
+      queued_task_id:'wo6take_'+'1'.repeat(24),
+      executed_task_id:'wo6take_'+'1'.repeat(24),
+      state:'SUCCEEDED',finished_film_approved:false,
+    })),
+    wo6_create_decision:vi.fn(async()=>({state:'SUCCEEDED',
+      queued_task_id:'wo6data_'+'1'.repeat(24),finished_film_approved:false})),
+    wo6_create_shot:vi.fn(async()=>({state:'QUEUED',
+      queued_task_id:'wo6shot_'+'1'.repeat(24),finished_film_approved:false})),
+    wo6_task_status:vi.fn(async()=>({state:'SUCCEEDED',
+      film_delivered:false,events:[{phase:'finished'}]})),
+    wo6_cancel_native_task:vi.fn(),
+    ...overrides,
+  };
+  window.pywebview={api};
+  return api;
+}
+afterEach(()=>{cleanup();delete window.pywebview;vi.restoreAllMocks()});
+
+describe('WO6 installed creator-native first-party actions',()=>{
+  it('never offers a browser/LLM fallback or auto-authorizes an operation',async()=>{
+    render(<WO6CreatorActionsPanel projectId={pid}/>);
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /installed NVP desktop WebView2 host/i);
+    expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
+  });
+
+  it('previews a real exact source and asks host for TWO OS approvals, not browser consent',async()=>{
+    const host=native();
+    render(<WO6CreatorActionsPanel projectId={pid}/>);
+    await screen.findByText(/SceneA · rev 1/);
+    fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
+      {target:{value:'NewImmutableTakeA'}});
+    expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
+    fireEvent.click(screen.getByText('Inspect source impact'));
+    await waitFor(()=>expect(host.wo6_source_impact).toHaveBeenCalledWith({
+      project_id:pid,source_id:'SceneA',source_revision:1,
+      source_sha256:sceneSha,change_kind:'retake',
+    }));
+    await waitFor(()=>expect(
+      screen.getByText('Request two OS approvals and execute').disabled).toBe(false));
+    fireEvent.click(screen.getByText('Request two OS approvals and execute'));
+    await waitFor(()=>expect(host.wo6_create_take).toHaveBeenCalledWith({
+      project_id:pid,scene_id:'SceneA',scene_revision:1,
+      scene_sha256:sceneSha,timeline_id:'TimelineA',timeline_revision:1,
+      timeline_sha256:timelineSha,new_take_id:'NewImmutableTakeA',
+      sample_ticks:[0],preview_sha256:previewSha,
+    }));
+    const proposed=host.wo6_create_take.mock.calls[0][0];
+    expect(proposed.creator_approved).toBeUndefined();
+    expect(proposed.native_tool_authorized).toBeUndefined();
+    expect(host.wo6_create_shot).not.toHaveBeenCalled();
+  });
+
+  it('shows native crash/status receipts without inventing success or final film',async()=>{
+    const host=native();
+    render(<WO6CreatorActionsPanel projectId={pid}/>);
+    await screen.findByText(/SceneA · rev 1/);
+    fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
+      {target:{value:'NewTakeA'}});
+    fireEvent.click(screen.getByText('Inspect source impact'));
+    await waitFor(()=>expect(screen.getByText(
+      'Request two OS approvals and execute').disabled).toBe(false));
+    fireEvent.click(screen.getByText('Request two OS approvals and execute'));
+    await screen.findByText('Read durable job status');
+    fireEvent.click(screen.getByText('Read durable job status'));
+    await waitFor(()=>expect(host.wo6_task_status)
+      .toHaveBeenCalledWith(pid,'wo6take_'+'1'.repeat(24)));
+    expect(screen.getByText(/film_delivered/)).toBeTruthy();
+    expect(host.wo6_cancel_native_task).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale/unfinished impact preview and never sends worker request',async()=>{
+    const host=native({wo6_source_impact:vi.fn(async()=>({
+      ...impact,indexed_downstream_truncated:true,
+    }))});
+    render(<WO6CreatorActionsPanel projectId={pid}/>);
+    await screen.findByText(/SceneA · rev 1/);
+    fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
+      {target:{value:'NewTakeB'}});
+    fireEvent.click(screen.getByText('Inspect source impact'));
+    await waitFor(()=>expect(host.wo6_source_impact).toHaveBeenCalled());
+    expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
+    expect(host.wo6_create_take).not.toHaveBeenCalled();
+  });
+});

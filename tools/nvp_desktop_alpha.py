@@ -195,12 +195,12 @@ def create_trusted_camera_bridge(port):
     """Desktop-only pywebview IPC; never registered as an HTTP route."""
     from backend.nvp_api import studio
     from backend.nvp_film_index import FilmIndex
-    from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+    from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
     from backend.nvp_wo5_codec_binding import desktop_finished_decoder_provider
     # Original DataFirst A/V remains active; finished DCP decoding requires
     # separately SHA-pinned native OpenJPEG/CineCert binaries installed by
     # the trusted host. Ordinary browser/AI callers cannot supply paths.
-    return TrustedDesktopWO5Bridge(
+    return TrustedDesktopWO6Bridge(
         FilmIndex(studio),origin="http://127.0.0.1:"+str(port),
         finished_codec_provider=desktop_finished_decoder_provider(bundle_root()))
 
@@ -319,10 +319,10 @@ def run_visible_window_smoke():
     result={"passed":False}
     bridge=None
     try:
-        from backend.nvp_wo5_desktop_bridge import (
-            TrustedDesktopWO5Bridge)
+        from backend.nvp_wo6_desktop_bridge import (
+            TrustedDesktopWO6Bridge)
         from backend.nvp_native_usd_texture import texture_transport
-        class InstalledWO2ProbeBridge(TrustedDesktopWO5Bridge):
+        class InstalledWO2ProbeBridge(TrustedDesktopWO6Bridge):
             """Test-only native IPC: uses one exact ephemeral smoke asset."""
             def wo2_gpu_texture_probe(self):
                 self._native_window()
@@ -572,6 +572,55 @@ def run_visible_window_smoke():
                                     if seen!="PASSED":
                                         raise RuntimeError(
                                             "Installed native codec capability IPC timed out")
+                                # WO6-07: the actual installed React
+                                # director-native tab and loopback OS host
+                                # must present source-bound preview with NO
+                                # automatic creative or native worker grant.
+                                result["passed"]=False
+                                selected=window.evaluate_js(
+                                    "(()=>{const b=[...document.querySelectorAll('nav.tabs button')]"
+                                    ".find(x=>x.textContent.includes('Native director approvals'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                if selected is not True:
+                                    raise RuntimeError(
+                                        "Installed WO6 director-native tab missing")
+                                until=time.monotonic()+20
+                                while time.monotonic()<until:
+                                    found=window.evaluate_js(
+                                        "Boolean(document.querySelector("
+                                        "'section[aria-label=\\\"Director native source operations\\\"]'))")
+                                    if found:
+                                        break
+                                    time.sleep(.2)
+                                if not found:
+                                    raise RuntimeError(
+                                        "Installed WO6 native creator panel never mounted")
+                                _native_window_stage("wo6_real_creator_panel_mounted")
+                                window.evaluate_js(
+                                    "window.__nvpWO6Catalog='PENDING';"
+                                    "window.pywebview.api.wo6_source_catalog('"+
+                                    project["id"]+"').then(x=>{"
+                                    "window.__nvpWO6Catalog="
+                                    "x.format==='nvp.wo6.director_desktop_native_consent.v1'&&"
+                                    "x.model_execute_enabled===false&&"
+                                    "x.approvals_preissued===false&&"
+                                    "x.scenes.some(s=>s.id==='smoke_scene')&&"
+                                    "x.takes.some(t=>t.id==='smoke_frozen_take')"
+                                    "?'PASSED':'FAILED';}).catch(()=>{"
+                                    "window.__nvpWO6Catalog='FAILED';});")
+                                until=time.monotonic()+15
+                                while time.monotonic()<until:
+                                    proof=window.evaluate_js("window.__nvpWO6Catalog")
+                                    if proof=="PASSED":break
+                                    if proof=="FAILED":
+                                        raise RuntimeError(
+                                            "Installed WO6 native FilmIndex catalog IPC denied")
+                                    time.sleep(.2)
+                                if proof!="PASSED":
+                                    raise RuntimeError(
+                                        "Installed WO6 native creator catalog timed out")
+                                _native_window_stage("wo6_real_film_index_read_only_catalog_passed")
+                                result["passed"]=True
                                 break
                     time.sleep(.2)
                 if not result["passed"]:
@@ -613,7 +662,32 @@ def run_visible_window_smoke():
                 shutil.rmtree(test_home,ignore_errors=True)
 
 
+def _run_private_wo6_worker(argv):
+    """Packaged native NVP.exe worker mode, no UI/loopback server/model dispatch.
+
+    A frozen PyInstaller executable is not a Python interpreter; passing a
+    .py path to it would instead launch the main desktop process and strand
+    the approved task. The real internal workers perform their own durable
+    ACTIVE/reserved/owner/spec-SHA checks before any FilmIndex writes.
+    """
+    if type(argv) is not list or len(argv)<3 or argv[0]!="--nvp-wo6-worker":
+        raise ValueError("Malformed private native worker invocation")
+    entrypoint=argv[1]
+    if entrypoint=="take":
+        from tools.nvp_wo6_take_worker import main as run_worker
+    elif entrypoint=="shot":
+        from tools.nvp_wo6_shot_worker import main as run_worker
+    elif entrypoint=="data":
+        from tools.nvp_wo6_data_worker import main as run_worker
+    else:
+        raise PermissionError("No arbitrary worker dispatch in installed NVP")
+    return run_worker(argv[2:])
+
+
 def main(argv=None):
+    raw_args=sys.argv[1:] if argv is None else list(argv)
+    if raw_args and raw_args[0]=="--nvp-wo6-worker":
+        return _run_private_wo6_worker(raw_args)
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
@@ -629,10 +703,13 @@ def main(argv=None):
                         help="Probe real installed licensed native picture MXF/J2K and mastered PCM")
     parser.add_argument("--smoke-visible-finished-av",action="store_true",
                         help="Verify all actual published DCP frames and sound play in visible installed WebView2")
+    parser.add_argument("--smoke-wo6-native-actions",action="store_true",
+                        help="Installed first-party WO6 native child/FilmIndex source-only acceptance")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_data_av,
-            args.smoke_finished_playback,args.smoke_visible_finished_av))>1:
+            args.smoke_finished_playback,args.smoke_visible_finished_av,
+            args.smoke_wo6_native_actions))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
@@ -647,6 +724,12 @@ def main(argv=None):
     if args.smoke_visible_finished_av:
         from tools.nvp_wo5_installed_visible import run_installed_visible_finished_smoke
         return run_installed_visible_finished_smoke(bundle_root())
+    if args.smoke_wo6_native_actions:
+        from tools.nvp_wo6_installed_action_smoke import run_wo6_installed_native_smoke
+        evidence=run_wo6_installed_native_smoke()
+        if evidence.get("status")!="INSTALLED_NATIVE_WORKER_SOURCES_VERIFIED_NO_FILM":
+            raise RuntimeError("Installed WO6 native source operations were not verified")
+        return 0
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
             "create" if args.smoke_create else "reopen")
