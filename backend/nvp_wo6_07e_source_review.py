@@ -25,6 +25,8 @@ FORMAT="nvp.wo6_07e.exact_edited_source_pcm_review.v1"
 FPS=24
 SAMPLE_RATE=48000
 SAMPLES_PER_FRAME=SAMPLE_RATE//FPS
+AUDIO_WINDOW_FRAMES=12  # at most half a second of authentic PCM per human click
+SOURCE_AUDIO_WINDOW_SAMPLES=SAMPLES_PER_FRAME*AUDIO_WINDOW_FRAMES
 TICKS_PER_SAMPLE=TICKS_PER_SECOND//SAMPLE_RATE
 MAX_ACTIVE_EVENTS=32
 MAX_MIXED_PCM_EVENTS=4
@@ -65,9 +67,16 @@ def _verify_derived_audio_timeline(index,pid,take,timeline_id,rev,sha):
             selected["data"]["event_count"]!=baseline["data"]["event_count"]+1):
         raise PermissionError("Derived audio timeline is not one source-preserving cue edit")
     length=baseline["data"]["duration_tick"]
-    _,old=_sealed_events(index,pid,original["timeline_id"],
-                         original["timeline_revision"],0,length)
-    _,new=_sealed_events(index,pid,timeline_id,rev,0,length)
+    temporal=TemporalLedger(index)
+    # Reopen the WHOLE bounded source event ledger for strict derived-cue
+    # parity; the per-frame source window retains a tighter active limit.
+    temporal.verify(pid,original["timeline_id"],original["timeline_revision"])
+    temporal.verify(pid,timeline_id,rev)
+    old=temporal.events_in(
+        pid,original["timeline_id"],original["timeline_revision"],
+        start_tick=0,end_tick=length,limit=129)["events"]
+    new=temporal.events_in(
+        pid,timeline_id,rev,start_tick=0,end_tick=length,limit=130)["events"]
     if len(old)!=baseline["data"]["event_count"] or (
             len(new)!=selected["data"]["event_count"]):
         raise PermissionError("Cannot establish unchanged complete original audio events")
@@ -142,8 +151,15 @@ def _window_pcm(index,pid,active,source_tick,requested_samples):
                               "reason":"RECORDED_PCM_WINDOW_EXHAUSTED"})
             continue
         # Native chunk verification is performed on every read.
-        wave_bytes=RecordedSoundSources(index).read(
-            pid,event["source_id"],event["source_revision"],at,count)
+        source_stream=bytearray()
+        # The immutable original source reader admits at most 8192 samples
+        # per call. Audition uses bounded paged 48 kHz reads, not a full
+        # soundtrack copied to RAM.
+        for begin in range(0,count,8192):
+            source_stream.extend(RecordedSoundSources(index).read(
+                pid,event["source_id"],event["source_revision"],
+                at+begin,min(8192,count-begin)))
+        wave_bytes=bytes(source_stream)
         for idx,(sample,) in enumerate(struct.iter_unpack("<h",wave_bytes)):
             mixed[offset+idx]+=round(sample*gain)
         if count<limit-offset:
@@ -225,7 +241,7 @@ def sample_editorial_source(index,project_id,edit_id,edit_revision,edit_sha,
     clip=next(x for x in committed["data"]["segments"]
               if x["segment_id"]==projected["segment_id"])
     clip_end=clip["timeline_end_tick"]
-    requested=min(SAMPLES_PER_FRAME,
+    requested=min(SOURCE_AUDIO_WINDOW_SAMPLES,
                   (clip_end-output_tick)//TICKS_PER_SAMPLE,
                   (source["data"]["duration_tick"]-source_tick)//TICKS_PER_SAMPLE)
     if requested<1:
@@ -266,7 +282,8 @@ def sample_editorial_source(index,project_id,edit_id,edit_revision,edit_sha,
         "audio_data_url":(
             "data:audio/wav;base64,"+base64.b64encode(audio).decode("ascii")
             if audio else None),
-        "frame_spans_edit_boundary":requested<SAMPLES_PER_FRAME,
+        "frame_spans_edit_boundary":requested<SOURCE_AUDIO_WINDOW_SAMPLES,
+        "audio_excerpt_max_frames":AUDIO_WINDOW_FRAMES,
         "zero_audio_when_no_source":audio is None,
         "audio_played_by_host":False,
         "audio_muted_until_user_action":True,
