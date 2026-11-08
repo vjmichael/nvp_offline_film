@@ -105,6 +105,23 @@ Dedicated workflow `.github/workflows/nvp-film01-real-blender-cycles-donut.yml`:
   first-party CPU-proxy render and no illustrative image count as
   NVP's verified Cycles pictures.
 
+## Independent native Blender reopen (distinct process)
+
+The test **must not trust the original render worker alone**. A new
+first-party GPL-labeled separate-process adapter
+`tools/nvp_film01_cycles_reopen_audit.py` is run from the Ubuntu
+acceptance job **after** the original supervised Blender process has
+closed and its `.blend` has passed worker SHA checks. The *second*
+genuine pinned Blender binary opens `source_derived_Blender_Cycles_scene.blend`,
+rechecks 1008 smooth torus faces, 3 real object-actor roles, source
+Take SHA, saved frame range/camera/key/shadow receiver, Cycles
+CPU/diffuse/glossy-bounce settings and original USD positions at
+frames 0/12/24/36/48/60/71. It writes an independent
+`independent_saved_Blender_reopen.json`, checked against the source
+frame/audit manifest before any director artifact is published.
+This is **CI-only independent re-open acceptance**, not production
+Blender worker bypass or native Windows installed approval.
+
 ## Acceptance and known open issues
 
 The user's immediate goal is to **WATCH and judge** actual Cycles
