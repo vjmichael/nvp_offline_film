@@ -54,6 +54,44 @@ class PrioritySchedulerTests(unittest.TestCase):
             self.assertEqual(ledger.get_task("cheap")["state"],"QUEUED")
             self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],0)
 
+    def test_exact_dispatch_notice_cannot_claim_unrelated_priority_head(self):
+        with TemporaryDirectory() as root:
+            ledger=TaskLedger(root,sampler=sample)
+            ledger.enqueue(self.req("slow"),owner_key="producer",lane="background")
+            ledger.enqueue(self.req("urgent"),owner_key="producer",lane="interactive")
+            rejected=ledger.claim_next(
+                owner_key="producer",expected_task_id="slow")
+            self.assertEqual(rejected["state"],"NOT_CLAIMED")
+            self.assertFalse(rejected["admitted"])
+            self.assertEqual(ledger.get_task("slow")["state"],"QUEUED")
+            self.assertEqual(ledger.get_task("urgent")["state"],"QUEUED")
+            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],0)
+            chosen=ledger.claim_next(
+                owner_key="producer",expected_task_id="urgent")
+            self.assertTrue(chosen["admitted"])
+            self.assertEqual(chosen["task_id"],"urgent")
+            next_=ledger.claim_next(
+                owner_key="producer",expected_task_id="slow")
+            self.assertTrue(next_["admitted"])
+            self.assertEqual(next_["task_id"],"slow")
+
+    def test_cancelled_notice_does_not_start_another_native_task(self):
+        with TemporaryDirectory() as root:
+            ledger=TaskLedger(root,sampler=sample)
+            ledger.enqueue(self.req("cancelled"),owner_key="producer")
+            ledger.enqueue(self.req("survivor"),owner_key="producer")
+            ledger.cancel_queued("cancelled",owner_key="producer")
+            result=ledger.claim_next(
+                owner_key="producer",expected_task_id="cancelled")
+            self.assertEqual(result["state"],"NOT_CLAIMED")
+            self.assertFalse(result["admitted"])
+            self.assertEqual(ledger.get_task("survivor")["state"],"QUEUED")
+            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],0)
+            other=ledger.claim_next(
+                owner_key="producer",expected_task_id="survivor")
+            self.assertTrue(other["admitted"])
+            self.assertEqual(other["task_id"],"survivor")
+
     def test_wrong_producer_cannot_claim_or_cancel(self):
         with TemporaryDirectory() as root:
             ledger=TaskLedger(root,sampler=sample)
