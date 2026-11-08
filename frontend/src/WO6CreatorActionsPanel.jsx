@@ -397,6 +397,12 @@ export default function WO6CreatorActionsPanel({projectId}){
     setSelectedPath('');
     setDirectorReason('');
     setDirectorTypedChange(false);
+    setSoundEventId('');
+    setSoundSubject('');
+    setSoundFirstSample('');
+    setSoundGain('');
+    setEditSegments([{segment_id:'',branch_id:'',source_in_tick:'',
+      source_out_tick:''}]);
     setImpact(null);
     setReceipt(null);
   });
@@ -467,6 +473,8 @@ export default function WO6CreatorActionsPanel({projectId}){
             <option value="camera">Camera adjustment</option>
             <option value="blocking">Actor or prop blocking</option>
             <option value="lighting">Lighting adjustment</option>
+            <option value="sound_cue">Recorded PCM sound cue</option>
+            <option value="editorial_cut">Digital-slate editorial cut</option>
           </select></label>
           <button type="button" disabled={busy||!aiReviewKind||
             !currentTake||currentTake.sha256!==aiProposal.proposal.take_sha256}
@@ -491,6 +499,70 @@ export default function WO6CreatorActionsPanel({projectId}){
       disabled={busy} onChange={e=>setTimelineId(e.target.value)}>
       {catalog?.timelines?.map(x=><option key={x.id} value={x.id}>{x.id} · rev {x.revision}</option>)}
     </select></label>}
+    {kind==='editorial_cut'&&<label>Original digital-slate graph<select
+      value={slateGraphId} disabled={busy}
+      onChange={e=>{setSlateGraphId(e.target.value);setImpact(null)}}>
+      {catalog?.slate_graphs?.map(x=><option key={x.id} value={x.id}>
+        {x.id} · rev {x.revision}</option>)}
+    </select></label>}
+    {kind==='sound_cue'&&<div aria-label="Original PCM sound cue editor">
+      <p>Original Take timeline: {currentTakeTimeline?.id||'none'}.
+      Original source samples remain unchanged; this creates a separate
+      event timeline with an independently chosen sound cue.</p>
+      <label>Recorded sound source<select value={soundSourceId} disabled={busy}
+        onChange={e=>{setSoundSourceId(e.target.value);setImpact(null)}}>
+        {catalog?.audio_sources?.map(x=><option key={x.id} value={x.id}>
+          {x.id} · {x.data.sample_count} native 48 kHz samples</option>)}
+      </select></label>
+      <label>New sound event ID<input value={soundEventId} disabled={busy}
+        onChange={e=>{setSoundEventId(e.target.value);setImpact(null);
+          if(aiReview)setDirectorTypedChange(true)}}/></label>
+      <label>Original subject ID<input value={soundSubject} disabled={busy}
+        onChange={e=>{setSoundSubject(e.target.value);setImpact(null);
+          if(aiReview)setDirectorTypedChange(true)}}/></label>
+      <label>Recorded PCM first sample<input value={soundFirstSample}
+        disabled={busy} onChange={e=>{setSoundFirstSample(e.target.value);
+          setImpact(null);if(aiReview)setDirectorTypedChange(true)}}/></label>
+      <label>Director-chosen cue gain 0–2<input value={soundGain}
+        disabled={busy} onChange={e=>{setSoundGain(e.target.value);
+          setImpact(null);if(aiReview)setDirectorTypedChange(true)}}/></label>
+    </div>}
+    {kind==='editorial_cut'&&<div aria-label="Human-authored digital-slate editorial assembly">
+      <p>Choose the exact original Take or shot branch and source in/out
+      ticks for each editorial segment. Rearrange rows manually; no
+      source retiming or final-picture rendering occurs here.</p>
+      {editSegments.map((entry,i)=><div key={i} className="columns">
+        <label>Segment ID {i+1}<input value={entry.segment_id}
+          disabled={busy} onChange={e=>{setEditSegments(old=>old.map((r,j)=>
+            j===i?{...r,segment_id:e.target.value}:r));setImpact(null);
+            if(aiReview)setDirectorTypedChange(true)}}/></label>
+        <label>Source branch {i+1}<select value={entry.branch_id} disabled={busy}
+          onChange={e=>{setEditSegments(old=>old.map((r,j)=>
+            j===i?{...r,branch_id:e.target.value}:r));setImpact(null);
+            if(aiReview)setDirectorTypedChange(true)}}>
+          <option value="">Choose original source</option>
+          {currentGraph?.data?.nodes?.map(node=><option key={node.branch_id}
+            value={node.branch_id}>{node.branch_id} · {node.take_id}</option>)}
+        </select></label>
+        <label>Source in tick {i+1}<input value={entry.source_in_tick}
+          disabled={busy} onChange={e=>{setEditSegments(old=>old.map((r,j)=>
+            j===i?{...r,source_in_tick:e.target.value}:r));setImpact(null);
+            if(aiReview)setDirectorTypedChange(true)}}/></label>
+        <label>Source out tick {i+1}<input value={entry.source_out_tick}
+          disabled={busy} onChange={e=>{setEditSegments(old=>old.map((r,j)=>
+            j===i?{...r,source_out_tick:e.target.value}:r));setImpact(null);
+            if(aiReview)setDirectorTypedChange(true)}}/></label>
+        {editSegments.length>1&&<button type="button" disabled={busy}
+          onClick={()=>{setEditSegments(old=>old.filter((_,j)=>j!==i));
+            setImpact(null);if(aiReview)setDirectorTypedChange(true)}}>
+          Remove segment {i+1}</button>}
+      </div>)}
+      <button type="button" disabled={busy||editSegments.length>=64}
+        onClick={()=>{setEditSegments(old=>[...old,{
+          segment_id:'',branch_id:'',source_in_tick:'',source_out_tick:'',
+        }]);setImpact(null);if(aiReview)setDirectorTypedChange(true)}}>
+        Add source segment</button>
+    </div>}
     {paths.length>0&&kind!=='take'&&kind!=='color'&&<label>Authored OpenUSD object<select
       value={selectedPath||paths[0]?.[0]||''} disabled={busy} onChange={e=>setSelectedPath(e.target.value)}>
       {paths.map(([path,role])=><option key={path} value={path}>{path} · {role}</option>)}
@@ -502,9 +574,9 @@ export default function WO6CreatorActionsPanel({projectId}){
       {kind==='camera'?'Focal length (mm)':kind==='lighting'?'Light intensity':'XYZ offset (x,y,z)'}
       <input disabled={busy} value={value} onChange={e=>{setValue(e.target.value);if(aiReview)setDirectorTypedChange(true)}}/>
     </label>}
-    {kind!=='color'&&kind!=='take'&&<label>End Film Time tick<input
+    {kind!=='color'&&kind!=='take'&&kind!=='editorial_cut'&&<label>End Film Time tick<input
       value={endTick} disabled={busy} onChange={e=>setEndTick(e.target.value)}/></label>}
-    {kind!=='color'&&kind!=='take'&&kind!=='camera_sequence'&&<label>Start tick<input
+    {kind!=='color'&&kind!=='take'&&kind!=='camera_sequence'&&kind!=='editorial_cut'&&<label>Start tick<input
       value={startTick} disabled={busy} onChange={e=>setStartTick(e.target.value)}/></label>}
     {aiReview&&<div aria-label="Human-reviewed AI consultation for manual source change">
       <h3>Director's independent shot decision</h3>
@@ -514,10 +586,11 @@ export default function WO6CreatorActionsPanel({projectId}){
       <p>Model text SHA: {aiReview.model_text_sha256}</p>
       <label>Director-written creative reason<textarea value={directorReason}
         maxLength={512} disabled={busy}
-        placeholder="Explain my independently selected camera, actor or lighting change"
+        placeholder="Explain my independently selected camera, actor, sound or editorial change"
         onChange={e=>setDirectorReason(e.target.value)}/></label>
-      <p>After entering your own shot value, new object ID and reason,
-      inspect a fresh source impact before requesting both OS confirmations.</p>
+      <p>After entering your own source values, new object ID and reason,
+      inspect both source-impact and exact typed-preview receipts before
+      requesting both OS confirmations.</p>
     </div>}
     <label>New immutable object ID<input value={newId} disabled={busy}
       onChange={e=>setNewId(e.target.value)} placeholder="director_new_shot_001"/></label>
@@ -533,6 +606,8 @@ export default function WO6CreatorActionsPanel({projectId}){
     {impact&&<div><h3>Read-only source-impact receipt</h3>
       <p>{impact.data.status}. Source SHA: {impact.data.preview_sha256}.
         This review does not grant tool permission.</p>
+      {impact.typed&&<p>Exact independently entered {kind} preview SHA:
+        {impact.typed.typed_preview_sha256}. No native worker has been admitted.</p>}
       <pre style={{maxHeight:280,overflow:'auto'}}>{JSON.stringify(
         impact.data,null,2).slice(0,7000)}</pre>
       </div>}
