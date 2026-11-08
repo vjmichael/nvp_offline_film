@@ -64,6 +64,15 @@ class NativeSceneSoundCapture:
         source,stage=self.scene.open(project_id,scene_id,scene_revision)
         if source["document_sha256"]!=plan["scene_document_sha256"]:
             raise RuntimeError("Camera scene identity changed before filming")
+        # Refuse occupied output identities before publishing any PCM. A
+        # late timeline/Take collision must not orphan fresh source revisions.
+        for output_id in (sound_timeline_id,take_id):
+            try:
+                self.index.read_revision(project_id,output_id,1)
+            except KeyError:
+                pass
+            else:
+                raise ValueError("Filming output identity already published")
         if type(recordings) is not list or not 1<=len(recordings)<=MAX_AUDIO_EVENTS:
             raise ValueError("Record a finite, bounded set of original sound events")
         # Preflight identities before writing any immutable PCM revisions.
