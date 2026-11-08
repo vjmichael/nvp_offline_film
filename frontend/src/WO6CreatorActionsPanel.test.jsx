@@ -153,6 +153,96 @@ describe('WO6 installed creator-native first-party actions',()=>{
     expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
   });
 
+  it('requires human-selected model review, manual shot values, fresh impact and native approval request',async()=>{
+    const proposalId='wo6proposal_'+'a'.repeat(24);
+    const modelHash='9'.repeat(64);
+    const contextHash='8'.repeat(64);
+    const humanReason='I independently selected an 85 mm framing for this original shot.';
+    const host=native({
+      wo6_local_models:vi.fn(async()=>({
+        state:'available',models:[{id:'real-local-test-model'}],
+        model_execute_authorized:false,
+      })),
+      wo6_suggest_from_local_model:vi.fn(async()=>({
+        state:'GENERATING',proposal_id:proposalId,
+        native_worker_authorized:false,
+      })),
+      wo6_model_proposal_status:vi.fn(async()=>({
+        state:'READY_FOR_HUMAN_REVIEW',
+        proposal:{
+          project_id:pid,take_id:'TakeA',take_sha256:takeSha,
+          model_text_sha256:modelHash,
+          verified_source_context_sha256:contextHash,
+          film_time_tick:'0',
+          suggestion_text:'Consider tighter framing. The model cannot approve tools.',
+          native_worker_authorized:false,creative_approval_granted:false,
+        },
+      })),
+      wo6_review_model_proposal:vi.fn(async()=>({
+        status:'HUMAN_SELECTED_AI_CONSULTATION_NO_GRANT',
+        proposal_id:proposalId,take_id:'TakeA',take_sha256:takeSha,
+        model_text_sha256:modelHash,
+        verified_source_context_sha256:contextHash,
+        action_kind:'camera',creative_approval_granted:false,
+        native_worker_authorized:false,source_modified:false,
+      })),
+    });
+    render(<WO6CreatorActionsPanel projectId={pid}/>);
+    await screen.findByText(/SceneA · rev 1/);
+    fireEvent.click(screen.getByText('Find local models'));
+    await waitFor(()=>expect(host.wo6_local_models).toHaveBeenCalled());
+    fireEvent.change(screen.getByPlaceholderText(
+      'Suggest a clearer camera or actor direction for this Take'),
+      {target:{value:'Suggest a shot for this actor'}});
+    fireEvent.click(screen.getByText('Ask local model for read-only advice'));
+    await waitFor(()=>expect(host.wo6_suggest_from_local_model).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('Read local model proposal status'));
+    await screen.findByText(/Consider tighter framing/);
+    expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Director-selected operation to consider'),
+      {target:{value:'camera'}});
+    fireEvent.click(screen.getByText('Review advice and plan my own shot'));
+    await waitFor(()=>expect(host.wo6_review_model_proposal).toHaveBeenCalledWith({
+      project_id:pid,proposal_id:proposalId,
+      take_id:'TakeA',take_sha256:takeSha,
+      model_text_sha256:modelHash,
+      verified_source_context_sha256:contextHash,
+      action_kind:'camera',
+    }));
+    expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
+    expect(host.wo6_create_shot).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Focal length (mm)'),
+      {target:{value:'85'}});
+    fireEvent.change(screen.getByPlaceholderText(
+      'Explain my independently selected camera, actor or lighting change'),
+      {target:{value:humanReason}});
+    fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
+      {target:{value:'HumanOriginalShotA'}});
+    expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
+    fireEvent.click(screen.getByText('Inspect source impact'));
+    await waitFor(()=>expect(host.wo6_source_impact).toHaveBeenCalledWith({
+      project_id:pid,source_id:'SceneA',source_revision:1,
+      source_sha256:sceneSha,change_kind:'revise_camera',
+    }));
+    await waitFor(()=>expect(
+      screen.getByText('Request two OS approvals and execute').disabled).toBe(false));
+    fireEvent.click(screen.getByText('Request two OS approvals and execute'));
+    await waitFor(()=>expect(host.wo6_create_shot).toHaveBeenCalledWith({
+      project_id:pid,preview_sha256:previewSha,
+      action_kind:'camera',shot_id:'HumanOriginalShotA',
+      take_id:'TakeA',take_sha256:takeSha,
+      scene_id:'SceneA',scene_revision:1,scene_sha256:sceneSha,
+      start_tick:0,end_tick:7056000000,
+      changes:[{path:'/World/Camera',
+                property:'camera_focal_length_mm',value:85}],
+      purpose:'framing',continuity_policy:'intentional_cheat',
+      reason:humanReason,reviewed_proposal_id:proposalId,
+    }));
+    expect(host.wo6_create_take).not.toHaveBeenCalled();
+    expect(host.wo6_create_decision).not.toHaveBeenCalled();
+    expect(host.wo6_cancel_native_task).not.toHaveBeenCalled();
+  });
+
   it('rejects a stale/unfinished impact preview and never sends worker request',async()=>{
     const host=native({wo6_source_impact:vi.fn(async()=>({
       ...impact,indexed_downstream_truncated:true,

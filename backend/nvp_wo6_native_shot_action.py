@@ -52,6 +52,42 @@ ACTION_KINDS = {
 }
 
 
+AI_REVIEW_FIELDS = frozenset({
+    "proposal_id","take_sha256","model_text_sha256",
+    "verified_source_context_sha256","film_time_tick",
+    "director_selected_action_kind",
+})
+_HEX = frozenset("0123456789abcdef")
+
+
+def _validate_ai_review_context(review, *, action_kind, take_sha256):
+    """Only human-reviewed, host-built *provenance*, never executable model text."""
+    if review is None:
+        return None
+    if type(review) is not dict or set(review) != AI_REVIEW_FIELDS:
+        raise ValueError("AI consultation must be exact bounded host provenance")
+    if (type(review["proposal_id"]) is not str or
+            not review["proposal_id"].startswith("wo6proposal_") or
+            len(review["proposal_id"]) != 36 or
+            any(c not in _HEX for c in review["proposal_id"][12:])):
+        raise ValueError("Invalid native AI suggestion ID")
+    for key in ("take_sha256","model_text_sha256",
+                "verified_source_context_sha256"):
+        val=review[key]
+        if (type(val) is not str or len(val)!=64 or
+                any(c not in _HEX for c in val)):
+            raise ValueError("Unsealed AI source SHA")
+    if (review["take_sha256"]!=take_sha256 or
+            review["director_selected_action_kind"]!=action_kind or
+            type(review["film_time_tick"]) is not str or
+            len(review["film_time_tick"])>16 or
+            not review["film_time_tick"].isascii() or
+            not review["film_time_tick"].isdecimal() or
+            str(int(review["film_time_tick"]))!=review["film_time_tick"]):
+        raise PermissionError("Reviewed advice does not match director-selected source/action")
+    return dict(review)
+
+
 def _check_shot_source(index, spec):
     pid = spec["project_id"]
     _require_pid(pid)
@@ -93,6 +129,14 @@ def _check_shot_source(index, spec):
                 scene["data"]["prim_roles"].get(x.get("path")) not in roles
                 for x in spec["changes"])):
         raise PermissionError("Property or actor role exceeds approved shot scope")
+    if "reviewed_ai_consultation" in spec:
+        reviewed=_validate_ai_review_context(
+            spec["reviewed_ai_consultation"],
+            action_kind=kind,take_sha256=spec["take_sha256"])
+        if (spec.get("creative_scope",{}).get(
+                "reviewed_ai_consultation")!=reviewed or
+                spec["creative_scope"].get("model_text_is_authority") is not False):
+            raise PermissionError("Reviewed AI provenance differs from OS creative approval")
     normalized = _normalize(spec["changes"], scene, stage)
     if normalized != spec["changes"]:
         raise PermissionError("Shot opinions are not canonical")
@@ -165,7 +209,8 @@ class NativeShotActionHost:
                    start_tick, end_tick, changes, purpose,
                    continuity_policy, reason, expected_preview_sha256,
                    screenplay_scene_id=None, screenplay_revision=None,
-                   expected_bible_digest=None, ram_mb=4096, expires_in_seconds=1800):
+                   expected_bible_digest=None, ram_mb=4096, expires_in_seconds=1800,
+                   ai_review_context=None):
         if not isinstance(scope, TrustedReadScope):
             raise PermissionError("Authenticated host-owned scope required")
         if (type(action_kind) is not str or action_kind not in ACTION_KIN or
@@ -186,6 +231,8 @@ class NativeShotActionHost:
             _id(value, "shot identity or original source")
         if type(expected_preview_sha256) is not str or len(expected_preview_sha256) != 64:
             raise ValueError("Original approved source impact SHA is required")
+        reviewed_ai=_validate_ai_review_context(
+            ai_review_context,action_kind=action_kind,take_sha256=take_sha256)
         spec = {
             "format": FORMAT, "operation": "nvp.film.author_director_shot.v1",
             "kind": "compositing", "actor_id": scope.actor_id,
@@ -203,6 +250,11 @@ class NativeShotActionHost:
             "screenplay_revision": screenplay_revision,
             "expected_bible_digest": expected_bible_digest, "ram_mb": ram_mb,
         }
+        if reviewed_ai is not None:
+            # The native first-party creator dialog and durable sealed
+            # receipt include consultation evidence; its plain-text model
+            # output never enters OpenUSD opinions or worker arguments.
+            spec["reviewed_ai_consultation"]=reviewed_ai
         # Normalize before creator sees exact committed proposed values;
         # the native stage validates prim existence, camera/light schema.
         shot = OpenUSDShotOverrides(
@@ -223,6 +275,10 @@ class NativeShotActionHost:
             "preview_sha256": expected_preview_sha256,
             "no_original_take_mutation": True, "renders_finished": False,
         }
+        if reviewed_ai is not None:
+            creative["reviewed_ai_consultation"]=reviewed_ai
+            creative["model_text_is_authority"]=False
+            creative["director_typed_shot_parameters_independently"]=True
         spec["creative_scope"] = creative
         task_id = "wo6shot_" + secrets.token_hex(12)
         approval = "wo6approval_" + secrets.token_hex(12)
@@ -328,6 +384,10 @@ class NativeShotActionHost:
                     receipt.get("task_id") != task_id or
                     receipt.get("shot_sha256") != record["document_sha256"] or
                     receipt.get("take_sha256") != spec["take_sha256"] or
+                    receipt.get("reviewed_ai_consultation") !=
+                        spec.get("reviewed_ai_consultation") or
+                    receipt.get("model_instruction_executed") is not False or
+                    receipt.get("model_approval_accepted") is not False or
                     evaluation["shot_document_sha256"] != record["document_sha256"] or
                     record["data"]["usd_layer_sha256"] != spec["shot_layer_sha256"] or
                     record["data"]["original_scene_modified"] is not False or
@@ -349,6 +409,9 @@ class NativeShotActionHost:
             return {"task_id": task_id, "state": "SUCCEEDED",
                     "shot_id": spec["shot_id"],
                     "shot_document_sha256": record["document_sha256"],
+                    "reviewed_ai_consultation":
+                        spec.get("reviewed_ai_consultation"),
+                    "model_instruction_executed":False,
                     "new_take_created": False, "film_delivered": False}
         except BaseException as error:
             if worker is not None:

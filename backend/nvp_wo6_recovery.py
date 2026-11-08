@@ -348,4 +348,10 @@ class WO6DurableRecovery:
                 time.time() - row["updated_at"] > 15),
             "film_delivered": False,
             "AI_permissions_implied": False,
+            # Durable disclosure of verified consulted advice ID/SHA only;
+            # never replay model text as commands or resurrect permissions.
+            "reviewed_ai_consultation":(
+                spec.get("reviewed_ai_consultation")
+                if spec["operation"]==SHOT_OP else None),
+            "reviewed_model_text_is_authority":False,
         }

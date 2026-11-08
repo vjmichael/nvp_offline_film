@@ -57,6 +57,10 @@ export default function WO6CreatorActionsPanel({projectId}){
   const [aiFilmTick,setAiFilmTick]=useState('0');
   const [aiProposalTicket,setAiProposalTicket]=useState(null);
   const [aiProposal,setAiProposal]=useState(null);
+  const [aiReviewKind,setAiReviewKind]=useState('');
+  const [aiReview,setAiReview]=useState(null);
+  const [directorReason,setDirectorReason]=useState('');
+  const [directorTypedChange,setDirectorTypedChange]=useState(false);
   const native=()=>window.pywebview?.api;
   const currentScene=catalog?.scenes?.find(x=>x.id===sceneId)||null;
   const currentTake=catalog?.takes?.find(x=>x.id===takeId)||null;
@@ -84,6 +88,9 @@ export default function WO6CreatorActionsPanel({projectId}){
   useEffect(()=>{
     setAiProposalTicket(null);
     setAiProposal(null);
+    setAiReview(null);
+    setAiReviewKind('');
+    setDirectorTypedChange(false);
   },[projectId,takeId]);
   useEffect(()=>{
     let live=true;
@@ -111,6 +118,8 @@ export default function WO6CreatorActionsPanel({projectId}){
   },[projectId]);
   const refresh=async()=>{
     const data=await native().wo6_source_catalog(projectId);
+    setAiReview(null);
+    setDirectorTypedChange(false);
     setCatalog(data);
     setSceneId(old=>data.scenes.find(x=>x.id===old)?old:(data.scenes[0]?.id||''));
     setTakeId(old=>data.takes.find(x=>x.id===old)?old:(data.takes[0]?.id||''));
@@ -162,6 +171,10 @@ export default function WO6CreatorActionsPanel({projectId}){
     if(!usableImpact)throw new Error('Refresh the exact native source impact before approval');
     if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(newId))
       throw new Error('Enter a new stable source/decision ID (letters, digits, _, ., :, -)');
+    if(aiReview&&(kind!==aiReview.action_kind||
+        currentTake?.sha256!==aiReview.take_sha256||
+        !directorTypedChange||directorReason.trim().length<12))
+      throw new Error('Enter independent shot values and a director-written reason');
     const preview_sha256=impact.data.preview_sha256;
     const common={project_id:projectId,preview_sha256};
     let response;
@@ -208,7 +221,9 @@ export default function WO6CreatorActionsPanel({projectId}){
         changes:shotOpinions(),
         purpose:kind==='lighting'?'lighting':'framing',
         continuity_policy:'intentional_cheat',
-        reason:'Director deliberately approved this isolated shot change',
+        reason:aiReview?directorReason.trim():
+          'Director deliberately approved this isolated shot change',
+        ...(aiReview?{reviewed_proposal_id:aiReview.proposal_id}:{}),
       });
     }
     setReceipt(response);
@@ -239,12 +254,49 @@ export default function WO6CreatorActionsPanel({projectId}){
       throw new Error('No native read-only model proposal was admitted');
     setAiProposalTicket(result.proposal_id);
     setAiProposal(null);
+    setAiReview(null);
+    setDirectorTypedChange(false);
   });
   const readLocalSuggestion=()=>run(async()=>{
     if(!aiProposalTicket)throw new Error('No model proposal has been requested');
     const result=await native().wo6_model_proposal_status(
       projectId,aiProposalTicket);
     setAiProposal(result);
+  });
+  const reviewAdviceForManualShot=()=>run(async()=>{
+    const advice=aiProposal?.proposal;
+    if(!aiProposalTicket||aiProposal?.state!=='READY_FOR_HUMAN_REVIEW'||!advice)
+      throw new Error('Read a completed original-source suggestion first');
+    if(!['camera','blocking','lighting'].includes(aiReviewKind))
+      throw new Error('The director must select a specific shot operation');
+    if(!currentTake||currentTake.id!==advice.take_id||
+        currentTake.sha256!==advice.take_sha256)
+      throw new Error('This advice does not belong to the selected original Take');
+    const reviewed=await native().wo6_review_model_proposal({
+      project_id:projectId,proposal_id:aiProposalTicket,
+      take_id:advice.take_id,take_sha256:advice.take_sha256,
+      model_text_sha256:advice.model_text_sha256,
+      verified_source_context_sha256:advice.verified_source_context_sha256,
+      action_kind:aiReviewKind,
+    });
+    if(reviewed?.status!=='HUMAN_SELECTED_AI_CONSULTATION_NO_GRANT'||
+        reviewed.proposal_id!==aiProposalTicket||
+        reviewed.action_kind!==aiReviewKind||
+        reviewed.take_sha256!==advice.take_sha256||
+        reviewed.native_worker_authorized!==false||
+        reviewed.creative_approval_granted!==false)
+      throw new Error('Unverified native AI consultation response');
+    // The model NEVER writes the chosen numeric parameter or reason.
+    // These empty fields and fresh impact preview must be set by the human.
+    setAiReview(reviewed);
+    setKind(aiReviewKind);
+    setValue('');
+    setNewId('');
+    setSelectedPath('');
+    setDirectorReason('');
+    setDirectorTypedChange(false);
+    setImpact(null);
+    setReceipt(null);
   });
   const selectedTask=receipt?.queued_task_id||receipt?.task_id;
   const readStatus=()=>run(async()=>{
@@ -303,18 +355,30 @@ export default function WO6CreatorActionsPanel({projectId}){
           <pre style={{maxHeight:280,overflow:'auto',whiteSpace:'pre-wrap'}}>
             {aiProposal.proposal.suggestion_text}
           </pre>
-          <p>Untrusted advice only. To make a real change, choose and
-          review an operation below, inspect fresh source impact, and
-          independently confirm both native OS dialogs.</p>
+          <p>Untrusted advice only. A human must choose the operation and
+          type every numeric change. A fresh source-impact review and
+          two independent native OS confirmations remain mandatory.</p>
+          <label>Director-selected operation to consider<select
+            value={aiReviewKind} disabled={busy}
+            onChange={e=>setAiReviewKind(e.target.value)}>
+            <option value="">Select an operation manually</option>
+            <option value="camera">Camera adjustment</option>
+            <option value="blocking">Actor or prop blocking</option>
+            <option value="lighting">Lighting adjustment</option>
+          </select></label>
+          <button type="button" disabled={busy||!aiReviewKind||
+            !currentTake||currentTake.sha256!==aiProposal.proposal.take_sha256}
+            onClick={reviewAdviceForManualShot}>
+            Review advice and plan my own shot</button>
         </div>}
       </div>}
     </div>
     {!catalog&&<p role="status">Checking the installed native host and FilmIndex…</p>}
     <label>Operation<select value={kind} disabled={busy}
-      onChange={e=>{setKind(e.target.value);setValue(e.target.value==='blocking'?'0,0,0':'50');setSelectedPath('');setImpact(null)}}>
+      onChange={e=>{setKind(e.target.value);setValue(e.target.value==='blocking'?'0,0,0':'50');setSelectedPath('');setImpact(null);setAiReview(null);setDirectorTypedChange(false)}}>
       {ACTIONS.map(([id,label])=><option key={id} value={id}>{label}</option>)}
     </select></label>
-    <label>Original scene<select value={sceneId} disabled={busy} onChange={e=>{setSceneId(e.target.value);setImpact(null)}}>
+    <label>Original scene<select value={sceneId} disabled={busy} onChange={e=>{setSceneId(e.target.value);setImpact(null);setAiReview(null);setDirectorTypedChange(false)}}>
       {catalog?.scenes?.map(x=><option key={x.id} value={x.id}>{x.id} · rev {x.revision}</option>)}
     </select></label>
     {(kind!=='take'&&kind!=='camera_sequence')&&<label>Frozen Take<select
@@ -334,18 +398,33 @@ export default function WO6CreatorActionsPanel({projectId}){
         onChange={e=>setColor(old=>({...old,[key]:Number(e.target.value)}))}/></label>)}</div>}
     {(kind==='camera'||kind==='lighting'||kind==='blocking')&&<label>
       {kind==='camera'?'Focal length (mm)':kind==='lighting'?'Light intensity':'XYZ offset (x,y,z)'}
-      <input disabled={busy} value={value} onChange={e=>setValue(e.target.value)}/>
+      <input disabled={busy} value={value} onChange={e=>{setValue(e.target.value);if(aiReview)setDirectorTypedChange(true)}}/>
     </label>}
     {kind!=='color'&&kind!=='take'&&<label>End Film Time tick<input
       value={endTick} disabled={busy} onChange={e=>setEndTick(e.target.value)}/></label>}
     {kind!=='color'&&kind!=='take'&&kind!=='camera_sequence'&&<label>Start tick<input
       value={startTick} disabled={busy} onChange={e=>setStartTick(e.target.value)}/></label>}
+    {aiReview&&<div aria-label="Human-reviewed AI consultation for manual source change">
+      <h3>Director's independent shot decision</h3>
+      <p>AI consultation {aiReview.proposal_id} was reviewed but granted
+      no native permission. The model suggestion is linked by SHA;
+      it cannot choose your numeric values or your new shot identity.</p>
+      <p>Model text SHA: {aiReview.model_text_sha256}</p>
+      <label>Director-written creative reason<textarea value={directorReason}
+        maxLength={512} disabled={busy}
+        placeholder="Explain my independently selected camera, actor or lighting change"
+        onChange={e=>setDirectorReason(e.target.value)}/></label>
+      <p>After entering your own shot value, new object ID and reason,
+      inspect a fresh source impact before requesting both OS confirmations.</p>
+    </div>}
     <label>New immutable object ID<input value={newId} disabled={busy}
       onChange={e=>setNewId(e.target.value)} placeholder="director_new_shot_001"/></label>
     <div className="actions">
       <button type="button" className="secondary" disabled={busy||!selectedOriginal} onClick={preview}>
         Inspect source impact</button>
-      <button type="button" className="primary" disabled={busy||!usableImpact||!newId} onClick={submit}>
+      <button type="button" className="primary" disabled={busy||!usableImpact||!newId||
+        (aiReview&&(!directorTypedChange||directorReason.trim().length<12))}
+        onClick={submit}>
         Request two OS approvals and execute</button>
       <button type="button" className="secondary" disabled={busy} onClick={()=>run(refresh)}>Refresh FilmIndex</button>
     </div>
