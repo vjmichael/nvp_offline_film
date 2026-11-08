@@ -75,7 +75,10 @@ is still responsible for actual scattering/shadow/illumination.
   deterministic bounded function evaluates intensity at authoritative
   Film Time and is baked as time-sampled UsdLux intensity into an
   immutable derived light revision when the director approves.
-  No free-running wall-clock effect should destroy film sync.
+  A separate monotonic light timer is permitted for live effects, but
+  its phase or real event times must be captured/synced to Film Time
+  before an immutable final render. Unrecorded live phase must never
+  change the original finished picture unpredictably.
 - **Edit and persist:** selecting a light presents its source identity
   and editable controls. Undo / Save Light Rig stores a new original-
   preserving authored revision, not an overwrite. Source-impact
@@ -91,3 +94,12 @@ existing source **SphereLight** is supported by NVP's CPU scene-linear
 raster as a *neutral scalar light* only; Kelvin/RGB, beam shaping,
 emitter softness and calibrated multi-bounce radiance are NOT proven by
 that preview. Those require an appropriate UsdLux-capable renderer.
+
+
+## Creator clarification: independent FX timers, silver/gold bounce (2026-11-08)
+
+- **Independent time is permitted:** Cop-car red/blue strobes, a flashlight flash, fireworks, flicker and lightning may run on their own monotonic oscillator during live authoring. NVP must offer *Capture/Sync*, recording clock origin/phase, triggers and exact offset to original Film Time. Timeline-synchronized mode is a separate switch. Final picture/audio rendering must replay the same recorded effect reproducibly rather than running a non-repeatable wall timer.
+- **Silver Bounce / Gold Bounce:** Placeable, orientable passive 3D reflector boards, freely moved, snapped, attached or locked. Silver has a comparatively neutral reflectance and gold warms the actual reflected illumination. Size, roughness/matte versus specular response and positioning matter. These boards are **not** emitted light, not an exposure shortcut and not a post-processing tint. Real indirect light transport/BSDF in the chosen renderer must be demonstrated by independently measured scene comparisons. The current simple CPU preview cannot prove GI or true reflected color.
+- **Priority:** Simple artist UI for practical lighting and FX comes before advanced IES/volumetric/cinema photometric calibration. Preserve original source scene, source SHA, Film Time and creator-native two-approval isolation.
+
+Detailed work-order requirements: `docs/NVP_VLIGHT_FX_TIMERS_REFLECTORS.md`. This is a **design backlog**, not a claim of finished installed controls or physically accurate bounces.
