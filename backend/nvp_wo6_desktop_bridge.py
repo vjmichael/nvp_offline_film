@@ -34,6 +34,7 @@ from backend.nvp_wo6_director_model_proposal import (
     director_model_suggestion, MAX_CREATIVE_CHARS)
 from backend.nvp_model_service import discover_models
 from backend.nvp_wo6_verified_local_model import verified_writer_for
+from backend.nvp_wo6_sound_editorial_decisions import preview_typed_decision
 
 FORMAT="nvp.wo6.director_desktop_native_consent.v1"
 MAX_LIST=64
@@ -259,7 +260,7 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                 len(proposal_id)!=36 or
                 any(c not in "0123456789abcdef" for c in proposal_id[12:]) or
                 type(action_kind) is not str or
-                action_kind not in ACTION_KINDS):
+                action_kind not in (*ACTION_KINDS,"sound_cue","editorial_cut")):
             raise ValueError("Exact review proposal and supported shot kind required")
         with self._wo6_model_lock:
             if self._wo6_closed:
@@ -349,29 +350,38 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
 
     def wo6_source_catalog(self,project_id):
         self._wo5_project(project_id)
-        scenes,timelines,takes,grades=[],[],[],[]
+        scenes,timelines,takes,grades,audio_sources,slate_graphs=[],[],[],[],[],[]
         for kind,items in (
             ("scene",scenes),("temporal",timelines),
-            ("take",takes),("style",grades)):
+            ("take",takes),("style",grades),
+            ("audio",audio_sources),("presentation",slate_graphs)):
             for entry in self.index.list_objects(project_id,kind=kind)[:MAX_LIST]:
                 r=self.index.read_revision(
                     project_id,entry["object_id"],entry["head_revision"])
                 if kind=="style" and r["data"].get("format")!=(
                         "nvp.data_first.color_decision.v1"):
                     continue
+                if kind=="audio" and r["data"].get("format")!=(
+                        "nvp.data_av.recorded_pcm.v1"):
+                    continue
+                if kind=="presentation" and r["data"].get("format")!=(
+                        "nvp.slate.branch_graph.v1"):
+                    continue
                 items.append({
                     "id":r["object_id"],"kind":r["kind"],
                     "revision":r["revision"],"sha256":r["document_sha256"],
-                    "data":r["data"] if kind in ("take","style") else {
+                    "data":r["data"] if kind in ("take","style","presentation") else {
                         "format":r["data"].get("format"),
                         "prim_roles":r["data"].get("prim_roles") if kind=="scene" else None,
-                        "duration_tick":r["data"].get("duration_tick")
+                        "duration_tick":r["data"].get("duration_tick"),
+                        "sample_count":r["data"].get("sample_count") if kind=="audio" else None,
                     },
                 })
         return {
             "format":FORMAT,"project_id":project_id,
             "scenes":scenes,"timelines":timelines,
             "takes":takes,"grades":grades,
+            "audio_sources":audio_sources,"slate_graphs":slate_graphs,
             "source_facts_from_real_filminindex":True,
             "approvals_preissued":False,
             "director_gui_present":True,"model_execute_enabled":False,
@@ -389,6 +399,14 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             request["source_id"],request["source_revision"],
             request["source_sha256"],request["change_kind"],
             max_nodes=32)
+
+    def wo6_preview_typed_decision(self,request):
+        """Pure FilmIndex/PCM/slate preview with no worker or OS permission."""
+        self._wo6_require(request,{
+            "project_id","decision_kind","decision_id",
+            "source_id","source_revision","source_sha256",
+            "payload","duration_tick","director_reason"})
+        return preview_typed_decision(self.index,request)
 
     def _wo6_require(self,request,expected):
         if type(request) is not dict or set(request)!=expected:
@@ -564,22 +582,94 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         return result
 
     def wo6_create_decision(self,request):
-        scope=self._wo6_require(request,{
+        required={
             "project_id","decision_kind","decision_id","source_id",
             "source_revision","source_sha256","payload","duration_tick",
-            "preview_sha256"})
-        self._wo6_host()
-        queued=self._wo6_data.queue_decision(
-            scope,creator_decision_id=self._wo6_decision(),
-            decision_kind=request["decision_kind"],
-            decision_id=request["decision_id"],
-            source_id=request["source_id"],
-            source_revision=request["source_revision"],
-            source_sha256=request["source_sha256"],
-            payload=request["payload"],
-            duration_tick=request["duration_tick"],
-            expected_preview_sha256=request["preview_sha256"])
-        return self._wo6_result(queued,self._wo6_data)
+            "preview_sha256"}
+        has_review=(type(request) is dict and
+                    "reviewed_proposal_id" in request)
+        has_typed=(type(request) is dict and
+                   request.get("decision_kind") in ("sound_cue","editorial_cut"))
+        scope=self._wo6_require(
+            request,required|({"reviewed_proposal_id"} if has_review else set())|
+                    ({"typed_preview_sha256","director_reason"} if has_typed else set()))
+        context=None
+        take_id=None
+        proposal_id=request.get("reviewed_proposal_id") if has_review else None
+        if has_review:
+            if request["decision_kind"] not in ("sound_cue","editorial_cut"):
+                raise PermissionError(
+                    "Only native sound and slate editorial edits accept this reviewed AI handoff")
+            with self._wo6_model_lock:
+                slot=self._wo6_model_proposals.get(proposal_id)
+                proposal=dict(slot.get("proposal") or {}) if slot else {}
+                take_id=proposal.get("take_id")
+                take_sha=proposal.get("take_sha256")
+            context,take=self._wo6_verified_ai_reference(
+                request["project_id"],proposal_id,
+                take_id,take_sha,request["decision_kind"])
+            if request["decision_kind"]=="sound_cue":
+                if (take.get("timeline_id")!=request["source_id"] or
+                        take.get("timeline_revision")!=request["source_revision"] or
+                        take.get("timeline_document_sha256")!=request["source_sha256"]):
+                    raise PermissionError("The sound edit must originate in the reviewed Take's original timeline")
+            else:
+                from backend.nvp_digital_slate_branches import DigitalSlateBranches
+                graph=DigitalSlateBranches(self.index,
+                    verify_editor_action=lambda *_:False).open_graph(
+                        request["project_id"],request["source_id"],
+                        request["source_revision"])
+                if (graph["document_sha256"]!=request["source_sha256"] or
+                        not any(n["take_id"]==take_id and
+                                n["take_document_sha256"]==take_sha
+                                for n in graph["data"]["nodes"])):
+                    raise PermissionError("The new editorial cut must include the exact reviewed Take")
+            with self._wo6_model_lock:
+                slot=self._wo6_model_proposals.get(proposal_id)
+                review=slot.get("review") if slot else None
+                if (review is None or review["context"]!=context or
+                        review["in_flight"] or review["consumed_task_id"] is not None or
+                        self._wo6_closed):
+                    raise PermissionError("Completed AI advice was never selected for this specific sound/edit action")
+                review["in_flight"]=True
+        try:
+            self._wo6_host()
+            queued=self._wo6_data.queue_decision(
+                scope,creator_decision_id=self._wo6_decision(),
+                decision_kind=request["decision_kind"],
+                decision_id=request["decision_id"],
+                source_id=request["source_id"],
+                source_revision=request["source_revision"],
+                source_sha256=request["source_sha256"],
+                payload=request["payload"],
+                duration_tick=request["duration_tick"],
+                expected_preview_sha256=request["preview_sha256"],
+                expected_typed_preview_sha256=(
+                    request["typed_preview_sha256"] if has_typed else None),
+                director_reason=(
+                    request["director_reason"] if has_typed else None),
+                ai_review_context=context,
+                reviewed_original_take_id=take_id)
+        except BaseException:
+            if has_review:
+                with self._wo6_model_lock:
+                    slot=self._wo6_model_proposals.get(proposal_id)
+                    if slot and slot.get("review"):
+                        slot["review"]["in_flight"]=False
+            raise
+        if has_review:
+            with self._wo6_model_lock:
+                slot=self._wo6_model_proposals.get(proposal_id)
+                if slot and slot.get("review"):
+                    slot["review"].update(
+                        in_flight=False,consumed_task_id=queued["task_id"])
+        result=self._wo6_result(queued,self._wo6_data)
+        if has_review:
+            result.update(
+                reviewed_ai_proposal_id=proposal_id,
+                reviewed_model_text_sha256=context["model_text_sha256"],
+                human_sound_or_editorial_parameters_separately_authorized=True)
+        return result
 
     def wo6_task_status(self,project_id,task_id):
         self._wo5_project(project_id)

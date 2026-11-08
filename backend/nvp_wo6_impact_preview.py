@@ -52,7 +52,7 @@ KIND_ACCEPTS = {
     "revise_actor_performance": {"scene", "performance", "actor"},
     "revise_camera": {"scene", "camera", "temporal"},
     "revise_sound": {"audio", "dialogue", "temporal"},
-    "revise_edit": {"edit"},
+    "revise_edit": {"edit", "presentation"},
     "revise_color": {"take", "style", "presentation", "master"},
     "retake": {"scene", "take"},
     "remaster": {"master", "audio", "presentation"},

@@ -1,0 +1,80 @@
+name: NVP WO6-07D Original PCM Sound and Slate Edit Native Acceptance (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/wo6-reviewed-ai-sound-editorial-20261107]
+  pull_request:
+    paths:
+      - backend/nvp_wo6_sound_editorial_decisions.py
+      - backend/nvp_wo6_native_data_action.py
+      - backend/nvp_wo6_desktop_bridge.py
+      - backend/nvp_wo6_impact_preview.py
+      - backend/nvp_wo6_recovery.py
+      - tools/nvp_wo6_data_worker.py
+      - frontend/src/WO6CreatorActionsPanel.jsx
+      - frontend/src/WO6CreatorActionsPanel.test.jsx
+      - tests/test_nvp_wo6_sound_editorial.py
+      - tests/test_nvp_wo6_reviewed_sound_editorial.py
+      - .github/workflows/nvp-wo6-07d-native-sound-editorial.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-wo6-07d-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  original-sound-editorial-native:
+    name: Real native PCM/source slate and reviewed AI, contained worker / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install authentic native OpenUSD and SQLite source verification
+        run: 'python -m pip install --only-binary=:all: "usd-core==26.11"'
+      - name: Install Windows native process-tree Job Object dependency
+        if: runner.os == 'Windows'
+        run: python -m pip install 'pywin32>=310'
+      - name: Compile actual native first-party dispatcher, PCM/slate writer and source tests
+        run: python -m compileall -q backend/nvp_wo6_sound_editorial_decisions.py backend/nvp_wo6_native_data_action.py backend/nvp_wo6_desktop_bridge.py backend/nvp_wo6_impact_preview.py backend/nvp_wo6_recovery.py tools/nvp_wo6_data_worker.py tests/test_nvp_wo6_sound_editorial.py tests/test_nvp_wo6_reviewed_sound_editorial.py
+      - name: Execute original recorded PCM sound event and two-segment native slate edit
+        run: python -m unittest discover -s tests -p test_nvp_wo6_sound_editorial.py -v
+      - name: Execute reviewed model consultation + TWO native OS grants + actual contained PCM/edit worker
+        run: python -m unittest discover -s tests -p test_nvp_wo6_reviewed_sound_editorial.py -v
+      - name: Preserve real native camera sequence/color decision source tests
+        run: python -m unittest discover -s tests -p test_nvp_wo6_native_data_action.py -v
+      - name: Preserve previously accepted source review and native shot provenance
+        run: python -m unittest discover -s tests -p test_nvp_wo6_reviewed_director_shot.py -v
+      - name: Preserve durable cancellation and crash-after-commit reconciliation
+        run: python -m unittest discover -s tests -p test_nvp_wo6_recovery.py -v
+      - name: Preserve exact-task desktop lifecycle and no-autoreplay
+        run: python -m unittest discover -s tests -p test_nvp_wo6_desktop_bridge.py -v
+
+  human-director-react:
+    name: React original PCM/film edit requires typed parameters, source preview, human OS approval
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install original NVP desktop UI dependencies without mutating lockfile
+        working-directory: frontend
+        run: npm install --no-audit --no-fund --package-lock=false
+      - name: Build actual React creator desktop
+        working-directory: frontend
+        run: npm run build
+      - name: Test original sound and ordered-edit review and native two-approval request boundaries
+        working-directory: frontend
+        run: npx vitest run src/WO6CreatorActionsPanel.test.jsx

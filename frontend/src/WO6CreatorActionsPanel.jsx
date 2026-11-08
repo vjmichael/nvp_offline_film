@@ -15,6 +15,8 @@ const ACTIONS = [
   ['lighting','Lighting shot adjustment'],
   ['color','New derived color decision'],
   ['camera_sequence','New exact Film Time camera sequence'],
+  ['sound_cue','New original PCM sound cue timeline'],
+  ['editorial_cut','New assembled digital-slate film edit'],
 ];
 function errorText(e){return e?.message || String(e)}
 function sourceFor(kind,scene,take){
@@ -61,10 +63,24 @@ export default function WO6CreatorActionsPanel({projectId}){
   const [aiReview,setAiReview]=useState(null);
   const [directorReason,setDirectorReason]=useState('');
   const [directorTypedChange,setDirectorTypedChange]=useState(false);
+  const [slateGraphId,setSlateGraphId]=useState('');
+  const [soundSourceId,setSoundSourceId]=useState('');
+  const [soundEventId,setSoundEventId]=useState('');
+  const [soundSubject,setSoundSubject]=useState('');
+  const [soundFirstSample,setSoundFirstSample]=useState('0');
+  const [soundGain,setSoundGain]=useState('1');
+  const [editSegments,setEditSegments]=useState([{
+    segment_id:'',branch_id:'',source_in_tick:'',source_out_tick:'',
+  }]);
   const native=()=>window.pywebview?.api;
   const currentScene=catalog?.scenes?.find(x=>x.id===sceneId)||null;
   const currentTake=catalog?.takes?.find(x=>x.id===takeId)||null;
   const currentTimeline=catalog?.timelines?.find(x=>x.id===timelineId)||null;
+  const currentTakeTimeline=catalog?.timelines?.find(x=>
+    x.id===currentTake?.data?.timeline_id &&
+    x.revision===currentTake?.data?.timeline_revision) ||null;
+  const currentGraph=catalog?.slate_graphs?.find(x=>x.id===slateGraphId)||null;
+  const currentSound=catalog?.audio_sources?.find(x=>x.id===soundSourceId)||null;
   const scene=(kind==='take'||kind==='camera_sequence')?currentScene:
     (currentTake?.data?.scene_id
       ?catalog?.scenes?.find(x=>x.id===currentTake.data.scene_id)||null
@@ -74,13 +90,24 @@ export default function WO6CreatorActionsPanel({projectId}){
     (kind==='camera'||kind==='camera_sequence')?role==='camera':
     kind==='lighting'?role==='light':
     kind==='blocking'?(role==='actor'||role==='prop'):false);
-  const selectedOriginal=sourceFor(kind,kind==='take'||kind==='camera_sequence'?currentScene:scene,currentTake);
+  const selectedOriginal=(kind==='sound_cue'?
+    (currentTakeTimeline?{id:currentTakeTimeline.id,
+      revision:currentTakeTimeline.revision,sha256:currentTakeTimeline.sha256,
+      change:'revise_sound'}:null):kind==='editorial_cut'?
+    (currentGraph?{id:currentGraph.id,revision:currentGraph.revision,
+      sha256:currentGraph.sha256,change:'revise_edit'}:null):
+    sourceFor(kind,kind==='take'||kind==='camera_sequence'?
+      currentScene:scene,currentTake));
   const fingerprint=selectedOriginal
     ?[projectId,kind,selectedOriginal.id,selectedOriginal.revision,
       selectedOriginal.sha256].join('|'):null;
+  const typedOperation=(kind==='sound_cue'||kind==='editorial_cut');
   const usableImpact=impact?.fingerprint===fingerprint &&
     impact?.data?.status==='READ_ONLY_IMPACT_PREVIEW_NO_CREATOR_GRANT' &&
-    impact?.data?.indexed_downstream_truncated===false;
+    impact?.data?.indexed_downstream_truncated===false &&
+    (!typedOperation || (impact.typed?.status==='READ_ONLY_TYPED_DECISION_NO_GRANT'
+      && impact.typed?.creative_approval_granted===false
+      && impact.typed?.native_worker_authorized===false));
   useEffect(()=>{setImpact(null)},[fingerprint]);
   // Never present prior Take/project suggestions as if selected for the
   // currently viewed original source. The native receipt itself remains
@@ -109,6 +136,8 @@ export default function WO6CreatorActionsPanel({projectId}){
         setSceneId(old=>old||response.scenes[0]?.id||'');
         setTakeId(old=>old||response.takes[0]?.id||'');
         setTimelineId(old=>old||response.timelines[0]?.id||'');
+        setSoundSourceId(old=>old||response.audio_sources?.[0]?.id||'');
+        setSlateGraphId(old=>old||response.slate_graphs?.[0]?.id||'');
         setProblem('');
       }catch(e){if(live)setProblem(errorText(e))}
     }
@@ -121,6 +150,10 @@ export default function WO6CreatorActionsPanel({projectId}){
     setAiReview(null);
     setDirectorTypedChange(false);
     setCatalog(data);
+    setSoundSourceId(old=>data.audio_sources?.some(x=>x.id===old)?
+      old:(data.audio_sources?.[0]?.id||''));
+    setSlateGraphId(old=>data.slate_graphs?.some(x=>x.id===old)?
+      old:(data.slate_graphs?.[0]?.id||''));
     setSceneId(old=>data.scenes.find(x=>x.id===old)?old:(data.scenes[0]?.id||''));
     setTakeId(old=>data.takes.find(x=>x.id===old)?old:(data.takes[0]?.id||''));
   };
@@ -132,6 +165,17 @@ export default function WO6CreatorActionsPanel({projectId}){
   };
   const preview=()=>run(async()=>{
     if(!selectedOriginal)throw new Error('Select a real source revision first');
+    let typed=null;
+    let typedFingerprint=null;
+    if(typedOperation){
+      const request=typedDecision();
+      typedFingerprint=JSON.stringify(request);
+      typed=await native().wo6_preview_typed_decision(request);
+      if(typed?.status!=='READ_ONLY_TYPED_DECISION_NO_GRANT'||
+          !typed.typed_preview_sha256||
+          typed.native_worker_authorized!==false)
+        throw new Error('Real native sound/editorial preview was not source-verified');
+    }
     const data=await native().wo6_source_impact({
       project_id:projectId,source_id:selectedOriginal.id,
       source_revision:selectedOriginal.revision,
@@ -139,7 +183,7 @@ export default function WO6CreatorActionsPanel({projectId}){
       change_kind:selectedOriginal.change,
     });
     if(!data?.preview_sha256)throw new Error('Native source impact proof is incomplete');
-    setImpact({fingerprint,data});
+    setImpact({fingerprint,data,typed,typedFingerprint});
     setReceipt(null);
   });
   function exactInteger(text,label){
@@ -148,6 +192,57 @@ export default function WO6CreatorActionsPanel({projectId}){
     const number=Number(text);
     if(!Number.isSafeInteger(number))throw new Error(label+' exceeds exact JS integer');
     return number;
+  }
+  function typedDecision(){
+    if(!typedOperation||!selectedOriginal)
+      throw new Error('Choose a native recorded sound timeline or slate graph');
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(newId))
+      throw new Error('Choose a new immutable native sound/edit ID');
+    if(!directorReason.trim()||directorReason.trim().length<12||
+        directorReason.trim().length>512)
+      throw new Error('Enter your independent sound/editorial creative reason');
+    let payload,duration_tick;
+    if(kind==='sound_cue'){
+      if(!currentTake||!currentTakeTimeline||!currentSound||
+          !/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(soundEventId)||
+          !/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(soundSubject))
+        throw new Error('Choose a source sound, cue ID and subject for the selected Take');
+      const gain=Number(soundGain);
+      if(!soundGain.trim()||!Number.isFinite(gain)||gain<0||gain>2)
+        throw new Error('Enter bounded independent PCM gain');
+      payload={
+        cue_id:soundEventId,subject_id:soundSubject,
+        start_tick:exactInteger(startTick,'Sound start'),
+        end_tick:exactInteger(endTick,'Sound end'),
+        recorded_sound_id:currentSound.id,
+        recorded_sound_revision:currentSound.revision,
+        recorded_sound_sha256:currentSound.sha256,
+        first_sample:exactInteger(soundFirstSample,'PCM start sample'),
+        gain,
+      };
+      duration_tick=String(currentTakeTimeline.data.duration_tick);
+    }else{
+      if(!currentGraph||!currentTake||!editSegments.length||
+          editSegments.length>64)
+        throw new Error('Select one bounded original-slate edit');
+      payload=editSegments.map((entry,i)=>{
+        if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(entry.segment_id)||
+            !currentGraph.data.nodes.some(node=>node.branch_id===entry.branch_id))
+          throw new Error('Choose original branch and unique segment ID for row '+(i+1));
+        return {
+          segment_id:entry.segment_id,branch_id:entry.branch_id,
+          source_in_tick:exactInteger(entry.source_in_tick,'Source in'),
+          source_out_tick:exactInteger(entry.source_out_tick,'Source out'),
+        };
+      });
+      duration_tick=null;
+    }
+    return {
+      project_id:projectId,decision_kind:kind,decision_id:newId,
+      source_id:selectedOriginal.id,source_revision:selectedOriginal.revision,
+      source_sha256:selectedOriginal.sha256,payload,duration_tick,
+      director_reason:directorReason.trim(),
+    };
   }
   function shotOpinions(){
     const target=selectedPath||paths[0]?.[0];
@@ -174,7 +269,11 @@ export default function WO6CreatorActionsPanel({projectId}){
     if(aiReview&&(kind!==aiReview.action_kind||
         currentTake?.sha256!==aiReview.take_sha256||
         !directorTypedChange||directorReason.trim().length<12))
-      throw new Error('Enter independent shot values and a director-written reason');
+      throw new Error('Enter independent values and a director-written reason');
+    const typed=typedOperation?typedDecision():null;
+    if(typedOperation&&(!impact?.typed?.typed_preview_sha256||
+        impact.typedFingerprint!==JSON.stringify(typed)))
+      throw new Error('Sound/editorial values changed after native typed preview; inspect again');
     const preview_sha256=impact.data.preview_sha256;
     const common={project_id:projectId,preview_sha256};
     let response;
@@ -194,6 +293,13 @@ export default function WO6CreatorActionsPanel({projectId}){
         ...common,decision_kind:'color',decision_id:newId,
         source_id:currentTake.id,source_revision:currentTake.revision,
         source_sha256:currentTake.sha256,payload:color,duration_tick:null,
+      });
+    }else if(typedOperation){
+      response=await native().wo6_create_decision({
+        ...typed,
+        preview_sha256,
+        typed_preview_sha256:impact.typed.typed_preview_sha256,
+        ...(aiReview?{reviewed_proposal_id:aiReview.proposal_id}:{}),
       });
     }else if(kind==='camera_sequence'){
       if(!currentScene)throw new Error('Select current scene');
@@ -295,6 +401,12 @@ export default function WO6CreatorActionsPanel({projectId}){
     setSelectedPath('');
     setDirectorReason('');
     setDirectorTypedChange(false);
+    setSoundEventId('');
+    setSoundSubject('');
+    setSoundFirstSample('');
+    setSoundGain('');
+    setEditSegments([{segment_id:'',branch_id:'',source_in_tick:'',
+      source_out_tick:''}]);
     setImpact(null);
     setReceipt(null);
   });
@@ -365,6 +477,8 @@ export default function WO6CreatorActionsPanel({projectId}){
             <option value="camera">Camera adjustment</option>
             <option value="blocking">Actor or prop blocking</option>
             <option value="lighting">Lighting adjustment</option>
+            <option value="sound_cue">Recorded PCM sound cue</option>
+            <option value="editorial_cut">Digital-slate editorial cut</option>
           </select></label>
           <button type="button" disabled={busy||!aiReviewKind||
             !currentTake||currentTake.sha256!==aiProposal.proposal.take_sha256}
@@ -389,6 +503,70 @@ export default function WO6CreatorActionsPanel({projectId}){
       disabled={busy} onChange={e=>setTimelineId(e.target.value)}>
       {catalog?.timelines?.map(x=><option key={x.id} value={x.id}>{x.id} · rev {x.revision}</option>)}
     </select></label>}
+    {kind==='editorial_cut'&&<label>Original digital-slate graph<select
+      value={slateGraphId} disabled={busy}
+      onChange={e=>{setSlateGraphId(e.target.value);setImpact(null)}}>
+      {catalog?.slate_graphs?.map(x=><option key={x.id} value={x.id}>
+        {x.id} · rev {x.revision}</option>)}
+    </select></label>}
+    {kind==='sound_cue'&&<div aria-label="Original PCM sound cue editor">
+      <p>Original Take timeline: {currentTakeTimeline?.id||'none'}.
+      Original source samples remain unchanged; this creates a separate
+      event timeline with an independently chosen sound cue.</p>
+      <label>Recorded sound source<select value={soundSourceId} disabled={busy}
+        onChange={e=>{setSoundSourceId(e.target.value);setImpact(null)}}>
+        {catalog?.audio_sources?.map(x=><option key={x.id} value={x.id}>
+          {x.id} · {x.data.sample_count} native 48 kHz samples</option>)}
+      </select></label>
+      <label>New sound event ID<input value={soundEventId} disabled={busy}
+        onChange={e=>{setSoundEventId(e.target.value);setImpact(null);
+          if(aiReview)setDirectorTypedChange(true)}}/></label>
+      <label>Original subject ID<input value={soundSubject} disabled={busy}
+        onChange={e=>{setSoundSubject(e.target.value);setImpact(null);
+          if(aiReview)setDirectorTypedChange(true)}}/></label>
+      <label>Recorded PCM first sample<input value={soundFirstSample}
+        disabled={busy} onChange={e=>{setSoundFirstSample(e.target.value);
+          setImpact(null);if(aiReview)setDirectorTypedChange(true)}}/></label>
+      <label>Director-chosen cue gain 0–2<input value={soundGain}
+        disabled={busy} onChange={e=>{setSoundGain(e.target.value);
+          setImpact(null);if(aiReview)setDirectorTypedChange(true)}}/></label>
+    </div>}
+    {kind==='editorial_cut'&&<div aria-label="Human-authored digital-slate editorial assembly">
+      <p>Choose the exact original Take or shot branch and source in/out
+      ticks for each editorial segment. Rearrange rows manually; no
+      source retiming or final-picture rendering occurs here.</p>
+      {editSegments.map((entry,i)=><div key={i} className="columns">
+        <label>Segment ID {i+1}<input value={entry.segment_id}
+          disabled={busy} onChange={e=>{setEditSegments(old=>old.map((r,j)=>
+            j===i?{...r,segment_id:e.target.value}:r));setImpact(null);
+            if(aiReview)setDirectorTypedChange(true)}}/></label>
+        <label>Source branch {i+1}<select value={entry.branch_id} disabled={busy}
+          onChange={e=>{setEditSegments(old=>old.map((r,j)=>
+            j===i?{...r,branch_id:e.target.value}:r));setImpact(null);
+            if(aiReview)setDirectorTypedChange(true)}}>
+          <option value="">Choose original source</option>
+          {currentGraph?.data?.nodes?.map(node=><option key={node.branch_id}
+            value={node.branch_id}>{node.branch_id} · {node.take_id}</option>)}
+        </select></label>
+        <label>Source in tick {i+1}<input value={entry.source_in_tick}
+          disabled={busy} onChange={e=>{setEditSegments(old=>old.map((r,j)=>
+            j===i?{...r,source_in_tick:e.target.value}:r));setImpact(null);
+            if(aiReview)setDirectorTypedChange(true)}}/></label>
+        <label>Source out tick {i+1}<input value={entry.source_out_tick}
+          disabled={busy} onChange={e=>{setEditSegments(old=>old.map((r,j)=>
+            j===i?{...r,source_out_tick:e.target.value}:r));setImpact(null);
+            if(aiReview)setDirectorTypedChange(true)}}/></label>
+        {editSegments.length>1&&<button type="button" disabled={busy}
+          onClick={()=>{setEditSegments(old=>old.filter((_,j)=>j!==i));
+            setImpact(null);if(aiReview)setDirectorTypedChange(true)}}>
+          Remove segment {i+1}</button>}
+      </div>)}
+      <button type="button" disabled={busy||editSegments.length>=64}
+        onClick={()=>{setEditSegments(old=>[...old,{
+          segment_id:'',branch_id:'',source_in_tick:'',source_out_tick:'',
+        }]);setImpact(null);if(aiReview)setDirectorTypedChange(true)}}>
+        Add source segment</button>
+    </div>}
     {paths.length>0&&kind!=='take'&&kind!=='color'&&<label>Authored OpenUSD object<select
       value={selectedPath||paths[0]?.[0]||''} disabled={busy} onChange={e=>setSelectedPath(e.target.value)}>
       {paths.map(([path,role])=><option key={path} value={path}>{path} · {role}</option>)}
@@ -400,22 +578,24 @@ export default function WO6CreatorActionsPanel({projectId}){
       {kind==='camera'?'Focal length (mm)':kind==='lighting'?'Light intensity':'XYZ offset (x,y,z)'}
       <input disabled={busy} value={value} onChange={e=>{setValue(e.target.value);if(aiReview)setDirectorTypedChange(true)}}/>
     </label>}
-    {kind!=='color'&&kind!=='take'&&<label>End Film Time tick<input
+    {kind!=='color'&&kind!=='take'&&kind!=='editorial_cut'&&<label>End Film Time tick<input
       value={endTick} disabled={busy} onChange={e=>setEndTick(e.target.value)}/></label>}
-    {kind!=='color'&&kind!=='take'&&kind!=='camera_sequence'&&<label>Start tick<input
+    {kind!=='color'&&kind!=='take'&&kind!=='camera_sequence'&&kind!=='editorial_cut'&&<label>Start tick<input
       value={startTick} disabled={busy} onChange={e=>setStartTick(e.target.value)}/></label>}
-    {aiReview&&<div aria-label="Human-reviewed AI consultation for manual source change">
-      <h3>Director's independent shot decision</h3>
-      <p>AI consultation {aiReview.proposal_id} was reviewed but granted
-      no native permission. The model suggestion is linked by SHA;
-      it cannot choose your numeric values or your new shot identity.</p>
-      <p>Model text SHA: {aiReview.model_text_sha256}</p>
+    {(aiReview||typedOperation)&&<div aria-label="Human-reviewed AI consultation for manual source change">
+      <h3>Director's independent source decision</h3>
+      {aiReview&&<><p>AI consultation {aiReview.proposal_id} was reviewed but
+      granted no native permission. The model suggestion is linked by SHA;
+      it cannot choose your values or your new source identity.</p>
+      <p>Model text SHA: {aiReview.model_text_sha256}</p></>}
       <label>Director-written creative reason<textarea value={directorReason}
         maxLength={512} disabled={busy}
-        placeholder="Explain my independently selected camera, actor or lighting change"
-        onChange={e=>setDirectorReason(e.target.value)}/></label>
-      <p>After entering your own shot value, new object ID and reason,
-      inspect a fresh source impact before requesting both OS confirmations.</p>
+        placeholder="Explain my independently selected camera, actor, sound or editorial change"
+        onChange={e=>{setDirectorReason(e.target.value);setImpact(null);
+          if(aiReview)setDirectorTypedChange(true)}}/></label>
+      <p>After entering your own source values, new object ID and reason,
+      inspect both source-impact and exact typed-preview receipts before
+      requesting both OS confirmations.</p>
     </div>}
     <label>New immutable object ID<input value={newId} disabled={busy}
       onChange={e=>setNewId(e.target.value)} placeholder="director_new_shot_001"/></label>
@@ -431,6 +611,8 @@ export default function WO6CreatorActionsPanel({projectId}){
     {impact&&<div><h3>Read-only source-impact receipt</h3>
       <p>{impact.data.status}. Source SHA: {impact.data.preview_sha256}.
         This review does not grant tool permission.</p>
+      {impact.typed&&<p>Exact independently entered {kind} preview SHA:
+        {impact.typed.typed_preview_sha256}. No native worker has been admitted.</p>}
       <pre style={{maxHeight:280,overflow:'auto'}}>{JSON.stringify(
         impact.data,null,2).slice(0,7000)}</pre>
       </div>}

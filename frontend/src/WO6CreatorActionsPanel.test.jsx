@@ -9,6 +9,9 @@ const sceneSha='b'.repeat(64);
 const timelineSha='c'.repeat(64);
 const takeSha='d'.repeat(64);
 const previewSha='e'.repeat(64);
+const soundSha='f'.repeat(64);
+const slateSha='9'.repeat(64);
+const typedSha='8'.repeat(64);
 const catalog={
   format:'nvp.wo6.director_desktop_native_consent.v1',
   project_id:pid,model_execute_enabled:false,
@@ -21,8 +24,18 @@ const catalog={
     sha256:timelineSha,data:{duration_tick:7056000000*3}}],
   takes:[{id:'TakeA',kind:'take',revision:1,sha256:takeSha,
     data:{scene_id:'SceneA',scene_revision:1,
-      scene_document_sha256:sceneSha}}],
+      scene_document_sha256:sceneSha,
+      timeline_id:'TimelineA',timeline_revision:1,
+      timeline_document_sha256:timelineSha}}],
   grades:[],
+  audio_sources:[{id:'OriginalPCM',kind:'audio',revision:1,
+    sha256:soundSha,data:{format:'nvp.data_av.recorded_pcm.v1',
+      sample_count:48000}}],
+  slate_graphs:[{id:'SlateA',kind:'presentation',revision:1,
+    sha256:slateSha,data:{format:'nvp.slate.branch_graph.v1',
+      nodes:[{branch_id:'root_take',take_id:'TakeA',
+        take_document_sha256:takeSha,
+        source_start_tick:0,source_end_tick:2*7056000000}]}}],
 };
 const impact={
   status:'READ_ONLY_IMPACT_PREVIEW_NO_CREATOR_GRANT',
@@ -34,6 +47,13 @@ function native(overrides={}){
   const api={
     wo6_source_catalog:vi.fn(async()=>catalog),
     wo6_source_impact:vi.fn(async()=>impact),
+    wo6_preview_typed_decision:vi.fn(async()=>({
+      status:'READ_ONLY_TYPED_DECISION_NO_GRANT',
+      typed_preview_sha256:typedSha,
+      creative_approval_granted:false,
+      native_worker_authorized:false,
+      rendered_sound:false,
+    })),
     wo6_create_take:vi.fn(async()=>({
       format:'nvp.wo6.director_desktop_native_consent.v1',
       queued_task_id:'wo6take_'+'1'.repeat(24),
@@ -214,7 +234,7 @@ describe('WO6 installed creator-native first-party actions',()=>{
     fireEvent.change(screen.getByLabelText('Focal length (mm)'),
       {target:{value:'85'}});
     fireEvent.change(screen.getByPlaceholderText(
-      'Explain my independently selected camera, actor or lighting change'),
+      'Explain my independently selected camera, actor, sound or editorial change'),
       {target:{value:humanReason}});
     fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
       {target:{value:'HumanOriginalShotA'}});
@@ -241,6 +261,116 @@ describe('WO6 installed creator-native first-party actions',()=>{
     expect(host.wo6_create_take).not.toHaveBeenCalled();
     expect(host.wo6_create_decision).not.toHaveBeenCalled();
     expect(host.wo6_cancel_native_task).not.toHaveBeenCalled();
+  });
+
+  it('creates an independently typed original PCM sound cue only after exact source and sample preview',async()=>{
+    const host=native();
+    render(<WO6CreatorActionsPanel projectId={pid}/>);
+    await screen.findByText(/SceneA · rev 1/);
+    fireEvent.change(screen.getByLabelText('Operation'),
+      {target:{value:'sound_cue'}});
+    fireEvent.change(screen.getByLabelText('New sound event ID'),
+      {target:{value:'HumanFoleyA'}});
+    fireEvent.change(screen.getByLabelText('Original subject ID'),
+      {target:{value:'Actor'}});
+    fireEvent.change(screen.getByLabelText('Recorded PCM first sample'),
+      {target:{value:'0'}});
+    fireEvent.change(screen.getByLabelText('Director-chosen cue gain 0–2'),
+      {target:{value:'0.5'}});
+    fireEvent.change(screen.getByPlaceholderText(
+      'Explain my independently selected camera, actor, sound or editorial change'),
+      {target:{value:'I independently placed a one-second original PCM cue.'}});
+    fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
+      {target:{value:'NewSoundTimelineA'}});
+    expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
+    fireEvent.click(screen.getByText('Inspect source impact'));
+    const typed={
+      project_id:pid,decision_kind:'sound_cue',
+      decision_id:'NewSoundTimelineA',
+      source_id:'TimelineA',source_revision:1,source_sha256:timelineSha,
+      payload:{
+        cue_id:'HumanFoleyA',subject_id:'Actor',
+        start_tick:0,end_tick:7056000000,
+        recorded_sound_id:'OriginalPCM',recorded_sound_revision:1,
+        recorded_sound_sha256:soundSha,
+        first_sample:0,gain:0.5,
+      },
+      duration_tick:String(7056000000*3),
+      director_reason:'I independently placed a one-second original PCM cue.',
+    };
+    await waitFor(()=>expect(host.wo6_preview_typed_decision)
+      .toHaveBeenCalledWith(typed));
+    await waitFor(()=>expect(host.wo6_source_impact).toHaveBeenCalledWith({
+      project_id:pid,source_id:'TimelineA',source_revision:1,
+      source_sha256:timelineSha,change_kind:'revise_sound',
+    }));
+    await waitFor(()=>expect(screen.getByText(
+      'Request two OS approvals and execute').disabled).toBe(false));
+    fireEvent.click(screen.getByText('Request two OS approvals and execute'));
+    await waitFor(()=>expect(host.wo6_create_decision).toHaveBeenCalledWith({
+      ...typed,preview_sha256:previewSha,typed_preview_sha256:typedSha,
+    }));
+    expect(host.wo6_create_shot).not.toHaveBeenCalled();
+    expect(host.wo6_create_take).not.toHaveBeenCalled();
+  });
+
+  it('requires original slate source intervals and fresh typed preview before native editorial cut',async()=>{
+    const host=native();
+    render(<WO6CreatorActionsPanel projectId={pid}/>);
+    await screen.findByText(/SceneA · rev 1/);
+    fireEvent.change(screen.getByLabelText('Operation'),
+      {target:{value:'editorial_cut'}});
+    fireEvent.change(screen.getByLabelText('Segment ID 1'),
+      {target:{value:'first_cue'}});
+    fireEvent.change(screen.getByLabelText('Source branch 1'),
+      {target:{value:'root_take'}});
+    fireEvent.change(screen.getByLabelText('Source in tick 1'),
+      {target:{value:'0'}});
+    fireEvent.change(screen.getByLabelText('Source out tick 1'),
+      {target:{value:String(7056000000)}});
+    fireEvent.click(screen.getByText('Add source segment'));
+    fireEvent.change(screen.getByLabelText('Segment ID 2'),
+      {target:{value:'second_cue'}});
+    fireEvent.change(screen.getByLabelText('Source branch 2'),
+      {target:{value:'root_take'}});
+    fireEvent.change(screen.getByLabelText('Source in tick 2'),
+      {target:{value:String(7056000000)}});
+    fireEvent.change(screen.getByLabelText('Source out tick 2'),
+      {target:{value:String(2*7056000000)}});
+    fireEvent.change(screen.getByPlaceholderText(
+      'Explain my independently selected camera, actor, sound or editorial change'),
+      {target:{value:'I chose these two source-backed editorial segments.'}});
+    fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
+      {target:{value:'HumanAssembledCut'}});
+    expect(host.wo6_create_decision).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Inspect source impact'));
+    const typed={
+      project_id:pid,decision_kind:'editorial_cut',
+      decision_id:'HumanAssembledCut',
+      source_id:'SlateA',source_revision:1,source_sha256:slateSha,
+      payload:[
+        {segment_id:'first_cue',branch_id:'root_take',
+         source_in_tick:0,source_out_tick:7056000000},
+        {segment_id:'second_cue',branch_id:'root_take',
+         source_in_tick:7056000000,source_out_tick:2*7056000000},
+      ],
+      duration_tick:null,
+      director_reason:'I chose these two source-backed editorial segments.',
+    };
+    await waitFor(()=>expect(host.wo6_preview_typed_decision)
+      .toHaveBeenCalledWith(typed));
+    await waitFor(()=>expect(host.wo6_source_impact).toHaveBeenCalledWith({
+      project_id:pid,source_id:'SlateA',source_revision:1,
+      source_sha256:slateSha,change_kind:'revise_edit',
+    }));
+    await waitFor(()=>expect(screen.getByText(
+      'Request two OS approvals and execute').disabled).toBe(false));
+    fireEvent.click(screen.getByText('Request two OS approvals and execute'));
+    await waitFor(()=>expect(host.wo6_create_decision).toHaveBeenCalledWith({
+      ...typed,preview_sha256:previewSha,typed_preview_sha256:typedSha,
+    }));
+    expect(host.wo6_create_take).not.toHaveBeenCalled();
+    expect(host.wo6_create_shot).not.toHaveBeenCalled();
   });
 
   it('rejects a stale/unfinished impact preview and never sends worker request',async()=>{
