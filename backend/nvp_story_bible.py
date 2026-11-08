@@ -269,6 +269,10 @@ class StoryBible:
     @staticmethod
     def _hydrate(db, row):
         entity_id=row["id"]
+        # FILM03-02: ONE canonical stable ActorID, never a duplicate
+        # random foreign key. Every castable character, including an
+        # object actor, carries its original StoryBible ID across renames.
+        row["actor_id"] = entity_id if row["kind"] == "character" else None
         row["aliases"]=[r["display_name"] for r in db.execute(
             "SELECT display_name FROM bible_names WHERE entity_id=? AND is_primary=0 ORDER BY display_name",
             (entity_id,)).fetchall()]
