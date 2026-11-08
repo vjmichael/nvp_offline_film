@@ -11,7 +11,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 from zipfile import ZipFile
-from PIL import Image,ImageDraw
+from PIL import Image,ImageDraw,ImageStat
 
 FORMAT="nvp.film01.verified_original_frame_contact_sheet.v1"
 SELECTED=(0,96,239,240,360,479,480,624,719)
@@ -51,12 +51,20 @@ def create_original_contact_sheet(source_zip,output_png,receipt_json):
                 im.load()
                 if im.format!="PNG" or im.mode!="RGB" or im.size!=(640,360):
                     raise RuntimeError("Unexpected original scene image geometry")
+                brightness=ImageStat.Stat(im).mean
                 tile=im.resize(THUMB,resample=Image.Resampling.LANCZOS)
-                tiles.append((frame,tile.copy(),row))
+                tiles.append((frame,tile.copy(),row,
+                              [round(v,2) for v in brightness]))
     out=Image.new("RGB",OUTPUT_SIZE,BG)
     draw=ImageDraw.Draw(out)
+    original_start_takes={
+        row["original_source_take_sha256"] for frame,_,row,_ in tiles
+        if frame in (0,240,480)
+    }
+    if len(original_start_takes)!=3:
+        raise RuntimeError("Original short contact sheet lacks three pinned source Takes")
     seen=[]
-    for i,(frame,tile,row) in enumerate(tiles):
+    for i,(frame,tile,row,brightness) in enumerate(tiles):
         column=i%3;line=i//3
         x=SPACING+column*(THUMB[0]+SPACING)
         y=SPACING+line*(THUMB[1]+HEADER+SPACING)
@@ -68,6 +76,7 @@ def create_original_contact_sheet(source_zip,output_png,receipt_json):
             "frame_zero":frame,"source_segment_id":row["source_segment_id"],
             "original_take_sha256":row["original_source_take_sha256"],
             "source_frame_sha256":row["frame_png_sha256"],
+            "original_scene_mean_RGB_8bit":brightness,
         })
     temp=target.with_name(target.name+".partial")
     if temp.exists() or temp.is_symlink():
@@ -85,6 +94,10 @@ def create_original_contact_sheet(source_zip,output_png,receipt_json):
         "contact_sheet_dimensions":list(OUTPUT_SIZE),
         "verified_actual_usd_source_tiles":seen,
         "native_film_frames_original":True,
+        "verified_three_separate_frozen_scene_takes":True,
+        "original_pixel_sha_diversity_sample":len({
+            x["source_frame_sha256"] for x in seen}),
+        "appearance_and_creative_quality_not_algorithmically_graded":True,
         "storyboard_is_playable_video":False,
         "representative_images_only":True,
         "light_fx_already_applied":False,
