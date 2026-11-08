@@ -239,7 +239,8 @@ class NativeFilmDecisionHost:
                        screenplay_revision=None, expected_bible_digest=None,
                        ram_mb=4096, expires_in_seconds=1800,
                        ai_review_context=None, reviewed_original_take_id=None,
-                       expected_typed_preview_sha256=None):
+                       expected_typed_preview_sha256=None,
+                       director_reason=None):
         if not isinstance(scope, TrustedReadScope):
             raise PermissionError("Native actor/project/turn context required")
         if (type(creator_decision_id) is not str or
@@ -272,8 +273,13 @@ class NativeFilmDecisionHost:
                 raise ValueError("Editorial requires exact immutable slate branches")
         if decision_kind in ("sound_cue","editorial_cut"):
             _sha(expected_typed_preview_sha256)
-        elif expected_typed_preview_sha256 is not None:
-            raise ValueError("Typed preview proof applies only to native sound/editorial")
+            if (type(director_reason) is not str or
+                    not 12<=len(director_reason.strip())<=512):
+                raise ValueError("Independent sound/editorial creative reason required")
+            director_reason=director_reason.strip()
+        elif (expected_typed_preview_sha256 is not None or
+              director_reason is not None):
+            raise ValueError("Sound/editorial typed preview and reason cannot affect older operations")
         reviewed=None
         if ai_review_context is not None:
             reviewed=_validate_ai_review_context(
@@ -297,6 +303,7 @@ class NativeFilmDecisionHost:
         }
         if decision_kind in ("sound_cue","editorial_cut"):
             spec["typed_preview_sha256"]=expected_typed_preview_sha256
+            spec["director_reason"]=director_reason
         if reviewed is not None:
             spec["reviewed_ai_consultation"]=reviewed
             spec["reviewed_original_take_id"]=reviewed_original_take_id
@@ -314,6 +321,9 @@ class NativeFilmDecisionHost:
             "no_original_take_or_scene_mutation": True,
             "no_render_or_release_approval": True,
         }
+        if decision_kind in ("sound_cue","editorial_cut"):
+            spec["creative_scope"]["director_reason"]=director_reason
+            spec["creative_scope"]["typed_preview_sha256"]=expected_typed_preview_sha256
         if reviewed is not None:
             spec["creative_scope"]["reviewed_ai_consultation"]=reviewed
             spec["creative_scope"]["model_text_is_authority"]=False
