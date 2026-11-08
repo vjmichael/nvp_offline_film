@@ -100,7 +100,7 @@ def add_actors(take):
     donut=bpy.data.objects.new("NVP_DonutActor",mesh)
     bpy.context.collection.objects.link(donut)
     donut.data.materials.append(material("NVP_Donut_Reflective_Copper",
-        (.58,.38,.22),.52,.17))
+        (.42,.205,.092),.86,.22))
     # source geometry local positions already are original original metres
     bpy.ops.mesh.primitive_cube_add(size=.8)
     box=bpy.context.object
@@ -146,12 +146,12 @@ def add_set_and_lights():
     light=bpy.data.lights.new("NVP_Key_Area","AREA")
     key=bpy.data.objects.new("NVP_Key_Area",light)
     bpy.context.collection.objects.link(key)
-    key.location=(2.8,3.,5.)
+    key.location=(3.2,3.4,5.5)
     direction=Vector((0.,0.,-1.))-key.location
     key.rotation_euler=direction.to_track_quat("-Z","Y").to_euler()
-    light.energy=850
+    light.energy=800
     light.shape="DISK"
-    light.size=1.8
+    light.size=1.15
 
     fill_data=bpy.data.lights.new("NVP_Artist_Fill","AREA")
     fill=bpy.data.objects.new("NVP_Artist_Fill",fill_data)
@@ -161,6 +161,18 @@ def add_set_and_lights():
     fill.rotation_euler=direction.to_track_quat("-Z","Y").to_euler()
     fill_data.shape="DISK";fill_data.size=3.2
     fill_data.energy=0
+
+    # Controlled edge definition: the accepted baseline lacked a clear
+    # metallic rim. This is a real area light, never a composited glow.
+    rim_data=bpy.data.lights.new("NVP_Cool_Rim","AREA")
+    rim=bpy.data.objects.new("NVP_Cool_Rim",rim_data)
+    bpy.context.collection.objects.link(rim)
+    rim.location=(-2.6,-2.1,3.9)
+    rim.rotation_euler=(Vector((0.,0.,0.))-rim.location).to_track_quat("-Z","Y").to_euler()
+    rim_data.energy=125
+    rim_data.color=(.67,.79,1.)
+    rim_data.shape="DISK"
+    rim_data.size=2.2
 
     sun_data=bpy.data.lights.new("NVP_Fixed_Summer_3PM","SUN")
     sun=bpy.data.objects.new("NVP_Fixed_Summer_3PM",sun_data)
@@ -172,8 +184,8 @@ def add_set_and_lights():
     world=bpy.data.worlds.new("NVP_Original_Studio_Sky")
     world.use_nodes=True
     world.node_tree.nodes["Background"].inputs["Color"].default_value=(
-        .22,.27,.35,1)
-    world.node_tree.nodes["Background"].inputs["Strength"].default_value=.25
+        .17,.21,.27,1)
+    world.node_tree.nodes["Background"].inputs["Strength"].default_value=.19
     bpy.context.scene.world=world
     return fill,sun
 
@@ -206,7 +218,6 @@ def main():
     scene.render.resolution_percentage=100
     scene.render.image_settings.file_format="PNG"
     scene.render.image_settings.color_mode="RGB"
-    scene.render.film_transparent=False
     scene.render.film_transparent=False
     scene.frame_start=1;scene.frame_end=FRAMES;scene.render.fps=FPS
     actors=add_actors(take)
