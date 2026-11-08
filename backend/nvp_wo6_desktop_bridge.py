@@ -729,6 +729,27 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             sound_timeline_revision=request["sound_timeline_revision"],
             sound_timeline_sha256=request["sound_timeline_sha256"])
 
+    def wo6_07f_rendered_av_window(self,request):
+        """Real 3D pixels and source PCM in source-locked finite 24fps windows.
+
+        Read-only installed native IPC; never an implicit renderer worker
+        grant, artist master approval or proof of sustained installed fps.
+        """
+        self._wo6_require(request,{
+            "project_id","edit_id","edit_revision","edit_sha256",
+            "first_frame","count","camera_path",
+            "sound_timeline_id","sound_timeline_revision",
+            "sound_timeline_sha256"})
+        from backend.nvp_wo6_07f_rendered_av import rendered_source_window
+        return rendered_source_window(
+            self.index,request["project_id"],request["edit_id"],
+            request["edit_revision"],request["edit_sha256"],
+            request["first_frame"],request["count"],
+            camera_path=request["camera_path"],
+            sound_timeline_id=request["sound_timeline_id"],
+            sound_timeline_revision=request["sound_timeline_revision"],
+            sound_timeline_sha256=request["sound_timeline_sha256"])
+
     def wo6_task_status(self,project_id,task_id):
         self._wo5_project(project_id)
         self._wo6_host()
