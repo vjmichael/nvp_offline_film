@@ -47,7 +47,10 @@ def verify_shader_id(stage, path, expected):
 
 def verify_literal_input(shader,name,expected,*,type_name=None):
     inp=shader.GetInput(name)
-    if not inp or inp.HasConnectedSource():
+    # A dangling or unresolved authored edge can be invisible to
+    # HasConnectedSource(), yet become live under USD composition. Literal
+    # settings are never allowed to carry *any* connection path.
+    if not inp or inp.GetAttr().GetConnections():
         raise RuntimeError("Literal original USD shader setting rewired")
     if type_name is not None and inp.GetTypeName()!=type_name:
         raise RuntimeError("Original USD shader setting type changed")
