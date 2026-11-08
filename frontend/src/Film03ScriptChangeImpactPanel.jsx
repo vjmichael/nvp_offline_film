@@ -7,6 +7,8 @@ export default function Film03ScriptChangeImpactPanel({project, api}) {
   const [impact, setImpact] = useState(null);
   const [error, setError] = useState('');
   const [working, setWorking] = useState(false);
+  const [snapshotNotice, setSnapshotNotice] = useState('');
+  const [newScriptId, setNewScriptId] = useState('NvpFilm03MainDialogue');
   const root = '/projects/' + project.id + '/film03';
 
   useEffect(() => {
@@ -35,10 +37,56 @@ export default function Film03ScriptChangeImpactPanel({project, api}) {
     finally {setWorking(false);}
   }
 
+  async function publishSnapshot() {
+    const native = window.pywebview?.api?.film03_publish_script_snapshot;
+    if (typeof native !== 'function') {
+      setError('New authoritative script snapshots require the installed NVP desktop native approval.');
+      return;
+    }
+    const chosen = sources.find(s=>s.script_id===scriptId);
+    const id = chosen?.script_id || newScriptId.trim();
+    if (!/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/.test(id)) {
+      setError('Enter a stable source identity, beginning with a letter.');
+      return;
+    }
+    if (!window.confirm('Capture this screenplay as a NEW immutable source revision? Previous script, dialogue, voices and Takes remain preserved. The desktop host will separately request permission.')) return;
+    setWorking(true); setError(''); setSnapshotNotice('');
+    try {
+      const result = await native({
+        project_id: project.id, script_id:id,
+        expected_screenplay_revision:project.revision,
+        expected_manifest_revision:chosen?.revision || 0,
+      });
+      if (result?.format !== 'nvp.film03.native_director_script_snapshot_result.v1' ||
+          result?.host_native_director_confirmation !== true ||
+          result?.original_spoken_voice_mutated !== false ||
+          result?.original_visual_take_mutated !== false ||
+          result?.film_or_native_worker_execution_authorized !== false)
+        throw new Error('Unverified native creator source result');
+      const updated = await api(root + '/script-sources');
+      setSources(updated.sources || []);
+      setScriptId(id); setImpact(null);
+      setSnapshotNotice('New script source revision ' + result.revision +
+        ' captured under desktop director confirmation; old work remains intact.');
+    } catch(e){setError(e.message);}
+    finally {setWorking(false);}
+  }
+
   return <section className="card" aria-label="Screenplay dialogue source impact">
     <h3>Script changes → dialogue and production bible</h3>
     <p className="fineprint">Compare your current screenplay to an exact saved FILM03 script snapshot. Earlier actor recordings, wardrobe links, OpenUSD Takes, editorial selections and source revisions are never silently replaced.</p>
     {error && <p role="alert">{error}</p>}
+    {snapshotNotice && <p role="status">{snapshotNotice}</p>}
+    <h4>Capture original screenplay as an immutable line source</h4>
+    {!sources.length && <label>New script source ID
+      <input aria-label="New script source ID" value={newScriptId} maxLength={80}
+        onChange={e=>setNewScriptId(e.target.value)} />
+    </label>}
+    <button className="secondary" disabled={working || !project.screenplay?.trim() ||
+      typeof window.pywebview?.api?.film03_publish_script_snapshot !== 'function'}
+      onClick={publishSnapshot}>Capture script revision (native director approval)</button>
+    {typeof window.pywebview?.api?.film03_publish_script_snapshot !== 'function' &&
+      <p className="fineprint">Available only inside installed NVP with real native director confirmation. Ordinary browser/API access cannot publish a script source or voice Take.</p>}
     {!sources.length ? <p className="muted">
       No creator-approved FILM03 script snapshot exists for this project yet.
       Original Studio screenplay versions remain saved. A source-authorized
