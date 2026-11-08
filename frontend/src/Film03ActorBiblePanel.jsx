@@ -146,6 +146,9 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
         <strong>{entry.role} · {entry.source_family}</strong>
         <small>{entry.target_id} · revision {entry.target_revision} · link version {entry.link_revision}</small>
         <p className="fineprint">Source SHA: <code>{entry.source_sha256}</code> · scope {entry.production_scope}</p>
+        {entry.needs_director_source_review && <p role="alert">
+          Source changed since this association: review original versus current screenplay, prop or asset before using the linked performance.
+        </p>}
         {entry.actor_prim_path && <p className="fineprint">OpenUSD actor: {entry.actor_prim_path}</p>}
         {entry.director_note && <p>{entry.director_note}</p>}
         <button className="secondary" disabled={busy} onClick={() => editExisting(entry)}>Revise link without deleting</button>
