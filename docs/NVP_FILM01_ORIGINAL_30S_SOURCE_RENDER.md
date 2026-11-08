@@ -85,6 +85,57 @@ source and exact edit; `--max-frames 6` is for short native smoke
 tests, not completion. CI exports the **full 720-frame** archive only
 after it can prove full original source and real raster/PCM integrity.
 
+## Director review outputs: a real video with sound, plus source images
+
+The primary user-visible goal is a **downloadable video the director can
+watch and judge**. After all original 720 OpenUSD frames and 1,440,000
+source PCM16 samples have been rendered and verified, NVP now emits
+one standard **RIFF AVI** containing **MJPEG picture at 24fps** and
+**interleaved 48kHz mono PCM16 sound**. The file is written by the
+first-party `backend/nvp_film01_native_avi.py` using Pillow only to
+transcode real NVP PNGs to review JPEGs. The source picture, sound
+sample order, time and exact hash provenance are preserved in the
+separate source archive. **No FFmpeg** nor fabricated replacement
+frames/audio are required.
+
+**Actual output artifact, once the GitHub full-render job succeeds:**
+
+- `nvp-relay30-playable-640x360-mjpeg-pcm.avi`: a **single playable
+  picture-and-sound file** (computer-screen review, lossy MJPEG, not DCI).
+  Installed physical media-player compatibility must still be tested.
+- `nvp-relay30-authentic-source-preview.zip`: 720 actual native
+  OpenUSD PNG frames, matching real source WAV, source SHA receipts.
+- `nvp-relay30-9-original-frames-contact.png`: a 3×3 visual sheet
+  of nine SHA-verified actual movie frames at selected timestamps.
+- `nvp-relay30-source-export-verification.json`: independent
+  RIFF AVI frame/index parser and byte-for-byte original sound
+  verification; plus contact-sheet receipt and export log.
+
+The technical acceptance gate checks **all 720 JPEG frames** in
+the AVI independently decode at 640×360, with exactly **1,440,000
+original source samples** interleaved into the same timebase, and
+the RIFF index/stream metadata match 24fps/48kHz. A separate
+real native contact sheet is generated from original PNGs;
+partially rendered source is never renamed as a completed film.
+
+Actual use in a fresh disposable directory:
+
+```bash
+python -m tools.nvp_film01_original_30s \
+  --root "/absolute/new/relay30-source" \
+  --render-review-zip "/absolute/new/relay30-source.zip" \
+  --render-preview-avi "/absolute/new/relay30-playable.avi" \
+  --consent I_APPROVE_DISPOSABLE_ORIGINAL_30S_CI_SOURCE
+```
+
+The AVI provides honest, visually judgeable **preview pixels**. It
+does NOT prove photorealism, virtual gold-fill/sun look (the renderer
+does not yet apply those effects), HDR, mastered stereo, final 2K,
+cinema DCP compliance, or real installed Windows/VLC display
+acceptance. Those remain open. The verified GitHub Actions
+artifact is the downloadable delivery route; no sandbox video or
+ZIP can be claimed before the native job actually produces it.
+
 ## Virtual lighting in this short
 
 The new `backend/nvp_virtual_light_fx.py` is a pure, deterministic
