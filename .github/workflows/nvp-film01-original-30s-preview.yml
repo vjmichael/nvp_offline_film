@@ -1,0 +1,107 @@
+name: NVP FILM01 Genuine Original 30s Three-Shot CPU Film Preview (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film01-original30s-digital-fx-20261108]
+  pull_request:
+    paths:
+      - backend/nvp_virtual_light_fx.py
+      - tests/test_nvp_virtual_light_fx.py
+      - tools/nvp_film01_original_30s.py
+      - tests/test_nvp_film01_original_30s.py
+      - backend/nvp_wo6_07f_rendered_av.py
+      - .github/workflows/nvp-film01-original-30s-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film01-original30s-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  original-short-native-source-and-digital-light:
+    name: Actual 3-Take 30s source + real 3D/PCM sample windows, deterministic FX / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD and first-party source dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Compile original native short, actual raster and deterministic virtual light effects
+        run: python -m compileall -q backend/nvp_virtual_light_fx.py backend/nvp_wo6_07f_rendered_av.py tools/nvp_film01_original_30s.py tests/test_nvp_film01_original_30s.py tests/test_nvp_virtual_light_fx.py
+      - name: Prove virtual artistic gold/silver fills, perpetual summer 3 PM and captured live flash clocks
+        run: python -m unittest discover -s tests -p test_nvp_virtual_light_fx.py -v
+      - name: Author original THREE real OpenUSD Takes, TWO immutable cuts and original 48 kHz source sound, then render authentic PNG/PCM proof
+        run: python -m unittest discover -s tests -p test_nvp_film01_original_30s.py -v
+      - name: Preserve genuine real 3D frame and 48 kHz PCM hard-cut source tests
+        run: python -m unittest discover -s tests -p test_nvp_wo6_07f_rendered_av.py -v
+
+  original-short-full-720-frame-review-package:
+    name: Actual FULL 720 native OpenUSD rendered PNG and 1,440,000 source PCM samples (NOT DCI movie)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real USD and native CPU raster dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Produce original 30-second source and genuine 720-frame/48k PCM NVP review ZIP (may render slower than realtime)
+        shell: bash
+        run: |
+          python -m tools.nvp_film01_original_30s \
+            --root "$RUNNER_TEMP/nvp-original-relay30" \
+            --render-review-zip "$RUNNER_TEMP/nvp-relay30-authentic-source-preview.zip" \
+            --consent I_APPROVE_DISPOSABLE_ORIGINAL_30S_CI_SOURCE \
+            | tee "$RUNNER_TEMP/nvp-relay30-export-log.json"
+          python - <<'PY'
+          import json,os,zipfile,hashlib,wave
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])
+          path=root/"nvp-relay30-authentic-source-preview.zip"
+          with zipfile.ZipFile(path) as z:
+              receipt=json.loads(z.read("original_30s_preview_receipt.json"))
+              frames=[n for n in z.namelist() if n.startswith("preview_frames/")]
+              assert receipt["all_720_frames_really_rendered"] is True
+              assert receipt["frames_rendered_from_usd"]==720
+              assert len(frames)==720
+              assert receipt["exact_pcm_samples"]==1440000
+              assert receipt["playable_muxed_movie_created"] is False
+              assert receipt["dci_master_or_dcp_created"] is False
+              with z.open("audio/original_source_review_48k_mono.wav") as src:
+                  with wave.open(src,"rb") as audio:
+                      assert audio.getnframes()==1440000
+                      assert audio.getframerate()==48000
+              manifest=json.dumps(
+                  {"artifact_sha256":hashlib.sha256(path.read_bytes()).hexdigest(),
+                   "actual_NVP_source_frames":720,
+                   "original_sample_count":1440000,
+                   "movie_container_created":False,
+                   "DCI_delivery_approved":False},indent=2)
+              (root/"nvp-relay30-source-export-verification.json").write_text(manifest)
+          PY
+      - name: Preserve verifiable original 30-second PNG sequence and WAV source as real artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-original-relay30-720-native-png-pcm-not-cinema
+          path: |
+            ${{ runner.temp }}/nvp-relay30-authentic-source-preview.zip
+            ${{ runner.temp }}/nvp-relay30-export-log.json
+            ${{ runner.temp }}/nvp-relay30-source-export-verification.json
+          if-no-files-found: warn
+          retention-days: 14
