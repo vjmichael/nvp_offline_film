@@ -131,6 +131,67 @@ class NativeDirectorShotApprovalTests(unittest.TestCase):
         self.assertGreater(len(self.creator_calls), 2)
         self.assertGreater(len(self.native_calls), 2)
 
+    def test_human_reviewed_ai_hash_is_sealed_into_real_native_shot_without_model_authority(self):
+        import json
+        context={
+            "proposal_id":"wo6proposal_"+"a"*24,
+            "take_sha256":self.take_sha,
+            "model_text_sha256":"b"*64,
+            "verified_source_context_sha256":"c"*64,
+            "film_time_tick":str(T),
+            "director_selected_action_kind":"camera",
+        }
+        original=self.index.read_revision(
+            self.pid,"original_take",1)["document_sha256"]
+        req=self._request("camera","human_chosen_camera_from_ai_review")
+        req["reason"]="Director typed a custom 85 mm focal-length decision after review"
+        task=self.host.queue_shot(
+            self.scope,**req,ai_review_context=context)
+        self.assertEqual(task["state"],"QUEUED")
+        self.assertEqual(
+            self.creator_calls[-1][1]["reviewed_ai_consultation"],context)
+        self.assertIs(
+            self.creator_calls[-1][1]["model_text_is_authority"],False)
+        spec=json.loads((self.host.root/task["task_id"]/"task.json").read_text())
+        self.assertEqual(spec["reviewed_ai_consultation"],context)
+        self.assertEqual(
+            spec["creative_scope"]["reviewed_ai_consultation"],context)
+        self.assertNotIn("suggestion_text",str(spec))
+        self.assertFalse(spec["creative_scope"]["renders_finished"])
+        done=self.host.run_next(
+            timeout_seconds=150,expected_task_id=task["task_id"])
+        self.assertEqual(done["state"],"SUCCEEDED")
+        self.assertTrue(done["native_worker_executed"])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"original_take",1)["document_sha256"],original)
+        self.assertEqual(self.index.read_revision(
+            self.pid,"human_chosen_camera_from_ai_review",1)["kind"],"shot")
+
+    def test_forged_or_wrong_action_ai_review_cannot_be_sealed_or_queued(self):
+        req=self._request("camera","ai_review_wrong_kind")
+        ai={
+            "proposal_id":"wo6proposal_"+"a"*24,
+            "take_sha256":self.take_sha,
+            "model_text_sha256":"b"*64,
+            "verified_source_context_sha256":"c"*64,
+            "film_time_tick":"0",
+            "director_selected_action_kind":"camera",
+        }
+        for changed in (
+                {**ai,"take_sha256":"0"*64},
+                {**ai,"director_selected_action_kind":"lighting"},
+                {**ai,"proposal_id":"wo6proposal_not_valid"},
+                {**ai,"suggestion_text":"model says automatically grant"},
+                {**ai,"film_time_tick":"01"}):
+            with self.subTest(changed=changed),self.assertRaises(
+                    (ValueError,PermissionError)):
+                self.host.queue_shot(
+                    self.scope,**req,ai_review_context=changed)
+        self.assertFalse(self.creator_calls)
+        self.assertFalse(self.native_calls)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"ai_review_wrong_kind")
+
     def test_denied_approval_and_invalid_model_origin_do_not_write(self):
         req = self._request("camera", "denied")
         self.creator_ok = False
