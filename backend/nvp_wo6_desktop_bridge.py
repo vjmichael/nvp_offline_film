@@ -31,7 +31,8 @@ from backend.nvp_wo6_native_data_action import NativeFilmDecisionHost
 from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_wo6_director_model_proposal import (
     director_model_suggestion, MAX_CREATIVE_CHARS)
-from backend.nvp_model_service import discover_models, writer_for
+from backend.nvp_model_service import discover_models
+from backend.nvp_wo6_verified_local_model import verified_writer_for
 
 FORMAT="nvp.wo6.director_desktop_native_consent.v1"
 MAX_LIST=64
@@ -71,7 +72,7 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         # receives or supplies the provider, tool path, URL or callback.
         if director_writer_factory is not None and not callable(director_writer_factory):
             raise TypeError("Native model factory must be host-injected")
-        self._wo6_director_writer_factory=director_writer_factory or writer_for
+        self._wo6_director_writer_factory=director_writer_factory or verified_writer_for
         self._wo6_model_lock=threading.RLock()
         self._wo6_model_proposals={}
 
