@@ -99,7 +99,35 @@ that preview. Those require an appropriate UsdLux-capable renderer.
 ## Creator clarification: independent FX timers, silver/gold bounce (2026-11-08)
 
 - **Independent time is permitted:** Cop-car red/blue strobes, a flashlight flash, fireworks, flicker and lightning may run on their own monotonic oscillator during live authoring. NVP must offer *Capture/Sync*, recording clock origin/phase, triggers and exact offset to original Film Time. Timeline-synchronized mode is a separate switch. Final picture/audio rendering must replay the same recorded effect reproducibly rather than running a non-repeatable wall timer.
-- **Silver Bounce / Gold Bounce:** Placeable, orientable passive 3D reflector boards, freely moved, snapped, attached or locked. Silver has a comparatively neutral reflectance and gold warms the actual reflected illumination. Size, roughness/matte versus specular response and positioning matter. These boards are **not** emitted light, not an exposure shortcut and not a post-processing tint. Real indirect light transport/BSDF in the chosen renderer must be demonstrated by independently measured scene comparisons. The current simple CPU preview cannot prove GI or true reflected color.
+- **Silver Bounce / Gold Bounce (creator's preferred digital mode):** Author an invisible, independently adjustable neutral/cool or warm-gold **virtual fill** aimed at selected actors/objects. The director does **not** need a reflector board or actual path tracing to achieve the *artistic result*. Placeable real material reflector boards and true bounce/GI are an optional physical mode. The current simple CPU preview does not yet apply those targeted virtual fills either.
 - **Priority:** Simple artist UI for practical lighting and FX comes before advanced IES/volumetric/cinema photometric calibration. Preserve original source scene, source SHA, Film Time and creator-native two-approval isolation.
 
 Detailed work-order requirements: `docs/NVP_VLIGHT_FX_TIMERS_REFLECTORS.md`. This is a **design backlog**, not a claim of finished installed controls or physically accurate bounces.
+
+
+## Digital-first virtual lighting shift (2026-11-08)
+
+NVP is not required to recreate a physical set to achieve cinematic
+lighting. A digital effect can target a face, costume, selected surface,
+camera region or entire scene, in impossible ways.
+
+- Gold/silver bounce may be an invisible per-object warm or neutral
+  fill contribution. True reflector geometry and path-traced GI are
+  optional alternative modes, not prerequisites.
+- `Always Summer 3 PM` locks a visually pleasing sun azimuth/elevation
+  and warmth across storytime, independent of an astronomical clock.
+- Police lights can flash on their own live timer, then have their
+  phase mapped to exact Film Time at record/capture.
+- Color filters, per-actor light wraps, impossibly fixed shadows,
+  animated practicals and editable nonphysical masks are first-class
+  creative tools, and may coexist with photorealistic lighting.
+- Every effect is authored source data: object/camera targeting,
+  mask/falloff, color/intensity, phase clock, film-tick mapping,
+  source ID/SHA and layer priority. Approved output must be
+  repeatable at the same exact frame even after restart.
+
+`backend/nvp_virtual_light_fx.py` provides strict, deterministic
+**evaluation** of several such decisions, including an independent-clock
+capture. It **does not apply those values to the real renderer yet**.
+Target mask/shader/camera-space adapter and DCI-managed output remain
+separate implementation and verification gates.
