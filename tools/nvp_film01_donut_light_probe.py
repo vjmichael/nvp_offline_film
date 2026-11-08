@@ -164,9 +164,16 @@ def render_donut_four_looks(source):
         luminance=(.2126*pixels[:,:,0]+.7152*pixels[:,:,1]+.0722*pixels[:,:,2])
         center=float(np.mean(luminance[radius<12]))
         annular=float(np.mean(luminance[(radius>45)&(radius<150)]))
-        if center>2 or annular<=1.:
+        # Record true highlight/midtone spread *inside the lit ring*,
+        # rather than confusing the black hole with dark material.
+        lit_ring=luminance[(radius>45)&(radius<150)&(luminance>2)]
+        if center>2 or annular<=1. or lit_ring.size<200:
             raise RuntimeError(
                 "Rendered donut must show an actual dark central hole and visible ring")
+        p10,p50,p90=(float(v) for v in np.percentile(lit_ring,[10,50,90]))
+        if look=="neutral" and p90-p10<1.:
+            raise RuntimeError(
+                "Neutral light did not produce measurable curved-surface shading")
         image_arrays.append(pixels)
         results.append({
             "look":look,"true_3d_usd_mesh_actor":True,
@@ -182,6 +189,10 @@ def render_donut_four_looks(source):
             "original_acting_object_role":"actor",
             "central_hole_mean_brightness_8bit":round(center,4),
             "annular_ring_mean_brightness_8bit":round(annular,4),
+            "lit_ring_luminance_p10_p50_p90_8bit":[
+                round(p10,4),round(p50,4),round(p90,4)],
+            "lit_ring_highlight_range_8bit":round(p90-p10,4),
+            "visible_lit_ring_pixels":int(lit_ring.size),
             "render_resolution":[640,360],
             "actual_image_bytes":bytes_png,
         })
@@ -269,7 +280,7 @@ def main():
     cli.add_argument("--test-consent",required=True)
     args=cli.parse_args()
     if args.test_consent!="I_APPROVE_DISPOSABLE_DONUT_SOURCE":
-        cli.error("Disposable donor lighting verification must be explicitly authorized")
+        cli.error("Disposable donut lighting verification must be explicitly authorized")
     source=build_frozen_donut_source(args.root.resolve())
     report=export_donut_lighting_contact(source,args.output.resolve())
     print(json.dumps({
