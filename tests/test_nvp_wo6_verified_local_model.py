@@ -109,6 +109,19 @@ class RealLoopbackProviderReceiptContract(unittest.TestCase):
             self.writer.complete("Director role","Original actor")
         self.assertIsNone(self.writer.completion_receipt)
 
+    def test_deceptive_loopback_looking_urls_and_remote_host_refused(self):
+        urls=[
+            "http://127.0.0.1:8000@evil.example/v1/chat/completions",
+            "http://127.0.0.1:8000/v1/chat/completions?redirect=1",
+            "http://127.0.0.1:8000/api/execute",
+            "https://127.0.0.1:8000/v1/chat/completions",
+            "http://evil.example:8000/v1/chat/completions",
+        ]
+        for url in urls:
+            with self.subTest(url=url),self.assertRaises(PermissionError):
+                ProvenLocalModelWriter(
+                    LocalScriptModel(endpoint=url,model_name="local-tested-gguf"))
+
     def test_acceptance_requires_real_gguf_and_explicit_local_consent(self):
         import tempfile
         from pathlib import Path
