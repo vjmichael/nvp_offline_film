@@ -196,16 +196,22 @@ export default function ExactFilmTimeShotPanel({project,api,action,busy}){
            next.video_frames_created!==false||
            next.shots.length!==shots.length)
           throw Error('Published timeline did not preserve source identity.');
+        // The server revision advances even if the creator edited locally.
+        // Never overwrite newer draft timing with an older in-flight response.
         setRevision(next.revision);
-        // An in-flight publication must not authorize a newer unsaved draft.
-        if(draftEpoch.current===publishingEpoch)setTimelineSha(next.document_sha256);
-        else setTimelineSha('');
-        setDurationTick(next.duration_tick);
-        const display=secondsFromTicks(next.duration_tick);
-        setExactDuration(display===null?next.duration_tick:null);
-        if(display!==null)setDuration(display);
-        setNotice('Saved exact-time source revision '+next.revision+
-          '. No frames, audio master or Digital Take generated.');
+        if(draftEpoch.current===publishingEpoch){
+          setTimelineSha(next.document_sha256);
+          setDurationTick(next.duration_tick);
+          const display=secondsFromTicks(next.duration_tick);
+          setExactDuration(display===null?next.duration_tick:null);
+          if(display!==null)setDuration(display);
+          setNotice('Saved exact-time source revision '+next.revision+
+            '. No frames, audio master or Digital Take generated.');
+        }else{
+          setTimelineSha('');
+          setNotice('An older revision was published while you edited. '+
+            'Your newer draft remains unsaved; review and publish again.');
+        }
       });
     }catch(e){setError(e.message);}
   }
