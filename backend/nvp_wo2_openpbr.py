@@ -51,7 +51,7 @@ def verify_openpbr_scalar(stage,material_path,material,color,roughness,metallic)
         inp=shader.GetInput(name)
         if not inp:
             raise RuntimeError("Original OpenPBR scalar input missing")
-        if inp.HasConnectedSource():
+        if inp.GetAttr().GetConnections():
             from pxr import Sdf
             from backend.nvp_wo3_materialx_integrity import (
                 verify_output_connection)
@@ -150,7 +150,7 @@ def verify_openpbr_texture(stage,material_path,material,
     # of the authorized source URI or filter mode. Reject both forms.
     for setting in ("file","uaddressmode","vaddressmode","filtertype"):
         input_=image.GetInput(setting)
-        if not input_ or input_.HasConnectedSource():
+        if not input_ or input_.GetAttr().GetConnections():
             raise RuntimeError("Frozen MaterialX image setting has upstream override")
     if (image.GetInput("file").GetTypeName()!=Sdf.ValueTypeNames.Asset or
         shader.GetInput("base_color").GetTypeName()!=Sdf.ValueTypeNames.Color3f):
@@ -181,7 +181,7 @@ def verify_openpbr_texture(stage,material_path,material,
         # scalar inputs and prevented native WebView2 source scene loading.
         # Preserve source custody by allowing ONLY the expected typed
         # bounded MaterialX channel path, never arbitrary shader rewiring.
-        if value.HasConnectedSource():
+        if value.GetAttr().GetConnections():
             expected_channel={
                 "base_metalness":"Metallic",
                 "specular_roughness":"Roughness"}[key]
