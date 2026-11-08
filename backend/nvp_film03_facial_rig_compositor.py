@@ -20,7 +20,10 @@ from backend.nvp_openusd_take import FORMAT as TAKE_FORMAT
 from backend.nvp_film03_independent_facial_direction import (
     FORMAT as FACE_FORMAT, TICKS_PER_SAMPLE, VISEMES, FACES,
 )
-from backend.nvp_film03_phoneme_alignment import FORMAT as PHONEME_FORMAT
+from backend.nvp_film03_phoneme_alignment import (
+    FORMAT as PHONEME_FORMAT, import_mfa_json,
+)
+from backend.nvp_film03_voice_conversion_intent import verified_guide_signal
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 from backend.nvp_production_bible_actors import ProductionBibleActors
 
@@ -377,6 +380,32 @@ def publish_verified_alignment_overlay(index: FilmIndex, pid,
     if candidate_id in {alignment_id, face_id, plan["audio_source_id"],
                         plan["source_take_id"]}:
         raise ValueError("Cannot overwrite an original actor, Take, voice or alignment")
+    # Reopen the REAL original native MFA output bytes as an immutable film
+    # blob, then independently rederive word/phone/viseme candidates.
+    # Mere "native_acoustic_model_executed=true" JSON is insufficient.
+    native_sha = s.get("native_output_blob_sha256")
+    if (type(native_sha) is not str or
+        native_sha != s.get("native_output_sha256")):
+        raise PermissionError("No independently reopenable native acoustic output")
+    _sha(native_sha)
+    raw = index.get_blob(pid, native_sha)
+    if sha256(raw).hexdigest() != native_sha:
+        raise PermissionError("Native acoustic source bytes changed")
+    rederived = import_mfa_json(
+        raw, exact_script_text=plan["exact_script_text"],
+        pcm_sample_count=plan["sample_count"])
+    if any(s.get(field) != rederived[field] for field in (
+        "word_intervals", "phoneme_intervals", "viseme_candidates",
+        "ticks_per_sample", "source_sample_count", "sample_rate_hz"
+    )):
+        raise PermissionError("Stored phonemes do not match actual native acoustic output")
+    sound = verified_guide_signal(
+        index, pid, plan["audio_source_id"], plan["audio_source_revision"])
+    if (sound["pcm16le_sha256"] != plan["original_pcm_sha256"] or
+        sound["source_document_sha256"] !=
+            plan["audio_source_document_sha256"] or
+        sound["sample_count"] != plan["sample_count"]):
+        raise PermissionError("Original dialogue changed after phoneme execution")
     cast = ProductionBibleActors(index.studio).require_complete_cast(
         pid, plan["source_take_id"])
     if (cast["actor_id_by_prim"].get(actor_path) != plan["actor_id"] or
