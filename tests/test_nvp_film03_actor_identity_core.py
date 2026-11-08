@@ -260,6 +260,12 @@ class ActorIdentityCompleteProfileSource(unittest.TestCase):
                              "Voice_Donut_ActorIdentity")
             with self.assertRaises(PermissionError):
                 core.prepare_generated_voice(pid,s["request"],profile_revision=1)
+            with self.assertRaises(PermissionError):
+                core.publish(
+                    pid,aid,identity_profile(),expected_profile_revision=1,
+                    expected_bible_revision=actor["bible_revision"],
+                    director_note="Unacceptable recast keeps the same actual model voice",
+                    creator_event=ACTION)
             changed=identity_profile()
             changed["voice_generation"]["engine_voice_id"]="DonutDistinctRecastVoice2026"
             changed["voice_type"]["timbre"]="More airy, less resonant"
