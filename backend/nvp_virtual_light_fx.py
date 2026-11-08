@@ -79,9 +79,8 @@ def _check_fx(fx):
         raise ValueError("Virtual FX RGB needs exactly three channels")
     for v in rgb:
         _finite(v,"RGB",0,16)
-    if fx["kind"] in ("police_red_blue","firework_flash") and (
-            fx["frequency_hz"]<=0):
-        raise ValueError("Cyclic light effects need positive frequency")
+    if fx["kind"]=="police_red_blue" and fx["frequency_hz"]<=0:
+        raise ValueError("Cyclic police light FX needs positive frequency")
 
 
 def evaluate_virtual_light_fx(fx,film_tick,*,monotonic_ns=None,final_render=False):
@@ -120,10 +119,12 @@ def evaluate_virtual_light_fx(fx,film_tick,*,monotonic_ns=None,final_render=Fals
     elif fx["kind"]=="firework_flash":
         # The light is a timed envelope; particles and actual fireworks
         # scene geometry are independent, still-unimplemented systems.
-        t=max(0.0,seconds)
-        jitter_seed=f"{fx['random_seed']}:{math.floor(phase)}".encode("ascii")
-        rng=int.from_bytes(hashlib.sha256(jitter_seed).digest()[:4],"big")/2**32
-        intensity*=math.exp(-t/fx["decay_seconds"])*(0.85+0.15*rng)
+        if seconds<0:
+            intensity=0.0
+        else:
+            jitter_seed=f"{fx['random_seed']}:{math.floor(phase)}".encode("ascii")
+            rng=int.from_bytes(hashlib.sha256(jitter_seed).digest()[:4],"big")/2**32
+            intensity*=math.exp(-seconds/fx["decay_seconds"])*(0.85+0.15*rng)
     # silver/gold fills and locked sun are constant until intentionally
     # animated by a separate authored keyframe/FX track.
     proof={
@@ -157,8 +158,8 @@ def captured_light_fx(fx,*,film_tick,monotonic_ns):
     if type(monotonic_ns) is not int or monotonic_ns<0:
         raise ValueError("Capture needs original monotonic timestamp")
     anchor=fx["anchor_monotonic_ns"]
-    if anchor is None:
-        raise PermissionError("Capture needs earlier native oscillator anchor")
+    if anchor is None or monotonic_ns<anchor:
+        raise PermissionError("Capture must follow a native oscillator start")
     delta=(monotonic_ns-anchor)/1e9*fx["frequency_hz"]
     # Keep the exact existing oscillator phase at the capture instant.
     result=dict(fx)
