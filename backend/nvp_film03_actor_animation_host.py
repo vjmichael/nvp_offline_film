@@ -54,6 +54,7 @@ class ReviewedActorAnimationHost:
              first_frame_in_take=0,frame_count=8):
         _require_pid(pid)
         _id(take_id,"frozen original OpenUSD source Take")
+        _id(actor_id,"canonical ActorID")
         if (type(first_frame_in_take) is not int or first_frame_in_take<0
                 or type(frame_count) is not int or
                 not 2<=frame_count<=MAX_FRAMES):
@@ -151,6 +152,9 @@ class ReviewedActorAnimationHost:
 
     def run(self,pid,actor_id,*,take_id,profile_revision,job_id,
             creator_event,first_frame_in_take=0,frame_count=8):
+        _id(job_id,"ActorID native animation job")
+        if len(job_id)>48:
+            raise ValueError("Native animation job exceeds FilmIndex candidate ID bounds")
         packet=self.plan(pid,actor_id,take_id=take_id,
                          profile_revision=profile_revision,
                          first_frame_in_take=first_frame_in_take,
