@@ -330,7 +330,7 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
 
 def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
                    texture=None,uv_face=None,pbr_maps=None,
-                   virtual_lights=()):
+                   virtual_lights=(),owner_map=None,owner_id=0):
     a,b,c=tri
     x0,y0,z0=a;x1,y1,z1=b;x2,y2,z2=c
     if (not all(math.isfinite(v) for v in (
@@ -398,6 +398,10 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
             uv_face=uv_face,
             virtual_lights=virtual_lights)
         out[visible]=lit[visible]
+    if owner_map is not None:
+        if type(owner_id) is not int or not 1<=owner_id<=255:
+            raise RuntimeError("Invalid bounded original USD visibility ID")
+        owner_map[lo_y:hi_y+1,lo_x:hi_x+1][visible]=owner_id
     return True
 
 
@@ -411,7 +415,9 @@ class NativeSceneLinearRaster:
 
     def render(self,project_id,take_id,take_sha256,*,tick,camera_path,
                source_session=None,source_snapshot=None,
-               virtual_fx=None):
+               virtual_fx=None,visibility_probe=False):
+        if type(visibility_probe) is not bool:
+            raise TypeError("Explicit per-source visibility probe mode required")
         _require_pid(project_id);_id(take_id,"original USD Take");_sha(take_sha256)
         _int(tick,"original scene Film Time")
         if type(camera_path) is not str or not camera_path.startswith("/World/"):
@@ -477,6 +483,10 @@ class NativeSceneLinearRaster:
             color=np.zeros((HEIGHT,WIDTH,4),dtype=np.float32)
             color[:,:,3]=1.
             depth=np.full((HEIGHT,WIDTH),np.inf,dtype=np.float32)
+            owner_map=(np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
+                       if visibility_probe else None)
+            visible_prim_ids={}
+            next_owner_id=1
             polygons=0
             rasterized=0
             default_materials=0
@@ -491,6 +501,11 @@ class NativeSceneLinearRaster:
                             "Original captured actor has no real USD surface")
                     continue
                 raw,faces=_triangles(obj)
+                if owner_map is not None:
+                    if next_owner_id>254:
+                        raise RuntimeError("Exceeded bounded scene visibility prim budget")
+                    visible_prim_ids[obj["path"]]=next_owner_id
+                    next_owner_id+=1
                 polygons+=len(faces)
                 if polygons>MAX_TRIANGLES:
                     raise RuntimeError("Source-authoritative color triangle budget exceeded")
@@ -578,7 +593,9 @@ class NativeSceneLinearRaster:
                                  if texture is not None or material_maps else None),
                         pbr_maps=(material_maps if
                                   face_index not in face_surfaces else None),
-                         virtual_lights=fxmap.get(obj["path"],())):
+                         virtual_lights=fxmap.get(obj["path"],()),
+                         owner_map=owner_map,
+                         owner_id=visible_prim_ids.get(obj["path"],0)):
                         rasterized+=1
                         textured_triangles+=int(
                             texture is not None and face_index not in face_surfaces)
@@ -612,6 +629,20 @@ class NativeSceneLinearRaster:
                 "ffmpeg_used":False,
                 "master_approved":False,
             }
+            if owner_map is not None:
+                reverse={value:key for key,value in visible_prim_ids.items()}
+                center_id=int(owner_map[HEIGHT//2,WIDTH//2])
+                receipt.update({
+                    "native_depth_tested_visible_pixel_probe":True,
+                    "visible_original_prim_pixels":{
+                        path:int(np.count_nonzero(owner_map==identity))
+                        for path,identity in sorted(visible_prim_ids.items())},
+                    "center_visible_original_prim":reverse.get(center_id),
+                    "center_image_pixel_xy":[WIDTH//2,HEIGHT//2],
+                    "visibility_probe_uses_depth_buffer_not_semantic_guess":True,
+                    "real_light_ray_traced_shadows_computed":False,
+                    "real_interobject_reflections_computed":False,
+                })
             if self.index.read_revision(
                     project_id,take_id,1)["document_sha256"]!=take_sha256:
                 raise RuntimeError("Original Digital Take changed during projection")
