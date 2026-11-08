@@ -352,6 +352,64 @@ class WorldSession:
         self.load_receipts.append(result)
         return result
 
+    def _prop_payload_action(self, prop_names, *, load):
+        self._check()
+        allowed = {
+            item["name"] for item in self.structure["props"]
+            if item["load"] == "payload"
+        }
+        if (type(prop_names) is not list or
+            len(prop_names) != len(set(prop_names)) or
+            not set(prop_names) <= allowed):
+            raise ValueError("Only explicitly authored lazy prop payloads may be changed")
+        started = perf_counter()
+        for name in prop_names:
+            path = "/World/Props/" + name
+            if load:
+                self.stage.Load(path)
+            else:
+                self.stage.Unload(path)
+            prim = self.stage.GetPrimAtPath(path)
+            if not prim or bool(prim.IsLoaded()) != bool(load):
+                raise RuntimeError("Native prop payload load/unload did not complete")
+        receipt = {
+            "operation": "load_props" if load else "unload_props",
+            "props": sorted(prop_names),
+            "elapsed_ms": round(1000*(perf_counter()-started),3),
+            "rss_after_bytes": _rss_bytes(),
+            "rendered_frames": False,
+        }
+        self.load_receipts.append(receipt)
+        return receipt
+
+    def load_props(self, prop_names):
+        return self._prop_payload_action(prop_names,load=True)
+
+    def unload_props(self, prop_names):
+        return self._prop_payload_action(prop_names,load=False)
+
+    def switch_variant(self, name, choice):
+        """Ephemeral shot look selection; publishing requires NEW world revision."""
+        self._check()
+        options = {
+            item["name"]: item for item in self.structure["variants"]
+        }
+        if type(name) is not str or type(choice) is not str or name not in options:
+            raise ValueError("Director look must target an authored world variant")
+        allowed = {item["name"] for item in options[name]["options"]}
+        if choice not in allowed:
+            raise ValueError("Director look is not a source-authored variant")
+        prim = self.stage.GetPrimAtPath("/World/Variants/" + name)
+        variant = prim.GetVariantSets().GetVariantSet("look")
+        if not variant or not variant.SetVariantSelection(choice) or
+            variant.GetVariantSelection() != choice:
+            raise RuntimeError("Native original world look did not switch")
+        return {
+            "variant": name, "selected": choice,
+            "persists_only_if_new_world_revision_published": True,
+            "original_source_take_changed": False,
+        }
+
     def receipt(self):
         self._check()
         return {
