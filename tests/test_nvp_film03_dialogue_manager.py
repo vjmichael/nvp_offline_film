@@ -331,6 +331,79 @@ class ActorDialogueFailuresMustRemainNonDestructive(unittest.TestCase):
                 s["pid"],"DonutAuthoredOriginalLine",1)["data"][
                     "script_line_text"],"The relay is still silent.")
 
+    def test_director_can_retain_earlier_actor_voice_after_script_rewrite_without_misassigning(self):
+        with TemporaryDirectory() as d:
+            s=construct_real_original_dialogue(Path(d).resolve(),recorded_voice=True)
+            pid=s["pid"]; aid=s["people"]["DONUT"]
+            index=s["index"]; registry=s["registry"]
+            studio=s["studio"]
+            studio.save_screenplay(pid, REVISED_SCRIPT, expected_revision=1)
+            # No actor or recording changes automatically after a script edit.
+            manager=ActorDialogueManager(index)
+            with self.assertRaises(PermissionError):
+                manager.route(pid,s["request"])
+            writer=ObjectActorDialogue(index,verify_creator_action=creator)
+            new=writer.publish_script_snapshot(
+                pid,"RelayAuthoredObjectScript",
+                expected_screenplay_revision=2,
+                expected_manifest_revision=1,
+                creator_event=ACTION)
+            # Director explicitly links the NEW source revision under the
+            # same canonical ActorID, preserving old link history.
+            current=registry.actor(pid,aid)
+            oldlink=next(x for x in current["active_links"]
+                         if x["role"]=="dialogue")
+            updated=registry.link(
+                pid,aid,role="dialogue",source_family="filmindex",
+                target_id="RelayAuthoredObjectScript",target_revision=2,
+                expected_actor_revision=current["bible_revision"],
+                link_id=oldlink["link_id"],
+                expected_link_revision=oldlink["link_revision"],
+                director_note="Revised script source; keep old voice for this Take")
+            self.assertTrue(any(
+                x["link_id"]==oldlink["link_id"] and
+                x["target_revision"]==1
+                for x in updated["history"]))
+            with self.assertRaises(PermissionError):
+                writer.publish_scene_dialogue(
+                    pid,selection_id="OriginalDonutDialogueSelection",
+                    overlay_timeline_id="OriginalDonutDialogueEvents",
+                    source_take_id="RelayRekindleTake",
+                    source_take_sha256=s["original_take"]["document_sha256"],
+                    script_id="RelayAuthoredObjectScript",script_revision=2,
+                    performance_ids=["DonutAuthoredOriginalLine"],
+                    expected_selection_revision=1,expected_timeline_revision=1,
+                    creator_event=ACTION)
+            accepted=writer.publish_scene_dialogue(
+                pid,selection_id="OriginalDonutDialogueSelection",
+                overlay_timeline_id="OriginalDonutDialogueEvents",
+                source_take_id="RelayRekindleTake",
+                source_take_sha256=s["original_take"]["document_sha256"],
+                script_id="RelayAuthoredObjectScript",script_revision=2,
+                performance_ids=["DonutAuthoredOriginalLine"],
+                expected_selection_revision=1,expected_timeline_revision=1,
+                preserve_prior_script_performances=True,
+                preservation_reason="Director specifically retains original Donut delivery",
+                creator_event=ACTION)
+            self.assertEqual(accepted["revision"],2)
+            revised_request=dict(
+                s["request"],selection_revision=2,
+                script_document_sha256=new["document_sha256"])
+            delivered=manager.route(pid,revised_request)
+            self.assertTrue(delivered["historical_line_explicitly_retained"])
+            self.assertEqual(delivered["actor_id"],aid)
+            self.assertEqual(delivered["exact_director_selected_text"],
+                             "The relay is still silent.")
+            self.assertEqual(manager.read_original_voice(
+                pid,revised_request,sample_count=2000)["original_pcm16le"],
+                s["original_pcm"][:4000])
+            # Both source revisions remain independently inspectable.
+            self.assertEqual(index.read_revision(pid,
+                "OriginalDonutDialogueSelection",1)["document_sha256"],
+                s["selected"]["document_sha256"])
+            self.assertEqual(index.read_revision(pid,
+                "DonutAuthoredOriginalLine",1)["data"]["script_revision"],1)
+
     def test_cast_is_complete_or_line_cannot_enter_real_scene(self):
         with TemporaryDirectory() as d:
             s=construct_real_original_dialogue(Path(d).resolve())
