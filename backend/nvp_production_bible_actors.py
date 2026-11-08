@@ -32,12 +32,12 @@ ROLE_FAMILIES = {
     "dialogue": {"filmindex"},
     "performance": {"filmindex"},
     "voice": {"filmindex"},
-    "wardrobe": {"bible_prop", "filmindex"},
-    "prop": {"bible_prop", "filmindex"},
-    "model": {"filmindex"},
-    "mesh": {"filmindex"},
-    "texture": {"filmindex"},
-    "rig": {"filmindex"},
+    "wardrobe": {"bible_prop", "filmindex", "mesh_glb", "rigged_glb"},
+    "prop": {"bible_prop", "filmindex", "mesh_glb"},
+    "model": {"filmindex", "mesh_glb", "rigged_glb"},
+    "mesh": {"filmindex", "mesh_glb", "rigged_glb"},
+    "texture": {"filmindex", "texture_blob"},
+    "rig": {"filmindex", "rigged_glb"},
     "take": {"filmindex"},
     "actor_prim": {"filmindex"},
 }
@@ -136,6 +136,22 @@ class ProductionBibleActors:
             for e in self.bible.list_entities(project_id)
             if e["kind"] == "prop"
         ]
+        # Already imported NVP GLB asset catalogs are also authoritative.
+        # Their immutable content-addressed original blobs must still be
+        # reverified when a director creates a canonical ActorID relation.
+        from backend.nvp_mesh_assets import MeshAssets
+        from backend.nvp_character_assets import CharacterAssets
+        imported = [
+            {"family": "mesh_glb", "target_id": row["asset_id"],
+             "target_revision": 1, "kind": "asset",
+             "sha256": row["sha256"], "name": row["asset_id"]}
+            for row in MeshAssets(self.studio).list(project_id)
+        ] + [
+            {"family": "rigged_glb", "target_id": row["asset_id"],
+             "target_revision": 1, "kind": "asset",
+             "sha256": row["sha256"], "name": row["asset_id"]}
+            for row in CharacterAssets(self.studio).list(project_id)
+        ]
         project = self.studio.get_project(project_id)
         scenes = [
             {"family": "screenplay_scene", "target_id": s["id"],
@@ -149,7 +165,7 @@ class ProductionBibleActors:
                         "bible_revision": e["revision"]}
                        for e in self.bible.list_entities(project_id)
                        if e["kind"] == "character"],
-            "sources": scenes + props + film,
+            "sources": scenes + props + film + imported,
             "supported_roles": sorted(ROLE_FAMILIES),
             "source_revision_verified": True,
             "model_mesh_texture_roles_do_not_claim_rendered_or_license_approved": True,
@@ -189,6 +205,48 @@ class ProductionBibleActors:
                 "aliases": ent["aliases"], "facts": ent["facts"],
             }
             return _sha(snapshot), snapshot
+        if family in ("mesh_glb", "rigged_glb"):
+            if revision != 1:
+                raise ValueError("Original imported GLB identity has immutable revision 1")
+            if type(oid) is not str or not oid.strip() or len(oid) > 120:
+                raise ValueError("Invalid original imported GLB asset ID")
+            from backend.nvp_mesh_assets import MeshAssets
+            from backend.nvp_character_assets import CharacterAssets
+            source = (MeshAssets(self.studio) if family == "mesh_glb"
+                      else CharacterAssets(self.studio))
+            entry = next((x for x in source.list(project_id)
+                          if x["asset_id"] == oid), None)
+            if entry is None:
+                raise KeyError("Imported GLB asset does not exist in this project")
+            digest = entry["sha256"]
+            blob = source.root / (digest + ".glb")
+            if (not blob.is_file() or blob.is_symlink() or
+                    hashlib.sha256(blob.read_bytes()).hexdigest() != digest):
+                raise PermissionError("Imported GLB original bytes no longer match catalog SHA")
+            snapshot = {
+                "source_family": family, "asset_id": oid, "revision": 1,
+                "original_blob_sha256": digest,
+                "license": entry.get("license"),
+                "attribution": entry.get("attribution"),
+                "source": entry.get("source"),
+                "redistribution_legally_approved": False,
+            }
+            return digest, snapshot
+        if family == "texture_blob":
+            if role != "texture" or revision != 1 or (
+                    type(oid) is not str or not SHA.fullmatch(oid)):
+                raise ValueError("Exact source texture SHA and immutable revision 1 required")
+            from backend.nvp_native_usd_texture import decode_png
+            original = self.index.get_blob(project_id, oid)
+            width, height, _ = decode_png(original)
+            snapshot = {
+                "format": "nvp.original.usd_texture_png.v1",
+                "original_blob_sha256": oid, "revision": 1,
+                "pixel_width": width, "pixel_height": height,
+                "source_material_reauthored": False,
+                "license_approved": False,
+            }
+            return oid, snapshot
         if family == "filmindex":
             if revision < 1:
                 raise ValueError("FilmIndex source requires exact positive revision")
