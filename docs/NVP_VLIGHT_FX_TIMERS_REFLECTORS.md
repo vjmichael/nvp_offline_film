@@ -29,16 +29,74 @@ Store the waveform and anchor, not a huge event list when an analytic repeatable
 - **Sync/read-back:** one source-revision/timeline SHA and explicit `clock_mode`, `anchor_film_tick`, `relative_phase`, optional `monotonic_capture`/jitter seed; edit preview shows the exact evaluated light state at scrubbed time. Renderer checksum/provenance is required for acceptance.
 - **Safety / artistic controls:** warn on frequent high-contrast flicker when reviewing/previewing; allow reduced-flash preview. Do not silently alter director-authored final waveforms or assume a universally safe frequency threshold.
 
-## V-LIGHT-FX-03 — Movable passive silver/gold reflector boards
+## V-LIGHT-FX-03 — DIGITAL cheats first, physical bounce as optional realism
 
-These are **physical reflecting surfaces**, NOT extra direct light emitters or post-process color overlays.
+**Creator clarification:** Do NOT force a real or simulated bounce card into a
+digital scene. Physical silver/gold reflectors are only ONE optional style.
+The default artist workflow is a `virtual_fill` effect: the renderer
+applies a colored/neutral directional contribution to selected actors,
+objects or surfaces, without an actual physical board or path-traced
+light bounce. The result can be deliberately nonphysical.
 
-- Place a plane/card (single- or double-sided per user selection) with size, shape, bend/curvature (later), orientation, position and a pivot/stand. Support free move, snap, attach to rig/actor and lock as for light fixtures.
-- **Silver bounce preset:** high but finite neutral spectral/RGB reflectance with a choice of diffuse/matte or directional/specular metallic-coated response, controlled roughness and reflectance. It can yield stronger, relatively neutral bounce subject to source and geometry.
-- **Gold bounce preset:** warm/yellow-gold wavelength-dependent reflectance (or calibrated material approximation) that warms the **reflected** light and highlight/shadow fill; maintain physically bounded energy. Gold is NOT just a gold light source.
-- Also useful future presets: white diffuse foamcore, black negative-fill flag, mirror/foil, silk/diffusion screen, grid/flag, and mixed silver/gold reflector. These are possible follow-ups, not yet required by the user's two specified bounce cards.
-- Author as immutable OpenUSD geometric meshes + bound compatible `UsdShade`/`MaterialX` material parameters with original-source SHA, not synthetic in-process UI sprites. A render delegate must actually calculate at least one bounce/indirect transport or an explicitly labeled physically informed approximation. **The current NVP first-party CPU raster has no demonstrated multi-bounce GI; displaying a reflector in that preview does NOT verify reflected illumination.**
-- Acceptance requires comparative real rendered pixels: same scene/card off vs silver vs gold, neutral vs warmer reflected illumination on an actor/object, shadows/reflections and multi-bounce energy tests against a suitable path-tracing renderer. Also validate USD/MaterialX translation and license/NOTICE requirements.
+- **Silver bounce (virtual):** linked neutral-to-cool fill or eye/face
+  highlight, brightness/direction/size/soft wrap and surface/actor mask,
+  recorded as authored USD/NVP effect parameters. Board geometry optional.
+- **Gold bounce (virtual):** linked warm-gold color fill on a face/scene
+  target with independent intensity and feathered mask, not a gold
+  light fixture or an actual reflecting surface. Multiple bounces can
+  be artistically faked by separate independent virtual lights.
+- **Physical bounce mode (optional):** place a real silver/gold material
+  board when the director wants visible set dressing and physically
+  accurate light transport. In this mode renderer BSDF/light-path tests
+  must prove reflected energy; the CPU preview cannot.
+- **Renderer adapter:** define exact priority between `physical`,
+  `virtual_fill`, and `hybrid` mode and label nonphysical overrides
+  clearly so the director can choose realistic or artistic output.
+  Link FX to object IDs, not arbitrary screen coordinates, unless the
+  user explicitly selects a camera-space filter. A target may be
+  an actor face, costume, ground, camera view, or whole shot.
+- **Preserve data-first custody:** effect ID, target original prim
+  identity/SHA, source camera/scene, RGB/Kelvin, intensity, falloff,
+  direction, mask, softness, timestamp/FX schedule and compositing
+  order are first-class authored source data. The renderer must evaluate
+  them at the same exact frame/Film Time as picture and sound.
+
+**Acceptance:** verify a face gets a warmer *artificial* fill without any
+gold object or indirect GI. A separate physically rendered bounce
+comparison proves optional `physical` mode. Do not claim the initial
+CPU raster currently implements these fills; pure effect evaluation and
+SHA receipts are a preparatory step only.
+
+## V-LIGHT-FX-03B — Impossible light, sky and creative filters
+
+- **"Always summer 3 PM" sun:** set a named, locked
+  `cinematic_sun_direction` (explicit azimuth, elevation and warm
+  spectrum) independent of the story's wall-clock date/time. Keep it
+  fixed across hours of film, or parent it to the camera or another
+  moving object. "3 PM" is an artist's *look* unless a latitude/season
+  and real solar model are explicitly requested. No astronomical
+  location data is needed to author the look.
+- **Impossible direction/target:** spotlight follows only the hero's
+  face, gold bounce ignores all other objects, shadows come from
+  an intentionally different virtual source, a rainbow falls only
+  on a selected costume, or a moonlight source pulses in sync with
+  a musical cue. Artistic reality may differ per camera/shot.
+- **Filters:** composited film looks (prismatic, gold/silver glow,
+  light wrap, stylized gradient, silhouette/negative fill, cartoon
+  or luminous edge) should be independent, reorderable, maskable
+  source operations rather than permanent baked pixels. They can
+  be layered with truly simulated lights. The final 2K color-managed
+  rendering path must preserve their scene-linear/color-space intent.
+- **Time:** some effects use authoritative Film Time; some run
+  independent clocks live and are captured/replayed as immutable
+  event/phase tracks. Freeze/scrub/retake must yield the same pixel
+  values for the same approved source. The film must never change
+  unpredictably between offline render attempts.
+- **Designer UX:** a simple `Light FX` section offers presets and
+  immediate before/after/solo/bypass, per-object targeting and
+  copy/paste to new shots. A realistic/virtual/hybrid toggle
+  keeps these choices accessible. There is no need to recreate
+  a practical studio set just to add an artistic fill.
 
 ## V-LIGHT-FX-04 — Film and DCP timing contracts
 
