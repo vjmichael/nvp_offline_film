@@ -72,6 +72,21 @@ def verify_three_shots(plan, report, shot_root):
                     c.get("worker_state") != "SUCCEEDED"
                     for c in chunks)):
             raise RuntimeError("Missing original journaled Cycles render chunks")
+        samples = doc.get("saved_native_blender_scene_samples")
+        if (type(samples) is not list or len(samples) != 2 or
+                [s.get("first_frame") for s in samples] != [start, end-24]):
+            raise RuntimeError("Original source Blender scene samples missing")
+        for sample in samples:
+            sample_dir = folder / "source_scene_samples"
+            for extension, name_key, sha_key in (
+                ("blend", "scene_file", "scene_sha256"),
+                ("source.json", "source_file", "source_sha256")):
+                expected_name = f"frame_{sample['first_frame']:04d}.{extension}"
+                path = sample_dir / expected_name
+                if (sample.get(name_key) != expected_name or
+                        path.is_symlink() or not path.is_file() or
+                        sha_file(path) != sample.get(sha_key)):
+                    raise RuntimeError("Original native Blender scene sample changed")
         for start_chunk in (start, end - 24):
             reopen_path = folder / f"independent_blend_reopen_{start_chunk:04d}.json"
             if reopen_path.is_symlink() or not reopen_path.is_file():
