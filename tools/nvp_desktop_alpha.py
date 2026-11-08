@@ -816,6 +816,8 @@ def main(argv=None):
     parser.add_argument("--llama-server-path",default=None)
     parser.add_argument("--gguf-report",default=None)
     parser.add_argument("--gguf-test-consent",default=None)
+    parser.add_argument("--gguf-visible-webview2",action="store_true",
+                        help="Run actual native GGUF through visible installed React director panel")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_data_av,
@@ -849,7 +851,8 @@ def main(argv=None):
         from tools.nvp_wo6_07b_real_gguf_smoke import run_real_gguf_acceptance
         measured=run_real_gguf_acceptance(
             model_path=args.gguf_path,server_path=args.llama_server_path,
-            report_path=args.gguf_report,consent=args.gguf_test_consent)
+            report_path=args.gguf_report,consent=args.gguf_test_consent,
+            visible_webview2=args.gguf_visible_webview2)
         if (measured["status"]!="LOCAL_GGUF_COMPLETION_OBSERVED" or
                 measured["human_director_reviewed"] is not False):
             raise RuntimeError("Native model test did not complete")
