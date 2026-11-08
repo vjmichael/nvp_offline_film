@@ -129,6 +129,14 @@ def _check_shot_source(index, spec):
                 scene["data"]["prim_roles"].get(x.get("path")) not in roles
                 for x in spec["changes"])):
         raise PermissionError("Property or actor role exceeds approved shot scope")
+    if "reviewed_ai_consultation" in spec:
+        reviewed=_validate_ai_review_context(
+            spec["reviewed_ai_consultation"],
+            action_kind=kind,take_sha256=spec["take_sha256"])
+        if (spec.get("creative_scope",{}).get(
+                "reviewed_ai_consultation")!=reviewed or
+                spec["creative_scope"].get("model_text_is_authority") is not False):
+            raise PermissionError("Reviewed AI provenance differs from OS creative approval")
     normalized = _normalize(spec["changes"], scene, stage)
     if normalized != spec["changes"]:
         raise PermissionError("Shot opinions are not canonical")
@@ -376,6 +384,10 @@ class NativeShotActionHost:
                     receipt.get("task_id") != task_id or
                     receipt.get("shot_sha256") != record["document_sha256"] or
                     receipt.get("take_sha256") != spec["take_sha256"] or
+                    receipt.get("reviewed_ai_consultation") !=
+                        spec.get("reviewed_ai_consultation") or
+                    receipt.get("model_instruction_executed") is not False or
+                    receipt.get("model_approval_accepted") is not False or
                     evaluation["shot_document_sha256"] != record["document_sha256"] or
                     record["data"]["usd_layer_sha256"] != spec["shot_layer_sha256"] or
                     record["data"]["original_scene_modified"] is not False or
@@ -397,6 +409,9 @@ class NativeShotActionHost:
             return {"task_id": task_id, "state": "SUCCEEDED",
                     "shot_id": spec["shot_id"],
                     "shot_document_sha256": record["document_sha256"],
+                    "reviewed_ai_consultation":
+                        spec.get("reviewed_ai_consultation"),
+                    "model_instruction_executed":False,
                     "new_take_created": False, "film_delivered": False}
         except BaseException as error:
             if worker is not None:
