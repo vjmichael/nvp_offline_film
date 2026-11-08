@@ -250,6 +250,14 @@ class ProductionBibleActors:
                 raise RuntimeError("Actor resource link changed concurrently")
             if previous and previous["role"] != role:
                 raise ValueError("An existing relationship cannot change its category")
+            # Re-read the source identity while holding the actor's SQLite
+            # write lease. A screenplay/StoryBible revision cannot slip in
+            # between preflight and durable relationship creation.
+            final_sha, final_snapshot = self._target(
+                project_id, role, source_family, target_id,
+                target_revision, actor_prim_path)
+            if final_sha != sha or final_snapshot != snapshot:
+                raise RuntimeError("Source changed during actor relationship approval")
             count = db.execute("""SELECT COUNT(DISTINCT link_id) FROM nvp_bible_actor_links
                 WHERE project_id=? AND actor_id=?""", (project_id,actor_id)).fetchone()[0]
             if count >= MAX_LINKS and previous is None:
