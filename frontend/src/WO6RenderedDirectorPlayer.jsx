@@ -244,7 +244,7 @@ export default function WO6RenderedDirectorPlayer({projectId}){
         session.last=target;
         setShown(frame);
         setPresented(target-session.start+1);
-        if(target%WINDOW===WINDOW-1){
+        if((target-session.start)%WINDOW===WINDOW-1){
           const old=target-WINDOW+1;
           if(windows.current.has(old)){
             windows.current.delete(old);
