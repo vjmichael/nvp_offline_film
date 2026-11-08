@@ -1,0 +1,58 @@
+name: NVP FILM03-03 Strict ActorID Dialogue Manager and Original PCM Identity (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film03-03-actorid-dialogue-routing-20261108]
+  pull_request:
+    branches: [nvp/film03-02-production-bible-actorid-editor-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film03-03-actorid-voice-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  genuine-actorid-source-tests:
+    name: Exact Studio script + real OpenUSD casting + AI dialogue routing / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual NVP/OpenUSD source stack and Starlette regression test client
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx2
+      - name: Compile strict actor source dialogue and scene crew
+        run: |
+          python -m compileall -q backend/nvp_film03_dialogue_manager.py backend/nvp_film03_object_dialogue.py backend/nvp_production_bible_actors.py backend/nvp_wo6_scene_context.py tests/test_nvp_film03_dialogue_manager.py
+      - name: Verify real complete 4-actor OpenUSD cast and exact source PCM; reject wrong actor, text, Take, voice, scene and drift
+        run: python -m unittest discover -s tests -p test_nvp_film03_dialogue_manager.py -v
+      - name: Preserve actual prior original screenplay/StoryBible/actor source regression
+        run: |
+          python -m unittest discover -s tests -p test_nvp_film03_object_dialogue.py -v
+          python -m unittest discover -s tests -p test_nvp_film03_actor_bible.py -v
+      - name: Preserve actual original TemporalLedger provenance
+        run: python -m unittest discover -s tests -p test_nvp_temporal_ledger.py -v
+      - name: Refuse imaginary voice synthesis/film acceptance
+        shell: python
+        run: |
+          from backend.nvp_film03_dialogue_manager import FORMAT
+          assert FORMAT == "nvp.film03.canonical_actorid_dialogue_route.v1"
+          from pathlib import Path
+          source=Path("backend/nvp_film03_dialogue_manager.py").read_text("utf8")
+          assert "NO generated voice" in source
+          assert "require_complete_cast" in source
+          assert "original_recorded_voice" in source
+          assert "No canonical 32-hex StoryBible ActorID" in source
+          print("ActorID source and PCM metadata accepted only by actual native tests, not film or voice release")
