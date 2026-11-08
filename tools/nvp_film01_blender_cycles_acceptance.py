@@ -231,7 +231,16 @@ def _review_outputs(dest,movie,stills,data,packet):
         # Saving a GIF is *review encoding*, not scene rendering.
         job_frames.append(movie[i])
     gif=dest/"donut_box_sphere_REAL_BLENDER_CYCLES_3sec.gif"
-    gif_frames=[img.quantize(colors=256) for img in job_frames]
+    # Add a tiny diagnostic frame counter to GIF COPIES only, so
+    # Pillow cannot merge visually identical adjacent frames and silently
+    # shorten the 72-frame timing. Original Cycles PNGs stay untouched.
+    gif_frames=[]
+    for frame,image in enumerate(job_frames):
+        marked=image.copy()
+        ImageDraw.Draw(marked).text(
+            (8,8),f"Original USD / Cycles frame {frame:02d}",
+            fill=(250,250,250))
+        gif_frames.append(marked.quantize(colors=256))
     gif_frames[0].save(
         gif,save_all=True,append_images=gif_frames[1:],
         duration=42,loop=0,optimize=False,disposal=2)
@@ -289,7 +298,6 @@ def fixture(workspace,blender,*,ci_test_consent=False):
         blender_sha256=sha_file(exe),blender_version=version,
         activity_ledger=ledger)
     op,packet,job=stage_original_cycles_worker(source,worker)
-    trusted_native_event=object()
     approval_name="CI_ONLY_FROZEN_DONUT_CYCLES_"+op.job_id[-12:]
     test_approval_id=approval_name if ci_test_consent else ""
     def approval_check(approval_id,digest,document):
@@ -297,9 +305,6 @@ def fixture(workspace,blender,*,ci_test_consent=False):
         # Production UI must use its own independent creator-presence
         # verifier. This fixture cannot mint a real approval.
         return (approval_id==approval_name and
-                operation.get("inputs",{}).get(SOURCE_NAME)==
-                    packet["source_sha256"] if False else
-                approval_id==approval_name and
                 operation.get("inputs",{}).get(SOURCE_NAME)==
                     sha_file(job/SOURCE_NAME) and
                 operation.get("script_sha256")==op.script_sha256 and
