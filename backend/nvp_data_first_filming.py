@@ -111,6 +111,42 @@ class NativeSceneSoundCapture:
                 "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
             }:
                 raise ValueError("Recorded sound requires typed source/evidence/Film Time")
+        # Validate the entire batch before consuming even the first one-shot
+        # recording iterator. A later duplicate, occupied source identity,
+        # invalid emitter, or checkpoint overflow must not trigger capture.
+        preflight_events=set()
+        preflight_sources=set()
+        for entry in recordings:
+            eid=_id(entry["event_id"],"recorded sound event")
+            sid=_id(entry["source_id"],"original audio source")
+            if (eid==sid or eid in preflight_events or eid in preflight_sources or
+                sid in preflight_sources or sid in preflight_events or
+                eid in camera_ids or sid in camera_ids or eid in ids or sid in ids):
+                raise ValueError("Duplicate or reserved recording identity")
+            if entry["event_kind"] not in ("sound","dialogue"):
+                raise ValueError("Captured audio must be a sound or dialogue event")
+            _id(entry["subject_id"],"sound source subject")
+            if entry["usd_prim_path"] not in source["data"]["prim_roles"]:
+                raise RuntimeError("Sound emitter is not part of original 3D scene")
+            start=_int(entry["start_tick"],"captured sound start")
+            end=_int(entry["end_tick"],"captured sound end",minimum=1)
+            gain=entry["gain"]
+            if (end<=start or end>duration or type(gain) not in (int,float) or
+                not math.isfinite(gain) or not 0<=gain<=2):
+                raise ValueError("Captured sound has invalid timing/gain")
+            try:
+                self.index.read_revision(project_id,sid,1)
+            except KeyError:
+                pass
+            else:
+                raise ValueError("Original audio source identity already published")
+            for tick in (start,end):
+                if tick<duration:
+                    boundaries.add(tick)
+            if len(boundaries)>MAX_CHECKPOINTS:
+                raise ValueError("Filming event boundaries exceed frozen Take checkpoint capacity")
+            preflight_events.add(eid)
+            preflight_sources.add(sid)
         frozen_recordings=[dict(entry) for entry in recordings]
         try:
             for entry in frozen_recordings:
