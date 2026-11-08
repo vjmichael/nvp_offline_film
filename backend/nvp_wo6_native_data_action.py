@@ -272,8 +272,9 @@ class NativeFilmDecisionHost:
                 "decision_id":decision_id,"film_delivered":False}
 
     @exclusive_worker_host
-    def run_next(self, *, timeout_seconds=900):
-        claimed = self.binding.claim_next(owner_key=self.owner)
+    def run_next(self, *, timeout_seconds=900, expected_task_id=None):
+        claimed = self.binding.claim_next(
+            owner_key=self.owner,expected_task_id=expected_task_id)
         if not claimed or not claimed["admitted"]:
             return claimed
         task = claimed["task_id"]
