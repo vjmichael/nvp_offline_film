@@ -9,6 +9,9 @@ const sceneSha='b'.repeat(64);
 const timelineSha='c'.repeat(64);
 const takeSha='d'.repeat(64);
 const previewSha='e'.repeat(64);
+const soundSha='f'.repeat(64);
+const slateSha='9'.repeat(64);
+const typedSha='8'.repeat(64);
 const catalog={
   format:'nvp.wo6.director_desktop_native_consent.v1',
   project_id:pid,model_execute_enabled:false,
@@ -21,8 +24,18 @@ const catalog={
     sha256:timelineSha,data:{duration_tick:7056000000*3}}],
   takes:[{id:'TakeA',kind:'take',revision:1,sha256:takeSha,
     data:{scene_id:'SceneA',scene_revision:1,
-      scene_document_sha256:sceneSha}}],
+      scene_document_sha256:sceneSha,
+      timeline_id:'TimelineA',timeline_revision:1,
+      timeline_document_sha256:timelineSha}}],
   grades:[],
+  audio_sources:[{id:'OriginalPCM',kind:'audio',revision:1,
+    sha256:soundSha,data:{format:'nvp.data_av.recorded_pcm.v1',
+      sample_count:48000}}],
+  slate_graphs:[{id:'SlateA',kind:'presentation',revision:1,
+    sha256:slateSha,data:{format:'nvp.slate.branch_graph.v1',
+      nodes:[{branch_id:'root_take',take_id:'TakeA',
+        take_document_sha256:takeSha,
+        source_start_tick:0,source_end_tick:2*7056000000}]}}],
 };
 const impact={
   status:'READ_ONLY_IMPACT_PREVIEW_NO_CREATOR_GRANT',
@@ -34,6 +47,13 @@ function native(overrides={}){
   const api={
     wo6_source_catalog:vi.fn(async()=>catalog),
     wo6_source_impact:vi.fn(async()=>impact),
+    wo6_preview_typed_decision:vi.fn(async()=>({
+      status:'READ_ONLY_TYPED_DECISION_NO_GRANT',
+      typed_preview_sha256:typedSha,
+      creative_approval_granted:false,
+      native_worker_authorized:false,
+      rendered_sound:false,
+    })),
     wo6_create_take:vi.fn(async()=>({
       format:'nvp.wo6.director_desktop_native_consent.v1',
       queued_task_id:'wo6take_'+'1'.repeat(24),
@@ -214,7 +234,7 @@ describe('WO6 installed creator-native first-party actions',()=>{
     fireEvent.change(screen.getByLabelText('Focal length (mm)'),
       {target:{value:'85'}});
     fireEvent.change(screen.getByPlaceholderText(
-      'Explain my independently selected camera, actor or lighting change'),
+      'Explain my independently selected camera, actor, sound or editorial change'),
       {target:{value:humanReason}});
     fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
       {target:{value:'HumanOriginalShotA'}});
