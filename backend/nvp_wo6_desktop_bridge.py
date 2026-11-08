@@ -34,6 +34,7 @@ from backend.nvp_wo6_director_model_proposal import (
     director_model_suggestion, MAX_CREATIVE_CHARS)
 from backend.nvp_model_service import discover_models
 from backend.nvp_wo6_verified_local_model import verified_writer_for
+from backend.nvp_wo6_sound_editorial_decisions import preview_typed_decision
 
 FORMAT="nvp.wo6.director_desktop_native_consent.v1"
 MAX_LIST=64
@@ -399,6 +400,14 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             request["source_sha256"],request["change_kind"],
             max_nodes=32)
 
+    def wo6_preview_typed_decision(self,request):
+        """Pure FilmIndex/PCM/slate preview with no worker or OS permission."""
+        self._wo6_require(request,{
+            "project_id","decision_kind","decision_id",
+            "source_id","source_revision","source_sha256",
+            "payload","duration_tick"})
+        return preview_typed_decision(self.index,request)
+
     def _wo6_require(self,request,expected):
         if type(request) is not dict or set(request)!=expected:
             raise ValueError("Unknown director operation fields")
@@ -579,8 +588,11 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             "preview_sha256"}
         has_review=(type(request) is dict and
                     "reviewed_proposal_id" in request)
+        has_typed=(type(request) is dict and
+                   request.get("decision_kind") in ("sound_cue","editorial_cut"))
         scope=self._wo6_require(
-            request,required|({"reviewed_proposal_id"} if has_review else set()))
+            request,required|({"reviewed_proposal_id"} if has_review else set())|
+                    ({"typed_preview_sha256"} if has_typed else set()))
         context=None
         take_id=None
         proposal_id=request.get("reviewed_proposal_id") if has_review else None
@@ -632,6 +644,8 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                 payload=request["payload"],
                 duration_tick=request["duration_tick"],
                 expected_preview_sha256=request["preview_sha256"],
+                expected_typed_preview_sha256=(
+                    request["typed_preview_sha256"] if has_typed else None),
                 ai_review_context=context,
                 reviewed_original_take_id=take_id)
         except BaseException:
