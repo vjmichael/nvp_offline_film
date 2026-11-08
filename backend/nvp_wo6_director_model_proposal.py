@@ -106,6 +106,28 @@ def director_model_suggestion(index:FilmIndex, project_id, take_id,
         raise ValueError("Model response is not a bounded plain-text suggestion")
     if index.read_revision(project_id,take_id,1)["document_sha256"]!=take_sha256:
         raise PermissionError("Source Take changed while model proposed a change")
+    # An immutable historical Take is valid evidence, but if its surrounding
+    # live scene/timeline heads change while generation is active, the
+    # proposal no longer has a stable *current* source view. Refuse to
+    # present an old snapshot as advice for the newly edited scene.
+    for observed in context["source_heads"]:
+        latest=index.read_revision(
+            project_id,observed["object_id"])["revision"]
+        if latest!=observed["head_revision_observed"]:
+            raise RuntimeError(
+                "Source scene/timeline head changed during local inference; discard proposal")
+    provider_receipt=getattr(model,"completion_receipt",None)
+    if provider_receipt is not None:
+        from backend.nvp_wo6_verified_local_model import FORMAT as PROVIDER_FORMAT
+        if (type(provider_receipt) is not dict or
+                provider_receipt.get("format")!=PROVIDER_FORMAT or
+                provider_receipt.get("selected_model_id")!=model_id or
+                provider_receipt.get("provider_reported_model_id")!=model_id or
+                provider_receipt.get("generated_text_sha256")!=
+                    sha256(candidate.strip().encode("utf8")).hexdigest() or
+                provider_receipt.get("provider_reported_completion_tokens",0)<1 or
+                provider_receipt.get("native_worker_authorized") is not False):
+            raise PermissionError("Local generation evidence does not match source proposal")
     result={
         "format":FORMAT,
         "status":"LOCAL_MODEL_TEXT_PROPOSED_NOT_APPROVED",
@@ -113,6 +135,9 @@ def director_model_suggestion(index:FilmIndex, project_id, take_id,
         "take_id":take_id,"take_sha256":take_sha256,
         "film_time_tick":film_tick,
         "model_id_reported_by_local_host":model_id,
+        "provider_completion_receipt":provider_receipt,
+        "provider_completion_observed":provider_receipt is not None,
+        "provider_report_self_reported_not_verified_weights":True,
         "verified_source_context_sha256":context["context_sha256"],
         "context_packet_sha256":source_prompt_sha,
         "model_text_sha256":sha256(candidate.encode("utf8")).hexdigest(),
