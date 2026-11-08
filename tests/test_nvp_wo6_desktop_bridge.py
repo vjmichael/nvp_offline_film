@@ -139,6 +139,15 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
         self.assertFalse(queued["native_worker_success_verified"])
         self.assertTrue(arrived.wait(timeout=2))
         self.assertEqual(seen,[task])
+        deadline=time.monotonic()+2
+        deferral=None
+        while time.monotonic()<deadline:
+            with self.bridge._wo6_dispatch_lock:
+                deferral=self.bridge._wo6_dispatch_deferrals.get(task)
+            if deferral is not None:
+                break
+            time.sleep(.01)
+        self.assertEqual(deferral,"NOTICE_NOT_CLAIMED")
         self.bridge._close()
 
     def test_native_job_dispatch_does_not_block_director_ipc(self):
