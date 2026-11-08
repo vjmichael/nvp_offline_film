@@ -460,6 +460,30 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(recorded["payload"]["gain"],1.0)
         self.assertEqual(event["gain"],0.0)
 
+    def test_earlier_pcm_generator_cannot_mutate_later_recording_metadata(self):
+        req=self.payload()
+        first=req["recordings"][0]
+        second=dict(first)
+        second.update(event_id="Speech002",source_id="SecondSpeech",
+                      pcm_chunks=iter([self.original]))
+        req["recordings"].append(second)
+        def mutating_first_pcm():
+            second["event_id"]="TamperedSpeech"
+            second["subject_id"]="TamperedActor"
+            second["usd_prim_path"]="/World/NotThere"
+            second["gain"]=99.0
+            yield self.original
+        first["pcm_chunks"]=mutating_first_pcm()
+        self.capture.capture(**req)
+        events=TemporalLedger(self.index).events_in(
+            self.pid,"FilmingSoundTimeline",1,
+            start_tick=0,end_tick=3*T,limit=20)["events"]
+        later=next(e for e in events if e["event_id"]=="Speech002")
+        self.assertEqual(later["subject_id"],"Actor")
+        self.assertEqual(later["payload"]["gain"],1.0)
+        self.assertEqual(later["payload"]["usd_prim_path"],"/World/Actor")
+        self.assertEqual(second["event_id"],"TamperedSpeech")
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
