@@ -181,6 +181,13 @@ class NativeSceneSoundCapture:
                         raise RuntimeError("Captured PCM spool changed after validation")
                     chunk_index+=1
                     yield chunk
+            # Verify every completed spool before publishing the first source.
+            # A damaged later spool must not orphan an earlier immutable PCM
+            # revision. Replay still rechecks digests at publication time.
+            for entry in prepared_entries:
+                sid=entry["source_id"]
+                for _ in replay(prepared_chunks[sid],chunk_digests[sid]):
+                    pass
             events=[]
             seen=set(ev["event_id"] for ev in camera_events["events"])
             for ev in camera_events["events"]:
