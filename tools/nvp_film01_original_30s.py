@@ -316,9 +316,15 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES):
         raise PermissionError("Original 30s edit SHA changed")
     rows=[]
     all_samples=bytearray()
+    # Never expose a partial/truncated ZIP under the user-facing final
+    # filename. Failed renders can retain an explicitly .partial scratch
+    # archive, which is not an accepted or published film candidate.
+    staged=out.with_name(out.name+".partial")
+    if staged.exists() or staged.is_symlink():
+        raise FileExistsError("Partial source export scratch path already exists")
     # Memory is bounded to one native six-frame render window and the
     # half-minute PCM buffer, not a flattened RGB frame sequence.
-    with ZipFile(out,"x",compression=ZIP_DEFLATED,compresslevel=5) as bundle:
+    with ZipFile(staged,"x",compression=ZIP_DEFLATED,compresslevel=5) as bundle:
         for start in range(0,max_frames,6):
             count=min(6,max_frames-start)
             packet=rendered_source_window(
@@ -394,6 +400,9 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES):
             "2K theatrical master or cinema-compliant DCP.\n"
             "Open the PNG sequence in an appropriate video editor and import "
             "the WAV at 24fps/48kHz for manual evaluation.\n")
+    if out.exists() or out.is_symlink():
+        raise FileExistsError("Final source review path changed during real render")
+    staged.rename(out)
     return {
         "format":RENDER_FORMAT,
         "zip_path":str(out),"complete_720_frame_source_preview":complete,
