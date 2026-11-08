@@ -44,7 +44,6 @@ jobs:
 
   freeze-one-original-for-all-shots:
     name: Generate ONE frozen 30s FilmIndex project, not three incompatible sources
-    needs: verify-original-source-and-supervisor
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
@@ -183,7 +182,7 @@ jobs:
 
   verify-and-publish-720-real-original-picture-frames:
     name: Source-verify ALL 720 Cycles PNGs, three source Takes, both cuts, six independent Blender readbacks
-    needs: [freeze-one-original-for-all-shots, native-real-three-shot-render]
+    needs: [verify-original-source-and-supervisor, freeze-one-original-for-all-shots, native-real-three-shot-render]
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
