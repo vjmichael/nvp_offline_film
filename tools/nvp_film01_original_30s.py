@@ -36,6 +36,7 @@ from backend.nvp_digital_slate_branches import DigitalSlateBranches
 from backend.nvp_slate_edit_assembly import SlateSequenceAssembly
 from backend.nvp_wo6_07f_rendered_av import rendered_source_window
 from backend.nvp_virtual_light_fx import make_simple_virtual_fx,evaluate_virtual_light_fx
+from backend.nvp_film01_donut_actor import original_donut_mesh
 
 FORMAT="nvp.film01.real_original_30_second_source.v1"
 RENDER_FORMAT="nvp.film01.source_raster_30_second_preview_receipt.v1"
@@ -104,21 +105,36 @@ def write_original_30s_source(destination,*,approve_test_only):
     pid=project["id"]
     index=FilmIndex(studio)
     assets=OpenUSDAssetRegistry(index)
+    donut=original_donut_mesh(
+        major_radius=0.95,minor_radius=0.32,
+        major_segments=36,minor_segments=14)
     geometry=(
-        ("RelayCore","sphere",1.8,[0.25,0.42,0.75]),
-        ("ServiceCraft","cube",1.0,[0.83,0.62,0.22]),
-        ("Engineer","sphere",0.52,[0.70,0.80,0.9]),
+        ("RelayCore","/World/RelayCore","sphere",1.8,
+         [0.25,0.42,0.75],None),
+        ("ServiceCraft","/World/ServiceCraft","cube",1.0,
+         [0.83,0.62,0.22],None),
+        # The engineer is an object-actor: a genuine OpenUSD torus with
+        # a hole and curved triangle normals. No human rig is required
+        # for an object to have a performance role.
+        ("EngineerDonut","/World/Engineer","mesh",1.4,
+         [0.72,0.53,0.33],donut),
     )
     bindings=[]
-    for name,shape,size,color in geometry:
+    for name,path,shape,size,color,mesh in geometry:
+        geometry_args=({
+            "points":mesh["mesh_points"],
+            "triangles":mesh["mesh_triangles"],
+            "face_uvs":mesh["mesh_face_uvs"],
+        } if mesh is not None else {})
         assets.publish(
             pid,name,shape=shape,size_m=size,
             preview_material={
-                "base_color_rgb":color,"roughness":0.57,
-                "metallic":0.12})
+                "base_color_rgb":color,
+                "roughness":0.31 if mesh is not None else 0.57,
+                "metallic":0.10 if mesh is not None else 0.12},
+            **geometry_args)
         bindings.append({
-            "path":"/World/"+name,"asset_id":name,
-            "asset_revision":1})
+            "path":path,"asset_id":name,"asset_revision":1})
     scene=OpenUSDSceneBridge(index)
     temporal=TemporalLedger(index)
     sound=RecordedSoundSources(index)
@@ -143,6 +159,10 @@ def write_original_30s_source(destination,*,approve_test_only):
                 {"tick":SHOT_SECONDS*T,"position":craft1}]},
             {"path":"/World/Engineer","samples":[
                 {"tick":0,"position":actor0},
+                {"tick":5*T,"position":[
+                    (actor0[0]+actor1[0])/2,
+                    (actor0[1]+actor1[1])/2,
+                    (actor0[2]+actor1[2])/2+0.15]},
                 {"tick":SHOT_SECONDS*T,"position":actor1}]},
         ]
         if shot==2:
@@ -272,9 +292,16 @@ def write_original_30s_source(destination,*,approve_test_only):
         "duration_seconds":DURATION,"fps":FPS,
         "target_frames":FRAMES,
         "source_asset_geometry":[
-            {"asset_id":name,"kind":shape,
-             "geometry_is_abstract_proxy":True}
-            for name,shape,size,color in geometry],
+            {"asset_id":name,"scene_path":path,
+             "kind":shape,"geometry_is_abstract_proxy":mesh is None,
+             "authored_donut_actor_surface":mesh is not None,
+             "donut_source_mesh_sha256":mesh["mesh_sha256"]
+                if mesh is not None else None,
+             "donut_hole_radius_m":mesh["hole_radius"]
+                if mesh is not None else None,
+             "donut_source_triangles":len(mesh["mesh_triangles"])
+                if mesh is not None else None}
+            for name,path,shape,size,color,mesh in geometry],
         "source_scene_id":"Relay30Scene",
         "slate_id":"Relay30Slate","slate_sha256":graph["document_sha256"],
         "edit_id":"Relay30Edit","edit_sha256":edit["document_sha256"],

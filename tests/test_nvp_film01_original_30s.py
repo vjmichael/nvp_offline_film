@@ -68,6 +68,34 @@ class Genuine30SecondOriginalShort(unittest.TestCase):
         self.assertEqual([x["source_take_id"] for x in mapped],list(SOURCE_IDS))
         self.assertEqual(len({x["source_take_sha256"] for x in mapped}),3)
 
+    def test_engineer_is_true_usd_donut_object_actor_not_human_proxy(self):
+        from backend.nvp_film01_donut_actor import original_donut_mesh
+        mesh=original_donut_mesh()
+        asset=self.index.read_revision(self.pid,"EngineerDonut",1)
+        self.assertEqual(asset["kind"],"asset")
+        self.assertEqual(asset["data"]["shape"],"mesh")
+        self.assertEqual(
+            len(asset["data"]["triangles"]),
+            len(mesh["mesh_triangles"]))
+        self.assertEqual(
+            asset["data"]["points"],mesh["mesh_points"])
+        source_names=self.report["source_asset_geometry"]
+        donut=next(x for x in source_names
+                   if x["asset_id"]=="EngineerDonut")
+        self.assertTrue(donut["authored_donut_actor_surface"])
+        self.assertFalse(donut["geometry_is_abstract_proxy"])
+        self.assertEqual(donut["donut_source_mesh_sha256"],mesh["mesh_sha256"])
+        for i in range(1,4):
+            scene=self.index.read_revision(self.pid,"Relay30Scene",i)
+            self.assertEqual(
+                scene["data"]["prim_roles"]["/World/Engineer"],"actor")
+            self.assertTrue(any(
+                row["asset_id"]=="EngineerDonut" and
+                row["asset_revision"]==1
+                for row in scene["data"]["asset_bindings"]))
+        self.assertFalse(
+            self.report["photorealistic_story_quality_approved"])
+
     def test_real_three_shot_visual_samples_and_timed_beacon_sound(self):
         receipts=[]
         for frame in (0,240,480,624):

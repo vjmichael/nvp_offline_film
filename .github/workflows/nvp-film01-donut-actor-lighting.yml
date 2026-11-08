@@ -1,0 +1,103 @@
+name: NVP FILM01 Donut Actor Real USD Ring and Four Lighting Pixel Proof (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film01-donut-actor-lighting-20261108]
+  pull_request:
+    paths:
+      - backend/nvp_film01_donut_actor.py
+      - tools/nvp_film01_donut_light_probe.py
+      - tools/nvp_film01_original_30s.py
+      - tests/test_nvp_film01_donut_lighting.py
+      - .github/workflows/nvp-film01-donut-actor-lighting.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film01-donut-actor-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-3d-donut-native-actor:
+    name: Authentic OpenUSD torus MESH/actor with center hole and four real shader lighting comparisons / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual OpenUSD source and first-party raster image tooling
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Compile genuine torus authoring, native source picture and tests
+        run: |
+          python -m compileall -q backend/nvp_film01_donut_actor.py tools/nvp_film01_donut_light_probe.py tools/nvp_film01_original_30s.py tests/test_nvp_film01_donut_lighting.py
+      - name: Test authoring TRUE torus ring, named USD object-actor, source SHA, native PNG hole and actual silver/gold/sun RGB shading
+        run: python -m unittest discover -s tests -p test_nvp_film01_donut_lighting.py -v
+      - name: Confirm original full-film editor source still authors real three-Take story
+        run: python -m unittest discover -s tests -p test_nvp_film01_original_30s.py -v
+
+  real-donut-four-png-and-contact-download:
+    name: Four real donut USD picture PNGs + contact sheet and source/lighting receipts (not DCI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install genuine USD first-party picture renderer
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Render true frozen USD 3D torus across neutral, silver, gold and fixed summer sun
+        shell: bash
+        run: |
+          python -m tools.nvp_film01_donut_light_probe \
+            --root "$RUNNER_TEMP/nvp-frozen-real-donut" \
+            --output "$RUNNER_TEMP/nvp-real-donut-artist-light-review" \
+            --test-consent I_APPROVE_DISPOSABLE_DONUT_SOURCE
+          python - <<'PY'
+          import json,hashlib,os
+          from pathlib import Path
+          from PIL import Image
+          folder=Path(os.environ["RUNNER_TEMP"])/"nvp-real-donut-artist-light-review"
+          receipt=json.loads((folder/"donut_actor_actual_source_lighting_receipt.json").read_text())
+          assert receipt["real_usd_torus_ring_with_hole"] is True
+          assert receipt["source_original_actor_role"]=="actor"
+          assert len(receipt["genuine_per_light_render_receipts"])==4
+          assert len(receipt["neutral_vs_virtual_shader_pixel_deltas"])==3
+          assert receipt["no_true_occlusion_shadows_or_global_illumination"] is True
+          assert receipt["no_authorized_film_release_or_DCI_master"] is True
+          for item in receipt["genuine_per_light_render_receipts"]:
+              name=f"donut_actor_{item['look']}_real_NVP.png"
+              data=(folder/name).read_bytes()
+              assert hashlib.sha256(data).hexdigest()==item["real_image_png_sha256"]
+              with Image.open(folder/name) as img:
+                  img.load()
+                  assert img.size==(640,360) and img.format=="PNG"
+              assert item["central_hole_mean_brightness_8bit"]<2
+              assert item["annular_ring_mean_brightness_8bit"]>1
+          with Image.open(folder/"donut_actor_real_NVP_4_lighting_looks.png") as img:
+              img.load()
+              assert img.size==(1312,792)
+          print("DONUT_ACTOR_REAL_OPENUSD_PIXELS_AND_LIGHTING_FX_QC_PASS")
+          PY
+      - name: Upload only the verified original Donut actor's four genuine NVP-rendered PNG pictures
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-original-donut-actor-four-real-lighting-looks
+          path: |
+            ${{ runner.temp }}/nvp-real-donut-artist-light-review/
+          if-no-files-found: error
+          retention-days: 14
