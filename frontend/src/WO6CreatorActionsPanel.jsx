@@ -15,6 +15,8 @@ const ACTIONS = [
   ['lighting','Lighting shot adjustment'],
   ['color','New derived color decision'],
   ['camera_sequence','New exact Film Time camera sequence'],
+  ['sound_cue','New original PCM sound cue timeline'],
+  ['editorial_cut','New assembled digital-slate film edit'],
 ];
 function errorText(e){return e?.message || String(e)}
 function sourceFor(kind,scene,take){
@@ -61,10 +63,24 @@ export default function WO6CreatorActionsPanel({projectId}){
   const [aiReview,setAiReview]=useState(null);
   const [directorReason,setDirectorReason]=useState('');
   const [directorTypedChange,setDirectorTypedChange]=useState(false);
+  const [slateGraphId,setSlateGraphId]=useState('');
+  const [soundSourceId,setSoundSourceId]=useState('');
+  const [soundEventId,setSoundEventId]=useState('');
+  const [soundSubject,setSoundSubject]=useState('');
+  const [soundFirstSample,setSoundFirstSample]=useState('0');
+  const [soundGain,setSoundGain]=useState('1');
+  const [editSegments,setEditSegments]=useState([{
+    segment_id:'',branch_id:'',source_in_tick:'',source_out_tick:'',
+  }]);
   const native=()=>window.pywebview?.api;
   const currentScene=catalog?.scenes?.find(x=>x.id===sceneId)||null;
   const currentTake=catalog?.takes?.find(x=>x.id===takeId)||null;
   const currentTimeline=catalog?.timelines?.find(x=>x.id===timelineId)||null;
+  const currentTakeTimeline=catalog?.timelines?.find(x=>
+    x.id===currentTake?.data?.timeline_id &&
+    x.revision===currentTake?.data?.timeline_revision) ||null;
+  const currentGraph=catalog?.slate_graphs?.find(x=>x.id===slateGraphId)||null;
+  const currentSound=catalog?.audio_sources?.find(x=>x.id===soundSourceId)||null;
   const scene=(kind==='take'||kind==='camera_sequence')?currentScene:
     (currentTake?.data?.scene_id
       ?catalog?.scenes?.find(x=>x.id===currentTake.data.scene_id)||null
@@ -74,13 +90,24 @@ export default function WO6CreatorActionsPanel({projectId}){
     (kind==='camera'||kind==='camera_sequence')?role==='camera':
     kind==='lighting'?role==='light':
     kind==='blocking'?(role==='actor'||role==='prop'):false);
-  const selectedOriginal=sourceFor(kind,kind==='take'||kind==='camera_sequence'?currentScene:scene,currentTake);
+  const selectedOriginal=(kind==='sound_cue'?
+    (currentTakeTimeline?{id:currentTakeTimeline.id,
+      revision:currentTakeTimeline.revision,sha256:currentTakeTimeline.sha256,
+      change:'revise_sound'}:null):kind==='editorial_cut'?
+    (currentGraph?{id:currentGraph.id,revision:currentGraph.revision,
+      sha256:currentGraph.sha256,change:'revise_edit'}:null):
+    sourceFor(kind,kind==='take'||kind==='camera_sequence'?
+      currentScene:scene,currentTake));
   const fingerprint=selectedOriginal
     ?[projectId,kind,selectedOriginal.id,selectedOriginal.revision,
       selectedOriginal.sha256].join('|'):null;
+  const typedOperation=(kind==='sound_cue'||kind==='editorial_cut');
   const usableImpact=impact?.fingerprint===fingerprint &&
     impact?.data?.status==='READ_ONLY_IMPACT_PREVIEW_NO_CREATOR_GRANT' &&
-    impact?.data?.indexed_downstream_truncated===false;
+    impact?.data?.indexed_downstream_truncated===false &&
+    (!typedOperation || (impact.typed?.status==='READ_ONLY_TYPED_DECISION_NO_GRANT'
+      && impact.typed?.creative_approval_granted===false
+      && impact.typed?.native_worker_authorized===false));
   useEffect(()=>{setImpact(null)},[fingerprint]);
   // Never present prior Take/project suggestions as if selected for the
   // currently viewed original source. The native receipt itself remains
@@ -109,6 +136,8 @@ export default function WO6CreatorActionsPanel({projectId}){
         setSceneId(old=>old||response.scenes[0]?.id||'');
         setTakeId(old=>old||response.takes[0]?.id||'');
         setTimelineId(old=>old||response.timelines[0]?.id||'');
+        setSoundSourceId(old=>old||response.audio_sources?.[0]?.id||'');
+        setSlateGraphId(old=>old||response.slate_graphs?.[0]?.id||'');
         setProblem('');
       }catch(e){if(live)setProblem(errorText(e))}
     }
@@ -121,6 +150,10 @@ export default function WO6CreatorActionsPanel({projectId}){
     setAiReview(null);
     setDirectorTypedChange(false);
     setCatalog(data);
+    setSoundSourceId(old=>data.audio_sources?.some(x=>x.id===old)?
+      old:(data.audio_sources?.[0]?.id||''));
+    setSlateGraphId(old=>data.slate_graphs?.some(x=>x.id===old)?
+      old:(data.slate_graphs?.[0]?.id||''));
     setSceneId(old=>data.scenes.find(x=>x.id===old)?old:(data.scenes[0]?.id||''));
     setTakeId(old=>data.takes.find(x=>x.id===old)?old:(data.takes[0]?.id||''));
   };
