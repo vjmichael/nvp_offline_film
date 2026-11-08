@@ -81,7 +81,9 @@ class BlenderFrozenObjectActorSource(unittest.TestCase):
         self.assertEqual(self.body["performance_variant"],"baseline")
         self.assertNotEqual(revised["source_take_sha256"],
                             self.body["source_take_sha256"])
-        for i in (0,71):
+        # Frame 71 is just before the final 3s key and rightly differs
+        # because the retake has a new approach trajectory.
+        for i in (0,):
             self.assertEqual(revised["frames"][i]["actors"]["sphere"],
                              self.body["frames"][i]["actors"]["sphere"])
         self.assertAlmostEqual(revised["frames"][24]["actors"]["sphere"][2],-2.8)
