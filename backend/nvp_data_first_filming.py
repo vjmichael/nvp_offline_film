@@ -141,8 +141,12 @@ class NativeSceneSoundCapture:
                         not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2 or
                         count>=MAX_CHUNKS):
                         raise ValueError("Invalid captured PCM16LE chunk")
-                    spool.write(struct.pack("<I",len(chunk)))
-                    spool.write(chunk)
+                    # A short write (including a full disk or interrupted
+                    # temporary backing store) is not a validated recording.
+                    # Refuse the entire batch before publishing source data.
+                    header=struct.pack("<I",len(chunk))
+                    if spool.write(header)!=len(header) or spool.write(chunk)!=len(chunk):
+                        raise OSError("Incomplete captured PCM spool write")
                     digests.append(hashlib.sha256(chunk).digest())
                     samples+=len(chunk)//2
                     count+=1
