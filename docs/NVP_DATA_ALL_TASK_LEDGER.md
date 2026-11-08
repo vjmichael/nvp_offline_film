@@ -1170,3 +1170,10 @@ has been collected. CI queued/pending or cancelled runs are not passes.
   picture+sound+director review; 60–90min and >=3h features; external
   theatrical validation. CI setup repair or source-only code review
   must never be counted as accepted native evidence.
+
+
+## WO1 integrated regression closeout — 2026-11-07
+
+Draft PR #94 (`nvp/wo1-integrated-native-regressions-20261107`) stacks on WO6 PR #93 and targets five native regressions: (1) genuine Windows handle-inheritance evidence rather than numeric HANDLE presence, (2) SLATE-05/06 failed creator admission with private stage diagnostics, (3) already-fixed narrow MaterialX mapped-scalar authorization plus tamper regression, (4) exact PCM24 24-frame cache-crossing sample custody, and (5) bounded first-party WO6 dispatch/close/failure behavior. Dedicated four-cell Windows/Linux Python 3.11/3.13 CI: `.github/workflows/nvp-wo1-integrated-regressions.yml`. See `docs/NVP_WO1_INTEGRATED_REGRESSION_CLOSEOUT.md` for exact source paths and exit criteria.
+
+**No new acceptance gate closed at submission.** In particular, SLATE approval failures need an observed native refusal-stage trace and an actual repair; windows native pipe/write readback, as well as all other exact-head tests, must run before success can be claimed. Work on WO2+ product features is not resumed until WO1's own acceptance is honestly assessed.
