@@ -85,3 +85,66 @@ pilot, 60–90-minute genuine feature, 3-hour-plus endurance, installed
 Windows/Linux playback, legal notice/Blender GPL review and independent
 calibrated DCP/SMPTE Bv2.1 verification. Passing a preflight 720-frame
 source manifest is *not* any of these outcomes.
+
+
+## FILM02-02 — Native supervised real Blender/Cycles implementation (2026-11-08)
+
+**Code and genuine GitHub OS-render workflow submitted; native full 720-frame
+acceptance must still be confirmed by completed run artifacts.** Do not
+treat queued or cancelled jobs as a finished film.
+
+- Fixed, first-party GPL Blender-side adapter:
+  tools/nvp_film02_blender_cycles_worker.py; imported only by the real
+  independently launched Blender binary, never by NVP Core. It receives
+  a SHA-bound 24-frame chunk derived from the frozen source; constructs
+  the five original FilmIndex USD-bound assets (including the genuine
+  torus), camera and practical light. The USD row-vector matrices are
+  explicitly transposed for Blender's column-vector convention.
+  Blender/Cycles CPU produces actual 640x360 PNGs with eight samples
+  and secondary lighting bounces, along with a derived source .blend,
+  one real verified preview and a per-frame image/SHA/time audit.
+- Host adapter:
+  tools/nvp_film02_blender_cycles_acceptance.py reopens the full 720-frame
+  original Take handoff and actual FilmIndex source on *each* runner, then
+  splits one source shot into 10 batches of 24 frames. Every batch runs
+  through the preexisting ApprovedBlenderDispatcher, TaskLedger and
+  BlenderWorkerSupervisor. All native resource/approval/cancellation,
+  timeout, journal/restart and OS-worker-containment contracts are reused.
+  Already successful chunks can be independently reverified on restart;
+  interrupted/failed chunks are NOT automatically replayed or accepted.
+  Three shots = 30 independently journaled real Cycles jobs.
+- Blender independent readback:
+  tools/nvp_film02_cycles_reopen.py is a second native Blender process
+  that reopens the original .blend for first and last batch per shot,
+  checks original source mesh identity, real camera/light/actors,
+  first/last matrix poses and true Cycles settings. The working adapter
+  cannot self-attest as an independent second process.
+- Final pixel evidence:
+  tools/nvp_film02_cycles_collect.py refuses any missing PNG, camera
+  source, interrupted worker, absent readback, frame SHA/time mismatch,
+  foreign source project or edit SHA, changed cut at 240/480, or
+  incomplete 720 original frames. Only after all three shot outputs
+  pass does it create a genuine 9-frame Cycles director contact and
+  comprehensive source frame receipt. It explicitly does NOT claim
+  a synchronized playable film or the original soundtrack.
+- Real GitHub verification:
+  .github/workflows/nvp-film02-real-blender-30s-render.yml
+  runs native Windows/Linux source and supervisor tests, freezes a
+  **single** original source project ONCE, distributes the identical
+  checked original project/720-frame manifest to 3 parallel Ubuntu
+  jobs, downloads official SHA-verified Blender 5.2.3, and renders
+  each real 240-frame shot. The final collector checks all 720 genuine
+  Blender frames before publishing a director sheet.
+  Failed workers upload separate explicitly labeled diagnostic logs.
+- Testing boundaries:
+  tests/test_nvp_film02_blender_cycles_source.py checks all thirty
+  exact-source 24-frame batches, no frame crossing edits, shared project,
+  source SHA and source packet tamper rejection and supervised staging
+  without pretending that staging is an actual Blender render.
+
+**Open, not waived:** exact current-head Windows/Linux CI evidence;
+successful actual three 240-frame Cycles artifacts; separately reopened
+saved .blend/native pixels; human director visual review, timing and
+reflection/shadow assessment; FILM02-03 genuine original source PCM and
+continuous 30-second synchronized playback; real installed Windows
+Blender/GUI, GPL notices and eventual calibrated 2K/DCI acceptance.
