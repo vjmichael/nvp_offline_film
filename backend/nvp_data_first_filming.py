@@ -102,8 +102,18 @@ class NativeSceneSoundCapture:
                     boundaries.add(int(tick))
         if len(boundaries)>MAX_CHECKPOINTS:
             raise ValueError("Filming event boundaries exceed frozen Take checkpoint capacity")
+        # Snapshot the ENTIRE batch before advancing any PCM generator.
+        # An earlier recorder callback can mutate a later caller-owned entry;
+        # copying only the current entry inside the loop is too late.
+        for entry in recordings:
+            if type(entry) is not dict or set(entry)!={
+                "event_id","event_kind","subject_id","source_id",
+                "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
+            }:
+                raise ValueError("Recorded sound requires typed source/evidence/Film Time")
+        frozen_recordings=[dict(entry) for entry in recordings]
         try:
-            for entry in recordings:
+            for entry in frozen_recordings:
                 if type(entry) is not dict or set(entry)!={
                     "event_id","event_kind","subject_id","source_id",
                     "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
