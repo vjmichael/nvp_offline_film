@@ -345,6 +345,16 @@ def production_bible_actor(project_id: str, actor_id: str):
     return run(lambda: _ProductionActors(studio).actor(project_id, actor_id))
 
 
+@app.get("/api/projects/{project_id}/production-bible/actors/{actor_id}/asset-audit")
+def production_bible_actor_asset_audit(
+    project_id: str, actor_id: str,
+    take_id: str | None = None,
+    performance_id: str | None = None,
+):
+    return run(lambda: _ProductionActors(studio).audit_actor_asset_package(
+        project_id, actor_id, take_id=take_id, performance_id=performance_id))
+
+
 @app.get("/api/projects/{project_id}/production-bible/actors/{actor_id}/voice-candidates")
 def production_bible_actor_voice_candidates(project_id: str, actor_id: str):
     from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
