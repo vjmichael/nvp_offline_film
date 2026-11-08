@@ -203,8 +203,12 @@ class ProductionBibleVoiceIdentity:
                             previous["reference_audio_revision"]!=reference_audio_revision):
                         raise PermissionError(
                             "An existing VoiceID's acoustic reference is immutable; recast with NEW VoiceID")
-                elif not _review_reason(voice_recast_reason):
-                    raise PermissionError("Voice recast needs an explicit director reason")
+                else:
+                    if not _review_reason(voice_recast_reason):
+                        raise PermissionError("Voice recast needs an explicit director reason")
+                    if previous["reference_audio_sha256"]==source_sha:
+                        raise PermissionError(
+                            "New VoiceID must use a different immutable original voice reference")
             elif voice_recast_reason:
                 raise ValueError("First voice cast is not a recast")
             # Reference source bytes are immutable and SHA-addressed.
@@ -315,12 +319,15 @@ class ProductionBibleVoiceIdentity:
                 if saved is None or saved["document_sha"]!=sha:
                     raise RuntimeError("Original performance/audio source changed during approval")
             owners=db.execute(
-                """SELECT DISTINCT actor_id FROM nvp_bible_voice_take_approvals
+                """SELECT DISTINCT actor_id,voice_id FROM nvp_bible_voice_take_approvals
                    WHERE project_id=? AND original_audio_id=?
                      AND original_audio_revision=?""",
                 (pid,audio_ref["audio_id"],audio_ref["audio_revision"])).fetchall()
             if any(row["actor_id"]!=actor_id for row in owners):
                 raise PermissionError("One recorded voice clip cannot serve two different actors")
+            if any(row["voice_id"]!=voice_id for row in owners):
+                raise PermissionError(
+                    "A recording already approved for another VoiceID cannot be relabeled; record new voice source")
             db.execute(
                 """INSERT INTO nvp_bible_voice_take_approvals
                    (project_id,actor_id,performance_id,approval_revision,
