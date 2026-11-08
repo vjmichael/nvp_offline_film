@@ -67,9 +67,12 @@ class SlatePreviewCache:
         db=sqlite3.connect(self.db,timeout=15,isolation_level=None)
         try:
             db.row_factory=sqlite3.Row
-            db.execute("PRAGMA journal_mode=WAL")
-            db.execute("PRAGMA synchronous=FULL")
             db.execute("PRAGMA busy_timeout=15000")
+            # Reconfiguring WAL on every open can race concurrent native
+            # creator/worker connections. Configure it only on first use.
+            if str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower()!="wal":
+                db.execute("PRAGMA journal_mode=WAL")
+            db.execute("PRAGMA synchronous=FULL")
             # reserve/accept_verified/fail/evict explicitly BEGIN IMMEDIATE.
             # Closing an uncommitted sqlite3 connection silently rolls these
             # changes back. In particular it erased the PENDING reservation
