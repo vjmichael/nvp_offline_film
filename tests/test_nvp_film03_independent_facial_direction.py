@@ -70,7 +70,7 @@ class FaceBodyVoiceSourceContracts(unittest.TestCase):
         with TemporaryDirectory() as temp:
             state, _, args = prepared(Path(temp))
             args.pop("emotional_relationship")
-            args["face_events"] = []
+            args.pop("face_events")  # Omitted, not merely an explicit empty list
             host = FilmIndependentActingDirection(
                 state["index"], verify_creator_action=lambda *_: True)
             plan = host.plan(state["pid"], state["request"], **args)
