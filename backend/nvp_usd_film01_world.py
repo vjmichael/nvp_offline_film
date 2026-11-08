@@ -64,7 +64,7 @@ def _position(value):
 
 
 def _record_source(index, pid, kind, source_id, revision, *,
-                   sealed_scene=None):
+                   sealed_scene=None, legacy_source_compat=False):
     _id(source_id, "film source")
     _exact_rev(revision)
     if sealed_scene is not None:
@@ -108,8 +108,11 @@ def _record_source(index, pid, kind, source_id, revision, *,
         from backend.nvp_usd_film01c_texture import (
             derive_texture_resolved_layer,
         )
-        contents, texture_files = derive_texture_resolved_layer(
-            index,pid,plain,source_kind="scene",source_record=record)
+        if legacy_source_compat:
+            contents = flattened.ExportToString().encode("utf8")
+        else:
+            contents, texture_files = derive_texture_resolved_layer(
+                index,pid,plain,source_kind="scene",source_record=record)
         root_prim = "/World"
     else:
         record, layer = OpenUSDAssetRegistry(index).open(pid, source_id, revision)
@@ -119,9 +122,12 @@ def _record_source(index, pid, kind, source_id, revision, *,
             derive_texture_resolved_layer,
         )
         from pxr import Usd
-        contents, texture_files = derive_texture_resolved_layer(
-            index,pid,Usd.Stage.Open(layer),
-            source_kind="asset",source_record=record)
+        if legacy_source_compat:
+            contents = layer.ExportToString().encode("utf8")
+        else:
+            contents, texture_files = derive_texture_resolved_layer(
+                index,pid,Usd.Stage.Open(layer),
+                source_kind="asset",source_record=record)
         root_prim = "/Asset"
     if not 0 < len(contents) <= MAX_LAYER_BYTES:
         raise RuntimeError("Actual source USD exceeds bounded staging size")
@@ -144,7 +150,7 @@ def _record_source(index, pid, kind, source_id, revision, *,
 
 
 def _normalize(index, pid, sets, props, variants, instancers,
-               *, sealed_sources=None):
+               *, sealed_sources=None, legacy_sources=False):
     if (type(sets) is not list or not 1 <= len(sets) <= MAX_SETS
         or type(props) is not list or len(props) > MAX_PROPS
         or type(variants) is not list or len(variants) > MAX_VARIANTS
@@ -161,7 +167,8 @@ def _normalize(index, pid, sets, props, variants, instancers,
                 raise PermissionError("Unrecognized scene payload in saved FilmIndex world")
             sources[key] = _record_source(
                 index, pid, kind, source_id, revision,
-                sealed_scene=pinned)
+                sealed_scene=pinned,
+                legacy_source_compat=legacy_sources)
         return sources[key]
     def name(item, required, category):
         if type(item) is not dict or set(item) != required:
@@ -511,7 +518,9 @@ class OpenUSDWorldComposer:
             self.index, pid, authored_sets, authored_props,
             authored_variants, authored_instancers,
             sealed_sources=(doc["sources"] if doc.get("world_root_sha256")
-                            else None))
+                            else None),
+            legacy_sources=(bool(doc.get("world_root_sha256")) and
+                            doc.get("scoped_layer_cache_registered") is not True))
         if pieces != {key: doc[key] for key in pieces}:
             raise PermissionError("World original source manifest changed since commit")
         for key, src in sources.items():
@@ -749,7 +758,7 @@ class OpenUSDWorldComposer:
                     # individually ON DEMAND; do not eagerly walk all sets.
                     actual = _record_source(
                         self.index,pid,"scene",item["scene_id"],
-                        item["scene_revision"])
+                        item["scene_revision"],legacy_source_compat=True)
                     if {k:v for k,v in actual.items()
                         if k not in ("bytes","texture_files")} != saved:
                         raise PermissionError(
