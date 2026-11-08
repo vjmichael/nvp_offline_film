@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   real-hydra-colored-textures:
-    name: Genuine Embree USD source-color image pixels / Ubuntu / Python 3.11
+    name: Genuine Storm USD texture pixels / Mesa/Xvfb / Ubuntu Python 3.11
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -37,8 +37,14 @@ jobs:
             openusd=26.08
             pillow
             numpy
+            pyside6
+            pyopengl
             pip
           init-shell: bash
+      - name: Provide genuine Mesa software OpenGL and virtual X display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0
       - name: Install NVP first-party Python dependencies in renderer environment
         shell: bash -el {0}
         run: |
@@ -62,7 +68,10 @@ jobs:
       - name: Real external Hydra renders and relative source-color fidelity (NO SKIP)
         shell: bash -el {0}
         run: |
-          python -m unittest discover -s tests -p test_nvp_wo3_real_hydra_color.py -v
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          export QT_QPA_PLATFORM=xcb
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24 +extension GLX +render" python -m unittest discover -s tests -p test_nvp_wo3_real_hydra_color.py -v
           test -s wo3-hydra-color-evidence.json
       - name: Preserve SHA-bound real Hydra measured pixel receipt
         if: always()
