@@ -11,6 +11,7 @@ from hashlib import sha256
 from pathlib import Path
 import json
 import math
+import shutil
 
 from backend.nvp_blender_worker import (
     BlenderOperation, BlenderWorkerSupervisor, sha_file,
@@ -249,8 +250,62 @@ class ReviewedBlenderFacialHost:
             or any(audit.get("preview_shas", {}).get(f"facial_at_{i}.png")
                    != sha_file(job / f"facial_at_{i}.png") for i in (1, 2, 3))):
             raise PermissionError("Real native Blender facial render receipt does not match actual source")
-        # Never claim completed cinematic lip sync until independent audio
-        # listening and geometry quality acceptance are performed.
+        # A SECOND native Blender process must independently reopen and
+        # check the same real ActorID face/PCM/Take and all three pose values.
+        reopen_code = Path(__file__).resolve().parents[1] / "tools" / \
+            "nvp_film03_real_face_blender_reopen.py"
+        if reopen_code.is_symlink() or not reopen_code.is_file():
+            raise PermissionError("Reviewed independent face verifier is missing")
+        reopen_id = job_id + "_reopen"
+        _id(reopen_id, "independent Blender reopen job")
+        reopen_dir = self.supervisor.root / reopen_id
+        if reopen_dir.exists() or reopen_dir.is_symlink():
+            raise RuntimeError("Independent facial reopen already staged")
+        reopen_dir.mkdir(mode=0o700)
+        shutil.copyfile(job / "scene.blend", reopen_dir / "scene.blend")
+        (reopen_dir / "source.json").write_bytes(canonical({
+            "source": data,
+            "source_blend_sha256": sha_file(reopen_dir / "scene.blend"),
+        }))
+        (reopen_dir / reopen_code.name).write_bytes(reopen_code.read_bytes())
+        reopen_op = BlenderOperation(
+            job_id=reopen_id, scene="scene.blend",
+            script=reopen_code.name,
+            script_sha256=sha_file(reopen_dir / reopen_code.name),
+            inputs={
+                "scene.blend": sha_file(reopen_dir / "scene.blend"),
+                "source.json": sha_file(reopen_dir / "source.json"),
+            },
+            outputs={"audit.json": "json_audit"},
+            arguments={
+                "--manifest": "source.json", "--audit": "audit.json",
+            },
+            memory_limit_mb=8192, timeout_seconds=600,
+            gpu_memory_mb=0, require_linux_cgroup_v2=False,
+        )
+        follow = self.supervisor.run(reopen_op)
+        if follow["state"] != "SUCCEEDED":
+            return {
+                "state": follow["state"], "job_id": job_id,
+                "independent_reopen_passed": False,
+                "render_approved_as_film": False,
+            }
+        self.supervisor.verify_completed(reopen_id)
+        proof = json.loads((reopen_dir / "audit.json").read_text("utf8"))
+        if (proof.get("passed") is not True
+            or proof.get("actor_id") != p["actor_id"]
+            or proof.get("voice_id") != p["voice_id"]
+            or proof.get("original_take_sha256") != p["source_take_sha256"]
+            or proof.get("original_pcm_sha256") != p["original_pcm_sha256"]
+            or proof.get("source_facial_candidate_sha256") !=
+                src["row"]["document_sha256"]
+            or proof.get("blender_reopen_sha256") != sha_file(job / "scene.blend")
+            or proof.get("real_imported_mesh_shape_keys_reopened") is not True
+            or proof.get("three_authored_mouth_face_poses_independently_reopened")
+                is not True):
+            raise PermissionError("Independent Blender process disagrees on saved facial source")
+        # The reopened geometry has passed, but real human auditory/video
+        # lip-sync quality and director Take approval remain separate gates.
         media = self.index.put_media_file(
             pid, job / "scene.blend", media_type="application/octet-stream",
             max_bytes=64 * 1024 * 1024)
@@ -274,7 +329,9 @@ class ReviewedBlenderFacialHost:
             "real_rendered_png_shas": pngs,
             "native_blender_audit_sha256": sha_file(job / "audit.json"),
             "actual_rendered_actor": True,
-            "independent_fresh_blender_reopen_pending": True,
+            "independent_fresh_blender_reopen_verified": True,
+            "independent_reopen_audit_sha256": sha_file(
+                reopen_dir / "audit.json"),
             "phoneme_to_rendered_lip_accuracy_verified": False,
             "director_take_approved": False,
         }
@@ -293,6 +350,6 @@ class ReviewedBlenderFacialHost:
             "document_sha256": saved["document_sha256"],
             "blend_sha256": media["sha256"], "preview_png_sha256": pngs,
             "original_sources_unchanged": True,
-            "independent_reopen_pending": True,
+            "independent_reopen_verified": True,
             "director_take_approved": False,
         }
