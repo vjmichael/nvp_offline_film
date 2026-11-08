@@ -87,6 +87,7 @@ def inspect_original_rig(index: FilmIndex, pid, take_id, actor_path, expected_ta
     if points is None or len(points) != rig["skin_vertex_count"]:
         raise RuntimeError("Skinned face mesh source topology changed")
     usable = []
+    deformed_vertices = {}
     for name, target_path in zip(mesh_names, paths):
         if str(target_path) != mesh_path + "/Blend_" + name:
             raise PermissionError("Original source BlendShape target was substituted")
@@ -96,13 +97,15 @@ def inspect_original_rig(index: FilmIndex, pid, take_id, actor_path, expected_ta
         offsets = shape.GetOffsetsAttr().Get()
         if offsets is None or len(offsets) != len(points):
             raise RuntimeError("Actual USD face shape offsets do not match mesh")
-        has_motion = False
-        for offset in offsets:
+        affected = []
+        for vertex, offset in enumerate(offsets):
             coords = [float(x) for x in offset]
             if any(not math.isfinite(x) or abs(x) > 2 for x in coords):
                 raise RuntimeError("Unbounded actual facial deformation")
-            has_motion |= any(abs(x) > EPSILON for x in coords)
-        if has_motion:
+            if any(abs(x) > EPSILON for x in coords):
+                affected.append(vertex)
+        deformed_vertices[name] = affected
+        if affected:
             usable.append(name)
     return {
         "format": "nvp.film03.original_usd_facial_rig_readback.v1",
@@ -115,6 +118,7 @@ def inspect_original_rig(index: FilmIndex, pid, take_id, actor_path, expected_ta
         "mesh_path": mesh_path, "animation_path": animation_path,
         "skeleton_layer_sha256": scene["data"]["skeleton_layer_sha256"],
         "shape_names": mesh_names, "nonzero_offset_shapes": usable,
+        "shape_deformed_vertices": deformed_vertices,
         "skinned_vertex_count": len(points),
         "real_usd_mesh_and_shape_offsets_verified": True,
         "artistic_mouth_semantics_verified_by_human": False,
@@ -161,6 +165,17 @@ def _map_controls(rig, viseme_events, face_events, viseme_shapes,
             "Mouth and emotion tracks share this shape: a reviewed corrective rig is needed")
     if not set(face_shapes.values()) <= set(neutralize_expressions):
         raise ValueError("All active emotion targets require explicit neutralization")
+    # Distinct shape *names* can still act on the SAME mesh vertices.
+    # That geometry collides without a genuine shape corrective solve.
+    affected = rig["shape_deformed_vertices"]
+    mouth_vertices = set().union(
+        *(set(affected[name]) for name in viseme_shapes.values()))
+    emotion_vertices = set().union(
+        *(set(affected[name]) for name in neutralize_expressions))
+    if mouth_vertices & emotion_vertices:
+        raise PermissionError(
+            "Actual mouth and facial emotion shapes deform shared vertices; "
+            "a reviewed corrective rig is required")
     return {
         "visemes": dict(viseme_shapes),
         "emotions": dict(face_shapes),
