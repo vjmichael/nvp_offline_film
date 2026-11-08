@@ -240,6 +240,27 @@ class ActorIdentityCore:
                     (last_cast["cast_revision"] if last_cast else None)!=cast_revision or
                     (last_cast["reference_audio_sha256"] if last_cast else None)!=voice_sha):
                 raise RuntimeError("Approved ActorID VoiceID changed during profile publication")
+            # A generic voice *type* may be shared (e.g. low and resonant),
+            # but the actual engine-specific VOICE SELECTOR must never be
+            # reused as two different characters' approved identity.
+            selector=normalized["voice_generation"]
+            others=db.execute(
+                """SELECT p.actor_id,p.profile_json
+                   FROM nvp_bible_actor_identity_profiles p
+                  WHERE p.project_id=? AND p.actor_id<>?
+                    AND p.profile_revision=(
+                      SELECT MAX(q.profile_revision)
+                        FROM nvp_bible_actor_identity_profiles q
+                       WHERE q.project_id=p.project_id
+                         AND q.actor_id=p.actor_id)""",
+                (pid,actor_id)).fetchall()
+            for other in others:
+                prior=json.loads(other["profile_json"])["voice_generation"]
+                if all(prior[k]==selector[k] for k in (
+                        "engine_id","model_id","model_revision",
+                        "engine_voice_id")):
+                    raise PermissionError(
+                        "Generated voice engine selector already belongs to another ActorID")
             db.execute(
                 """INSERT INTO nvp_bible_actor_identity_profiles
                   (project_id,actor_id,profile_revision,document_sha256,
