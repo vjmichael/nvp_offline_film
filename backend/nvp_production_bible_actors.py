@@ -372,6 +372,79 @@ class ProductionBibleActors:
                 (project_id,actor_id,expected_actor_revision))
         return self.actor(project_id,actor_id)
 
+    def casting_coverage(self, project_id, take_id):
+        """Audit EVERY authored OpenUSD actor against canonical Bible ActorIDs.
+
+        No automatic fake character creation: an actor in a source Take must
+        be manually cast/linked and signed off as an actual Bible character.
+        Uncast actors are visible and block full source-cast completeness.
+        """
+        _require_pid(project_id)
+        _id(take_id, "real frozen scene Take")
+        take = self.index.read_revision(project_id, take_id, 1)
+        if take["kind"] != "take" or take["data"].get("frozen") is not True:
+            raise PermissionError("Casting coverage requires a genuine frozen Digital Take")
+        scene, _ = OpenUSDSceneBridge(self.index).open(
+            project_id, take["data"]["scene_id"],
+            take["data"]["scene_revision"])
+        if scene["document_sha256"] != take["data"]["scene_document_sha256"]:
+            raise PermissionError("Source actor prims differ from frozen Take")
+        paths = sorted(path for path, role in scene["data"]["prim_roles"].items()
+                       if role == "actor")
+        if not paths:
+            raise ValueError("No castable OpenUSD actors in source")
+        assignments = {}
+        with self.studio._connection() as db:
+            last = db.execute("""
+                SELECT a.actor_id,a.actor_prim_path,a.source_sha256,a.status
+                  FROM nvp_bible_actor_links a
+                  JOIN (SELECT actor_id,link_id,MAX(link_revision) revision
+                          FROM nvp_bible_actor_links WHERE project_id=?
+                            AND role='actor_prim' AND source_family='filmindex'
+                            AND target_id=? AND target_revision=1
+                         GROUP BY actor_id,link_id) latest
+                    ON latest.actor_id=a.actor_id
+                   AND latest.link_id=a.link_id
+                   AND latest.revision=a.link_revision
+                 WHERE a.project_id=? AND a.role='actor_prim'
+                   AND a.target_id=? AND a.target_revision=1
+                """, (project_id,take_id,project_id,take_id)).fetchall()
+            for row in last:
+                if row["status"] != "active":
+                    continue
+                if row["source_sha256"] != take["document_sha256"]:
+                    raise RuntimeError("Cast member link has wrong source Take SHA")
+                canonical = db.execute("""
+                    SELECT kind FROM bible_entities WHERE id=? AND project_id=?""",
+                    (row["actor_id"],project_id)).fetchone()
+                if not canonical or canonical["kind"] != "character":
+                    raise RuntimeError("Source cast points to a non-character Bible entry")
+                assignments.setdefault(row["actor_prim_path"],set()).add(row["actor_id"])
+        if any(path not in paths for path in assignments):
+            raise RuntimeError("Stored actor link addresses an absent native prim")
+        ambiguous = {p:sorted(ids) for p,ids in assignments.items() if len(ids)>1}
+        missing = [p for p in paths if p not in assignments]
+        return {
+            "format": "nvp.film03.production_bible_actor_cast_coverage.v1",
+            "project_id": project_id, "take_id": take_id,
+            "take_sha256": take["document_sha256"],
+            "source_scene_sha256": scene["document_sha256"],
+            "authored_actor_prims": paths,
+            "actor_id_by_prim": {p:next(iter(ids)) for p,ids in assignments.items()
+                                 if len(ids)==1},
+            "uncast_prim_paths": missing,
+            "ambiguous_prim_bindings": ambiguous,
+            "complete": not missing and not ambiguous,
+            "all_actor_ids_in_authoritative_story_bible": True,
+            "automatic_casting_or_recasting": False,
+        }
+
+    def require_complete_cast(self, project_id, take_id):
+        proof = self.casting_coverage(project_id,take_id)
+        if not proof["complete"]:
+            raise RuntimeError("Cannot accept scene cast with missing/ambiguous StoryBible ActorIDs")
+        return proof
+
     def actor(self, project_id, actor_id):
         actor = self._actor(project_id, actor_id)
         with self.studio._connection() as db:
