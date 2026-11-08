@@ -139,3 +139,39 @@ jobs:
           path: usd-film00-evidence/
           if-no-files-found: warn
           retention-days: 14
+
+  actual-nvp-adapter-regressions:
+    name: EXISTING NVP FilmIndex/Take/Skel/MaterialX native adapter tests / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real existing NVP native source dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+          python -m pip install httpx
+      - name: Execute all existing first-party OpenUSD/Skel/MaterialX adapter regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p usd-film00-evidence
+          python -m compileall -q tools/nvp_usd_film00_adapter_smoke.py
+          python tools/nvp_usd_film00_adapter_smoke.py \
+            --output usd-film00-evidence/existing_nvp_adapter_matrix.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-usd-film00-existing-adapters-${{ matrix.os }}-UNREVIEWED
+          path: usd-film00-evidence/
+          if-no-files-found: warn
+          retention-days: 14
