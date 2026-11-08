@@ -81,3 +81,15 @@ inherit new-session permission. The user needs to decide whether to cancel
 or resubmit a fresh authorized action. No content-addressed Take/DCP or
 original source is rewritten by this safety repair. GitHub CI queueing or
 source submission is not accepted as execution evidence.
+
+### Explicit nonadmission status
+
+A consumed desktop notice does **not** imply a worker launch. For a targeted
+`NOT_CLAIMED` or resource-blocked `QUEUED` return, the bridge now stores
+a bounded categorical in-process status (`NOTICE_NOT_CLAIMED` or
+`RESOURCE_QUEUED`). The authenticated task-status read exposes
+`local_notice_not_admitted` only while the durable task still is QUEUED.
+It does not fabricate a SQLite task event, a permission renewal, or an
+automatic retry. These hints are ephemeral; a reopened desktop must inspect
+the actual ledger for enduring task state. No native exception file path is
+returned. The map is bounded to 256 retained notices.
