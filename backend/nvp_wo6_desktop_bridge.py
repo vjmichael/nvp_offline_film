@@ -213,6 +213,124 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             "film_or_native_worker_execution_authorized":False,
         }
 
+    def film03_audition_original_voice(self, request):
+        """Actual original PCM -> bounded native WAV preview; never TTS."""
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","source_audio_id","source_audio_revision",
+            "first_sample","sample_count"})
+        from backend.nvp_data_av_source import (
+            RecordedSoundSources, SAMPLE_RATE, MAX_READ_SAMPLES)
+        import base64
+        import io
+        import wave
+        pid=_require_pid(request["project_id"])
+        self._wo5_project(pid)
+        sid=_id(request["source_audio_id"],"recorded original voice source")
+        revision=request["source_audio_revision"]
+        first=request["first_sample"]
+        count=request["sample_count"]
+        if (type(revision) is not int or revision<1 or
+                type(first) is not int or first<0 or
+                type(count) is not int or not 1<=count<=SAMPLE_RATE*3):
+            raise ValueError("Original audition is bounded to 3 seconds at 48kHz")
+        audio=RecordedSoundSources(self.index)
+        record=audio.describe(pid,sid,revision)
+        if first+count>record["data"]["sample_count"]:
+            raise ValueError("Requested original audition exceeds source recording")
+        blocks=[]
+        at=first
+        remaining=count
+        while remaining:
+            n=min(remaining,MAX_READ_SAMPLES)
+            blocks.append(audio.read(pid,sid,revision,at,n))
+            remaining-=n
+            at+=n
+        original=b"".join(blocks)
+        if len(original)!=count*2:
+            raise RuntimeError("Original audition PCM bytes did not match intended sample window")
+        out=io.BytesIO()
+        with wave.open(out,"wb") as writer:
+            writer.setnchannels(1)
+            writer.setsampwidth(2)
+            writer.setframerate(SAMPLE_RATE)
+            writer.writeframes(original)
+        return {
+            "format":"nvp.film03.original_actor_voice_audition.v1",
+            "project_id":pid,"source_audio_id":sid,
+            "source_audio_revision":revision,
+            "source_audio_sha256":record["document_sha256"],
+            "first_sample":first,"sample_count":count,
+            "sample_rate_hz":SAMPLE_RATE,
+            "original_pcm_window_sha256":sha256(original).hexdigest(),
+            "wav_data_base64":base64.b64encode(out.getvalue()).decode("ascii"),
+            "original_recording_not_tts":True,
+            "audition_not_voice_identity_approval":True,
+            "source_modified":False,
+        }
+
+    def film03_cast_actor_voice(self,request):
+        """Native creator-approved, append-only VoiceID reference enrollment."""
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","actor_id","voice_id",
+            "reference_audio_id","reference_audio_revision",
+            "expected_cast_revision","director_review_note",
+            "voice_recast_reason"})
+        from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
+        nonce="film03_voice_cast_"+secrets.token_hex(16)
+        def approve(event,scope):
+            return bool(event==nonce and
+                        self._wo6_confirm_creative(nonce,scope))
+        result=ProductionBibleVoiceIdentity(
+            self.index,verify_creator_action=approve).cast_voice(
+                request["project_id"],request["actor_id"],
+                voice_id=request["voice_id"],
+                reference_audio_id=request["reference_audio_id"],
+                reference_audio_revision=request["reference_audio_revision"],
+                expected_cast_revision=request["expected_cast_revision"],
+                director_review_note=request["director_review_note"],
+                voice_recast_reason=request["voice_recast_reason"],
+                creator_event=nonce)
+        return {
+            **result,
+            "host_native_director_confirmation":True,
+            "source_voice_performance_generated":False,
+            "audio_take_overwritten":False,
+            "voice_identity_recast_history_retained":True,
+        }
+
+    def film03_approve_actor_voice_take(self,request):
+        """Explicitly compare a candidate original Take to current VoiceID."""
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","actor_id","performance_id",
+            "voice_id","expected_cast_revision",
+            "expected_approval_revision","reference_audio_sha256",
+            "director_comparison_note"})
+        from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
+        nonce="film03_voice_review_"+secrets.token_hex(16)
+        def approve(event,scope):
+            return bool(event==nonce and
+                        self._wo6_confirm_creative(nonce,scope))
+        result=ProductionBibleVoiceIdentity(
+            self.index,verify_creator_action=approve).approve_delivery(
+                request["project_id"],request["actor_id"],
+                request["performance_id"],
+                voice_id=request["voice_id"],
+                expected_cast_revision=request["expected_cast_revision"],
+                expected_approval_revision=request["expected_approval_revision"],
+                reference_audio_sha256=request["reference_audio_sha256"],
+                director_comparison_note=request["director_comparison_note"],
+                creator_event=nonce)
+        return {
+            **result,
+            "host_native_director_confirmation":True,
+            "original_recording_overwritten":False,
+            "audio_voice_model_invoked":False,
+            "director_audition_comparison_claim_not_machine_voice_match":True,
+        }
+
     def wo6_local_models(self,project_id):
         """Explicit user discovery of an existing loopback-only model service."""
         self._wo5_project(project_id)
