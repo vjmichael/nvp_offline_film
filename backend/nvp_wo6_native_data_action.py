@@ -32,11 +32,15 @@ from backend.nvp_wo6_kernel_attestation import (
 from backend.nvp_wo6_impact_preview import preview_source_impact, _source_lifecycle_state
 from backend.nvp_wo6_native_take_action import digest_file, _exact_source
 from backend.nvp_wo6_recovery import WO6DurableRecovery
+from backend.nvp_wo6_native_shot_action import _validate_ai_review_context
+from backend.nvp_wo6_sound_editorial_decisions import (
+    preflight_sound_cue,preflight_editorial_cut,
+    verify_sound_cue,verify_editorial_cut)
 
 FORMAT = "nvp.wo6.creator_authorized_data_decision.v1"
 RECEIPT = "nvp.wo6.native_data_decision_receipt.v1"
 OPERATION = "nvp.film.author_data_decision.v1"
-KINDS = ("color", "camera_sequence")
+KINDS = ("color", "camera_sequence", "sound_cue", "editorial_cut")
 
 
 def _preflight(index, spec):
@@ -65,6 +69,12 @@ def _preflight(index, spec):
                 validate_parameters(spec["payload"]) != spec["payload"]):
             raise ValueError("Invalid non-destructive color decision parameters")
         change_kind = "revise_color"
+    elif spec["decision_kind"]=="sound_cue":
+        preflight_sound_cue(index,spec)
+        change_kind="revise_sound"
+    elif spec["decision_kind"]=="editorial_cut":
+        draft=preflight_editorial_cut(index,spec)
+        change_kind="revise_edit"
     else:
         scene_id = spec["source_id"]
         _exact_source(index, pid, scene_id, spec["source_revision"],
@@ -94,6 +104,30 @@ def _preflight(index, spec):
             previous_end = end
             seen.add(shot["shot_id"])
         change_kind = "revise_camera"
+    if "reviewed_ai_consultation" in spec:
+        reviewed=_validate_ai_review_context(
+            spec["reviewed_ai_consultation"],
+            action_kind=spec["decision_kind"],
+            take_sha256=spec["reviewed_ai_consultation"]["take_sha256"])
+        if (spec.get("creative_scope",{}).get("reviewed_ai_consultation")!=reviewed
+                or spec["creative_scope"].get("model_text_is_authority") is not False):
+            raise PermissionError("Original sealed human AI consultation differs")
+        if spec["decision_kind"]=="sound_cue":
+            take_id=spec["reviewed_original_take_id"]
+            take=index.read_revision(pid,take_id,1)
+            if (take["document_sha256"]!=reviewed["take_sha256"] or
+                    take["data"].get("timeline_id")!=spec["source_id"] or
+                    take["data"].get("timeline_revision")!=spec["source_revision"]):
+                raise PermissionError("Reviewed original Take has a different source soundtrack timeline")
+        if spec["decision_kind"]=="editorial_cut":
+            graph=__import__("backend.nvp_digital_slate_branches",
+                fromlist=["DigitalSlateBranches"]).DigitalSlateBranches(
+                index,verify_editor_action=lambda *_:False).open_graph(
+                pid,spec["source_id"],spec["source_revision"])
+            if not any(
+                    n["take_document_sha256"]==reviewed["take_sha256"]
+                    for n in graph["data"]["nodes"]):
+                raise PermissionError("Reviewed original Take absent from the actual edit graph")
     preview = preview_source_impact(
         index, pid, spec["source_id"], spec["source_revision"],
         spec["source_sha256"], change_kind,
@@ -133,6 +167,16 @@ def verify_decision_output(index, spec):
                 output["duration_tick"] != spec["duration_tick"] or
                 output["video_frames_created"] is not False):
             raise RuntimeError("Reopened Film Time editorial timeline disagrees")
+    elif kind=="sound_cue":
+        doc=index.read_revision(pid,spec["decision_id"],1)
+        if verify_sound_cue(index,spec)!=doc["document_sha256"]:
+            raise RuntimeError("Sound event source changed")
+        output={"document_sha256":doc["document_sha256"]}
+    elif kind=="editorial_cut":
+        doc=index.read_revision(pid,spec["decision_id"],1)
+        if verify_editorial_cut(index,spec)!=doc["document_sha256"]:
+            raise RuntimeError("Editorial cut source changed")
+        output={"document_sha256":doc["document_sha256"]}
     else:
         raise ValueError("Unknown native operation")
     return output
@@ -190,7 +234,8 @@ class NativeFilmDecisionHost:
                        source_sha256, payload, expected_preview_sha256,
                        duration_tick=None, screenplay_scene_id=None,
                        screenplay_revision=None, expected_bible_digest=None,
-                       ram_mb=4096, expires_in_seconds=1800):
+                       ram_mb=4096, expires_in_seconds=1800,
+                       ai_review_context=None, reviewed_original_take_id=None):
         if not isinstance(scope, TrustedReadScope):
             raise PermissionError("Native actor/project/turn context required")
         if (type(creator_decision_id) is not str or
@@ -211,9 +256,24 @@ class NativeFilmDecisionHost:
             if source_revision != 1 or duration_tick is not None:
                 raise ValueError("Color plan uses immutable original Take revision 1")
             payload = validate_parameters(payload)
-        elif (type(duration_tick) is not str or
-              type(payload) is not list or not 1 <= len(payload) <= MAX_SHOTS):
-            raise ValueError("Camera sequence needs exact Film Time and bounded shots")
+        elif decision_kind=="camera_sequence":
+            if (type(duration_tick) is not str or type(payload) is not list or
+                    not 1<=len(payload)<=MAX_SHOTS):
+                raise ValueError("Camera sequence needs exact Film Time and bounded shots")
+        elif decision_kind=="sound_cue":
+            if type(duration_tick) is not str or type(payload) is not dict:
+                raise ValueError("Sound cue needs original exact Film Time and recorded PCM")
+        elif decision_kind=="editorial_cut":
+            if duration_tick is not None or type(payload) is not list:
+                raise ValueError("Editorial requires exact immutable slate branches")
+        reviewed=None
+        if ai_review_context is not None:
+            reviewed=_validate_ai_review_context(
+                ai_review_context,action_kind=decision_kind,
+                take_sha256=ai_review_context.get("take_sha256"))
+            _id(reviewed_original_take_id,"reviewed original frozen Take")
+        elif reviewed_original_take_id is not None:
+            raise PermissionError("Original reviewed Take cannot be supplied without AI consultation")
         spec = {
             "format": FORMAT, "operation": OPERATION, "kind": "compositing",
             "actor_id": scope.actor_id, "project_id": scope.project_id,
@@ -227,7 +287,14 @@ class NativeFilmDecisionHost:
             "expected_bible_digest": expected_bible_digest,
             "preview_sha256": expected_preview_sha256, "ram_mb": ram_mb,
         }
-        _preflight(self.index, spec)
+        if reviewed is not None:
+            spec["reviewed_ai_consultation"]=reviewed
+            spec["reviewed_original_take_id"]=reviewed_original_take_id
+        # A preflight without the creative_scope must not interpret a model
+        # suggestion as consent. The identical source check repeats after
+        # the sealed creator/native scope is constructed.
+        if reviewed is None:
+            _preflight(self.index, spec)
         spec["creative_scope"] = {
             "operation": OPERATION, "project_id": scope.project_id,
             "decision_kind": decision_kind, "decision_id": decision_id,
@@ -237,6 +304,11 @@ class NativeFilmDecisionHost:
             "no_original_take_or_scene_mutation": True,
             "no_render_or_release_approval": True,
         }
+        if reviewed is not None:
+            spec["creative_scope"]["reviewed_ai_consultation"]=reviewed
+            spec["creative_scope"]["model_text_is_authority"]=False
+            spec["creative_scope"]["director_typed_values_independently"]=True
+        _preflight(self.index,spec)
         task = "wo6data_" + secrets.token_hex(12)
         approval = "wo6approval_" + secrets.token_hex(12)
         spec.update(
@@ -335,12 +407,18 @@ class NativeFilmDecisionHost:
                     receipt.get("task_id")!=task or
                     receipt.get("decision_sha256")!=output["document_sha256"] or
                     receipt.get("source_impact_sha256")!=spec["preview_sha256"] or
+                    receipt.get("reviewed_ai_consultation")!=
+                        spec.get("reviewed_ai_consultation") or
+                    receipt.get("model_instruction_executed") is not False or
+                    receipt.get("model_approval_accepted") is not False or
                     receipt.get("rendered_frames") is not False or
                     receipt.get("film_delivered") is not False):
                 raise RuntimeError("Native decision output receipt differs from FilmIndex")
-            if spec["decision_kind"]=="camera_sequence":
+            if spec["decision_kind"] in ("camera_sequence","sound_cue","editorial_cut"):
                 _exact_source(self.index,spec["project_id"],spec["source_id"],
-                              spec["source_revision"],spec["source_sha256"],"scene")
+                              spec["source_revision"],spec["source_sha256"],
+                              {"camera_sequence":"scene","sound_cue":"temporal",
+                               "editorial_cut":"presentation"}[spec["decision_kind"]])
             if self.recovery.cancel_requested(task):
                 raise NativeCancelRequested("Creator cancelled after decision commit")
             if not self._check(spec["native_approval_id"],
@@ -353,6 +431,8 @@ class NativeFilmDecisionHost:
             return {"task_id":task,"state":"SUCCEEDED",
                     "decision_id":spec["decision_id"],
                     "decision_sha256":output["document_sha256"],
+                    "reviewed_ai_consultation":spec.get("reviewed_ai_consultation"),
+                    "model_instruction_executed":False,
                     "film_delivered":False}
         except BaseException as error:
             if proc is not None:
