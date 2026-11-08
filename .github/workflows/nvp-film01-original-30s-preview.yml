@@ -10,6 +10,8 @@ on:
       - tools/nvp_film01_original_30s.py
       - tests/test_nvp_film01_original_30s.py
       - backend/nvp_wo6_07f_rendered_av.py
+      - backend/nvp_film01_native_avi.py
+      - tests/test_nvp_film01_native_avi.py
       - .github/workflows/nvp-film01-original-30s-preview.yml
   workflow_dispatch:
 
@@ -39,16 +41,18 @@ jobs:
           python -m pip install -r requirements-foundation.txt
           python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
       - name: Compile original native short, actual raster and deterministic virtual light effects
-        run: python -m compileall -q backend/nvp_virtual_light_fx.py backend/nvp_wo6_07f_rendered_av.py tools/nvp_film01_original_30s.py tests/test_nvp_film01_original_30s.py tests/test_nvp_virtual_light_fx.py
+        run: python -m compileall -q backend/nvp_virtual_light_fx.py backend/nvp_wo6_07f_rendered_av.py tools/nvp_film01_original_30s.py tests/test_nvp_film01_original_30s.py tests/test_nvp_virtual_light_fx.py backend/nvp_film01_native_avi.py tests/test_nvp_film01_native_avi.py
       - name: Prove virtual artistic gold/silver fills, perpetual summer 3 PM and captured live flash clocks
         run: python -m unittest discover -s tests -p test_nvp_virtual_light_fx.py -v
       - name: Author original THREE real OpenUSD Takes, TWO immutable cuts and original 48 kHz source sound, then render authentic PNG/PCM proof
         run: python -m unittest discover -s tests -p test_nvp_film01_original_30s.py -v
+      - name: Independently decode genuine NVP original six-frame AVI MJPEG and exact PCM, no FFmpeg
+        run: python -m unittest discover -s tests -p test_nvp_film01_native_avi.py -v
       - name: Preserve genuine real 3D frame and 48 kHz PCM hard-cut source tests
         run: python -m unittest discover -s tests -p test_nvp_wo6_07f_rendered_av.py -v
 
   original-short-full-720-frame-review-package:
-    name: Actual FULL 720 native OpenUSD rendered PNG and 1,440,000 source PCM samples (NOT DCI movie)
+    name: Actual FULL 720 native USD frames and 1.44m PCM samples → PLAYABLE MJPEG/PCM AVI + source ZIP
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -60,19 +64,28 @@ jobs:
         run: |
           python -m pip install -r requirements-foundation.txt
           python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
-      - name: Produce original 30-second source and genuine 720-frame/48k PCM NVP review ZIP (may render slower than realtime)
+      - name: Produce original 30-second real 720-frame/48k PCM ZIP AND playable native MJPEG/PCM AVI
         shell: bash
         run: |
           python -m tools.nvp_film01_original_30s \
             --root "$RUNNER_TEMP/nvp-original-relay30" \
             --render-review-zip "$RUNNER_TEMP/nvp-relay30-authentic-source-preview.zip" \
+            --render-preview-avi "$RUNNER_TEMP/nvp-relay30-playable-640x360-mjpeg-pcm.avi" \
             --consent I_APPROVE_DISPOSABLE_ORIGINAL_30S_CI_SOURCE \
             | tee "$RUNNER_TEMP/nvp-relay30-export-log.json"
           python - <<'PY'
           import json,os,zipfile,hashlib,wave
           from pathlib import Path
+          import sys
+          sys.path.insert(0,str(Path.cwd()/"tests"))
+          from test_nvp_film01_native_avi import inspect_avi_independently
           root=Path(os.environ["RUNNER_TEMP"])
           path=root/"nvp-relay30-authentic-source-preview.zip"
+          avi=root/"nvp-relay30-playable-640x360-mjpeg-pcm.avi"
+          movie_proof=inspect_avi_independently(avi,path,720)
+          assert movie_proof["frames_decoded"]==720
+          assert movie_proof["original_pcm_samples"]==1440000
+          assert movie_proof["exact_sound_matches_source"] is True
           with zipfile.ZipFile(path) as z:
               receipt=json.loads(z.read("original_30s_preview_receipt.json"))
               frames=[n for n in z.namelist() if n.startswith("preview_frames/")]
@@ -90,16 +103,21 @@ jobs:
                   {"artifact_sha256":hashlib.sha256(path.read_bytes()).hexdigest(),
                    "actual_NVP_source_frames":720,
                    "original_sample_count":1440000,
-                   "movie_container_created":False,
+                   "movie_container_created":True,
+                   "movie_format":"AVI_MJPEG_PCM16_preview",
+                   "AVI_sha256":hashlib.sha256(avi.read_bytes()).hexdigest(),
+                   "avi_independently_decoded":movie_proof,
+                   "external_installed_player_verified":False,
                    "DCI_delivery_approved":False},indent=2)
               (root/"nvp-relay30-source-export-verification.json").write_text(manifest)
           PY
-      - name: Preserve verifiable original 30-second PNG sequence and WAV source as real artifact
+      - name: Preserve actual PLAYABLE short AVI and verified original PNG/WAV source ZIP as two review downloads
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nvp-original-relay30-720-native-png-pcm-not-cinema
+          name: nvp-original-relay30-playable-avi-plus-verified-png-pcm
           path: |
+            ${{ runner.temp }}/nvp-relay30-playable-640x360-mjpeg-pcm.avi
             ${{ runner.temp }}/nvp-relay30-authentic-source-preview.zip
             ${{ runner.temp }}/nvp-relay30-export-log.json
             ${{ runner.temp }}/nvp-relay30-source-export-verification.json
