@@ -203,6 +203,24 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             with self.assertRaises(KeyError):
                 self.index.read_revision(self.pid,identity,1)
 
+    def test_materialized_chunks_snapshot_survives_host_list_mutation(self):
+        req=self.payload()
+        second=dict(req["recordings"][0])
+        second.update(event_id="Speech002",source_id="SecondSpeech",
+                      pcm_chunks=[self.original])
+        req["recordings"].append(second)
+        original_publish=self.capture.sources.publish
+        def mutate_after_first(project_id,source_id,chunks,**kwargs):
+            result=original_publish(project_id,source_id,chunks,**kwargs)
+            if source_id=="NewRecordedSpeech":
+                second["pcm_chunks"].clear()
+            return result
+        self.capture.sources.publish=mutate_after_first
+        receipt=self.capture.capture(**req)
+        self.assertEqual(receipt["original_sound_count"],2)
+        self.assertEqual(self.index.read_revision(
+            self.pid,"SecondSpeech",1)["data"]["sample_count"],48000)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
