@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import shutil
+import json
+import subprocess
 import unittest
 
 from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
@@ -190,6 +192,14 @@ class NativeRealActorWorkerExecution(unittest.TestCase):
                 worker.run(s["pid"],other,profile_revision=1,
                            job_id="SphereStealsDonutVoice",
                            creator_event=ACTION)
+            if os.environ.get("NVP_FILM03_ARTIFACT_DIR"):
+                dest=Path(os.environ["NVP_FILM03_ARTIFACT_DIR"])/"real-voice"
+                dest.mkdir(parents=True,exist_ok=True)
+                for rel in ("voice.wav","receipt.json","contract.json","source.txt",
+                            "worker_stdout.log","worker_stderr.log"):
+                    shutil.copy2(worker.root/"DonutOriginalSpeech01"/rel,dest/rel)
+                (dest/"filmindex_candidate.json").write_text(
+                    json.dumps(candidate["data"],sort_keys=True,indent=2),"utf8")
             with open(worker.root/"DonutOriginalSpeech01"/"voice.wav","ab") as f:
                 f.write(b"altered")
             with self.assertRaises((PermissionError,RuntimeError)):
@@ -228,6 +238,30 @@ class NativeRealActorWorkerExecution(unittest.TestCase):
                                 receipt["generated_keyframes"][1]["gait_lift_m"])
             verified=host.verify(s["pid"],"DonutRealGait001")
             self.assertEqual(verified["status"],"VERIFIED_UNAPPROVED")
+            # Reopen actual saved .blend in a completely fresh Blender
+            # process; the Python host and worker JSON alone are insufficient.
+            saved=supervisor.root/"DonutRealGait001"
+            reopen=saved/"independent_reopen.json"
+            script=Path(__file__).resolve().parents[1]/"tools"/"nvp_film03_actor_animation_reopen.py"
+            command=[str(bin),"-b",str(saved/"scene.blend"),
+                     "--python-exit-code","70","--python",str(script),
+                     "--",str(saved/"source.json"),str(reopen)]
+            completed=subprocess.run(
+                command,capture_output=True,text=True,timeout=180,check=False)
+            self.assertEqual(completed.returncode,0,
+                             (completed.stdout+completed.stderr)[-3000:])
+            independent=json.loads(reopen.read_text("utf8"))
+            self.assertTrue(independent["passed"])
+            self.assertEqual(independent["actor_id"],s["people"]["DONUT"])
+            self.assertEqual(independent["original_source_frames_checked"],4)
+            self.assertTrue(independent["all_other_source_actors_unchanged"])
+            if os.environ.get("NVP_FILM03_ARTIFACT_DIR"):
+                dest=Path(os.environ["NVP_FILM03_ARTIFACT_DIR"])/"real-animation"
+                dest.mkdir(parents=True,exist_ok=True)
+                for rel in ("scene.blend","preview.png","source.json",
+                            "audit.json","independent_reopen.json",
+                            "worker_stdout.log","worker_stderr.log"):
+                    shutil.copy2(saved/rel,dest/rel)
             self.assertFalse(verified["production_approved"])
             candidate=s["index"].read_revision(
                 s["pid"],result["candidate_id"],1)["data"]
