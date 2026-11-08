@@ -74,6 +74,28 @@ class ThreeRealUSDObjectActors(unittest.TestCase):
         self.assertEqual(len({row["depth_tested_native_picture_sha256"]
                               for row in self.rows}),len(self.rows))
 
+    def test_source_geometry_demands_true_cast_shadows_and_box_reflections(self):
+        from tools.nvp_film01_donut_light_path_reference import (
+            reference_real_original_light_paths)
+        result=reference_real_original_light_paths(self.source)
+        self.assertEqual(result["source_take_sha256"],
+                         self.source["take_sha256"])
+        self.assertGreater(
+            result["physically_expected_shadowed_sample_count"],0)
+        self.assertGreater(
+            result["physically_expected_unshadowed_sample_count"],0)
+        self.assertGreater(
+            result["ideal_camera_mirror_rays_that_hit_original_box"],0)
+        self.assertTrue(
+            result["reference_is_secondary_light_transport_not_raster_acceptance"])
+        # The current CPU raster has a real depth buffer, but NO real
+        # cast-shadow/secondary-reflection ray transport. This is
+        # intentionally an open production-quality lighting gate.
+        self.assertFalse(
+            result["native_current_renderer_cast_shadows_present"])
+        self.assertFalse(
+            result["native_current_renderer_interobject_reflections_present"])
+
     def test_six_actual_usd_frames_render_to_artistic_contact_sheet(self):
         output=self.root/"six_real_actor_moments"
         report=export_three_actor_picture_probe(
@@ -83,6 +105,11 @@ class ThreeRealUSDObjectActors(unittest.TestCase):
         self.assertTrue(report["native_depth_occlusion_computed"])
         self.assertFalse(report["real_interobject_cast_shadows_computed"])
         self.assertFalse(report["real_interobject_reflections_computed"])
+        self.assertTrue(report["shadow_and_reflection_renderer_gates_still_open"])
+        self.assertGreater(report["source_geometric_lighting_expected_paths"][
+            "physically_expected_shadowed_sample_count"],0)
+        self.assertGreater(report["source_geometric_lighting_expected_paths"][
+            "ideal_camera_mirror_rays_that_hit_original_box"],0)
         with Image.open(output/
                         "donut_box_sphere_real_NVP_6_moments.png") as img:
             img.load()
