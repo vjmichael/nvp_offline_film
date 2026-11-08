@@ -556,6 +556,22 @@ class ProductionBibleActors:
                 self.index,verify_creator_action=lambda *_:False
             ).verify_delivery(
                 project_id,actor_id,performance_id,require_current_cast=True)
+            perf=self.index.read_revision(project_id,performance_id,1)["data"]
+            required_links=(
+                ("performance",performance_id,1),
+                ("dialogue",perf["script_id"],perf["script_revision"]),
+                ("voice",voice["original_audio_id"],voice["original_audio_revision"]),
+            )
+            for role,oid,rev in required_links:
+                if not any(x["role"]==role and
+                           x["source_family"]=="filmindex" and
+                           x["target_id"]==oid and
+                           x["target_revision"]==rev and
+                           x["source_verified_now"] for x in details):
+                    failures.append({
+                        "role":role,"link_id":None,
+                        "reason":"Approved voice delivery lacks this ActorID's active verified original source link",
+                    })
             # The VoiceID only authorizes a candidate source; final speech
             # still needs the exact scripted selection/time in dialogue router.
         elif current["current_voice_identity"] is None:
