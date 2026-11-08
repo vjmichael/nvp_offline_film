@@ -1,0 +1,71 @@
+name: NVP FILM03-02 Canonical ActorID Production Bible / Script Impact Desktop UI (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film03-02-production-bible-actorid-editor-20261108]
+  pull_request:
+    branches: [nvp/film03-01-object-actor-dialogue-script-lineage-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film03-02-actorid-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  original-source-actor-registry:
+    name: Original Studio StoryBible ActorID OpenUSD asset history / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Real Studio/FilmIndex/OpenUSD + original texture and API dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Compile actual ActorID registry, StoryBible identity, screenplay source API
+        run: |
+          python -m compileall -q backend/nvp_story_bible.py backend/nvp_production_bible_actors.py backend/nvp_film03_object_dialogue.py backend/nvp_api.py tests/test_nvp_film03_actor_bible.py
+      - name: Verify canonical ActorID stability, SHA-pinned originals, wardrobe/texture changes, historical SQLite recovery
+        run: python -m unittest discover -s tests -p test_nvp_film03_actor_bible.py -v
+      - name: Preserve existing source-backed script, StoryBible and FilmIndex contracts
+        run: |
+          python -m unittest discover -s tests -p test_nvp_film03_object_dialogue.py -v
+          python -m unittest discover -s tests -p test_story_bible.py -v
+          python -m unittest discover -s tests -p test_studio.py -v
+      - name: Preserve imported GLB mesh and rig source SHA/licensing tests
+        run: |
+          python -m unittest discover -s tests -p test_mesh_assets.py -v
+          python -m unittest discover -s tests -p test_character_assets.py -v
+
+  desktop-story-bible-director-review:
+    name: Actual React ActorID source link, native desktop webpack/Vite build / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install NVP frontend pinned React/Vitest/Vite toolchain
+        run: npm install --no-audit --no-fund
+      - name: Test real StoryBible ActorID UI source auth and read-only script impact
+        run: npm run test:ui -- Film03ProductionBiblePanel.test.jsx
+      - name: Build actual desktop WebView2/GTK frontend with ActorID and script impact
+        run: npm run build
