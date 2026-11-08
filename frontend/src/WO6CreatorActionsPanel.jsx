@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import WO6DirectorSourceReview from './WO6DirectorSourceReview.jsx';
+import WO6RenderedDirectorPlayer from './WO6RenderedDirectorPlayer.jsx';
 
 // WO6 first-party WebView2 only. An LLM, ordinary HTTP browser or project
 // JSON cannot grant creator/native execution. The Python OS host must show
@@ -627,5 +628,6 @@ export default function WO6CreatorActionsPanel({projectId}){
     {busy&&<p role="status">Native authorization/worker operation in progress. No finished-film claim is implied.</p>}
     {problem&&<p role="alert">{problem}</p>}
     <WO6DirectorSourceReview projectId={projectId}/>
+    <WO6RenderedDirectorPlayer projectId={projectId}/>
   </section>;
 }
