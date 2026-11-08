@@ -6,6 +6,8 @@ on:
   pull_request:
     paths:
       - backend/nvp_wo3_hydra_color_fidelity.py
+      - backend/nvp_wo3_materialx_integrity.py
+      - tests/test_nvp_wo3_color_contract.py
       - backend/nvp_wo2_hydra_probe.py
       - tests/test_nvp_wo3_real_hydra_color.py
       - .github/workflows/nvp-wo3-real-hydra-color.yml
@@ -64,7 +66,10 @@ jobs:
       - name: Compile real swatch source and actual pixel measurement
         shell: bash -el {0}
         run: |
-          python -m compileall -q backend/nvp_wo3_hydra_color_fidelity.py backend/nvp_wo2_hydra_probe.py tests/test_nvp_wo3_real_hydra_color.py
+          python -m compileall -q backend/nvp_wo3_hydra_color_fidelity.py backend/nvp_wo3_materialx_integrity.py backend/nvp_wo2_hydra_probe.py tests/test_nvp_wo3_color_contract.py tests/test_nvp_wo3_real_hydra_color.py
+      - name: Validate color-verdict refusal separately (synthetic test only)
+        shell: bash -el {0}
+        run: python -m unittest discover -s tests -p test_nvp_wo3_color_contract.py -v
       - name: Real external Hydra renders and relative source-color fidelity (NO SKIP)
         shell: bash -el {0}
         run: |
