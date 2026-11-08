@@ -271,6 +271,10 @@ def write_original_30s_source(destination,*,approve_test_only):
         "title":TITLE,"project_id":pid,
         "duration_seconds":DURATION,"fps":FPS,
         "target_frames":FRAMES,
+        "source_asset_geometry":[
+            {"asset_id":name,"kind":shape,
+             "geometry_is_abstract_proxy":True}
+            for name,shape,size,color in geometry],
         "source_scene_id":"Relay30Scene",
         "slate_id":"Relay30Slate","slate_sha256":graph["document_sha256"],
         "edit_id":"Relay30Edit","edit_sha256":edit["document_sha256"],
@@ -392,6 +396,7 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES,
             "format":RENDER_FORMAT,"source_format":FORMAT,
             "edit_sha256":report["edit_sha256"],
             "source_title":TITLE,"frames_rendered_from_usd":len(rows),
+            "source_geometry_asset_profiles":report["source_asset_geometry"],
             "intended_30s_output_frames":FRAMES,
             "film_duration_seconds":len(rows)/FPS,
             "all_720_frames_really_rendered":complete,
