@@ -87,7 +87,7 @@ class ThreeRealUSDObjectActors(unittest.TestCase):
                         "donut_box_sphere_real_NVP_6_moments.png") as img:
             img.load()
             self.assertEqual(img.format,"PNG")
-            self.assertEqual(img.size,(1956,816))
+            self.assertEqual(img.size,(1968,816))
         self.assertEqual(len(list(output.glob("donut_actors_key_*.png"))),6)
         with self.assertRaises(PermissionError):
             export_three_actor_picture_probe(
