@@ -29,7 +29,7 @@ class RequiredRealHydraTextureColor(unittest.TestCase):
         Image.new("RGB",(8,8),rgb).save(dst,format="PNG")
         return dst.getvalue()
 
-    def render_swatch(self,name,rgb):
+    def render_swatch(self,name,rgb,*,material_context_probe):
         aid="wo3_color_"+name
         sid="wo3_color_scene_"+name
         self.assets.publish(
@@ -62,7 +62,7 @@ class RequiredRealHydraTextureColor(unittest.TestCase):
         observed=capture_hydra_evidence(
             self.index,self.pid,sid,1,camera_path="/World/Camera",
             renderer="Storm",width=320,timeout_seconds=150,
-            require_gpu=True)
+            require_gpu=True,material_context_probe=material_context_probe)
         self.assertEqual(observed["status"],"HYDRA_FRAME_RENDERED",
                          "REAL usdrecord/Storm unavailable or failed: "
                          +str(observed))
@@ -72,19 +72,42 @@ class RequiredRealHydraTextureColor(unittest.TestCase):
             len(observed["approved_texture_sha256"]),6)
         self.assertFalse(observed["hydra_shader_parity_accepted"])
         self.assertFalse(observed["physical_display_calibrated"])
+        self.assertEqual(observed["material_context_probe"],material_context_probe)
         return observed
 
-    def test_real_hydra_red_blue_source_color_response(self):
-        red=self.render_swatch("red",(240,20,20))
-        blue=self.render_swatch("blue",(20,20,240))
-        receipt=verify_relative_hydra_swatch_response(red,blue)
-        self.assertTrue(receipt["actual_independent_hydra_pixels_verified"])
-        self.assertFalse(receipt["materialx_openpbr_shading_parity_verified"])
-        self.assertFalse(receipt["absolute_reference_color_accuracy_verified"])
-        self.assertFalse(receipt["theatrical_color_accepted"])
-        receipt["workflow_commit_sha"]=os.environ.get("GITHUB_SHA")
+    def test_real_hydra_dual_and_isolated_materialx_source_color_response(self):
+        # Four genuine USD/Hydra render subprocesses (no mocked pixels).
+        # Context-isolated runs remove all universal PreviewSurface fallbacks
+        # *on a disposable stage only* before executing Storm.
+        measured={}
+        for context in ("dual","mtlx_only"):
+            with self.subTest(material_context=context):
+                red=self.render_swatch("red_"+context,(240,20,20),
+                    material_context_probe=context)
+                blue=self.render_swatch("blue_"+context,(20,20,240),
+                    material_context_probe=context)
+                receipt=verify_relative_hydra_swatch_response(
+                    red,blue,required_context=context)
+                self.assertTrue(receipt["actual_independent_hydra_pixels_verified"])
+                self.assertEqual(receipt["material_context_probe"],context)
+                self.assertFalse(receipt["materialx_openpbr_shading_parity_verified"])
+                self.assertFalse(receipt["absolute_reference_color_accuracy_verified"])
+                self.assertFalse(receipt["theatrical_color_accepted"])
+                measured[context]=receipt
+        self.assertTrue(
+            measured["mtlx_only"]["materialx_only_relative_color_response_verified"])
+        self.assertTrue(
+            measured["dual"]["dual_context_relative_color_response_verified"])
+        receipt={
+            "status":"HYDRA_DUAL_AND_ISOLATED_MTLX_COLOR_RESPONSES_MEASURED",
+            "workflow_commit_sha":os.environ.get("GITHUB_SHA"),
+            "relative_color_measurements":measured,
+            "materialx_openpbr_shading_parity_verified":False,
+            "absolute_reference_color_accuracy_verified":False,
+            "theatrical_color_accepted":False,
+        }
         output=Path("wo3-hydra-color-evidence.json")
-        output.write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n",
+        output.write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\\n",
                           encoding="utf-8")
         print("WO3_REAL_HYDRA_COLOR_RECEIPT:",
               json.dumps(receipt,sort_keys=True),flush=True)
