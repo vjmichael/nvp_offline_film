@@ -90,6 +90,9 @@ def main(argv=None):
         "action_kind": spec["action_kind"], "rendered_frames": False,
         "original_scene_modified": False, "old_take_modified": False,
         "existing_dcp_replaced": False, "creative_screening_completed": False,
+        "reviewed_ai_consultation":spec.get("reviewed_ai_consultation"),
+        "model_instruction_executed":False,
+        "model_approval_accepted":False,
     }
     with (target.parent / "receipt.json").open("xb") as stream:
         stream.write(canonical_bytes(receipt))
