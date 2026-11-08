@@ -211,7 +211,7 @@ class NativePublishedViewerTests(unittest.TestCase):
         def real_pcm_fixture(codec,args,*,workdir,check_cancel,timeout):
             self.assertFalse(check_cancel())
             self.assertEqual(codec.product,"ASDCP-asdcp_unwrap")
-            self.assertEqual(args[-1],f"snd_{int(args[args.index(\"-f\")+1]):09d}")
+            self.assertEqual(args[-1],"snd_%09d" % int(args[args.index("-f")+1]))
             start=int(args[args.index("-f")+1])
             frames=int(args[args.index("-d")+1])
             unwrap_starts.append((start,frames))
