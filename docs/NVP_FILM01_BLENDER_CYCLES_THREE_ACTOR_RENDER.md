@@ -1,6 +1,6 @@
 # FILM01-BLENDER — Real supervised Blender/Cycles donut-box-sphere director screening
 
-**2026-11-08 — draft implementation / native CI evidence OPEN.**
+**2026-11-08 — baseline native real Blender accepted; directed retake pending native acceptance.**
 
 This restores NVP's approved STACK-002 architecture: **Blender is the
 external 3D production renderer**; first-party CPU OpenUSD raster is a
@@ -144,3 +144,18 @@ camera editing and actor performances; calibrated OCIO/ACES HDR,
 license review. A 640x360 8-sample Cycles GIF is NOT DCI/theatrical
 master, and the source project's original PCM is not in GIF (GIF is
 silent; full 30-second AV finishing is separate).
+
+## FILM01 baseline render actually inspected — 2026-11-08
+
+- Exact baseline source/Cycles head: `0d24a3891a146a0199262d5f3cbe47243c3e9429`.
+- [Native Windows/Linux/Cycles success](https://github.com/vjmichael/nvp_offline_film/actions/runs/42490015508), artifact ID `13621138323` (`nvp-FILM01-REAL-BLENDER-CYCLES-donut-box-sphere-3s`). The CI reported all three native jobs successful, including separate saved .blend reopen and all 72 PNG/GIF tests.
+- Actual downloaded six-shot contact and four-look sheet were opened and visually inspected; not concept imagery. **Observed** ring smooth and hole real, blue sphere travels inside hole in depth, green cube is visible through hole at ~1 second; glossy tan/beige-looking material is insufficiently copper-like; broad/diffuse backdrop shadow distracts from action; sphere's approach spends too long behind box, then comes forward quickly. Silver and gold treatments generate visibly distinct white/cool/warm highlights; no claim yet of visually legible green-box reflections on a named facet.
+- The baseline package is retained immutable for side-by-side comparison; no baseline pixels have been modified. Rendering acceptance does **not** confer physical fidelity, creator release, legal distribution, Windows installed-app acceptance or theatrical color approval.
+
+## Director retake 01 — authored revision awaiting native re-render
+
+- `tools/nvp_film01_donut_light_probe.py` now permits explicitly selected `performance="director_retake_01"`. The staged Cycles acceptance generates this as **a distinct frozen FilmIndex/OpenUSD Take** with different SHA; baseline generator remains the default so old checks remain reproducible.
+- Source-authored sphere approach: at 1.0s z=-2.8m (baseline -3.7), 1.5s z=-0.45m (baseline -1), 2.0s z=0.7m (baseline 0.1), 2.5s z=1.7m (baseline 1.45). Same .30m sphere radius, real torus hole clearance, unchanged actor roles, unchanged topology; position snapshots continue to come from frozen USD, not invented Blender animation.
+- Observed tan ring motivates derived Blender shader change to a darker copper base `(0.42,0.205,0.092)`, metallic `0.86`, roughness `0.22`; key area reduced from 1.8m to 1.15m to control diffuse shadow edges, light 800W at (3.2,3.4,5.5), plus cool 125W area rim and restrained world ambient. These are **artist-directed lighting/material overrides**, not silent edits to the authoritative original USD source material.
+- The independent second Blender open now asserts the saved Principled metallic/roughness, new rim presence/energy and key radius. The source regression asserts that retake SHA differs from the baseline and confirms changed 24/36/48-frame frozen sphere positions.
+- Do not call retake accepted until its actual pinned native Windows/Linux source tests, separate real Blender 72-frame render, second Blender reopen, full PNG/GIF and audits complete; thereafter compare original vs new contact sheets and note remaining artistic quality gaps. For production a creator must explicitly approve the retake, not rely on CI's test-only authorization.
