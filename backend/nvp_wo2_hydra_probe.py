@@ -164,14 +164,23 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                             "render_wall_seconds":elapsed,
                             "exit_code":run.returncode,
                             "untrusted_or_missing_output":True}
-                from PIL import Image
+                from PIL import Image,ImageStat
                 with Image.open(image_path) as result:
                     if (result.width>width*4 or result.height>width*4 or
                         result.width<1 or result.height<1):
                         raise RuntimeError("Independent rendered frame size out of bounds")
                     result.load()
                     w,h=result.size
-                    rgb=result.convert("RGB").tobytes()
+                    rendered=result.convert("RGB")
+                    rgb=rendered.tobytes()
+                    # Actual center-surface image pixels, not shader metadata
+                    # or expected source RGB. No color-space calibration is
+                    # inferred from these unprofiled RGB8 output samples.
+                    bounds=(3*w//8,3*h//8,max(3*w//8+1,5*w//8),
+                            max(3*h//8+1,5*h//8))
+                    patch=rendered.crop(bounds)
+                    center_rgb=[round(v,3) for v in ImageStat.Stat(patch).mean]
+                    center_pixels=patch.width*patch.height
                 comparison=None
                 if native_take is not None:
                     from backend.nvp_native_scene_linear_raster import (
@@ -223,6 +232,8 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                     "rendered_width":w,"rendered_height":h,
                     "rendered_rgb_sha256":sha256(rgb).hexdigest(),
                     "rendered_rgb_mean":round(sum(rgb)/len(rgb),4),
+                    "rendered_center_patch_mean_rgb8":center_rgb,
+                    "rendered_center_patch_pixels":center_pixels,
                     "renderer_executable_sha256":native_tool_sha,
                     "derived_source_scope":True,
                     "original_modified":False,
