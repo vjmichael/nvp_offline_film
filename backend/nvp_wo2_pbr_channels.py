@@ -162,10 +162,10 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
         materialx_file=mtlx.GetInput("file")
         if (not preview_file or
                 preview_file.GetTypeName()!=Sdf.ValueTypeNames.Asset or
-                preview_file.HasConnectedSource() or
+                preview_file.GetAttr().GetConnections() or
                 not materialx_file or
                 materialx_file.GetTypeName()!=Sdf.ValueTypeNames.Asset or
-                materialx_file.HasConnectedSource() or
+                materialx_file.GetAttr().GetConnections() or
                 str(preview_file.GetAttr().Get().path)!=desc["usd_asset_path"] or
                 str(materialx_file.GetAttr().Get().path)!=desc["usd_asset_path"] or
                 materialx_file.GetAttr().GetColorSpace()!=(
@@ -198,11 +198,13 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
             verify_literal_input(preview,"opacityThreshold",.5,
                 type_name=Sdf.ValueTypeNames.Float)
         if key=="normal":
-            if (list(shader.GetInput("scale").GetAttr().Get())!=
-                    [2.,2.,2.,1.] or
-                list(shader.GetInput("bias").GetAttr().Get())!=
-                    [-1.,-1.,-1.,0.]):
-                raise RuntimeError("Original tangent normal conversion changed")
+            from pxr import Gf
+            # Preserve tangent normal decoding (2*texture-1), including
+            # the literal type and *absence* of hidden USD inputs.
+            verify_literal_input(shader,"scale",Gf.Vec4f(2.,2.,2.,1.),
+                type_name=Sdf.ValueTypeNames.Float4)
+            verify_literal_input(shader,"bias",Gf.Vec4f(-1.,-1.,-1.,0.),
+                type_name=Sdf.ValueTypeNames.Float4)
         preview_socket="r" if key in ("roughness","metallic","opacity") else "rgb"
         preview_output_type=(
             Sdf.ValueTypeNames.Float if preview_socket=="r"
@@ -211,9 +213,14 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
             "roughness":"roughness","metallic":"metallic",
             "emission":"emissiveColor","normal":"normal",
             "opacity":"opacity"}[key]
+        preview_input_type=(
+            Sdf.ValueTypeNames.Normal3f if key=="normal" else
+            Sdf.ValueTypeNames.Color3f if key=="emission" else
+            Sdf.ValueTypeNames.Float)
         verify_output_connection(
             preview.GetInput(preview_target),path,preview_socket,
-            output_type=preview_output_type)
+            output_type=preview_output_type,
+            input_type=preview_input_type)
         map_output_type=(
             Sdf.ValueTypeNames.Float
             if key in ("roughness","metallic","opacity")
@@ -240,4 +247,4 @@ def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
                 "opacity":"geometry_opacity"}[key]
             verify_output_connection(
                 openpbr.GetInput(openpbr_target),mtlx_path,"out",
-                output_type=map_output_type)
+                output_type=map_output_type,input_type=map_output_type)
