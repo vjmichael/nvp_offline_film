@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 
-from backend.nvp_data_av_source import RecordedSoundSources,SAMPLE_RATE
+from backend.nvp_data_av_source import (RecordedSoundSources,SAMPLE_RATE,MAX_CHUNK_BYTES,MAX_CHUNKS)
 from backend.nvp_exact_time_shots import ExactTimeShotSequence,MAX_SHOTS
 from backend.nvp_film_index import FilmIndex,_id,_require_pid
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
@@ -119,6 +119,21 @@ class NativeSceneSoundCapture:
                 pass
             else:
                 raise ValueError("Original audio source identity already published")
+            # Validate materialized host chunks across the entire batch before
+            # writing any source. Iterators remain streaming and bounded.
+            chunks=entry["pcm_chunks"]
+            if type(chunks) in (list,tuple):
+                if not 1<=len(chunks)<=MAX_CHUNKS:
+                    raise ValueError("Invalid captured PCM chunk count")
+                samples=0
+                for chunk in chunks:
+                    if (type(chunk) is not bytes or
+                        not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2):
+                        raise ValueError("Invalid captured PCM16LE chunk")
+                    samples+=len(chunk)//2
+                required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
+                if samples<required:
+                    raise ValueError("Captured PCM is shorter than its Film Time event")
             event_ids.add(eid)
             source_ids.add(sid)
         events=[]
