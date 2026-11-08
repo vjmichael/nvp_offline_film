@@ -61,6 +61,7 @@ def assemble_film_crew_context(
     index: FilmIndex, project_id: str, take_id: str, take_revision: int,
     tick: int, *, source_revision=None, screenplay_scene_id=None,
     shot_sequence_id=None, shot_sequence_revision=None,
+    dialogue_selection_id=None, dialogue_selection_revision=None,
     max_prims: int = 32, max_events: int = 24,
 ) -> dict:
     if not isinstance(index, FilmIndex):
@@ -77,6 +78,13 @@ def assemble_film_crew_context(
         raise ValueError("Screenplay scene and exact revision must be selected together")
     if (shot_sequence_id is None) != (shot_sequence_revision is None):
         raise ValueError("Shot timeline ID and exact revision must be selected together")
+    if (dialogue_selection_id is None) != (dialogue_selection_revision is None):
+        raise ValueError("Selected dialogue requires exact source ID and revision")
+    if dialogue_selection_id is not None:
+        _id(dialogue_selection_id, "creator-selected object-actor dialogue")
+        if (type(dialogue_selection_revision) is not int or
+                dialogue_selection_revision < 1):
+            raise ValueError("Exact approved dialogue revision required")
     if shot_sequence_id is not None:
         _id(shot_sequence_id, "shot timeline")
         if type(shot_sequence_revision) is not int or shot_sequence_revision < 1:
@@ -210,6 +218,14 @@ def assemble_film_crew_context(
             "camera_selected_by_source_not_ai_guess": True,
             "rendered_output_proven": False,
         }
+    selected_dialogue = None
+    if dialogue_selection_id is not None:
+        from backend.nvp_film03_object_dialogue import read_scene_dialogue_selection
+        selected_dialogue = read_scene_dialogue_selection(
+            index, project_id, dialogue_selection_id,
+            dialogue_selection_revision, tick=tick, expected_take_id=take_id)
+        if selected_dialogue["source_take_sha256"] != take["document_sha256"]:
+            raise PermissionError("Scene crew received a dialogue selection from another frozen Take")
     screenplay = None
     approved_facts = []
     bible_status = "NO_SCREENPLAY_SCENE_SELECTED"
@@ -330,6 +346,7 @@ def assemble_film_crew_context(
         "sound_events": known_sound,
         "sound_events_omitted": max(0, len(relevant_sound)-len(known_sound)),
         "authored_camera_selection": shot_selection,
+        "authored_object_actor_dialogue_selection": selected_dialogue,
         "screenplay_scene_context": screenplay,
         "approved_story_facts": approved_facts,
         "approved_story_facts_omitted_at_least": approved_fact_omitted,

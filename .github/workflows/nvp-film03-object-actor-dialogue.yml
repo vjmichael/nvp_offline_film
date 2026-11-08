@@ -1,0 +1,63 @@
+name: NVP FILM03-01 Real Studio Script StoryBible Object Actor Dialogue Source and Retake (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film03-01-object-actor-dialogue-script-lineage-20261108]
+    paths:
+      - backend/nvp_film03_object_dialogue.py
+      - backend/nvp_wo6_scene_context.py
+      - tests/test_nvp_film03_object_dialogue.py
+      - .github/workflows/nvp-film03-object-actor-dialogue.yml
+  pull_request:
+    branches: [nvp/film02-03-original-pcm-cycles-playback-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film03-real-script-bible-actor-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-film03-script-to-bible-and-usd-actor:
+    name: Actual Studio revision / StoryBible / original OpenUSD actor dialogue / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 85
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original OpenUSD + FilmIndex + native record source tests
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx2
+      - name: Compile actual FILM03 script/performance/scene crew and native regression
+        run: |
+          python -m compileall -q backend/nvp_film03_object_dialogue.py backend/nvp_wo6_scene_context.py tests/test_nvp_film03_object_dialogue.py
+      - name: Verify old/changed/new script, creator-approved actor/canon, frozen Takes, indexed retake impact and strict unauthorized refusal
+        run: python -m unittest discover -s tests -p test_nvp_film03_object_dialogue.py -v
+      - name: Protect existing screenplay revision / StoryBible source contract
+        run: |
+          python -m unittest discover -s tests -p test_story_bible.py -v
+          python -m unittest discover -s tests -p test_studio.py -v
+      - name: Protect real OpenUSD original scene crew and temporal source compatibility
+        run: |
+          python -m unittest discover -s tests -p test_nvp_temporal_ledger.py -v
+      - name: Output cannot be misidentified as rendered scene/audio feature
+        shell: python
+        run: |
+          from pathlib import Path
+          code = Path("backend/nvp_film03_object_dialogue.py").read_text("utf8")
+          assert "prior_script_work_destroyed" in code
+          assert "original_take_scene_and_sound_unchanged" in code
+          assert "recorded_audio_mixed_or_mastered" in code
+          assert "requires_director_reconciliation" in code
+          assert "production_bible" in code
+          print("FILM03-01 native tested DATA SOURCE only, no false generated dialogue sound or new pixels")
