@@ -410,6 +410,20 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             with self.assertRaises(KeyError):
                 self.index.read_revision(self.pid,identity,1)
 
+    def test_checkpoint_overflow_rejects_before_any_immutable_publication(self):
+        from unittest.mock import patch
+        import backend.nvp_data_first_filming as filming
+        req=self.payload()
+        # The real capacity is much larger; force the same production guard
+        # with a smaller bound instead of allocating thousands of sources.
+        with patch.object(filming,"MAX_CHECKPOINTS",1):
+            with self.assertRaisesRegex(ValueError,"checkpoint capacity"):
+                self.capture.capture(**req)
+        self.assertEqual(self.approvals,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
