@@ -277,6 +277,9 @@ describe('WO6 installed creator-native first-party actions',()=>{
       {target:{value:'0'}});
     fireEvent.change(screen.getByLabelText('Director-chosen cue gain 0–2'),
       {target:{value:'0.5'}});
+    fireEvent.change(screen.getByPlaceholderText(
+      'Explain my independently selected camera, actor, sound or editorial change'),
+      {target:{value:'I independently placed a one-second original PCM cue.'}});
     fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
       {target:{value:'NewSoundTimelineA'}});
     expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
@@ -293,6 +296,7 @@ describe('WO6 installed creator-native first-party actions',()=>{
         first_sample:0,gain:0.5,
       },
       duration_tick:String(7056000000*3),
+      director_reason:'I independently placed a one-second original PCM cue.',
     };
     await waitFor(()=>expect(host.wo6_preview_typed_decision)
       .toHaveBeenCalledWith(typed));
@@ -333,6 +337,9 @@ describe('WO6 installed creator-native first-party actions',()=>{
       {target:{value:String(7056000000)}});
     fireEvent.change(screen.getByLabelText('Source out tick 2'),
       {target:{value:String(2*7056000000)}});
+    fireEvent.change(screen.getByPlaceholderText(
+      'Explain my independently selected camera, actor, sound or editorial change'),
+      {target:{value:'I chose these two source-backed editorial segments.'}});
     fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
       {target:{value:'HumanAssembledCut'}});
     expect(host.wo6_create_decision).not.toHaveBeenCalled();
@@ -348,6 +355,7 @@ describe('WO6 installed creator-native first-party actions',()=>{
          source_in_tick:7056000000,source_out_tick:2*7056000000},
       ],
       duration_tick:null,
+      director_reason:'I chose these two source-backed editorial segments.',
     };
     await waitFor(()=>expect(host.wo6_preview_typed_decision)
       .toHaveBeenCalledWith(typed));
