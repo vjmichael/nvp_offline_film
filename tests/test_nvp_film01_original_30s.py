@@ -96,6 +96,42 @@ class Genuine30SecondOriginalShort(unittest.TestCase):
         self.assertFalse(
             self.report["photorealistic_story_quality_approved"])
 
+    def test_third_filmed_shot_box_crosses_behind_donut_and_sphere_uses_actual_hole(self):
+        from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        from backend.nvp_temporal_ledger import TemporalLedger
+        scene=self.index.read_revision(self.pid,"Relay30Scene",3)
+        bindings={row["path"]:row["asset_id"]
+                  for row in scene["data"]["asset_bindings"]}
+        expected={
+            "/World/Engineer":"EngineerDonut",
+            "/World/CrossingBox":"CrossingBox",
+            "/World/PassingSphere":"PassingSphere"}
+        for path,asset_id in expected.items():
+            self.assertEqual(scene["data"]["prim_roles"][path],"actor")
+            self.assertEqual(bindings[path],asset_id)
+        bridge=OpenUSDSceneBridge(self.index)
+        donut=bridge.evaluate(self.pid,"Relay30Scene",3,
+            path="/World/Engineer",tick=7*T)["world_translation"]
+        sphere=bridge.evaluate(self.pid,"Relay30Scene",3,
+            path="/World/PassingSphere",tick=7*T)["world_translation"]
+        box=bridge.evaluate(self.pid,"Relay30Scene",3,
+            path="/World/CrossingBox",tick=5*T)["world_translation"]
+        self.assertAlmostEqual(sphere[0],donut[0],places=3)
+        self.assertAlmostEqual(sphere[1],donut[1],places=3)
+        self.assertAlmostEqual(sphere[2],.1,places=3)
+        self.assertLess(box[2],donut[2]-.5)
+        self.assertGreater(
+            self.report["donut_actual_open_hole_radius_m"]-
+            self.report["sphere_actual_radius_m"],.2)
+        events=TemporalLedger(self.index).events_in(
+            self.pid,"Relay30TimelineRekindle",1,start_tick=0,
+            end_tick=10*T)["events"]
+        ids={e["event_id"] for e in events}
+        self.assertIn("CrossingBoxBehindEngineer",ids)
+        self.assertIn("PassingSphereThroughEngineerHole",ids)
+        self.assertIn("BeaconSignalRestored",ids)
+        self.assertFalse(self.report["photorealistic_story_quality_approved"])
+
     def test_real_three_shot_visual_samples_and_timed_beacon_sound(self):
         receipts=[]
         for frame in (0,240,480,624):
