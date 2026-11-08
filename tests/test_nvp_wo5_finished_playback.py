@@ -162,8 +162,10 @@ class NativePublishedViewerTests(unittest.TestCase):
                    "backend.nvp_wo5_finished_playback.inspect_j2k_header",
                    return_value={"raw_codestream_sha256":self.expected}):
             final=self.player.frame(ticket,3)
-            last_first_reel=self.player.window(ticket,2,4)
+            # Adjacent reel-two window reuses its verified sound segment.
             next_reel=self.player.window(ticket,3,2)
+            # Crossing back into reel one must unwrap THAT reel's PCM.
+            last_first_reel=self.player.window(ticket,2,4)
         self.assertEqual(last_first_reel["frame_count"],1)
         self.assertEqual(last_first_reel["frames"][0]["frame_index"],2)
         self.assertEqual(next_reel["frame_count"],2)
