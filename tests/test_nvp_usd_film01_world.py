@@ -220,7 +220,10 @@ class NativeFilmWorld01(unittest.TestCase):
             "VERIFIED_FROZEN_DATA_TAKE")
         self.assertEqual(
             self.index.direct_dependents(self.pid,"Crate",1),
-            [{"object_id":"TownWorld","revision":1}])
+            [
+                {"object_id":"TownWorld","revision":1},
+                {"object_id":"TownWorld","revision":2},
+            ])
 
     def test_foreign_film_untrusted_paths_ambiguous_views_and_unbounded_work_refused(self):
         outsider=self.studio.create_project("Other film","")["id"]
