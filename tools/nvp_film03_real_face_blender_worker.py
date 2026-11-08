@@ -44,10 +44,13 @@ def trusted_paths():
     targets = {}
     for k, val in args.items():
         file = Path(val)
-        if file.is_absolute() or file.name != val or file.name in (".", ".."):
+        # Existing NVP BlenderWorkerSupervisor passes absolute paths under
+        # the pinned job directory, not relative CLI values.
+        path = file.resolve()
+        if path.parent != cwd or file.is_symlink() or path.name in (".", ".."):
             raise PermissionError("All facial worker paths must remain inside the job")
-        path = cwd / val
-        if path.is_symlink() or (k != "--manifest" and path.exists()):
+        if (k == "--manifest" and not path.is_file()) or (
+                k != "--manifest" and path.exists()):
             raise PermissionError("Facial worker may not overwrite source files")
         targets[k] = path
     return targets
