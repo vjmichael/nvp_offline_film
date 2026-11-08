@@ -112,6 +112,12 @@ class NativeFilmWorld01(unittest.TestCase):
                 "/World/Props/TemporaryBox").IsValid())
             self.assertFalse(session.stage.GetPrimAtPath(
                 "/World/Props/TemporaryBox").IsLoaded())
+            self.assertEqual(session.load_props(["TemporaryBox"])["operation"],
+                             "load_props")
+            self.assertTrue(session.stage.GetPrimAtPath(
+                "/World/Props/TemporaryBox/Geometry").IsA(UsdGeom.Cube))
+            self.assertEqual(session.unload_props(["TemporaryBox"])["operation"],
+                             "unload_props")
             loaded = session.load(["Outside"])
             self.assertEqual(loaded["sets"],["Outside"])
             self.assertTrue(session.stage.GetPrimAtPath(
@@ -144,7 +150,8 @@ class NativeFilmWorld01(unittest.TestCase):
                 "/World/Variants/Facade/Geometry"))
             self.assertTrue(low)
             self.assertAlmostEqual(low.GetSizeAttr().Get(),2.)
-            self.assertTrue(look.SetVariantSelection("High"))
+            switched=session.switch_variant("Facade","High")
+            self.assertTrue(switched["persists_only_if_new_world_revision_published"])
             high = UsdGeom.Cube(stage.GetPrimAtPath(
                 "/World/Variants/Facade/Geometry"))
             self.assertAlmostEqual(high.GetSizeAttr().Get(),4.)
@@ -256,6 +263,10 @@ class NativeFilmWorld01(unittest.TestCase):
                 session.load(["NotAnOriginalFilmSet"])
             with self.assertRaises(ValueError):
                 session.load(["Inside","Inside"])
+            with self.assertRaises(ValueError):
+                session.load_props(["Box"])
+            with self.assertRaises(ValueError):
+                session.switch_variant("Facade","UnsignedExternalLook")
         with self.assertRaises(KeyError):
             self.world.open(outsider,"TownWorld",1).__enter__()
 
