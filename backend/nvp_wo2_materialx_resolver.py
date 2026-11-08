@@ -66,6 +66,10 @@ def resolved_materialx_probe(index, project_id, original_stage, descriptors):
             except Exception:
                 # fdopen owns fd after success; TemporaryDirectory cleans up.
                 raise
+            # The independent renderer only needs to read exact approved
+            # PNG essence. Lock its temporary source copy against writes.
+            # The digest is revalidated *after* the renderer exits, too.
+            dest.chmod(0o400)
             paths[PREFIX+digest]=str(dest)
         for source,key in files:
             # A temporary *derived* USD layer may reference an approved
@@ -79,4 +83,16 @@ def resolved_materialx_probe(index, project_id, original_stage, descriptors):
             "derived_probe_only":True,
             "independent_hydra_render_accepted":False,
         }
-        yield resolved,evidence
+        try:
+            yield resolved,evidence
+        finally:
+            # This runs even when the caller returns early, for example an
+            # independent Hydra zero exit. A native renderer that overwrote,
+            # replaced or removed a verified source cannot produce a
+            # successful custody receipt just because it drew a PNG.
+            for key,dest_name in paths.items():
+                target=Path(dest_name)
+                if (target.is_symlink() or not target.is_file() or
+                    sha256(target.read_bytes()).hexdigest()!=key[len(PREFIX):]):
+                    raise RuntimeError(
+                        "Independent renderer changed a verified material source")
