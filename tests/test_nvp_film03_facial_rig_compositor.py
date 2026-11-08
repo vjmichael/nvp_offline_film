@@ -15,8 +15,10 @@ from pxr import Sdf, Usd, UsdSkel
 import test_nvp_slate07_skinned_camera as fixture
 from backend.nvp_film03_facial_rig_compositor import (
     FORMAT, inspect_original_rig, compose_usd_facial_overlay,
-    publish_verified_alignment_overlay,
+    publish_verified_alignment_overlay, validate_stored_acoustic_output,
 )
+from backend.nvp_film03_phoneme_alignment import import_mfa_json
+from test_nvp_film03_phoneme_alignment import example_json, encoded
 from backend.nvp_film03_phoneme_alignment import FORMAT as PHONEME_FORMAT
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
 
@@ -235,6 +237,41 @@ class RealActorFacialRigAcceptance(fixture.RealCharacterAndLens):
                 face_track=self.face, body_track=[],
                 controls=self.controls, source_start_tick=0,
                 sample_count=48000)
+
+    def test_actual_stored_mfa_json_must_reproduce_every_phoneme(self):
+        # The byte source is an explicit MFA *format fixture* and does not
+        # pretend a speech model ran. The validation tests data integrity.
+        source = encoded(example_json())
+        model_sha = self.index.put_blob(
+            self.pid, source, media_type="application/json")
+        parsed = import_mfa_json(
+            source, exact_script_text="Hello world!",
+            pcm_sample_count=48000)
+        candidate = {
+            **parsed,
+            "source_plan": {
+                "exact_script_text": "Hello world!",
+                "sample_count": 48000,
+            },
+            "native_output_sha256": model_sha,
+            "native_output_blob_sha256": model_sha,
+            "native_acoustic_model_executed": False,
+        }
+        self.assertEqual(
+            validate_stored_acoustic_output(self.index, self.pid, candidate),
+            parsed)
+        corrupt = deepcopy(candidate)
+        corrupt["viseme_candidates"][0]["viseme"] = "TH"
+        with self.assertRaises(PermissionError):
+            validate_stored_acoustic_output(self.index, self.pid, corrupt)
+        missing = deepcopy(candidate)
+        missing["native_output_blob_sha256"] = "0" * 64
+        with self.assertRaises(PermissionError):
+            validate_stored_acoustic_output(self.index, self.pid, missing)
+        different = deepcopy(candidate)
+        different["source_plan"]["exact_script_text"] = "Different spoken words"
+        with self.assertRaises(PermissionError):
+            validate_stored_acoustic_output(self.index, self.pid, different)
 
     def test_no_unverified_acoustic_source_may_publish_as_real_animation(self):
         self.index.register_revision(
