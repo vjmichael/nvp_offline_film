@@ -202,6 +202,23 @@ class WO3NativeMaterialXIntegrity(unittest.TestCase):
                     [self.texture]+list(self.maps.values())):
                 self.fail("An upstream file override must never reach Hydra")
 
+    def test_materialx_only_probe_refuses_fallback_only_network(self):
+        from backend.nvp_wo3_materialx_integrity import (
+            isolate_materialx_only_on_derived_stage)
+        original=self.stage()
+        snapshot=original.GetRootLayer().ExportToString()
+        with resolved_materialx_probe(
+                self.index,self.pid,original,
+                [self.texture]+list(self.maps.values())) as (derived,_):
+            mat=UsdShade.Material(
+                derived.GetPrimAtPath("/Asset/Material"))
+            # Mutate only a derived layer to simulate a renderer that would
+            # fall back to PreviewSurface despite appearing to have OpenPBR.
+            mat.GetSurfaceOutput("mtlx").GetAttr().SetConnections([])
+            with self.assertRaises(RuntimeError):
+                isolate_materialx_only_on_derived_stage(derived)
+        self.assertEqual(original.GetRootLayer().ExportToString(),snapshot)
+
     def test_materialx_only_probe_removes_preview_fallback_on_copy(self):
         from backend.nvp_wo3_materialx_integrity import (
             isolate_materialx_only_on_derived_stage)
