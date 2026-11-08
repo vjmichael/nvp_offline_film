@@ -165,6 +165,17 @@ export default function WO6CreatorActionsPanel({projectId}){
   };
   const preview=()=>run(async()=>{
     if(!selectedOriginal)throw new Error('Select a real source revision first');
+    let typed=null;
+    let typedFingerprint=null;
+    if(typedOperation){
+      const request=typedDecision();
+      typedFingerprint=JSON.stringify(request);
+      typed=await native().wo6_preview_typed_decision(request);
+      if(typed?.status!=='READ_ONLY_TYPED_DECISION_NO_GRANT'||
+          !typed.typed_preview_sha256||
+          typed.native_worker_authorized!==false)
+        throw new Error('Real native sound/editorial preview was not source-verified');
+    }
     const data=await native().wo6_source_impact({
       project_id:projectId,source_id:selectedOriginal.id,
       source_revision:selectedOriginal.revision,
@@ -172,7 +183,7 @@ export default function WO6CreatorActionsPanel({projectId}){
       change_kind:selectedOriginal.change,
     });
     if(!data?.preview_sha256)throw new Error('Native source impact proof is incomplete');
-    setImpact({fingerprint,data});
+    setImpact({fingerprint,data,typed,typedFingerprint});
     setReceipt(null);
   });
   function exactInteger(text,label){
@@ -181,6 +192,53 @@ export default function WO6CreatorActionsPanel({projectId}){
     const number=Number(text);
     if(!Number.isSafeInteger(number))throw new Error(label+' exceeds exact JS integer');
     return number;
+  }
+  function typedDecision(){
+    if(!typedOperation||!selectedOriginal)
+      throw new Error('Choose a native recorded sound timeline or slate graph');
+    if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(newId))
+      throw new Error('Choose a new immutable native sound/edit ID');
+    let payload,duration_tick;
+    if(kind==='sound_cue'){
+      if(!currentTake||!currentTakeTimeline||!currentSound||
+          !/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(soundEventId)||
+          !/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(soundSubject))
+        throw new Error('Choose a source sound, cue ID and subject for the selected Take');
+      const gain=Number(soundGain);
+      if(!soundGain.trim()||!Number.isFinite(gain)||gain<0||gain>2)
+        throw new Error('Enter bounded independent PCM gain');
+      payload={
+        cue_id:soundEventId,subject_id:soundSubject,
+        start_tick:exactInteger(startTick,'Sound start'),
+        end_tick:exactInteger(endTick,'Sound end'),
+        recorded_sound_id:currentSound.id,
+        recorded_sound_revision:currentSound.revision,
+        recorded_sound_sha256:currentSound.sha256,
+        first_sample:exactInteger(soundFirstSample,'PCM start sample'),
+        gain,
+      };
+      duration_tick=String(currentTakeTimeline.data.duration_tick);
+    }else{
+      if(!currentGraph||!currentTake||!editSegments.length||
+          editSegments.length>64)
+        throw new Error('Select one bounded original-slate edit');
+      payload=editSegments.map((entry,i)=>{
+        if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/.test(entry.segment_id)||
+            !currentGraph.data.nodes.some(node=>node.branch_id===entry.branch_id))
+          throw new Error('Choose original branch and unique segment ID for row '+(i+1));
+        return {
+          segment_id:entry.segment_id,branch_id:entry.branch_id,
+          source_in_tick:exactInteger(entry.source_in_tick,'Source in'),
+          source_out_tick:exactInteger(entry.source_out_tick,'Source out'),
+        };
+      });
+      duration_tick=null;
+    }
+    return {
+      project_id:projectId,decision_kind:kind,decision_id:newId,
+      source_id:selectedOriginal.id,source_revision:selectedOriginal.revision,
+      source_sha256:selectedOriginal.sha256,payload,duration_tick,
+    };
   }
   function shotOpinions(){
     const target=selectedPath||paths[0]?.[0];
@@ -207,7 +265,11 @@ export default function WO6CreatorActionsPanel({projectId}){
     if(aiReview&&(kind!==aiReview.action_kind||
         currentTake?.sha256!==aiReview.take_sha256||
         !directorTypedChange||directorReason.trim().length<12))
-      throw new Error('Enter independent shot values and a director-written reason');
+      throw new Error('Enter independent values and a director-written reason');
+    const typed=typedOperation?typedDecision():null;
+    if(typedOperation&&(!impact?.typed?.typed_preview_sha256||
+        impact.typedFingerprint!==JSON.stringify(typed)))
+      throw new Error('Sound/editorial values changed after native typed preview; inspect again');
     const preview_sha256=impact.data.preview_sha256;
     const common={project_id:projectId,preview_sha256};
     let response;
@@ -227,6 +289,13 @@ export default function WO6CreatorActionsPanel({projectId}){
         ...common,decision_kind:'color',decision_id:newId,
         source_id:currentTake.id,source_revision:currentTake.revision,
         source_sha256:currentTake.sha256,payload:color,duration_tick:null,
+      });
+    }else if(typedOperation){
+      response=await native().wo6_create_decision({
+        ...typed,
+        preview_sha256,
+        typed_preview_sha256:impact.typed.typed_preview_sha256,
+        ...(aiReview?{reviewed_proposal_id:aiReview.proposal_id}:{}),
       });
     }else if(kind==='camera_sequence'){
       if(!currentScene)throw new Error('Select current scene');
