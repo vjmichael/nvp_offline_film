@@ -114,6 +114,8 @@ class ReviewedBlenderFacialHost:
 
     def run(self, pid, candidate_id, *, job_id, director_event):
         _id(job_id, "Blender facial render job")
+        if len(job_id) > 64:
+            raise ValueError("Facial job ID plus independent reopen must fit native supervisor")
         src = self.source(pid, candidate_id)
         p, rig = src["plan"], src["rig"]
         if not p["original_pcm_sha256"] or not src["alignment"]["data"]["viseme_candidates"]:
