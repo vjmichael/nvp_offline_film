@@ -46,6 +46,75 @@ def _safe_file(path):
     return file
 
 
+def _children(reader, first, last):
+    """Bounded RIFF child offsets without trusting nested LIST lengths."""
+    result = []
+    cursor = first
+    while cursor < last:
+        reader.seek(cursor)
+        header = reader.read(8)
+        if len(header) != 8:
+            raise RuntimeError("Truncated AVI stream header")
+        tag, count = struct.unpack("<4sI", header)
+        next_position = cursor + 8 + count + (count & 1)
+        if count < 1 or next_position > last:
+            raise RuntimeError("AVI stream header exceeds its parent LIST")
+        result.append((tag, cursor, count))
+        cursor = next_position
+    if cursor != last:
+        raise RuntimeError("AVI stream LIST contains unindexed bytes")
+    return result
+
+
+def _validate_native_stream_headers(reader, first, last, expected_frames):
+    """Verify real 24fps / 640x360 MJPEG and 48kHz PCM playback metadata."""
+    chunks = _children(reader, first, last)
+    avih = [(position, size) for tag, position, size in chunks if tag == b"avih"]
+    streams = [(position, size) for tag, position, size in chunks if tag == b"LIST"]
+    if len(avih) != 1 or avih[0][1] != 56 or len(streams) != 2:
+        raise RuntimeError("Expected one native AVI playback clock and two streams")
+    reader.seek(avih[0][0] + 8)
+    main = struct.unpack("<IIIIIIIIII4I", reader.read(56))
+    if (main[0] != round(1000000/FPS) or
+            main[4] != expected_frames or main[6] != 2 or
+            main[8] != WIDTH or main[9] != HEIGHT):
+        raise RuntimeError("AVI header declares wrong film rate/size/length")
+    seen = set()
+    for position, size in streams:
+        reader.seek(position + 8)
+        if size < 4 or reader.read(4) != b"strl":
+            raise RuntimeError("Unexpected AVI stream list type")
+        entries = _children(reader, position+12, position+8+size+(size&1))
+        strh = [(at, n) for tag, at, n in entries if tag == b"strh"]
+        strf = [(at, n) for tag, at, n in entries if tag == b"strf"]
+        if len(strh) != 1 or len(strf) != 1 or strh[0][1] != 56:
+            raise RuntimeError("Incomplete AVI native video/audio stream")
+        reader.seek(strh[0][0]+8)
+        h = struct.unpack("<4s4sIHHIIIIIIIIhhhh", reader.read(56))
+        reader.seek(strf[0][0]+8)
+        if h[0] == b"vids":
+            if (h[1] != b"MJPG" or h[6:10] != (1,FPS,0,expected_frames)
+                    or strf[0][1] != 40):
+                raise RuntimeError("AVI original MJPEG stream has wrong playback metadata")
+            img = struct.unpack("<IiiHH4sIiiII", reader.read(40))
+            if img[:6] != (40,WIDTH,HEIGHT,1,24,b"MJPG"):
+                raise RuntimeError("AVI actual MJPEG image format mismatches source")
+        elif h[0] == b"auds":
+            if (h[6:10] != (1,48000,0,expected_frames*SAMPLES_PER_FRAME)
+                    or h[12] != 2 or strf[0][1] != 16):
+                raise RuntimeError("AVI original audio timing changed")
+            audio = struct.unpack("<HHIIHH", reader.read(16))
+            if audio != (1,1,48000,96000,2,16):
+                raise RuntimeError("AVI PCM stream format changed")
+        else:
+            raise RuntimeError("Unrecognized review stream in original film")
+        if h[0] in seen:
+            raise RuntimeError("Duplicate video/audio stream")
+        seen.add(h[0])
+    if seen != {b"vids", b"auds"}:
+        raise RuntimeError("Original playable AVI must contain picture and sound")
+
+
 def _parse_riff(avi, expected_frames):
     """Parse top-level RIFF/LIST/movi and full idx1 independently of muxer."""
     size = avi.stat().st_size
@@ -58,6 +127,7 @@ def _parse_riff(avi, expected_frames):
             raise RuntimeError("Native AVI RIFF length/container inconsistent")
         movi = None
         index = None
+        playback_header = False
         position = 12
         while position < size:
             inp.seek(position)
@@ -71,6 +141,11 @@ def _parse_riff(avi, expected_frames):
             if tag == b"LIST":
                 inp.seek(position+8)
                 list_kind = inp.read(4)
+                if list_kind == b"hdrl":
+                    if playback_header:
+                        raise RuntimeError("Repeated native AVI playback header")
+                    _validate_native_stream_headers(inp, position+12, end, expected_frames)
+                    playback_header = True
                 if list_kind == b"movi":
                     if movi is not None:
                         raise RuntimeError("More than one original picture/audio stream")
@@ -81,8 +156,8 @@ def _parse_riff(avi, expected_frames):
                 inp.seek(position+8)
                 index = inp.read(length)
             position = end
-        if movi is None or index is None:
-            raise RuntimeError("Missing original AVI interleaved picture/audio or index")
+        if movi is None or index is None or not playback_header:
+            raise RuntimeError("Missing original AVI playback header, media or index")
         return movi, [
             struct.unpack_from("<4sIII", index, i * 16)
             for i in range(expected_frames * 2)]
