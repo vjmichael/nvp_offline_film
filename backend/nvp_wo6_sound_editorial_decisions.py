@@ -11,7 +11,7 @@ import math
 from backend.nvp_data_av_source import RecordedSoundSources, FORMAT as PCM_FORMAT
 from backend.nvp_digital_slate_branches import DigitalSlateBranches
 from backend.nvp_film_index import FilmIndex, _id, _sha
-from backend.nvp_slate_edit_assembly import SlateSequenceAssembly, SEGMENT_KEYS
+from backend.nvp_slate_edit_assembly import SlateSequenceAssembly, SEGMENT_KEYS, _digest
 from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND, _int
 from backend.nvp_wo6_native_take_action import _exact_source
 
@@ -163,7 +163,7 @@ def publish_editorial_cut(index,spec):
                 scope["expected_revision"]==0 and
                 scope["graph_id"]==spec["source_id"] and
                 scope["graph_document_sha256"]==spec["source_sha256"] and
-                scope["ordered_segment_sha256"]==draft["draft_sha256"] and
+                scope["ordered_segment_sha256"]==_digest(draft["segments"]) and
                 scope["final_render_approval"] is False)
     slate=DigitalSlateBranches(index,verify_editor_action=lambda *_:False)
     assembly=SlateSequenceAssembly(slate,verify_editor_action=trusted)
@@ -184,7 +184,7 @@ def verify_editorial_cut(index,spec):
     if (d["graph_id"]!=spec["source_id"] or
             d["graph_revision"]!=spec["source_revision"] or
             d["graph_document_sha256"]!=spec["source_sha256"] or
-            d["ordered_segment_sha256"]!=draft["draft_sha256"] or
+            d["ordered_segment_sha256"]!=_digest(draft["segments"]) or
             d["duration_tick"]!=draft["duration_tick"] or
             d["source_performance_modified"] is not False or
             d["render_approved"] is not False or
