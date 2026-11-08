@@ -1234,3 +1234,16 @@ adversarial regression. WO3 is still **OPEN pending latest exact-head CI**.
   job must actually finish successfully with a nonempty emitted color receipt.
   Embree is explicitly unsuitable because OpenUSD's reference Embree renderer
   does not use materials. 
+
+
+
+**WO3 continued native color audit:** Fixed duplicate PNG-SHA in real
+red/blue swatch fixture. Required Storm test now runs dual and isolated
+MaterialX-only contexts (four real images) and records derived USD layer SHA,
+actual pixel hashes, center RGB means, ΔE76 source separation, and exact
+renderer-entrypoint SHA. MaterialX-only mode strips universal fallback on
+a disposable source copy only; added positive and missing-terminal native USD
+regressions, and negative **synthetic verdict** contract tests kept separate
+from genuine renderer acceptance. OpenUSD 26.08 imaging and 26.11 source
+matrix remain distinct. **All acceptance still OPEN** pending final exact-head
+native jobs; no GPU/calibrated or production rendering claim.
