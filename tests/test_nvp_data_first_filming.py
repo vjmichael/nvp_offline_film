@@ -293,6 +293,44 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"NewRecordedSpeech",1)
 
+    def test_corrupted_later_spool_fails_before_first_source_publication(self):
+        from unittest.mock import patch
+        import backend.nvp_data_first_filming as filming
+        req=self.payload()
+        second=dict(req["recordings"][0])
+        second.update(event_id="Speech002",source_id="SecondSpeech",
+                      pcm_chunks=iter([self.original]))
+        req["recordings"].append(second)
+        actual_spool=filming.tempfile.SpooledTemporaryFile
+        created=[]
+        class CorruptingSpool:
+            def __init__(self,inner):
+                self.inner=inner
+                self.rewound=False
+            def write(self,*args):return self.inner.write(*args)
+            def read(self,*args):return self.inner.read(*args)
+            def seek(self,offset,*args):
+                result=self.inner.seek(offset,*args)
+                if offset==0 and len(created)==2 and self is created[1] and not self.rewound:
+                    self.rewound=True
+                    self.inner.seek(4)
+                    first=self.inner.read(1)
+                    self.inner.seek(4)
+                    self.inner.write(bytes([first[0]^1]))
+                    self.inner.seek(0)
+                return result
+            def close(self):return self.inner.close()
+        def spool_factory(**kwargs):
+            wrapped=CorruptingSpool(actual_spool(**kwargs))
+            created.append(wrapped)
+            return wrapped
+        with patch.object(filming.tempfile,"SpooledTemporaryFile",spool_factory):
+            with self.assertRaisesRegex(RuntimeError,"spool changed after validation"):
+                self.capture.capture(**req)
+        for identity in ("NewRecordedSpeech","SecondSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
