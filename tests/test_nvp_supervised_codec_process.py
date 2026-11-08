@@ -76,20 +76,20 @@ class NativeCodecWorkerProcessTests(unittest.TestCase):
             marker=secrets.token_bytes(24)
             probe=self.root/"probe_no_handle_leak.py"
             probe.write_text(
-                "import ctypes,sys\\n"
-                "from ctypes import wintypes\\n"
-                "k=ctypes.WinDLL('kernel32',use_last_error=True)\\n"
+                "import ctypes,sys\n"
+                "from ctypes import wintypes\n"
+                "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
                 "k.WriteFile.argtypes=[wintypes.HANDLE,ctypes.c_void_p,"
-                "wintypes.DWORD,ctypes.POINTER(wintypes.DWORD),ctypes.c_void_p]\\n"
-                "k.WriteFile.restype=wintypes.BOOL\\n"
-                "payload=bytes.fromhex(sys.argv[2])\\n"
-                "buf=ctypes.create_string_buffer(payload)\\n"
-                "written=wintypes.DWORD()\\n"
+                "wintypes.DWORD,ctypes.POINTER(wintypes.DWORD),ctypes.c_void_p]\n"
+                "k.WriteFile.restype=wintypes.BOOL\n"
+                "payload=bytes.fromhex(sys.argv[2])\n"
+                "buf=ctypes.create_string_buffer(payload)\n"
+                "written=wintypes.DWORD()\n"
                 "ok=k.WriteFile(wintypes.HANDLE(int(sys.argv[1])),buf,"
-                "len(payload),ctypes.byref(written),None)\\n"
+                "len(payload),ctypes.byref(written),None)\n"
                 "print('NUMERIC_HANDLE_WRITABLE' if ok and "
                 "written.value==len(payload) else "
-                "'NUMERIC_HANDLE_NOT_WRITABLE',flush=True)\\n")
+                "'NUMERIC_HANDLE_NOT_WRITABLE',flush=True)\n")
             record=run_supervised_codec(
                 self.codec,[str(probe),str(unlisted),marker.hex()],
                 workdir=self.root,check_cancel=lambda:False,
