@@ -198,6 +198,51 @@ class NativePublishedViewerTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.player.frame(ticket,4)
 
+    def test_pcm_region_boundary_preserves_all_2000_sample_frames(self):
+        # Distinct source samples prove that 22..25 never become 22..23
+        # or duplicate the first samples of the next 24-frame region.
+        ticket=self.open()["session_id"]
+        original=self.reels[0]
+        reel=Reel(0,48,original.picture,original.sound,
+                  original.picture_sha,original.sound_sha,
+                  original.job_id,original.channels,
+                  original.picture_stat,original.sound_stat)
+        unwrap_starts=[]
+        def real_pcm_fixture(codec,args,*,workdir,check_cancel,timeout):
+            self.assertFalse(check_cancel())
+            self.assertEqual(codec.product,"ASDCP-asdcp_unwrap")
+            self.assertEqual(args[-1],"snd")
+            start=int(args[args.index("-f")+1])
+            frames=int(args[args.index("-d")+1])
+            unwrap_starts.append((start,frames))
+            with wave.open(str(Path(workdir)/"snd"),"wb") as wav:
+                wav.setnchannels(2)
+                wav.setsampwidth(3)
+                wav.setframerate(RATE)
+                chunks=[]
+                for frame in range(start,start+frames):
+                    sample=(frame+1).to_bytes(3,"little",signed=True)
+                    chunks.append((sample*2)*SAMPLES_PER_FRAME)
+                wav.writeframes(b"".join(chunks))
+            return {"exit_code":0}
+        with TemporaryDirectory(dir=self.root) as temp,patch(
+            "backend.nvp_wo5_finished_playback.run_supervised_codec",
+            side_effect=real_pcm_fixture):
+            sample=self.player._pcm24_window(
+                ticket,reel,0,22,4,Path(temp),lambda:False)
+            cached=self.player._pcm24_window(
+                ticket,reel,0,24,2,Path(temp),lambda:False)
+        self.assertEqual(len(sample),4*SAMPLES_PER_FRAME*2*3)
+        self.assertEqual(sample[2*SAMPLES_PER_FRAME*6:],cached)
+        for i in range(4):
+            frame=22+i
+            self.assertEqual(
+                sample[i*SAMPLES_PER_FRAME*6:i*SAMPLES_PER_FRAME*6+6],
+                (frame+1).to_bytes(3,"little",signed=True)*2)
+        self.assertEqual(unwrap_starts,[(0,24),(24,24)])
+        self.player.stop(ticket)
+        self.assertIsNone(self.player._pcm_cache)
+
     def test_mutated_published_picture_or_sound_refused(self):
         ticket=self.open()["session_id"]
         self.sound.write_bytes(b"mutated")
