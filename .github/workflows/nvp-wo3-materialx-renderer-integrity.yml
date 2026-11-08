@@ -1,0 +1,86 @@
+name: NVP WO3 Native MaterialX and Renderer Integrity (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/wo3-materialx-renderer-integrity-20261107]
+  pull_request:
+    paths:
+      - backend/nvp_wo3_materialx_integrity.py
+      - backend/nvp_wo2_pbr_channels.py
+      - backend/nvp_wo2_openpbr.py
+      - backend/nvp_wo2_materialx_resolver.py
+      - backend/nvp_wo2_hydra_probe.py
+      - tests/test_nvp_wo3_materialx_integrity.py
+      - tests/test_nvp_wo2_pbr_channels.py
+      - tests/test_nvp_wo2_hydra_probe.py
+      - .github/workflows/nvp-wo3-materialx-renderer-integrity.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-wo3-materialx-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-materialx-regressions:
+    name: Real OpenUSD MaterialX custody / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine OpenUSD 26.11 and native texture dependencies
+        shell: bash
+        run: |
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+      - name: Compile MaterialX source, independent resolver and regressions
+        run: python -m compileall -q backend/nvp_wo3_materialx_integrity.py backend/nvp_wo2_openpbr.py backend/nvp_wo2_materialx_resolver.py backend/nvp_wo2_pbr_channels.py backend/nvp_wo2_hydra_probe.py tests/test_nvp_wo3_materialx_integrity.py tests/test_nvp_wo2_pbr_channels.py tests/test_nvp_wo2_hydra_probe.py
+      - name: Genuine USD source five-channel PBR and MaterialX contract
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_wo2_pbr_channels.py -v
+      - name: WO3 exact-source shader sockets, UV, normal, refusal and post-render SHA
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_wo3_materialx_integrity.py -v
+      - name: Independent Hydra result cannot fake physical shader parity
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_wo2_hydra_probe.py -v
+      - name: Paired-image metrics remain explicitly non-certified
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_wo2_renderer_comparison.py -v
+      - name: No FFmpeg or arbitrary external legacy media executable
+        if: success() || failure()
+        run: python tools/nvp_no_ffmpeg_contract.py
+
+  sixty-real-frozen-frames:
+    name: Real native 60-second USD/skin/five-map CPU continuity, not GPU parity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install genuine OpenUSD and CPU scene renderer dependencies
+        run: |
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+      - name: Real 60-second source material / skinned actor regression
+        run: python -m unittest discover -s tests -p test_nvp_wo2_mixed_60s.py -v
+      - name: Preserve measured native source timing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-wo3-mixed-60s-${{ github.sha }}
+          path: wo2-mixed-60s-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
