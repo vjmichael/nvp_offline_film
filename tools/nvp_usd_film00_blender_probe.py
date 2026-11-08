@@ -26,8 +26,11 @@ def file_sha(path):
 
 
 def checked_file(raw, *, must_exist):
-    value = Path(raw).resolve()
-    if not value.is_absolute() or value.is_symlink() or not value.parent.is_dir():
+    origin = Path(raw)
+    if origin.is_symlink():
+        raise PermissionError("Native Blender audit file may not be a symlink")
+    value = origin.resolve()
+    if not value.is_absolute() or not value.parent.is_dir():
         raise ValueError("Native Blender audit needs regular workspace files")
     if must_exist and not value.is_file():
         raise RuntimeError("Actual source/USD review file not present")
