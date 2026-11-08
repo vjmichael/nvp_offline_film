@@ -1,0 +1,106 @@
+name: NVP FILM03-06 ActorID Film-Voice Refusal and REAL Blender Gait (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film03-06-supervised-voice-animation-workers-20261108]
+  pull_request:
+    branches: [nvp/film03-05-actor-identity-voice-type-ai-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film03-06-actor-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  source-contracts:
+    name: ActorID original source and worker regression / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD source and Starlette regression requirements
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx2
+      - name: Compile all reviewed source and native scripts
+        run: |
+          python -m compileall -q backend/nvp_film03_actor_identity_core.py backend/nvp_film03_expressive_voice_direction.py backend/nvp_film03_actor_animation_host.py backend/nvp_wo6_desktop_bridge.py tools/nvp_film03_actor_animation_worker.py tools/nvp_film03_actor_animation_reopen.py tests/test_nvp_film03_actor_native_workers.py tests/test_nvp_film03_expressive_voice_direction.py
+      - name: Source verified ActorID voice source and film TTS quality denial; real motion tests
+        run: python -m unittest discover -s tests -p test_nvp_film03_actor_native_workers.py -v
+      - name: Verify actual script word stress, pronunciation, emotion, dynamics and no unqualified voice worker
+        run: python -m unittest discover -s tests -p test_nvp_film03_expressive_voice_direction.py -v
+      - name: Earlier script and identity continuity regressions
+        run: |
+          python -m unittest discover -s tests -p test_nvp_film03_actor_identity_core.py -v
+          python -m unittest discover -s tests -p test_nvp_film03_dialogue_manager.py -v
+
+  real-blender-gait:
+    name: REAL Blender 5.2.3 ActorID gait keyframes, Cycles preview and independent reopen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM03_ARTIFACT_DIR: actor-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install OpenUSD and Blender CPU dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx2
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download official Blender and validate SHA against Blender-published checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Actually run contained Blender and independent new process .blend/ActorID reopen
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM03_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p test_nvp_film03_actor_native_workers.py -v
+          python - <<'PY'
+          from pathlib import Path
+          import json,os,hashlib
+          p=Path(os.environ["NVP_FILM03_ARTIFACT_DIR"])/"real-animation"
+          doc=json.loads((p/"audit.json").read_text())
+          proof=json.loads((p/"independent_reopen.json").read_text())
+          assert doc["passed"] and doc["frame_count"]==4 and doc["gait_preset"]=="lopsided_roll"
+          assert proof["passed"] and proof["real_animation_action_reopened"]
+          assert proof["all_other_source_actors_unchanged"]
+          assert doc["source_human_director_review_pending"] is True
+          assert doc["blend_sha256"]==hashlib.sha256((p/"scene.blend").read_bytes()).hexdigest()
+          print("Real Cycles ActorID gait saved, rendered and independently reopened")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: nvp-FILM03-REAL-ActorID-GAIT-BLEND-CYCLES-PNG-NOT-APPROVED
+          path: actor-evidence/real-animation/
+          if-no-files-found: error
+          retention-days: 14

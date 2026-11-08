@@ -40,6 +40,9 @@ BEHAVIOR_FIELDS = frozenset({
 MOVEMENT_FIELDS = frozenset({
     "gait", "posture", "signature_gestures", "movement_peculiarities",
 })
+# A descriptive off-gait is not an executable locomotion instruction.
+# NVP requires a reviewed, closed vocabulary so no LLM guesses motion.
+GAIT_PRESETS = frozenset({"steady","lopsided_roll","uneven_step","unconfigured"})
 GENERATION_FIELDS = frozenset({
     "engine_id", "model_id", "model_revision", "engine_voice_id",
     "seed", "rate", "pitch_shift", "stability", "language",
@@ -86,7 +89,22 @@ def checked_profile(profile):
         raise ValueError("Actor identity profile must have exactly six typed sections")
     appearance=section(profile["appearance"],APPEARANCE_FIELDS,"appearance")
     behavior=section(profile["behavior"],BEHAVIOR_FIELDS,"behavior")
-    movement=section(profile["movement"],MOVEMENT_FIELDS,"movement")
+    motion=profile["movement"]
+    if type(motion) is not dict:
+        raise ValueError("Expected exact ActorID motion source")
+    if set(motion) == MOVEMENT_FIELDS:
+        # Old (FILM03-05) profiles are readable without pretending their
+        # prose text already specifies safe executable animation.
+        preset="unconfigured"
+    elif set(motion) == MOVEMENT_FIELDS | {"gait_preset"}:
+        preset=motion["gait_preset"]
+        if type(preset) is not str or preset not in GAIT_PRESETS:
+            raise ValueError("Unsupported actor gait preset")
+    else:
+        raise ValueError("Motion contains extra or missing identity fields")
+    movement=section({k:motion[k] for k in MOVEMENT_FIELDS},
+                     MOVEMENT_FIELDS,"movement")
+    movement["gait_preset"]=preset
     voice_type=section(profile["voice_type"],VOICE_FIELDS,"voice_type")
     _id(voice_type["voice_type_id"],"ActorID's stable VoiceType identifier")
     if not voice_type["voice_type_id"].startswith("VoiceType_"):

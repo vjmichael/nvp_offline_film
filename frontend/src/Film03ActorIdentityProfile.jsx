@@ -12,6 +12,7 @@ const initial = {
   },
   movement: {
     gait:'', posture:'', signature_gestures:'', movement_peculiarities:'',
+    gait_preset:'unconfigured',
   },
   voice_type: {
     voice_type_id:'', register:'', pitch:'', timbre:'', accent:'',
@@ -118,7 +119,14 @@ export default function Film03ActorIdentityProfile({
       {descriptions[section] && <p className="fineprint">{descriptions[section]}</p>}
       {Object.entries(profile[section]).map(([name,value])=>
         <label key={name}>{name.replaceAll('_',' ')}
-          <input aria-label={'Actor '+section+'.'+name}
+          {name==='gait_preset' ? <select
+            aria-label="Director-approved executable gait preset" value={value}
+            onChange={e=>field(section,name,e.target.value)}>
+            <option value="unconfigured">Not executable (descriptive gait only)</option>
+            <option value="steady">Steady source-preserving gait</option>
+            <option value="lopsided_roll">Distinctive lopsided roll</option>
+            <option value="uneven_step">Uneven alternate-step gait</option>
+          </select> : <input aria-label={'Actor '+section+'.'+name}
             type={settings.has(name) ? 'number' : 'text'}
             min={name==='seed'?0:name==='rate'?0.5:name==='stability'?0:
               name==='pitch_shift'?-12:undefined}
@@ -126,7 +134,7 @@ export default function Film03ActorIdentityProfile({
               name==='stability'?1:name==='pitch_shift'?12:undefined}
             step={name==='seed'?1:settings.has(name)?0.1:undefined}
             maxLength={settings.has(name)?undefined:350}
-            value={value} onChange={e=>field(section,name,e.target.value)}/>
+            value={value} onChange={e=>field(section,name,e.target.value)}/>}
         </label>)}
     </fieldset>)}
     <label>Director identity continuity notes

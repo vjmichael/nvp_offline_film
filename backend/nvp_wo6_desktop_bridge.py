@@ -46,7 +46,8 @@ MAX_MODEL_PROPOSALS=4  # Not native workers or persistent approvals.
 class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
     """First-party Desktop IPC only, not NVP FastAPI or model execute catalog."""
 
-    def __init__(self,index,*,origin,director_writer_factory=None,**kwargs):
+    def __init__(self,index,*,origin,director_writer_factory=None,
+                 actor_blender_engine_provider=None,**kwargs):
         super().__init__(index,origin=origin,**kwargs)
         home=Path(os.environ.get("NVP_HOME",str(
             Path(index.studio.db_path).parent)))
@@ -75,6 +76,11 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         if director_writer_factory is not None and not callable(director_writer_factory):
             raise TypeError("Native model factory must be host-injected")
         self._wo6_director_writer_factory=director_writer_factory or verified_writer_for
+        # NVP trusted native bootstrap MUST inject reviewed binary manifests.
+        # Never read executable locations or provider identity from web/AI JSON.
+        if actor_blender_engine_provider is not None and not callable(actor_blender_engine_provider):
+            raise TypeError("Only trusted desktop bootstrap can supply Blender worker identity")
+        self._film03_blender_engine_provider=actor_blender_engine_provider
         self._wo6_model_lock=threading.RLock()
         self._wo6_model_proposals={}
 
@@ -374,6 +380,103 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         return service.prepare_generated_voice(
             request["project_id"],route,
             profile_revision=request["profile_revision"])
+
+    def film03_publish_actor_voice_direction(self,request):
+        """Native director-approved emotional delivery; zero speech generated.
+
+        A screenplay rewrite creates a new FilmIndex direction revision.
+        The original lines, ActorID, VoiceID and prior acting intentions
+        remain stored and are not modified by this preview/authoring action.
+        """
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","source_route","profile_revision","directions",
+            "expected_revision","director_note"})
+        from backend.nvp_film03_expressive_voice_direction import FilmActorVoiceDirection
+        nonce="film03_director_delivery_"+secrets.token_hex(16)
+        def approve(event,scope):
+            return bool(event==nonce and self._wo6_confirm_creative(nonce,scope))
+        return FilmActorVoiceDirection(self.index,verify_creator_action=approve).publish(
+            request["project_id"],request["source_route"],
+            profile_revision=request["profile_revision"],
+            directions=request["directions"],
+            expected_revision=request["expected_revision"],
+            director_note=request["director_note"],creator_event=nonce)
+
+    def film03_inspect_film_voice_readiness(self,project_id):
+        """Voice engine quality is CLOSED until actual expressive film results."""
+        self._wo5_project(project_id)
+        from backend.nvp_film03_expressive_voice_direction import cinematic_engine_readiness
+        return cinematic_engine_readiness(None)
+
+    def film03_run_actor_voice_candidate(self,request):
+        """Film speech is disabled until a genuinely expressive provider passes
+        human/director listening and model-specific qualification gates.
+
+        The earlier eSpeak NG baseline was removed from NVP's movie path.
+        Its ability to emit PCM does not demonstrate film-quality acting,
+        emotional range, pronunciation, dynamic whispers or VoiceID fidelity.
+        Existing ActorID source planning and real recorded-voice audition
+        remain available; this method is deliberately fail-closed.
+        """
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","source_route","profile_revision","job_id"})
+        raise PermissionError(
+            "FILM03 voice generation blocked: no expressive, film-qualified "
+            "voice worker with proven emotional/prosodic control and "
+            "ActorID voice continuity is registered. eSpeak NG is not "
+            "authorized for cinematic dialogue.")
+
+    def film03_run_actor_animation_candidate(self,request):
+        """Real contained Blender gait scene, source Take untouched, no AI code."""
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","actor_id","take_id","profile_revision",
+            "first_frame_in_take","frame_count","job_id"})
+        if self._film03_blender_engine_provider is None:
+            raise PermissionError("No reviewed Blender binary connected to NVP native bootstrap")
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor
+        from backend.nvp_film03_actor_animation_host import ReviewedActorAnimationHost
+        manifest=self._film03_blender_engine_provider()
+        if type(manifest) is not dict or set(manifest)!={
+                "executable","sha256","version"}:
+            raise PermissionError("Native Blender binary requires reviewed first-party SHA manifest")
+        supervisor=BlenderWorkerSupervisor(
+            self._wo6_root/"actor-blender",
+            blender_executable=manifest["executable"],
+            blender_sha256=manifest["sha256"],
+            blender_version=manifest["version"],
+            activity_ledger=self._wo6_host())
+        from backend.nvp_film03_actor_identity_core import canonical
+        nonce="nvp_film03_real_gait_"+secrets.token_hex(16)
+        def approve(event,scope):
+            return bool(event==nonce and
+                        self._wo6_confirm_creative(nonce,scope) and
+                        self._wo6_confirm_native(
+                            self._wo6_scope(scope["project_id"]),
+                            sha256(canonical(scope)).hexdigest(),scope))
+        animator=ReviewedActorAnimationHost(
+            self.index,supervisor,verify_creator_action=approve)
+        output=animator.run(
+            request["project_id"],request["actor_id"],
+            take_id=request["take_id"],
+            profile_revision=request["profile_revision"],
+            first_frame_in_take=request["first_frame_in_take"],
+            frame_count=request["frame_count"],job_id=request["job_id"],
+            creator_event=nonce)
+        if not output.get("actual_native_Blender_completed"):
+            return output
+        final=animator.verify(request["project_id"],request["job_id"])
+        if final["status"]!="VERIFIED_UNAPPROVED":
+            raise RuntimeError("Native actor animation candidate was not independently verified")
+        return {
+            "format":"nvp.film03.native_actor_animation_delivery.v1",
+            "actor_id":request["actor_id"],
+            "native_result":output,"independent_restart_readback":final,
+            "original_source_unchanged":True,
+            "director_has_not_approved_animation":True,
+        }
 
     def wo6_local_models(self,project_id):
         """Explicit user discovery of an existing loopback-only model service."""
