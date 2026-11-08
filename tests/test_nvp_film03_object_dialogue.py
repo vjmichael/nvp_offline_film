@@ -277,6 +277,22 @@ class RealFilm03DialogueLineage(unittest.TestCase):
             self.assertEqual(
                 original.verify(pid, "Relay03DialogueOverlay", 3)["status"],
                 "VERIFIED_INDEXED_EVENT_PROVENANCE")
+            # Real restart: reopen the SAME persistent SQLite project and
+            # exact FilmIndex blob history in a fresh process-style reader.
+            reopened_index = FilmIndex(Studio(source/"short.sqlite3"))
+            preserved = read_scene_dialogue_selection(
+                reopened_index, pid, "Relay03DialogueEdit", 1, tick=0,
+                expected_take_id="RelayRekindleTake")
+            newest = read_scene_dialogue_selection(
+                reopened_index, pid, "Relay03DialogueEdit", 3, tick=0,
+                expected_take_id="RelayRekindleTake")
+            self.assertEqual(preserved["active_object_actor_lines"][0][
+                "original_spoken_text"],
+                "The relay has been silent for twenty years.")
+            self.assertEqual(newest["active_object_actor_lines"][0][
+                "original_spoken_text"], "The relay is coming back online.")
+            self.assertEqual(reopened_index.read_revision(
+                pid, "RelayRekindleTake", 1)["document_sha256"], take_sha)
 
     def test_ambiguous_multi_line_rewrites_do_not_claim_old_actor_lineage(self):
         first = parse_screenplay("""INT. RELAY - NIGHT
@@ -313,6 +329,47 @@ Different second line.
             for r in revised[0]["lines"]))
         self.assertGreaterEqual(
             sum(x["kind"] == "requires_director_reconciliation" for x in changes), 2)
+
+    def test_repeated_identical_cues_with_adjacent_insert_do_not_silently_rebind_recordings(self):
+        old = """INT. RELAY - NIGHT
+
+DONUT
+Yes.
+
+DONUT
+Yes.
+
+BOX
+Understood.
+"""
+        revised = """INT. RELAY - NIGHT
+
+BOX
+Something changed.
+
+DONUT
+Yes.
+
+DONUT
+Yes.
+
+BOX
+Understood.
+"""
+        old_scenes, _ = _script_scenes(old, "RepeatedScript", 1)
+        revised_scenes, impact = _script_scenes(
+            revised, "RepeatedScript", 2, {"scenes":old_scenes})
+        candidates = [line for line in revised_scenes[0]["lines"]
+                      if line["speaker"] == "DONUT"]
+        self.assertEqual(len(candidates), 2)
+        self.assertTrue(all(
+            line["lineage_status"] == "requires_director_reconciliation"
+            for line in candidates))
+        old_ids = {line["line_id"] for line in old_scenes[0]["lines"]}
+        self.assertTrue(all(line["line_id"] not in old_ids
+                            for line in candidates))
+        self.assertTrue(any(x["kind"] ==
+                            "requires_director_reconciliation" for x in impact))
 
     def test_ambiguous_two_line_rewrite_requires_explicit_authoritative_mapping(self):
         with TemporaryDirectory() as d:
