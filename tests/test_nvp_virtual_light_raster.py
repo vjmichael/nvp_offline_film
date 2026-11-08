@@ -77,9 +77,8 @@ class RealDigitalCinematicLightPixels(unittest.TestCase):
         self.assertGreater(int(np.sum(delta[:,:,0])),
                            int(np.sum(delta[:,:,2])))
         self.assertEqual(
-            self.index.read_revision(self.pid,"RelayDiscoveryTake",1)[
+            self.index.read_revision(self.pid,"RelayRekindleTake",1)[
                 "document_sha256"],
-            self.source["shots"][1]["take_sha256"] if False else
             self.source["shots"][2]["take_sha256"])
         self.assertFalse(warm["film_delivered"])
         self.assertTrue(warm["virtual_light_not_necessarily_source_authorized"])
