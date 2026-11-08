@@ -50,6 +50,21 @@ class TimelineAndPixelTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             _display_png(xyz[:-2],"2K_FLAT_24")
 
+    def test_unsampled_xyz12_word_cannot_hide_in_preview_decimation(self):
+        # The full 2K XYZ image is sampled every second pixel for the
+        # GUI. A native decoder must not hide invalid 12-bit essence in
+        # those discarded positions.
+        width,height=1998,1080
+        original=bytearray((0x0300).to_bytes(2,"big")*3*(width*height))
+        # x=1, y=1 is NOT included in raw[::2,::2].
+        offset=((width+1)*3)*2
+        self.assertEqual(int.from_bytes(original[offset:offset+2],"big"),0x300)
+        original[offset:offset+2]=(0x1000).to_bytes(2,"big")
+        with self.assertRaisesRegex(PermissionError,"XYZ12"):
+            _display_png(bytes(original),"2K_FLAT_24")
+        # Keep the existing test for an entirely valid full-resolution
+        # DCP preview; both sampled and unsampled pixels are now audited.
+
     def test_mastered_pcm24_downmix_exact_48k_samples(self):
         # 24bit source actual values, converted only for the device preview.
         pcm=(b"\x00\x00\x40"+b"\x00\x00\x80")*SAMPLES_PER_FRAME
@@ -240,6 +255,54 @@ class NativePublishedViewerTests(unittest.TestCase):
                 sample[i*SAMPLES_PER_FRAME*6:i*SAMPLES_PER_FRAME*6+6],
                 (frame+1).to_bytes(3,"little",signed=True)*2)
         self.assertEqual(unwrap_starts,[(0,24),(24,24)])
+        self.player.stop(ticket)
+        self.assertIsNone(self.player._pcm_cache)
+
+    def test_partial_terminal_pcm_region_and_5_1_channels_preserve_samples(self):
+        ticket=self.open()["session_id"]
+        base=self.reels[0]
+        six=("L","R","C","LFE","Ls","Rs")
+        # The final region of this reel has only frames 24 and 25.
+        reel=Reel(0,26,base.picture,base.sound,base.picture_sha,
+                  base.sound_sha,base.job_id,six,
+                  base.picture_stat,base.sound_stat)
+        observed=[]
+        def native_pcm(codec,args,*,workdir,check_cancel,timeout):
+            self.assertFalse(check_cancel())
+            self.assertEqual(codec.product,"ASDCP-asdcp_unwrap")
+            start=int(args[args.index("-f")+1])
+            duration=int(args[args.index("-d")+1])
+            observed.append((start,duration))
+            with wave.open(str(Path(workdir)/args[-1]),"wb") as wav:
+                wav.setnchannels(6)
+                wav.setsampwidth(3)
+                wav.setframerate(RATE)
+                frames=[]
+                for fr in range(start,start+duration):
+                    channel_samples=b"".join(
+                        (fr*16+ch).to_bytes(3,"little",signed=True)
+                        for ch in range(6))
+                    frames.append(channel_samples*SAMPLES_PER_FRAME)
+                wav.writeframes(b"".join(frames))
+            return {"exit_code":0}
+        with TemporaryDirectory(dir=self.root) as tmp,patch(
+                "backend.nvp_wo5_finished_playback.run_supervised_codec",
+                side_effect=native_pcm):
+            pcm=self.player._pcm24_window(
+                ticket,reel,0,22,4,Path(tmp),lambda:False)
+            tail=self.player._pcm24_window(
+                ticket,reel,0,24,2,Path(tmp),lambda:False)
+        frame_bytes=SAMPLES_PER_FRAME*6*3
+        self.assertEqual(len(pcm),4*frame_bytes)
+        self.assertEqual(pcm[2*frame_bytes:],tail)
+        for i in range(4):
+            fr=22+i
+            start=i*frame_bytes
+            self.assertEqual(
+                pcm[start:start+18],
+                b"".join((fr*16+ch).to_bytes(3,"little",signed=True)
+                         for ch in range(6)))
+        self.assertEqual(observed,[(0,24),(24,2)])
         self.player.stop(ticket)
         self.assertIsNone(self.player._pcm_cache)
 
