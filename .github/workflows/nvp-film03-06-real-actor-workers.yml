@@ -49,7 +49,7 @@ jobs:
     timeout-minutes: 95
     env:
       NVP_FILM03_ESPEAK_BIN: /usr/bin/espeak-ng
-      NVP_FILM03_ARTIFACT_DIR: ${{ runner.temp }}/actual-actor-evidence
+      NVP_FILM03_ARTIFACT_DIR: actor-evidence
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -88,7 +88,7 @@ jobs:
         if: success()
         with:
           name: nvp-FILM03-REAL-ActorID-SPEECH-WAV-NOT-DIRECTOR-APPROVED
-          path: ${{ runner.temp }}/actual-actor-evidence/real-voice/
+          path: actor-evidence/real-voice/
           if-no-files-found: error
           retention-days: 14
 
@@ -99,7 +99,7 @@ jobs:
     env:
       BLENDER_VERSION: '5.2.3'
       BLENDER_BASE: https://download.blender.org/release/Blender5.2
-      NVP_FILM03_ARTIFACT_DIR: ${{ runner.temp }}/actual-actor-evidence
+      NVP_FILM03_ARTIFACT_DIR: actor-evidence
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -148,6 +148,6 @@ jobs:
         if: success()
         with:
           name: nvp-FILM03-REAL-ActorID-GAIT-BLEND-CYCLES-PNG-NOT-APPROVED
-          path: ${{ runner.temp }}/actual-actor-evidence/real-animation/
+          path: actor-evidence/real-animation/
           if-no-files-found: error
           retention-days: 14
