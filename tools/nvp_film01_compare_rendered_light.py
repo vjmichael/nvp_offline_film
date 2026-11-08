@@ -134,3 +134,28 @@ def compare_native_light_versions(baseline,fx_version,output_png,output_report):
     }
     report.write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
     return result
+
+
+def main():
+    import argparse
+    parser=argparse.ArgumentParser(
+        description="Compare two FULL, genuine NVP original render archives")
+    parser.add_argument("--baseline",required=True,type=Path)
+    parser.add_argument("--virtual",required=True,type=Path)
+    parser.add_argument("--out-png",required=True,type=Path)
+    parser.add_argument("--out-report",required=True,type=Path)
+    args=parser.parse_args()
+    result=compare_native_light_versions(
+        args.baseline.resolve(),args.virtual.resolve(),
+        args.out_png.resolve(),args.out_report.resolve())
+    print(json.dumps({
+        "format":result["format"],
+        "source_pair_verified":result["original_take_and_film_time_are_identical"],
+        "sound_identical":result["original_sound_pcm_identical"],
+        "sampled_pixel_differences":result["sampled_real_picture_differences"],
+        "artist_approval_required":result["human_artistic_approval_required"],
+    },indent=2))
+
+
+if __name__=="__main__":
+    main()
