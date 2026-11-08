@@ -1,0 +1,94 @@
+name: NVP FILM02 Original 30s Blender Source-Verified Shot Handoff (NOT Film Acceptance)
+
+on:
+  push:
+    branches: [nvp/film02-30s-blender-handoff-20261108]
+  pull_request:
+    branches: [nvp/film01-real-blender-cycles-donut-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film02-30s-handoff-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  source-bound-shot-handoff:
+    name: Exact 720-frame native frozen FilmIndex/OpenUSD/PCM edit handoff / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual native source contract and OpenUSD
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Compile first-party FILM02 bridge and tests
+        run: python -m compileall -q tools/nvp_film02_blender_handoff.py tests/test_nvp_film02_blender_handoff.py
+      - name: Verify full 720 original frame/cut/source/actor/camera/light/audio references and tamper denial
+        run: python -m unittest discover -s tests -p test_nvp_film02_blender_handoff.py -v
+      - name: Preserve exact existing native Blender worker authorization/cancellation/recovery tests
+        run: python -m unittest discover -s tests -p test_blender_worker.py -v
+
+  publish-only-verified-source-plan:
+    name: Native source handoff manifest, NEVER a rendered movie / ubuntu-24.04
+    needs: source-bound-shot-handoff
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual source and USD dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Freeze fresh creator-test-only original 30s project and derive full 720-frame Blender handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/film02-handoff"
+          python -m tools.nvp_film02_blender_handoff \
+            --source "$RUNNER_TEMP/film02-original-frozen" \
+            --out "$RUNNER_TEMP/film02-handoff/verified_original_edit_to_blender.json" \
+            --create-test-fixture \
+            --consent I_APPROVE_DISPOSABLE_30S_SOURCE_HANDOFF_TEST
+      - name: Independently validate archive identity, all 720 frame slots and no false film acceptance
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from tools.nvp_film02_blender_handoff import validate_handoff
+          root = Path(os.environ["RUNNER_TEMP"])
+          manifest = json.loads((root/"film02-handoff/verified_original_edit_to_blender.json").read_text())
+          report = json.loads((root/"film02-original-frozen/original-source-report.json").read_text())
+          evidence = validate_handoff(manifest, report)
+          assert evidence["frame_count"] == 720
+          assert evidence["cut_frames"] == [240,480]
+          assert evidence["chirp_start_frame"] == 624
+          assert evidence["chirp_end_exclusive"] == 636
+          assert evidence["render_acceptance"] is False
+          assert evidence["creator_visual_approval"] is False
+          assert manifest["picture_rendered"] is False
+          assert manifest["mixed_audio_exported"] is False
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          PY
+      - name: Publish handoff source data ONLY (explicitly not a film)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-FILM02-30S-EDIT-SOURCE-TO-BLENDER-HANDOFF-NOT-A-MOVIE
+          path: ${{ runner.temp }}/film02-handoff/verified_original_edit_to_blender.json
+          if-no-files-found: error
+          retention-days: 14

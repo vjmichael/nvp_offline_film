@@ -1,0 +1,222 @@
+name: NVP FILM02 REAL Blender Cycles 30s Three-Shot 720-Frame Picture (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film02-30s-blender-handoff-20261108]
+  pull_request:
+    branches: [nvp/film01-real-blender-cycles-donut-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film02-native-cycles-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  verify-original-source-and-supervisor:
+    name: Frozen source and contained native Blender contracts / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real original OpenUSD dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Compile fixed Blender worker, independent scene reopen, and native host
+        run: |
+          python -m compileall -q tools/nvp_film02_blender_cycles_worker.py tools/nvp_film02_blender_cycles_acceptance.py tools/nvp_film02_cycles_reopen.py tools/nvp_film02_cycles_collect.py tests/test_nvp_film02_blender_cycles_source.py
+      - name: Check 720 original frames, cut boundaries, actor/source integrity and worker isolation
+        run: |
+          python -m unittest discover -s tests -p test_nvp_film02_blender_handoff.py -v
+          python -m unittest discover -s tests -p test_nvp_film02_blender_cycles_source.py -v
+      - name: Preserve native Blender cancellation, containment and journal
+        run: python -m unittest discover -s tests -p test_blender_worker.py -v
+
+  freeze-one-original-for-all-shots:
+    name: Generate ONE frozen 30s FilmIndex project, not three incompatible sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Freeze one native original three-shot project, original PCM and immutable 720-frame manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/film02-shared"
+          python -m tools.nvp_film02_blender_handoff \
+            --source "$RUNNER_TEMP/film02-shared/source" \
+            --out "$RUNNER_TEMP/film02-shared/handoff.json" \
+            --create-test-fixture --consent I_APPROVE_DISPOSABLE_30S_SOURCE_HANDOFF_TEST
+      - name: Upload shared project, SQLite, content-addressed source blobs, SHA-linked 720-frame handoff
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-FILM02-ONE-FROZEN-ORIGINAL
+          path: ${{ runner.temp }}/film02-shared/
+          if-no-files-found: error
+          retention-days: 14
+
+  native-real-three-shot-render:
+    name: Genuine CPU Cycles renders original 240 frames shot ${{ matrix.shot }}
+    needs: freeze-one-original-for-all-shots
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shot: [0, 1, 2]
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      SHOT: ${{ matrix.shot }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real Blender/OpenUSD/CPU Cycles system prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Fetch official Blender 5.2.3 and verify against original Blender-published SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/nvp-blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/nvp-blender" --strip-components=1
+          "$RUNNER_TEMP/nvp-blender/blender" -b --version | head -n 2
+      - uses: actions/download-artifact@v4
+        with:
+          name: nvp-FILM02-ONE-FROZEN-ORIGINAL
+          path: ${{ runner.temp }}/film02-shared
+      - name: Reopen original source and render actual 240 PNGs using ten approved 24-frame OS-contained worker jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_film02_blender_cycles_acceptance \
+            --source "$RUNNER_TEMP/film02-shared/source" \
+            --handoff "$RUNNER_TEMP/film02-shared/handoff.json" \
+            --blender "$RUNNER_TEMP/nvp-blender/blender" \
+            --shot "$SHOT" \
+            --out "$RUNNER_TEMP/film02-shot-$SHOT" \
+            --consent I_APPROVE_DISPOSABLE_FILM02_NATIVE_CYCLES_RENDER \
+            | tee "$RUNNER_TEMP/film02-shot-$SHOT-summary.log"
+      - name: Independently reopen saved FIRST and LAST chunk scenes in fresh real Blender processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["manifest_sha256"][:16])' "$RUNNER_TEMP/film02-shared/handoff.json")"
+          first="$((SHOT*240))"
+          last="$((first+216))"
+          for start in "$first" "$last"; do
+            printf -v padded "%04d" "$start"
+            job="$RUNNER_TEMP/film02-shot-$SHOT/native_blender_worker/film02_s$SHOT"_f"$padded"_"$prefix"
+            if [ ! -f "$job/scene.blend" ] || [ ! -f "$job/source.json" ]; then echo "Missing saved Blender source scene"; exit 1; fi
+            xvfb-run -a "$RUNNER_TEMP/nvp-blender/blender" \
+              -b "$job/scene.blend" --python-exit-code 70 \
+              --python tools/nvp_film02_cycles_reopen.py \
+              -- --manifest "$job/source.json" \
+              --audit "$RUNNER_TEMP/film02-shot-$SHOT/review/shot_$SHOT/independent_blend_reopen_$padded.json"
+          done
+      - name: Audit exact 240 source-bound frames and real separate Blender reopen evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          shot=int(os.environ["SHOT"])
+          folder=Path(os.environ["RUNNER_TEMP"])/f"film02-shot-{shot}"/"review"/f"shot_{shot}"
+          doc=json.loads((folder/"shot_receipt.json").read_text())
+          assert doc["passed"] is True and doc["rendered_frame_count"]==240
+          assert len(doc["chunks"])==10 and len(doc["frames"])==240
+          assert doc["shot_number"]==shot
+          assert doc["continuous_30s_movie_muxed"] is False
+          for start in (shot*240,shot*240+216):
+            proof=json.loads((folder/f"independent_blend_reopen_{start:04d}.json").read_text())
+            assert proof["passed"] is True and proof["source_bound_scene_object_count"]==7
+          PY
+      - name: Publish verified actual 240 Blender original shot frame PNGs and receipts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-FILM02-REAL-CYCLES-original-shot-${{ matrix.shot }}
+          path: ${{ runner.temp }}/film02-shot-${{ matrix.shot }}/review/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish failure logs separately, NEVER as a finished movie
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-FILM02-FAILED-shot-${{ matrix.shot }}-NOT-A-MOVIE
+          path: |
+            ${{ runner.temp }}/film02-shot-${{ matrix.shot }}/native_blender_worker/film02_*/worker_stdout.log
+            ${{ runner.temp }}/film02-shot-${{ matrix.shot }}/native_blender_worker/film02_*/worker_stderr.log
+            ${{ runner.temp }}/film02-shot-${{ matrix.shot }}-summary.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  verify-and-publish-720-real-original-picture-frames:
+    name: Source-verify ALL 720 Cycles PNGs, three source Takes, both cuts, six independent Blender readbacks
+    needs: [verify-original-source-and-supervisor, freeze-one-original-for-all-shots, native-real-three-shot-render]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install same audited source stack and independent image decoder
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - uses: actions/download-artifact@v4
+        with:
+          name: nvp-FILM02-ONE-FROZEN-ORIGINAL
+          path: ${{ runner.temp }}/film02-shared
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nvp-FILM02-REAL-CYCLES-original-shot-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/film02-real-pictures
+      - name: Independently decode and source-check 720 actual Cycles original frames
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.nvp_film02_cycles_collect \
+            --handoff "$RUNNER_TEMP/film02-shared/handoff.json" \
+            --original-report "$RUNNER_TEMP/film02-shared/source/original-source-report.json" \
+            --shots "$RUNNER_TEMP/film02-real-pictures" \
+            --out "$RUNNER_TEMP/film02-director-contact"
+      - name: Publish 720-frame original-source Cycles receipt and 9-frame actual visual contact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-FILM02-REAL-30S-720-CYCLES-FRAMES-PICTURE-ONLY-NOT-AUDIO-MOVIE
+          path: ${{ runner.temp }}/film02-director-contact/
+          if-no-files-found: error
+          retention-days: 14
