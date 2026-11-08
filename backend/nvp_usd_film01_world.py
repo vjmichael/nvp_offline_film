@@ -86,6 +86,19 @@ def _record_source(index, pid, kind, source_id, revision):
         if not root or not root.IsDefined():
             raise RuntimeError("Original NVP scene lacks a native /World root")
         plain.SetDefaultPrim(root)
+        # Original NVP scenes can contain legitimate project-owned texture
+        # data, but full reviewed image resolution is not yet installed in
+        # this world composer. Refuse dangling AssetPaths instead of
+        # silently rendering a textured shot with missing dependencies.
+        from pxr import Sdf
+        for prim in plain.Traverse():
+            for attribute in prim.GetAttributes():
+                if attribute.GetTypeName() == Sdf.ValueTypeNames.Asset:
+                    asset_path = attribute.Get()
+                    if asset_path is not None and str(asset_path.path):
+                        raise ValueError(
+                            "Film set has unresolved texture/image asset; "
+                            "install reviewed project texture resolver first")
         contents = flattened.ExportToString().encode("utf8")
         root_prim = "/World"
     else:
