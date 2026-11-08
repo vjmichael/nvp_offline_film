@@ -144,7 +144,7 @@ class NativePublishedViewerTests(unittest.TestCase):
                     for n in range(frames):
                         (root/f"p_{start+n:06d}.j2c").write_bytes(self.codestream)
                 else:
-                    with wave.open(str(root/"snd"),"wb") as out:
+                    with wave.open(str(root/args[-1]),"wb") as out:
                         out.setnchannels(2)
                         out.setsampwidth(3)
                         out.setframerate(RATE)
@@ -187,7 +187,7 @@ class NativePublishedViewerTests(unittest.TestCase):
         self.assertEqual(invocations[0][1][1:4],["0","-d","1"])
         self.assertEqual(invocations[2][1][1:4],["0","-d","3"])
         sound_unwraps=[args for product,args in invocations
-                       if product=="ASDCP-asdcp_unwrap" and args[-1]=="snd"]
+                       if product=="ASDCP-asdcp_unwrap" and args[-1].startswith("snd_")]
         self.assertEqual(len(sound_unwraps),2)
         self.assertEqual(
             len([args for product,args in invocations
@@ -211,11 +211,11 @@ class NativePublishedViewerTests(unittest.TestCase):
         def real_pcm_fixture(codec,args,*,workdir,check_cancel,timeout):
             self.assertFalse(check_cancel())
             self.assertEqual(codec.product,"ASDCP-asdcp_unwrap")
-            self.assertEqual(args[-1],"snd")
+            self.assertEqual(args[-1],f"snd_{int(args[args.index(\"-f\")+1]):09d}")
             start=int(args[args.index("-f")+1])
             frames=int(args[args.index("-d")+1])
             unwrap_starts.append((start,frames))
-            with wave.open(str(Path(workdir)/"snd"),"wb") as wav:
+            with wave.open(str(Path(workdir)/args[-1]),"wb") as wav:
                 wav.setnchannels(2)
                 wav.setsampwidth(3)
                 wav.setframerate(RATE)
