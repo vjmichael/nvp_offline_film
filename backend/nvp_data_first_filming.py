@@ -66,6 +66,23 @@ class NativeSceneSoundCapture:
             raise RuntimeError("Camera scene identity changed before filming")
         if type(recordings) is not list or not 1<=len(recordings)<=MAX_AUDIO_EVENTS:
             raise ValueError("Record a finite, bounded set of original sound events")
+        # Preflight identities before writing any immutable PCM revisions.
+        # Reusing a source ID would otherwise fail only after an earlier
+        # recording had already been published, leaving avoidable orphans.
+        source_ids=set()
+        event_ids=set()
+        for entry in recordings:
+            if type(entry) is not dict or set(entry)!={
+                "event_id","event_kind","subject_id","source_id",
+                "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
+            }:
+                raise ValueError("Recorded sound requires typed source/evidence/Film Time")
+            eid=_id(entry["event_id"],"recorded sound event")
+            sid=_id(entry["source_id"],"original audio source")
+            if eid in event_ids or sid in source_ids or sid in ids:
+                raise ValueError("Duplicate or reserved recording identity")
+            event_ids.add(eid)
+            source_ids.add(sid)
         duration=int(plan["duration_tick"])
         events=[]
         camera_events=self.timeline.events_in(
