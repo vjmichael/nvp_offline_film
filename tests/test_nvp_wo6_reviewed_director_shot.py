@@ -143,9 +143,8 @@ class OriginalSourceDirectorHandoff(unittest.TestCase):
         self.assertIn("Separate native worker",self.window.prompts[1][0])
         self.assertIn(proposal["model_text_sha256"],
                       self.window.prompts[0][1])
-        self.assertFalse(
-            self.index.read_revision(self.pid,"OriginalTake",1)["data"][
-                "frozen"] is not True)
+        self.assertTrue(
+            self.index.read_revision(self.pid,"OriginalTake",1)["data"]["frozen"])
         self.assertEqual(
             self.index.read_revision(self.pid,"OriginalTake",1)[
                 "document_sha256"],self.take_sha)
@@ -167,6 +166,17 @@ class OriginalSourceDirectorHandoff(unittest.TestCase):
             self.pid,"human_reviewed_camera",1,tick=T//2)
         self.assertEqual(evaluated["shot_document_sha256"],
                          done["shot_document_sha256"])
+        native_receipt=json.loads(
+            (native.root/task_id/"receipt.json").read_text())
+        self.assertEqual(
+            native_receipt["reviewed_ai_consultation"]["model_text_sha256"],
+            proposal["model_text_sha256"])
+        self.assertFalse(native_receipt["model_approval_accepted"])
+        durable=self.bridge.wo6_task_status(self.pid,task_id)
+        self.assertEqual(durable["state"],"SUCCEEDED")
+        self.assertEqual(
+            durable["reviewed_ai_consultation"]["proposal_id"],proposal_id)
+        self.assertFalse(durable["reviewed_model_text_is_authority"])
         self.assertFalse(evaluated["source_performance_modified"])
         self.assertEqual(
             self.index.read_revision(self.pid,"OriginalTake",1)[
