@@ -107,7 +107,7 @@ class RequiredRealHydraTextureColor(unittest.TestCase):
             "theatrical_color_accepted":False,
         }
         output=Path("wo3-hydra-color-evidence.json")
-        output.write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\\n",
+        output.write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n",
                           encoding="utf-8")
         print("WO3_REAL_HYDRA_COLOR_RECEIPT:",
               json.dumps(receipt,sort_keys=True),flush=True)
