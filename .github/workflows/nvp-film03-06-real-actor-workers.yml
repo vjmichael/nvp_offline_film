@@ -1,4 +1,4 @@
-name: NVP FILM03-06 REAL ActorID Voice Worker and Blender Gait (NO FFMPEG)
+name: NVP FILM03-06 ActorID Film-Voice Refusal and REAL Blender Gait (NO FFMPEG)
 
 on:
   push:
@@ -35,62 +35,13 @@ jobs:
           python -m pip install httpx2
       - name: Compile all reviewed source and native scripts
         run: |
-          python -m compileall -q backend/nvp_film03_actor_identity_core.py backend/nvp_film03_actor_voice_worker.py backend/nvp_film03_actor_animation_host.py backend/nvp_wo6_desktop_bridge.py tools/nvp_film03_actor_animation_worker.py tools/nvp_film03_actor_animation_reopen.py tests/test_nvp_film03_actor_native_workers.py
-      - name: Source verified ActorID voice, gait and denial tests
+          python -m compileall -q backend/nvp_film03_actor_identity_core.py backend/nvp_film03_actor_animation_host.py backend/nvp_wo6_desktop_bridge.py tools/nvp_film03_actor_animation_worker.py tools/nvp_film03_actor_animation_reopen.py tests/test_nvp_film03_actor_native_workers.py
+      - name: Source verified ActorID voice source and film TTS quality denial; real motion tests
         run: python -m unittest discover -s tests -p test_nvp_film03_actor_native_workers.py -v
       - name: Earlier script and identity continuity regressions
         run: |
           python -m unittest discover -s tests -p test_nvp_film03_actor_identity_core.py -v
           python -m unittest discover -s tests -p test_nvp_film03_dialogue_manager.py -v
-
-  real-offline-voice:
-    name: REAL eSpeak NG ActorID source speech and native WAV evidence
-    runs-on: ubuntu-24.04
-    timeout-minutes: 95
-    env:
-      NVP_FILM03_ESPEAK_BIN: /usr/bin/espeak-ng
-      NVP_FILM03_ARTIFACT_DIR: actor-evidence
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install Ubuntu 24.04 eSpeak NG native engine and OpenUSD
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install -r requirements-foundation.txt
-          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
-          python -m pip install httpx2
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends espeak-ng
-          dpkg-query --show espeak-ng
-          "$NVP_FILM03_ESPEAK_BIN" --version
-      - name: Actually run OS-contained native voice synthesis and independent WAV/FilmIndex verification
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m unittest discover -s tests -p test_nvp_film03_actor_native_workers.py -v
-          python - <<'PY'
-          from pathlib import Path
-          import json,os,hashlib,wave
-          p=Path(os.environ["NVP_FILM03_ARTIFACT_DIR"])/"real-voice"
-          r=json.loads((p/"receipt.json").read_text())
-          assert r["passed"] and r["voice_output_generated_in_contained_real_process"]
-          assert not r["voice_approved_for_film"] and not r["acoustic_identity_independently_verified"]
-          assert hashlib.sha256((p/"voice.wav").read_bytes()).hexdigest()==r["wav_info"]["wav_sha256"]
-          with wave.open(str(p/"voice.wav"),"rb") as stream:
-            assert stream.getnframes()==r["wav_info"]["sample_count"]
-            assert stream.getnchannels()==1
-          print("Real offline generated actor speech: source-verified but NOT director-approved")
-          PY
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: nvp-FILM03-REAL-ActorID-SPEECH-WAV-NOT-DIRECTOR-APPROVED
-          path: actor-evidence/real-voice/
-          if-no-files-found: error
-          retention-days: 14
 
   real-blender-gait:
     name: REAL Blender 5.2.3 ActorID gait keyframes, Cycles preview and independent reopen
