@@ -229,6 +229,7 @@ def source_alignment_plan(index: FilmIndex, pid, dialogue_route,
         "exact_script_text": routed["exact_director_selected_text"],
         "script_sha256": required["exact_original_script_text_sha256"],
         "source_take_sha256": routed["source_take_sha256"],
+        "source_take_id": routed["source_take_id"],
         "face_direction_id": face_direction_id,
         "face_direction_revision": face_revision,
         "face_direction_sha256": facial["document_sha256"],
@@ -264,7 +265,7 @@ def _pinned_file(path, expected_sha):
 def run_reviewed_mfa_one(index, plan, *, work_root, mfa_binary, mfa_sha256,
                          dictionary_file, dictionary_sha256,
                          acoustic_model_file, acoustic_model_sha256,
-                         timeout_seconds=240):
+                         timeout_seconds=240, candidate_object_id=None):
     """Real OS-contained single-utterance alignment; no unreviewed fallback.
 
     Only a trusted native host supplies binary/model paths/hashes and scoped
@@ -276,6 +277,13 @@ def run_reviewed_mfa_one(index, plan, *, work_root, mfa_binary, mfa_sha256,
         raise PermissionError("An exact original audio alignment plan is required")
     if type(timeout_seconds) is not int or not 5 <= timeout_seconds <= 900:
         raise ValueError("Bounded native model execution deadline required")
+    if candidate_object_id is not None:
+        _id(candidate_object_id, "derived lip-sync candidate")
+        if candidate_object_id in {
+            plan["face_direction_id"], plan["audio_source_id"],
+            plan["source_take_id"]
+        }:
+            raise ValueError("Derived lip-sync candidate cannot alias original film source")
     binary = _pinned_file(mfa_binary, mfa_sha256)
     dictionary = _pinned_file(dictionary_file, dictionary_sha256)
     acoustic = _pinned_file(acoustic_model_file, acoustic_model_sha256)
@@ -350,7 +358,7 @@ def run_reviewed_mfa_one(index, plan, *, work_root, mfa_binary, mfa_sha256,
         accepted = import_mfa_json(
             output, exact_script_text=plan["exact_script_text"],
             pcm_sample_count=plan["sample_count"])
-        return {
+        receipt = {
             **accepted,
             "source_plan": plan,
             "native_acoustic_model_executed": True,
@@ -361,4 +369,40 @@ def run_reviewed_mfa_one(index, plan, *, work_root, mfa_binary, mfa_sha256,
             "native_result_exit_code": 0,
             "output_is_viseme_candidates_not_rig_animation": True,
             "manual_lip_sync_review_pending": True,
+        }
+        if candidate_object_id is None:
+            return receipt
+        # Only successful in-process, source-locked native alignment publishes
+        # derived candidate keyframes. Never promote these to an approved Take.
+        face = index.read_revision(
+            plan["project_id"], plan["face_direction_id"],
+            plan["face_direction_revision"])
+        sound = verified_guide_signal(
+            index, plan["project_id"], plan["audio_source_id"],
+            plan["audio_source_revision"])
+        if (face["document_sha256"] != plan["face_direction_sha256"] or
+                sound["pcm16le_sha256"] != plan["original_pcm_sha256"] or
+                sound["source_document_sha256"] != plan["audio_source_document_sha256"]):
+            raise PermissionError("Original actor, face direction or PCM changed after alignment")
+        published = index.register_revision(
+            plan["project_id"], candidate_object_id, "performance",
+            {**receipt, "review_state": "UNREVIEWED_PHONEME_CANDIDATE",
+             "director_selected": False, "real_rig_animation_produced": False},
+            expected_revision=0,
+            dependencies=[
+                {"object_id": plan["audio_source_id"],
+                 "revision": plan["audio_source_revision"], "role": "audio"},
+                {"object_id": plan["face_direction_id"],
+                 "revision": plan["face_direction_revision"], "role": "performance"},
+                {"object_id": plan["source_take_id"], "revision": 1,
+                 "role": "source_take"},
+            ],
+        )
+        return {
+            **receipt,
+            "candidate_id": candidate_object_id,
+            "candidate_revision": published["revision"],
+            "candidate_document_sha256": published["document_sha256"],
+            "original_sources_preserved": True,
+            "film_take_approved": False,
         }
