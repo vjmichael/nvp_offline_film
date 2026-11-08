@@ -40,6 +40,14 @@ class BlenderFrozenObjectActorSource(unittest.TestCase):
         self.assertEqual(m["scene_sha256"],self.source["scene_sha256"])
         self.assertEqual(m["torus_mesh_sha256"],
                          self.source["torus_source_mesh_sha256"])
+        # The registry serializes face-varying source UVs as face_uvs,
+        # while the original procedural generator calls them mesh_face_uvs.
+        # A Blender staging adapter must read the authoritative asset key.
+        asset=self.source["index"].read_revision(
+            self.source["project_id"],"DonutMesh",1)["data"]
+        self.assertEqual(len(asset["face_uvs"]),1008)
+        self.assertEqual(asset["face_uvs"],
+                         self.source["geometry"]["mesh_face_uvs"])
         self.assertEqual(len(m["donut_vertices"]),504)
         self.assertEqual(len(m["donut_triangles"]),1008)
         self.assertEqual(m["original_actor_roles"],{
