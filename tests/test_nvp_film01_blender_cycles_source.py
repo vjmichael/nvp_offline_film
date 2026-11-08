@@ -72,6 +72,26 @@ class BlenderFrozenObjectActorSource(unittest.TestCase):
                     "document_sha256"],
             m["source_take_sha256"])
 
+    def test_director_retake_is_new_immutable_source_not_a_Blender_fake(self):
+        retake=build_frozen_donut_source(
+            self.root/"genuine_director_retake",
+            performance="director_retake_01")
+        revised=original_take_manifest(retake)
+        self.assertEqual(revised["performance_variant"],"director_retake_01")
+        self.assertEqual(self.body["performance_variant"],"baseline")
+        self.assertNotEqual(revised["source_take_sha256"],
+                            self.body["source_take_sha256"])
+        for i in (0,71):
+            self.assertEqual(revised["frames"][i]["actors"]["sphere"],
+                             self.body["frames"][i]["actors"]["sphere"])
+        self.assertAlmostEqual(revised["frames"][24]["actors"]["sphere"][2],-2.8)
+        self.assertAlmostEqual(revised["frames"][36]["actors"]["sphere"][2],-.45)
+        self.assertAlmostEqual(revised["frames"][48]["actors"]["sphere"][2],.7)
+        self.assertEqual(revised["torus_mesh_sha256"],
+                         self.body["torus_mesh_sha256"])
+        self.assertEqual(revised["original_actor_roles"],
+                         self.body["original_actor_roles"])
+
     def test_typed_blender_stage_uses_original_digest_and_fixed_first_party_script(self):
         worker=BlenderWorkerSupervisor(
             self.root/"staged_native_worker_only",
