@@ -82,7 +82,7 @@ export default function WO6DirectorSourceReview({projectId}){
     <h3>Original edit + recorded sound, exact Film Time</h3>
     <p>This is a source-level director audition. It displays the real
       OpenUSD actor, camera and lighting state and lets you hear a bounded
-      original PCM excerpt at the same editorial frame. It is not rendered
+      original PCM excerpt starting at the same editorial frame. It is not rendered
       film picture or a mastered soundtrack.</p>
     {!catalog&&<p>Reading trusted original editorial sources…</p>}
     <label>Approved immutable editorial cut
@@ -141,7 +141,7 @@ export default function WO6DirectorSourceReview({projectId}){
         {review.source_pcm_omissions.map(x=>x.event_id+' ('+x.reason+')').join(', ')}
       </p>}
       {review.frame_spans_edit_boundary&&<p>Clip boundary: this window
-        contains fewer than 2,000 original PCM samples. Next frame maps
+        is shorter than the usual 0.5-second source excerpt. Next frame maps
         to its own original source Take.</p>}
       <p>Audio begins only when you press play. There are no picture
         pixels here, no continuous 24 fps playback verification,
