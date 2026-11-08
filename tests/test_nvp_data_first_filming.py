@@ -424,6 +424,25 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             with self.assertRaises(KeyError):
                 self.index.read_revision(self.pid,identity,1)
 
+    def test_checkpoint_overflow_does_not_consume_recording_iterator(self):
+        from unittest.mock import patch
+        import backend.nvp_data_first_filming as filming
+        req=self.payload()
+        consumed=[]
+        def guarded_pcm():
+            consumed.append(True)
+            raise AssertionError("Overflow must not read recording PCM")
+            yield b"\\x00\\x00"
+        req["recordings"][0]["pcm_chunks"]=guarded_pcm()
+        with patch.object(filming,"MAX_CHECKPOINTS",1):
+            with self.assertRaisesRegex(ValueError,"checkpoint capacity"):
+                self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        self.assertEqual(self.approvals,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
