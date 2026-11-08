@@ -37,7 +37,7 @@ CANDIDATE_FORMAT = "nvp.film03.unapproved_generated_actor_voice.v1"
 ENGINE = "NvpEspeakNG"
 MODEL = "EspeakNG"
 VOICE = re.compile(r"en(?:-us|-gb)?(?:\+[mMfF][1-5])?\Z")
-JOB = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,79}\Z")
+JOB = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,47}\Z")
 MAX_WAV = 16 * 1024 * 1024
 
 
@@ -234,7 +234,7 @@ class ReviewedActorVoiceWorker:
                 wav_data=(jobdir/"voice.wav").read_bytes()
                 stored_sha=self.index.put_blob(pid,wav_data,media_type="audio/wav")
                 if stored_sha!=info["wav_sha256"]:
-                    raise RuntimeError("Filmlndex source WAV SHA mismatch")
+                    raise RuntimeError("FilmIndex source WAV SHA mismatch")
                 candidate_id="ActorVoiceCandidate_"+job_id
                 record={
                     "format":CANDIDATE_FORMAT,"actor_id":plan["actor_id"],
