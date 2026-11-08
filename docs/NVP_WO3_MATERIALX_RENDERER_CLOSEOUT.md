@@ -120,3 +120,40 @@ regular file's exact originally approved byte length via `fstat`, and hashes
 in at most 64 KiB chunks. An inflated or replaced source fails closed
 without consuming worker-controlled RAM. The native regression deliberately
 inflates a temporary source file. This remains **unverified by native CI**.
+
+## WO3 mandatory actual Hydra image and color-response acceptance
+
+**Gate OPEN until observed real native jobs succeed.** Prior optional
+`usdrecord` test skipping was insufficient evidence of a working renderer.
+New required workflow: `.github/workflows/nvp-wo3-real-hydra-color.yml`.
+It provisions independent conda-forge OpenUSD **26.08** native executable and
+Mesa/GLX/Xvfb software-OpenGL context, with PySide6 for `usdrecord`.
+The main source-authoring matrix remains **OpenUSD 26.11**, so no cross-version
+bitwise parity or certified renderer compatibility is inferred from this audit.
+
+The real `tests/test_nvp_wo3_real_hydra_color.py` test must **NOT SKIP** when
+`usdrecord` is absent or fails. It publishes two different immutable
+FilmIndex-owned scenes with identical USD mesh, UVs, source-light/camera,
+normal/roughness/metallic/emission/opacity maps and different red/blue base
+textures. Both must genuinely render under **Hydra Storm**, not Embree.
+OpenUSD's HdEmbree example does not use materials and therefore **cannot
+prove texture color fidelity**. Storm supports USD PreviewSurface/MaterialX
+shading in a real graphics context. Passing requires genuine decoded image
+pixels, independent scene and pixel SHA-256s, same pinned native Storm executable,
+center-swatch red/blue dominance, and CIE ΔE76 separation at least 25 *between
+the two output swatches*. The ΔE is diagnostic and assumes unprofiled RGB8 is
+sRGB; it is **NOT** an allowable error versus a reference color and cannot
+certify photographic/colorimetric accuracy.
+
+The audit uploads `wo3-hydra-color-evidence.json` with raw measured center
+RGB8 means, hash-bound native renderer identity, per-scene SHA and measured
+color separation. A missing renderer, failed draw, black/gray/identical output,
+wrong shader sampling, missing source file or reused fake pixels fails the
+required job rather than creating acceptance.
+
+**Still separate and OPEN even after this gate passes:** independent proof that
+Storm selected/evaluated the actual `mtlx` OpenPBR terminal rather than the
+UsdPreviewSurface fallback; absolute reference ΔE76/ΔE2000 versus known
+color-managed expected pixels; ACES/OCIO transform, target gamut transfer
+function, HDR/film mastering, physical GPU and calibrated projection. A successful
+Mesa software-OpenGL Storm run does not count as physical GPU acceptance.
