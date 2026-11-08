@@ -202,6 +202,31 @@ class WO3NativeMaterialXIntegrity(unittest.TestCase):
                     [self.texture]+list(self.maps.values())):
                 self.fail("An upstream file override must never reach Hydra")
 
+    def test_materialx_only_probe_removes_preview_fallback_on_copy(self):
+        from backend.nvp_wo3_materialx_integrity import (
+            isolate_materialx_only_on_derived_stage)
+        original=self.stage()
+        snapshot=original.GetRootLayer().ExportToString()
+        path="/Asset/Material"
+        source_material=UsdShade.Material(original.GetPrimAtPath(path))
+        self.assertEqual(
+            len(source_material.GetSurfaceOutput().GetAttr().GetConnections()),1)
+        with resolved_materialx_probe(
+                self.index,self.pid,original,
+                [self.texture]+list(self.maps.values())) as (derived,evidence):
+            self.assertTrue(evidence["derived_probe_only"])
+            count=isolate_materialx_only_on_derived_stage(derived)
+            self.assertEqual(count,1)
+            scoped_material=UsdShade.Material(derived.GetPrimAtPath(path))
+            self.assertEqual(
+                scoped_material.GetSurfaceOutput().GetAttr().GetConnections(),[])
+            self.assertEqual(
+                len(scoped_material.GetSurfaceOutput("mtlx").GetAttr()
+                    .GetConnections()),1)
+            self.assertEqual(
+                len(source_material.GetSurfaceOutput().GetAttr().GetConnections()),1)
+        self.assertEqual(original.GetRootLayer().ExportToString(),snapshot)
+
     def test_materialx_resolver_uses_temporary_source_bytes_only(self):
         stage=self.stage()
         original=stage.GetRootLayer().ExportToString()
