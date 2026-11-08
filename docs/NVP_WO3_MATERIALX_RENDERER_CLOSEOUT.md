@@ -82,3 +82,33 @@ and target machines remain separate production acceptance gates.
 - Native `usdrecord` is resolved to an exact executable path and SHA-256 hashed before/after rendering. Failed, symbolic-link or oversized image outputs cannot produce `HYDRA_FRAME_RENDERED` receipt. Raw stderr containing private directories is not returned through the renderer receipt.
 - Negative tests include executable change during a mock native run (must throw), failure stderr redaction (must not certify a rendered frame), and an extra USD connection on an otherwise valid OpenPBR input (must fail).
 - No evidence exists yet that an independent real Hydra/MaterialX renderer achieved visual parity, even if the four matrix cells complete successfully: `usdrecord` may not be installed. Renderer output custody and source graph acceptance are separate from cinematic parity.
+
+## WO3 follow-up hardening — exact authored edge custody
+
+Native results from initial PR #96 run 42435076173 were still **queued** when
+reviewed. The follow-up commits below are **not** a passing native test claim.
+
+- Exact authored USD connection lists are checked even when referenced
+  sources are unresolved. `HasConnectedSource()` alone can miss dangling
+  paths which later become live under scene composition. This extends to
+  literal shader settings, source file paths, and permitted scalar maps.
+- PreviewSurface and OpenPBR PBR input USD types are checked alongside the
+  already pinned shader output types. The normal-map scale and bias must
+  remain typed literal `float4` values with no authored upstream edges.
+- The disposable MaterialX image resolver denies connected `file` inputs
+  even if the visible `nvp-blob://` source URI has not changed.
+- Independent `usdrecord` stdout/stderr now go to `DEVNULL`, rather than
+  unbounded `capture_output` host RAM; private renderer diagnostics remain
+  absent from acceptance receipts.
+- Additional real OpenUSD native tests cover hidden normal scale/bias edges,
+  unresolved texture and literal edges, and refusing a shadowed file during
+  source resolution. Hydra mock verifies bounded diagnostic handling.
+
+**New acceptance requirement:** At the final PR #96 exact commit, all five
+WO3 native jobs must complete successfully: Windows 2025/Python 3.11 and 3.13,
+Ubuntu 24.04/Python 3.11 and 3.13, and the Ubuntu real 60-second USD/skin/PBR
+CPU continuity job. Inspect failing job logs and repair without dropping
+regressions. CI is currently queued; native OpenUSD 26.11 is absent from the
+assistant's local environment, so local direct USD execution is **not**
+evidence. Real independent Hydra picture parity, shader colors under reference
+renderers, installed Windows GPU and calibrated cinema tests remain **OPEN**.
