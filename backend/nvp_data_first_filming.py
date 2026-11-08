@@ -153,6 +153,10 @@ class NativeSceneSoundCapture:
                 required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
                 if not count or samples<required:
                     raise ValueError("Captured PCM is shorter than its Film Time event")
+                # Flush buffered data before declaring the recording validated.
+                # A delayed disk write failure must not be discovered only
+                # after an earlier immutable source has been published.
+                spool.flush()
                 spool.seek(0)
                 prepared_chunks[sid]=spool
                 chunk_digests[sid]=tuple(digests)
