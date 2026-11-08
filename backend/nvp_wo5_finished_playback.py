@@ -40,6 +40,7 @@ FORMAT="nvp.wo5.finished_dcp_pcm24_picture_review.v1"
 RATE=48000
 FPS=24
 SAMPLES_PER_FRAME=RATE//FPS
+PCM_CACHE_FRAMES=24  # At most one actual finished-MXF sound second.
 SESSION_SECONDS=7200
 MAX_PREVIEW_WIDTH=1024
 MAX_PNG_BYTES=3*1024*1024
@@ -250,6 +251,7 @@ class FinishedFilmPlayer:
         self._lock=threading.RLock()
         self._decode_lock=threading.Lock()
         self._state=None
+        self._pcm_cache=None
         self._closed=False
 
     def begin(self,project_id,feature_id):
@@ -279,6 +281,7 @@ class FinishedFilmPlayer:
             if self._state or self._closed:
                 raise PermissionError("Playback changed during native confirmation")
             ticket=secrets.token_urlsafe(32)
+            self._pcm_cache=None
             self._state={"ticket":ticket,"project_id":project_id,
                          "feature_id":feature_id,"reels":reels,
                          "profile":profile,"audit":audit,
@@ -312,6 +315,49 @@ class FinishedFilmPlayer:
             return (self._closed or not self._state or
                     self._state["cancelled"] or
                     self._state["ticket"]!=ticket)
+
+    def _pcm24_window(self,ticket,reel,reel_index,local,count,work,cancel):
+        """Read verified real sound essence with a bounded 24-frame cache.
+
+        The first use of each one-second/reel region invokes the approved
+        native MXF unwrap; adjacent frames reuse those SAME published PCM24
+        samples. No synthetic sound, transcoded source, or complete-reel
+        audio is retained. Caller holds _decode_lock and checks MXF identity.
+        """
+        if (type(local) is not int or type(count) is not int or
+                not 0<=local<reel.frames or
+                not 1<=count<=4 or local+count>reel.frames):
+            raise ValueError("Exact reel-local mastered sound window required")
+        segment=(local//PCM_CACHE_FRAMES)*PCM_CACHE_FRAMES
+        frames=min(PCM_CACHE_FRAMES,reel.frames-segment)
+        key=(ticket,reel_index,segment,frames,reel.sound_sha,reel.sound_stat)
+        bytes_per_frame=SAMPLES_PER_FRAME*3*len(reel.channels)
+        cache=self._pcm_cache
+        if cache is None or cache["key"]!=key:
+            run_supervised_codec(self.unwrap,
+                ["-f",str(segment),"-d",str(frames),str(reel.sound),"snd"],
+                workdir=work,check_cancel=cancel,
+                timeout=150+frames*10)
+            sound=work/"snd"
+            if sound.is_symlink() or not sound.is_file():
+                raise PermissionError("Native final DCP sound region missing")
+            with wave.open(str(sound),"rb") as wav:
+                if (wav.getnchannels()!=len(reel.channels) or
+                    wav.getframerate()!=RATE or wav.getsampwidth()!=3 or
+                    wav.getcomptype()!="NONE" or
+                    wav.getnframes()!=frames*SAMPLES_PER_FRAME):
+                    raise PermissionError("Published PCM24 region misaligned")
+                pcm=wav.readframes(frames*SAMPLES_PER_FRAME)
+            if len(pcm)!=frames*bytes_per_frame:
+                raise PermissionError("Incomplete mastered PCM24 source region")
+            self._get(ticket)  # Reject revoked playback before caching.
+            cache={"key":key,"pcm":pcm}
+            self._pcm_cache=cache
+        start=(local-segment)*bytes_per_frame
+        selected=cache["pcm"][start:start+count*bytes_per_frame]
+        if len(selected)!=count*bytes_per_frame:
+            raise PermissionError("Published PCM24 selection omitted samples")
+        return selected
 
     def frame(self,ticket,global_frame):
         """Decode exact FINAL published picture/PCM for one 24fps frame.
@@ -362,11 +408,8 @@ class FinishedFilmPlayer:
                                    width=PROFILES[s["profile"]][0],
                                    height=PROFILES[s["profile"]][1])
                 png,(width,height)=_display_png(pixels,s["profile"])
-                run_supervised_codec(self.unwrap,
-                                     ["-f",str(local),"-d","1",
-                                      str(reel.sound),"snd"],
-                                     workdir=work,timeout=120,check_cancel=cancel)
-                pcm24=_read_verified_pcm24(work/"snd",reel.channels)
+                pcm24=self._pcm24_window(
+                    ticket,reel,reel_index,local,1,work,cancel)
                 audio=_stereo_pcm16(pcm24,reel.channels)
             self._get(ticket)
             return {
@@ -423,24 +466,9 @@ class FinishedFilmPlayer:
                      "-b",str(MAX_J2K_BYTES),str(reel.picture),"p_"],
                     workdir=work,check_cancel=cancel,
                     timeout=150+count*25)
-                run_supervised_codec(self.unwrap,
-                    ["-f",str(local),"-d",str(count),
-                     str(reel.sound),"snd"],
-                    workdir=work,check_cancel=cancel,
-                    timeout=150+count*25)
-                sound=work/"snd"
-                if sound.is_symlink() or not sound.is_file():
-                    raise PermissionError("Native finished DCP audio batch missing")
-                with wave.open(str(sound),"rb") as wav:
-                    if (wav.getnchannels()!=len(reel.channels) or
-                        wav.getframerate()!=RATE or wav.getsampwidth()!=3 or
-                        wav.getcomptype()!="NONE" or
-                        wav.getnframes()!=count*SAMPLES_PER_FRAME):
-                        raise PermissionError("Final mastered audio window misaligned")
-                    pcm=wav.readframes(count*SAMPLES_PER_FRAME)
+                pcm=self._pcm24_window(
+                    ticket,reel,reel_index,local,count,work,cancel)
                 bytes_per_picture_sound=SAMPLES_PER_FRAME*3*len(reel.channels)
-                if len(pcm)!=count*bytes_per_picture_sound:
-                    raise PermissionError("Published PCM batch omitted samples")
                 # The published J2K codestreams and PCM window have already
                 # been independently SHA-verified. Separate read-only native
                 # OpenJPEG workers can decode at most four different pictures
@@ -514,12 +542,14 @@ class FinishedFilmPlayer:
             s=self._get(ticket)
             s["cancelled"]=True
             self._state=None
+            self._pcm_cache=None
         return {"format":FORMAT,"status":"STOPPED",
                 "production_accepted":False}
 
     def close(self):
         with self._lock:
             self._closed=True
+            self._pcm_cache=None
             if self._state:
                 self._state["cancelled"]=True
                 self._state=None
