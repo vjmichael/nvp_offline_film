@@ -32,6 +32,7 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
   const [notice, setNotice] = useState('');
   const [castTake, setCastTake] = useState('');
   const [castReport, setCastReport] = useState(null);
+  const [assetAudit, setAssetAudit] = useState(null);
   const [error, setError] = useState('');
 
   const pid = project.id;
@@ -94,6 +95,19 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
       if (report?.format !== 'nvp.film03.production_bible_actor_cast_coverage.v1')
         throw new Error('Unverified native cast-coverage report');
       setCastReport(report);
+    });
+  }
+  function auditActorAssets() {
+    if (!actorId) return;
+    action(async()=>{
+      const url = root + '/actors/' + encodeURIComponent(actorId) +
+        '/asset-audit' + (castTake ? '?take_id=' + encodeURIComponent(castTake) : '');
+      const report = await api(url);
+      if (report?.format !== 'nvp.film03.actor_asset_source_audit.v1' ||
+          report?.actor_id !== actorId ||
+          report?.no_assets_or_takes_modified !== true)
+        throw new Error('Actor package audit is not an authentic read-only source report');
+      setAssetAudit(report);
     });
   }
   function submit() {
@@ -226,6 +240,31 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
           Uncast OpenUSD actor prims: {castReport.uncast_prim_paths.join(', ')}.
           Select each StoryBible character and link its real actor prim before acceptance.
         </p>}
+      </>}
+      <h4>ActorID source integrity audit</h4>
+      <p className="fineprint">Check that every current wardrobe, prop, 3D model,
+        mesh, rig, texture, scene, original Take and VoiceID asset belongs
+        to this canonical character. Shared non-voice props may legitimately
+        appear with several actors; original voice identity may not.</p>
+      <button className="secondary" disabled={busy} onClick={auditActorAssets}>
+        Verify all source assets linked to this ActorID
+      </button>
+      {assetAudit && <>
+        <p role="status">{assetAudit.all_current_sources_physically_verified
+          ? 'All current source assets verified for this ActorID'
+          : 'Asset/source review required before actor package acceptance'}</p>
+        {assetAudit.links.map(x=><p key={x.link_id} className="fineprint">
+          {x.role} · {x.source_id} ·
+          {x.source_verified_now ? 'original source verified' :
+            'historical or unverified source — director review'}
+        </p>)}
+        {assetAudit.source_failures.map((x,i)=><p role="alert"
+          key={'invalid'+i}>{x.role}: {x.reason}</p>)}
+        {assetAudit.director_review_required.map((x,i)=><p role="alert"
+          key={'review'+i}>{x.role}: {x.reason}</p>)}
+        <p className="fineprint">Current voice identity:
+          {assetAudit.current_voice_id || 'NO approved VoiceID'}.
+          This is a source audit, not a claim of automatic acoustic speaker verification.</p>
       </>}
       <Film03ActorVoicePanel project={project} actorId={actorId}
         detail={detail} catalog={catalog} api={api} action={action} busy={busy}
