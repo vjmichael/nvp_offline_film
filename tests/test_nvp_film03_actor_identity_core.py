@@ -230,6 +230,58 @@ class ActorIdentityCompleteProfileSource(unittest.TestCase):
             self.assertEqual(reopened.prepare_generated_voice(
                 pid,s["request"],profile_revision=2)["actor_id"],aid)
 
+    def test_voice_recast_invalidates_old_voice_type_until_director_republishes(self):
+        with TemporaryDirectory() as d:
+            s=real_unrecorded_actor_with_voice(Path(d).resolve())
+            pid=s["pid"];aid=s["people"]["DONUT"]
+            core=ActorIdentityCore(s["index"],verify_creator_action=permit)
+            actor=s["registry"].actor(pid,aid)
+            original=core.publish(
+                pid,aid,identity_profile(),expected_profile_revision=0,
+                expected_bible_revision=actor["bible_revision"],
+                director_note="Original actor style and VoiceID approved",
+                creator_event=ACTION)
+            self.assertFalse(original["profile_voice_cast_stale"])
+            new_pcm=RecordedSoundSources(s["index"]).publish(
+                pid,"DonutChangedVoiceAnchorTestOnly",
+                [b"\x10\x00"*256],expected_revision=0)
+            voice=ProductionBibleVoiceIdentity(
+                s["index"],verify_creator_action=permit)
+            voice.cast_voice(
+                pid,aid,voice_id="Voice_Donut_Recast_V2",
+                reference_audio_id="DonutChangedVoiceAnchorTestOnly",
+                reference_audio_revision=1,expected_cast_revision=1,
+                director_review_note="TEST: hearing a different reference profile",
+                voice_recast_reason="Director intentionally recasts the character for story",
+                creator_event=ACTION)
+            stale=core.current(pid,aid)
+            self.assertTrue(stale["profile_voice_cast_stale"])
+            self.assertEqual(stale["current"]["voice_id"],
+                             "Voice_Donut_ActorIdentity")
+            with self.assertRaises(PermissionError):
+                core.prepare_generated_voice(pid,s["request"],profile_revision=1)
+            changed=identity_profile()
+            changed["voice_generation"]["engine_voice_id"]="DonutDistinctRecastVoice2026"
+            changed["voice_type"]["timbre"]="More airy, less resonant"
+            revised=core.publish(
+                pid,aid,changed,expected_profile_revision=1,
+                expected_bible_revision=actor["bible_revision"],
+                director_note="Director approves VoiceType and generator after recasting",
+                creator_event=ACTION)
+            self.assertEqual(revised["current"]["voice_id"],
+                             "Voice_Donut_Recast_V2")
+            self.assertFalse(revised["profile_voice_cast_stale"])
+            next_plan=core.prepare_generated_voice(
+                pid,s["request"],profile_revision=2)
+            self.assertEqual(next_plan["voice_id"],"Voice_Donut_Recast_V2")
+            self.assertEqual(next_plan["voice_type"]["timbre"],
+                             "More airy, less resonant")
+            self.assertEqual(revised["profile_history"][0]["voice_id"],
+                             "Voice_Donut_ActorIdentity")
+            self.assertEqual(s["index"].read_revision(
+                pid,"DonutGenuineSourceVoiceAnchorTest",1)["document_sha256"],
+                s["anchor"]["document_sha256"])
+
     def test_wrong_speaker_and_wrong_voice_selector_are_rejected(self):
         with TemporaryDirectory() as d:
             s=real_unrecorded_actor_with_voice(Path(d).resolve())
