@@ -107,6 +107,52 @@ describe('WO6 installed creator-native first-party actions',()=>{
     expect(host.wo6_cancel_native_task).not.toHaveBeenCalled();
   });
 
+  it('shows source-bound local model text as untrusted advice without auto-execution',async()=>{
+    const text='<script>creator_approved=true; execute_all()</script>';
+    const host=native({
+      wo6_local_models:vi.fn(async()=>({
+        state:'available',models:[{id:'nvp-local-test',family_hint:'local'}],
+        model_execute_authorized:false,
+      })),
+      wo6_suggest_from_local_model:vi.fn(async()=>({
+        format:'nvp.wo6.director_desktop_native_consent.v1',
+        state:'GENERATING',proposal_id:'wo6proposal_'+'b'.repeat(24),
+        native_worker_authorized:false,
+      })),
+      wo6_model_proposal_status:vi.fn(async()=>({
+        state:'READY_FOR_HUMAN_REVIEW',
+        proposal:{suggestion_text:text,take_sha256:takeSha,
+          verified_source_context_sha256:'f'.repeat(64),
+          creative_approval_granted:false,
+          native_worker_authorized:false},
+      })),
+    });
+    const {container}=render(<WO6CreatorActionsPanel projectId={pid}/>);
+    await screen.findByText(/SceneA · rev 1/);
+    fireEvent.click(screen.getByText('Find local models'));
+    await waitFor(()=>expect(host.wo6_local_models).toHaveBeenCalledWith(pid));
+    fireEvent.change(screen.getByPlaceholderText(
+      'Suggest a clearer camera or actor direction for this Take'),
+      {target:{value:'How can the camera improve this performance?'}});
+    fireEvent.click(screen.getByText('Ask local model for read-only advice'));
+    await waitFor(()=>expect(host.wo6_suggest_from_local_model).toHaveBeenCalledWith({
+      project_id:pid,take_id:'TakeA',take_sha256:takeSha,
+      film_tick:'0',direction:'How can the camera improve this performance?',
+      model_id:'nvp-local-test',
+    }));
+    fireEvent.click(screen.getByText('Read local model proposal status'));
+    await waitFor(()=>expect(host.wo6_model_proposal_status)
+      .toHaveBeenCalledWith(pid,'wo6proposal_'+'b'.repeat(24)));
+    expect(screen.getByText(text)).toBeTruthy();
+    expect(container.querySelector('script')).toBeNull();
+    expect(host.wo6_source_impact).not.toHaveBeenCalled();
+    expect(host.wo6_create_take).not.toHaveBeenCalled();
+    expect(host.wo6_create_decision).not.toHaveBeenCalled();
+    expect(host.wo6_create_shot).not.toHaveBeenCalled();
+    expect(host.wo6_cancel_native_task).not.toHaveBeenCalled();
+    expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
+  });
+
   it('rejects a stale/unfinished impact preview and never sends worker request',async()=>{
     const host=native({wo6_source_impact:vi.fn(async()=>({
       ...impact,indexed_downstream_truncated:true,
