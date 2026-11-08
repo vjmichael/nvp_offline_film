@@ -1,5 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import Film03ActorVoicePanel from './Film03ActorVoicePanel.jsx';
+import Film03ActorIdentityProfile from './Film03ActorIdentityProfile.jsx';
 
 const FAMILIES = {
   scene: ['screenplay_scene', 'filmindex'],
@@ -266,6 +267,15 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
           {assetAudit.current_voice_id || 'NO approved VoiceID'}.
           This is a source audit, not a claim of automatic acoustic speaker verification.</p>
       </>}
+      <Film03ActorIdentityProfile project={project} actorId={actorId}
+        detail={detail} action={action} busy={busy}
+        onUpdated={async()=>{
+          const latest=await api(root + '/actors/' + encodeURIComponent(actorId));
+          if(latest?.actor_id!==actorId)
+            throw new Error('Updated actor identity belongs to another ActorID');
+          setDetail(latest);
+          await refreshBible(pid);
+        }} />
       <Film03ActorVoicePanel project={project} actorId={actorId}
         detail={detail} catalog={catalog} api={api} action={action} busy={busy}
         onUpdated={async()=>{
