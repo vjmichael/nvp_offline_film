@@ -18,6 +18,7 @@ from backend.nvp_film03_actor_identity_core import (
 from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
+from backend.nvp_wo6_scene_context import assemble_film_crew_context
 from test_nvp_film03_dialogue_manager import (
     construct_real_original_dialogue,ACTION,
 )
@@ -144,6 +145,47 @@ class ActorIdentityCompleteProfileSource(unittest.TestCase):
             self.assertEqual(s["index"].read_revision(
                 pid,"RelayRekindleTake",1)["document_sha256"],
                 s["original_take"]["document_sha256"])
+
+    def test_actual_source_scene_crew_retrieves_authoritative_actor_essence(self):
+        with TemporaryDirectory() as d:
+            s=real_unrecorded_actor_with_voice(Path(d).resolve())
+            pid=s["pid"];aid=s["people"]["DONUT"]
+            core=ActorIdentityCore(s["index"],verify_creator_action=permit)
+            actor=s["registry"].actor(pid,aid)
+            prof=core.publish(
+                pid,aid,identity_profile(),
+                expected_profile_revision=0,
+                expected_bible_revision=actor["bible_revision"],
+                director_note="Director connects actor physicality and voice to scene",
+                creator_event=ACTION)
+            context=assemble_film_crew_context(
+                s["index"],pid,"RelayRekindleTake",1,0,
+                actor_identity_id=aid,actor_profile_revision=1)
+            essence=context["selected_actorid_character_essence"]
+            self.assertEqual(essence["actor_id"],aid)
+            self.assertEqual(essence["profile_document_sha256"],
+                             prof["current"]["document_sha256"])
+            self.assertEqual(essence["actor_prim_paths"],["/World/Engineer"])
+            self.assertIn("Off-gait",essence["character_profile"]["movement"][
+                "movement_peculiarities"])
+            self.assertEqual(essence["character_profile"]["voice_type"][
+                "timbre"],"Rounded, slightly grainy resonant quality")
+            self.assertEqual(essence["voice_id"],"Voice_Donut_ActorIdentity")
+            self.assertFalse(essence["rendered_or_generated_performance_authorized"])
+            self.assertTrue(context[
+                "actor_identity_context_is_not_generation_authorization"])
+            inspected=assemble_film_crew_context(
+                s["index"],pid,"RelayRekindleTake",1,0)
+            self.assertIsNone(inspected["selected_actorid_character_essence"])
+            with self.assertRaises(PermissionError):
+                assemble_film_crew_context(
+                    s["index"],pid,"RelayRekindleTake",1,0,
+                    actor_identity_id=s["people"]["BOX"],
+                    actor_profile_revision=1)
+            with self.assertRaises(PermissionError):
+                assemble_film_crew_context(
+                    s["index"],pid,"RelayRekindleTake",1,0,
+                    actor_identity_id=aid,actor_profile_revision=2)
 
     def test_revisions_preserve_original_persona_and_reject_stale_ai_profile(self):
         with TemporaryDirectory() as d:
