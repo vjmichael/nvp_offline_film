@@ -57,3 +57,41 @@ def verify_literal_input(shader,name,expected,*,type_name=None):
     if inp.GetAttr().Get()!=expected:
         raise RuntimeError("Literal original USD shader setting changed")
     return True
+
+
+def isolate_materialx_only_on_derived_stage(derived_stage):
+    """Strip universal fallback ONLY in a caller-created disposable USD copy.
+
+    A render after this change cannot honestly count as a MaterialX render
+    unless a genuine source-bound OpenPBR network produces measured pixels.
+    Do not use this on FilmIndex-authoritative scenes or asset layers.
+    """
+    from pxr import Usd,UsdShade
+    if not isinstance(derived_stage,Usd.Stage):
+        raise TypeError("Disposable native USD stage required")
+    selected=0
+    for prim in derived_stage.Traverse():
+        if not prim.IsA(UsdShade.Material):
+            continue
+        material=UsdShade.Material(prim)
+        mtlx=material.GetSurfaceOutput("mtlx")
+        if not mtlx:
+            continue
+        connections=mtlx.GetAttr().GetConnections()
+        source=mtlx.GetConnectedSource()
+        if (len(connections)!=1 or not source or
+                source[2]!=UsdShade.AttributeType.Output or
+                str(source[1])!="out" or
+                UsdShade.Shader(source[0].GetPrim()).GetIdAttr().Get()!=
+                "ND_open_pbr_surface_surfaceshader"):
+            raise RuntimeError("Derived MaterialX terminal is not trusted OpenPBR")
+        universal=material.GetSurfaceOutput()
+        if universal:
+            if not universal.GetAttr().SetConnections([]):
+                raise RuntimeError("Cannot isolate universal shader fallback")
+            if universal.GetAttr().GetConnections():
+                raise RuntimeError("PreviewSurface fallback remained connected")
+        selected+=1
+    if selected<1:
+        raise RuntimeError("No genuine OpenPBR MaterialX surface to isolate")
+    return selected
