@@ -1198,3 +1198,15 @@ Draft PR #94 (`nvp/wo1-integrated-native-regressions-20261107`) stacks on WO6 PR
 - WO3 requires *exact* shader output sockets, UsdShade output-kind/type, no extra/raw USD graph connections, source-bound UV selection and PBR normal/emission/opacity color contracts. Strengthened `nvp_wo2_openpbr.py`, `nvp_wo2_pbr_channels.py`, added `nvp_wo3_materialx_integrity.py`.
 - Independent disposable MaterialX texture source copies are read-only and re-hashed **after** the renderer operation, avoiding false custody receipts on native mutation; Hydra probes SHA-pin their executable across the call, reject untrusted image symlinks/oversize files and do not include raw stderr private source paths.
 - Added adversarial real USD tests `test_nvp_wo3_materialx_integrity.py` and Hydra-executable integrity tests; workflow `nvp-wo3-materialx-renderer-integrity.yml` runs Windows/Linux 3.11/3.13 plus 60s original USD CPU continuity. **Pending all real job results and repairs**; optional `usdrecord` is not evidence of shader parity if skipped. Installed Windows film parity remains separate.
+
+
+**WO3 hardening follow-up (2026-11-07):** Added raw USD connection-list checks for dangling shader and
+texture source edges, exact PreviewSurface/OpenPBR input types, untampered
+normal-map scale/bias literals, and resolver refusal of shadowed `file`
+inputs. Independent `usdrecord` stdout/stderr are discarded instead of
+buffered in unbounded RAM. Added native adversarial regressions in
+`tests/test_nvp_wo3_materialx_integrity.py` and diagnostic-cap test in
+`tests/test_nvp_wo2_hydra_probe.py`. **Final-head native execution remains
+OPEN**; original PR #96 workflow run `42435076173` was queued, and all
+subsequent commits require fresh exact-head evidence. No shader/Hydra parity,
+GPU or installed film acceptance is inferred.
