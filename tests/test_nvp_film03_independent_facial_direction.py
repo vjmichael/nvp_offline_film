@@ -1,4 +1,4 @@
-"""FILM03-09: voice emotion is NEVER an authority for facial or body emotion.
+"""FILM03-09: default vocal-emotion matching with preserved director override.
 
 Native PCM fixture intentionally contains silence; it validates source and
 articulation timeline custody, NOT phoneme recognition, acting or animation.
@@ -66,6 +66,42 @@ def prepared(root):
 
 
 class FaceBodyVoiceSourceContracts(unittest.TestCase):
+    def test_default_face_proposes_approved_vocal_emotion_not_acoustic_fact(self):
+        with TemporaryDirectory() as temp:
+            state, _, args = prepared(Path(temp))
+            args.pop("emotional_relationship")
+            args["face_events"] = []
+            host = FilmIndependentActingDirection(
+                state["index"], verify_creator_action=lambda *_: True)
+            plan = host.plan(state["pid"], state["request"], **args)
+            self.assertEqual(plan["emotional_relationship"], "match_voice_default")
+            self.assertEqual(plan["voice_direction_emotion"], "sad")
+            self.assertEqual(plan["facial_expression_track"], [{
+                "sample": 0, "value": "sad", "intensity": 0.65,
+            }])
+            self.assertEqual(plan["face_track_source"],
+                             "approved_voice_direction_provisional")
+            self.assertTrue(plan["default_match_from_approved_voice_direction"])
+            self.assertFalse(plan["director_explicit_face_override_preserved"])
+            self.assertFalse(plan["final_audio_emotion_acoustically_verified"])
+            self.assertFalse(plan["default_emotion_arc_word_timing_verified"])
+            self.assertFalse(plan["facial_match_to_final_audio_verified"])
+
+    def test_director_face_events_override_default_even_when_mode_omitted(self):
+        with TemporaryDirectory() as temp:
+            state, _, args = prepared(Path(temp))
+            args.pop("emotional_relationship")
+            host = FilmIndependentActingDirection(
+                state["index"], verify_creator_action=lambda *_: True)
+            plan = host.plan(state["pid"], state["request"], **args)
+            self.assertEqual(plan["emotional_relationship"], "match_voice_default")
+            self.assertEqual(plan["voice_direction_emotion"], "sad")
+            self.assertEqual(plan["facial_expression_track"][0]["value"], "happy")
+            self.assertEqual(plan["face_track_source"], "director_explicit_keyframes")
+            self.assertFalse(plan["default_match_from_approved_voice_direction"])
+            self.assertTrue(plan["director_explicit_face_override_preserved"])
+            self.assertEqual(plan["body_performance_track"][0]["value"], "relaxed")
+
     def test_sad_voice_with_happy_face_is_valid_director_decision(self):
         with TemporaryDirectory() as temp:
             state, audio, args = prepared(Path(temp))
@@ -77,6 +113,8 @@ class FaceBodyVoiceSourceContracts(unittest.TestCase):
             self.assertEqual(plan["facial_expression_track"][0]["value"], "happy")
             self.assertEqual(plan["body_performance_track"][1]["value"], "shrug")
             self.assertEqual(plan["emotional_relationship"], "intentional_contrast")
+            self.assertTrue(plan["director_explicit_face_override_preserved"])
+            self.assertFalse(plan["default_match_from_approved_voice_direction"])
             self.assertEqual(plan["ticks_per_pcm_sample"], 147000)
             self.assertEqual(TICKS_PER_SAMPLE, 147000)
             self.assertEqual(
