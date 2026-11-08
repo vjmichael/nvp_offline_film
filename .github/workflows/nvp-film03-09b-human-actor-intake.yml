@@ -1,0 +1,44 @@
+name: NVP FILM03-09B Human Voice Actor Original PCM and Scoped Rights (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film03-09b-human-voice-actor-intake-20261108]
+  pull_request:
+    branches: [nvp/film03-09-independent-facial-direction-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film03-09b-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  human-voice-intake:
+    name: Real original PCM/performer rights/restart custody / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install source-authentic native dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+      - name: Compile trusted performer intake and cross-branch source workers
+        run: |
+          python -m compileall -q backend/nvp_film03_human_actor_intake.py backend/nvp_film03_dialogue_manager.py backend/nvp_film03_voice_conversion_intent.py tests/test_nvp_film03_human_actor_intake.py
+      - name: Run actual original PCM sample and consent regression / Windows and Linux
+        run: python -m unittest discover -s tests -p test_nvp_film03_human_actor_intake.py -v
+      - name: Preserve prior voice, director face defaults and guide routing behavior
+        run: |
+          python -m unittest discover -s tests -p test_nvp_film03_voice_conversion_intent.py -v
+          python -m unittest discover -s tests -p test_nvp_film03_independent_facial_direction.py -v
