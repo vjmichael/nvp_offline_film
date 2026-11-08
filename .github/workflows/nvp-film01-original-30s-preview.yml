@@ -4,6 +4,9 @@ on:
   push:
     branches: [nvp/film01-original30s-digital-fx-20261108]
   pull_request:
+    # Baseline all-720 render only for its own FILM01 PR; the stacked
+    # V-LIGHT PR has a separate full-720 artist-FX comparison job.
+    branches: [nvp/vlight-fx-clock-bounce-dci-20261108]
     paths:
       - backend/nvp_virtual_light_fx.py
       - tests/test_nvp_virtual_light_fx.py
