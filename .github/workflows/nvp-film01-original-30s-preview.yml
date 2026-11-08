@@ -12,6 +12,7 @@ on:
       - backend/nvp_wo6_07f_rendered_av.py
       - backend/nvp_film01_native_avi.py
       - tests/test_nvp_film01_native_avi.py
+      - tools/nvp_film01_contact_sheet.py
       - .github/workflows/nvp-film01-original-30s-preview.yml
   workflow_dispatch:
 
@@ -111,7 +112,23 @@ jobs:
                    "DCI_delivery_approved":False},indent=2)
               (root/"nvp-relay30-source-export-verification.json").write_text(manifest)
           PY
-      - name: Preserve actual PLAYABLE short AVI and verified original PNG/WAV source ZIP as two review downloads
+      - name: Create actual nine-frame 3-shot visual contact sheet from real original PNG and source SHA
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          from tools.nvp_film01_contact_sheet import create_original_contact_sheet
+          root=Path(os.environ["RUNNER_TEMP"])
+          result=create_original_contact_sheet(
+              root/"nvp-relay30-authentic-source-preview.zip",
+              root/"nvp-relay30-9-original-frames-contact.png",
+              root/"nvp-relay30-contact-sheet-receipt.json")
+          assert len(result["verified_actual_usd_source_tiles"])==9
+          assert result["artistic_quality_accepted"] is False
+          print(json.dumps(result,indent=2))
+          PY
+      - name: Preserve actual PLAYABLE short AVI, source ZIP and genuine contact sheet as review downloads
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -119,6 +136,8 @@ jobs:
           path: |
             ${{ runner.temp }}/nvp-relay30-playable-640x360-mjpeg-pcm.avi
             ${{ runner.temp }}/nvp-relay30-authentic-source-preview.zip
+            ${{ runner.temp }}/nvp-relay30-9-original-frames-contact.png
+            ${{ runner.temp }}/nvp-relay30-contact-sheet-receipt.json
             ${{ runner.temp }}/nvp-relay30-export-log.json
             ${{ runner.temp }}/nvp-relay30-source-export-verification.json
           if-no-files-found: warn
