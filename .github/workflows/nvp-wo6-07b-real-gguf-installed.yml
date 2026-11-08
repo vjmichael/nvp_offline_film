@@ -141,9 +141,9 @@ jobs:
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           $model=$env:NVP_TEST_GGUF_PATH
           $server=$env:NVP_TEST_LLAMA_SERVER
-          & $installed --smoke-wo6-real-gguf --gguf-path $model --llama-server-path $server --gguf-report "$env:RUNNER_TEMP/wo6-installed-real-gguf.json" --gguf-test-consent I_APPROVE_DISPOSABLE_LOCAL_GGUF_TEST
-          if ($LASTEXITCODE -ne 0) { throw 'Installed real GGUF/Take model acceptance process failed' }
-          python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'wo6-installed-real-gguf.json').read_text()); assert d['installed_windows_app_verified'] and d['status']=='LOCAL_GGUF_COMPLETION_OBSERVED' and d['completed_provider_receipt']['provider_reported_completion_tokens']>0 and not d['native_worker_authorized']"
+          & $installed --smoke-wo6-real-gguf --gguf-path $model --llama-server-path $server --gguf-report "$env:RUNNER_TEMP/wo6-installed-real-gguf.json" --gguf-test-consent I_APPROVE_DISPOSABLE_LOCAL_GGUF_TEST --gguf-visible-webview2
+          if ($LASTEXITCODE -ne 0) { throw 'Installed real GGUF/Take and visible WebView2 model acceptance process failed' }
+          python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'wo6-installed-real-gguf.json').read_text()); assert d['installed_windows_app_verified'] and d['visible_webview2_model_and_director_panel_verified'] and d['server_main_process_exited_after_test'] and d['status']=='LOCAL_GGUF_COMPLETION_OBSERVED' and d['completed_provider_receipt']['provider_reported_completion_tokens']>0 and not d['native_worker_authorized']"
           if ($LASTEXITCODE -ne 0) { throw 'Missing or counterfeit installed GGUF completion evidence' }
       - name: Actual installed WebView2 source panel launches and closes cleanly (separate session)
         shell: pwsh
