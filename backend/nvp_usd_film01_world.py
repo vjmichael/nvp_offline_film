@@ -280,7 +280,8 @@ class WorldSession:
     def close(self):
         if not self.closed:
             self.stage = None
-            self._tmp.cleanup()
+            if self._tmp is not None:
+                self._tmp.cleanup()
             self.closed = True
 
     def _check(self):
@@ -367,9 +368,27 @@ class OpenUSDWorldComposer:
     def _assemble(self, pid, doc, staging_dir):
         Gf, Sdf, Usd, UsdGeom = _usd()
         from pxr import Vt
+        # A committed manifest contains verified source hashes in addition
+        # to the public authoring arguments. Strip ONLY those exact pinned
+        # hash fields, re-derive from real FilmIndex source bytes, then
+        # require byte-for-byte semantic equality to the stored manifest.
+        authored_sets = [
+            {k:v for k,v in x.items() if k != "scene_sha256"}
+            for x in doc["sets"]]
+        authored_props = [
+            {k:v for k,v in x.items() if k != "asset_sha256"}
+            for x in doc["props"]]
+        authored_variants = [
+            {**{k:v for k,v in x.items() if k not in ("options",)},
+             "options":[{k:v for k,v in opt.items()
+                         if k != "asset_sha256"} for opt in x["options"]]}
+            for x in doc["variants"]]
+        authored_instancers = [
+            {k:v for k,v in x.items() if k != "asset_sha256"}
+            for x in doc["instancers"]]
         pieces, sources = _normalize(
-            self.index, pid, doc["sets"], doc["props"],
-            doc["variants"], doc["instancers"])
+            self.index, pid, authored_sets, authored_props,
+            authored_variants, authored_instancers)
         if pieces != {key: doc[key] for key in pieces}:
             raise PermissionError("World original source manifest changed since commit")
         for key, src in sources.items():
