@@ -1210,3 +1210,9 @@ buffered in unbounded RAM. Added native adversarial regressions in
 OPEN**; original PR #96 workflow run `42435076173` was queued, and all
 subsequent commits require fresh exact-head evidence. No shader/Hydra parity,
 GPU or installed film acceptance is inferred.
+
+
+**WO3 post-render RAM bound:** Scoped MaterialX source integrity now validates
+regular-file type and exact original byte length and hashes in 64 KiB chunks
+without `Path.read_bytes()` on native worker output; adds oversized source
+adversarial regression. WO3 is still **OPEN pending latest exact-head CI**.
