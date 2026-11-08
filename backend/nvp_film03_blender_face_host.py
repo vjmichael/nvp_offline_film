@@ -17,6 +17,7 @@ from backend.nvp_blender_worker import (
 )
 from backend.nvp_film03_facial_rig_compositor import (
     FORMAT as FACE_LAYER_FORMAT, inspect_original_rig,
+    validate_stored_acoustic_output,
 )
 from backend.nvp_film03_independent_facial_direction import (
     FORMAT as DIRECTION_FORMAT, TICKS_PER_SAMPLE,
@@ -70,6 +71,9 @@ class ReviewedBlenderFacialHost:
         face_dep, face = _one_source(
             self.index, pid, row["dependencies"], DIRECTION_FORMAT)
         a, f = alignment["data"], face["data"]
+        # The original model-output JSON must be available and re-parsable.
+        # A self-reported "model executed" field does not authorize renders.
+        validate_stored_acoustic_output(self.index, pid, a)
         plan = a["source_plan"]
         if (d["source_09c_alignment_sha256"] != alignment["document_sha256"]
             or d["source_facial_direction_sha256"] != face["document_sha256"]
