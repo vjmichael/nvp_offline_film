@@ -497,6 +497,41 @@ class VoiceIDContinuityMustRemainStable(unittest.TestCase):
                     pid,next_req,sample_count=2000)["original_pcm16le"],
                 audio[:4000])
 
+    def test_full_actorid_asset_bundle_audits_3d_cast_script_voice_and_costume_source(self):
+        with TemporaryDirectory() as d:
+            s=construct_real_original_dialogue(Path(d).resolve(),recorded_voice=True)
+            pid=s["pid"]; aid=s["people"]["DONUT"]
+            proof=s["registry"].audit_actor_asset_package(
+                pid,aid,take_id="RelayRekindleTake",
+                performance_id="DonutAuthoredOriginalLine")
+            self.assertEqual(proof["format"],
+                             "nvp.film03.actor_asset_source_audit.v1")
+            self.assertTrue(proof["all_current_sources_physically_verified"])
+            self.assertEqual(proof["current_voice_id"],"Voice_Donut_Original")
+            self.assertEqual(proof["source_failures"],[])
+            self.assertTrue(proof["source_take_casting"]["complete"])
+            self.assertEqual(
+                proof["source_take_casting"]["actor_id_by_prim"]["/World/Engineer"],
+                aid)
+            self.assertTrue(all(x["source_verified_now"] for x in proof["links"]))
+            registered=s["registry"].actor(pid,aid)
+            old_voice=next(x for x in registered["active_links"] if x["role"]=="voice")
+            s["registry"].retire(
+                pid,aid,old_voice["link_id"],
+                expected_actor_revision=registered["bible_revision"],
+                expected_link_revision=old_voice["link_revision"],
+                reason="Unlink this voice recording, retain its historical version")
+            after=s["registry"].audit_actor_asset_package(
+                pid,aid,take_id="RelayRekindleTake",
+                performance_id="DonutAuthoredOriginalLine")
+            self.assertFalse(after["all_current_sources_physically_verified"])
+            self.assertTrue(any(x["role"]=="voice"
+                                for x in after["source_failures"]))
+            self.assertEqual(after["current_voice_id"],"Voice_Donut_Original")
+            self.assertEqual(s["index"].read_revision(
+                pid,"DonutSourceVoiceFixture",1)["document_sha256"],
+                s["audio"]["document_sha256"])
+
 class NativeActorVoiceAuditionAndConsent(unittest.TestCase):
     def test_real_native_pcm_audition_and_explicit_recast_consent(self):
         import base64
