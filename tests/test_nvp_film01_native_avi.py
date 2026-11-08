@@ -17,6 +17,7 @@ from zipfile import ZipFile
 from PIL import Image
 
 from backend.nvp_film01_native_avi import mux_original_native_avi,FORMAT
+from tools.nvp_film01_contact_sheet import create_original_contact_sheet
 from tools.nvp_film01_original_30s import (
     write_original_30s_source,render_original_30s_review)
 
@@ -130,6 +131,13 @@ class NativeOriginalPlayableMovie(unittest.TestCase):
         self.assertTrue(independent["exact_sound_matches_source"])
         with self.assertRaises(PermissionError):
             mux_original_native_avi(self.zip,path,expected_frames=6)
+
+    def test_contact_sheet_never_treats_six_frame_smoke_as_complete_original_film(self):
+        proposed=self.root/"fake-approved-contact.png"
+        with self.assertRaises(PermissionError):
+            create_original_contact_sheet(
+                self.zip,proposed,self.root/"fake-contact-proof.json")
+        self.assertFalse(proposed.exists())
 
     def test_rejects_fake_duration_and_missing_original_verified_manifest(self):
         with self.assertRaises(PermissionError):
