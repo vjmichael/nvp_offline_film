@@ -276,6 +276,28 @@ class Slate06NativeTests(unittest.TestCase):
         self.assertNotEqual(native,preview_cache_key(ticket,"thumbnail"))
         self.assertIn('scene.render.engine="CYCLES"',BLENDER_SCRIPT)
 
+    def test_geometry_binding_denial_revokes_without_hanging_resource_or_cache(self):
+        with patch.object(self.host,"_approval_check",return_value=False):
+            with self.assertRaises(PermissionError):
+                self.host.request(
+                    self.pid,"cut",1,film_tick=0,quality="thumbnail",
+                    creator_event=self.trusted_event,
+                    presentation="geometry",camera_path="/World/Camera")
+        with self.activity._db() as db:
+            approval=db.execute("""SELECT task_id,revoked_at
+                FROM nvp_slate_preview_consents
+                WHERE presentation='geometry'""").fetchone()
+            self.assertIsNotNone(approval)
+            self.assertIsNotNone(approval[1])
+            self.assertIsNone(db.execute(
+                "SELECT id FROM tasks WHERE id=?",
+                (approval[0],)).fetchone())
+        with self.cache._db() as db:
+            pending=db.execute("""SELECT job_id,state FROM slate_preview_cache
+                WHERE project_id=?""",(self.pid,)).fetchone()
+        self.assertEqual(pending["state"],"FAILED")
+        self.assertFalse((self.supervisor.root/pending["job_id"]).exists())
+
     def test_native_host_approval_and_distinct_geometry_worker_script(self):
         saved=self.index.read_revision(self.pid,"take",1)["document_sha256"]
         with self.assertRaises(PermissionError):
