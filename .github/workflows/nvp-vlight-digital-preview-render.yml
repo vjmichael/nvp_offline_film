@@ -13,6 +13,8 @@ on:
       - backend/nvp_virtual_light_raster_adapter.py
       - backend/nvp_native_scene_linear_raster.py
       - tests/test_nvp_virtual_light_raster.py
+      - tools/nvp_film01_native_visual_audio_qc.py
+      - tests/test_nvp_film01_native_visual_audio_qc.py
       - backend/nvp_film01_native_avi.py
       - tests/test_nvp_film01_native_avi.py
       - tools/nvp_film01_contact_sheet.py
@@ -54,6 +56,8 @@ jobs:
         run: python -m unittest discover -s tests -p test_nvp_film01_original_30s.py -v
       - name: Independently decode genuine NVP original six-frame AVI MJPEG and exact PCM, no FFmpeg
         run: python -m unittest discover -s tests -p test_nvp_film01_native_avi.py -v
+      - name: Ensure a real six-frame smoke cannot claim complete original film QC
+        run: python -m unittest discover -s tests -p test_nvp_film01_native_visual_audio_qc.py -v
       - name: Preserve genuine real 3D frame and 48 kHz PCM hard-cut source tests
         run: python -m unittest discover -s tests -p test_nvp_wo6_07f_rendered_av.py -v
 
@@ -122,6 +126,28 @@ jobs:
                    "DCI_delivery_approved":False},indent=2)
               (root/"nvp-relay30-source-export-verification.json").write_text(manifest)
           PY
+      - name: Inspect genuine FULL original film PNG movement/exposure and 26s source chirp/PCM levels
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          from tools.nvp_film01_native_visual_audio_qc import inspect_original_nvp_film
+          root=Path(os.environ["RUNNER_TEMP"])
+          report=inspect_original_nvp_film(
+              root/"nvp-relay30-authentic-source-preview.zip",
+              root/"nvp-relay30-visual-sound-qc.json")
+          assert report["technical_native_source_frame_count"]==720
+          assert report["audio"]["total_original_pcm_samples"]==1440000
+          assert report["audio"]["signal_event_at_26s_proven_by_actual_native_receipts"]
+          assert report["human_visual_judgment_required"] is True
+          print(json.dumps({
+              "warnings_for_human_review":report["observed_warnings_not_automatic_artistic_rejection"],
+              "frames_sampled":len(report["sampled_picture_frames"]),
+              "unique_frame_hashes_by_shot":report["unique_source_image_hashes_by_shot"],
+              "cue_before":report["audio"]["cue_before"],
+              "cue_during":report["audio"]["cue_during"]},indent=2))
+          PY
       - name: Create actual nine-frame 3-shot visual contact sheet from real original PNG and source SHA
         shell: bash
         run: |
@@ -148,6 +174,7 @@ jobs:
             ${{ runner.temp }}/nvp-relay30-authentic-source-preview.zip
             ${{ runner.temp }}/nvp-relay30-9-original-frames-contact.png
             ${{ runner.temp }}/nvp-relay30-contact-sheet-receipt.json
+            ${{ runner.temp }}/nvp-relay30-visual-sound-qc.json
             ${{ runner.temp }}/nvp-relay30-export-log.json
             ${{ runner.temp }}/nvp-relay30-source-export-verification.json
           if-no-files-found: warn
