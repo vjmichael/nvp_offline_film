@@ -17,6 +17,7 @@ import unittest
 from backend.nvp_data_av_source import RecordedSoundSources, SAMPLE_RATE
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_film03_dialogue_manager import ActorDialogueManager, actor_subject, FORMAT
+from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
 from backend.nvp_film03_object_dialogue import ObjectActorDialogue
 from backend.nvp_production_bible_actors import ProductionBibleActors
 from backend.nvp_story_bible import StoryBible
@@ -47,7 +48,9 @@ def creator(event, scope):
                 scope["operation"] in {
                     "film03_publish_script_dialogue",
                     "film03_record_object_actor_dialogue",
-                    "film03_publish_scene_dialogue_selection"
+                    "film03_publish_scene_dialogue_selection",
+                    "film03_cast_actor_voice_identity",
+                    "film03_approve_actor_voice_performance"
                 })
 
 
@@ -130,6 +133,25 @@ def construct_real_original_dialogue(root, *, recorded_voice=True):
         pid,donut_id,role="performance",source_family="filmindex",
         target_id="DonutAuthoredOriginalLine",target_revision=1,
         expected_actor_revision=actor["bible_revision"])
+    voice_cast = None
+    if recorded_voice:
+        voice_bible=ProductionBibleVoiceIdentity(
+            index,verify_creator_action=creator)
+        cast=voice_bible.cast_voice(
+            pid,donut_id,voice_id="Voice_Donut_Original",
+            reference_audio_id="DonutSourceVoiceFixture",
+            reference_audio_revision=1,
+            expected_cast_revision=0,
+            director_review_note="TEST ONLY: original PCM checked as identity anchor",
+            creator_event=ACTION)
+        voice_cast=cast["current"]
+        voice_bible.approve_delivery(
+            pid,donut_id,"DonutAuthoredOriginalLine",
+            voice_id="Voice_Donut_Original",expected_cast_revision=1,
+            reference_audio_sha256=audio["document_sha256"],
+            director_comparison_note=(
+                "TEST ONLY: sample bytes compared against exact VoiceID reference"),
+            creator_event=ACTION)
     selected=writer.publish_scene_dialogue(
         pid,selection_id="OriginalDonutDialogueSelection",
         overlay_timeline_id="OriginalDonutDialogueEvents",
@@ -153,7 +175,8 @@ def construct_real_original_dialogue(root, *, recorded_voice=True):
         "root":src,"pid":pid,"studio":studio,"index":index,
         "bible":bible,"registry":registry,"people":people,
         "script":script,"original_take":take,"script_sha":script_sha,
-        "original_pcm":pcm,"audio":audio,"selected":selected,
+        "original_pcm":pcm,"audio":audio,"voice_cast":voice_cast,
+        "selected":selected,
         "request":request,
     }
 
