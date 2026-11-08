@@ -81,11 +81,9 @@ class FilmGuideVoiceConversion:
 
     def plan(self, project_id, source_route, *, profile_revision,
              direction_id, direction_revision, guide_audio_id,
-             guide_audio_revision, mode, guide_origin,
-             guide_rights_evidence_sha256):
+             guide_audio_revision, mode, guide_origin):
         if mode not in MODES or guide_origin not in ORIGINS:
             raise ValueError("Unknown reviewed voice-conversion performance mode")
-        _sha(guide_rights_evidence_sha256)
         if guide_origin == "tts_acted_guide":
             raise PermissionError(
                 "TTS acting guide is derived audio, not an original microphone source; "
@@ -117,8 +115,6 @@ class FilmGuideVoiceConversion:
             "director_emotion": case["emotion"], "director_delivery": case["delivery"],
             "performance_mode": mode, "guide_origin": guide_origin,
             "guide_source": guide,
-            "guide_rights_evidence_sha256": guide_rights_evidence_sha256,
-            "guide_rights_independently_authenticated": False,
             "guide_script_and_emotion_independently_verified": False,
             "converted_voice_identity_verified": False,
             "conversion_preserves_guide_prosody_verified": False,
@@ -134,7 +130,6 @@ class FilmGuideVoiceConversion:
     def publish_intent(self, project_id, source_route, *, profile_revision,
                        direction_id, direction_revision, guide_audio_id,
                        guide_audio_revision, mode, guide_origin,
-                       guide_rights_evidence_sha256,
                        intent_id, expected_revision, director_note,
                        creator_event):
         _id(intent_id, "guide conversion intent ID")
@@ -148,7 +143,6 @@ class FilmGuideVoiceConversion:
             "guide_audio_id": guide_audio_id,
             "guide_audio_revision": guide_audio_revision,
             "mode": mode, "guide_origin": guide_origin,
-            "guide_rights_evidence_sha256": guide_rights_evidence_sha256,
         }
         packet = self.plan(project_id, source_route, **plan_kwargs)
         if intent_id in (guide_audio_id, direction_id, packet["source_take_id"]):

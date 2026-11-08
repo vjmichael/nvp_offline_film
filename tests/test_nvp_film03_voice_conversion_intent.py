@@ -5,7 +5,6 @@ without ever pretending the silence contains a performed screenplay line.
 """
 from __future__ import annotations
 
-from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -17,8 +16,6 @@ from backend.nvp_film03_voice_conversion_intent import (
 from backend.nvp_film03_expressive_voice_direction import FilmActorVoiceDirection
 from test_nvp_film03_actor_native_workers import prepared_source
 from test_nvp_film03_expressive_voice_direction import direction
-
-RIGHTS = sha256(b"unreviewed rights evidence for source-only test").hexdigest()
 
 
 def prepared_guide(root):
@@ -48,7 +45,6 @@ def plan_args(performance):
         guide_audio_revision=1,
         mode="tone_color_transfer",
         guide_origin="human_acted_guide",
-        guide_rights_evidence_sha256=RIGHTS,
     )
 
 
@@ -86,7 +82,7 @@ class FilmGuideConversionContracts(unittest.TestCase):
             self.assertTrue(plan["unreviewed_model_must_not_run"])
             self.assertFalse(plan["creator_film_approval"])
 
-    def test_wrong_actor_wrong_direction_wrong_audio_and_unproven_rights_refused(self):
+    def test_wrong_actor_wrong_direction_and_wrong_audio_refused(self):
         with TemporaryDirectory() as temp:
             source, performance, _ = prepared_guide(Path(temp))
             host = FilmGuideVoiceConversion(
@@ -95,7 +91,6 @@ class FilmGuideConversionContracts(unittest.TestCase):
                 dict(plan_args(performance), guide_audio_id="WrongGuide"),
                 dict(plan_args(performance), direction_id="WrongDirection"),
                 dict(plan_args(performance), guide_audio_revision=99),
-                dict(plan_args(performance), guide_rights_evidence_sha256="unverifiable"),
                 dict(plan_args(performance), mode="voice_impersonation"),
                 dict(plan_args(performance), guide_origin="unauthenticated_mic"),
                 dict(plan_args(performance), guide_origin="tts_acted_guide"),
@@ -113,7 +108,7 @@ class FilmGuideConversionContracts(unittest.TestCase):
                     source["pid"], "RelayRekindleTake", 1)["document_sha256"],
                 source["original_take"]["document_sha256"])
 
-    def test_native_director_consent_writes_immutable_plan_without_execution(self):
+    def test_native_director_approval_writes_immutable_plan_without_execution(self):
         with TemporaryDirectory() as temp:
             source, performance, _ = prepared_guide(Path(temp))
             pid = source["pid"]

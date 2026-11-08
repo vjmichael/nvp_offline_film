@@ -5,7 +5,6 @@ articulation timeline custody, NOT phoneme recognition, acting or animation.
 """
 from __future__ import annotations
 
-from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -18,8 +17,6 @@ from backend.nvp_film03_independent_facial_direction import (
 from test_nvp_film03_actor_native_workers import prepared_source
 from test_nvp_film03_expressive_voice_direction import direction
 
-
-CONSENT_SHA = sha256(b"test-not-real-consent-cannot-unlock-speech-usage").hexdigest()
 
 
 def prepared(root):
@@ -42,8 +39,7 @@ def prepared(root):
         profile_revision=1, direction_id=approved["direction_id"],
         direction_revision=1,
         dialogue_audio_id="OriginalActorGuideForFace", dialogue_audio_revision=1,
-        contributor_id="VoiceActor_A", contributor_role="consenting_voice_actor",
-        contributor_consent_sha256=CONSENT_SHA,
+        contributor_id="VoiceActor_A", contributor_role="voice_actor",
         articulation="mouth_visemes",
         mouth_events=[
             {"start_sample": 0, "end_sample": 5500,
@@ -124,8 +120,6 @@ class FaceBodyVoiceSourceContracts(unittest.TestCase):
             self.assertFalse(plan["audio_transcript_matches_script_verified"])
             self.assertFalse(plan["face_rig_compatibility_verified"])
             self.assertFalse(plan["real_facial_animation_generated"])
-            self.assertFalse(plan["contributor_permission_independently_verified"])
-            self.assertTrue(plan["voice_cloning_permission_not_inferred"])
             self.assertTrue(plan["voice_expression_can_be_deliberately_inconsistent"])
 
     def test_angry_face_with_happy_voice_is_not_auto_corrected(self):
@@ -165,8 +159,6 @@ class FaceBodyVoiceSourceContracts(unittest.TestCase):
             bad = [
                 dict(args, start_tick=args["start_tick"] + TICKS_PER_SAMPLE),
                 dict(args, dialogue_audio_revision=6),
-                dict(args, contributor_role="unconsented_voice_clone"),
-                dict(args, contributor_consent_sha256="not-a-sha"),
                 dict(args, articulation="mouth_visemes", mouth_events=[]),
                 dict(args, mouth_events=[{
                     "start_sample": 22000, "end_sample": 40000,

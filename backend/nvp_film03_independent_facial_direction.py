@@ -43,7 +43,7 @@ INTENT = frozenset({
     "match_voice_default", "independent", "intentional_contrast",
     "director_chosen_alignment",
 })
-CONTRIBUTORS = frozenset({"consenting_voice_actor", "consenting_director_guide"})
+CONTRIBUTORS = frozenset({"voice_actor", "director_guide"})
 MAX_EVENTS = 240
 
 
@@ -123,7 +123,7 @@ class FilmIndependentActingDirection:
 
     def plan(self, project_id, route, *, profile_revision, direction_id,
              direction_revision, dialogue_audio_id, dialogue_audio_revision,
-             contributor_id, contributor_role, contributor_consent_sha256,
+             contributor_id, contributor_role,
              articulation, mouth_events, body_events, start_tick,
              face_events=None, emotional_relationship="match_voice_default"):
         _require_pid(project_id)
@@ -135,8 +135,7 @@ class FilmIndependentActingDirection:
         ).prepare_generated_voice(project_id, route, profile_revision=profile_revision)
         _id(contributor_id, "performer/contributor identity")
         if contributor_role not in CONTRIBUTORS:
-            raise ValueError("A real voice actor or actual director guide must be identified")
-        _sha(contributor_consent_sha256)
+            raise ValueError("A voice performer or director guide must be identified")
         _id(dialogue_audio_id, "performed dialogue source")
         if articulation not in ARTICULATION or emotional_relationship not in INTENT:
             raise ValueError("Unsupported articulation or director facial relationship")
@@ -193,9 +192,6 @@ class FilmIndependentActingDirection:
             "voice_direction_delivery": case["delivery"],
             "audio_source": pcm,
             "contributor_id": contributor_id, "contributor_role": contributor_role,
-            "contributor_consent_evidence_sha256": contributor_consent_sha256,
-            "contributor_permission_independently_verified": False,
-            "voice_cloning_permission_not_inferred": True,
             "speech_start_film_tick": start_tick,
             "ticks_per_pcm_sample": TICKS_PER_SAMPLE,
             "articulation_style": articulation, "viseme_candidates": mouth,

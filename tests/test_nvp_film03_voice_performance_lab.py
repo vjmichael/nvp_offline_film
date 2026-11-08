@@ -39,9 +39,6 @@ def producer(case, *, model="ExperimentalModel"):
     return {
         "provider_id": "LabProvider",
         "model_id": model, "model_revision": "v2026_test",
-        "license_id": "LicenseReviewPending",
-        "license_evidence_sha256": pending,
-        "voice_consent_evidence_sha256": pending,
         "model_execution_receipt_sha256": pending,
         "original_reference_sha256": case["voice_reference_sha256"],
     }

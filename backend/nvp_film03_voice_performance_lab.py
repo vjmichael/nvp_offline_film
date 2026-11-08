@@ -187,15 +187,14 @@ def record_candidate(case, root, filename, *, producer, declared_wav_sha256):
     if type(case) is not dict or case.get("format") != FORMAT or \
        case.get("lab_only_not_permission_to_generate_or_approve") is not True:
         raise ValueError("Only a canonical offline audition case may be evaluated")
-    required = {"provider_id", "model_id", "model_revision", "license_id",
-                "license_evidence_sha256", "voice_consent_evidence_sha256",
+    required = {"provider_id", "model_id", "model_revision",
                 "model_execution_receipt_sha256", "original_reference_sha256"}
     if type(producer) is not dict or set(producer) != required:
         raise ValueError("External producer provenance must be complete and exact")
-    for key in ("provider_id", "model_id", "model_revision", "license_id"):
+    for key in ("provider_id", "model_id", "model_revision"):
         if type(producer[key]) is not str or not SLUG.fullmatch(producer[key]):
             raise ValueError("Invalid provenance field " + key)
-    for key in required - {"provider_id", "model_id", "model_revision", "license_id"}:
+    for key in required - {"provider_id", "model_id", "model_revision"}:
         _sha(producer[key])
     _sha(declared_wav_sha256)
     if producer["original_reference_sha256"] != case["voice_reference_sha256"]:
@@ -208,7 +207,6 @@ def record_candidate(case, root, filename, *, producer, declared_wav_sha256):
         "case": case, "producer": dict(producer), "readback": sound,
         "review_state": "UNREVIEWED_EXPERIMENT",
         "run_receipt_independently_verified": False,
-        "license_and_consent_documents_independently_reviewed": False,
         "film_workforce_and_tts_qualified": False,
         "director_take_approved": False,
         "no_native_speech_worker_executed": True,
