@@ -608,7 +608,19 @@ class NativeSlatePreviewHost:
                 self.dispatcher.enqueue(
                     op,approval_id=approval_id,lane="interactive")
             except Exception:
-                self.cache.fail(job_id,state="FAILED")
+                with self.ledger._db() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    exists=db.execute(
+                        "SELECT 1 FROM tasks WHERE id=?",
+                        (spec["task_id"],)).fetchone()
+                    if exists is None:
+                        db.execute("""UPDATE nvp_camera_preview_consents
+                            SET revoked_at=? WHERE approval_id=?
+                            AND revoked_at IS NULL""",
+                            (time.time(),approval_id))
+                    db.commit()
+                if exists is None:
+                    self.cache.fail(job_id,state="FAILED")
                 raise
             return {
                 "status":"QUEUED",
@@ -622,11 +634,14 @@ class NativeSlatePreviewHost:
                 "film_master_approved":False,
             }
         except BaseException:
+            # A recorded approval alone is not a native worker admission.
+            # Only the durable resource-ledger task justifies retaining the
+            # private staged source for crash/recovery inspection.
             with self.ledger._db() as db:
-                consent=db.execute("""SELECT 1 FROM nvp_camera_preview_consents
-                    WHERE task_id=?""",
+                task=db.execute("""SELECT 1 FROM tasks
+                    WHERE id=?""",
                     (self.supervisor._activity_id(job_id),)).fetchone()
-            if consent is None:
+            if task is None:
                 shutil.rmtree(jobdir,ignore_errors=True)
             raise
 
