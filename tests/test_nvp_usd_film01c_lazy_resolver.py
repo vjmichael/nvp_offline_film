@@ -109,6 +109,27 @@ class USDFilm01CLazyResolution(unittest.TestCase):
             self.assertFalse(again.stage.GetPrimAtPath(
                 "/World/Sets/Outside").IsLoaded())
 
+    def test_corrupted_project_layer_cache_must_fail_without_fallback_to_untrusted_source(self):
+        b=self.baseline
+        b.publish()
+        record=b.index.read_revision(b.pid,"TownWorld",1)
+        scene_digest=record["data"]["sources"]["scene|Street|1"]["layer_sha256"]
+        path=b.index._blob_path(b.pid,scene_digest)
+        original=path.read_bytes()
+        self.assertEqual(sha256(original).hexdigest(),scene_digest)
+        # Simulate external disk corruption of the derived cache blob. A
+        # false model/renderer success report must not hide this failure.
+        path.write_bytes(b"INVALID USD SOURCE CONTENT")
+        with patch.object(OpenUSDSceneBridge,"open",
+                side_effect=AssertionError("must not fall back to another scene")):
+            with b.world.open(b.pid,"TownWorld",1) as world:
+                with self.assertRaises((RuntimeError,PermissionError)):
+                    world.load(["Outside"])
+                self.assertEqual(world.receipt()["sha_verified_cached_set_loads"],0)
+                self.assertEqual(world.receipt()["materialized_scene_set_names"],[])
+                self.assertFalse(world.stage.GetPrimAtPath(
+                    "/World/Sets/Inside").IsLoaded())
+
     def test_original_png_and_pbr_source_shader_materialize_only_in_private_stage(self):
         b=self.baseline
         original_png=png_bytes()
