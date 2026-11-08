@@ -40,9 +40,11 @@ jobs:
           python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
       - name: Compile native source sound and strict 720-frame AVI review mux
         run: |
-          python -m compileall -q tools/nvp_film02_original_pcm.py tools/nvp_film02_original_av_review.py tests/test_nvp_film02_original_pcm_av.py
+          python -m compileall -q tools/nvp_film02_original_pcm.py tools/nvp_film02_original_av_review.py tools/nvp_film02_avi_independent_readback.py tests/test_nvp_film02_original_pcm_av.py tests/test_nvp_film02_avi_independent_readback.py
       - name: Independently verify original 48kHz FilmIndex PCM at 0, 10s, 20s and beacon frame 624
-        run: python -m unittest discover -s tests -p test_nvp_film02_original_pcm_av.py -v
+        run: |
+          python -m unittest discover -s tests -p test_nvp_film02_original_pcm_av.py -v
+          python -m unittest discover -s tests -p test_nvp_film02_avi_independent_readback.py -v
 
   genuine-cycles-audio-video-review:
     if: github.event_name == 'workflow_dispatch'
@@ -99,6 +101,16 @@ jobs:
             --handoff "$RUNNER_TEMP/film02-shared/handoff.json" \
             --shots "$RUNNER_TEMP/film02-real-cycles" \
             --out "$RUNNER_TEMP/film02-original-av-review"
+      - name: Independently decode EVERY actual AVI MJPEG frame and original PCM against all Cycles pictures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.nvp_film02_avi_independent_readback \
+            --source "$RUNNER_TEMP/film02-shared/source" \
+            --handoff "$RUNNER_TEMP/film02-shared/handoff.json" \
+            --shots "$RUNNER_TEMP/film02-real-cycles" \
+            --review "$RUNNER_TEMP/film02-original-av-review" \
+            --out "$RUNNER_TEMP/film02-audited-AVI-decoded"
       - name: Reopen AVI and inspect 720-frame source / 1,440,000 PCM sample / exact 30-second receipt
         shell: bash
         run: |
@@ -127,6 +139,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nvp-FILM02-REAL-BLENDER-30S-ORIGINAL-PICTURE-AND-PCM-SCREEN-REVIEW-NOT-DCP
-          path: ${{ runner.temp }}/film02-original-av-review/
+          path: |
+            ${{ runner.temp }}/film02-original-av-review/
+            ${{ runner.temp }}/film02-audited-AVI-decoded/
           if-no-files-found: error
           retention-days: 14
