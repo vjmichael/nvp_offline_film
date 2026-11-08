@@ -42,6 +42,11 @@ def resolved_materialx_probe(index, project_id, original_stage, descriptors):
         if not node:continue
         source=node.GetInput("file")
         if source:
+            # The authored nvp-blob URI may still be present while a
+            # connected USD output overrides the actual image to render.
+            # Reject even dangling edges, not only resolved connections.
+            if source.GetAttr().GetConnections():
+                raise PermissionError("Original USD image source has an upstream override")
             raw=source.GetAttr().Get()
             if not isinstance(raw,Sdf.AssetPath):
                 raise RuntimeError("MaterialX file input is not USD asset typed")
