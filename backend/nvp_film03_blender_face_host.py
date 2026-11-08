@@ -219,7 +219,7 @@ class ReviewedBlenderFacialHost:
                 "--manifest": "source.json", "--output": "scene.blend",
                 "--audit": "audit.json", "--preview": "facial_at_2.png",
             },
-            timeout_seconds=900, memory_limit_mb=8192,
+            timeout_seconds=600, memory_limit_mb=8192,
             gpu_memory_mb=0, require_linux_cgroup_v2=False,
         )
         outcome = self.supervisor.run(op)
