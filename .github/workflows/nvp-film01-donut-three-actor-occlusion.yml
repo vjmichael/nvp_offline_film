@@ -9,6 +9,7 @@ on:
       - tools/nvp_film01_original_30s.py
       - tools/nvp_film01_donut_light_probe.py
       - tools/nvp_film01_donut_three_actor_motion.py
+      - tools/nvp_film01_donut_light_path_reference.py
       - tests/test_nvp_film01_donut_lighting.py
       - tests/test_nvp_film01_donut_three_actor_motion.py
       - tests/test_nvp_film01_original_30s.py
@@ -42,7 +43,7 @@ jobs:
           python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
       - name: Compile actual 3D source/raster/motion and all native proof tests
         run: |
-          python -m compileall -q backend/nvp_native_scene_linear_raster.py backend/nvp_film01_donut_actor.py tools/nvp_film01_donut_light_probe.py tools/nvp_film01_donut_three_actor_motion.py tools/nvp_film01_original_30s.py tests/test_nvp_film01_donut_lighting.py tests/test_nvp_film01_donut_three_actor_motion.py tests/test_nvp_film01_original_30s.py
+          python -m compileall -q backend/nvp_native_scene_linear_raster.py backend/nvp_film01_donut_actor.py tools/nvp_film01_donut_light_probe.py tools/nvp_film01_donut_three_actor_motion.py tools/nvp_film01_donut_light_path_reference.py tools/nvp_film01_original_30s.py tests/test_nvp_film01_donut_lighting.py tests/test_nvp_film01_donut_three_actor_motion.py tests/test_nvp_film01_original_30s.py
       - name: Prove torus 3D shaded by neutral/silver/gold/sun and box appears through hole
         run: python -m unittest discover -s tests -p test_nvp_film01_donut_lighting.py -v
       - name: Prove exact center pixel native depth owner moves sphere→box→sphere across true torus hole
@@ -88,6 +89,12 @@ jobs:
           assert report["real_interobject_cast_shadows_computed"] is False
           assert report["real_interobject_reflections_computed"] is False
           assert report["through_hole_mechanical_clearance_m"]>.2
+          paths=report["source_geometric_lighting_expected_paths"]
+          assert paths["physically_expected_shadowed_sample_count"]>0
+          assert paths["physically_expected_unshadowed_sample_count"]>0
+          assert paths["ideal_camera_mirror_rays_that_hit_original_box"]>0
+          assert paths["native_current_renderer_cast_shadows_present"] is False
+          assert paths["native_current_renderer_interobject_reflections_present"] is False
           assert report["center_depth_owner_at_key_frames"]=={
             "0":"/World/SphereActor",
             "24":"/World/BoxActor",
