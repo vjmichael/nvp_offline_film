@@ -258,6 +258,7 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                 not proposal_id.startswith("wo6proposal_") or
                 len(proposal_id)!=36 or
                 any(c not in "0123456789abcdef" for c in proposal_id[12:]) or
+                type(action_kind) is not str or
                 action_kind not in ACTION_KINDS):
             raise ValueError("Exact review proposal and supported shot kind required")
         with self._wo6_model_lock:
@@ -314,9 +315,12 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             raise PermissionError("Director must review exact displayed model suggestion")
         with self._wo6_model_lock:
             slot=self._wo6_model_proposals.get(request["proposal_id"])
+            previous=slot.get("review") if slot else None
             if (self._wo6_closed or slot is None or
                     slot["state"]!="READY_FOR_HUMAN_REVIEW" or
-                    slot.get("review",{}).get("consumed_task_id")):
+                    (previous is not None and
+                     (previous["in_flight"] or
+                      previous["consumed_task_id"] is not None))):
                 raise PermissionError("AI consultation no longer available for review")
             slot["review"]={
                 "context":dict(context),"in_flight":False,
