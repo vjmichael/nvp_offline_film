@@ -260,5 +260,74 @@ class ActorIDSourceProductionBible(unittest.TestCase):
                     expected_actor_revision=actor["revision"])
             self.assertEqual(registry.actor(p1["id"], actor["id"])["history"], [])
 
+class NativeFilm03ScriptDirectorApproval(unittest.TestCase):
+    def test_actual_host_denial_and_acceptance_keep_all_previous_script_versions(self):
+        import os
+        from unittest.mock import patch
+        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+
+        class DirectorWindow:
+            url = "http://127.0.0.1:43231/"
+            def __init__(self):
+                self.answers = []
+                self.prompts = []
+            def get_current_url(self):
+                return self.url
+            def create_confirmation_dialog(self, title, message):
+                self.prompts.append((title, message))
+                return self.answers.pop(0) if self.answers else False
+
+        with TemporaryDirectory() as d:
+            home = Path(d).resolve()
+            with patch.dict(os.environ, {"NVP_HOME": str(home / "Projects")}):
+                studio = Studio(home / "source.sqlite3")
+                pid = studio.create_project("FILM03 canonical script", "Original object-actor voice")
+                index = FilmIndex(studio)
+                studio.save_screenplay(pid, SCRIPT_ONE, expected_revision=0)
+                bridge = TrustedDesktopWO6Bridge(
+                    index, origin="http://127.0.0.1:43231",
+                    host_factory=lambda _:None)
+                self.addCleanup(bridge._close)
+                window = DirectorWindow()
+                bridge._attach_window(window)
+                request = {"project_id": pid,
+                           "script_id": "OriginalScriptAuthor",
+                           "expected_screenplay_revision": 1,
+                           "expected_manifest_revision": 0}
+                with self.assertRaises(PermissionError):
+                    bridge.film03_publish_script_snapshot(request)
+                self.assertEqual(index.list_objects(pid, kind="dialogue"), [])
+                self.assertEqual(len(window.prompts), 1)
+                self.assertIn("script", window.prompts[0][1].lower())
+                window.answers = [True]
+                first = bridge.film03_publish_script_snapshot(request)
+                self.assertEqual(first["revision"], 1)
+                self.assertTrue(first["host_native_director_confirmation"])
+                self.assertFalse(first["film_or_native_worker_execution_authorized"])
+                saved = index.read_revision(pid, "OriginalScriptAuthor", 1)
+                original_sha = saved["document_sha256"]
+                # A normal Studio editor revision is not secretly published
+                # as an approved new object-dialogue snapshot.
+                studio.save_screenplay(pid, SCRIPT_TWO, expected_revision=1)
+                self.assertEqual(index.read_revision(pid,
+                                 "OriginalScriptAuthor", 1)["document_sha256"],
+                                 original_sha)
+                next_request = {"project_id": pid,
+                                "script_id": "OriginalScriptAuthor",
+                                "expected_screenplay_revision": 2,
+                                "expected_manifest_revision": 1}
+                window.answers = [True]
+                second = bridge.film03_publish_script_snapshot(next_request)
+                self.assertEqual(second["revision"], 2)
+                self.assertEqual(index.read_revision(pid, "OriginalScriptAuthor",
+                                                    1)["document_sha256"],
+                                 original_sha)
+                self.assertNotEqual(index.read_revision(pid,
+                                    "OriginalScriptAuthor", 2)["document_sha256"],
+                                    original_sha)
+                with self.assertRaises(RuntimeError):
+                    bridge.film03_publish_script_snapshot(next_request)
+
+
 if __name__ == "__main__":
     unittest.main()
