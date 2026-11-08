@@ -63,9 +63,28 @@ def _position(value):
     return [float(x) for x in value]
 
 
-def _record_source(index, pid, kind, source_id, revision):
+def _record_source(index, pid, kind, source_id, revision, *,
+                   sealed_scene=None):
     _id(source_id, "film source")
     _exact_rev(revision)
+    if sealed_scene is not None:
+        # Only used for NOT-YET-LOADED source scene payloads. Verify the
+        # authoritative FilmIndex document cheaply without reopening the
+        # original USD scene, geometry and its images until explicitly loaded.
+        record = index.read_revision(pid,source_id,revision)
+        if (kind != "scene" or record["kind"] != "scene" or
+            sealed_scene.get("kind") != "scene" or
+            sealed_scene.get("id") != source_id or
+            sealed_scene.get("revision") != revision or
+            sealed_scene.get("document_sha256") != record["document_sha256"] or
+            sealed_scene.get("source_blob_sha256") !=
+                record["data"]["layout_layer_sha256"] or
+            sealed_scene.get("root_prim") != "/World" or
+            type(sealed_scene.get("layer_sha256")) is not str):
+            raise PermissionError("Lazy source set is not a sealed FilmIndex scene")
+        _sha(sealed_scene["layer_sha256"])
+        return {**sealed_scene,"bytes":None,"texture_files":{}}
+    texture_files = {}
     if kind == "scene":
         record, stage = OpenUSDSceneBridge(index).open(pid, source_id, revision)
         from pxr import UsdGeom
@@ -86,35 +105,27 @@ def _record_source(index, pid, kind, source_id, revision):
         if not root or not root.IsDefined():
             raise RuntimeError("Original NVP scene lacks a native /World root")
         plain.SetDefaultPrim(root)
-        # Original NVP scenes can contain legitimate project-owned texture
-        # data, but full reviewed image resolution is not yet installed in
-        # this world composer. Refuse dangling AssetPaths instead of
-        # silently rendering a textured shot with missing dependencies.
-        from pxr import Sdf
-        for prim in plain.Traverse():
-            for attribute in prim.GetAttributes():
-                if attribute.GetTypeName() == Sdf.ValueTypeNames.Asset:
-                    asset_path = attribute.Get()
-                    if asset_path is not None and str(asset_path.path):
-                        raise ValueError(
-                            "Film set has unresolved texture/image asset; "
-                            "install reviewed project texture resolver first")
-        contents = flattened.ExportToString().encode("utf8")
+        from backend.nvp_usd_film01c_texture import (
+            derive_texture_resolved_layer,
+        )
+        contents, texture_files = derive_texture_resolved_layer(
+            index,pid,plain,source_kind="scene",source_record=record)
         root_prim = "/World"
     else:
         record, layer = OpenUSDAssetRegistry(index).open(pid, source_id, revision)
         if record["kind"] != "asset":
             raise ValueError("World asset source is not genuine NVP asset")
-        mat = record["data"].get("preview_material") or {}
-        # Texture and PBR AssetPaths need a reviewed project-scoped image
-        # resolver before material-rich set dressing can be staged safely.
-        if "texture" in mat or "pbr_maps" in mat:
-            raise ValueError("Textured asset needs a reviewed NVP texture resolver")
-        contents = layer.ExportToString().encode("utf8")
+        from backend.nvp_usd_film01c_texture import (
+            derive_texture_resolved_layer,
+        )
+        from pxr import Usd
+        contents, texture_files = derive_texture_resolved_layer(
+            index,pid,Usd.Stage.Open(layer),
+            source_kind="asset",source_record=record)
         root_prim = "/Asset"
     if not 0 < len(contents) <= MAX_LAYER_BYTES:
         raise RuntimeError("Actual source USD exceeds bounded staging size")
-    return {
+    descriptor = {
         "kind": kind,
         "id": source_id,
         "revision": revision,
@@ -125,10 +136,15 @@ def _record_source(index, pid, kind, source_id, revision):
             else record["data"]["layout_layer_sha256"]),
         "root_prim": root_prim,
         "bytes": contents,
+        "texture_files": texture_files,
     }
+    if texture_files:
+        descriptor["texture_sha256"] = sorted(texture_files)
+    return descriptor
 
 
-def _normalize(index, pid, sets, props, variants, instancers):
+def _normalize(index, pid, sets, props, variants, instancers,
+               *, sealed_sources=None):
     if (type(sets) is not list or not 1 <= len(sets) <= MAX_SETS
         or type(props) is not list or len(props) > MAX_PROPS
         or type(variants) is not list or len(variants) > MAX_VARIANTS
@@ -139,8 +155,13 @@ def _normalize(index, pid, sets, props, variants, instancers):
     def use(kind, source_id, revision):
         key = (kind, source_id, revision)
         if key not in sources:
+            pinned = (sealed_sources or {}).get(
+                "|".join(map(str,key))) if kind == "scene" else None
+            if sealed_sources is not None and kind == "scene" and pinned is None:
+                raise PermissionError("Unrecognized scene payload in saved FilmIndex world")
             sources[key] = _record_source(
-                index, pid, kind, source_id, revision)
+                index, pid, kind, source_id, revision,
+                sealed_scene=pinned)
         return sources[key]
     def name(item, required, category):
         if type(item) is not dict or set(item) != required:
@@ -460,7 +481,9 @@ class OpenUSDWorldComposer:
             for x in doc["instancers"]]
         pieces, sources = _normalize(
             self.index, pid, authored_sets, authored_props,
-            authored_variants, authored_instancers)
+            authored_variants, authored_instancers,
+            sealed_sources=(doc["sources"] if doc.get("world_root_sha256")
+                            else None))
         if pieces != {key: doc[key] for key in pieces}:
             raise PermissionError("World original source manifest changed since commit")
         for key, src in sources.items():
@@ -483,11 +506,12 @@ class OpenUSDWorldComposer:
             if rel not in written:
                 data = src["bytes"]
                 total_bytes += len(data)
-                if total_bytes > MAX_STAGING_BYTES:
-                    raise RuntimeError("Bounded private world staging budget exceeded")
-                with dest.open("xb") as output:
-                    output.write(data)
-                written.add(rel)
+                if data is not None:
+                    if total_bytes > MAX_STAGING_BYTES:
+                        raise RuntimeError("Bounded private world staging budget exceeded")
+                    with dest.open("xb") as output:
+                        output.write(data)
+                    written.add(rel)
             paths[key] = "./" + rel
         dest = staging / "world.usda"
         stage = Usd.Stage.CreateNew(str(dest))
