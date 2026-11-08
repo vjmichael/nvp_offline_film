@@ -23,8 +23,8 @@ FPS=24
 
 
 def canonical(data):
-    return json.dumps(data,sort_keys=True,separators=(",",":"),ensure_ascii=True,
-                      allow_nan=False).encode("ascii")
+    return json.dumps(data,sort_keys=True,separators=(",",":"),ensure_ascii=False,
+                      allow_nan=False).encode("utf8")
 
 
 def digest(data):
@@ -101,7 +101,7 @@ def validate(packet):
             len(data["source_take_sha256"])!=64):
         raise PermissionError("Not a bounded original ActorID source take")
     paths=set(frames[0]["world_matrices"])
-    if (not {"\/World\/Camera".replace("\\",""), "\/World\/PracticalLight".replace("\\","")} <= paths or
+    if (not {"/World/Camera", "/World/PracticalLight"} <= paths or
             set(cast) - paths or actor not in paths or
             set(data["assets"]) != paths-{
                 "/World/Camera","/World/PracticalLight"}):
