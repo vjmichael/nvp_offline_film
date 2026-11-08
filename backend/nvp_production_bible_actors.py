@@ -128,6 +128,8 @@ class ProductionBibleActors:
                 "family": "filmindex", "target_id": item["object_id"],
                 "target_revision": item["head_revision"],
                 "kind": item["kind"], "sha256": rec["document_sha256"],
+                "sample_count": (rec["data"].get("sample_count")
+                                 if item["kind"]=="audio" else None),
             })
         props = [
             {"family": "bible_prop", "target_id": e["id"],
