@@ -461,3 +461,27 @@ This avoids about 58 redundant native sound-unwrapping subprocesses in a
 two-reel, 720-frame test without dropping/muting/replacing any PCM samples.
 The genuine separate 24fps decoder-speed and real visible WebAudio/Canvas
 release gates remain required and OPEN pending exact-head installed runs.
+
+### WO5 production playback follow-up — one verified PCM second (2026-11-07)
+
+The **actual product** `FinishedFilmPlayer` (not just the installed test
+fixture) now retains at most 24 frames of decoded **original published-MXF**
+PCM24 per active reel/segment and session. Consecutive four-frame
+presentation windows reuse the exact 2,000-sample-per-frame slices instead
+of repeatedly launching CineCert sound unwrap. Changing reel/segment
+evicts the cached sample block; stop, close and new session clear it.
+Each delivered JPEG2000 frame still undergoes its own source-hash check
+and original OpenJPEG decode; no picture skip, fabricated throughput
+or new audio master was introduced.
+
+`tests/test_nvp_wo5_finished_playback.py` now checks the real
+native-wrapper invocation count, PCM reuse across neighboring windows,
+original per-picture decoding, reel transition and cache disposal.
+`tools/nvp_wo5_installed_sustain.py` now emits newline-delimited,
+fsynced stage records, making a stuck installed codec easier to locate.
+
+These are **submitted changes, not accepted native results**.
+WO5 PR #92 updated from its earlier `e89ec7b5` head; all installed
+24fps, genuine visible synchronized WebView2 picture/audio, 30-minute
+original and theatrical certification gates remain OPEN pending real
+exact-head GitHub Actions/physical acceptance.
