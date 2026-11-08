@@ -133,6 +133,7 @@ def run_real_gguf_acceptance(*,model_path,server_path,report_path=None,
                 args,cwd=str(root),stdin=subprocess.DEVNULL,
                 stdout=logfile,stderr=subprocess.STDOUT,
                 creationflags=flags,start_new_session=os.name!="nt")
+            outcome=None
             try:
                 until=time.monotonic()+max_startup_seconds
                 models=None
@@ -196,12 +197,6 @@ def run_real_gguf_acceptance(*,model_path,server_path,report_path=None,
                     "elapsed_model_ms":elapsed,
                     "provider_self_report_not_independent_model_attestation":True,
                 }
-                if report is not None:
-                    with report.open("x",encoding="utf-8") as fd:
-                        fd.write(json.dumps(outcome,sort_keys=True,indent=2)+"\n")
-                        fd.flush()
-                        os.fsync(fd.fileno())
-                return outcome
             finally:
                 # Acceptance-only server is not the creator's existing model.
                 # Never unload arbitrary instances or send a kill-all command.
@@ -224,6 +219,21 @@ def run_real_gguf_acceptance(*,model_path,server_path,report_path=None,
                         else:
                             proc.kill()
                         proc.wait(timeout=10)
+            # A test is not accepted until this exact acceptance-owned
+            # server process has actually terminated. No arbitrary LM Studio
+            # instance was touched or unloaded.
+            if proc.poll() is None:
+                raise RuntimeError("Acceptance-owned llama-server did not stop")
+            if outcome is None:
+                raise RuntimeError("No completed native inference receipt")
+            outcome["server_main_process_exited_after_test"]=True
+            outcome["full_descendant_tree_stopped_attested"]=False
+            if report is not None:
+                with report.open("x",encoding="utf-8") as fd:
+                    fd.write(json.dumps(outcome,sort_keys=True,indent=2)+"\n")
+                    fd.flush()
+                    os.fsync(fd.fileno())
+            return outcome
 
 
 def main(argv=None):
