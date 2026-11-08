@@ -46,7 +46,8 @@ def _original_texture_descriptors(index,pid,scene):
 def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                            camera_path,renderer="Embree",width=256,
                            timeout_seconds=90,require_gpu=False,
-                           native_take=None,look_ref=None):
+                           native_take=None,look_ref=None,
+                           material_context_probe="dual"):
     if not isinstance(index,FilmIndex):
         raise TypeError("Original FilmIndex required")
     _require_pid(pid)
@@ -58,11 +59,14 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
         not 5<=timeout_seconds<=180 or
         type(camera_path) is not str or
         not camera_path.startswith("/World/") or
-        len(camera_path)>256):
+        len(camera_path)>256 or
+        material_context_probe not in ("dual","mtlx_only")):
         raise ValueError("Unsafe independent renderer acceptance request")
     if (renderer=="Storm" and not require_gpu) or (
             renderer=="Embree" and require_gpu):
         raise ValueError("Hydra renderer and GPU admission must agree")
+    if material_context_probe=="mtlx_only" and (renderer!="Storm" or native_take is not None or look_ref is not None):
+        raise ValueError("MaterialX-only audit requires isolated Storm source without look/Take")
     if native_take is not None:
         if (type(native_take) is not dict or
             set(native_take)!={"take_id","take_sha256","tick"} or
@@ -95,6 +99,7 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
     base={
         "format":FORMAT,"scene_document_sha256":record["document_sha256"],
         "camera_path":camera_path,"renderer":renderer,
+        "material_context_probe":material_context_probe,
         "original_modified":False,"ffmpeg_used":False,
         "hydra_shader_parity_accepted":False,
         "physical_display_calibrated":False,
@@ -125,9 +130,17 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
     source_ctx=(resolved_materialx_probe(index,pid,stage,descriptors)
                 if descriptors else nullcontext((stage,{
                     "original_layer_mutated":False})))
+    if material_context_probe=="mtlx_only" and not descriptors:
+        raise RuntimeError("MaterialX-only audit requires actual indexed textures")
     original_layer=stage.GetRootLayer().ExportToString()
     try:
         with source_ctx as (copy,evidence):
+            if material_context_probe=="mtlx_only":
+                if evidence.get("derived_probe_only") is not True:
+                    raise RuntimeError("MaterialX-only isolation forbidden on source stage")
+                from backend.nvp_wo3_materialx_integrity import (
+                    isolate_materialx_only_on_derived_stage)
+                isolate_materialx_only_on_derived_stage(copy)
             with TemporaryDirectory(prefix="nvp-wo2-hydra-") as directory:
                 root=Path(directory)
                 scene_path=root/"approved_derived_scene.usda"
