@@ -331,6 +331,50 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             "director_audition_comparison_claim_not_machine_voice_match":True,
         }
 
+    def film03_publish_actor_identity_profile(self, request):
+        """Trusted director authoring: ActorID appearance/behavior/gait/VoiceType.
+
+        Changes never reassign actor identity or overwrite old assets.
+        Browser content cannot issue this source mutation over HTTP.
+        """
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","actor_id","profile",
+            "expected_profile_revision","expected_bible_revision","director_note"})
+        from backend.nvp_film03_actor_identity_core import ActorIdentityCore
+        nonce="film03_actor_core_"+secrets.token_hex(16)
+        def approve(event,scope):
+            return bool(event==nonce and
+                        self._wo6_confirm_creative(nonce,scope))
+        service=ActorIdentityCore(self.index,verify_creator_action=approve)
+        result=service.publish(
+            request["project_id"],request["actor_id"],request["profile"],
+            expected_profile_revision=request["expected_profile_revision"],
+            expected_bible_revision=request["expected_bible_revision"],
+            director_note=request["director_note"],creator_event=nonce)
+        return {
+            **result,
+            "host_native_director_confirmation":True,
+            "original_actor_assets_modified":False,
+            "original_voice_recordings_modified":False,
+            "tts_or_animation_worker_invoked":False,
+        }
+
+    def film03_preview_actor_ai_voice_contract(self, request):
+        """Read-only vetted ActorID source contract, NOT an AI model invocation."""
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","actor_id","source_route","profile_revision"})
+        from backend.nvp_film03_actor_identity_core import ActorIdentityCore
+        route=request["source_route"]
+        if type(route) is not dict or route.get("actor_id")!=request["actor_id"]:
+            raise PermissionError("AI voice contract's ActorID must match canonical character")
+        service=ActorIdentityCore(
+            self.index,verify_creator_action=lambda *_:False)
+        return service.prepare_generated_voice(
+            request["project_id"],route,
+            profile_revision=request["profile_revision"])
+
     def wo6_local_models(self,project_id):
         """Explicit user discovery of an existing loopback-only model service."""
         self._wo5_project(project_id)
