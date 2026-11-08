@@ -134,6 +134,13 @@ def rendered_source_window(index,project_id,edit_id,edit_revision,edit_sha,
                     sample["source_projection"]["source_take_sha256"] or
                 sample["original_source_modified"] is not False):
             raise PermissionError("Original scene/source/audio frame projection changed")
+        if sample["source_projection"].get("source_shot_id") is not None:
+            # The first-party source raster reads a frozen Take. A native
+            # shot-local override is a stronger authored presentation;
+            # silently displaying unmodified Take pixels as that shot
+            # would be counterfeit editorial playback.
+            raise RuntimeError(
+                "Native shot-local OpenUSD overrides require their own composed raster path")
         cameras=sorted(p["prim_path"] for p in sample["scene_poses"]
                        if p["role"]=="camera")
         active_camera=camera_path or (cameras[0] if len(cameras)==1 else None)
