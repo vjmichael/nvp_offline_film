@@ -78,6 +78,13 @@ export default function WO6CreatorActionsPanel({projectId}){
     impact?.data?.status==='READ_ONLY_IMPACT_PREVIEW_NO_CREATOR_GRANT' &&
     impact?.data?.indexed_downstream_truncated===false;
   useEffect(()=>{setImpact(null)},[fingerprint]);
+  // Never present prior Take/project suggestions as if selected for the
+  // currently viewed original source. The native receipt itself remains
+  // SHA-bound even if the user changes the panel selection mid-generation.
+  useEffect(()=>{
+    setAiProposalTicket(null);
+    setAiProposal(null);
+  },[projectId,takeId]);
   useEffect(()=>{
     let live=true;
     async function load(){
