@@ -64,6 +64,16 @@ class VirtualLightFXTest(unittest.TestCase):
         half=evaluate_virtual_light_fx(fx,T//2,final_render=True)
         self.assertGreater(first["evaluated_intensity"],half["evaluated_intensity"])
         self.assertEqual(first,evaluate_virtual_light_fx(fx,0,final_render=True))
+        started_later={**fx,"anchor_film_tick":T}
+        self.assertEqual(
+            evaluate_virtual_light_fx(started_later,0,final_render=True)[
+                "evaluated_intensity"],0.0)
+        one_shot=make_simple_virtual_fx(
+            "firework_flash","/World/Firework",fx_id="no_cycle",
+            anchor_film_tick=T,intensity=100)
+        self.assertGreater(
+            evaluate_virtual_light_fx(one_shot,T,final_render=True)[
+                "evaluated_intensity"],0.0)
         for change in (
             {"intensity":float("nan")},
             {"color_rgb":[1,2]},
