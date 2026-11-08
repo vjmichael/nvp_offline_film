@@ -16,6 +16,8 @@ from backend.nvp_wo6_worker_admission import verify_admitted_worker
 from backend.nvp_exact_time_shots import ExactTimeShotSequence
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_native_color_decisions import NativeColorDecisions
+from backend.nvp_wo6_sound_editorial_decisions import (
+    publish_sound_cue,publish_editorial_cut)
 from backend.nvp_studio import Studio
 from backend.nvp_wo6_native_data_action import (
     FORMAT, RECEIPT, OPERATION, _preflight, verify_decision_output)
@@ -56,14 +58,20 @@ def main(argv=None):
             scene_id=doc["source_id"],scene_revision=doc["source_revision"],
             duration_tick=doc["duration_tick"],shots=doc["payload"],
             expected_revision=0)
+    elif doc["decision_kind"]=="sound_cue":
+        record=publish_sound_cue(index,doc)
+    elif doc["decision_kind"]=="editorial_cut":
+        record=publish_editorial_cut(index,doc)
     else:
         raise ValueError("Native worker cannot dispatch arbitrary operation")
     output=verify_decision_output(index,doc)
     if record["document_sha256"]!=output["document_sha256"]:
         raise RuntimeError("Published native decision cannot be reopened")
-    if doc["decision_kind"]=="camera_sequence":
+    if doc["decision_kind"] in ("camera_sequence","sound_cue","editorial_cut"):
         _exact_source(index,doc["project_id"],doc["source_id"],
-                      doc["source_revision"],doc["source_sha256"],"scene")
+                      doc["source_revision"],doc["source_sha256"],
+                      {"camera_sequence":"scene","sound_cue":"temporal",
+                       "editorial_cut":"presentation"}[doc["decision_kind"]])
     receipt={
         "format":RECEIPT,"task_id":doc["task_id"],
         "project_id":doc["project_id"],"decision_id":doc["decision_id"],
@@ -75,6 +83,9 @@ def main(argv=None):
         "original_take_modified":False,"original_scene_modified":False,
         "existing_dcp_replaced":False,"film_delivered":False,
         "director_release_approved":False,
+        "reviewed_ai_consultation":doc.get("reviewed_ai_consultation"),
+        "model_instruction_executed":False,
+        "model_approval_accepted":False,
     }
     with (path.parent/"receipt.json").open("xb") as stream:
         stream.write(canonical_bytes(receipt))
