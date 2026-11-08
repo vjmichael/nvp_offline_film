@@ -16,7 +16,7 @@ from pathlib import Path
 import os
 import secrets
 import threading
-from queue import Queue
+from queue import Queue, Empty, Full
 import time
 
 from backend.nvp_ai_read_host import TrustedReadScope
@@ -33,6 +33,7 @@ from backend.nvp_wo6_recovery import WO6DurableRecovery
 FORMAT="nvp.wo6.director_desktop_native_consent.v1"
 MAX_LIST=64
 MAX_APPROVAL_TEXT=4096
+MAX_DISPATCH_QUEUE=64
 
 
 class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
@@ -198,14 +199,21 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             try:
                 if trigger is None:
                     return
+                # Restart/close clears ephemeral native permission. An
+                # already-running worker keeps its own durable recovery
+                # contract, but unstarted triggers must not auto-execute.
+                with self._wo6_dispatch_lock:
+                    if self._wo6_closed:
+                        continue
                 try:
                     host.run_next(timeout_seconds=240)
                 except Exception as exc:
                     # The actual host writes interrupted/failed task states
                     # durably; this is supplementary local diagnostic only.
                     with self._wo6_dispatch_lock:
-                        self._wo6_dispatch_faults[trigger]=(
-                            type(exc).__name__+": "+str(exc)[:240])
+                        # The native durable ledger is the source of truth.
+                        # Do not expose subprocess paths or secrets in IPC.
+                        self._wo6_dispatch_faults[trigger]=type(exc).__name__
             finally:
                 queue.task_done()
 
@@ -217,16 +225,23 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                 raise RuntimeError("Director's native session is closing")
             channel=self._wo6_dispatch_queues.get(host.owner)
             if channel is None:
-                channel=Queue()
+                channel=Queue(maxsize=MAX_DISPATCH_QUEUE)
                 worker=threading.Thread(
                     target=self._wo6_worker_loop,args=(host,channel),
                     name="NVP-WO6-"+host.owner,daemon=True)
                 self._wo6_dispatch_queues[host.owner]=channel
                 worker.start()
-            channel.put(queued["task_id"])
+            try:
+                channel.put_nowait(queued["task_id"])
+                dispatched=True
+            except Full:
+                # Approved QUEUED task is still safe in the durable ledger,
+                # but must not be represented as a scheduled native worker.
+                dispatched=False
         return {
             "format":FORMAT,"queued_task_id":queued["task_id"],
-            "state":"QUEUED","native_dispatch_requested":True,
+            "state":"QUEUED" if dispatched else "QUEUED_NOT_DISPATCHED",
+            "native_dispatch_requested":dispatched,
             "native_worker_success_verified":False,
             "durable_status_must_be_polled":True,
             "finished_film_approved":False,
@@ -323,7 +338,16 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         with self._wo6_dispatch_lock:
             self._wo6_closed=True
             for queue in self._wo6_dispatch_queues.values():
-                queue.put(None)
+                # Drop unstarted in-memory dispatch notices. Durable tasks
+                # remain QUEUED and require fresh user approval on restart.
+                while True:
+                    try:
+                        queue.get_nowait()
+                    except Empty:
+                        break
+                    else:
+                        queue.task_done()
+                queue.put_nowait(None)
         self._wo6_decisions.clear()
         self._wo6_native_grants.clear()
         super()._close()

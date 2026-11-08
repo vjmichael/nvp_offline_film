@@ -144,6 +144,87 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
         finally:
             resume.set()
 
+    def test_close_drops_unstarted_native_dispatch_without_replaying(self):
+        entered=threading.Event()
+        resume=threading.Event()
+        class HeldHost:
+            owner="wo6_lifecycle_close"
+            def __init__(self):
+                self.calls=[]
+            def run_next(self,*,timeout_seconds):
+                self.calls.append(timeout_seconds)
+                entered.set()
+                resume.wait(timeout=5)
+                return None
+        host=HeldHost()
+        first=self.bridge._wo6_result(
+            {"task_id":"wo6take_"+"2"*24},host)
+        self.assertEqual(first["state"],"QUEUED")
+        self.assertTrue(entered.wait(timeout=2))
+        second=self.bridge._wo6_result(
+            {"task_id":"wo6take_"+"3"*24},host)
+        self.assertTrue(second["native_dispatch_requested"])
+        self.bridge._close()
+        resume.set()
+        # The first worker was authorized before close; it may finish,
+        # but the second persisted task is never started automatically.
+        time.sleep(.05)
+        self.assertEqual(len(host.calls),1)
+        self.assertTrue(self.bridge._wo6_closed)
+        with self.assertRaises(RuntimeError):
+            self.bridge._wo6_result({"task_id":"wo6take_"+"4"*24},host)
+
+    def test_dispatcher_bounded_under_resource_pressure_and_no_fake_success(self):
+        from backend.nvp_wo6_desktop_bridge import MAX_DISPATCH_QUEUE
+        entered=threading.Event()
+        resume=threading.Event()
+        class HeldHost:
+            owner="wo6_lifecycle_pressure"
+            def __init__(self):
+                self.calls=0
+            def run_next(self,*,timeout_seconds):
+                self.calls+=1
+                entered.set()
+                resume.wait(timeout=5)
+                return {"task_id":"held","admitted":False,
+                        "state":"QUEUED"}
+        host=HeldHost()
+        try:
+            first=self.bridge._wo6_result(
+                {"task_id":"wo6data_"+"5"*24},host)
+            self.assertFalse(first["native_worker_success_verified"])
+            self.assertTrue(entered.wait(timeout=2))
+            for i in range(MAX_DISPATCH_QUEUE):
+                receipt=self.bridge._wo6_result(
+                    {"task_id":"wo6data_"+format(i,"024x")},host)
+                self.assertTrue(receipt["native_dispatch_requested"])
+            overflow=self.bridge._wo6_result(
+                {"task_id":"wo6data_"+"e"*24},host)
+            self.assertEqual(overflow["state"],"QUEUED_NOT_DISPATCHED")
+            self.assertFalse(overflow["native_dispatch_requested"])
+            self.assertFalse(overflow["native_worker_success_verified"])
+        finally:
+            self.bridge._close()
+            resume.set()
+
+    def test_native_dispatch_failure_never_claims_success_or_exposes_path(self):
+        class FailedHost:
+            owner="wo6_lifecycle_failure"
+            def run_next(self,*,timeout_seconds):
+                raise PermissionError("private path /secret/studio/source")
+        task="wo6shot_"+"8"*24
+        receipt=self.bridge._wo6_result({"task_id":task},FailedHost())
+        self.assertEqual(receipt["state"],"QUEUED")
+        deadline=time.monotonic()+2
+        while time.monotonic()<deadline:
+            with self.bridge._wo6_dispatch_lock:
+                failure=self.bridge._wo6_dispatch_faults.get(task)
+            if failure is not None:
+                break
+            time.sleep(.01)
+        self.assertEqual(failure,"PermissionError")
+        self.assertFalse(receipt["native_worker_success_verified"])
+
     def test_foreign_origin_model_supplied_consent_and_bad_project_denied(self):
         request=self._request()
         with self.assertRaises(ValueError):

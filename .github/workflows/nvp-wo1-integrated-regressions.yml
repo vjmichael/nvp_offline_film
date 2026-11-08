@@ -1,0 +1,69 @@
+name: NVP WO1 Integrated Native Regression Closeout (NO FFMPEG)
+on:
+  push:
+    branches: [nvp/wo1-integrated-native-regressions-20261107]
+  pull_request:
+    paths:
+      - backend/nvp_slate_preview_host.py
+      - backend/nvp_approved_tasks.py
+      - backend/nvp_win_suspended_worker.py
+      - backend/nvp_supervised_codec_process.py
+      - backend/nvp_wo2_openpbr.py
+      - backend/nvp_wo5_finished_playback.py
+      - backend/nvp_wo6_desktop_bridge.py
+      - tests/test_nvp_supervised_codec_process.py
+      - tests/test_nvp_slate05_preview_native.py
+      - tests/test_nvp_slate06_geometry_native.py
+      - tests/test_nvp_wo2_pbr_channels.py
+      - tests/test_nvp_wo5_finished_playback.py
+      - tests/test_nvp_wo6_desktop_bridge.py
+      - .github/workflows/nvp-wo1-integrated-regressions.yml
+  workflow_dispatch:
+concurrency:
+  group: nvp-wo1-native-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-exact-head:
+    name: WO1 exact-head ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 28
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine OpenUSD, film source and native-test dependencies
+        shell: bash
+        run: |
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+      - name: Install actual protected Windows worker dependency
+        if: runner.os == 'Windows'
+        run: python -m pip install "pywin32>=310"
+      - name: Compile all WO1 native repairs and regressions
+        run: python -m compileall -q backend/nvp_slate_preview_host.py backend/nvp_approved_tasks.py backend/nvp_win_suspended_worker.py backend/nvp_supervised_codec_process.py backend/nvp_wo2_openpbr.py backend/nvp_wo5_finished_playback.py backend/nvp_wo6_desktop_bridge.py tests/test_nvp_supervised_codec_process.py tests/test_nvp_slate05_preview_native.py tests/test_nvp_slate06_geometry_native.py tests/test_nvp_wo2_pbr_channels.py tests/test_nvp_wo5_finished_playback.py tests/test_nvp_wo6_desktop_bridge.py
+      - name: Real Windows HANDLE_LIST, native Job Object and process-tree regression
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_supervised_codec_process.py -v
+      - name: Source-bound SLATE-05 creator approval and exact on-disk preview recovery
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_slate05_preview_native.py -v
+      - name: Source-bound SLATE-06 geometry approval and native renderer receipts
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_slate06_geometry_native.py -v
+      - name: Actual USD original multichannel MaterialX map verification and tamper denial
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_wo2_pbr_channels.py -v
+      - name: Real PCM24 final-DCP 22–25 boundary, exact Film Time and source hashes
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_wo5_finished_playback.py -v
+      - name: Native WO6 desktop approval, bounded queue, close/restart and failure lifecycle
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_wo6_desktop_bridge.py -v

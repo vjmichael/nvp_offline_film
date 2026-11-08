@@ -124,9 +124,16 @@ class NativeSlatePreviewHost:
             supervisor,ledger,approval_check=self._approval_check,
             pre_worker_check=self._before_worker)
 
+    def _slate_refused(self,stage):
+        # Local host-only diagnostic category, not an approval capability,
+        # tool endpoint or source document disclosure.
+        self._last_slate_approval_refusal=stage
+        return False
+
     def _approval_check(self,approval_id,digest,document):
+        self._last_slate_approval_refusal="unverified"
         if type(approval_id) is not str or not isinstance(document,dict):
-            return False
+            return self._slate_refused("invalid_callback_inputs")
         try:
             with self.ledger._db() as db:
                 row=db.execute("""SELECT * FROM nvp_slate_preview_consents
@@ -147,7 +154,7 @@ class NativeSlatePreviewHost:
                 _digest(document)!=digest or
                 document.get("kind")!="blender" or
                 document.get("task_id")!=row["task_id"]):
-                return False
+                return self._slate_refused("consent_expired_or_spec_mismatch")
             adapter=_adapter_for(row["presentation"])
             script=adapter.BLENDER_SCRIPT
             op=BlenderOperation(**document["operation"])
@@ -158,7 +165,7 @@ class NativeSlatePreviewHost:
                 op.outputs!={OUTPUT_FILE:"png"} or
                 op.arguments!={"--manifest":SOURCE_FILE,"--preview":OUTPUT_FILE} or
                 op.scene is not None or op.gpu_memory_mb!=0):
-                return False
+                return self._slate_refused("sealed_worker_spec_mismatch")
             ticket=self.lazy.select(
                 row["project_id"],row["edit_id"],row["edit_revision"],
                 film_tick=row["film_tick"],quality=row["quality"])
@@ -169,14 +176,14 @@ class NativeSlatePreviewHost:
                 adapter.preview_cache_key(ticket,row["quality"]))
             if (sha(canonical(ticket))!=row["ticket_sha256"] or
                 expected_key!=row["cache_key"]):
-                return False
+                return self._slate_refused("source_ticket_or_cache_identity_mismatch")
             directory=self.supervisor.root/op.job_id
             if (sha_file(directory/SCRIPT_FILE)!=op.script_sha256 or
                 sha_file(directory/SOURCE_FILE)!=row["source_manifest_sha256"]):
-                return False
+                return self._slate_refused("staged_worker_file_hash_mismatch")
             raw=(directory/SOURCE_FILE).read_bytes()
             if len(raw)>128*1024:
-                return False
+                return self._slate_refused("staged_source_exceeded_limit")
             source=json.loads(raw)
             if (source.get("format")!=adapter.FORMAT or
                 source.get("renderer_version")!=adapter.RENDERER_VERSION or
@@ -187,21 +194,22 @@ class NativeSlatePreviewHost:
                 source.get("source_tick")!=ticket["source_tick"] or
                 source.get("cache_key")!=ticket["cache_key"] or
                 (source.get("width"),source.get("height"))!=adapter.DIMENSIONS[row["quality"]]):
-                return False
+                return self._slate_refused("staged_recipe_identity_mismatch")
             if row["presentation"]=="geometry" and (
                 source.get("camera",{}).get("path")!=(
                     row["camera_path"] or source.get("camera",{}).get("path")) or
                 source.get("final_presentation_approved") is not False):
-                return False
+                return self._slate_refused("camera_provenance_mismatch")
             pending=self.cache._job(op.job_id)
             if (pending["state"]!="PENDING" or
                 pending["cache_key"]!=row["cache_key"] or
                 pending["recipe_sha256"]!=row["source_manifest_sha256"]):
-                return False
+                return self._slate_refused("pending_cache_receipt_mismatch")
+            self._last_slate_approval_refusal="verified"
             return True
         except (OSError,KeyError,ValueError,RuntimeError,TypeError,
                 PermissionError,IndexError):
-            return False
+            return self._slate_refused("internal_validation_exception")
 
     def _camera_approval_check(self,approval_id,digest,document):
         """Validate a PRE-TAKE scene, not a counterfeit frozen-Take receipt."""

@@ -153,9 +153,15 @@ class Slate05NativeTests(unittest.TestCase):
         self.lazy=SlateLazyPreview(self.index)
 
     def _request(self,tick=0,quality="thumbnail"):
-        return self.host.request(
-            self.pid,"cut",1,film_tick=tick,quality=quality,
-            creator_event=self.trusted_event)
+        try:
+            return self.host.request(
+                self.pid,"cut",1,film_tick=tick,quality=quality,
+                creator_event=self.trusted_event)
+        except PermissionError as exc:
+            self.fail("Unexpected SLATE-05 approval refusal at trusted "
+                      "host gate: "+str(getattr(
+                          self.host,"_last_slate_approval_refusal","unknown"))+
+                      " ("+type(exc).__name__+")")
 
     def _complete_fixture(self,request):
         """Simulate only a verified worker receipt, never fake a render pass."""

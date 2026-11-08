@@ -110,6 +110,46 @@ class OriginalPBRChannelAcceptance(unittest.TestCase):
         self.assertEqual(old["document_sha256"],original["document_sha256"])
         self.assertNotEqual(later["document_sha256"],original["document_sha256"])
 
+    def test_openpbr_mapped_scalars_preserve_source_values_and_exact_edges(self):
+        # Regression for the older WO4 "MaterialX source scalar changed"
+        # failure: approved metallic/roughness image maps are connected
+        # inputs, never arbitrary injected scalar-network connections.
+        maps={"roughness":self.png((64,64,64)),
+              "metallic":self.png((200,200,200))}
+        self.publish(maps=maps)
+        from backend.nvp_wo2_openpbr import verify_openpbr_texture
+        rec,layer=self.assets.open(self.pid,"pbr_mesh",1)
+        stage=Usd.Stage.Open(layer)
+        path="/Asset/Material"
+        material=UsdShade.Material(stage.GetPrimAtPath(path))
+        descriptor=rec["data"]["preview_material"]["texture"]
+        verify=lambda:verify_openpbr_texture(
+            stage,path,material,descriptor,.5,0.)
+        self.assertTrue(verify()["materialx_image_graph_authored"])
+        shader=UsdShade.Shader(stage.GetPrimAtPath(path+"/OpenPBR"))
+        rough=shader.GetInput("specular_roughness")
+        metal=shader.GetInput("base_metalness")
+        self.assertEqual(
+            str(rough.GetConnectedSource()[0].GetPrim().GetPath()),
+            path+"/MtlxMap_Roughness")
+        self.assertEqual(
+            str(metal.GetConnectedSource()[0].GetPrim().GetPath()),
+            path+"/MtlxMap_Metallic")
+        # A malicious document could wire an existing Float output to the
+        # WRONG input. It must fail instead of accepting any connected map.
+        rough.ConnectToSource(
+            UsdShade.Shader(stage.GetPrimAtPath(
+                path+"/MtlxMap_Metallic")).GetOutput("out"))
+        with self.assertRaises(RuntimeError):
+            verify()
+        rough.ConnectToSource(
+            UsdShade.Shader(stage.GetPrimAtPath(
+                path+"/MtlxMap_Roughness")).GetOutput("out"))
+        self.assertTrue(verify()["materialx_image_graph_authored"])
+        metal.GetAttr().Set(.75)
+        with self.assertRaises(RuntimeError):
+            verify()
+
     def test_hostile_channels_and_untrusted_map_inputs_fail_closed(self):
         png=self.png((128,128,255))
         for bad in (
