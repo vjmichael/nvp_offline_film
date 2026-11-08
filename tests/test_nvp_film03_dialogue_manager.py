@@ -497,6 +497,76 @@ class VoiceIDContinuityMustRemainStable(unittest.TestCase):
                     pid,next_req,sample_count=2000)["original_pcm16le"],
                 audio[:4000])
 
+class NativeActorVoiceAuditionAndConsent(unittest.TestCase):
+    def test_real_native_pcm_audition_and_explicit_recast_consent(self):
+        import base64
+        import io
+        import os
+        import wave
+        from unittest.mock import patch
+        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+
+        class HumanWindow:
+            def __init__(self):
+                self.answers=[]
+                self.prompts=[]
+            def get_current_url(self):
+                return "http://127.0.0.1:43231/"
+            def create_confirmation_dialog(self,title,message):
+                self.prompts.append((title,message))
+                return self.answers.pop(0) if self.answers else False
+
+        with TemporaryDirectory() as d:
+            s=construct_real_original_dialogue(Path(d).resolve(),recorded_voice=True)
+            pid=s["pid"]; aid=s["people"]["DONUT"]
+            with patch.dict(os.environ,{"NVP_HOME":str(Path(d)/"native-home")}):
+                bridge=TrustedDesktopWO6Bridge(
+                    s["index"],origin="http://127.0.0.1:43231",
+                    host_factory=lambda *_: None)
+                self.addCleanup(bridge._close)
+                win=HumanWindow()
+                bridge._attach_window(win)
+                preview=bridge.film03_audition_original_voice({
+                    "project_id":pid,
+                    "source_audio_id":"DonutSourceVoiceFixture",
+                    "source_audio_revision":1,
+                    "first_sample":0,"sample_count":2000})
+                self.assertEqual(preview["source_audio_sha256"],
+                                 s["audio"]["document_sha256"])
+                self.assertTrue(preview["original_recording_not_tts"])
+                with wave.open(io.BytesIO(base64.b64decode(
+                        preview["wav_data_base64"])),"rb") as wav:
+                    self.assertEqual(wav.getframerate(),48000)
+                    self.assertEqual(wav.getnchannels(),1)
+                    self.assertEqual(wav.readframes(2000),
+                                     s["original_pcm"][:4000])
+                with self.assertRaises(ValueError):
+                    bridge.film03_audition_original_voice({
+                        "project_id":pid,"source_audio_id":"DonutSourceVoiceFixture",
+                        "source_audio_revision":1,"first_sample":0,
+                        "sample_count":144001})
+                proposal={
+                    "project_id":pid,"actor_id":aid,
+                    "performance_id":"DonutAuthoredOriginalLine",
+                    "voice_id":"Voice_Donut_Original",
+                    "expected_cast_revision":1,
+                    "expected_approval_revision":1,
+                    "reference_audio_sha256":s["audio"]["document_sha256"],
+                    "director_comparison_note":
+                        "I compared original voice reference to actual source Take",
+                }
+                with self.assertRaises(PermissionError):
+                    bridge.film03_approve_actor_voice_take(proposal)
+                self.assertTrue(any("Voice_Donut_Original" in message
+                                    for title,message in win.prompts))
+                win.answers=[True]
+                accepted=bridge.film03_approve_actor_voice_take(proposal)
+                self.assertEqual(accepted["approval_revision"],2)
+                self.assertTrue(accepted["host_native_director_confirmation"])
+                self.assertFalse(accepted["audio_voice_model_invoked"])
+                self.assertTrue(ActorDialogueManager(s["index"]).route(
+                    pid,s["request"])["playable_recorded_voice_available"])
+
 class ActorDialogueFailuresMustRemainNonDestructive(unittest.TestCase):
     def test_no_fake_audio_from_metadata_only_actor_performance(self):
         with TemporaryDirectory() as d:
