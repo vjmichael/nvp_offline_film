@@ -705,11 +705,17 @@ def main(argv=None):
                         help="Verify all actual published DCP frames and sound play in visible installed WebView2")
     parser.add_argument("--smoke-wo6-native-actions",action="store_true",
                         help="Installed first-party WO6 native child/FilmIndex source-only acceptance")
+    parser.add_argument("--smoke-wo6-real-gguf",action="store_true",
+                        help="Explicit disposable real GGUF, original OpenUSD Take and model response acceptance")
+    parser.add_argument("--gguf-path",default=None)
+    parser.add_argument("--llama-server-path",default=None)
+    parser.add_argument("--gguf-report",default=None)
+    parser.add_argument("--gguf-test-consent",default=None)
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_data_av,
             args.smoke_finished_playback,args.smoke_visible_finished_av,
-            args.smoke_wo6_native_actions))>1:
+            args.smoke_wo6_native_actions,args.smoke_wo6_real_gguf))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
@@ -729,6 +735,19 @@ def main(argv=None):
         evidence=run_wo6_installed_native_smoke()
         if evidence.get("status")!="INSTALLED_NATIVE_WORKER_SOURCES_VERIFIED_NO_FILM":
             raise RuntimeError("Installed WO6 native source operations were not verified")
+        return 0
+    if args.smoke_wo6_real_gguf:
+        if (not args.gguf_path or not args.llama_server_path or
+                args.gguf_test_consent!="I_APPROVE_DISPOSABLE_LOCAL_GGUF_TEST"):
+            raise PermissionError(
+                "Explicit GGUF, llama-server and disposable model-test consent required")
+        from tools.nvp_wo6_07b_real_gguf_smoke import run_real_gguf_acceptance
+        measured=run_real_gguf_acceptance(
+            model_path=args.gguf_path,server_path=args.llama_server_path,
+            report_path=args.gguf_report,consent=args.gguf_test_consent)
+        if (measured["status"]!="LOCAL_GGUF_COMPLETION_OBSERVED" or
+                measured["human_director_reviewed"] is not False):
+            raise RuntimeError("Native model test did not complete")
         return 0
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
@@ -766,7 +785,7 @@ if __name__=="__main__":
     smoke=any(flag in sys.argv for flag in (
         "--smoke","--smoke-create","--smoke-reopen",
         "--smoke-window","--smoke-data-av","--smoke-finished-playback",
-        "--smoke-visible-finished-av"))
+        "--smoke-visible-finished-av","--smoke-wo6-real-gguf"))
     if smoke:
         report=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
         if report:
