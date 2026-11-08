@@ -109,6 +109,9 @@ class NativeSceneSoundCapture:
                     "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
                 }:
                     raise ValueError("Recorded sound requires typed source/evidence/Film Time")
+                # Snapshot caller-owned event metadata before advancing a streaming
+                # PCM iterator, which may execute callbacks that mutate its dict.
+                entry=dict(entry)
                 eid=_id(entry["event_id"],"recorded sound event")
                 sid=_id(entry["source_id"],"original audio source")
                 if (eid==sid or eid in event_ids or eid in camera_ids or eid in ids or
