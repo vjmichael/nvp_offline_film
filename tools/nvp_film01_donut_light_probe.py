@@ -205,8 +205,8 @@ def render_donut_four_looks(source):
     if (results[1]["real_image_png_sha256"]==
             results[2]["real_image_png_sha256"]):
         raise RuntimeError("Silver/gold donut lighting rendered identically")
-    if comparisons[2]["real_RGB_mean_delta_8bit"][0]<=(
-            comparisons[2]["real_RGB_mean_delta_8bit"][2]):
+    if comparisons[1]["real_RGB_mean_delta_8bit"][0]<=(
+            comparisons[1]["real_RGB_mean_delta_8bit"][2]):
         raise RuntimeError("Gold fill failed to create warmer donut image")
     before=idx.read_revision(pid,"DonutLightingTake",1)
     if before["document_sha256"]!=source["take_sha256"]:
@@ -251,7 +251,7 @@ def export_donut_lighting_contact(source,output_dir):
         "neutral_vs_virtual_shader_pixel_deltas":comparisons,
         "four_way_visual_comparison_png_sha256":hashlib.sha256(
             sheet.read_bytes()).hexdigest(),
-        "display_shading_unclalibrated":True,
+        "display_shading_uncalibrated":True,
         "face_normals_flat_not_smooth_vertex_normals":True,
         "no_true_occlusion_shadows_or_global_illumination":True,
         "no_authorized_film_release_or_DCI_master":True,
