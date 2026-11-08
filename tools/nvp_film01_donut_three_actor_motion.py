@@ -28,6 +28,8 @@ from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 from tools.nvp_film01_donut_light_probe import (
     build_frozen_donut_source,DONUT_PATH,BOX_PATH,SPHERE_PATH,BOX_DEPTH,
     SPHERE_RADIUS)
+from tools.nvp_film01_donut_light_path_reference import (
+    reference_real_original_light_paths)
 
 FORMAT="nvp.film01.donut_box_behind_sphere_through_real_hole.v1"
 FPS=24
@@ -187,6 +189,14 @@ def export_three_actor_picture_probe(source,output,*,full_72_frames=False):
         (dest/f"donut_actors_key_{frame:03d}.png").write_bytes(png)
     sheet=dest/"donut_box_sphere_real_NVP_6_moments.png"
     contact.save(sheet,format="PNG")
+    geometric_light_paths=reference_real_original_light_paths(source)
+    if (geometric_light_paths[
+            "physically_expected_shadowed_sample_count"]<1 or
+            geometric_light_paths[
+            "physically_expected_unshadowed_sample_count"]<1 or
+            geometric_light_paths[
+            "ideal_camera_mirror_rays_that_hit_original_box"]<1):
+        raise RuntimeError("No source-grounded shadow/reflection lighting stress case")
     result={
         "format":FORMAT,
         "original_source_take_sha256":source["take_sha256"],
@@ -203,6 +213,8 @@ def export_three_actor_picture_probe(source,output,*,full_72_frames=False):
         "genuine_six_moment_contact_sha256":sha256(sheet.read_bytes()).hexdigest(),
         "real_interobject_cast_shadows_computed":False,
         "real_interobject_reflections_computed":False,
+        "source_geometric_lighting_expected_paths":geometric_light_paths,
+        "shadow_and_reflection_renderer_gates_still_open":True,
         "native_depth_occlusion_computed":True,
         "object_interpenetration_not_shown_by_silhouette_alone":True,
         "native_preview_only_not_DCI":True,
