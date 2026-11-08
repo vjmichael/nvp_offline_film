@@ -35,6 +35,15 @@ from backend.nvp_film01_donut_actor import original_donut_mesh
 
 FORMAT="nvp.film01.real_source_donut_actor_four_lights.v1"
 DONUT_PATH="/World/DonutActor"
+BOX_PATH="/World/BoxActor"
+SPHERE_PATH="/World/SphereActor"
+# Real torus inner radius .63m; sphere .30m radius has .33m clearance
+# through the torus tube, even while the torus is slowly bobbing.
+BOX_DEPTH=-2.2
+SPHERE_RADIUS=.30
+STORY_TICKS=(0, TICKS_PER_SECOND//2, TICKS_PER_SECOND,
+             3*TICKS_PER_SECOND//2, 2*TICKS_PER_SECOND,
+             5*TICKS_PER_SECOND//2)
 FILENAME="donut_actor_real_NVP_4_lighting_looks.png"
 SELECTED_TICK=TICKS_PER_SECOND
 LOOKS=("neutral","silver_fill","gold_fill","locked_summer_3pm_sun")
@@ -62,22 +71,54 @@ def build_frozen_donut_source(workspace):
             "base_color_rgb":[.78,.63,.47],
             "roughness":.26,
             "metallic":.08})
+    # These are THREE genuine source actors. The box crosses behind
+    # the torus while the smaller sphere travels *through its open hole*
+    # along its actual Z axis (toward the native camera at +Z).
+    assets=OpenUSDAssetRegistry(index)
+    box_asset=assets.publish(
+        pid,"BoxActorMesh",shape="cube",size_m=.8,
+        preview_material={"base_color_rgb":[.14,.78,.31],
+                          "roughness":.46,"metallic":.18})
+    sphere_asset=assets.publish(
+        pid,"SphereActorMesh",shape="sphere",size_m=2*SPHERE_RADIUS,
+        preview_material={"base_color_rgb":[.25,.42,.94],
+                          "roughness":.22,"metallic":.26})
     prims=[
         {"path":DONUT_PATH,"role":"actor","position":[0.,0.,0.]},
+        {"path":BOX_PATH,"role":"actor","position":[-2.4,0.,BOX_DEPTH]},
+        {"path":SPHERE_PATH,"role":"actor","position":[0.,0.,-4.]},
         {"path":"/World/Camera","role":"camera","position":[0.,0.,9.]},
         {"path":"/World/KeyLight","role":"light","position":[2.8,3.,5.0]},
     ]
-    # The object is an actor with authored motion, not an ordinary
-    # passive prop. It bobs at a middle checkpoint while retaining
-    # its torus topology and original frozen mesh.
-    curves=[{"path":DONUT_PATH,"samples":[
-        {"tick":0,"position":[0.,0.,0.]},
-        {"tick":SELECTED_TICK,"position":[0.,0.,.12]},
-        {"tick":2*TICKS_PER_SECOND,"position":[0.,0.,0.]}]}]
+    # Box: -X -> 0 -> +X strictly behind donut; sphere: -Z -> +Z
+    # passes the ring without intersecting it. Source motion is in the
+    # original immutable USD layer, not screen-space frame invention.
+    curves=[
+        {"path":DONUT_PATH,"samples":[
+            {"tick":0,"position":[0.,0.,0.]},
+            {"tick":SELECTED_TICK,"position":[0.,0.,.12]},
+            {"tick":2*TICKS_PER_SECOND,"position":[0.,0.,0.]},
+            {"tick":3*TICKS_PER_SECOND,"position":[0.,0.,0.]}]},
+        {"path":BOX_PATH,"samples":[
+            {"tick":0,"position":[-2.4,0.,BOX_DEPTH]},
+            {"tick":SELECTED_TICK,"position":[0.,0.,BOX_DEPTH]},
+            {"tick":2*TICKS_PER_SECOND,"position":[2.4,0.,BOX_DEPTH]},
+            {"tick":3*TICKS_PER_SECOND,"position":[2.8,0.,BOX_DEPTH]}]},
+        {"path":SPHERE_PATH,"samples":[
+            {"tick":0,"position":[0.,0.,-4.]},
+            {"tick":SELECTED_TICK,"position":[0.,0.,-3.7]},
+            {"tick":3*TICKS_PER_SECOND//2,"position":[0.,0.,-1.]},
+            {"tick":2*TICKS_PER_SECOND,"position":[0.,0.,.1]},
+            {"tick":5*TICKS_PER_SECOND//2,"position":[0.,0.,1.45]},
+            {"tick":3*TICKS_PER_SECOND,"position":[0.,0.,2.2]}]},
+    ]
     scene=OpenUSDSceneBridge(index).publish(
         pid,"DonutLightingScene",prims=prims,curves=curves,
-        asset_bindings=[{"path":DONUT_PATH,"asset_id":"DonutMesh",
-                         "asset_revision":1}],
+        asset_bindings=[
+            {"path":DONUT_PATH,"asset_id":"DonutMesh","asset_revision":1},
+            {"path":BOX_PATH,"asset_id":"BoxActorMesh","asset_revision":1},
+            {"path":SPHERE_PATH,"asset_id":"SphereActorMesh","asset_revision":1},
+        ],
         native_schemas=True)
     duration=3*TICKS_PER_SECOND
     timeline=TemporalLedger(index).publish(
@@ -88,6 +129,18 @@ def build_frozen_donut_source(workspace):
              "source_revision":1,
              "payload":{"usd_prim_path":DONUT_PATH,
                         "actor_is_a_real_object":True}},
+            {"event_id":"BoxCrossesBehindDonut","event_kind":"action",
+             "subject_id":"BoxActor","start_tick":0,
+             "end_tick":duration,"source_id":"DonutLightingScene",
+             "source_revision":1,
+             "payload":{"usd_prim_path":BOX_PATH,
+                        "blocking":"torus ring in depth"}},
+            {"event_id":"SpherePassesThroughHole","event_kind":"action",
+             "subject_id":"SphereActor","start_tick":0,
+             "end_tick":duration,"source_id":"DonutLightingScene",
+             "source_revision":1,
+             "payload":{"usd_prim_path":SPHERE_PATH,
+                        "true_hole_passage":True}},
             {"event_id":"DonutCamera","event_kind":"camera",
              "subject_id":"DirectorCamera","start_tick":0,
              "end_tick":duration,"source_id":"DonutLightingScene",
@@ -103,7 +156,8 @@ def build_frozen_donut_source(workspace):
         pid,"DonutLightingTake",scene_id="DonutLightingScene",
         scene_revision=1,timeline_id="DonutLightingTimeline",
         timeline_revision=1,
-        sample_ticks=[0,SELECTED_TICK,2*TICKS_PER_SECOND],
+        sample_ticks=[0,SELECTED_TICK,2*TICKS_PER_SECOND,
+                      5*TICKS_PER_SECOND//2],
         creator_event="CI_ONLY_DONUT_TEST_CAPTURE")
     if capture.verify_take(pid,"DonutLightingTake")[
             "status"]!="VERIFIED_FROZEN_DATA_TAKE":
@@ -113,7 +167,13 @@ def build_frozen_donut_source(workspace):
         "take_sha256":frozen["document_sha256"],
         "scene_sha256":scene["document_sha256"],
         "mesh_asset_sha256":asset["document_sha256"],
+        "box_source_asset_sha256":box_asset["document_sha256"],
+        "sphere_source_asset_sha256":sphere_asset["document_sha256"],
         "torus_source_mesh_sha256":donut["mesh_sha256"],
+        "sphere_radius_m":SPHERE_RADIUS,
+        "sphere_clearance_from_hole_m":round(
+            donut["hole_radius"]-SPHERE_RADIUS,6),
+        "all_three_actors_authoritatively_animated":True,
         "geometry":donut,
     }
 
