@@ -37,6 +37,32 @@ class WO2IndependentHydraGate(unittest.TestCase):
                         self.index,self.pid,"hydra_scene",1,
                         camera_path="/World/Camera")
 
+    def test_independent_renderer_symlink_output_is_not_a_render_receipt(self):
+        import os
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        if os.name=="nt":
+            self.skipTest("Windows symlink privileges vary across native runners")
+        with TemporaryDirectory() as tmp:
+            tool=Path(tmp)/"usdrecord"
+            tool.write_bytes(b"native exact executable")
+            outside=Path(tmp)/"untrusted.png"
+            outside.write_bytes(b"not a source-confirmed renderer output")
+            def unexpected_symlink(args,**kwargs):
+                Path(args[-1]).symlink_to(outside)
+                return SimpleNamespace(returncode=0,stderr="")
+            with patch("backend.nvp_wo2_hydra_probe.shutil.which",
+                       return_value=str(tool)),patch(
+                       "backend.nvp_wo2_hydra_probe.subprocess.run",
+                       side_effect=unexpected_symlink):
+                result=capture_hydra_evidence(
+                    self.index,self.pid,"hydra_scene",1,
+                    camera_path="/World/Camera")
+        self.assertEqual(result["status"],"HYDRA_RENDER_FAILED")
+        self.assertFalse(result["real_independent_frame_rendered"])
+        self.assertTrue(result["untrusted_or_missing_output"])
+
     def test_untrusted_renderer_failure_omits_private_worker_stderr(self):
         from pathlib import Path
         from tempfile import TemporaryDirectory
