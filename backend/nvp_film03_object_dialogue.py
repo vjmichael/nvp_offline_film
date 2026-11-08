@@ -139,6 +139,106 @@ def _script_scenes(script, script_id, revision, old=None):
     return new_scenes, changes
 
 
+def read_scene_dialogue_selection(index, pid, selection_id, revision, *,
+                                  tick, expected_take_id=None):
+    """Read an EXACT selected script/actor performance for NVP's AI scene crew.
+
+    This read does not initialize StoryBible tables or change old recordings,
+    Takes, scripts, editorial selections or approvals. A newer screenplay is
+    explicitly reported as drift; NVP never silently switches dialogue.
+    """
+    if not isinstance(index, FilmIndex):
+        raise TypeError("Trusted existing film source index required")
+    _require_pid(pid)
+    _id(selection_id, "selected object-actor dialogue")
+    _int(tick, "Film Time")
+    if type(revision) is not int or revision < 1:
+        raise ValueError("Exact scene dialogue selection revision required")
+    selected = index.read_revision(pid, selection_id, revision)
+    doc = selected["data"]
+    if selected["kind"] != "presentation" or doc.get("format") != SELECTION_FORMAT:
+        raise PermissionError("Not an immutable creator-selected FILM03 dialogue source")
+    if expected_take_id is not None and doc["source_take_id"] != expected_take_id:
+        raise PermissionError("Dialogue selection belongs to a different frozen Take")
+    take = index.read_revision(pid, doc["source_take_id"], 1)
+    if (take["document_sha256"] != doc["source_take_sha256"] or
+            tick >= take["data"]["duration_tick"]):
+        raise PermissionError("Selected dialogue does not match frozen source Film Time")
+    script = index.read_revision(pid, doc["script_id"], doc["script_revision"])
+    if (script["document_sha256"] != doc["script_document_sha256"] or
+            script["kind"] != "dialogue" or
+            script["data"].get("format") != SCRIPT_FORMAT):
+        raise PermissionError("Screenplay selection source SHA no longer resolves")
+    timeline = TemporalLedger(index)
+    timeline_record = timeline._revision(
+        pid, doc["overlay_timeline_id"], doc["overlay_timeline_revision"])
+    if (timeline_record["document_sha256"] != doc["overlay_timeline_sha256"] or
+            timeline.verify(pid, doc["overlay_timeline_id"],
+                            doc["overlay_timeline_revision"])["document_sha256"]
+                            != doc["overlay_timeline_sha256"]):
+        raise PermissionError("Selected scene dialogue event manifest changed")
+    with index.studio._connection() as db:
+        project = db.execute(
+            "SELECT revision,screenplay FROM projects WHERE id=?", (pid,)
+        ).fetchone()
+    if project is None:
+        raise KeyError("Film project no longer exists")
+    active = []
+    for item in doc["selected"]:
+        perf = index.read_revision(pid, item["performance_id"], 1)
+        if (perf["kind"] != "performance" or
+                perf["document_sha256"] != item["source_performance_sha256"] or
+                perf["data"].get("format") != PERFORMANCE_FORMAT or
+                perf["data"]["source_take_sha256"] != doc["source_take_sha256"] or
+                perf["data"]["script_line_id"] != item["script_line_id"]):
+            raise PermissionError("Selected original performance SHA is inconsistent")
+        data = perf["data"]
+        if data["first_tick"] <= tick < data["end_tick"]:
+            active.append({
+                "performance_id": item["performance_id"],
+                "performance_document_sha256": perf["document_sha256"],
+                "script_line_id": data["script_line_id"],
+                "original_spoken_text": data["script_line_text"],
+                "screenplay_speaker": data["screenplay_speaker"],
+                "source_script_revision": data["script_revision"],
+                "selected_script_revision": doc["script_revision"],
+                "openusd_actor_prim_path": data["openusd_actor_prim_path"],
+                "production_bible_entity_id": data["production_bible"]["entity_id"],
+                "production_bible_revision_at_capture": data["production_bible"]["entity_revision"],
+                "voice_source_recorded": data["recorded_dialogue_present"],
+                "voice_synthesis_or_final_mix_claimed": False,
+                "source_line_still_matches_selected_script": item[
+                    "matches_selected_script_text"],
+                "director_explicitly_retained_old_delivery":
+                    item["performance_id"] in doc["retained_earlier_performances"],
+                "start_tick": data["first_tick"], "end_tick": data["end_tick"],
+            })
+    # The latest screenplay can differ from this valid historical selection.
+    changed = (project["revision"] != script["data"]["screenplay_revision"] or
+               sha256(project["screenplay"].encode("utf8")).hexdigest() !=
+               script["data"]["screenplay_sha256"])
+    return {
+        "format": "nvp.film03.readonly_exact_scene_dialogue_context.v1",
+        "selection_id": selection_id, "selection_revision": revision,
+        "selection_document_sha256": selected["document_sha256"],
+        "selected_script_object_id": doc["script_id"],
+        "selected_script_revision": doc["script_revision"],
+        "screenplay_revision_at_script_capture": script["data"]["screenplay_revision"],
+        "current_screenplay_revision": project["revision"],
+        "script_changed_since_selected_dialogue": changed,
+        "source_take_id": doc["source_take_id"],
+        "source_take_sha256": doc["source_take_sha256"],
+        "selected_overlay_timeline_sha256": doc["overlay_timeline_sha256"],
+        "film_time_tick": tick,
+        "active_object_actor_lines": active,
+        "other_selected_performance_count": len(doc["selected"]) - len(active),
+        "prior_creative_work_preserved": True,
+        "automatic_new_dialogue_recording": False,
+        "recorded_voice_does_not_imply_playback_or_master": True,
+        "effect": "read", "source_mutated": False,
+    }
+
+
 class ObjectActorDialogue:
     def __init__(self, index: FilmIndex, *, verify_creator_action):
         if not isinstance(index, FilmIndex) or not callable(verify_creator_action):
