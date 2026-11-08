@@ -74,6 +74,7 @@ class NativeSoundAndSlateFilmTime(unittest.TestCase):
             "source_revision":1,"source_sha256":sha,
             "payload":payload,
             "duration_tick":str(3*T) if kind=="sound_cue" else None,
+            "director_reason":"I independently chose this original source sound or editorial arrangement.",
         }
         proof=preview_typed_decision(self.index,typed)
         impact=preview_source_impact(
@@ -86,7 +87,8 @@ class NativeSoundAndSlateFilmTime(unittest.TestCase):
             "creator_decision_id":"creator_clicked_yes",
             **{k:typed[k] for k in (
                 "decision_kind","decision_id","source_id",
-                "source_revision","source_sha256","payload","duration_tick")},
+                "source_revision","source_sha256","payload","duration_tick",
+                "director_reason")},
             "expected_preview_sha256":impact["preview_sha256"],
             "expected_typed_preview_sha256":proof["typed_preview_sha256"],
         }
