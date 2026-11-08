@@ -396,3 +396,33 @@ six data-authoring classes, guaranteed process-tree shutdown on installed
 Linux cgroup host, 60–90min feature and >=3hr epic, and independent SMPTE
 Bv2.1 projection/server ingest. All are still OPEN until real evidence
 has been collected. CI queued/pending or cancelled runs are not passes.
+
+## WO6 creator desktop nonblocking native execution follow-up — 2026-11-07
+
+WO6 PR #93 no longer blocks the director's WebView2 authoring request
+for an entire contained OpenUSD/FilmIndex worker. After both independent
+native OS creative-scope and exact SHA-bound worker confirmations,
+`TrustedDesktopWO6Bridge` persists the approved QUEUED task and sends
+it to a **per-native-operation-family serialized, host-owned dispatcher**.
+The GUI receives a truthful `QUEUED` receipt immediately; success is
+only established by reopening `WO6DurableRecovery.status()` and its
+actual TaskLedger and verified immutable worker outputs. No browser
+permission, model-generated execute flag, or fabricated success exists.
+A crashed process is **not automatically replayed**. An unadmitted task
+may remain queued until a later explicit host trigger; no claim of a
+general background auto-resume scheduler is made.
+
+`tests/test_nvp_wo6_desktop_bridge.py` now includes a real blocked-worker
+regression proving the native call returns without waiting for the worker,
+plus checks that queued requests cannot be labelled completed film.
+The React workflow's missing npm lockfile cache/`npm ci` setup was
+repaired in earlier commit `aa1012b5`.
+
+WO6 includes WO5's new **one-second verified original PCM24 reel
+region cache** and corrected installed codec diagnostics in its stacked
+merge. New source changes require fresh exact-head Linux/Windows
+Python 3.11/3.13 native runs, actual installed NSIS worker proof and
+real visible WebView2 operations before WO6-05/06/07 acceptance can close.
+The 30-minute original, final DCP creative approval, measured 24fps,
+independent projector/speaker compliance and model-in-loop director
+orchestration are explicitly **OPEN**.

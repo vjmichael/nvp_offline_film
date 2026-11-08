@@ -1140,3 +1140,33 @@ six data-authoring classes, guaranteed process-tree shutdown on installed
 Linux cgroup host, 60–90min feature and >=3hr epic, and independent SMPTE
 Bv2.1 projection/server ingest. All are still OPEN until real evidence
 has been collected. CI queued/pending or cancelled runs are not passes.
+
+## 2026-11-07 — WO5 / WO6 native-gate follow-up
+
+- **Native CI result check:** latest exact-head WO6 multi-platform jobs
+  and WO5 real installed picture/sound jobs were queued or pending,
+  and earlier superseded runs were cancelled. **No newly accepted
+  pass/fail native execution evidence; no acceptance gate closed.**
+- **WO5 submitted:** production `FinishedFilmPlayer` now uses an at-most
+  24-frame/one-second session-and-reel scoped cache of genuinely
+  unwrapped DCP PCM24 for adjacent frame windows, with exact original
+  2,000-sample sound slices. Every JPEG2000 picture remains separately
+  verified/decoded; cross-reel seek and stop invalidate sample reuse.
+  A regression checks wrapper call counts and original pixel counts.
+  Installed-codec fsync diagnostics now contain real line boundaries.
+- **WO6 submitted:** two independent native OS approvals remain enforced;
+  source mutations now return a **QUEUED** receipt without synchronously
+  blocking the director's WebView2 IPC while a serialized trusted-host
+  dispatcher invokes the original OS-contained native worker. A new
+  regression blocks its child and checks prompt responsiveness. Task
+  status is still the only authority for SUCCEEDED/INTERRUPTED.
+- **Stacking:** PR #93 merged the updated WO5 parent into its WO6
+  branch, retaining the WO6-specific native operations, workflows and
+  the latest WO5 product playback improvements.
+- **Still open:** exact-head Windows/Linux tests; installed Windows
+  native six-operation worker acceptance; real visible continuous
+  720-frame/WebAudio proof and independent >=24fps codec result;
+  native cancellation/crash-boundary proof; authentic original 30m
+  picture+sound+director review; 60–90min and >=3h features; external
+  theatrical validation. CI setup repair or source-only code review
+  must never be counted as accepted native evidence.
