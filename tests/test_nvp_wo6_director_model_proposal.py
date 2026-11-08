@@ -108,6 +108,23 @@ class RealUSDSourceModelProposals(unittest.TestCase):
         self.assertTrue(result["historical_take_not_current_scene"])
         self.assertFalse(result["native_worker_authorized"])
 
+    def test_inference_refuses_source_revision_race_before_showing_advice(self):
+        # Model completion runs while a legitimate creator publishes a new
+        # revision. Original Take remains historically valid, but its
+        # "current scene" context has changed during generation.
+        test=self
+        class ConcurrentCreatorEdit:
+            def complete(self,_system,_user):
+                OpenUSDSceneBridge(test.index).publish(
+                    test.pid,"OriginalScene",prims=test.actor_scene,
+                    curves=[],native_schemas=True,expected_revision=1)
+                return "Suggested new camera angle"
+        with self.assertRaisesRegex(RuntimeError,"changed during local inference"):
+            self.suggest(ConcurrentCreatorEdit())
+        self.assertEqual(
+            self.index.read_revision(self.pid,"OriginalTake",1)[
+                "document_sha256"],self.sha)
+
     def test_host_dispatch_nonblocking_and_restart_drops_draft(self):
         with patch.dict(os.environ,{"NVP_HOME":str(self.root/"nativehome")}):
             entered=threading.Event()
