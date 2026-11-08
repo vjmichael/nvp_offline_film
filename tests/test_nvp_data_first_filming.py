@@ -111,6 +111,29 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"FilmingSoundTimeline",1)
 
+    def test_second_invalid_recording_does_not_publish_first_pcm(self):
+        req=self.payload()
+        second=dict(req["recordings"][0])
+        second.update(event_id="Speech002",source_id="SecondSpeech",
+                      end_tick=4*T)
+        req["recordings"].append(second)
+        with self.assertRaisesRegex(ValueError,"invalid timing/gain"):
+            self.capture.capture(**req)
+        for identity in ("NewRecordedSpeech","SecondSpeech","FilmingSoundTimeline"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+
+    def test_camera_event_collision_preflight_does_not_publish_pcm(self):
+        req=self.payload()
+        camera_event=ExactTimeShotSequence(self.index).timeline.events_in(
+            self.pid,"FilmingCameraTimeline",1,start_tick=0,end_tick=3*T,
+            limit=10)["events"][0]["event_id"]
+        req["recordings"][0]["event_id"]=camera_event
+        with self.assertRaisesRegex(ValueError,"Duplicate or reserved"):
+            self.capture.capture(**req)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"NewRecordedSpeech",1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
