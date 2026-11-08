@@ -1,0 +1,177 @@
+name: NVP USD-FILM-00 Real OpenUSD / Blender Capability Inventory (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/usd-film00-native-capability-audit-20261108]
+  pull_request:
+    branches: [nvp/usd-world-full-film-integration-roadmap-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-usd-film00-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-native-usd:
+    name: OpenUSD core author/read, payload, variant and schema / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine pinned OpenUSD core (no mock pxr)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Compile probe, tests and native NVP adapters
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q tools/nvp_usd_film00_probe.py tools/nvp_usd_film00_blender_probe.py tests/test_nvp_usd_film00_capabilities.py backend/nvp_openusd_scene.py backend/nvp_openusd_skeleton.py backend/nvp_openusd_skinning.py backend/nvp_openusd_native_schemas.py
+      - name: Execute real native schema and authored-USD roundtrips
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p usd-film00-evidence
+          python tools/nvp_usd_film00_probe.py --output usd-film00-evidence/native.json --fixture usd-film00-evidence/blender_source.usda
+          python -m unittest discover -s tests -p "test_nvp_usd_film00_capabilities.py" -v
+          python - <<'PY'
+          import json
+          d=json.load(open("usd-film00-evidence/native.json"))
+          assert d["required_source_baseline_passed"] is True
+          assert d["photorealism_verified"] is False
+          assert d["renderer_verified"] is False
+          assert d["nvp_source_indexed_asset_resolver_verified"] is False
+          for v in d["features"].values():
+              assert v["status"] in ("PASS","NOT_AVAILABLE","FAIL")
+          print("NVP USD-FILM-00 real source author/read evidence; optical/renderer acceptance still open")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-usd-film00-native-${{ matrix.os }}-py${{ matrix.python }}-UNREVIEWED
+          path: usd-film00-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+  real-blender-usd-roundtrip:
+    name: Genuine Blender 5.2.3 USD Mesh/Camera/Light import-export and independent usd-core reopen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD and native Blender windowless dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Fetch official Blender and verify release-published SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Generate genuine source USD Mesh/Camera/Light stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p usd-film00-evidence
+          python tools/nvp_usd_film00_probe.py --output usd-film00-evidence/native.json --fixture usd-film00-evidence/blender_source.usda
+      - name: Execute actual Blender USD import and export operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a "$RUNNER_TEMP/blender/blender" -b --factory-startup \
+            --python-exit-code 74 --python tools/nvp_usd_film00_blender_probe.py -- \
+            --source "$PWD/usd-film00-evidence/blender_source.usda" \
+            --export "$PWD/usd-film00-evidence/blender_roundtrip.usda" \
+            --report "$PWD/usd-film00-evidence/blender_operator.json"
+      - name: Independently reopen real Blender output in separate usd-core interpreter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/nvp_usd_film00_probe.py \
+            --verify-blender usd-film00-evidence/blender_operator.json \
+            --blender-export usd-film00-evidence/blender_roundtrip.usda \
+            --output usd-film00-evidence/blender_independent.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("usd-film00-evidence")
+          a=json.loads((p/"blender_operator.json").read_text())
+          b=json.loads((p/"blender_independent.json").read_text())
+          assert a["import_export_returned_success"]
+          assert b["status"]=="PASS_BLENDER_EXPORT_NATIVE_REOPEN"
+          assert not b["renderer_pixels_verified"] and not b["artist_photorealism_verified"]
+          assert b["actual_exported_meshes"]>=1
+          assert b["actual_exported_cameras"]>=1
+          assert b["actual_exported_lights"]>=1
+          print("Native Blender USD mesh/light/camera import/export: verified; shading/Skel/film render: open")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-usd-film00-REAL-BLENDER-USD-ROUNDTRIP-NOT-RENDERED
+          path: usd-film00-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+  actual-nvp-adapter-regressions:
+    name: EXISTING NVP FilmIndex/Take/Skel/MaterialX native adapter tests / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real existing NVP native source dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+          python -m pip install httpx
+      - name: Execute all existing first-party OpenUSD/Skel/MaterialX adapter regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p usd-film00-evidence
+          python -m compileall -q tools/nvp_usd_film00_adapter_smoke.py
+          python tools/nvp_usd_film00_adapter_smoke.py \
+            --output usd-film00-evidence/existing_nvp_adapter_matrix.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-usd-film00-existing-adapters-${{ matrix.os }}-UNREVIEWED
+          path: usd-film00-evidence/
+          if-no-files-found: warn
+          retention-days: 14
