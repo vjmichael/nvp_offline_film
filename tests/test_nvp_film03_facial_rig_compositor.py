@@ -44,6 +44,7 @@ class RealActorFacialRigAcceptance(fixture.RealCharacterAndLens):
             {"name": "Inactive",
              "offsets": offsets(n, 1, [0., 0., 0.])},
         ]
+        self.source_rig = deepcopy(rig)
         for t, key in enumerate(rig["samples"]):
             key["face_weights"] = {
                 "MouthClosed": 0., "MouthOpen": 0.,
@@ -105,6 +106,9 @@ class RealActorFacialRigAcceptance(fixture.RealCharacterAndLens):
             "MouthClosed", "MouthOpen", "Sad", "Smile", "Inactive"])
         self.assertEqual(set(rig["nonzero_offset_shapes"]),
                          {"MouthClosed", "MouthOpen", "Sad", "Smile"})
+        self.assertEqual(rig["shape_deformed_vertices"]["MouthClosed"], [4])
+        self.assertEqual(rig["shape_deformed_vertices"]["Smile"], [7])
+        self.assertEqual(rig["shape_deformed_vertices"]["Inactive"], [])
         self.assertEqual(rig["source_scene_sha256"],
                          self.index.read_revision(
                              self.pid, "real_face_scene", 1)["document_sha256"])
@@ -188,6 +192,49 @@ class RealActorFacialRigAcceptance(fixture.RealCharacterAndLens):
             with self.subTest(case=case), self.assertRaises(
                 (ValueError, PermissionError)):
                 self.compile(**case)
+
+    def test_actual_shared_mesh_vertices_require_corrective_face_rig(self):
+        overlap = deepcopy(self.source_rig)
+        smile = overlap["skin"]["blend_shapes"][3]["offsets"]
+        smile[7] = [0., 0., 0.]
+        smile[4] = [0., 0., 0.23]
+        for t, key in enumerate(overlap["samples"]):
+            key["face_weights"] = {
+                "MouthClosed": 0., "MouthOpen": 0.,
+                "Sad": 0., "Smile": 0.3 + t * 0.1, "Inactive": 0.,
+            }
+        self.scene.publish(
+            self.pid, "overlap_face_scene",
+            prims=[
+                {"path": "/World/Actor", "role": "actor", "position": [0, 0, 0]},
+                {"path": "/World/Camera", "role": "camera", "position": [0, 0, 8]},
+                {"path": "/World/Key", "role": "light", "position": [0, 5, 5]},
+            ], curves=[], skeletal_rigs=[overlap])
+        self.takes.freeze(
+            self.pid, "overlap_face_take", scene_id="overlap_face_scene",
+            scene_revision=1, timeline_id="acting", timeline_revision=1,
+            sample_ticks=[0, T, 2 * T], creator_event="freeze_take")
+        frozen = self.index.read_revision(self.pid, "overlap_face_take", 1)
+        actual_rig = inspect_original_rig(
+            self.index, self.pid, "overlap_face_take", "/World/Actor",
+            frozen["document_sha256"])
+        self.assertEqual(actual_rig["shape_deformed_vertices"]["Smile"], [4])
+        with self.assertRaises(PermissionError):
+            compose_usd_facial_overlay(
+                self.index, actual_rig, phonemes=self.phonemes,
+                face_track=self.face, body_track=[],
+                controls=self.controls, source_start_tick=0,
+                sample_count=48000)
+
+    def test_source_rig_descriptor_tampering_is_not_allowed(self):
+        forged = deepcopy(self.rig)
+        forged["shape_deformed_vertices"]["Smile"] = [4]
+        with self.assertRaises(PermissionError):
+            compose_usd_facial_overlay(
+                self.index, forged, phonemes=self.phonemes,
+                face_track=self.face, body_track=[],
+                controls=self.controls, source_start_tick=0,
+                sample_count=48000)
 
     def test_no_unverified_acoustic_source_may_publish_as_real_animation(self):
         self.index.register_revision(
