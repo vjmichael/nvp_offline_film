@@ -201,6 +201,28 @@ class Slate05NativeTests(unittest.TestCase):
             before["document_sha256"])
         self.assertEqual(self.task_ledger.snapshot()["tasks"],[])
 
+    def test_binding_denial_revokes_orphaned_consent_and_unregistered_stage(self):
+        # Approved click is not a registered worker. If binding rejects the
+        # actual sealed worker spec, a consent stub must not grant later use.
+        with patch.object(self.host,"_approval_check",return_value=False):
+            with self.assertRaises(PermissionError):
+                self.host.request(self.pid,"cut",1,film_tick=0,
+                                  quality="thumbnail",
+                                  creator_event=self.trusted_event)
+        with self.task_ledger._db() as db:
+            consent=db.execute("""SELECT task_id,approval_id,revoked_at
+                FROM nvp_slate_preview_consents""").fetchone()
+            self.assertIsNotNone(consent)
+            worker=db.execute("SELECT id FROM tasks WHERE id=?",
+                              (consent[0],)).fetchone()
+            self.assertIsNone(worker)
+        self.assertIsNotNone(consent[2])
+        with self.cache._db() as db:
+            pending=db.execute("""SELECT job_id,state FROM slate_preview_cache
+                WHERE project_id=?""",(self.pid,)).fetchone()
+        self.assertEqual(pending["state"],"FAILED")
+        self.assertFalse((self.supervisor.root/pending["job_id"]).exists())
+
     def test_one_approved_preview_queue_and_verified_disk_cache_hit(self):
         request=self._request()
         self.assertEqual(request["status"],"QUEUED")
