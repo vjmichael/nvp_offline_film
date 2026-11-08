@@ -100,7 +100,10 @@ def create_original_contact_sheet(source_zip,output_png,receipt_json):
         "appearance_and_creative_quality_not_algorithmically_graded":True,
         "storyboard_is_playable_video":False,
         "representative_images_only":True,
-        "light_fx_already_applied":False,
+        "light_fx_already_applied":all(
+            manifest["frame_receipts"][frame].get(
+                "virtual_light_shader_used") is True for frame in SELECTED),
+        "effects_have_no_physical_GI_or_DCI_approval":True,
         "artistic_quality_accepted":False,
         "independent_artist_review_required":True,
     }
