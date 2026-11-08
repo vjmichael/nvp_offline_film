@@ -12,6 +12,7 @@ import json
 import math
 import time
 from urllib.request import Request, ProxyHandler, HTTPRedirectHandler, build_opener
+from urllib.parse import urlsplit
 
 from backend.nvp_idea_pipeline import LocalModelUnavailable
 from backend.nvp_model_service import writer_for
@@ -39,9 +40,19 @@ class ProvenLocalModelWriter:
         from backend.nvp_idea_pipeline import LocalScriptModel
         if not isinstance(provider,LocalScriptModel):
             raise TypeError("Trusted selected local script writer required")
-        if not isinstance(endpoint,str) or not endpoint.startswith(
-                ("http://127.0.0.1:","http://localhost:","http://[::1]:")):
+        if not isinstance(endpoint,str):
             raise PermissionError("Only an already-authorized loopback writer may run")
+        try:
+            url=urlsplit(endpoint)
+            if (url.scheme!="http" or url.hostname not in
+                    ("127.0.0.1","localhost","::1") or
+                    not 1<=url.port<=65535 or
+                    url.username is not None or url.password is not None or
+                    url.query or url.fragment or
+                    url.path!="/v1/chat/completions"):
+                raise ValueError("Untrusted model HTTP destination")
+        except ValueError as exc:
+            raise PermissionError("Only strict local model chat endpoints are allowed") from exc
         if (not isinstance(model_name,str) or not 1<=len(model_name)<=256):
             raise ValueError("Exact selected model required")
         self.endpoint=endpoint
