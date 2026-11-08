@@ -21,6 +21,7 @@ import struct
 from backend.nvp_data_av_source import (RecordedSoundSources,SAMPLE_RATE,MAX_CHUNK_BYTES,MAX_CHUNKS)
 from backend.nvp_exact_time_shots import ExactTimeShotSequence,MAX_SHOTS
 from backend.nvp_film_index import FilmIndex,_id,_require_pid
+from backend.nvp_filming_publication_journal import FilmingPublicationJournal
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
 from backend.nvp_openusd_take import OpenUSDTakeCapture,MAX_CHECKPOINTS
 from backend.nvp_temporal_ledger import (
@@ -41,6 +42,7 @@ class NativeSceneSoundCapture:
         self.timeline=TemporalLedger(index)
         self.camera=ExactTimeShotSequence(index)
         self.scene=OpenUSDSceneBridge(index)
+        self.publications=FilmingPublicationJournal(index)
 
     def capture(self,project_id,take_id,*,scene_id,scene_revision,
                 camera_timeline_id,camera_timeline_revision,
@@ -148,6 +150,7 @@ class NativeSceneSoundCapture:
             preflight_events.add(eid)
             preflight_sources.add(sid)
         frozen_recordings=[dict(entry) for entry in recordings]
+        publication_started=False
         try:
             for entry in frozen_recordings:
                 if type(entry) is not dict or set(entry)!={
@@ -263,6 +266,11 @@ class NativeSceneSoundCapture:
                 sid=entry["source_id"]
                 for _ in replay(prepared_chunks[sid],chunk_digests[sid]):
                     pass
+            # Durable intent precedes the first immutable source publication.
+            # A crash leaves PREPARING for explicit restart reconciliation.
+            self.publications.begin(project_id,take_id,sound_timeline_id,
+                [entry["source_id"] for entry in prepared_entries])
+            publication_started=True
             events=[]
             seen=set(ev["event_id"] for ev in camera_events["events"])
             for ev in camera_events["events"]:
@@ -338,6 +346,8 @@ class NativeSceneSoundCapture:
                     creator_event={"kind":"trusted_native_filming_host",
                                    "source_scene_sha256":source["document_sha256"],
                                    "event_manifest_sha256":combined["document_sha256"]})
+            self.publications.finish(project_id,take_id,completed=True)
+            publication_started=False
             return {
                 "format":FORMAT,"status":"FROZEN_ORIGINAL_SCENE_SOUND_TAKE",
                 "take_id":take_id,
@@ -352,7 +362,10 @@ class NativeSceneSoundCapture:
                 "picture_frames_generated":False,
                 "master_approved":False,
             }
-    
+        except BaseException:
+            if publication_started:
+                self.publications.finish(project_id,take_id,completed=False)
+            raise
         finally:
             for spool in spooled:
                 spool.close()
