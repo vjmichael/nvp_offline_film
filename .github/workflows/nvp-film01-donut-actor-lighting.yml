@@ -4,6 +4,9 @@ on:
   push:
     branches: [nvp/film01-donut-actor-lighting-20261108]
   pull_request:
+    # The original four-light isolated donut run belongs to PR #109.
+    # PR #110 has its own native three-actor/72-frame movie diagnostic.
+    branches: [nvp/film01-native-visual-audio-qc-20261108]
     paths:
       - backend/nvp_film01_donut_actor.py
       - tools/nvp_film01_donut_light_probe.py
