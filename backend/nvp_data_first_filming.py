@@ -14,6 +14,7 @@ the trusted, supervised recording host.
 from __future__ import annotations
 
 import math
+import hashlib
 import tempfile
 import struct
 
@@ -83,6 +84,7 @@ class NativeSceneSoundCapture:
         source_ids=set()
         event_ids=set()
         prepared_chunks={}
+        chunk_digests={}
         spooled=[]
         prepared_entries=[]
         camera_events=self.timeline.events_in(
@@ -133,6 +135,7 @@ class NativeSceneSoundCapture:
                 spooled.append(spool)
                 samples=0
                 count=0
+                digests=[]
                 for chunk in chunks:
                     if (type(chunk) is not bytes or
                         not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2 or
@@ -140,6 +143,7 @@ class NativeSceneSoundCapture:
                         raise ValueError("Invalid captured PCM16LE chunk")
                     spool.write(struct.pack("<I",len(chunk)))
                     spool.write(chunk)
+                    digests.append(hashlib.sha256(chunk).digest())
                     samples+=len(chunk)//2
                     count+=1
                 required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
@@ -147,6 +151,7 @@ class NativeSceneSoundCapture:
                     raise ValueError("Captured PCM is shorter than its Film Time event")
                 spool.seek(0)
                 prepared_chunks[sid]=spool
+                chunk_digests[sid]=tuple(digests)
                 # Freeze validated metadata as well as materialized PCM. A native
                 # callback must not be able to rewrite a later event mid-batch.
                 frozen=dict(entry)
@@ -154,11 +159,14 @@ class NativeSceneSoundCapture:
                 prepared_entries.append(frozen)
                 event_ids.add(eid)
                 source_ids.add(sid)
-            def replay(spool):
+            def replay(spool,expected_digests):
                 spool.seek(0)
+                chunk_index=0
                 while True:
                     size=spool.read(4)
                     if not size:
+                        if chunk_index!=len(expected_digests):
+                            raise RuntimeError("Captured PCM spool chunk count changed")
                         return
                     if len(size)!=4:
                         raise RuntimeError("Damaged captured PCM spool header")
@@ -168,6 +176,10 @@ class NativeSceneSoundCapture:
                     chunk=spool.read(n)
                     if len(chunk)!=n:
                         raise RuntimeError("Truncated captured PCM spool")
+                    if (chunk_index>=len(expected_digests) or
+                        hashlib.sha256(chunk).digest()!=expected_digests[chunk_index]):
+                        raise RuntimeError("Captured PCM spool changed after validation")
+                    chunk_index+=1
                     yield chunk
             events=[]
             seen=set(ev["event_id"] for ev in camera_events["events"])
@@ -204,7 +216,7 @@ class NativeSceneSoundCapture:
                     not 0<=gain<=2):
                     raise ValueError("Captured sound has invalid timing/gain")
                 receipt=self.sources.publish(
-                    project_id,audio_id,replay(prepared_chunks[audio_id]),expected_revision=0)
+                    project_id,audio_id,replay(prepared_chunks[audio_id],chunk_digests[audio_id]),expected_revision=0)
                 source_record=self.index.read_revision(
                     project_id,audio_id,receipt["revision"])
                 available=source_record["data"]["sample_count"]
