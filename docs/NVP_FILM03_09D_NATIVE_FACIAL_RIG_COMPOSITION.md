@@ -10,7 +10,7 @@ Facial expression follows the voice emotional state by default, unless the direc
 
 The new backend/nvp_film03_facial_rig_compositor.py reopens the exact frozen original OpenUSD Take and source scene through FilmIndex. It inspects genuine UsdGeom.Mesh, UsdSkel.Skeleton, UsdSkel.Animation and UsdSkel.BlendShape binding/source point-offset geometry. Existing shape targets must have nonzero offsets. A shape named "MouthOpen" without actual movement is refused. An actor without a rig must not be presented as synchronized; no surrogate mesh or fabricated face is created.
 
-An explicit semantic map binds canonical 09C phoneme-visemes to actual original facial shapes. An independent expression map binds the director's happy/sad/etc. track to actual original shapes. In this first compositor a face-expression shape and a mouth shape cannot overlap; a corrective rig is necessary for shared-vertex conflicts. Original facial animation outside explicitly controlled targets and all original joint/body keyframes remain untouched.
+An explicit semantic map binds canonical 09C phoneme-visemes to actual original facial shapes. An independent expression map binds the director's happy/sad/etc. track to actual original shapes. In this first compositor a face-expression shape and a mouth shape cannot overlap **even when their shape names differ but their real USD offsets deform the same mesh vertices**. A corrective rig is necessary before combining those targets. Shape support is independently reopened from the immutable source scene so a supplied mapping cannot spoof the original mesh. Original facial animation outside explicitly controlled targets and all original joint/body keyframes remain untouched.
 
 ## Derived native animation
 
