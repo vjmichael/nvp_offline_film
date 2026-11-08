@@ -242,12 +242,23 @@ def _review_outputs(dest,movie,stills,data,packet):
             (8,8),f"Original USD / Cycles frame {frame:02d}",
             fill=(250,250,250))
         gif_frames.append(marked.quantize(colors=256))
+    # GIF delays are integer centiseconds: a uniform 42 ms rounds to
+    # 40 ms in Pillow, shortening 72 frames from 3.00s to 2.88s.
+    # Distribute 40/50 ms delays on the exact 24-fps time grid.
+    gif_delays=[10*((((i+1)*100+RATE//2)//RATE)-
+                    ((i*100+RATE//2)//RATE))
+                for i in range(BATCH_FRAMES)]
+    if sum(gif_delays)!=3000 or sorted(set(gif_delays))!=[40,50]:
+        raise RuntimeError("GIF review timebase does not preserve 3-second film")
     gif_frames[0].save(
         gif,save_all=True,append_images=gif_frames[1:],
-        duration=42,loop=0,optimize=False,disposal=2)
+        duration=gif_delays,loop=0,optimize=False,disposal=2)
     with Image.open(gif) as verify:
         if verify.format!="GIF" or verify.n_frames!=BATCH_FRAMES:
             raise RuntimeError("Native Cycles review animation lost real frames")
+        if sum((verify.seek(i) or verify.info["duration"])
+               for i in range(BATCH_FRAMES))!=3000:
+            raise RuntimeError("Native Cycles GIF did not preserve exact 3-second playback")
     contact=Image.new("RGB",(3*640+4*12,2*390+3*12),(24,24,29))
     pen=ImageDraw.Draw(contact)
     for i,n in enumerate(KEY_FRAMES):
