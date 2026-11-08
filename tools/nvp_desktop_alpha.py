@@ -299,7 +299,7 @@ def run_visible_window_smoke():
                 "source_id":"smoke_signal","source_revision":1,
                 "payload":{"usd_prim_path":"/World/Actor","gain":0.8},
             }],duration_tick=TICKS_PER_SECOND)
-        OpenUSDTakeCapture(
+        smoke_take_record=OpenUSDTakeCapture(
             source_index,verify_creator_action=lambda event,scope:
             event=="smoke_only" and scope["operation"]==
             "nvp.freeze.usd_temporal_take.v1").freeze(
@@ -620,6 +620,111 @@ def run_visible_window_smoke():
                                     raise RuntimeError(
                                         "Installed WO6 native creator catalog timed out")
                                 _native_window_stage("wo6_real_film_index_read_only_catalog_passed")
+                                # WO6-07B OPT-IN ONLY: exercise the actual
+                                # installed React -> native WebView2 IPC ->
+                                # local GGUF completion -> on-screen director
+                                # review while the acceptance-owned CPU model
+                                # is running in the same process. Never issue
+                                # a source-write request or fake OS consent.
+                                model_alias=os.environ.get("NVP_WO6_REAL_MODEL_ALIAS")
+                                if model_alias:
+                                    import json
+                                    if (not model_alias.startswith("nvp-07b-") or
+                                            len(model_alias)!=24 or
+                                            any(c not in "0123456789abcdef"
+                                                for c in model_alias[8:])):
+                                        raise PermissionError("Invalid opt-in native GGUF UI test alias")
+                                    alias_json=json.dumps(model_alias)
+                                    _native_window_stage("wo6_07b_visible_model_discovery")
+                                    pressed=window.evaluate_js(
+                                        "(()=>{const pane=document.querySelector("
+                                        "'section[aria-label=\\\"Director native source operations\\\"]');"
+                                        "const b=[...pane.querySelectorAll('button')]"
+                                        ".find(x=>x.textContent.includes('Find local models'));"
+                                        "if(!b)return false;b.click();return true;})()")
+                                    if not pressed:
+                                        raise RuntimeError("Installed local model discovery button missing")
+                                    until=time.monotonic()+25
+                                    while time.monotonic()<until:
+                                        found_model=window.evaluate_js(
+                                            "Boolean([...document.querySelectorAll("
+                                            "'section[aria-label=\\\"Director native source operations\\\"] option')]"
+                                            ".some(x=>x.value==="+alias_json+"))")
+                                        if found_model:
+                                            break
+                                        time.sleep(.3)
+                                    if not found_model:
+                                        raise RuntimeError("Installed React panel could not select actual GGUF model")
+                                    prepared=window.evaluate_js(
+                                        "(()=>{const pane=document.querySelector("
+                                        "'section[aria-label=\\\"Director native source operations\\\"]');"
+                                        "const input=pane.querySelector('textarea');"
+                                        "if(!input)return false;"
+                                        "const set=Object.getOwnPropertyDescriptor("
+                                        "HTMLTextAreaElement.prototype,'value').set;"
+                                        "set.call(input,'Suggest one original camera change for this actor scene');"
+                                        "input.dispatchEvent(new Event('input',{bubbles:true}));"
+                                        "return true;})()")
+                                    if not prepared:
+                                        raise RuntimeError("Cannot enter actual native director scene request")
+                                    until=time.monotonic()+12
+                                    while time.monotonic()<until:
+                                        submitted=window.evaluate_js(
+                                            "(()=>{const b=[...document.querySelectorAll("
+                                            "'section[aria-label=\\\"Director native source operations\\\"] button')]"
+                                            ".find(x=>x.textContent.includes("
+                                            "'Ask local model for read-only advice'));"
+                                            "if(!b||b.disabled)return false;b.click();return true;})()")
+                                        if submitted:
+                                            break
+                                        time.sleep(.2)
+                                    if not submitted:
+                                        raise RuntimeError("Installed React did not submit native GGUF read-only advice")
+                                    _native_window_stage("wo6_07b_visible_real_model_submitted")
+                                    until=time.monotonic()+115
+                                    completed=False
+                                    while time.monotonic()<until:
+                                        # The React button polls only the
+                                        # host-owned native proposal receipt;
+                                        # it cannot trigger a worker write.
+                                        window.evaluate_js(
+                                            "(()=>{const b=[...document.querySelectorAll("
+                                            "'section[aria-label=\\\"Director native source operations\\\"] button')]"
+                                            ".find(x=>x.textContent.includes("
+                                            "'Read local model proposal status'));"
+                                            "if(!b||b.disabled)return false;b.click();return true;})()")
+                                        time.sleep(1)
+                                        presented=window.evaluate_js(
+                                            "(()=>{const pane=document.querySelector("
+                                            "'section[aria-label=\\\"Director native source operations\\\"]');"
+                                            "const s=pane?.textContent||'';"
+                                            "return s.includes('READY_FOR_HUMAN_REVIEW')&&"
+                                            "s.includes('Verified context SHA:')&&"
+                                            "s.includes('Untrusted advice only.');})()")
+                                        if presented:
+                                            with bridge._wo6_model_lock:
+                                                proposals=list(
+                                                    bridge._wo6_model_proposals.values())
+                                            if len(proposals)!=1:
+                                                raise RuntimeError("Installed source model proposal lost custody")
+                                            packet=proposals[0].get("proposal") or {}
+                                            proof=packet.get("provider_completion_receipt") or {}
+                                            if (packet.get("provider_completion_observed") is not True or
+                                                    proof.get("provider_reported_completion_tokens",0)<1 or
+                                                    packet.get("native_worker_authorized") is not False or
+                                                    bridge._wo6_decisions or bridge._wo6_native_grants or
+                                                    bridge._wo6_dispatch_queues):
+                                                raise RuntimeError(
+                                                    "Actual installed model response lacks native authority proof")
+                                            if packet["take_sha256"]!=smoke_take_record["document_sha256"]:
+                                                raise RuntimeError("Installed model proposed for wrong frozen Take")
+                                            completed=True
+                                            break
+                                        time.sleep(.5)
+                                    if not completed:
+                                        raise RuntimeError(
+                                            "Actual installed GGUF did not reach visible React director review")
+                                    _native_window_stage("wo6_07b_visible_real_gguf_director_review_passed")
                                 result["passed"]=True
                                 break
                     time.sleep(.2)
