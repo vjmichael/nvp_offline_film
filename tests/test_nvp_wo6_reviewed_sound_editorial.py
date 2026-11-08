@@ -192,6 +192,33 @@ class RealReviewedSoundAndEditorial(unittest.TestCase):
             receipt["reviewed_ai_consultation"]["model_text_sha256"],
             proposal["model_text_sha256"])
 
+    def test_scene_revision_changed_after_two_approvals_blocks_native_sound_worker(self):
+        from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        proposal_id,proposal=self.proposal()
+        self.review(proposal_id,proposal,"sound_cue")
+        request=self.request("sound_cue","CanceledDueToRevisedScene")
+        self.window.answers=[True,True]
+        with patch.object(self.bridge,"_wo6_result",
+                side_effect=lambda task,host:{
+                    "queued_task_id":task["task_id"],
+                    "state":"QUEUED","native_worker_success_verified":False}):
+            queued=self.bridge.wo6_create_decision({
+                **request,"reviewed_proposal_id":proposal_id})
+        task=queued["queued_task_id"]
+        OpenUSDSceneBridge(self.index).publish(
+            self.pid,"OriginalScene",prims=self.actor_scene,curves=[],
+            native_schemas=True,expected_revision=1)
+        with self.assertRaises(PermissionError):
+            self.bridge._wo6_data.run_next(
+                timeout_seconds=150,expected_task_id=task)
+        self.assertEqual(
+            self.bridge._wo6_ledger.get_task(task)["state"],"INTERRUPTED")
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"CanceledDueToRevisedScene")
+        self.assertEqual(
+            self.index.read_revision(self.pid,"OriginalTake",1)[
+                "document_sha256"],self.original_take_sha)
+
     def test_ai_review_refuses_another_take_and_new_source_revision(self):
         proposal_id,proposal=self.proposal()
         self.review(proposal_id,proposal,"sound_cue")
