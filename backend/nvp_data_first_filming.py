@@ -189,6 +189,21 @@ class NativeSceneSoundCapture:
                         raise RuntimeError("Captured PCM spool changed after validation")
                     chunk_index+=1
                     yield chunk
+            # A frozen Take must checkpoint every original event boundary.
+            # Reject an oversized boundary set before publishing any immutable
+            # PCM source rather than silently truncating the Take's evidence.
+            boundaries={0}
+            for ev in camera_events["events"]:
+                for tick in (ev["start_tick"],ev["end_tick"]):
+                    if int(tick)<duration:
+                        boundaries.add(int(tick))
+            for entry in prepared_entries:
+                for tick in (entry["start_tick"],entry["end_tick"]):
+                    if tick<duration:
+                        boundaries.add(tick)
+            if len(boundaries)>MAX_CHECKPOINTS:
+                raise ValueError("Filming event boundaries exceed frozen Take checkpoint capacity")
+            checkpoints=sorted(boundaries)
             # Verify every completed spool before publishing the first source.
             # A damaged later spool must not orphan an earlier immutable PCM
             # revision. Replay still rechecks digests at publication time.
@@ -254,13 +269,6 @@ class NativeSceneSoundCapture:
             combined=self.timeline.publish(
                 project_id,sound_timeline_id,events,
                 duration_tick=duration,expected_revision=0)
-            timestamps={0}
-            for item in events:
-                if item["start_tick"]<duration:
-                    timestamps.add(item["start_tick"])
-                if item["end_tick"]<duration:
-                    timestamps.add(item["end_tick"])
-            checkpoints=sorted(timestamps)[:MAX_CHECKPOINTS]
             def approve(event,scope):
                 if (scope.get("operation")!="nvp.freeze.usd_temporal_take.v1" or
                     scope.get("scene_document_sha256")!=source["document_sha256"] or
