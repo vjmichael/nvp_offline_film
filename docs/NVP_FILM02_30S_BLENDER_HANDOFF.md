@@ -193,3 +193,15 @@ Blender/GUI, GPL notices and eventual calibrated 2K/DCI acceptance.
   commercial Blender licensing notices, calibrated cinema color,
   surround mixing/mastering, original 30-minute pilot, 60–90-minute
   feature or 3h endurance.
+
+
+## FILM02-03B — Independent review-media decode and human-director evidence (2026-11-08)
+
+**Implemented on the FILM02-03 source/audio branch; exact-head OS execution pending.**
+
+- tools/nvp_film02_avi_independent_readback.py is NOT an encoder or another renderer. It independently opens the true accepted original AVI, validates native RIFF lengths, the 24fps 640x360 MJPEG playback clock, 48kHz mono PCM stream metadata and all frame/audio index offsets, decodes **all 720 actual JPEG frames**, and compares each encoded JPEG byte-for-byte against an independently re-encoded **actual original Blender/Cycles PNG** from the three source-verified shot artifact sets. Every original 2,000-sample 48kHz PCM frame is compared byte-for-byte against the independent source WAV. Incorrect timing, interleaving, edited source or a corrupt picture/audio stream must fail before an acceptance record is published.
+- Produces a 13-image genuine **AVI-decoded** director contact with images at the two cut boundaries (239/240, 479/480), 26-second sound cue (623/624/635/636), early/middle shot and film end. Extracts measured per-frame luminance, near-black/highlight fraction, image change and PCM RMS/peak for lighting, motion and audible-change *review*; no thresholds are used to falsely approve subjective art direction.
+- The production verifier refuses mock pictures: it first executes the full FILM02-02 verify_three_shots source/worker/Blender-reopen contract and validates the original FILM02-03 WAV and movie SHA receipts. It marks real installed synchronized playback, human inspection, creative approval and theatrical color/mix as still OPEN.
+- tests/test_nvp_film02_avi_independent_readback.py exercises a clearly **disposable synthetic 3-frame AVI fixture** to validate parser/decoder and refusal of corrupted stream metadata, false film FPS, tampered AVI index and missing/changed original PCM. Those 3 frames NEVER constitute a render or film acceptance. New CI adds these tests to Windows/Linux plus a true 720-frame independent decode after verified original Cycles output is imported.
+
+**Latest observed before this update:** FILM02-01 source native Windows/Linux PASSED; FILM02-02 source/worker Windows/Linux PASSED, three true 240-frame original Cycles jobs still QUEUED; FILM02-03 exact-head original PCM tests PASSED Windows/Linux; FILM02-03B new AV readback exact-head jobs QUEUED. No genuine 720-frame picture/audible movie exists yet.
