@@ -204,8 +204,8 @@ def render_donut_four_looks(source):
                     len(source["geometry"]["mesh_triangles"])+12 or
                 proof.get("native_depth_tested_visible_pixel_probe") is not True or
                 proof.get("center_visible_original_prim")!=BOX_PATH or
-                min(proof.get("visible_original_prim_pixels",{}).get(path,0)
-                    for path in (DONUT_PATH,BOX_PATH,SPHERE_PATH))<0 or
+                proof["visible_original_prim_pixels"].get(DONUT_PATH,0)<50 or
+                proof["visible_original_prim_pixels"].get(BOX_PATH,0)<50 or
                 proof["source_modified"] is not False or
                 bool(proof["virtual_artistic_fx_applied_to_real_pixels"])!=
                 (look!="neutral")):
