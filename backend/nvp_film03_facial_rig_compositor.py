@@ -247,6 +247,10 @@ def compose_usd_facial_overlay(index: FilmIndex, rig, *, phonemes,
     take = index.read_revision(rig["project_id"], rig["source_take_id"], 1)
     if take["document_sha256"] != rig["source_take_sha256"]:
         raise PermissionError("Frozen actor take changed before facial overlay")
+    if (source_start_tick < 0 or
+            source_start_tick + sample_count * TICKS_PER_SAMPLE >
+            take["data"]["duration_tick"]):
+        raise PermissionError("Actor spoken mouth motion cannot exceed the frozen Take")
     scene, original_stage = OpenUSDSceneBridge(index).open(
         rig["project_id"], rig["source_scene_id"], rig["source_scene_revision"])
     if scene["document_sha256"] != rig["source_scene_sha256"]:
