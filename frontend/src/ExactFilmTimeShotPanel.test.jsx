@@ -133,5 +133,13 @@ describe('DA-01 precise Film Time desktop editor',()=>{
     release({...sequence,revision:2,document_sha256:'d'.repeat(64)});
     await waitFor(()=>expect(screen.getByText(/Current saved revision: 2/)).toBeTruthy());
     expect(screen.getByText('Approve and freeze original 3D Take').disabled).toBe(true);
+    expect(screen.getByLabelText('Film Time duration limit ticks').value)
+      .toBe('7056000020');
+    expect(screen.getByRole('status').textContent).toMatch(/newer draft remains unsaved/);
+    // Re-publishing must send the newer duration, not the stale response.
+    fireEvent.click(screen.getByText('Save immutable timing revision'));
+    await waitFor(()=>expect(api.mock.calls.filter(x=>x[1]==='POST')).toHaveLength(2));
+    expect(api.mock.calls.filter(x=>x[1]==='POST')[1][2])
+      .toEqual(expect.objectContaining({duration_tick:'7056000020',expected_revision:2}));
   });
 });
