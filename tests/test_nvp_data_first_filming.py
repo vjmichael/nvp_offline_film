@@ -3,6 +3,7 @@ import unittest
 
 import test_nvp_data_av_native as fixture
 from backend.nvp_exact_time_shots import ExactTimeShotSequence
+from backend.nvp_temporal_ledger import TemporalLedger
 from backend.nvp_data_first_filming import NativeSceneSoundCapture
 from backend.nvp_data_av_scene import FrozenSceneAV
 from backend.nvp_openusd_take import OpenUSDTakeCapture
@@ -125,7 +126,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
 
     def test_camera_event_collision_preflight_does_not_publish_pcm(self):
         req=self.payload()
-        camera_event=ExactTimeShotSequence(self.index).timeline.events_in(
+        camera_event=TemporalLedger(self.index).events_in(
             self.pid,"FilmingCameraTimeline",1,start_tick=0,end_tick=3*T,
             limit=10)["events"][0]["event_id"]
         req["recordings"][0]["event_id"]=camera_event
