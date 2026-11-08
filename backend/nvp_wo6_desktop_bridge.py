@@ -15,6 +15,8 @@ import json
 from pathlib import Path
 import os
 import secrets
+import threading
+from queue import Queue
 import time
 
 from backend.nvp_ai_read_host import TrustedReadScope
@@ -55,6 +57,10 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         self._wo6_shot=None
         self._wo6_data=None
         self._wo6_recovery=None
+        self._wo6_dispatch_lock=threading.RLock()
+        self._wo6_dispatch_queues={}
+        self._wo6_dispatch_faults={}
+        self._wo6_closed=False
 
     def _wo6_host(self):
         self._native_window()
@@ -179,18 +185,51 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
     def _wo6_decision(self):
         return "native_director_"+secrets.token_hex(16)
 
-    def _wo6_result(self,queued,host):
-        # The resource-aware scheduler can legitimately dispatch a different
-        # already queued action first. Report the exact task actually run;
-        # do not pretend the submitted task has already finished.
-        result=host.run_next(timeout_seconds=240)
-        if result is None:
-            return {**queued,"state":"QUEUED_NOT_ADMITTED"}
+
+    def _wo6_worker_loop(self, host, queue):
+        """One native host-owned dispatcher per operation family.
+
+        Queueing a sealed approved task is never a successful native write.
+        This worker drains requests without blocking the pywebview/creator
+        console; the existing TaskLedger decides which task is admitted.
+        """
+        while True:
+            trigger=queue.get()
+            try:
+                if trigger is None:
+                    return
+                try:
+                    host.run_next(timeout_seconds=240)
+                except Exception as exc:
+                    # The actual host writes interrupted/failed task states
+                    # durably; this is supplementary local diagnostic only.
+                    with self._wo6_dispatch_lock:
+                        self._wo6_dispatch_faults[trigger]=(
+                            type(exc).__name__+": "+str(exc)[:240])
+            finally:
+                queue.task_done()
+
+    def _wo6_result(self, queued, host):
+        # Native approvals were checked by queue_*. Execution is handed
+        # off to a first-party serialized dispatcher, not to the browser.
+        with self._wo6_dispatch_lock:
+            if self._wo6_closed:
+                raise RuntimeError("Director's native session is closing")
+            channel=self._wo6_dispatch_queues.get(host.owner)
+            if channel is None:
+                channel=Queue()
+                worker=threading.Thread(
+                    target=self._wo6_worker_loop,args=(host,channel),
+                    name="NVP-WO6-"+host.owner,daemon=True)
+                self._wo6_dispatch_queues[host.owner]=channel
+                worker.start()
+            channel.put(queued["task_id"])
         return {
             "format":FORMAT,"queued_task_id":queued["task_id"],
-            "executed_task_id":result.get("task_id"),
-            "state":result.get("state"),
-            "result":result,"finished_film_approved":False,
+            "state":"QUEUED","native_dispatch_requested":True,
+            "native_worker_success_verified":False,
+            "durable_status_must_be_polled":True,
+            "finished_film_approved":False,
         }
 
     def wo6_create_take(self,request):
@@ -259,7 +298,12 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         if (spec["project_id"]!=project_id or
                 spec["actor_id"]!=self._wo6_actor):
             raise PermissionError("Native job belongs to a different director")
-        return self._wo6_recovery.status(task_id,owner_key=owner["owner_key"])
+        evidence=self._wo6_recovery.status(task_id,owner_key=owner["owner_key"])
+        with self._wo6_dispatch_lock:
+            fault=self._wo6_dispatch_faults.get(task_id)
+        if fault is not None:
+            evidence["local_dispatch_failure"]=fault
+        return evidence
 
     def wo6_cancel_native_task(self,project_id,task_id):
         scope=self._wo6_scope(project_id)
@@ -276,6 +320,10 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             reason="Creator cancelled via native WebView2 console")
 
     def _close(self):
+        with self._wo6_dispatch_lock:
+            self._wo6_closed=True
+            for queue in self._wo6_dispatch_queues.values():
+                queue.put(None)
         self._wo6_decisions.clear()
         self._wo6_native_grants.clear()
         super()._close()
