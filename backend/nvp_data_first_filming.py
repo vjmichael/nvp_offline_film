@@ -86,7 +86,7 @@ class NativeSceneSoundCapture:
                 raise ValueError("Recorded sound requires typed source/evidence/Film Time")
             eid=_id(entry["event_id"],"recorded sound event")
             sid=_id(entry["source_id"],"original audio source")
-            if (eid in event_ids or eid in camera_ids or eid in ids or
+            if (eid==sid or eid in event_ids or eid in camera_ids or eid in ids or
                 sid in source_ids or sid in ids or sid in camera_ids or
                 sid in event_ids or eid in source_ids):
                 raise ValueError("Duplicate or reserved recording identity")
@@ -102,8 +102,7 @@ class NativeSceneSoundCapture:
                 type(gain) not in (int,float) or not math.isfinite(gain) or
                 not 0<=gain<=2):
                 raise ValueError("Captured sound has invalid timing/gain")
-            event_ids.add(eid)
-            source_ids.add(sid)
+            # An existing immutable source ID cannot be republished at revision 1.\n            # Check all IDs before writing any new source in this batch.\n            try:\n                self.index.read_revision(project_id,sid,1)\n            except KeyError:\n                pass\n            else:\n                raise ValueError("Original audio source identity already published")\n            event_ids.add(eid)\n            source_ids.add(sid)
         events=[]
         seen=set(ev["event_id"] for ev in camera_events["events"])
         for ev in camera_events["events"]:
