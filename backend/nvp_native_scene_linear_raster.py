@@ -168,7 +168,7 @@ def _unit(v):
     return tuple(x/length for x in v)
 
 
-def _shade(points,surface,lights,eye):
+def _shade(points,surface,lights,eye,virtual_lights=()):
     """Deterministic scalar GGX/Smith/Schlick source-preview shading.
 
     The untextured path deliberately uses Python scalars; per-texel maps
@@ -216,6 +216,13 @@ def _shade(points,surface,lights,eye):
             specular=(distribution*geometry*fresnel[channel]/
                       max(1e-6,4.*nv*nl))
             out[channel]+=strength*nl*(diffuse+specular)
+    # Digital film cheats: direct per-object RGB fill with no reflector or
+    # path-traced indirect light. Physical USD shading above is unchanged.
+    for rgb,gain,direction in virtual_lights:
+        facing=(max(0.,_dot(n,direction))
+                if direction is not None else 1.)
+        for channel in range(3):
+            out[channel]+=color[channel]*(1.-metallic)*rgb[channel]*gain*facing
     if any(not math.isfinite(x) or x<0 for x in out):
         raise RuntimeError("Source USD microfacet preview produced invalid light")
     return tuple(out)
@@ -224,7 +231,7 @@ def _shade(points,surface,lights,eye):
 def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
                           roughness_texels=None,metallic_texels=None,
                           emission_texels=None,normal_texels=None,
-                          uv_face=None):
+                          uv_face=None,virtual_lights=()):
     """Evaluate bounded GGX/Schlick with the actual per-pixel source color.
 
     Avoid applying the sRGB base map to the *completed lighting result*:
@@ -308,13 +315,22 @@ def _shade_texture_texels(points,surface,lights,eye,sampled_rgb,np,*,
         out=out+strength*nl[...,None]*(diffuse+specular)
     if emission_texels is not None:
         out=out+np.asarray(emission_texels,dtype=np.float64)
+    for rgb,gain,direction in virtual_lights:
+        tint=np.asarray(rgb,dtype=np.float64)
+        if direction is None:
+            out=out+color*(1.-metal[...,None])*tint*gain
+        else:
+            incidence=np.maximum(
+                0.,np.sum(normal*np.asarray(direction),axis=-1))
+            out=out+color*(1.-metal[...,None])*tint*gain*incidence[...,None]
     if not np.all(np.isfinite(out)) or np.any(out<0):
         raise RuntimeError("Invalid source USD textured microfacet shading")
     return out.astype(np.float32)
 
 
 def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
-                   texture=None,uv_face=None,pbr_maps=None):
+                   texture=None,uv_face=None,pbr_maps=None,
+                   virtual_lights=()):
     a,b,c=tri
     x0,y0,z0=a;x1,y1,z1=b;x2,y2,z2=c
     if (not all(math.isfinite(v) for v in (
@@ -328,7 +344,7 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
     if lo_x>hi_x or lo_y>hi_y:return False
     denom=(y1-y2)*(x0-x2)+(x2-x1)*(y0-y2)
     if abs(denom)<1e-8:return False
-    shade=_shade(world_points,surface,lights,eye)
+    shade=_shade(world_points,surface,lights,eye,virtual_lights)
     if shade is None:return False
     xs=np.arange(lo_x,hi_x+1,dtype=np.float64)+.5
     ys=np.arange(lo_y,hi_y+1,dtype=np.float64)+.5
@@ -379,7 +395,8 @@ def _draw_triangle(buffer,depth,tri,world_points,surface,lights,eye,np,
                              if "metallic" in decoded else None),
             emission_texels=decoded.get("emission"),
             normal_texels=decoded.get("normal"),
-            uv_face=uv_face)
+            uv_face=uv_face,
+            virtual_lights=virtual_lights)
         out[visible]=lit[visible]
     return True
 
