@@ -155,6 +155,53 @@ class WO3NativeMaterialXIntegrity(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.verify(stage)
 
+    def test_normal_scale_and_bias_cannot_be_connected_over_literals(self):
+        # Prior to WO3 the normal transform was checked only via its
+        # authored numeric value, which remains after a hostile connection.
+        for port in ("scale","bias"):
+            with self.subTest(setting=port):
+                stage=self.stage()
+                source=self.shader(stage,"Map_Normal")
+                malicious=source.CreateOutput(
+                    "shadow_"+port,Sdf.ValueTypeNames.Float4)
+                target=self.shader(stage,"Map_Normal").GetInput(port)
+                original=list(target.GetAttr().Get())
+                target.ConnectToSource(malicious)
+                self.assertEqual(list(target.GetAttr().Get()),original)
+                with self.assertRaises(RuntimeError):
+                    self.verify(stage)
+
+    def test_unresolved_literal_and_texture_paths_are_not_trusted(self):
+        # GetConnectedSource/HasConnectedSource may not see a dangling edge,
+        # but USD can resolve the path after subsequent composition.
+        for node,setting in (
+                ("MtlxMap_Roughness","filtertype"),
+                ("MtlxMap_Normal","file"),
+                ("MtlxTexcoord","index")):
+            with self.subTest(node=node,setting=setting):
+                stage=self.stage()
+                attribute=self.shader(stage,node).GetInput(setting).GetAttr()
+                preserved=attribute.Get()
+                attribute.AddConnection(Sdf.Path(
+                    "/Asset/Material/Unresolved.outputs:override"))
+                self.assertEqual(attribute.Get(),preserved)
+                with self.assertRaises(RuntimeError):
+                    self.verify(stage)
+
+    def test_resolver_rejects_connected_file_even_with_original_uri(self):
+        stage=self.stage()
+        shader=self.shader(stage,"MtlxMap_Roughness")
+        attribute=shader.GetInput("file").GetAttr()
+        uri=attribute.Get()
+        attribute.AddConnection(Sdf.Path(
+            "/Asset/Material/Unresolved.outputs:shadowFile"))
+        self.assertEqual(attribute.Get(),uri)
+        with self.assertRaises(PermissionError):
+            with resolved_materialx_probe(
+                    self.index,self.pid,stage,
+                    [self.texture]+list(self.maps.values())):
+                self.fail("An upstream file override must never reach Hydra")
+
     def test_materialx_resolver_uses_temporary_source_bytes_only(self):
         stage=self.stage()
         original=stage.GetRootLayer().ExportToString()
