@@ -63,6 +63,7 @@ def assemble_film_crew_context(
     shot_sequence_id=None, shot_sequence_revision=None,
     dialogue_selection_id=None, dialogue_selection_revision=None,
     dialogue_route_request=None,
+    actor_identity_id=None, actor_profile_revision=None,
     max_prims: int = 32, max_events: int = 24,
 ) -> dict:
     if not isinstance(index, FilmIndex):
@@ -81,6 +82,8 @@ def assemble_film_crew_context(
         raise ValueError("Shot timeline ID and exact revision must be selected together")
     if (dialogue_selection_id is None) != (dialogue_selection_revision is None):
         raise ValueError("Selected dialogue requires exact source ID and revision")
+    if (actor_identity_id is None) != (actor_profile_revision is None):
+        raise ValueError("ActorID and exact profile revision must be selected together")
     if dialogue_route_request is not None:
         if (type(dialogue_route_request) is not dict or
                 dialogue_selection_id is None or dialogue_selection_revision is None):
@@ -236,6 +239,37 @@ def assemble_film_crew_context(
             dialogue_selection_revision, tick=tick, expected_take_id=take_id)
         if selected_dialogue["source_take_sha256"] != take["document_sha256"]:
             raise PermissionError("Scene crew received a dialogue selection from another frozen Take")
+    selected_actor_identity = None
+    if actor_identity_id is not None:
+        from backend.nvp_production_bible_actors import ProductionBibleActors
+        from backend.nvp_film03_actor_identity_core import ActorIdentityCore
+        registry = ProductionBibleActors(index.studio)
+        cast = registry.require_complete_cast(project_id, take_id)
+        if actor_identity_id not in cast["actor_id_by_prim"].values():
+            raise PermissionError("Selected actor identity is not in exact frozen OpenUSD source cast")
+        profile = ActorIdentityCore(index,verify_creator_action=lambda *_:False).current(
+            project_id, actor_identity_id)
+        chosen_profile = profile["current"]
+        if (chosen_profile is None or
+                chosen_profile["profile_revision"] != actor_profile_revision):
+            raise PermissionError("Character profile is stale, absent or not approved")
+        voice_id = profile["current_voice_id"]
+        if chosen_profile["voice_id"] != voice_id or (
+                chosen_profile["voice_cast_revision"] !=
+                profile["current_voice_cast_revision"]):
+            raise PermissionError("Actor profile's voice identity is no longer current")
+        selected_actor_identity = {
+            "actor_id":actor_identity_id,
+            "actor_prim_paths":[p for p,aid in cast["actor_id_by_prim"].items()
+                                if aid==actor_identity_id],
+            "profile_revision":chosen_profile["profile_revision"],
+            "profile_document_sha256":chosen_profile["document_sha256"],
+            "character_profile":chosen_profile["profile"],
+            "voice_id":voice_id,
+            "voice_reference_sha256":profile["current_voice_reference_sha256"],
+            "source_take_sha256":take["document_sha256"],
+            "rendered_or_generated_performance_authorized":False,
+        }
     canonical_dialogue_route = None
     if dialogue_route_request is not None:
         from backend.nvp_film03_dialogue_manager import ActorDialogueManager
@@ -365,6 +399,8 @@ def assemble_film_crew_context(
         "authored_camera_selection": shot_selection,
         "authored_object_actor_dialogue_selection": selected_dialogue,
         "authoritative_actorid_dialogue_route": canonical_dialogue_route,
+        "selected_actorid_character_essence":selected_actor_identity,
+        "actor_identity_context_is_not_generation_authorization":True,
         "dialogue_source_inspection_is_not_permission_to_speak":
             canonical_dialogue_route is None,
         "screenplay_scene_context": screenplay,
