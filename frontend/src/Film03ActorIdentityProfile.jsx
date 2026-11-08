@@ -95,6 +95,15 @@ export default function Film03ActorIdentityProfile({
       'revision ' + current.profile_revision : 'not yet director-authored'} ·
       current VoiceID: {detail.current_voice_identity?.voice_id ||
         'none (AI voice generation blocked)'}</p>
+    {current && (
+      current.voice_id !== (detail.current_voice_identity?.voice_id || null) ||
+      current.voice_cast_revision !== (
+        detail.current_voice_identity?.cast_revision || null)
+    ) && <p role="alert">
+      VoiceID changed since this ActorID profile was published.
+      AI-generated speech is blocked until the director reviews and
+      republishes a profile bound to the CURRENT approved voice.
+    </p>}
     {!!detail.immutable_identity_profile_history?.length && <details>
       <summary>View all historical ActorID identity profiles</summary>
       {detail.immutable_identity_profile_history.map(x=>
