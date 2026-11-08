@@ -1216,3 +1216,21 @@ GPU or installed film acceptance is inferred.
 regular-file type and exact original byte length and hashes in 64 KiB chunks
 without `Path.read_bytes()` on native worker output; adds oversized source
 adversarial regression. WO3 is still **OPEN pending latest exact-head CI**.
+
+
+### WO3 independent Hydra image and color acceptance gate — 2026-11-07
+
+- New **mandatory and non-skippable** real Hydra Storm render test and workflow
+  `nvp-wo3-real-hydra-color.yml`, stacked on PR #96. Uses independent
+  conda-forge OpenUSD 26.08, Mesa/Xvfb software OpenGL, genuine native
+  `usdrecord`; main 26.11 authoring matrix stays separate.
+- Publishes two immutable FilmIndex scenes with identical geometry/camera/
+  light/five PBR maps and different red/blue original sRGB textures. Compares
+  **actual decoded Storm image pixels** for center-swatch color dominance and
+  between-swatch Lab ΔE76 separation; hashes native renderer, scene and pixels.
+  Receipts leave theatrical color, absolute calibrated reference accuracy,
+  physical GPU and MaterialX-only terminal parity **FALSE/OPEN**.
+- **Do not claim accepted from code submission:** latest exact-head real native
+  job must actually finish successfully with a nonempty emitted color receipt.
+  Embree is explicitly unsuitable because OpenUSD's reference Embree renderer
+  does not use materials. 
