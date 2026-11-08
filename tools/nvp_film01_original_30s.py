@@ -57,7 +57,7 @@ SHOTS=(
     ("Discovery","An engineer reaches the silent antenna.",
      [-1.5,0,0],[-1.0,0,0],[-2.5,-1,0],[0.3,-1,0],[1,0,12]),
     ("Rekindle","The engineer reconnects the beacon and hears the signal.",
-     [-1,0,0],[-1.0,0,0],[0.3,-1,0],[1.4,0.2,0],[0,0,10]),
+     [-1,0,0],[-1.0,0,0],[0.3,-1,0],[0.3,-1,0],[0,0,10]),
 )
 
 
@@ -118,6 +118,10 @@ def write_original_30s_source(destination,*,approve_test_only):
         # for an object to have a performance role.
         ("EngineerDonut","/World/Engineer","mesh",1.4,
          [0.72,0.53,0.33],donut),
+        ("CrossingBox","/World/CrossingBox","cube",0.8,
+         [0.15,0.76,0.30],None),
+        ("PassingSphere","/World/PassingSphere","sphere",0.6,
+         [0.25,0.42,0.95],None),
     )
     bindings=[]
     for name,path,shape,size,color,mesh in geometry:
@@ -145,10 +149,17 @@ def write_original_30s_source(destination,*,approve_test_only):
             scope["duration_tick"]==SHOT_SECONDS*T))
     take_reports=[]
     for shot,(name,description,craft0,craft1,actor0,actor1,camera) in enumerate(SHOTS):
+        # Final shot: green box crosses behind torus while blue sphere
+        # moves through the real center hole near the 26s film chirp.
+        # In earlier shots both are present but outside camera view.
+        box0=([-1.8,-1,-2.2] if shot==2 else [12,9,-2.2])
+        sphere0=([.3,-1,-4.] if shot==2 else [12,9,-4.])
         poses=[
             {"path":"/World/RelayCore","role":"prop","position":[0,0,0]},
             {"path":"/World/ServiceCraft","role":"actor","position":craft0},
             {"path":"/World/Engineer","role":"actor","position":actor0},
+            {"path":"/World/CrossingBox","role":"actor","position":box0},
+            {"path":"/World/PassingSphere","role":"actor","position":sphere0},
             {"path":"/World/Camera","role":"camera","position":camera},
             {"path":"/World/PracticalLight","role":"light",
              "position":([2,3,5] if shot<2 else [0.5,2,5])},
@@ -166,11 +177,32 @@ def write_original_30s_source(destination,*,approve_test_only):
                 {"tick":SHOT_SECONDS*T,"position":actor1}]},
         ]
         if shot==2:
+            curves.extend([
+                {"path":"/World/CrossingBox","samples":[
+                    {"tick":0,"position":box0},
+                    {"tick":5*T,"position":[.3,-1,-2.2]},
+                    {"tick":9*T,"position":[2.7,-1,-2.2]},
+                    {"tick":10*T,"position":[3.,-1,-2.2]}]},
+                {"path":"/World/PassingSphere","samples":[
+                    {"tick":0,"position":sphere0},
+                    {"tick":5*T,"position":[.3,-1,-3.7]},
+                    {"tick":6*T,"position":[.3,-1,-1.]},
+                    {"tick":7*T,"position":[.3,-1,.1]},
+                    {"tick":8*T,"position":[.3,-1,1.45]},
+                    {"tick":10*T,"position":[.3,-1,2.2]}]},
+            ])
             # A timed move of a real light exists separately from future
             # virtual gold-fill shader and film-clock strobe FX work.
             curves.append({"path":"/World/PracticalLight","samples":[
                 {"tick":0,"position":[0.5,2,5]},
                 {"tick":SHOT_SECONDS*T,"position":[2,2,5]}]})
+        if shot!=2:
+            for path,position in (
+                    ("/World/CrossingBox",box0),
+                    ("/World/PassingSphere",sphere0)):
+                curves.append({"path":path,"samples":[
+                    {"tick":0,"position":position},
+                    {"tick":10*T,"position":position}]})
         scene_revision=scene.publish(
             pid,"Relay30Scene",prims=poses,curves=curves,
             native_schemas=True,asset_bindings=bindings,
@@ -196,6 +228,18 @@ def write_original_30s_source(destination,*,approve_test_only):
              "payload":{"usd_prim_path":"/World/Engineer"}},
         ]
         if shot==2:
+            for event_id,subject,path in (
+                    ("CrossingBoxBehindEngineer","CrossingBox",
+                     "/World/CrossingBox"),
+                    ("PassingSphereThroughEngineerHole","PassingSphere",
+                     "/World/PassingSphere")):
+                events.append({
+                    "event_id":event_id,"event_kind":"action",
+                    "subject_id":subject,"start_tick":0,
+                    "end_tick":SHOT_SECONDS*T,
+                    "source_id":"Relay30Scene","source_revision":shot+1,
+                    "payload":{"usd_prim_path":path,
+                               "three_actor_staged_original_motion":True}})
             beep=sound.publish(pid,"RelaySignalChirp",[_chirp()])
             events.append({
                 "event_id":"BeaconSignalRestored",
@@ -308,6 +352,10 @@ def write_original_30s_source(destination,*,approve_test_only):
         "shots":take_reports,"shot_count":3,"hard_cuts":2,
         "original_sound_in_each_take":True,
         "timed_beacon_signal_event":True,
+        "donut_three_object_actor_blocking_scene":True,
+        "box_behind_donut_sphere_through_hole_in_third_shot":True,
+        "sphere_actual_radius_m":.3,
+        "donut_actual_open_hole_radius_m":donut["hole_radius"],
         "virtual_artistic_lighting_proposals":planned_fx,
         "virtual_artistic_lighting_sources":[sun,gold],
         "virtual_artistic_lighting_rendered_in_pixels":False,
