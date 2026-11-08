@@ -212,9 +212,10 @@ def preview_sound_cue(index,pid,source_id,source_rev,source_sha,payload):
 
 
 def typed_decision_sha(spec):
-    """One SHA of the EXACT human-entered source+new decision+parameters."""
+    """One SHA of the EXACT human-entered source, reason and parameters."""
     fields=("project_id","decision_kind","decision_id","source_id",
-            "source_revision","source_sha256","payload","duration_tick")
+            "source_revision","source_sha256","payload","duration_tick",
+            "director_reason")
     return sha256(canonical_bytes({k:spec[k] for k in fields})).hexdigest()
 
 
@@ -231,6 +232,11 @@ def preview_typed_decision(index,spec):
     else:
         raise PermissionError("Decision identity already exists")
     kind=spec["decision_kind"]
+    if (type(spec.get("director_reason")) is not str or
+            not 12<=len(spec["director_reason"].strip())<=512 or
+            any(ord(c)<32 and c not in "\\n\\t"
+                for c in spec["director_reason"])):
+        raise ValueError("Independent human sound/editorial reason required")
     if kind=="sound_cue":
         source,existing,cue=preflight_sound_cue(index,spec)
         detail={"inherited_event_count":len(existing),
