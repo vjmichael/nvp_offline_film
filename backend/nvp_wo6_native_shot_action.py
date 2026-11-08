@@ -259,8 +259,9 @@ class NativeShotActionHost:
                 "human_and_host_permission_required": True}
 
     @exclusive_worker_host
-    def run_next(self, *, timeout_seconds=900):
-        claim = self.binding.claim_next(owner_key=self.owner)
+    def run_next(self, *, timeout_seconds=900, expected_task_id=None):
+        claim = self.binding.claim_next(
+            owner_key=self.owner,expected_task_id=expected_task_id)
         if not claim or not claim["admitted"]:
             return claim
         task_id = claim["task_id"]
