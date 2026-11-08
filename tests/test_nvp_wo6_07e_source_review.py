@@ -104,10 +104,13 @@ class OriginalEditorialFramePCMReview(unittest.TestCase):
                   sound_timeline_sha256="0"*64)
         with self.assertRaises(PermissionError):
             self.review(24,**args)
-        with self.assertRaises(PermissionError):
-            self.review(24,sound_timeline_id="actions",
-                        sound_timeline_revision=1,
-                        sound_timeline_sha256=self.timeline_sha)
+        # Selecting an actual original soundtrack is a legitimate,
+        # distinct review and must not be conflated with an added cue.
+        original=self.review(24,sound_timeline_id="actions",
+                             sound_timeline_revision=1,
+                             sound_timeline_sha256=self.timeline_sha)
+        self.assertFalse(original["source_audio_timeline_is_derived"])
+        self.assertIsNone(original["audio_data_url"])
         for frame in (48,-1,True,24*60*60*3):
             with self.subTest(frame=frame),self.assertRaises(ValueError):
                 self.review(frame)
