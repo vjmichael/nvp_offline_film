@@ -201,6 +201,70 @@ class Slate05NativeTests(unittest.TestCase):
             before["document_sha256"])
         self.assertEqual(self.task_ledger.snapshot()["tasks"],[])
 
+    def test_approved_native_reservation_is_durable_before_second_connection(self):
+        import sqlite3
+        queued=self._request()
+        # A separate SQLite connection is exactly what the trusted host
+        # approval checker uses when verifying its creator/worker consent.
+        # The old cache context closed with BEGIN IMMEDIATE uncommitted,
+        # returning QUEUED even though the PENDING row never persisted.
+        with sqlite3.connect(self.cache.db) as other:
+            row=other.execute("""SELECT job_id,state,recipe_sha256
+                FROM slate_preview_cache WHERE project_id=? AND cache_key=?""",
+                (self.pid,queued["cache_key"])).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0],queued["job_id"])
+        self.assertEqual(row[1],"PENDING")
+        self.assertEqual(row[2],queued["source_recipe_sha256"])
+        with self.task_ledger._db() as db:
+            approved=db.execute("""SELECT approval_id,spec_sha256,spec_json
+                FROM authorized_task_specs WHERE task_id=?""",
+                (queued["task_id"],)).fetchone()
+        self.assertIsNotNone(approved)
+        import json
+        self.assertTrue(self.host._approval_check(
+            approved[0],approved[1],json.loads(approved[2])))
+        self.assertEqual(self.host._last_slate_approval_refusal,"verified")
+
+    def test_failed_preview_cache_write_transaction_rolls_back(self):
+        queued=self._request()
+        with self.assertRaises(RuntimeError):
+            with self.cache._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                db.execute("""UPDATE slate_preview_cache SET state='FAILED'
+                    WHERE job_id=?""",(queued["job_id"],))
+                raise RuntimeError("Fault injected during cache state update")
+        # Exception rollback preserves creator-approved PENDING state and
+        # the immutable approved task; no false worker success.
+        with self.cache._db() as db:
+            row=db.execute("""SELECT state FROM slate_preview_cache
+                WHERE job_id=?""",(queued["job_id"],)).fetchone()
+        self.assertEqual(row["state"],"PENDING")
+        self.assertEqual(
+            self.task_ledger.get_task(queued["task_id"])["state"],"QUEUED")
+
+    def test_binding_denial_revokes_orphaned_consent_and_unregistered_stage(self):
+        # Approved click is not a registered worker. If binding rejects the
+        # actual sealed worker spec, a consent stub must not grant later use.
+        with patch.object(self.host,"_approval_check",return_value=False):
+            with self.assertRaises(PermissionError):
+                self.host.request(self.pid,"cut",1,film_tick=0,
+                                  quality="thumbnail",
+                                  creator_event=self.trusted_event)
+        with self.task_ledger._db() as db:
+            consent=db.execute("""SELECT task_id,approval_id,revoked_at
+                FROM nvp_slate_preview_consents""").fetchone()
+            self.assertIsNotNone(consent)
+            worker=db.execute("SELECT id FROM tasks WHERE id=?",
+                              (consent[0],)).fetchone()
+            self.assertIsNone(worker)
+        self.assertIsNotNone(consent[2])
+        with self.cache._db() as db:
+            pending=db.execute("""SELECT job_id,state FROM slate_preview_cache
+                WHERE project_id=?""",(self.pid,)).fetchone()
+        self.assertEqual(pending["state"],"FAILED")
+        self.assertFalse((self.supervisor.root/pending["job_id"]).exists())
+
     def test_one_approved_preview_queue_and_verified_disk_cache_hit(self):
         request=self._request()
         self.assertEqual(request["status"],"QUEUED")

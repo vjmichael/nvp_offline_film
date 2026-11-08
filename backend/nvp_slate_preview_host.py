@@ -450,7 +450,24 @@ class NativeSlatePreviewHost:
                 queued=self.dispatcher.enqueue(
                     op,approval_id=approval_id,lane="interactive")
             except Exception:
-                self.cache.fail(job_id,state="FAILED")
+                # Consent and an inert source staging directory are not a
+                # queued worker. If binding rejects the exact approval,
+                # immediately revoke the orphaned consent while retaining
+                # its audit row. Never leave a live grant or a "PENDING"
+                # preview for an operation that was never registered.
+                with self.ledger._db() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    exists=db.execute(
+                        "SELECT 1 FROM tasks WHERE id=?",
+                        (exact["task_id"],)).fetchone()
+                    if exists is None:
+                        db.execute("""UPDATE nvp_slate_preview_consents
+                            SET revoked_at=? WHERE approval_id=?
+                            AND revoked_at IS NULL""",
+                            (time.time(),approval_id))
+                    db.commit()
+                if exists is None:
+                    self.cache.fail(job_id,state="FAILED")
                 raise
             with self.ledger._db() as db:
                 db.execute("""UPDATE nvp_slate_preview_consents
@@ -466,11 +483,13 @@ class NativeSlatePreviewHost:
                 "full_feature_render_approved":False,
             }
         except BaseException:
-            # Never delete staged inputs after the worker is registered:
-            # crash recovery relies on the immutable spec and jobdir.
+            # Stage retention is controlled by the durable TASK, not a
+            # consent stub. A declined grant or failed binding never started
+            # a worker and may discard only its own private staging bytes.
+            # A registered task (QUEUED or ACTIVE) must retain its inputs.
             with self.ledger._db() as db:
-                row=db.execute("""SELECT 1 FROM nvp_slate_preview_consents
-                    WHERE task_id=?""",(self.supervisor._activity_id(job_id),)).fetchone()
+                row=db.execute("""SELECT 1 FROM tasks
+                    WHERE id=?""",(self.supervisor._activity_id(job_id),)).fetchone()
             if row is None:
                 shutil.rmtree(jobdir,ignore_errors=True)
             raise
@@ -589,7 +608,19 @@ class NativeSlatePreviewHost:
                 self.dispatcher.enqueue(
                     op,approval_id=approval_id,lane="interactive")
             except Exception:
-                self.cache.fail(job_id,state="FAILED")
+                with self.ledger._db() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    exists=db.execute(
+                        "SELECT 1 FROM tasks WHERE id=?",
+                        (spec["task_id"],)).fetchone()
+                    if exists is None:
+                        db.execute("""UPDATE nvp_camera_preview_consents
+                            SET revoked_at=? WHERE approval_id=?
+                            AND revoked_at IS NULL""",
+                            (time.time(),approval_id))
+                    db.commit()
+                if exists is None:
+                    self.cache.fail(job_id,state="FAILED")
                 raise
             return {
                 "status":"QUEUED",
@@ -603,11 +634,14 @@ class NativeSlatePreviewHost:
                 "film_master_approved":False,
             }
         except BaseException:
+            # A recorded approval alone is not a native worker admission.
+            # Only the durable resource-ledger task justifies retaining the
+            # private staged source for crash/recovery inspection.
             with self.ledger._db() as db:
-                consent=db.execute("""SELECT 1 FROM nvp_camera_preview_consents
-                    WHERE task_id=?""",
+                task=db.execute("""SELECT 1 FROM tasks
+                    WHERE id=?""",
                     (self.supervisor._activity_id(job_id),)).fetchone()
-            if consent is None:
+            if task is None:
                 shutil.rmtree(jobdir,ignore_errors=True)
             raise
 

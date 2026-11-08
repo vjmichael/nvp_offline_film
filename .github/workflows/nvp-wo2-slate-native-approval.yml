@@ -1,0 +1,55 @@
+name: NVP WO2 SLATE Creator Approval and Durable SQLite Recovery (NO FFMPEG)
+on:
+  push:
+    branches: [nvp/wo2-slate-native-approval-consistency-20261107]
+    paths:
+      - backend/nvp_slate_preview_cache.py
+      - backend/nvp_slate_preview_host.py
+      - backend/nvp_approved_tasks.py
+      - tests/test_nvp_slate05_preview_native.py
+      - tests/test_nvp_slate06_geometry_native.py
+      - docs/NVP_WO2_SLATE_APPROVAL_CLOSEOUT.md
+      - .github/workflows/nvp-wo2-slate-native-approval.yml
+  pull_request:
+    paths:
+      - backend/nvp_slate_preview_cache.py
+      - backend/nvp_slate_preview_host.py
+      - tests/test_nvp_slate05_preview_native.py
+      - tests/test_nvp_slate06_geometry_native.py
+      - .github/workflows/nvp-wo2-slate-native-approval.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nvp-wo2-approval-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-approval-consistency:
+    name: Durable SLATE approval / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 24
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine pinned OpenUSD and native regression dependencies
+        shell: bash
+        run: |
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+      - name: Compile native preview, approved binding, SQLite journal and tests
+        run: python -m compileall -q backend/nvp_slate_preview_cache.py backend/nvp_slate_preview_host.py backend/nvp_approved_tasks.py backend/nvp_approved_blender_dispatch.py tests/test_nvp_slate05_preview_native.py tests/test_nvp_slate06_geometry_native.py
+      - name: Real native SLATE-05 consent, durable reservation, crash recovery, denial and source-preservation tests
+        run: python -m unittest discover -s tests -p test_nvp_slate05_preview_native.py -v
+      - name: Real native SLATE-06 OpenUSD geometry/shot consent and pre-Take camera refusal tests
+        if: success() || failure()
+        run: python -m unittest discover -s tests -p test_nvp_slate06_geometry_native.py -v
+      - name: Assert no FFmpeg or shell pipeline admission
+        if: success() || failure()
+        run: python tools/nvp_no_ffmpeg_contract.py
