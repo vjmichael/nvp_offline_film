@@ -18,7 +18,7 @@ import uuid
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_story_bible import StoryBible, sha_scene
-from backend.nvp_studio import Studio
+from backend.nvp_studio import Studio, parse_screenplay
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
 
 FORMAT = "nvp.film03.production_bible_actor_links.v1"
@@ -272,6 +272,52 @@ class ProductionBibleActors:
             return rec["document_sha256"], snapshot
         raise ValueError("Unknown production actor source family")
 
+    @staticmethod
+    def _source_guard_in_actor_transaction(db, pid, family, oid, revision,
+                                           sha, snapshot):
+        """No nested schema-writing registry initialization under write lease."""
+        if family == "screenplay_scene":
+            row = db.execute(
+                "SELECT screenplay,revision FROM projects WHERE id=?", (pid,)
+            ).fetchone()
+            if row is None or row["revision"] != revision:
+                raise RuntimeError("Screenplay changed during ActorID source approval")
+            scene = next((s for s in parse_screenplay(row["screenplay"])
+                          if s["id"] == oid), None)
+            if (scene is None or sha_scene(scene) != snapshot["scene_sha256"]
+                    or _sha(snapshot) != sha):
+                raise RuntimeError("Screenplay scene differs from approved ActorID source")
+        elif family == "bible_prop":
+            row = db.execute(
+                "SELECT kind,revision FROM bible_entities WHERE id=? AND project_id=?",
+                (oid,pid)).fetchone()
+            if row is None or row["kind"] != "prop" or row["revision"] != revision:
+                raise RuntimeError("Original production prop changed during ActorID link")
+        elif family == "filmindex":
+            row = db.execute(
+                "SELECT document_sha FROM film_object_revisions WHERE "
+                "project_id=? AND object_id=? AND revision=?",
+                (pid,oid,revision)).fetchone()
+            if row is None or row["document_sha"] != sha:
+                raise RuntimeError("Immutable FilmIndex source changed while linking actor")
+        elif family in ("mesh_glb","rigged_glb"):
+            table = ("prod_mesh_bindings" if family=="mesh_glb"
+                     else "prod_character_assets")
+            row = db.execute(
+                "SELECT " + ("sha256" if family=="mesh_glb" else "sha") +
+                " AS digest FROM " + table +
+                " WHERE project_id=? AND asset_id=?", (pid,oid)).fetchone()
+            if row is None or row["digest"] != sha:
+                raise RuntimeError("Real imported GLB source identity changed")
+        elif family == "texture_blob":
+            # FilmIndex's content-addressed blob is checked through
+            # get_blob/PNG decoder before this transaction; SHA cannot be
+            # reassigned under a different ID by a project editor.
+            if sha != oid or snapshot["original_blob_sha256"] != sha:
+                raise RuntimeError("Texture source SHA changed")
+        else:
+            raise ValueError("Unknown original actor source family")
+
     def link(self, project_id, actor_id, *, role, source_family, target_id,
              target_revision, expected_actor_revision, production_scope="global",
              director_note="", actor_prim_path=None, link_id=None,
@@ -311,11 +357,9 @@ class ProductionBibleActors:
             # Re-read the source identity while holding the actor's SQLite
             # write lease. A screenplay/StoryBible revision cannot slip in
             # between preflight and durable relationship creation.
-            final_sha, final_snapshot = self._target(
-                project_id, role, source_family, target_id,
-                target_revision, actor_prim_path)
-            if final_sha != sha or final_snapshot != snapshot:
-                raise RuntimeError("Source changed during actor relationship approval")
+            self._source_guard_in_actor_transaction(
+                db, project_id, source_family, target_id, target_revision,
+                sha, snapshot)
             count = db.execute("""SELECT COUNT(DISTINCT link_id) FROM nvp_bible_actor_links
                 WHERE project_id=? AND actor_id=?""", (project_id,actor_id)).fetchone()[0]
             if count >= MAX_LINKS and previous is None:
