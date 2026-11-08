@@ -203,8 +203,16 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             # model completion in a different thread behind the user's back.
             active=sum(x["state"]=="GENERATING" for x in
                        self._wo6_model_proposals.values())
-            if active>=1 or len(self._wo6_model_proposals)>=MAX_MODEL_PROPOSALS:
-                raise RuntimeError("Existing model request must finish or desktop must restart")
+            if active>=1:
+                raise RuntimeError("Previous local model generation has not finished")
+            while len(self._wo6_model_proposals)>=MAX_MODEL_PROPOSALS:
+                # Bounded retention of only completed review drafts. The
+                # oldest result is evicted; no persistent source, approval
+                # or model instruction is recovered or auto-applied.
+                oldest=next(iter(self._wo6_model_proposals))
+                if self._wo6_model_proposals[oldest]["state"]=="GENERATING":
+                    raise RuntimeError("No safe completed model result to evict")
+                del self._wo6_model_proposals[oldest]
             proposal_id="wo6proposal_"+secrets.token_hex(12)
             self._wo6_model_proposals[proposal_id]={
                 "state":"GENERATING","project_id":request["project_id"],
