@@ -86,6 +86,12 @@ class ActorIDSourceProductionBible(unittest.TestCase):
                 expected_actor_revision=ro["bible_revision"],
                 production_scope="scene:relay_first_costume")
             self.assertEqual(len(ro["active_links"]), 4)
+            incomplete = registry.casting_coverage(pid, "RelayRekindleTake")
+            self.assertFalse(incomplete["complete"])
+            self.assertIn("/World/CrossingBox", incomplete["uncast_prim_paths"])
+            self.assertEqual(incomplete["actor_id_by_prim"]["/World/Engineer"], actor_id)
+            with self.assertRaises(RuntimeError):
+                registry.require_complete_cast(pid, "RelayRekindleTake")
             wardrobe = next(l for l in ro["active_links"] if l["role"] == "wardrobe")
             self.assertEqual(wardrobe["source_snapshot"]["entity_id"], costume["id"])
             self.assertEqual(wardrobe["source_snapshot"]["kind"], "prop")
@@ -172,9 +178,9 @@ class ActorIDSourceProductionBible(unittest.TestCase):
                                  for x in after_retire["active_links"]))
             self.assertEqual(len([x for x in after_retire["history"]
                                   if x["link_id"] == wardrobe["link_id"]]), 3)
-            self.assertEqual(after_retire["history"][-1]["status"], "retired"
-                             if after_retire["history"][-1]["link_id"] == wardrobe["link_id"]
-                             else after_retire["history"][-1]["status"])
+            self.assertEqual([x for x in after_retire["history"]
+                              if x["link_id"] == wardrobe["link_id"]][-1]["status"],
+                             "retired")
 
             # Restart and read identical canonical ActorID and immutable
             # source revisions using fresh Studio, FilmIndex and registry.
@@ -188,6 +194,28 @@ class ActorIDSourceProductionBible(unittest.TestCase):
             self.assertEqual(reopened.catalog(pid)["format"], FORMAT)
             self.assertEqual(index.read_revision(pid, "RelayRekindleTake", 1)[
                 "kind"], "take")
+            # Cast the two other original nonhuman actors and the source
+            # ServiceCraft actor. Scene acceptance is still blocked until
+            # EVERY OpenUSD actor prim belongs to a canonical StoryBible ID.
+            for eid, prim in ((box["id"], "/World/CrossingBox"),
+                              (sphere["id"], "/World/PassingSphere")):
+                data = reopened.actor(pid, eid)
+                reopened.link(
+                    pid, eid, role="actor_prim", source_family="filmindex",
+                    target_id="RelayRekindleTake", target_revision=1,
+                    actor_prim_path=prim, expected_actor_revision=data["bible_revision"])
+            craft = bible.create_entity(pid, "character", "SERVICE CRAFT")
+            craft_data = reopened.actor(pid, craft["actor_id"])
+            reopened.link(
+                pid, craft["actor_id"], role="actor_prim", source_family="filmindex",
+                target_id="RelayRekindleTake", target_revision=1,
+                actor_prim_path="/World/ServiceCraft",
+                expected_actor_revision=craft_data["bible_revision"])
+            accepted = reopened.require_complete_cast(pid, "RelayRekindleTake")
+            self.assertTrue(accepted["complete"])
+            self.assertEqual(len(accepted["actor_id_by_prim"]), 4)
+            self.assertEqual(accepted["actor_id_by_prim"]["/World/PassingSphere"],
+                             sphere["actor_id"])
 
     def test_cross_project_invented_and_nonactor_links_are_refused(self):
         with TemporaryDirectory() as d:
