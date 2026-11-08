@@ -123,12 +123,30 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
         self.assertEqual(cancelled["state"],"CANCELLED")
         self.assertTrue(cancelled["cancel_intent_durable"])
 
+    def test_exact_dispatch_notice_reaches_host_and_never_loses_task_id(self):
+        seen=[]
+        arrived=threading.Event()
+        class TargetHost:
+            owner="wo6_notice_identity"
+            def run_next(self,*,timeout_seconds,expected_task_id=None):
+                seen.append(expected_task_id)
+                arrived.set()
+                return {"task_id":expected_task_id,"state":"NOT_CLAIMED",
+                        "admitted":False}
+        task="wo6data_"+"6"*24
+        queued=self.bridge._wo6_result({"task_id":task},TargetHost())
+        self.assertEqual(queued["state"],"QUEUED")
+        self.assertFalse(queued["native_worker_success_verified"])
+        self.assertTrue(arrived.wait(timeout=2))
+        self.assertEqual(seen,[task])
+        self.bridge._close()
+
     def test_native_job_dispatch_does_not_block_director_ipc(self):
         started=threading.Event()
         resume=threading.Event()
         class HeldHost:
             owner="wo6_test_worker"
-            def run_next(self,*,timeout_seconds):
+            def run_next(self,*,timeout_seconds,expected_task_id=None):
                 started.set()
                 resume.wait(timeout=6)
                 return None
@@ -151,8 +169,8 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
             owner="wo6_lifecycle_close"
             def __init__(self):
                 self.calls=[]
-            def run_next(self,*,timeout_seconds):
-                self.calls.append(timeout_seconds)
+            def run_next(self,*,timeout_seconds,expected_task_id=None):
+                self.calls.append(expected_task_id)
                 entered.set()
                 resume.wait(timeout=5)
                 return None
@@ -169,7 +187,7 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
         # The first worker was authorized before close; it may finish,
         # but the second persisted task is never started automatically.
         time.sleep(.05)
-        self.assertEqual(len(host.calls),1)
+        self.assertEqual(host.calls,["wo6take_"+"2"*24])
         self.assertTrue(self.bridge._wo6_closed)
         with self.assertRaises(RuntimeError):
             self.bridge._wo6_result({"task_id":"wo6take_"+"4"*24},host)
@@ -182,7 +200,7 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
             owner="wo6_lifecycle_pressure"
             def __init__(self):
                 self.calls=0
-            def run_next(self,*,timeout_seconds):
+            def run_next(self,*,timeout_seconds,expected_task_id=None):
                 self.calls+=1
                 entered.set()
                 resume.wait(timeout=5)
@@ -210,7 +228,7 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
     def test_native_dispatch_failure_never_claims_success_or_exposes_path(self):
         class FailedHost:
             owner="wo6_lifecycle_failure"
-            def run_next(self,*,timeout_seconds):
+            def run_next(self,*,timeout_seconds,expected_task_id=None):
                 raise PermissionError("private path /secret/studio/source")
         task="wo6shot_"+"8"*24
         receipt=self.bridge._wo6_result({"task_id":task},FailedHost())
