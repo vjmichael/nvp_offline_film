@@ -102,6 +102,19 @@ class WO3NativeMaterialXIntegrity(unittest.TestCase):
                     self.verify(stage)
         self.verify(self.stage())
 
+    def test_extra_connected_source_does_not_hide_behind_first_valid_source(self):
+        stage=self.stage()
+        target=self.shader(stage,"OpenPBR").GetInput("specular_roughness")
+        existing=target.GetAttr().GetConnections()
+        self.assertEqual(len(existing),1)
+        # A first-source-only validator would still report Roughness and
+        # silently overlook the second output path.
+        target.GetAttr().AddConnection(Sdf.Path(
+            "/Asset/Material/MtlxMap_Metallic.outputs:out"))
+        self.assertEqual(len(target.GetAttr().GetConnections()),2)
+        with self.assertRaises(RuntimeError):
+            self.verify(stage)
+
     def test_color_filter_uv_and_wrap_tamper_are_rejected(self):
         def rewrite_string(stage,node,port,value):
             self.shader(stage,node).GetInput(port).Set(value)
