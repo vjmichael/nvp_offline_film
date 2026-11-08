@@ -331,6 +331,44 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             with self.assertRaises(KeyError):
                 self.index.read_revision(self.pid,identity,1)
 
+    def test_short_spool_write_rejects_batch_and_closes_temporary_files(self):
+        from unittest.mock import patch
+        import backend.nvp_data_first_filming as filming
+        req=self.payload()
+        second=dict(req["recordings"][0])
+        second.update(event_id="Speech002",source_id="SecondSpeech",
+                      pcm_chunks=iter([self.original]))
+        req["recordings"].append(second)
+        real_factory=filming.tempfile.SpooledTemporaryFile
+        created=[]
+        class ShortWriteSpool:
+            def __init__(self,inner,fail):
+                self.inner=inner
+                self.fail=fail
+                self.closed=False
+            def write(self,data):
+                if self.fail:
+                    self.fail=False
+                    return len(data)-1
+                return self.inner.write(data)
+            def seek(self,*args):return self.inner.seek(*args)
+            def read(self,*args):return self.inner.read(*args)
+            def close(self):
+                self.closed=True
+                return self.inner.close()
+        def factory(**kwargs):
+            wrapped=ShortWriteSpool(real_factory(**kwargs),len(created)==1)
+            created.append(wrapped)
+            return wrapped
+        with patch.object(filming.tempfile,"SpooledTemporaryFile",factory):
+            with self.assertRaisesRegex(OSError,"Incomplete captured PCM spool write"):
+                self.capture.capture(**req)
+        self.assertEqual(len(created),2)
+        self.assertTrue(all(spool.closed for spool in created))
+        for identity in ("NewRecordedSpeech","SecondSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
