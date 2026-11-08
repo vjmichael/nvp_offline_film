@@ -10,11 +10,18 @@ from __future__ import annotations
 
 def verify_output_connection(target, source_path, output_name, *,
                              output_type=None, input_type=None):
-    from pxr import UsdShade
+    from pxr import Sdf,UsdShade
     if not target:
         raise RuntimeError("Required original USD shading input is missing")
     if input_type is not None and target.GetTypeName()!=input_type:
         raise RuntimeError("Original USD shading input type changed")
+    # GetConnectedSource() can return only the first source when an
+    # attacker authors *multiple* connections. Refuse all duplicate,
+    # invalid and extra connection paths before looking up that first.
+    edges=target.GetAttr().GetConnections()
+    expected=Sdf.Path(source_path+".outputs:"+output_name)
+    if len(edges)!=1 or edges[0]!=expected:
+        raise RuntimeError("Original USD shading connection has extra or incorrect edges")
     connection=target.GetConnectedSource()
     if (not connection or
             str(connection[0].GetPrim().GetPath())!=source_path or
