@@ -1256,3 +1256,12 @@ native jobs; no GPU/calibrated or production rendering claim.
 - Adds original sample-preservation test for 4-frame window 22–25 of a 26-frame terminal 5.1 PCM24 reel, including exact 2000 samples/frame/channel, uniquely labelled six-channel samples, two unwrap regions (0–23,24–25), reuse and eviction.
 - Native four-cell Ubuntu/Windows 3.11/3.13 suite: `.github/workflows/nvp-wo5-preview-pcm-custody.yml`; exact-head completion **OPEN**. See `docs/NVP_WO5_PREVIEW_PCM_CACHE_CLOSEOUT.md`.
 - Genuine installed NVP.exe 24fps A/V continuous playback, full original 30-minute film, hardware, independent theater and Bv2.1 remain **OPEN**, not implied by source fixes or unit tests.
+
+
+## WO6 — Exact task-notice lifecycle and native recovery (2026-11-07)
+
+- **New WO6 follow-up branch:** `nvp/wo6-exact-dispatch-recovery-20261107`, stacked on WO5 PR #97. Previous WO6-05/06/07 source writes, durable cancel receipts, kernel worker-tree attestation, and director UI remain inherited from WO6 PR #93; no active acceptance gate is silently closed.
+- **Real source-review defect:** native desktop queued a specific sealed task ID but passed only `run_next()` to its operation-family host, allowing a different scheduler-head task to be claimed. New `expected_task_id` is threaded through desktop, three first-party host types, creator binding preflight and the SQLite `BEGIN IMMEDIATE` admission transaction. A stale, canceled, or out-of-order notice fails without reservation or another task's admission; existing scheduler priority remains authoritative.
+- **Adversarial regressions:** native SQLite priority and cancellation mismatch, approved spec policy preflight, exact desktop notice propagation, queue pressure, close that drops unstarted notices, and reopened SQLite task status with explicit new OS cancellation approval. Existing OS-contained OpenUSD Take, shot, color/editorial worker, crash-after-commit and Windows Job Object tests remain in the dedicated matrix.
+- **Native test workflow:** `.github/workflows/nvp-wo6-exact-dispatch-recovery.yml`, Windows 2025 / Ubuntu 24.04 with Python 3.11/3.13, actual `usd-core==26.11`, native pywin32 on Windows. **Acceptance OPEN** pending exact-head job results; no installed NVP.exe, actual terminated-worker tree or 30-minute film claim.
+- Closeout specification: `docs/NVP_WO6_DISPATCH_LIFECYCLE_RECOVERY.md`. A task left QUEUED after a non-admitted notice requires fresh creator choice, **never automatic restart replay**.
