@@ -65,6 +65,17 @@ def main():
             len(donut.data.polygons)!=1008 or
             any(not face.use_smooth for face in donut.data.polygons)):
         raise RuntimeError("Original USD torus topology or smooth rendering changed in saved Blender project")
+    # Aesthetic changes are verified on independently reopened native
+    # Blender data, not inferred from a successful Python staging test.
+    copper=donut.active_material.node_tree.nodes.get("Principled BSDF")
+    rim=bpy.data.objects.get("NVP_Cool_Rim")
+    if (copper is None or
+            abs(copper.inputs["Metallic"].default_value-.86)>1.e-5 or
+            abs(copper.inputs["Roughness"].default_value-.22)>1.e-5 or
+            rim is None or rim.type!="LIGHT" or
+            abs(rim.data.energy-125)>1.e-5 or
+            abs(key.data.size-1.15)>1.e-5):
+        raise RuntimeError("Inspected Cycles copper/rim/shadow revision not saved")
     for frame in (0,12,24,36,48,60,71):
         sc.frame_set(frame+1)
         for name,obj in source_objects.items():
