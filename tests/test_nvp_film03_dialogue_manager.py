@@ -22,6 +22,7 @@ from backend.nvp_production_bible_actors import ProductionBibleActors
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_studio import Studio
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND, TemporalLedger
+from backend.nvp_wo6_scene_context import assemble_film_crew_context
 from tools.nvp_film01_original_30s import write_original_30s_source
 
 
@@ -241,6 +242,39 @@ class ActualOriginalActorSourceRouting(unittest.TestCase):
             mgr.route(s["pid"],dict(s["request"],speaker_name="DONUT"))
         with self.assertRaises(ValueError):
             actor_subject("TheDonut")
+
+    def test_native_AI_scene_crew_requires_verified_actorid_delivery(self):
+        s=self.state
+        context=assemble_film_crew_context(
+            s["index"],s["pid"],"RelayRekindleTake",1,0,
+            dialogue_selection_id="OriginalDonutDialogueSelection",
+            dialogue_selection_revision=1,
+            dialogue_route_request=s["request"])
+        deliver=context["authoritative_actorid_dialogue_route"]
+        self.assertEqual(deliver["actor_id"],s["people"]["DONUT"])
+        self.assertEqual(deliver["script_line_id"],s["request"]["script_line_id"])
+        self.assertFalse(context[
+            "dialogue_source_inspection_is_not_permission_to_speak"])
+        observed=assemble_film_crew_context(
+            s["index"],s["pid"],"RelayRekindleTake",1,0,
+            dialogue_selection_id="OriginalDonutDialogueSelection",
+            dialogue_selection_revision=1)
+        self.assertTrue(observed[
+            "dialogue_source_inspection_is_not_permission_to_speak"])
+        self.assertIsNone(observed["authoritative_actorid_dialogue_route"])
+        wrong=dict(s["request"],actor_id=s["people"]["SPHERE"])
+        with self.assertRaises(PermissionError):
+            assemble_film_crew_context(
+                s["index"],s["pid"],"RelayRekindleTake",1,0,
+                dialogue_selection_id="OriginalDonutDialogueSelection",
+                dialogue_selection_revision=1,
+                dialogue_route_request=wrong)
+        with self.assertRaises(PermissionError):
+            assemble_film_crew_context(
+                s["index"],s["pid"],"RelayRekindleTake",1,1,
+                dialogue_selection_id="OriginalDonutDialogueSelection",
+                dialogue_selection_revision=1,
+                dialogue_route_request=s["request"])
 
     def test_reopen_SQLite_keeps_original_identity_and_audio(self):
         s=self.state
