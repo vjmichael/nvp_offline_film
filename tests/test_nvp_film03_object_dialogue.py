@@ -14,8 +14,9 @@ import unittest
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_film03_object_dialogue import (
     ObjectActorDialogue, SCRIPT_FORMAT, PERFORMANCE_FORMAT, SELECTION_FORMAT,
-    _script_scenes,
+    read_scene_dialogue_selection, _script_scenes,
 )
+from backend.nvp_wo6_scene_context import assemble_film_crew_context
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_studio import Studio, parse_screenplay
 from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND
@@ -118,6 +119,23 @@ class RealFilm03DialogueLineage(unittest.TestCase):
             self.assertEqual(edit1["data"]["format"], SELECTION_FORMAT)
             self.assertTrue(edit1["data"]["all_original_take_events_preserved"])
             self.assertEqual(len(edit1["data"]["selected"]), 3)
+            crew_before = assemble_film_crew_context(
+                index, pid, "RelayRekindleTake", 1, 0,
+                dialogue_selection_id="Relay03DialogueEdit",
+                dialogue_selection_revision=1)
+            selected_before = crew_before["authored_object_actor_dialogue_selection"]
+            self.assertIsNotNone(selected_before)
+            self.assertFalse(selected_before["script_changed_since_selected_dialogue"])
+            self.assertEqual(selected_before["active_object_actor_lines"][0][
+                "screenplay_speaker"], "DONUT")
+            self.assertEqual(selected_before["active_object_actor_lines"][0][
+                "production_bible_entity_id"], people["DONUT"]["id"])
+            self.assertFalse(selected_before["active_object_actor_lines"][0][
+                "voice_source_recorded"])
+            with self.assertRaises(PermissionError):
+                read_scene_dialogue_selection(
+                    index, pid, "Relay03DialogueEdit", 1,
+                    tick=0, expected_take_id="RelayDiscoveryTake")
             original = TemporalLedger(index)
             overlay1 = original.verify(pid, "Relay03DialogueOverlay", 1)
             self.assertGreater(overlay1["event_count"],
@@ -142,6 +160,17 @@ class RealFilm03DialogueLineage(unittest.TestCase):
                 pid, "Relay03ScreenplayDialogue")
             self.assertEqual(impact["screenplay_revision"], 2)
             self.assertEqual(impact["last_published_script_snapshot_revision"], 1)
+            crew_after_rewrite = assemble_film_crew_context(
+                index, pid, "RelayRekindleTake", 1, 0,
+                dialogue_selection_id="Relay03DialogueEdit",
+                dialogue_selection_revision=1)
+            self.assertTrue(crew_after_rewrite[
+                "authored_object_actor_dialogue_selection"][
+                    "script_changed_since_selected_dialogue"])
+            self.assertEqual(crew_after_rewrite[
+                "authored_object_actor_dialogue_selection"][
+                    "active_object_actor_lines"][0]["original_spoken_text"],
+                "The relay has been silent for twenty years.")
             self.assertIn("DonutOriginalLine",
                           [x["performance_id"] for x in impact["impacted_historical_performances"]])
             self.assertNotIn("BoxOriginalLine",
@@ -232,6 +261,18 @@ class RealFilm03DialogueLineage(unittest.TestCase):
                 "document_sha256"], old_donut_sha)
             self.assertEqual(index.read_revision(pid, "RelayRekindleTake", 1)[
                 "document_sha256"], take_sha)
+            crew_final = assemble_film_crew_context(
+                index, pid, "RelayRekindleTake", 1, 0,
+                dialogue_selection_id="Relay03DialogueEdit",
+                dialogue_selection_revision=3)
+            active_final = crew_final["authored_object_actor_dialogue_selection"][
+                "active_object_actor_lines"][0]
+            self.assertEqual(active_final["performance_id"], "DonutRevisedLine")
+            self.assertEqual(active_final["original_spoken_text"],
+                             "The relay is coming back online.")
+            self.assertFalse(crew_final[
+                "authored_object_actor_dialogue_selection"][
+                    "script_changed_since_selected_dialogue"])
             self.assertGreaterEqual(len(studio.screenplay_history(pid)), 2)
             self.assertEqual(
                 original.verify(pid, "Relay03DialogueOverlay", 3)["status"],
