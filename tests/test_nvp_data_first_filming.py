@@ -484,6 +484,26 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(later["payload"]["usd_prim_path"],"/World/Actor")
         self.assertEqual(second["event_id"],"TamperedSpeech")
 
+    def test_invalid_later_recording_rejected_before_first_pcm_iterator(self):
+        req=self.payload()
+        consumed=[]
+        def guarded_pcm():
+            consumed.append(True)
+            raise AssertionError("No PCM may be consumed before batch preflight")
+            yield b"\\x00\\x00"
+        req["recordings"][0]["pcm_chunks"]=guarded_pcm()
+        later=dict(req["recordings"][0])
+        later.update(event_id="Speech002",source_id="SecondSpeech",
+                     usd_prim_path="/World/NotThere",pcm_chunks=iter([self.original]))
+        req["recordings"].append(later)
+        with self.assertRaisesRegex(RuntimeError,"emitter"):
+            self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        self.assertEqual(self.approvals,[])
+        for identity in ("NewRecordedSpeech","SecondSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
