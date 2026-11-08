@@ -98,7 +98,11 @@ describe('WO5 finished published picture/mastered sound playback',()=>{
       wo5_film_frame:vi.fn(),wo5_film_stop:vi.fn()
     };
     const audio=window.AudioContext;
-    window.AudioContext=class {};
+    window.AudioContext=class {
+      state='running';
+      resume(){return Promise.resolve();}
+      close(){return Promise.resolve();}
+    };
     try{
       render(<FinishedFilmPlaybackPanel projectId={pid}
         featureId={fid} nativeBridge={native}/>);
@@ -109,7 +113,7 @@ describe('WO5 finished published picture/mastered sound playback',()=>{
         name:'Request native permission and play finished DCP'}));
       await waitFor(()=>expect(native.wo5_film_begin)
         .toHaveBeenCalledWith(pid,fid));
-      expect(screen.getByText(/State: DENIED/)).toBeTruthy();
+      await waitFor(()=>expect(screen.getByText(/State: DENIED/)).toBeTruthy());
       expect(native.wo5_film_frame).not.toHaveBeenCalled();
     }finally{window.AudioContext=audio;}
   });

@@ -62,6 +62,9 @@ class NativePublishedMultiReelViewing(unittest.TestCase):
             profile="2K_FLAT_24"
             width,height,_=PROFILES[profile]
             take_sha=sha256(b"CI-owned sealed example identity").hexdigest()
+            reel_frames=int(os.environ.get("NVP_WO5_CI_REEL_FRAMES","3"))
+            if not 3<=reel_frames<=360:
+                raise PermissionError("CI fixture permits only 3..360 frames per SMPTE reel")
             hashes={}
             receipts=[]
             original_files=[]
@@ -94,35 +97,44 @@ class NativePublishedMultiReelViewing(unittest.TestCase):
                         timeout=180)
                     codestream_hashes.append(encoded["codestream_sha256"])
                     (work/"frame.j2c").replace(frames/f"{local:06d}.j2c")
+                # CI duration fixture repeats only verified native 2K J2K
+                # codestreams. This tests actual published 24fps transport,
+                # not authentic unique authored cinema photography.
+                if reel_frames>3:
+                    import shutil
+                    for local in range(3,reel_frames):
+                        shutil.copyfile(frames/f"{local%3:06d}.j2c",
+                                        frames/f"{local:06d}.j2c")
+                        codestream_hashes.append(codestream_hashes[local%3])
                 hashes[reel_i]=codestream_hashes
                 picture=wrap_disk_j2k_picture(
                     wrap,info,frames_dir=frames,stage_dir=picture_stage,
-                    frame_count=3,profile=profile,asset_uuid=str(uuid4()),
+                    frame_count=reel_frames,profile=profile,asset_uuid=str(uuid4()),
                     check_cancel=lambda:False,timeout=180)
                 # True native signed PCM24 in the published sound MXF.
                 # Different average amplitude on each reel, to catch
                 # accidentally continuing the previous sound track.
                 amplitude=0x100000+reel_i*0x100000
                 raw=(amplitude.to_bytes(3,"little",signed=True) +
-                     (-amplitude).to_bytes(3,"little",signed=True))*6000
+                     (-amplitude).to_bytes(3,"little",signed=True))*(reel_frames*2000)
                 raw_path=folder/"original_pcm24.pcm"
                 raw_path.write_bytes(raw)
                 original_files.append((raw_path,digest_file(raw_path)))
                 master=stream_master_pcm24_candidate(
                     raw_path,source_sha256=digest_file(raw_path),
-                    original_take_sha256=take_sha,cinema_frames=3,
+                    original_take_sha256=take_sha,cinema_frames=reel_frames,
                     channel_layout="stereo",output_root=master_stage,
                     approve=lambda _:True)
                 sound=wrap_supervised_sound(
                     wrap,info,candidate=master,source_take_sha=take_sha,
-                    frames=3,sound_uuid=str(uuid4()),
+                    frames=reel_frames,sound_uuid=str(uuid4()),
                     stage_dir=sounds,check_cancel=lambda:False)
                 picture_file=picture_stage/"picture.mxf"
                 sound_file=sounds/"sound.mxf"
                 receipts.append({
-                    "start_tick":reel_i*3*FRAME_TICKS,
-                    "end_tick":(reel_i+1)*3*FRAME_TICKS,
-                    "frames":3,"reel_uuid":str(uuid4()),
+                    "start_tick":reel_i*reel_frames*FRAME_TICKS,
+                    "end_tick":(reel_i+1)*reel_frames*FRAME_TICKS,
+                    "frames":reel_frames,"reel_uuid":str(uuid4()),
                     "picture":{"file_path":str(picture_file),
                                "file_sha256":picture["file_sha256"],
                                "file_bytes":picture["file_bytes"],
@@ -139,7 +151,7 @@ class NativePublishedMultiReelViewing(unittest.TestCase):
             self.assertEqual(published["status"],"MULTIREEL_STRUCTURAL_DCP_PUBLISHED")
             folder=Path(published["destination"])
             dcp=inspect_dcp_structure(folder)
-            self.assertEqual(dcp["reel_durations"],[3,3])
+            self.assertEqual(dcp["reel_durations"],[reel_frames,reel_frames])
             self.assertEqual(dcp["status"],"STRUCTURE_AND_SHA_VERIFIED")
             tracks=dcp["tracks"]
             ordered=[]
@@ -148,12 +160,12 @@ class NativePublishedMultiReelViewing(unittest.TestCase):
                 pic=folder/by_kind["picture"]["filename"]
                 snd=folder/by_kind["sound"]["filename"]
                 ordered.append(Reel(
-                    r*3,3,pic,snd,digest_file(pic),digest_file(snd),
+                    r*reel_frames,reel_frames,pic,snd,digest_file(pic),digest_file(snd),
                     f"real_native_reel_{r}",("L","R"),
                     _fingerprint(pic),_fingerprint(snd)))
             audit={"filmindex_feature_receipt_sha256":"a"*64,
                    "ordered_picture_custody_sha256":"b"*64,
-                   "frame_count":6}
+                   "frame_count":2*reel_frames}
             player=FinishedFilmPlayer(
                 index,journal,unwrap=unwrap,decoder=decode,
                 private_root=root/"work_native",
@@ -169,23 +181,24 @@ class NativePublishedMultiReelViewing(unittest.TestCase):
                     return hashes[reel][local]
                 with patch("backend.nvp_wo5_finished_playback._expected_frame_sha",
                            side_effect=expected_sha):
-                    a=player.frame(token,2)
-                    b=player.frame(token,3)
-                    one=player.window(token,2,4)
-                    two=player.window(token,3,2)
+                    a=player.frame(token,reel_frames-1)
+                    b=player.frame(token,reel_frames)
+                    one=player.window(token,reel_frames-1,4)
+                    two=player.window(token,reel_frames,2)
                 self.assertEqual(one["frame_count"],1)
                 self.assertEqual(two["frame_count"],2)
                 self.assertEqual(
-                    [f["frame_index"] for f in two["frames"]],[3,4])
+                    [f["frame_index"] for f in two["frames"]],
+                    [reel_frames,reel_frames+1])
                 self.assertEqual(
                     [f["audio_start_sample"] for f in two["frames"]],
-                    [6000,8000])
+                    [reel_frames*2000,(reel_frames+1)*2000])
                 self.assertTrue(one["no_reel_crossing"])
                 self.assertTrue(two["no_reel_crossing"])
-                self.assertEqual((a["reel_index"],a["reel_frame_index"]),(0,2))
+                self.assertEqual((a["reel_index"],a["reel_frame_index"]),(0,reel_frames-1))
                 self.assertEqual((b["reel_index"],b["reel_frame_index"]),(1,0))
-                self.assertEqual(a["audio_start_sample"],4000)
-                self.assertEqual(b["audio_start_sample"],6000)
+                self.assertEqual(a["audio_start_sample"],(reel_frames-1)*2000)
+                self.assertEqual(b["audio_start_sample"],reel_frames*2000)
                 self.assertNotEqual(a["source_j2k_sha256"],b["source_j2k_sha256"])
                 self.assertNotEqual(a["picture_png_base64"],b["picture_png_base64"])
                 self.assertNotEqual(a["stereo_pcm16_base64"],b["stereo_pcm16_base64"])
@@ -197,6 +210,20 @@ class NativePublishedMultiReelViewing(unittest.TestCase):
                 player.close()
             for original,original_sha in original_files:
                 self.assertEqual(digest_file(original),original_sha)
+            # Optional GitHub-owned fixture for a REAL installed NVP.exe
+            # codec timing acceptance. Never treat six distinct frames as
+            # original feature-film proof or include a synthetic movie in
+            # the released installer.
+            fixture_root=os.environ.get("NVP_WO5_TEST_KEEP_DCP")
+            if fixture_root:
+                import shutil
+                destination=Path(fixture_root)
+                if (not destination.is_absolute() or destination.exists() or
+                        destination.is_symlink() or not destination.parent.is_dir()):
+                    raise PermissionError("Fresh CI-owned native DCP fixture destination required")
+                shutil.copytree(folder,destination)
+                check=inspect_dcp_structure(destination)
+                self.assertEqual(check["reel_durations"],[reel_frames,reel_frames])
 
 if __name__=="__main__":
     unittest.main()

@@ -99,6 +99,7 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
   const [seek,setSeek]=useState('0');
   const [position,setPosition]=useState(0);
   const [playing,setPlaying]=useState(false);
+  const [presentationReceipt,setPresentationReceipt]=useState(null);
   const canvas=useRef(null);
   const ref=useRef({generation:0,active:false});
 
@@ -151,7 +152,7 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
 
   async function begin(){
     if(!native||!featureId||playing)return;
-    setError('');setNote('');
+    setError('');setNote('');setPresentationReceipt(null);
     let start=Number(seek);
     if(!Number.isSafeInteger(start)||start<0||
        (info&&start>=info.frame_count)){
@@ -159,14 +160,36 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
     }
     const Audio=window.AudioContext||window.webkitAudioContext;
     if(!Audio){setError('A real WebView2 WebAudio device is required for synchronized film review.');return;}
+    // AudioContext must be created/resumed in the ORIGINAL creator click
+    // task, before awaiting native OS confirmation. Chromium can refuse
+    // an audio device resume attempted only after an async permission IPC.
+    // No film data is played before the exact native grant is approved.
+    let ctx=null,activated=null;
+    try{
+      ctx=new Audio({sampleRate:RATE});
+      activated=ctx.resume();
+    }catch(e){
+      if(ctx)try{await ctx.close();}catch{}
+      setError('WebView2 audio activation failed: '+e.message);return;
+    }
     await stop(true);
     const current=ref.current;
     const gen=current.generation;
     setStatus('APPROVING_NATIVE_READ');
-    let session=null,ctx=null;
+    let session=null;
     try{
       session=await native.wo5_film_begin(projectId,featureId);
-      if(session?.status==='DENIED'){setStatus('DENIED');return;}
+      if(session?.status==='DENIED'){
+        await ctx.close();
+        setStatus('DENIED');return;
+      }
+      if(ref.current.generation!==gen){
+        await ctx.close();
+        if(session?.session_id)try{
+          await native.wo5_film_stop(session.session_id);
+        }catch{}
+        return;
+      }
       if(!session||session.format!==FORMAT||
          session.status!=='FINISHED_DCP_READONLY_READY'||
          session.native_picture_and_sound_from_published_mxf!==true||
@@ -177,14 +200,25 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
          session.frame_count<1||!session.session_id)
         throw Error('Native completed-film session receipt is invalid');
       if(start>=session.frame_count)throw Error('Seek beyond finished film duration');
-      ctx=new Audio({sampleRate:RATE});
-      await ctx.resume();
+      await activated;
+      if(ctx.state!=='running')
+        throw Error('Native WebView2 WebAudio device did not enter running state');
+      // Observe actual WebAudio graph samples during playback, in addition
+      // to verifying native PCM receipts and scheduled source windows.
+      const analyser=ctx.createAnalyser();
+      analyser.fftSize=2048;
+      analyser.smoothingTimeConstant=0;
+      analyser.connect(ctx.destination);
+      const audioProbe=new Float32Array(analyser.fftSize);
       const c={
         generation:gen,active:true,native,
         ticket:session.session_id,context:ctx,
         first:start,requested:start,loaded:new Map(),scheduled:[],
         started:false,anchor:0,nextSchedule:start,
         displayed:start-1,animation:null,lastFrame:session.frame_count-1,
+        painted:0,soundQueued:0,paintedFirst:null,paintedLast:null,
+        analyser,audioProbe,nonSilentAudioCallbacks:0,
+        maximumPictureAudioOffsetMs:0,
       };
       ref.current=c;
       setInfo(session);setPlaying(true);
@@ -209,10 +243,16 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
           clip.getChannelData(1).set(item.audio[1]);
           const node=ctx.createBufferSource();
           node.buffer=clip;
-          node.connect(ctx.destination);
+          node.connect(c.analyser);
+          node.onended=()=>{
+            const n=c.scheduled.indexOf(node);
+            if(n>=0)c.scheduled.splice(n,1);
+            try{node.disconnect();}catch{}
+          };
           node.start(requireAheadOfAudioClock(
             c.anchor+(c.nextSchedule-c.first)/FPS,ctx.currentTime));
           c.scheduled.push(node);
+          c.soundQueued++;
           item.scheduled=true;
           c.nextSchedule++;
         }
@@ -225,6 +265,9 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
           void stop(true);setPlaying(false);return;
         }
         if(c.started){
+          c.analyser.getFloatTimeDomainData(c.audioProbe);
+          if(c.audioProbe.some(value=>Math.abs(value)>0.00002))
+            c.nonSilentAudioCallbacks++;
           const elapsed=ctx.currentTime-c.anchor;
           if(elapsed>=0){
             const frame=c.first+Math.floor(elapsed*FPS);
@@ -234,6 +277,25 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
                 setStatus('FAILED_INCOMPLETE_FILM_NOT_REVIEWED');
                 void stop(true);setPlaying(false);return;
               }
+              if(c.painted!==c.lastFrame-c.first+1 ||
+                 c.soundQueued!==c.lastFrame-c.first+1){
+                setError('Final film missing displayed canvas frames or queued audio blocks.');
+                setStatus('FAILED_INCOMPLETE_FILM_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
+              }
+              setPresentationReceipt({
+                format:'nvp.wo5.screen_web_audio_clock_receipt.v1',
+                first:c.first,last:c.lastFrame,
+                canvasFramesDrawn:c.painted,
+                masteredPcmWindowsQueued:c.soundQueued,
+                webAudioNonSilentRenderCallbacks:c.nonSilentAudioCallbacks,
+                maxPictureAudioOffsetMs:c.maximumPictureAudioOffsetMs,
+                audioContextElapsedSeconds:Math.max(0,ctx.currentTime-c.anchor),
+                continuousCanvasTimeline:true,
+                audibleSpeakersIndependentlyVerified:false,
+                humanDirectorReviewVerified:false,
+                originalFilmAccepted:false,
+              });
               setStatus('FINISHED_PLAYBACK_REACHED_END_NOT_CREATIVE_APPROVAL');
               setNote('Decoded final picture/audio reached the last presentation frame. This does not certify that a person watched and heard it.');
               void stop(true);
@@ -257,11 +319,25 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
               }
               const target=canvas.current;
               const paint=target?.getContext('2d');
-              if(target&&paint){
-                if(target.width!==packet.width)target.width=packet.width;
-                if(target.height!==packet.height)target.height=packet.height;
-                paint.drawImage(packet.image,0,0,target.width,target.height);
+              if(!target||!paint){
+                setError('No real WebView canvas available for final film frames.');
+                setStatus('FAILED_NO_CANVAS_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
               }
+              if(target.width!==packet.width)target.width=packet.width;
+              if(target.height!==packet.height)target.height=packet.height;
+              try{paint.drawImage(packet.image,0,0,target.width,target.height);}
+              catch(e){
+                setError('Published final picture could not be painted: '+e.message);
+                setStatus('FAILED_NO_CANVAS_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
+              }
+              c.painted++;
+              c.maximumPictureAudioOffsetMs=Math.max(
+                c.maximumPictureAudioOffsetMs,
+                Math.abs(elapsed-(frame-c.first)/FPS)*1000);
+              c.paintedFirst??=frame;
+              c.paintedLast=frame;
               c.displayed=frame;
               setPosition(frame);
               // No full-film frames retained: only a short real-time window.
@@ -335,6 +411,16 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
       has not been configured for the trusted desktop host. Finished
       DCP playback cannot start; no FFmpeg or synthetic fallback.</p>}
     <p aria-label="Finished film playback state">State: {status}</p>
+    {presentationReceipt&&<output aria-label="Native finished film presentation receipt"
+      data-nvp-film-av-receipt={JSON.stringify(presentationReceipt)}>
+      WebView2 presentation timeline: {presentationReceipt.canvasFramesDrawn}
+      {' '}real canvas frames, {presentationReceipt.masteredPcmWindowsQueued}
+      {' '}mastered-audio clock windows queued; Web Audio produced non-silent samples
+      in {presentationReceipt.webAudioNonSilentRenderCallbacks} callback(s),
+      maximum picture/audio-clock phase {presentationReceipt.maxPictureAudioOffsetMs.toFixed(1)} ms.
+      This does not prove audible speakers,
+      director approval or theatrical compliance.
+    </output>}
     <canvas ref={canvas} width={512} height={270} role="img"
       aria-label="Decoded finished DCP picture at its audio-clock Film Time"
       style={{width:'100%',height:'auto',background:'#090b12',aspectRatio:'16/9'}}/>

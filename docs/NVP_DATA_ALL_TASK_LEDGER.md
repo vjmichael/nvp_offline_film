@@ -878,3 +878,88 @@ DCP Bv2.1 expert/projection review: **OPEN**, not production accepted.
 Old preexisting Native MaterialX source scalar failure patched with
 strict exact-map source verification; installed WebView2 reenactment
 remains a separate pending gate. WO4 deferred/open.
+
+### WO5 installed native theatrical playback and original thirty-minute source (2026-11-07)
+
+**Draft PR #92**, stacked on #91. Engineering work:
+- Pinned-source **real Windows OpenJPEG/CineCert** build, verified complete
+  BSD license notices and exact release SHA manifest baked into installed
+  NVP.exe; binary self-pinning from runtime/browser forbidden.
+- Actual NSIS install + embedded WebView2 native codec capability test,
+  real published two-reel SMPTE picture and mastered PCM24 decoding from
+  installed NVP.exe, and a measured >=24fps throughput gate that fails
+  closed when the native codec is too slow. Source fixture contains six
+  distinct synthetic test patterns and must NOT be reported as a film.
+- **Original 30m source pilot** Last Light at Relay Nine: six-act creative
+  experimental OpenUSD scene, 60 original timed camera cuts, moving
+  3D actors, six original PCM recorded motifs, a persisted/frozen
+  full-1,800s Digital Take and 6x7,200-frame reel plan, plus source
+  scene-linear visual checkpoints across all acts. Verify the original
+  Take/scene SHAs remain immutable if a new scene revision and new Take
+  are recorded from the surviving original data.
+- The actual rendered final 43,200 cinema-resolution frames, 30-minute
+  mastered sound and finished DCP, uninterrupted native Windows physical
+  audio/display playback, user/director creative review, 60–90min real
+  feature, >=3h epic and independent DCI/SMPTE projector validation:
+  **NOT IMPLEMENTED OR ACCEPTED by these source/codec tests**.
+- NVP project provenance can navigate from published DCP metadata to
+  FilmIndex assembled reels, mastering decision, original Take and exact
+  native OpenUSD scene source. New Takes must have a new identity; DCP
+  essence alone cannot reconstruct editable scenes/camera/actor actions.
+  Keep this in project/archival metadata rather than proprietary DCP
+  extensions. Original files stay immutable, no FFmpeg.
+
+**Status:** implementation and native tests submitted. Do not close
+installed sustained playback or original 30m finished-film acceptance
+until actual GitHub test receipts and director review arrive. WO4
+production deferred/open; WO5 still open.
+
+
+## WO5 native installed-film repair round — 2026-11-07
+
+**Observed previous native run**: The earlier Windows NSIS installed acceptance
+experienced a 180-second real MXF/OpenJPEG throughput timeout, a 600-second
+visible WebView2 30s picture/PCM24 final presentation timeout, and a
+180-second multi-stage installed source review timeout. The DATA-AV suite
+also had a real failure in `test_nvp_wo2_presentation_look.py`, where
+a literal escaped-NUL model rationale was not rejected. These are release
+blockers, **not passed acceptance**.
+
+**Code repairs submitted to PR #92**:
+
+- Fixed assistant rationale validation to reject actual control characters
+  plus escaped NUL/control instructions; no AI approval or arbitrary native
+  shader/command execution is introduced. Existing legitimate newline/tab
+  text remains permitted.
+- Changed the installed visible test-only actual final SMPTE DCP predecode
+  to 24-frames-at-a-time native MXF sound/picture unwrap instead of launching
+  two subprocesses per four original frames. It still independently checks
+  every original published JPEG2000 frame, real PCM24 exact-sample window,
+  published SHA and real reel boundary. The test fixture cannot substitute
+  its cache for production real-time native decode throughput.
+- The *independent throughput gate* now overlaps four separate native
+  OpenJPEG decodes of four distinct genuinely unwrapped J2K frames using
+  the existing SHA-pinned OS-contained codec worker. No cached picture,
+  synthetic frame count, DCP change, FFmpeg or shortened film gets
+  counted as genuine measured 24fps.
+- Added an inner 60–120s bounded probe time budget, per-codec limits,
+  honest incomplete/under-target vs passed reports, and fsynced stage
+  checkpoints naming the native MXF reel/window, OpenUSD installed source
+  stage and WebView2/Canvas/audio receipt stage. The runner always prints
+  the collected diagnostic tail and uploads surviving reports even when
+  a step times out. Source-window budget now covers the actual multi-panel
+  OpenUSD, GPU, PCM, film catalog and camera work; a higher timeout is not
+  itself acceptance.
+- **All underlying cinematic release gates remain strict**: actual
+  `NVP.exe` installation, measured picture 24fps, full 720 actual
+  published DCP picture/PCM blocks drawn/queued by real visible
+  WebView2/WebAudio, real audio clock continuity, no skipped footage,
+  meaningful performance audit, and no substituted pixels or sounds.
+
+**Current exact-head acceptance status:** Windows installed CI has been
+submitted and is queued; no newer green or measured throughput result is
+available. Real creative production of 43,200 distinct 2K/4K mastered
+frames and original 30m sound is still open, as are human director
+screening, 60–90min feature, >=3h epic and independent theater Bv2.1
+qualification. These performance fixes cannot be conflated with film
+delivery or calibrated speaker/display proof.
