@@ -361,6 +361,11 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES,
                     "preview_resolution":"640x360_not_DCI",
                     "virtual_light_shader_used":apply_virtual_fx,
                     "virtual_light_sha256":image["virtual_fx_sha256"],
+                    "source_audio_event_ids":sorted(
+                        x["event_id"] for x in
+                        image["recorded_pcm_source_tracks"]),
+                    "source_audio_track_count":len(
+                        image["recorded_pcm_source_tracks"]),
                 })
             wav=base64.b64decode(
                 packet["source_audio_wav_data_url"].split(",",1)[1],validate=True)
