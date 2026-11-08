@@ -221,6 +221,34 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(self.index.read_revision(
             self.pid,"SecondSpeech",1)["data"]["sample_count"],48000)
 
+    def test_validated_metadata_snapshot_survives_later_host_mutation(self):
+        req=self.payload()
+        second=dict(req["recordings"][0])
+        second.update(event_id="Speech002",source_id="SecondSpeech",
+                      pcm_chunks=[self.original])
+        req["recordings"].append(second)
+        original_publish=self.capture.sources.publish
+        def mutate_after_first(project_id,source_id,chunks,**kwargs):
+            result=original_publish(project_id,source_id,chunks,**kwargs)
+            if source_id=="NewRecordedSpeech":
+                second["event_id"]="TamperedSpeech"
+                second["usd_prim_path"]="/World/NotThere"
+                second["start_tick"]=2*T
+                second["gain"]=99.0
+            return result
+        self.capture.sources.publish=mutate_after_first
+        self.capture.capture(**req)
+        events=TemporalLedger(self.index).events_in(
+            self.pid,"FilmingSoundTimeline",1,start_tick=0,end_tick=3*T,
+            limit=10)["events"]
+        recorded=[ev for ev in events if ev["event_kind"]=="dialogue"]
+        self.assertEqual({ev["event_id"] for ev in recorded},
+                         {"Speech001","Speech002"})
+        later=next(ev for ev in recorded if ev["event_id"]=="Speech002")
+        self.assertEqual(later["start_tick"],0)
+        self.assertEqual(later["payload"]["usd_prim_path"],"/World/Actor")
+        self.assertEqual(later["payload"]["gain"],1.0)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
