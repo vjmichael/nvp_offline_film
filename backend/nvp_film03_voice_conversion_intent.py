@@ -86,6 +86,10 @@ class FilmGuideVoiceConversion:
         if mode not in MODES or guide_origin not in ORIGINS:
             raise ValueError("Unknown reviewed voice-conversion performance mode")
         _sha(guide_rights_evidence_sha256)
+        if guide_origin == "tts_acted_guide":
+            raise PermissionError(
+                "TTS acting guide is derived audio, not an original microphone source; "
+                "requires a separately verified source-to-derived provenance adapter")
         case = frozen_case(
             self.index, project_id, source_route,
             profile_revision=profile_revision,
