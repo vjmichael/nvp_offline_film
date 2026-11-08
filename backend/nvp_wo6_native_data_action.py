@@ -35,7 +35,7 @@ from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_wo6_native_shot_action import _validate_ai_review_context
 from backend.nvp_wo6_sound_editorial_decisions import (
     preflight_sound_cue,preflight_editorial_cut,
-    verify_sound_cue,verify_editorial_cut)
+    verify_sound_cue,verify_editorial_cut,typed_decision_sha)
 
 FORMAT = "nvp.wo6.creator_authorized_data_decision.v1"
 RECEIPT = "nvp.wo6.native_data_decision_receipt.v1"
@@ -104,6 +104,9 @@ def _preflight(index, spec):
             previous_end = end
             seen.add(shot["shot_id"])
         change_kind = "revise_camera"
+    if spec["decision_kind"] in ("sound_cue","editorial_cut"):
+        if spec.get("typed_preview_sha256")!=typed_decision_sha(spec):
+            raise PermissionError("Human typed sound/edit preview changed before native worker admission")
     if "reviewed_ai_consultation" in spec:
         reviewed=_validate_ai_review_context(
             spec["reviewed_ai_consultation"],
@@ -235,7 +238,8 @@ class NativeFilmDecisionHost:
                        duration_tick=None, screenplay_scene_id=None,
                        screenplay_revision=None, expected_bible_digest=None,
                        ram_mb=4096, expires_in_seconds=1800,
-                       ai_review_context=None, reviewed_original_take_id=None):
+                       ai_review_context=None, reviewed_original_take_id=None,
+                       expected_typed_preview_sha256=None):
         if not isinstance(scope, TrustedReadScope):
             raise PermissionError("Native actor/project/turn context required")
         if (type(creator_decision_id) is not str or
@@ -266,6 +270,10 @@ class NativeFilmDecisionHost:
         elif decision_kind=="editorial_cut":
             if duration_tick is not None or type(payload) is not list:
                 raise ValueError("Editorial requires exact immutable slate branches")
+        if decision_kind in ("sound_cue","editorial_cut"):
+            _sha(expected_typed_preview_sha256)
+        elif expected_typed_preview_sha256 is not None:
+            raise ValueError("Typed preview proof applies only to native sound/editorial")
         reviewed=None
         if ai_review_context is not None:
             reviewed=_validate_ai_review_context(
@@ -287,6 +295,8 @@ class NativeFilmDecisionHost:
             "expected_bible_digest": expected_bible_digest,
             "preview_sha256": expected_preview_sha256, "ram_mb": ram_mb,
         }
+        if decision_kind in ("sound_cue","editorial_cut"):
+            spec["typed_preview_sha256"]=expected_typed_preview_sha256
         if reviewed is not None:
             spec["reviewed_ai_consultation"]=reviewed
             spec["reviewed_original_take_id"]=reviewed_original_take_id
