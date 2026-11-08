@@ -135,6 +135,30 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"NewRecordedSpeech",1)
 
+    def test_same_event_and_source_identity_rejected_before_pcm(self):
+        req=self.payload()
+        req["recordings"][0]["event_id"]="NewRecordedSpeech"
+        with self.assertRaisesRegex(ValueError,"Duplicate or reserved"):
+            self.capture.capture(**req)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"NewRecordedSpeech",1)
+
+    def test_existing_source_in_later_entry_rejected_before_first_pcm(self):
+        existing=self.capture.sources.publish(
+            self.pid,"PreviouslyRecorded", [self.original],
+            expected_revision=0)
+        self.assertEqual(existing["revision"],1)
+        req=self.payload()
+        second=dict(req["recordings"][0])
+        second.update(event_id="Speech002",source_id="PreviouslyRecorded")
+        req["recordings"].append(second)
+        with self.assertRaisesRegex(ValueError,"already published"):
+            self.capture.capture(**req)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"NewRecordedSpeech",1)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"FilmingSoundTimeline",1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
