@@ -92,6 +92,30 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertIsNotNone(self.index.read_revision(
             self.pid,"DeniedSoundSource",1))
 
+    def test_denied_publication_is_visible_after_journal_reopen(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        denied=NativeSceneSoundCapture(self.index,approve_take=lambda event,scope:False)
+        request=self.payload()
+        request["take_id"]="InterruptedFilmingTake"
+        request["sound_timeline_id"]="InterruptedFilmingTimeline"
+        request["recordings"][0]["source_id"]="InterruptedFilmingSource"
+        with self.assertRaises(PermissionError):
+            denied.capture(**request)
+        inventory=FilmingPublicationJournal(self.index).unresolved(self.pid)
+        row=next(r for r in inventory if r["take_id"]=="InterruptedFilmingTake")
+        self.assertEqual(row["state"],"INTERRUPTED")
+        self.assertEqual(row["source_ids"],["InterruptedFilmingSource"])
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"InterruptedFilmingTake",1)
+        self.assertIsNotNone(self.index.read_revision(
+            self.pid,"InterruptedFilmingSource",1))
+
+    def test_successful_publication_is_not_unresolved(self):
+        self.capture.capture(**self.payload())
+        self.assertFalse(any(
+            r["take_id"]=="FilmedTake"
+            for r in self.capture.publications.unresolved(self.pid)))
+
     def test_duplicate_source_identity_fails_before_any_pcm_publication(self):
         req=self.payload()
         duplicate=dict(req["recordings"][0])
