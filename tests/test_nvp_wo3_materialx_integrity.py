@@ -102,6 +102,20 @@ class WO3NativeMaterialXIntegrity(unittest.TestCase):
                     self.verify(stage)
         self.verify(self.stage())
 
+    def test_base_image_file_cannot_be_overridden_by_hidden_usd_connection(self):
+        stage=self.stage()
+        image=self.shader(stage,"MtlxImage")
+        original=image.GetInput("file")
+        self.assertEqual(original.Get().path,self.texture["usd_asset_path"])
+        upstream=self.shader(stage,"MtlxTexcoord").CreateOutput(
+            "untrustedAsset",Sdf.ValueTypeNames.Asset)
+        original.ConnectToSource(upstream)
+        # The authored literal URI remains unchanged: the new connection,
+        # which a renderer could evaluate, must nevertheless be rejected.
+        self.assertEqual(original.Get().path,self.texture["usd_asset_path"])
+        with self.assertRaises(RuntimeError):
+            self.verify(stage)
+
     def test_extra_connected_source_does_not_hide_behind_first_valid_source(self):
         stage=self.stage()
         target=self.shader(stage,"OpenPBR").GetInput("specular_roughness")
