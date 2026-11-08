@@ -183,6 +183,12 @@ class ActorIdentityCore:
             "current_voice_cast_revision":cast["cast_revision"] if cast else None,
             "current_voice_reference_sha256":
                 cast["reference_audio_sha256"] if cast else None,
+            "profile_voice_cast_stale": bool(current and (
+                current["voice_id"] != (cast["voice_id"] if cast else None) or
+                current["voice_cast_revision"] !=
+                    (cast["cast_revision"] if cast else None) or
+                current["voice_reference_sha256"] !=
+                    (cast["reference_audio_sha256"] if cast else None))),
             "identity_is_story_bible_character_id":True,
             "no_generated_voice_or_motion_claim":True,
         }
