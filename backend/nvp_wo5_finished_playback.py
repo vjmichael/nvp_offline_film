@@ -345,11 +345,16 @@ class FinishedFilmPlayer:
         bytes_per_frame=SAMPLES_PER_FRAME*3*len(reel.channels)
         cache=self._pcm_cache
         if cache is None or cache["key"]!=key:
+            # Each region has its own output. A window crossing frame
+            # 23/24 must not ask asdcplib to overwrite the first extracted
+            # WAV in the same verified private decode directory.
+            sound_name=f"snd_{segment:09d}"
             run_supervised_codec(self.unwrap,
-                ["-f",str(segment),"-d",str(frames),str(reel.sound),"snd"],
+                ["-f",str(segment),"-d",str(frames),
+                 str(reel.sound),sound_name],
                 workdir=work,check_cancel=cancel,
                 timeout=150+frames*10)
-            sound=work/"snd"
+            sound=work/sound_name
             if sound.is_symlink() or not sound.is_file():
                 raise PermissionError("Native final DCP sound region missing")
             with wave.open(str(sound),"rb") as wav:
