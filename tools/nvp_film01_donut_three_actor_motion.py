@@ -65,9 +65,12 @@ def render_actual_three_actor_frames(source,*,full_72_frames=False):
     raster=NativeSceneLinearRaster(idx)
     images=[]
     receipts=[]
-    with FrozenSceneAV(idx,pid,"DonutLightingTake",
-                       expected_take_sha256=sha,
-                       listener_path="/World/Camera") as native:
+    # FrozenSceneAV is an explicit first-party session with close(),
+    # not a Python context-manager. Always close even on failed pixels.
+    native=FrozenSceneAV(
+        idx,pid,"DonutLightingTake",
+        expected_take_sha256=sha,listener_path="/World/Camera")
+    try:
         for frame in chosen:
             tick=frame*FRAME_TICK
             snap=native.snapshot(tick)
@@ -140,6 +143,8 @@ def render_actual_three_actor_frames(source,*,full_72_frames=False):
                     proof["real_interobject_reflections_computed"],
                 "source_original_modified":False,
             })
+    finally:
+        native.close()
     if any(not row["box_physically_behind_torus"] for row in receipts):
         raise RuntimeError("Passing box was not behind donut throughout filmed action")
     if len(receipts)!=n or len(images)!=n:
