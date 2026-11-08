@@ -358,6 +358,12 @@ def run_reviewed_mfa_one(index, plan, *, work_root, mfa_binary, mfa_sha256,
         accepted = import_mfa_json(
             output, exact_script_text=plan["exact_script_text"],
             pcm_sample_count=plan["sample_count"])
+        # Store the actual native model JSON bytes, NOT just a declarative
+        # "model ran" boolean. Downstream face rigs reopen and reparse this.
+        native_output_blob_sha = index.put_blob(
+            plan["project_id"], output, media_type="application/json")
+        if native_output_blob_sha != sha256(output).hexdigest():
+            raise RuntimeError("Original acoustic output blob differs from executed output")
         receipt = {
             **accepted,
             "source_plan": plan,
@@ -366,6 +372,7 @@ def run_reviewed_mfa_one(index, plan, *, work_root, mfa_binary, mfa_sha256,
             "executed_acoustic_model_sha256": acoustic_model_sha256,
             "executed_dictionary_sha256": dictionary_sha256,
             "native_output_sha256": sha256(output).hexdigest(),
+            "native_output_blob_sha256": native_output_blob_sha,
             "native_result_exit_code": 0,
             "output_is_viseme_candidates_not_rig_animation": True,
             "manual_lip_sync_review_pending": True,
