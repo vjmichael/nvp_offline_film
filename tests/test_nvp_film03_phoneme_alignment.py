@@ -119,6 +119,7 @@ class MFARealAudioImporterContracts(unittest.TestCase):
             self.assertEqual(plan["sample_count"], 24000)
             self.assertFalse(plan["phoneme_model_already_executed"])
             self.assertFalse(plan["speech_is_final_selected_film_audio"])
+            self.assertEqual(plan["source_take_id"], "RelayRekindleTake")
             with self.assertRaises((ValueError, KeyError, PermissionError)):
                 source_alignment_plan(
                     state["index"], state["pid"],
@@ -128,6 +129,18 @@ class MFARealAudioImporterContracts(unittest.TestCase):
                 source_alignment_plan(
                     state["index"], state["pid"], state["request"],
                     "WrongFacialSource", 1)
+            # A derived performance cannot overwrite the original guide/Takes.
+            with self.assertRaises(ValueError):
+                run_reviewed_mfa_one(
+                    state["index"], plan,
+                    work_root=Path(temp).resolve(),
+                    mfa_binary=Path(temp) / "nonexistent-mfa",
+                    mfa_sha256="0" * 64,
+                    dictionary_file=Path(temp) / "nonexistent.dict",
+                    dictionary_sha256="0" * 64,
+                    acoustic_model_file=Path(temp) / "nonexistent.model",
+                    acoustic_model_sha256="0" * 64,
+                    candidate_object_id="RelayRekindleTake")
             # No unreviewed binary may execute, even if a source plan exists.
             with self.assertRaises((ValueError, PermissionError)):
                 run_reviewed_mfa_one(
