@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Blender-side bpy adapter; subject to Blender/GPL distribution review.
 """Trusted NVP FILM01 Blender 5.2 Cycles worker (external GPL Blender script).
 
 Executed ONLY by the established SHA-pinned BlenderWorkerSupervisor.
