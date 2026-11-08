@@ -263,5 +263,76 @@ class ActorIdentityCompleteProfileSource(unittest.TestCase):
                     creator_event=ACTION)
             self.assertIsNone(deny.current(pid,aid)["current"])
 
+class NativeActorIdentityDirectorApproval(unittest.TestCase):
+    def test_native_host_denies_AI_identity_updates_and_exposes_only_a_read_only_tts_plan(self):
+        import os
+        from unittest.mock import patch
+        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+
+        class HumanWindow:
+            def __init__(self):
+                self.answers=[]
+                self.prompts=[]
+            def get_current_url(self):
+                return "http://127.0.0.1:43231/"
+            def create_confirmation_dialog(self,title,message):
+                self.prompts.append((title,message))
+                return self.answers.pop(0) if self.answers else False
+
+        with TemporaryDirectory() as d:
+            s=real_unrecorded_actor_with_voice(Path(d).resolve())
+            pid=s["pid"];aid=s["people"]["DONUT"]
+            original=ActorIdentityCore(
+                s["index"],verify_creator_action=permit)
+            current=original.publish(
+                pid,aid,identity_profile(),
+                expected_profile_revision=0,
+                expected_bible_revision=s["registry"].actor(pid,aid)["bible_revision"],
+                director_note="Original identity approved for exact source",
+                creator_event=ACTION)
+            old_sha=current["current"]["document_sha256"]
+            changed=identity_profile()
+            changed["voice_type"]["cadence"]="Quicker with short breaths"
+            with patch.dict(os.environ,{
+                    "NVP_HOME":str(Path(d).resolve()/"native_app_home")}):
+                host=TrustedDesktopWO6Bridge(
+                    s["index"],origin="http://127.0.0.1:43231",
+                    host_factory=lambda *_:None)
+                self.addCleanup(host._close)
+                window=HumanWindow()
+                host._attach_window(window)
+                request={
+                    "project_id":pid,"actor_id":aid,"profile":changed,
+                    "expected_profile_revision":1,
+                    "expected_bible_revision":
+                        s["registry"].actor(pid,aid)["bible_revision"],
+                    "director_note":"Director authorizes a new speaking cadence",
+                }
+                with self.assertRaises(PermissionError):
+                    host.film03_publish_actor_identity_profile(request)
+                self.assertEqual(original.current(pid,aid)["current"][
+                    "document_sha256"],old_sha)
+                self.assertTrue(any(aid in message
+                                    for _,message in window.prompts))
+                window.answers=[True]
+                result=host.film03_publish_actor_identity_profile(request)
+                self.assertEqual(result["current"]["profile_revision"],2)
+                self.assertTrue(result["host_native_director_confirmation"])
+                self.assertFalse(result["tts_or_animation_worker_invoked"])
+                plan=host.film03_preview_actor_ai_voice_contract({
+                    "project_id":pid,"actor_id":aid,
+                    "source_route":s["request"],"profile_revision":2})
+                self.assertEqual(plan["actor_id"],aid)
+                self.assertEqual(plan["voice_type"]["cadence"],
+                                 "Quicker with short breaths")
+                self.assertFalse(plan["audio_generation_executed"])
+                self.assertFalse(plan["tts_worker_authorized"])
+                self.assertEqual(original.current(pid,aid)["profile_history"][0][
+                    "document_sha256"],old_sha)
+                with self.assertRaises(PermissionError):
+                    host.film03_preview_actor_ai_voice_contract({
+                        "project_id":pid,"actor_id":s["people"]["BOX"],
+                        "source_route":s["request"],"profile_revision":2})
+
 if __name__=="__main__":
     unittest.main()
