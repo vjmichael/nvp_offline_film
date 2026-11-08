@@ -81,6 +81,7 @@ class NativeSceneSoundCapture:
         source_ids=set()
         event_ids=set()
         prepared_chunks={}
+        prepared_entries=[]
         camera_events=self.timeline.events_in(
             project_id,camera_timeline_id,camera_timeline_revision,
             start_tick=0,end_tick=int(plan["duration_tick"]),limit=MAX_SHOTS+1)
@@ -138,6 +139,12 @@ class NativeSceneSoundCapture:
                 # Snapshot mutable caller lists before publication: a host must
                 # not alter a validated batch while earlier sources are saved.
                 prepared_chunks[sid]=tuple(chunks)
+            # Freeze validated metadata as well as materialized PCM. A native
+            # callback must not be able to rewrite a later event mid-batch.
+            frozen=dict(entry)
+            if sid in prepared_chunks:
+                frozen["pcm_chunks"]=prepared_chunks[sid]
+            prepared_entries.append(frozen)
             event_ids.add(eid)
             source_ids.add(sid)
         events=[]
@@ -153,12 +160,7 @@ class NativeSceneSoundCapture:
                            "payload":ev["payload"]})
         # Original mono source signal is stored independently, not a room mix.
         # Exact per-emitter timing and the scene geometry remain authoritative.
-        for entry in recordings:
-            if type(entry) is not dict or set(entry)!={
-                "event_id","event_kind","subject_id","source_id",
-                "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
-            }:
-                raise ValueError("Recorded sound requires typed source/evidence/Film Time")
+        for entry in prepared_entries:
             eid=_id(entry["event_id"],"recorded sound event")
             if eid in seen:
                 raise ValueError("Collision with a camera or sound event")
@@ -233,7 +235,7 @@ class NativeSceneSoundCapture:
             "take_document_sha256":take["document_sha256"],
             "timeline_document_sha256":combined["document_sha256"],
             "camera_timeline_document_sha256":plan["document_sha256"],
-            "original_sound_count":len(recordings),
+            "original_sound_count":len(prepared_entries),
             "duration_tick":str(duration),
             "original_scene_modified":False,
             "original_sound_modified":False,
