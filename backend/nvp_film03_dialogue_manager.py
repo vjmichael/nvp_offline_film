@@ -122,12 +122,31 @@ class ActorDialogueManager:
                 perf.get("format") != PERFORMANCE_FORMAT or
                 chosen["document_sha256"] != entry["performance_document_sha256"] or
                 perf["production_bible"]["actor_id"] != aid or
+                perf["script_id"] != source["script_id"] or
                 perf["script_line_id"] != requested["script_line_id"] or
                 perf["script_line_text"] != text or
                 perf["script_line_text_sha256"] != sha256(text.encode("utf8")).hexdigest() or
                 perf["source_take_sha256"] != requested["source_take_sha256"] or
                 perf["openusd_actor_prim_path"] != entry["openusd_actor_prim_path"]):
             raise PermissionError("Frozen performance points to another actor, line or Take")
+
+        # If the director explicitly retained an older script performance,
+        # its original source revision must STILL resolve exactly. A model
+        # may never substitute "retained" as a blanket bypass of script SHA.
+        original_script = self.index.read_revision(
+            project_id, perf["script_id"], perf["script_revision"])
+        if (original_script["kind"] != "dialogue" or
+                original_script["document_sha256"] !=
+                    perf["script_document_sha256"]):
+            raise PermissionError("Historical script performance provenance changed")
+        if perf["script_revision"] == source["script_revision"]:
+            if perf["script_document_sha256"] != source["script_document_sha256"]:
+                raise PermissionError("Performance came from another script source")
+        elif (perf["script_revision"] > source["script_revision"] or
+              not entry["director_explicitly_retained_old_delivery"] or
+              requested["selected_performance_id"] not in
+                source["retained_earlier_performances"]):
+            raise PermissionError("Historical retake was not expressly retained by director")
 
         def require_link(role, target_id, source_revision, document_sha):
             hits = [link for link in bible["active_links"] if
