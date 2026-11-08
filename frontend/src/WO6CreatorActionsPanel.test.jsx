@@ -263,6 +263,108 @@ describe('WO6 installed creator-native first-party actions',()=>{
     expect(host.wo6_cancel_native_task).not.toHaveBeenCalled();
   });
 
+  it('creates an independently typed original PCM sound cue only after exact source and sample preview',async()=>{
+    const host=native();
+    render(<WO6CreatorActionsPanel projectId={pid}/>);
+    await screen.findByText(/SceneA · rev 1/);
+    fireEvent.change(screen.getByLabelText('Operation'),
+      {target:{value:'sound_cue'}});
+    fireEvent.change(screen.getByLabelText('New sound event ID'),
+      {target:{value:'HumanFoleyA'}});
+    fireEvent.change(screen.getByLabelText('Original subject ID'),
+      {target:{value:'Actor'}});
+    fireEvent.change(screen.getByLabelText('Recorded PCM first sample'),
+      {target:{value:'0'}});
+    fireEvent.change(screen.getByLabelText('Director-chosen cue gain 0–2'),
+      {target:{value:'0.5'}});
+    fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
+      {target:{value:'NewSoundTimelineA'}});
+    expect(screen.getByText('Request two OS approvals and execute').disabled).toBe(true);
+    fireEvent.click(screen.getByText('Inspect source impact'));
+    const typed={
+      project_id:pid,decision_kind:'sound_cue',
+      decision_id:'NewSoundTimelineA',
+      source_id:'TimelineA',source_revision:1,source_sha256:timelineSha,
+      payload:{
+        cue_id:'HumanFoleyA',subject_id:'Actor',
+        start_tick:0,end_tick:7056000000,
+        recorded_sound_id:'OriginalPCM',recorded_sound_revision:1,
+        recorded_sound_sha256:soundSha,
+        first_sample:0,gain:0.5,
+      },
+      duration_tick:String(7056000000*3),
+    };
+    await waitFor(()=>expect(host.wo6_preview_typed_decision)
+      .toHaveBeenCalledWith(typed));
+    await waitFor(()=>expect(host.wo6_source_impact).toHaveBeenCalledWith({
+      project_id:pid,source_id:'TimelineA',source_revision:1,
+      source_sha256:timelineSha,change_kind:'revise_sound',
+    }));
+    await waitFor(()=>expect(screen.getByText(
+      'Request two OS approvals and execute').disabled).toBe(false));
+    fireEvent.click(screen.getByText('Request two OS approvals and execute'));
+    await waitFor(()=>expect(host.wo6_create_decision).toHaveBeenCalledWith({
+      ...typed,preview_sha256:previewSha,typed_preview_sha256:typedSha,
+    }));
+    expect(host.wo6_create_shot).not.toHaveBeenCalled();
+    expect(host.wo6_create_take).not.toHaveBeenCalled();
+  });
+
+  it('requires original slate source intervals and fresh typed preview before native editorial cut',async()=>{
+    const host=native();
+    render(<WO6CreatorActionsPanel projectId={pid}/>);
+    await screen.findByText(/SceneA · rev 1/);
+    fireEvent.change(screen.getByLabelText('Operation'),
+      {target:{value:'editorial_cut'}});
+    fireEvent.change(screen.getByLabelText('Segment ID 1'),
+      {target:{value:'first_cue'}});
+    fireEvent.change(screen.getByLabelText('Source branch 1'),
+      {target:{value:'root_take'}});
+    fireEvent.change(screen.getByLabelText('Source in tick 1'),
+      {target:{value:'0'}});
+    fireEvent.change(screen.getByLabelText('Source out tick 1'),
+      {target:{value:String(7056000000)}});
+    fireEvent.click(screen.getByText('Add source segment'));
+    fireEvent.change(screen.getByLabelText('Segment ID 2'),
+      {target:{value:'second_cue'}});
+    fireEvent.change(screen.getByLabelText('Source branch 2'),
+      {target:{value:'root_take'}});
+    fireEvent.change(screen.getByLabelText('Source in tick 2'),
+      {target:{value:String(7056000000)}});
+    fireEvent.change(screen.getByLabelText('Source out tick 2'),
+      {target:{value:String(2*7056000000)}});
+    fireEvent.change(screen.getByPlaceholderText('director_new_shot_001'),
+      {target:{value:'HumanAssembledCut'}});
+    expect(host.wo6_create_decision).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Inspect source impact'));
+    const typed={
+      project_id:pid,decision_kind:'editorial_cut',
+      decision_id:'HumanAssembledCut',
+      source_id:'SlateA',source_revision:1,source_sha256:slateSha,
+      payload:[
+        {segment_id:'first_cue',branch_id:'root_take',
+         source_in_tick:0,source_out_tick:7056000000},
+        {segment_id:'second_cue',branch_id:'root_take',
+         source_in_tick:7056000000,source_out_tick:2*7056000000},
+      ],
+      duration_tick:null,
+    };
+    await waitFor(()=>expect(host.wo6_preview_typed_decision)
+      .toHaveBeenCalledWith(typed));
+    await waitFor(()=>expect(host.wo6_source_impact).toHaveBeenCalledWith({
+      project_id:pid,source_id:'SlateA',source_revision:1,
+      source_sha256:slateSha,change_kind:'revise_edit',
+    }));
+    await waitFor(()=>expect(screen.getByText(
+      'Request two OS approvals and execute').disabled).toBe(false));
+    fireEvent.click(screen.getByText('Request two OS approvals and execute'));
+    await waitFor(()=>expect(host.wo6_create_decision).toHaveBeenCalledWith({
+      ...typed,preview_sha256:previewSha,typed_preview_sha256:typedSha,
+    }));
+    expect(host.wo6_create_take).not.toHaveBeenCalled();
+    expect(host.wo6_create_shot).not.toHaveBeenCalled();
+  });
+
   it('rejects a stale/unfinished impact preview and never sends worker request',async()=>{
     const host=native({wo6_source_impact:vi.fn(async()=>({
       ...impact,indexed_downstream_truncated:true,
