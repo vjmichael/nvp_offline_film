@@ -1,9 +1,10 @@
 """FILM03-09: independent speech articulation, face, and body direction.
 
-The director may intentionally pair a sad voice with a happy face, or the
-opposite. AI speech alignment proposes mouth timing ONLY; it has no authority
-to rewrite facial emotion or body acting. Actor, cast, script, guide audio
-and director intention remain preserved as source, not generated film output.
+Facial acting defaults to matching the approved vocal emotional direction.
+The director may override this with any intentionally contrasting facial or
+body performance. A default suggestion is NOT evidence that actual final
+speech sounds emotional or that a rig has produced real facial animation.
+Actor, cast, guide audio and director choices remain original source data.
 
 Source-only stage: NO phoneme aligner or animation model is executed, and
 NO facial rig has been proven able to realize the requested mouth shapes.
@@ -17,6 +18,7 @@ from backend.nvp_film03_actor_identity_core import (
     ActorIdentityCore, bounded, digest,
 )
 from backend.nvp_data_av_source import SAMPLE_RATE
+from backend.nvp_film03_expressive_voice_direction import EMOTIONS
 
 FORMAT = "nvp.film03.independent_face_body_voice_direction.v1"
 TICKS_PER_SECOND = 7056000000
@@ -32,13 +34,14 @@ FACES = frozenset({
     "neutral", "happy", "sad", "angry", "calm", "nonchalant", "afraid",
     "surprised", "confused", "wry", "determined", "smiling", "crying",
     "disgusted", "ironic", "custom",
-})
+}) | EMOTIONS
 BODIES = frozenset({
     "neutral", "still", "relaxed", "tense", "lean_forward", "lean_back",
     "shrug", "fold_arms", "gesture", "turn_away", "custom",
 })
 INTENT = frozenset({
-    "independent", "intentional_contrast", "director_chosen_alignment",
+    "match_voice_default", "independent", "intentional_contrast",
+    "director_chosen_alignment",
 })
 CONTRIBUTORS = frozenset({"consenting_voice_actor", "consenting_director_guide"})
 MAX_EVENTS = 240
@@ -59,7 +62,7 @@ def _number(value, label):
 
 
 def _time_events(items, total, choices, field):
-    """Independent expression/body keyframes; NOT inferred from vocal emotion."""
+    """Explicit director keyframes; defaults are separately source-derived."""
     if type(items) is not list or len(items) > MAX_EVENTS:
         raise ValueError(field + " track must be a bounded list")
     previous = -1
@@ -122,7 +125,7 @@ class FilmIndependentActingDirection:
              direction_revision, dialogue_audio_id, dialogue_audio_revision,
              contributor_id, contributor_role, contributor_consent_sha256,
              articulation, mouth_events, face_events, body_events,
-             emotional_relationship, start_tick):
+             start_tick, emotional_relationship="match_voice_default"):
         _require_pid(project_id)
         case = frozen_case(
             self.index, project_id, route, profile_revision=profile_revision,
@@ -136,7 +139,7 @@ class FilmIndependentActingDirection:
         _sha(contributor_consent_sha256)
         _id(dialogue_audio_id, "performed dialogue source")
         if articulation not in ARTICULATION or emotional_relationship not in INTENT:
-            raise ValueError("Director must explicitly select articulation and emotion relationship")
+            raise ValueError("Unsupported articulation or director facial relationship")
         if type(start_tick) is not int or not 0 <= start_tick <= INT64_MAX:
             raise ValueError("Original Film Time must be signed 64-bit positive ticks")
         if start_tick != source["film_time_tick"]:
@@ -149,6 +152,29 @@ class FilmIndependentActingDirection:
         mouth = _mouth_events(mouth_events, total, articulation)
         face = _time_events(face_events, total, FACES, "face")
         body = _time_events(body_events, total, BODIES, "body")
+        # Director-authored facial keyframes ALWAYS take priority, even when
+        # the caller leaves the default mode selected. No untrusted audio model
+        # may rewrite them to make the actor look happier/angrier.
+        manual_face = bool(face)
+        provisional_default = (
+            emotional_relationship == "match_voice_default" and not manual_face
+        )
+        if provisional_default:
+            # The approved DIRECTOR source emotion is a safe initial suggestion.
+            # There is no proven acoustic emotion detector or word alignment
+            # here. A later verified FINAL sound may need a new suggestion.
+            original = self.index.read_revision(
+                project_id, direction_id, direction_revision)
+            if original["document_sha256"] != case["direction_document_sha256"]:
+                raise PermissionError("Voice emotion source changed before facial direction")
+            delivery = original["data"]["directions"]
+            if delivery["emotion"] != case["emotion"]:
+                raise PermissionError("Approved voice emotion changed")
+            face = [{
+                "sample": 0, "value": case["emotion"],
+                "intensity": _number(delivery["emotion_intensity"],
+                                     "approved vocal emotional intensity"),
+            }]
         if articulation == "mouth_visemes" and not mouth:
             raise ValueError("Mouth-driven actor requires a nonempty proposed alignment")
         doc = {
@@ -174,6 +200,16 @@ class FilmIndependentActingDirection:
             "articulation_style": articulation, "viseme_candidates": mouth,
             "facial_expression_track": face, "body_performance_track": body,
             "emotional_relationship": emotional_relationship,
+            "face_track_source": (
+                "approved_voice_direction_provisional" if provisional_default
+                else "director_explicit_keyframes" if manual_face
+                else "director_selected_no_facial_keyframes"
+            ),
+            "default_match_from_approved_voice_direction": provisional_default,
+            "director_explicit_face_override_preserved": manual_face,
+            "final_audio_emotion_acoustically_verified": False,
+            "default_emotion_arc_word_timing_verified": False,
+            "facial_match_to_final_audio_verified": False,
             "voice_expression_can_be_deliberately_inconsistent": True,
             "ai_cannot_override_director_face_or_body": True,
             "actual_phoneme_alignment_independently_verified": False,
@@ -241,7 +277,10 @@ class FilmIndependentActingDirection:
             "format": FORMAT, "actor_id": plan["actor_id"], "voice_id": plan["voice_id"],
             "performance_id": performance_id, "revision": saved["revision"],
             "document_sha256": saved["document_sha256"],
-            "director_face_independent_of_voice": True,
+            "default_face_matches_approved_voice_direction": plan[
+                "default_match_from_approved_voice_direction"],
+            "director_face_override_preserved": plan[
+                "director_explicit_face_override_preserved"],
             "real_lip_sync_validated": False,
             "facial_animation_executed": False,
             "film_take_approved": False,
