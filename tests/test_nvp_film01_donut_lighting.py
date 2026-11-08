@@ -85,7 +85,11 @@ class NativeDonutPixelLighting(unittest.TestCase):
             self.source["project_id"],"DonutLightingTake",1)
         self.assertEqual(take["document_sha256"],self.source["take_sha256"])
         self.assertEqual(take["data"]["sample_ticks"],[
-            0,7056000000,14112000000])
+            0,7056000000,14112000000,17640000000])
+        self.assertEqual(scene["data"]["prim_roles"][
+            "/World/BoxActor"],"actor")
+        self.assertEqual(scene["data"]["prim_roles"][
+            "/World/SphereActor"],"actor")
 
     def test_real_native_3d_donut_hole_visible_and_all_four_looks_affect_pixels(self):
         self.assertEqual([r["look"] for r in self.results],list(LOOKS))
@@ -98,8 +102,15 @@ class NativeDonutPixelLighting(unittest.TestCase):
             self.assertEqual(
                 row["authored_torus_triangle_count"],
                 len(self.source["geometry"]["mesh_triangles"]))
-            self.assertLess(row["central_hole_mean_brightness_8bit"],2)
+            # The center is now occupied by the box crossing *behind*
+            # the real donut opening: a dark hole would be a false pass.
+            self.assertGreater(row["central_hole_mean_brightness_8bit"],2)
+            self.assertEqual(row["center_visible_original_actor"],
+                             "/World/BoxActor")
             self.assertGreater(row["annular_ring_mean_brightness_8bit"],1)
+            self.assertGreater(row["lit_ring_highlight_range_8bit"],0)
+            self.assertFalse(row["real_interobject_shadow_rays_computed"])
+            self.assertFalse(row["real_interobject_reflection_rays_computed"])
             self.assertEqual(row["original_acting_object_role"],"actor")
         self.assertFalse(self.results[0][
             "virtual_effects_applied_to_real_pixels"])
