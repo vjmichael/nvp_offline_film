@@ -191,9 +191,13 @@ def _window_pcm(index,pid,active,source_tick,requested_samples):
 def sample_editorial_source(index,project_id,edit_id,edit_revision,edit_sha,
                             frame_zero,*,sound_timeline_id=None,
                             sound_timeline_revision=None,
-                            sound_timeline_sha256=None):
+                            sound_timeline_sha256=None,
+                            audio_window_frames=AUDIO_WINDOW_FRAMES):
     if not isinstance(index,FilmIndex):
         raise TypeError("Source preview requires existing trusted FilmIndex")
+    if (type(audio_window_frames) is not int or
+            not 1<=audio_window_frames<=AUDIO_WINDOW_FRAMES):
+        raise ValueError("Exact bounded source PCM preview window required")
     _require_pid(project_id)
     _id(edit_id,"original editorial cut")
     _sha(edit_sha)
@@ -241,7 +245,7 @@ def sample_editorial_source(index,project_id,edit_id,edit_revision,edit_sha,
     clip=next(x for x in committed["data"]["segments"]
               if x["segment_id"]==projected["segment_id"])
     clip_end=clip["timeline_end_tick"]
-    requested=min(SOURCE_AUDIO_WINDOW_SAMPLES,
+    requested=min(SAMPLES_PER_FRAME*audio_window_frames,
                   (clip_end-output_tick)//TICKS_PER_SAMPLE,
                   (source["data"]["duration_tick"]-source_tick)//TICKS_PER_SAMPLE)
     if requested<1:
@@ -282,8 +286,8 @@ def sample_editorial_source(index,project_id,edit_id,edit_revision,edit_sha,
         "audio_data_url":(
             "data:audio/wav;base64,"+base64.b64encode(audio).decode("ascii")
             if audio else None),
-        "frame_spans_edit_boundary":requested<SOURCE_AUDIO_WINDOW_SAMPLES,
-        "audio_excerpt_max_frames":AUDIO_WINDOW_FRAMES,
+        "frame_spans_edit_boundary":requested<SAMPLES_PER_FRAME*audio_window_frames,
+        "audio_excerpt_max_frames":audio_window_frames,
         "zero_audio_when_no_source":audio is None,
         "audio_played_by_host":False,
         "audio_muted_until_user_action":True,
