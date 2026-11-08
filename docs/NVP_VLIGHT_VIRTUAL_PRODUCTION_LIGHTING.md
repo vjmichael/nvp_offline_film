@@ -33,3 +33,61 @@ All above licenses generally permit use in commercial software, conditional on c
 **V-LIGHT-05 — Acceptance:** Native Windows/Linux, real renderer image evidence and scene fixtures; calibrated OCIO/ACES reference, finite and valid units, motion continuity, measured 30s/30m memory and frame latency, installed NVP interaction, transitive SPDX/NOTICE and legal license review. Production final quality/feature-film scope remains a separate gate.
 
 Decision: **do not invent NVP v-lighting immediately**. Use UsdLux as authoritative lighting description, validate native preview, and prototype Apache-licensed renderer bridge(s) before deciding a custom subsystem. No candidate is bundled into this work order.
+
+
+## Creator's simple V-LIGHT control specification (2026-11-08)
+
+**UsdLux is already part of OpenUSD**, exposed in Python through
+`from pxr import UsdLux` and used by NVP's existing native
+`UsdLux.SphereLight` source schema. No separate UsdLux runtime, marketplace
+plugin or independently installed lighting editor is required. The
+existing OpenUSD library represents light *data*; the chosen render delegate
+is still responsible for actual scattering/shadow/illumination.
+
+**V-LIGHT-SIMPLE-01 (first useful artist UI):**
+- **Place light:** Click Add Light, place a draggable/rotatable light gizmo
+  anywhere in 3D space, select an established type: Sphere (omni),
+  Distant (parallel directional), Disk/Rect (softbox/area), Cylinder
+  (light strip), Dome (ambient/HDRI). Add beam/spot via
+  `UsdLux.ShapingAPI` cone angle and cone softness; no fake new
+  ray-type USD schema is needed.
+- **Brightness and color:** intensity, exposure (stops), RGB/hex color
+  and optional white-light temperature in **Kelvin** (e.g. 2700K warm,
+  5600K daylight). These are separate controls. The color temperature
+  path is enabled explicitly with LightAPI's enableColorTemperature;
+  if RGB color is also selected, the renderer's combination behavior
+  must be made clear. Do not equate Kelvin with brightness or assume
+  photometric lumens equality across renderer types.
+- **Soft or hard:** luminous emitter SIZE controls area-shadow softness;
+  `ShapingAPI` cone softness controls beam-edge rolloff; shadow controls
+  are separate, not interchangeable. The actual ray-traced renderer must
+  visibly implement those meanings. Expose a simple Soft/Hard artist
+  preset while preserving the underlying authored parameters.
+- **Attachment:** Free Move, Snap To Object, Attach To Object,
+  and Lock In Place. Use USD parent-child transforms or evaluated
+  absolute matrices when baking a captured frame. **UsdLux does not
+  itself implement a live constraint/locking system**, so NVP's
+  first-party scene editor stores/re-evaluates the attachment target,
+  offset, source SHA and lock state. Snapping and locking are NOT
+  permissions for a model to alter source.
+- **Pulse/flicker:** on/off, speed in Hz, amplitude, phase and optional
+  simple wave shape (smooth pulse, sharp pulse, flicker later). A
+  deterministic bounded function evaluates intensity at authoritative
+  Film Time and is baked as time-sampled UsdLux intensity into an
+  immutable derived light revision when the director approves.
+  No free-running wall-clock effect should destroy film sync.
+- **Edit and persist:** selecting a light presents its source identity
+  and editable controls. Undo / Save Light Rig stores a new original-
+  preserving authored revision, not an overwrite. Source-impact
+  preview and both existing native OS approvals remain required.
+  AI may suggest combinations but never automatically install lights.
+
+**Scope decision:** implement this small everyday interaction *before*
+photometric-accuracy extras such as IES, GI, participating media,
+gobo light linking and theatrical calibration. These advanced lighting
+mechanics remain V-LIGHT-02+ gates; do not let them make basic lights
+difficult to place or adjust. For WO6-07F continuous rendered preview,
+existing source **SphereLight** is supported by NVP's CPU scene-linear
+raster as a *neutral scalar light* only; Kelvin/RGB, beam shaping,
+emitter softness and calibrated multi-bounce radiance are NOT proven by
+that preview. Those require an appropriate UsdLux-capable renderer.
