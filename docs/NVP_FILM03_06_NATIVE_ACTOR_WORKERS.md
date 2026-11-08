@@ -1,156 +1,122 @@
-# FILM03-06 — REAL supervised ActorID speech and Blender motion workers
+# FILM03-06 — ActorID Blender animation and film-quality voice qualification
 
-**Implementation branch: nvp/film03-06-supervised-voice-animation-workers-20261108.**
-A new source implementation is NOT technical acceptance until the exact-head
-Windows/Linux native tests and genuine generated WAV/.blend/Cycles PNG artifacts
-pass independent verification. Physically installed director acceptance,
-full neural TTS and actual artist/audible approval are separate open gates.
+**Revised November 8, 2026 on the director's voice-quality requirement.**
+Source implementation is committed; native Windows/Linux and real Blender
+evidence is OPEN. No generated cinematic voice or human artist's approval
+is claimed.
 
-## ActorID is the only authoritative character identity
+## Decision: remove eSpeak NG from NVP film production
 
-An AI output must NEVER become a character voice or motion merely because
-the model says "This is the DONUT". The source-of-truth is NVP's existing
-canonical StoryBible ActorID and current director-published identity profile.
+eSpeak NG is an existing open-source formant text-to-speech engine, not
+something NVP or ChatGPT invented. An early exploratory adapter was useful
+to exercise operating-system speech worker launch, WAV decoding and
+hash-based candidate persistence. That does not establish expressive acting
+or production-quality dialogue. This adapter is DELETED from NVP, the film
+CI eSpeak execution job is removed, and the trusted desktop cinematic speech
+action now fails closed even when supplied a prior source request.
 
-That profile includes appearance, personality, signature movement/odd gait,
-VoiceType, current VoiceID, exact voice reference SHA and the reviewed
-engine/model/voice-selector settings. Every generated candidate includes the
-source ActorID, selected Take SHA, source script line SHA and profile/VoiceID
-identities; mismatches fail closed rather than silently recasting characters.
+Film acting requires real emotional interpretation, natural inflection,
+word/phrase emphasis, nuanced pronunciation, breathing, whispering, soft
+speaking, audible intensity/volume modulation, sighs/laughter/crying, and
+consistent speaker identity across scenes/retakes. Valid WAV file creation
+proves only that bytes were produced, NOT that a voice delivered believable
+acting or matched its canonical ActorID/VoiceID.
 
-The approved PROFILE is not an execution permission. Model output or ordinary
-web API cannot submit arbitrary executable paths, Blender Python, provider
-URLs, new voice selectors or invented source Takes. The existing trusted
-desktop host must make two separate confirmations: creator intent AND native
-OS execution under the exact source/operation digest. Installed host
-configuration supplies the executable and its SHA, never the browser.
+A lightweight TTS engine might later be examined as an OPTIONAL Lu
+accessibility tool in a separate scope, with distribution/licensing review.
+This PR neither ships eSpeak for NVP nor integrates it into Lu.
 
-## Real spoken voice generation: eSpeak NG pilot
+## What stays in the ActorID-based movie architecture
 
-- backend/nvp_film03_actor_voice_worker.py executes the real reviewed
-  **eSpeak NG 1.51** offline rule-based speech engine. It is an actual speech
-  synthesizer and verified audio producer, **NOT** a neural voice model or
-  speaker clone, and is not silently claimed to match a human actor.
-- Requires exactly NvpEspeakNG / EspeakNG / EspeakNG_1_51 in the current
-  ActorID profile, plus a restricted installed voice selector (e.g. en-us).
-  Rejects unsupported engine parameters (seed/stability/pitch-shift) rather
-  than pretending to honor them.
-- Source text comes ONLY from ActorDialogueManager's exact original
-  screenplay, selected unrecorded performance, fully verified OpenUSD cast,
-  ActorID and source Take. It stages the fixed text and immutable contract in
-  a private job directory, SHA-pins the executable, checks runtime version,
-  then invokes the reviewed command as an argv array under NVP's existing
-  launch_contained OS execution layer. No shell, internet, external model
-  code or browser-supplied file path.
-- The worker reopens the source after native execution to reject changes
-  during its run, rechecks source contract, binary and text SHA, independently
-  decodes actual generated WAV into non-silent bounded PCM16 mono, and
-  registers the WAV as an immutable FilmIndex content-addressed blob. A
-  separate versioned **unapproved** FilmIndex asset candidate includes:
-  ActorID, VoiceID, VoiceType, source script/Take/profile hashes, versioned
-  executable, actual engine selector, voice wav/PCM hashes and sample count.
-- Uses a durable local journal and kernel-backed host lease. Replays of
-  completed/failed/interrupted work IDs are refused. Windows uses
-  suspended process creation and a Job Object, while Linux uses the
-  existing process guardian; the latter is NOT a guarantee about every
-  hypothetical detached grandchild unless strict cgroup v2 custody is
-  selected and independently proven.
-- Neither a successful process nor a valid WAV establishes acoustic
-  same-speaker fidelity. The output **cannot become an approved recorded
-  performance or production soundtrack** until a separate director audition,
-  speaker-consistency review, sound source binding and editorial approval.
-- No eSpeak binary is bundled by this PR, and distribution/license review
-  is open. NVP's native desktop must supply a reviewed installed binary SHA.
-  The native Ubuntu CI obtains the Ubuntu 24.04 eSpeak NG package separately.
+The canonical StoryBible ActorID still owns every character resource:
+appearance, model/mesh/texture/costume, personality, unusual gait,
+behavior, VoiceType, approved VoiceID and original recorded source SHA,
+exact screenplay, current director-selected performance, source Take,
+OpenUSD prim and Film Time.
 
-## Real procedural gait: original OpenUSD actor -> supervised Blender
+ActorIdentityCore.prepare_generated_voice remains a read-only, source-
+validated plan pinned to these source revisions. It can NEVER on its own
+give permission to run a speech provider, create a Take or approve output.
 
-- ActorIdentityCore now has an optional explicit **gait_preset**
-  ("steady", "lopsided_roll", "uneven_step", "unconfigured"). Old profile
-  versions remain readable; "unconfigured" cannot be executed. Vague
-  prose is NEVER interpreted by AI as an executable motion profile.
-- A director selects the preset in the Story Bible. The original
-  characteristic gait/behavior/quirks remain separate descriptive identity
-  traits, still available to future animation and film research workers.
-- backend/nvp_film03_actor_animation_host.py opens the exact frozen
-  FilmIndex Digital Take and OpenUSD scene, requires complete canonical
-  actor casting (every authored actor prim has exactly one ActorID),
-  verifies actual source meshes, camera, light, all actor transforms,
-  original per-frame snapshot SHA and current approved profile/VoiceID.
-  A bounded 2–24 frame packet carries source time and the exact actor
-  prim to animate.
-- tools/nvp_film03_actor_animation_worker.py is a fixed first-party
-  Blender Python script. It uses Blender's own mesh, animation and
-  Cycles APIs under the established BlenderWorkerSupervisor, with a
-  SHA-pinned worker script and immutable source packet, native
-  memory/resource supervision, OS process containment, cancellation,
-  durable journal/recovery and independent input/output SHA checks.
-- Exactly ONE source cast actor receives approved procedural gait
-  keyframes; original camera, light, background and every other actor
-  remain source-positioned. A real .blend animation, Cycles PNG preview
-  and per-frame ActorID/source/transform receipt are generated.
-- The host verifies every gait frame, source snapshot, cast source SHA,
-  Blender binary+script, .blend/PNG bytes and current ActorID profile,
-  reopens the original source AGAIN after execution, and publishes
-  content-addressed .blend and PNG into FilmIndex. Its new asset
-  candidate is explicitly **not approved for the editorial film**.
-- A separate Blender process reopens the saved scene.blend, checks
-  actual source character keyframes, original 4-actor cast and
-  unmodified other-actor matrices at every frame. This is stronger
-  than trusting the worker's own JSON receipt. It is a native test
-  oracle, not a new user-facing renderer.
-- The current pilot supports original OpenUSD mesh/cube/sphere actors
-  and one selected frozen Take range. Fully general armatures, facial
-  rigging, cloth and arbitrary game engine actor geometry remain open
-  and require reviewed extensions rather than invented transforms.
+## Explicit director-authored vocal performance
 
-## Actual installed NVP integration
+New backend/nvp_film03_expressive_voice_direction.py stores per-actor,
+per-exact-script-line, immutable and versioned FilmIndex speech directions.
+Each is validated against real original script words; director controls:
 
-TrustedDesktopWO6Bridge.film03_run_actor_voice_candidate and
-film03_run_actor_animation_candidate are first-party native IPC actions.
-They receive only source ActorID/script/performance/Take/frame identities
-and job ID, **not executable paths**. The first-party installed host
-bootstrap must inject reviewed binary manifests with executable path,
-SHA-256 and exact version. No provider configured => fail closed.
-Both actions use separate creator/OS execution consent and return verified
-source receipts/candidates rather than silently altering the original film.
+- Emotion and intensity, including a changing emotional arc across words.
+- Delivery mode: natural, soft, whisper, shout, crying, laughing.
+- Relative volume in dB, pacing and breathiness.
+- Exact word-index emphasis/stress.
+- Exact word-index timed pauses and breath points.
+- Pronunciation overrides anchored to the unchanged original written word.
+- Director intent and explicit reason for a revised or alternative Take.
 
-The current native bridge uses synchronous process invocation, so
-production interactive dispatch (non-blocking UI progress, explicit
-cancellation and durable job recovery) remains an open desktop
-integration gate. Do not represent this as a completed installed alpha
-workflow. The native jobs and source validation are independently testable.
+This is artistically necessary source metadata, but NEVER a claim that an
+AI really whispered or pronounced the words correctly. Different providers
+have different control methods; a qualified adapter must prove its actual
+rendered sound followed the direction. Old approved notes, prior lines,
+VoiceIDs and original Take versions remain intact.
 
-## Real native acceptance
+Native installed first-party host method
+film03_publish_actor_voice_direction uses exact creator confirmation and
+saves these revisions. There is no model or web approval shortcut.
 
-.github/workflows/nvp-film03-06-real-actor-workers.yml:
-- Windows 2025 and Ubuntu 24.04 source-contract and cross-character
-  regression (actual Studio/FilmIndex/StoryBible/USD identity checks).
-- Ubuntu native eSpeak NG engine: execute real original screenplay
-  into nonzero generated PCM WAV and separately decode/rehash the source
-  plus FilmIndex candidate. Upload WAV and original source/receipt.
-- Ubuntu official Blender 5.2.3: verify download against Blender's own
-  SHA, launch under NVP's existing contained BlenderWorkerSupervisor,
-  produce real 4-frame actor gait in a .blend and Cycles PNG, then
-  independently reopen in a new Blender process to check the original
-  four actor prims, source matrices and gait. Upload .blend, PNG,
-  source manifest, native audit and independent reopen evidence.
+## FILM voice quality gate
 
-Native CI uses a **disposable, TEST-ONLY** original Studio/OpenUSD source
-and a TEST-ONLY reference PCM to establish ActorID/VoiceID source lineage.
-A generated eSpeak spoken WAV can be genuine speech yet still fail
-artistic voice continuity, particularly when the reference is test noise.
-No AI-generated audio is mixed into FILM02's existing 30-second original
-Cycles/PCM AVI, and no generated gait silently replaces its source Take.
+All speech engines currently return DISABLED in
+cinematic_engine_readiness, even if their spec claims expressive tags.
 
-## Open gates
+A film-qualified reviewed provider must pass actual audible tests
+for contextual natural inflection; emotion/emotional arc; exact word stress;
+pronunciation of fictional character names and difficult terms; real
+whispers/soft speech and projected/shouted voice; timed pauses/breaths;
+correct vocal loudness; nonverbal reactions; long-scene same-VoiceID
+continuity and a believable actor performance; reproducible model/voice
+selection, consent/licensing and artifact-level provenance.
 
-Native exact-head CI results and repairs; actual Windows eSpeak runtime
-packaging and binary/license compliance, full Linux kernel cgroup
-descendant protection for high-risk engine providers; neural TTS
-provider/model/voice pack verification and replay-safe execution;
-acoustic speaker/timbre consistency measurements and human audition;
-actual director approval of resulting spoken/audio and animated Takes;
-nonblocking installed desktop progress, cancellation and restart; fully
-general rigged/recast actors and spatially synchronized dialogue; final
-director picture/audio approval.
+The actual benchmark should compare the same dialogue in multiple emotional
+conditions and multiple scene takes against suitable expressive
+commercial systems such as ElevenLabs. Its quality and limitations must
+be demonstrated with real output, independent tests and director listening.
+Do not treat model capability declarations or metadata echoes as proof.
+The director approves each final recorded/generated performance separately.
+
+No new speech model was developed and no claim of ElevenLabs-level parity is
+being made. An offline neural engine could qualify in the future if its
+independently observed performance genuinely meets the same bar.
+
+## Animation remains on the EXISTING verified Blender execution path
+
+backend/nvp_film03_actor_animation_host.py reopens original frozen
+FilmIndex/OpenUSD scenes, canonical 4-actor cast and actual source meshes,
+camera, light, film-time world matrices and ActorID identity profile.
+The actor's explicit typed gait preset is executed via NVP's preexisting
+BlenderWorkerSupervisor and SHA-pinned first-party Blender worker.
+It creates a real keyframed .blend, Cycles PNG preview and auditable
+per-frame SHA/actor-motion receipts. All other actors remain at their
+original source positions. A separate fresh Blender process independently
+reopens and checks the scene.
+
+These outputs are immutable FilmIndex candidates, NOT approved editorial
+Takes, and no original source film is silently rewritten. Animator and
+speech producer remain separate; failure to qualify TTS does not prevent
+testing the reviewed actor gait.
+
+## OS acceptance and remaining work
+
+GitHub workflow .github/workflows/nvp-film03-06-real-actor-workers.yml
+now tests Windows and Linux source identity, wrong speaker refusal,
+original script/VoiceID preservation, actual director acting-direction
+validation and fail-closed film TTS status. Ubuntu runs a real reviewed
+Blender/Cycles gait and independently reopens its saved output.
+
+The previous Ubuntu eSpeak NG speech job and its generated WAV artifact
+publication were REMOVED from film CI.
+
+Still OPEN: check exact-head native results, repair actual failures,
+physical installed workflow acceptance, expressive/neural TTS provider
+review and output comparisons, pronunciation and emotion matching,
+speaker/acoustic continuity tests across multiple scenes, consent and
+licensing checks, real director audible review, output receipts, eventual
+3D spatial dialogue mixing and full finished-film acceptance.
