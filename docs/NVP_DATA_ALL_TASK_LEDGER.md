@@ -1492,3 +1492,19 @@ native jobs; no GPU/calibrated or production rendering claim.
 - **Actual tested contract (submitted):** Real original FILM02 OpenUSD source actor IDs donut/box/sphere/ServiceCraft, existing Studio script and FilmIndex/Takes, PCM16 source SHA, script/actor switching refusal, wrong VoiceID/recast, previous voice history, new recording requiring explicit comparison, durable SQLite restart and bounded native WAV audition/consent. PCM test signals are explicitly disposable synthesized TEST fixtures, NOT human recorded dialogue or claimed same-speaker acoustic proof.
 - **Native evidence:** .github/workflows/nvp-film03-04-actor-voice-continuity.yml Windows 2025 + Ubuntu 24.04 Python 3.11/OpenUSD/native bridge and React/Vitest/Vite tests; exact-head results pending, do not call technically accepted until repaired/passed. Repaired prior FILM03-02 test assertions in new branch and base PR #115 after inspecting real Windows/Linux failure logs.
 - **Open:** physical installed WebView2/GTK operation, actual microphone capture/voice recording producer consent, verified speaker acoustic similarity calibration and warning, TTS provider identity enforcement, spatial actor-relative dialogue mix, director review and final film voice playback. Detailed spec: docs/NVP_FILM03_04_ACTORID_VOICE_CONTINUITY.md.
+
+
+### FILM03-04A — Complete actor source and voice package audit
+
+Implemented backend/nvp_production_bible_actors.py::audit_actor_asset_package
+with a read-only GET endpoint and one-click existing Story Bible ActorID
+control. Source-verify all active actor-scoped original asset links (exact
+FilmIndex SHA, real GLB bytes, real PNG textures, screenplay/prop historical
+status), optionally native full-cast Take coverage and exact per-Take
+VoiceID/dialogue/performance/PCM link continuity. Stale links are retained
+but flagged for director review; missing or altered assets and wrong voice
+invalidate package acceptance. Shared generic props/meshes are allowed
+where authorized; an ActorID's unique voice and scene casting are not
+silently shared. Includes native regression for retiring voice asset link
+without deleting old sound and React read-only audit result. Still requires
+actual Windows/Linux native CI and physical installed app acceptance.
