@@ -309,6 +309,194 @@ class ActualOriginalActorSourceRouting(unittest.TestCase):
         self.assertEqual(voice["original_pcm16le"],s["original_pcm"][:4000])
 
 
+class VoiceIDContinuityMustRemainStable(unittest.TestCase):
+    def test_actorid_voiceid_and_approved_source_survive_restart(self):
+        with TemporaryDirectory() as d:
+            s=construct_real_original_dialogue(Path(d).resolve(),recorded_voice=True)
+            pid=s["pid"]; aid=s["people"]["DONUT"]
+            profile=ProductionBibleVoiceIdentity(
+                s["index"],verify_creator_action=lambda *_:False).current(pid,aid)
+            self.assertEqual(profile["current"]["voice_id"],"Voice_Donut_Original")
+            self.assertEqual(profile["current"]["reference_audio_sha256"],
+                             s["audio"]["document_sha256"])
+            self.assertFalse(profile["acoustic_same_speaker_automatically_verified"])
+            self.assertEqual(len(profile["cast_history"]),1)
+            managed=ActorDialogueManager(s["index"]).route(pid,s["request"])
+            self.assertEqual(managed["canonical_voice_id"],"Voice_Donut_Original")
+            self.assertEqual(managed["original_recorded_voice"]["voice_id"],
+                             "Voice_Donut_Original")
+            self.assertTrue(managed["original_recorded_voice"]["director_reviewed_exact_audio"])
+            self.assertFalse(managed["original_recorded_voice"][
+                "acoustically_same_speaker_automatically_proven"])
+            reopened=FilmIndex(Studio(s["root"]/"short.sqlite3"))
+            verified=ActorDialogueManager(reopened).route(pid,s["request"])
+            self.assertEqual(verified["canonical_voice_id"],"Voice_Donut_Original")
+            self.assertEqual(verified["original_recorded_voice"][
+                "voice_reference_audio_sha256"],s["audio"]["document_sha256"])
+
+    def test_unapproved_voice_model_or_other_actor_cannot_enroll_itself(self):
+        with TemporaryDirectory() as d:
+            s=construct_real_original_dialogue(Path(d).resolve(),recorded_voice=True)
+            pid=s["pid"]; aid=s["people"]["DONUT"]
+            reference=s["audio"]["document_sha256"]
+            denied=ProductionBibleVoiceIdentity(
+                s["index"],verify_creator_action=lambda *_:False)
+            with self.assertRaises(PermissionError):
+                denied.cast_voice(
+                    pid,s["people"]["BOX"],voice_id="Voice_Donut_Original",
+                    reference_audio_id="DonutSourceVoiceFixture",
+                    reference_audio_revision=1,expected_cast_revision=0,
+                    director_review_note="An AI claims this belongs to the box",
+                    creator_event="UNTRUSTED_AI_REPLY")
+            approved=ProductionBibleVoiceIdentity(
+                s["index"],verify_creator_action=creator)
+            with self.assertRaises(PermissionError):
+                approved.cast_voice(
+                    pid,s["people"]["BOX"],voice_id="Voice_Donut_Original",
+                    reference_audio_id="DonutSourceVoiceFixture",
+                    reference_audio_revision=1,expected_cast_revision=0,
+                    director_review_note="Attempt same VoiceID under another actor",
+                    creator_event=ACTION)
+            with self.assertRaises(PermissionError):
+                approved.cast_voice(
+                    pid,s["people"]["BOX"],voice_id="Voice_Sphere_Another",
+                    reference_audio_id="DonutSourceVoiceFixture",
+                    reference_audio_revision=1,expected_cast_revision=0,
+                    director_review_note="Attempt same original voice anchor under box",
+                    creator_event=ACTION)
+            with self.assertRaises(ValueError):
+                approved.approve_delivery(
+                    pid,aid,"DonutAuthoredOriginalLine",
+                    voice_id="Voice_Donut_Original",expected_cast_revision=1,
+                    reference_audio_sha256=reference,
+                    director_comparison_note="looks fine",
+                    creator_event=ACTION)
+            with self.assertRaises(PermissionError):
+                denied.approve_delivery(
+                    pid,aid,"DonutAuthoredOriginalLine",
+                    voice_id="Voice_Donut_Original",expected_cast_revision=1,
+                    reference_audio_sha256=reference,
+                    expected_approval_revision=1,
+                    director_comparison_note="AI cannot approve an original voice by labeling",
+                    creator_event="UNTRUSTED_AI_REPLY")
+
+    def test_voice_recast_blocks_old_actor_voice_and_keeps_previous_history(self):
+        with TemporaryDirectory() as d:
+            s=construct_real_original_dialogue(Path(d).resolve(),recorded_voice=True)
+            pid=s["pid"]; aid=s["people"]["DONUT"]; index=s["index"]
+            voice=ProductionBibleVoiceIdentity(index,verify_creator_action=creator)
+            current=voice.current(pid,aid)
+            original_approval=voice.verify_delivery(
+                pid,aid,"DonutAuthoredOriginalLine")
+            alt_pcm=struct.pack("<"+"h"*SAMPLE_RATE,
+                                *(int(1800*((i%163)/163-0.5))
+                                  for i in range(SAMPLE_RATE)))
+            alternative=RecordedSoundSources(index).publish(
+                pid,"DonutRecastVoiceReferenceTestOnly",[alt_pcm],
+                expected_revision=0)
+            with self.assertRaises(PermissionError):
+                voice.cast_voice(
+                    pid,aid,voice_id="Voice_Donut_Recast",
+                    reference_audio_id="DonutSourceVoiceFixture",
+                    reference_audio_revision=1,expected_cast_revision=1,
+                    director_review_note="Director requests another immutable VoiceID",
+                    voice_recast_reason="Director changed the character voice",
+                    creator_event=ACTION)
+            new_cast=voice.cast_voice(
+                pid,aid,voice_id="Voice_Donut_Recast",
+                reference_audio_id="DonutRecastVoiceReferenceTestOnly",
+                reference_audio_revision=1,expected_cast_revision=1,
+                director_review_note="TEST: new voice reference reviewed",
+                voice_recast_reason="Explicit voice recast for an alternate character delivery",
+                creator_event=ACTION)
+            self.assertEqual(new_cast["current"]["cast_revision"],2)
+            self.assertEqual(new_cast["current"]["voice_id"],"Voice_Donut_Recast")
+            self.assertEqual(new_cast["cast_history"][0]["voice_id"],
+                             "Voice_Donut_Original")
+            with self.assertRaises(PermissionError):
+                ActorDialogueManager(index).route(pid,s["request"])
+            with self.assertRaises(PermissionError):
+                voice.approve_delivery(
+                    pid,aid,"DonutAuthoredOriginalLine",
+                    voice_id="Voice_Donut_Recast",
+                    expected_cast_revision=2,
+                    reference_audio_sha256=alternative["document_sha256"],
+                    director_comparison_note="TEST: try to relabel old audio without re-recording",
+                    expected_approval_revision=1,
+                    creator_event=ACTION)
+            self.assertEqual(original_approval["voice_id"],"Voice_Donut_Original")
+            self.assertEqual(index.read_revision(
+                pid,"DonutSourceVoiceFixture",1)["document_sha256"],
+                s["audio"]["document_sha256"])
+            self.assertEqual(index.read_revision(
+                pid,"DonutAuthoredOriginalLine",1)["data"][
+                    "recorded_voice_source"]["audio_sha256"],
+                s["audio"]["document_sha256"])
+
+    def test_alternate_original_voice_clip_requires_new_director_comparison_before_use(self):
+        with TemporaryDirectory() as d:
+            s=construct_real_original_dialogue(Path(d).resolve(),recorded_voice=True)
+            pid=s["pid"]; aid=s["people"]["DONUT"]; index=s["index"]
+            audio=struct.pack("<"+"h"*SAMPLE_RATE,
+                              *(int(1200*((i%187)/187-0.5))
+                                for i in range(SAMPLE_RATE)))
+            new_audio=RecordedSoundSources(index).publish(
+                pid,"DonutSecondRecordedTakeTestOnly",[audio],expected_revision=0)
+            writer=ObjectActorDialogue(index,verify_creator_action=creator)
+            new_perf=writer.record_performance(
+                pid,"DonutAlternatePerformance",
+                script_id="RelayAuthoredObjectScript",script_revision=1,
+                script_line_id=s["request"]["script_line_id"],
+                bible_entity_id=aid,actor_prim_path="/World/Engineer",
+                source_take_id="RelayRekindleTake",
+                source_take_sha256=s["original_take"]["document_sha256"],
+                first_tick=0,end_tick=TICKS_PER_SECOND,
+                delivery_intent="Second creator-authored voice delivery",
+                voice_source_id="DonutSecondRecordedTakeTestOnly",
+                voice_source_revision=1,creator_event=ACTION)
+            actor=s["registry"].actor(pid,aid)
+            s["registry"].link(
+                pid,aid,role="voice",source_family="filmindex",
+                target_id="DonutSecondRecordedTakeTestOnly",target_revision=1,
+                expected_actor_revision=actor["bible_revision"])
+            actor=s["registry"].actor(pid,aid)
+            s["registry"].link(
+                pid,aid,role="performance",source_family="filmindex",
+                target_id="DonutAlternatePerformance",target_revision=1,
+                expected_actor_revision=actor["bible_revision"])
+            writer.publish_scene_dialogue(
+                pid,selection_id="OriginalDonutDialogueSelection",
+                overlay_timeline_id="OriginalDonutDialogueEvents",
+                source_take_id="RelayRekindleTake",
+                source_take_sha256=s["original_take"]["document_sha256"],
+                script_id="RelayAuthoredObjectScript",script_revision=1,
+                performance_ids=["DonutAlternatePerformance"],
+                expected_selection_revision=1,expected_timeline_revision=1,
+                creator_event=ACTION)
+            next_req=dict(s["request"],selection_revision=2,
+                          selected_performance_id="DonutAlternatePerformance")
+            # Correct actor + correct words + correct audio link STILL cannot
+            # speak without a human comparing the new take to VoiceID's anchor.
+            with self.assertRaises(PermissionError):
+                ActorDialogueManager(index).route(pid,next_req)
+            voice=ProductionBibleVoiceIdentity(index,verify_creator_action=creator)
+            p=voice.approve_delivery(
+                pid,aid,"DonutAlternatePerformance",
+                voice_id="Voice_Donut_Original",expected_cast_revision=1,
+                reference_audio_sha256=s["audio"]["document_sha256"],
+                director_comparison_note=(
+                    "TEST ONLY: reviewed new PCM take against original approved VoiceID anchor"),
+                creator_event=ACTION)
+            self.assertEqual(p["voice_id"],"Voice_Donut_Original")
+            accepted=ActorDialogueManager(index).route(pid,next_req)
+            self.assertEqual(accepted["original_recorded_voice"][
+                "original_pcm_document_sha256"],new_audio["document_sha256"])
+            self.assertEqual(accepted["canonical_voice_id"],"Voice_Donut_Original")
+            self.assertEqual(
+                ActorDialogueManager(index).read_original_voice(
+                    pid,next_req,sample_count=2000)["original_pcm16le"],
+                audio[:4000])
+
 class ActorDialogueFailuresMustRemainNonDestructive(unittest.TestCase):
     def test_no_fake_audio_from_metadata_only_actor_performance(self):
         with TemporaryDirectory() as d:
