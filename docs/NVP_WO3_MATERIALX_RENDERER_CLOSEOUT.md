@@ -112,3 +112,11 @@ regressions. CI is currently queued; native OpenUSD 26.11 is absent from the
 assistant's local environment, so local direct USD execution is **not**
 evidence. Real independent Hydra picture parity, shader colors under reference
 renderers, installed Windows GPU and calibrated cinema tests remain **OPEN**.
+
+Further renderer custody fix: post-render source verification no longer calls
+`Path.read_bytes()` on an untrusted worker-mutated file. It opens the source
+with no-follow/nonblocking flags where available, validates the opened
+regular file's exact originally approved byte length via `fstat`, and hashes
+in at most 64 KiB chunks. An inflated or replaced source fails closed
+without consuming worker-controlled RAM. The native regression deliberately
+inflates a temporary source file. This remains **unverified by native CI**.
