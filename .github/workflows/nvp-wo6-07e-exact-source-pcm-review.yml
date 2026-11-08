@@ -1,0 +1,70 @@
+name: NVP WO6-07E Genuine Edited Source/PCM Exact-Time Review (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/wo6-07e-synchronized-director-preview-20261108]
+  pull_request:
+    paths:
+      - backend/nvp_wo6_07e_source_review.py
+      - backend/nvp_wo6_desktop_bridge.py
+      - frontend/src/WO6DirectorSourceReview.jsx
+      - frontend/src/WO6DirectorSourceReview.test.jsx
+      - frontend/src/WO6CreatorActionsPanel.jsx
+      - tests/test_nvp_wo6_07e_source_review.py
+      - .github/workflows/nvp-wo6-07e-exact-source-pcm-review.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-wo6-07e-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  original-source-frame-and-48khz-pcm:
+    name: Real OpenUSD source frame and decoded 48k PCM original cut / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual native OpenUSD scene and temporal source backend
+        run: 'python -m pip install --only-binary=:all: "usd-core==26.11"'
+      - name: Install Windows Job Object helpers for genuine native source-fixture authoring
+        if: runner.os == 'Windows'
+        run: python -m pip install 'pywin32>=310'
+      - name: Compile original edited source/PCM review, bridge and tests
+        run: python -m compileall -q backend/nvp_wo6_07e_source_review.py backend/nvp_wo6_desktop_bridge.py tests/test_nvp_wo6_07e_source_review.py
+      - name: Execute genuine frozen original slate cut + 48k recorded PCM + sample-aligned WAV readback
+        run: python -m unittest discover -s tests -p test_nvp_wo6_07e_source_review.py -v
+      - name: Preserve real native sound/editorial source authoring and negative receipt tests
+        run: python -m unittest discover -s tests -p test_nvp_wo6_sound_editorial.py -v
+      - name: Preserve SHA-bound two-approval review and durable source custody
+        run: python -m unittest discover -s tests -p test_nvp_wo6_reviewed_sound_editorial.py -v
+
+  source-director-react:
+    name: React source projection, user-triggered PCM audition, no invented rendered picture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install original desktop UI dependencies without lockfile mutation
+        working-directory: frontend
+        run: npm install --no-audit --no-fund --package-lock=false
+      - name: Build existing NVP creator desktop, including original-source preview UI
+        working-directory: frontend
+        run: npm run build
+      - name: Verify source-frame/PCM review, no autoplay or source-write and stale UI invalidation
+        working-directory: frontend
+        run: npx vitest run src/WO6DirectorSourceReview.test.jsx src/WO6CreatorActionsPanel.test.jsx
