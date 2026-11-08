@@ -156,6 +156,8 @@ class FilmIndependentActingDirection:
             "actor_id": case["actor_id"], "voice_id": case["voice_id"],
             "source_take_id": source["source_take_id"],
             "source_take_sha256": case["source_take_sha256"],
+            "actor_profile_document_sha256": source["actor_identity_profile_sha256"],
+            "voice_reference_sha256": case["voice_reference_sha256"],
             "script_line_id": case["script_line_id"],
             "exact_original_script_text_sha256": case["script_text_sha256"],
             "direction_id": direction_id, "direction_revision": direction_revision,
@@ -214,10 +216,12 @@ class FilmIndependentActingDirection:
                    WHERE project_id=? AND actor_id=?
                    ORDER BY profile_revision DESC LIMIT 1""",
                 (project_id, plan["actor_id"])).fetchone()
-            if not current or current["voice_id"] != plan["voice_id"]:
-                raise PermissionError("Character voice changed before facial performance publication")
-            if current["document_sha256"] != kwargs["profile_revision_sha256"] if False else False:
-                raise PermissionError("Unreachable")
+            if not current or (
+                current["voice_id"] != plan["voice_id"]
+                or current["voice_reference_sha256"] != plan["voice_reference_sha256"]
+                or current["document_sha256"] != plan["actor_profile_document_sha256"]
+            ):
+                raise PermissionError("Character profile or VoiceID changed before facial performance publication")
         # The same source and cast are re-opened before submission; a worker
         # may only animate them in a subsequent separately authorized stage.
         saved = self.index.register_revision(
