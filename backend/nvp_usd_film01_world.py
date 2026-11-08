@@ -293,7 +293,8 @@ def _rss_bytes():
 class WorldSession:
     """One bounded real USD working set. Always use with context manager."""
     def __init__(self, tmp, record, stage, structure, sources, staged_bytes,
-                 stage_initial_ms):
+                 stage_initial_ms, *, materialize_set=None,
+                 initially_staged_sources=0):
         self._tmp = tmp
         self.record = record
         self.stage = stage
@@ -304,6 +305,11 @@ class WorldSession:
         self.closed = False
         self.load_receipts = []
         self.rss_unloaded_bytes = _rss_bytes()
+        self._materialize_set = materialize_set
+        self._set_roles = {}
+        self.initially_staged_sources = initially_staged_sources
+        self.materialized_set_names = set()
+        self.loaded_stage_prepared_bytes = 0
 
     def __enter__(self):
         return self
@@ -336,10 +342,23 @@ class WorldSession:
         paths = []
         for name in set_names:
             path = "/World/Sets/" + name
+            if name not in self.materialized_set_names:
+                if self._materialize_set is None:
+                    raise RuntimeError("Lazy film-world set resolver is missing")
+                info = self._materialize_set(name)
+                self.loaded_stage_prepared_bytes += info["new_staged_bytes"]
+                self.materialized_set_names.add(name)
             self.stage.Load(path)
             prim = self.stage.GetPrimAtPath(path)
             if not prim or not prim.IsLoaded():
                 raise RuntimeError("Native OpenUSD payload did not become loaded")
+            # Prevent a silently unresolved payload file from masquerading
+            # as a loaded set just because UsdPrim.IsLoaded() is true.
+            source_roles = self._set_roles[name]
+            if not any(self.stage.GetPrimAtPath(
+                    path + original_path[len("/World"):]).IsDefined()
+                    for original_path in source_roles):
+                raise RuntimeError("Native USD set loaded no original scene geometry")
             paths.append(path)
         duration_ms = round(1000 * (perf_counter()-started),3)
         after = _rss_bytes()
@@ -440,8 +459,14 @@ class WorldSession:
             "loaded_set_names": [s["name"] for s in self.structure["sets"]
                  if self.stage.GetPrimAtPath(
                      "/World/Sets/" + s["name"]).IsLoaded()],
-            "source_staging_file_count": len(self.sources),
-            "source_staging_bytes": self.staged_bytes,
+            "source_staging_file_count": self.initially_staged_sources +
+                                          len(self.materialized_set_names),
+            "source_registry_entry_count": len(self.sources),
+            "initial_eager_source_count": self.initially_staged_sources,
+            "materialized_scene_set_names": sorted(self.materialized_set_names),
+            "eager_original_scene_flatten_count": 0,
+            "source_staging_bytes": self.staged_bytes +
+                                    self.loaded_stage_prepared_bytes,
             "usd_stage_load_none_ms": self.stage_initial_ms,
             "rss_unloaded_bytes": self.rss_unloaded_bytes,
             "rss_current_bytes": _rss_bytes(),
@@ -670,12 +695,58 @@ class OpenUSDWorldComposer:
         with TemporaryDirectory(prefix="nvp-usd-world-open-") as tmp:
             stage, _, structure, sources, staged_bytes, stage_ms = \
                 self._assemble(pid,doc,tmp)
+            root = Path(tmp)
+            set_by_name = {entry["name"]:entry for entry in structure["sets"]}
+            def materialize(name):
+                # This executes only when director/shot explicitly loads a
+                # set. Exact original scene and any original texture sources
+                # are reopened, verified and flattened RIGHT HERE, never on
+                # the initial Stage.LoadNone working-set open.
+                item = set_by_name[name]
+                key = ("scene",item["scene_id"],item["scene_revision"])
+                saved = doc["sources"]["|".join(map(str,key))]
+                actual = _record_source(
+                    self.index,pid,"scene",item["scene_id"],
+                    item["scene_revision"])
+                if {k:v for k,v in actual.items()
+                    if k not in ("bytes","texture_files")} != saved:
+                    raise PermissionError(
+                        "Original scene layer changed during lazy payload retrieval")
+                dest = root / "scenes" / (saved["layer_sha256"]+".usda")
+                if dest.is_symlink():
+                    raise PermissionError("Source world stage contains a symlink")
+                new_bytes = 0
+                if dest.exists():
+                    if (not dest.is_file() or
+                        sha256(dest.read_bytes()).hexdigest() !=
+                            saved["layer_sha256"]):
+                        raise PermissionError("Staged set source was substituted")
+                else:
+                    with dest.open("xb") as out:
+                        out.write(actual["bytes"])
+                    new_bytes = len(actual["bytes"])
+                from backend.nvp_usd_film01c_texture import (
+                    write_verified_texture_files,
+                )
+                tex_paths = write_verified_texture_files(
+                    root/"textures",actual.get("texture_files",{}))
+                return {"new_staged_bytes":new_bytes,
+                        "source_role_paths":list(self.index.read_revision(
+                            pid,item["scene_id"],item["scene_revision"]
+                        )["data"]["prim_roles"]),
+                        "texture_file_count":len(tex_paths)}
+            initially_staged = sum(
+                1 for src in sources.values() if src["bytes"] is not None)
             session = WorldSession(
-                None,record,stage,structure,sources,staged_bytes,stage_ms)
-            # This context owns all real USD staging. Keep stage alive only
-            # while the private workspace and its checked files exist.
+                None,record,stage,structure,sources,staged_bytes,stage_ms,
+                materialize_set=materialize,
+                initially_staged_sources=initially_staged)
+            session._set_roles = {
+                item["name"]:list(self.index.read_revision(
+                    pid,item["scene_id"],item["scene_revision"]
+                )["data"]["prim_roles"]) for item in structure["sets"]
+            }
             try:
                 yield session
             finally:
-                session.stage = None
-                session.closed = True
+                session.close()
