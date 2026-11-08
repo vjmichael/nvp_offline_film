@@ -381,6 +381,34 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             request["project_id"],route,
             profile_revision=request["profile_revision"])
 
+    def film03_publish_actor_voice_direction(self,request):
+        """Native director-approved emotional delivery; zero speech generated.
+
+        A screenplay rewrite creates a new FilmIndex direction revision.
+        The original lines, ActorID, VoiceID and prior acting intentions
+        remain stored and are not modified by this preview/authoring action.
+        """
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","source_route","profile_revision","directions",
+            "expected_revision","director_note"})
+        from backend.nvp_film03_expressive_voice_direction import FilmActorVoiceDirection
+        nonce="film03_director_delivery_"+secrets.token_hex(16)
+        def approve(event,scope):
+            return bool(event==nonce and self._wo6_confirm_creative(nonce,scope))
+        return FilmActorVoiceDirection(self.index,verify_creator_action=approve).publish(
+            request["project_id"],request["source_route"],
+            profile_revision=request["profile_revision"],
+            directions=request["directions"],
+            expected_revision=request["expected_revision"],
+            director_note=request["director_note"],creator_event=nonce)
+
+    def film03_inspect_film_voice_readiness(self,project_id):
+        """Voice engine quality is CLOSED until actual expressive film results."""
+        self._wo5_project(project_id)
+        from backend.nvp_film03_expressive_voice_direction import cinematic_engine_readiness
+        return cinematic_engine_readiness(None)
+
     def film03_run_actor_voice_candidate(self,request):
         """Film speech is disabled until a genuinely expressive provider passes
         human/director listening and model-specific qualification gates.
