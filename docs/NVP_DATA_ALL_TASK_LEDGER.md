@@ -1189,3 +1189,12 @@ Draft PR #94 (`nvp/wo1-integrated-native-regressions-20261107`) stacks on WO6 PR
 
 
 **WO2 root cause and repair update:** The original SLATE-05/06 positive creator-consent rejection is explained by `SlatePreviewCache._db` closing an explicit `BEGIN IMMEDIATE` transaction without commit. Thus `reserve()` returned PENDING but erased its cache row, so `_approval_check` saw no durable reservation and failed closed. Verified underlying SQLite rollback behavior locally; committed success-only commit/exception rollback and native multi-connection positive/negative tests, plus orphaned-consent cleanup for blocking, geometry and pre-Take camera. Dedicated four-cell workflow `.github/workflows/nvp-wo2-slate-native-approval.yml`. Draft PR #95 remains **open pending actual native results**. See `docs/NVP_WO2_SLATE_APPROVAL_CLOSEOUT.md`.
+
+
+## WO3 MaterialX and independent native renderer integrity — 2026-11-07
+
+- **Draft PR #96** `nvp/wo3-materialx-renderer-integrity-20261107`, stacked on WO2 #95/WO1 #94, **implementation submitted; exact-head native acceptance OPEN**.
+- Prior **real** DATA-AV job `128474807034` (PBR five channels) and 60s mixed scene job `128474807074` hit `RuntimeError: MaterialX source scalar changed` on valid connected roughness/metallic maps. Earlier WO1 code restricted only valid mapped scalar connections, still no passing native evidence.
+- WO3 requires *exact* shader output sockets, UsdShade output-kind/type, no extra/raw USD graph connections, source-bound UV selection and PBR normal/emission/opacity color contracts. Strengthened `nvp_wo2_openpbr.py`, `nvp_wo2_pbr_channels.py`, added `nvp_wo3_materialx_integrity.py`.
+- Independent disposable MaterialX texture source copies are read-only and re-hashed **after** the renderer operation, avoiding false custody receipts on native mutation; Hydra probes SHA-pin their executable across the call, reject untrusted image symlinks/oversize files and do not include raw stderr private source paths.
+- Added adversarial real USD tests `test_nvp_wo3_materialx_integrity.py` and Hydra-executable integrity tests; workflow `nvp-wo3-materialx-renderer-integrity.yml` runs Windows/Linux 3.11/3.13 plus 60s original USD CPU continuity. **Pending all real job results and repairs**; optional `usdrecord` is not evidence of shader parity if skipped. Installed Windows film parity remains separate.

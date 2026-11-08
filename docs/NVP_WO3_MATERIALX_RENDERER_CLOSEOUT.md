@@ -75,3 +75,10 @@ and target machines remain separate production acceptance gates.
   native Hydra image parity gate**, never infer it from success of other tests.
 - Update this document and project ledger with job IDs, SHA, and actual
   passing or failed results. Only then close WO3 implementation acceptance.
+
+## Additional source integrity closeout requirements
+
+- USD shading ports must have **exactly one authored connection path**, not merely a valid first source from `GetConnectedSource()` with a secondary, invalid or hostile edge. The new gate compares the raw `UsdAttribute.GetConnections()` against the exact expected output path.
+- Native `usdrecord` is resolved to an exact executable path and SHA-256 hashed before/after rendering. Failed, symbolic-link or oversized image outputs cannot produce `HYDRA_FRAME_RENDERED` receipt. Raw stderr containing private directories is not returned through the renderer receipt.
+- Negative tests include executable change during a mock native run (must throw), failure stderr redaction (must not certify a rendered frame), and an extra USD connection on an otherwise valid OpenPBR input (must fail).
+- No evidence exists yet that an independent real Hydra/MaterialX renderer achieved visual parity, even if the four matrix cells complete successfully: `usdrecord` may not be installed. Renderer output custody and source graph acceptance are separate from cinematic parity.
