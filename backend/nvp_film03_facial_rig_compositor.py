@@ -235,6 +235,10 @@ def compose_usd_facial_overlay(index: FilmIndex, rig, *, phonemes,
     if type(phonemes) is not list or type(face_track) is not list or \
        type(body_track) is not list:
         raise ValueError("Independent voice/face/body source tracks required")
+    if type(rig) is not dict or rig != inspect_original_rig(
+            index, rig["project_id"], rig["source_take_id"],
+            rig["actor_prim_path"], rig["source_take_sha256"]):
+        raise PermissionError("Facial source map differs from actual original USD rig")
     controls = _map_controls(rig, phonemes, face_track,
                              controls["visemes"], controls["emotions"],
                              controls["emotion_reset_targets"])
