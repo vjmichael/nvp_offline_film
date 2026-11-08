@@ -18,7 +18,7 @@ from backend.nvp_film03_actor_identity_core import (
 from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
-from tests.test_nvp_film03_dialogue_manager import (
+from test_nvp_film03_dialogue_manager import (
     construct_real_original_dialogue,ACTION,
 )
 
