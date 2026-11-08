@@ -656,9 +656,28 @@ class ProductionBibleActors:
                    WHERE project_id=? AND actor_id=?
                    ORDER BY cast_revision""", (project_id, actor_id))]
                 if voice_table else [])
+        with self.studio._connection() as db:
+            identity_table=db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='nvp_bible_actor_identity_profiles'").fetchone()
+            identity_history=([dict(x) for x in db.execute(
+                """SELECT actor_id,profile_revision,document_sha256,
+                          profile_json,voice_id,voice_cast_revision,
+                          voice_reference_sha256,source_bible_revision,
+                          director_note,created_at
+                   FROM nvp_bible_actor_identity_profiles
+                   WHERE project_id=? AND actor_id=?
+                   ORDER BY profile_revision""",(project_id,actor_id))]
+                if identity_table else [])
+        for identity in identity_history:
+            identity["profile"]=json.loads(identity.pop("profile_json"))
         return {
             "format": FORMAT,
             "project_id": project_id, "actor_id": actor["id"],
+            "current_identity_profile": (
+                identity_history[-1] if identity_history else None),
+            "immutable_identity_profile_history": identity_history,
+            "appearance_behavior_movement_voice_type_share_canonical_actorid": True,
             "current_voice_identity": (voice_history[-1] if voice_history else None),
             "immutable_voice_cast_history": voice_history,
             "audio_asset_link_alone_cannot_approve_actors_voice": True,
