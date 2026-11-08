@@ -1,0 +1,114 @@
+name: NVP FILM01 Native Visual, Sound and Paired Director Look Acceptance (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film01-native-visual-audio-qc-20261108]
+  pull_request:
+    paths:
+      - tools/nvp_film01_original_30s.py
+      - backend/nvp_film01_native_avi.py
+      - tools/nvp_film01_native_visual_audio_qc.py
+      - tools/nvp_film01_compare_rendered_light.py
+      - tools/nvp_film01_render_paired_original.py
+      - tests/test_nvp_film01_native_visual_audio_qc.py
+      - tests/test_nvp_film01_compare_rendered_light.py
+      - .github/workflows/nvp-film01-native-visual-qc.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film01-visual-qc-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-original-source-negative-integrity:
+    name: Native real USD short smoke and strong 720-frame anti-false-acceptance / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD and original picture/audio dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Compile original source render and native QC modules
+        run: |
+          python -m compileall -q tools/nvp_film01_original_30s.py backend/nvp_wo6_07f_rendered_av.py backend/nvp_film01_native_avi.py tools/nvp_film01_native_visual_audio_qc.py tools/nvp_film01_compare_rendered_light.py tools/nvp_film01_render_paired_original.py tests/test_nvp_film01_native_visual_audio_qc.py tests/test_nvp_film01_compare_rendered_light.py
+      - name: Deny six actual OpenUSD/PCM frames disguised as a finished 720-frame film
+        run: python -m unittest discover -s tests -p test_nvp_film01_native_visual_audio_qc.py -v
+      - name: Deny incomplete actual USD source as a full gold/sun visual comparison
+        run: python -m unittest discover -s tests -p test_nvp_film01_compare_rendered_light.py -v
+
+  two-authentic-looks-one-original-30s-project:
+    name: Full 720+720 real USD frames same project, identical 1.44m PCM, 2 AVI, source film QC and 2-look contact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD and CPU image/QC dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Create ONE verified three-shot source and render two full real looks from that exact same original
+        shell: bash
+        run: |
+          python -m tools.nvp_film01_render_paired_original \
+            --root "$RUNNER_TEMP/nvp-relay30-one-source-project" \
+            --out-dir "$RUNNER_TEMP/nvp-relay30-paired-complete-review" \
+            --consent I_APPROVE_DISPOSABLE_ORIGINAL_30S_CI_SOURCE \
+            | tee "$RUNNER_TEMP/nvp-relay30-paired-export-log.json"
+      - name: Independently decode and verify both complete original AVI indexes, JPEG pixels and PCM stream
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path.cwd()/"tests"))
+          from test_nvp_film01_native_avi import inspect_avi_independently
+          root=Path(os.environ["RUNNER_TEMP"])/"nvp-relay30-paired-complete-review"
+          master=json.loads((root/"paired-original-30s-report.json").read_text())
+          assert master["same_original_project_edit_and_pcm_for_both_looks"] is True
+          for name in ("baseline","digital_gold_sun"):
+              pack=root/(name+".source_png_pcm.zip")
+              movie=root/(name+".playable_mjpeg_pcm.avi")
+              result=inspect_avi_independently(movie,pack,720)
+              assert result["frames_decoded"]==720
+              assert result["original_pcm_samples"]==1440000
+              assert result["exact_sound_matches_source"] is True
+              qc=json.loads((root/(name+".visual_audio_qc.json")).read_text())
+              assert qc["audio"]["signal_event_at_26s_proven_by_actual_native_receipts"]
+              assert qc["technical_native_source_frame_count"]==720
+          comparison=json.loads((root/"baseline_vs_digital_gold_sun.metrics.json").read_text())
+          assert comparison["original_take_and_film_time_are_identical"] is True
+          assert comparison["original_sound_pcm_identical"] is True
+          assert comparison["real_pixels_modified_by_artist_lighting"] is True
+          assert comparison["human_artistic_approval_required"] is True
+          print(json.dumps({"full_native_provenance":"PASS",
+              "creative_quality":"UNREVIEWED",
+              "two_original_720_frame_looks":"COMPLETE",
+              "original_sound_identical":"YES",
+              "installed_player":"NOT_TESTED",
+              "DCI":"NOT_ACCEPTED"},indent=2))
+          PY
+      - name: Upload two actual director-playable AVIs, two original source ZIPs, visual/sound QC and comparative contact PNG
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-relay30-two-real-30s-film-looks-plus-visual-sound-QC
+          path: |
+            ${{ runner.temp }}/nvp-relay30-paired-complete-review/
+            ${{ runner.temp }}/nvp-relay30-paired-export-log.json
+          if-no-files-found: warn
+          retention-days: 14
