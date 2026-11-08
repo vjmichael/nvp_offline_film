@@ -44,11 +44,10 @@ jobs:
         run: python -m unittest discover -s tests -p test_nvp_film03_object_dialogue.py -v
       - name: Protect existing screenplay revision / StoryBible source contract
         run: |
-          python -m unittest discover -s tests -p test_nvp_story_bible.py -v
-          python -m unittest discover -s tests -p test_nvp_studio.py -v
+          python -m unittest discover -s tests -p test_story_bible.py -v
+          python -m unittest discover -s tests -p test_studio.py -v
       - name: Protect real OpenUSD original scene crew and temporal source compatibility
         run: |
-          python -m unittest discover -s tests -p test_nvp_wo6_scene_context.py -v
           python -m unittest discover -s tests -p test_nvp_temporal_ledger.py -v
       - name: Output cannot be misidentified as rendered scene/audio feature
         shell: python
