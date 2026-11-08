@@ -26,7 +26,8 @@ from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
 from backend.nvp_wo6_impact_preview import preview_source_impact
 from backend.nvp_wo6_native_take_action import NativeTakeActionHost
-from backend.nvp_wo6_native_shot_action import NativeShotActionHost
+from backend.nvp_wo6_native_shot_action import NativeShotActionHost, ACTION_KINDS
+from backend.nvp_wo6_scene_context import assemble_film_crew_context
 from backend.nvp_wo6_native_data_action import NativeFilmDecisionHost
 from backend.nvp_wo6_recovery import WO6DurableRecovery
 from backend.nvp_wo6_director_model_proposal import (
@@ -249,6 +250,99 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                     "creative_approval_granted":False,
                     "film_delivered":False}
 
+    def _wo6_verified_ai_reference(self,project_id,proposal_id,take_id,
+                                   take_sha256,action_kind):
+        """Reopen the exact original verified context, not model-supplied fields."""
+        self._wo5_project(project_id)
+        if (type(proposal_id) is not str or
+                not proposal_id.startswith("wo6proposal_") or
+                len(proposal_id)!=36 or
+                any(c not in "0123456789abcdef" for c in proposal_id[12:]) or
+                action_kind not in ACTION_KINDS):
+            raise ValueError("Exact review proposal and supported shot kind required")
+        with self._wo6_model_lock:
+            if self._wo6_closed:
+                raise PermissionError("Native director session already closed")
+            slot=self._wo6_model_proposals.get(proposal_id)
+            if (slot is None or slot["project_id"]!=project_id or
+                    slot["actor_id"]!=self._wo6_actor or
+                    slot["state"]!="READY_FOR_HUMAN_REVIEW"):
+                raise PermissionError("No completed actor-owned model advice")
+            proposal=dict(slot["proposal"])
+        if (proposal.get("take_id")!=take_id or
+                proposal.get("take_sha256")!=take_sha256 or
+                proposal.get("project_id")!=project_id or
+                proposal.get("model_text_is_untrusted") is not True or
+                proposal.get("creative_approval_granted") is not False or
+                proposal.get("native_worker_authorized") is not False or
+                type(proposal.get("model_text_sha256")) is not str or
+                len(proposal["model_text_sha256"])!=64):
+            raise PermissionError("Model advice source or permission evidence changed")
+        original=self.index.read_revision(project_id,take_id,1)
+        if (original["kind"]!="take" or
+                original["document_sha256"]!=take_sha256 or
+                original["data"].get("frozen") is not True):
+            raise PermissionError("Reviewed advice is not bound to original frozen Take")
+        packet=assemble_film_crew_context(
+            self.index,project_id,take_id,1,
+            int(proposal["film_time_tick"]),max_prims=16,max_events=12)
+        if (packet["context_sha256"]!=proposal["verified_source_context_sha256"]
+                or packet["historical_take_not_current_scene"] or
+                any(not head["is_current_head"] for head in packet["source_heads"])):
+            raise PermissionError("AI consultation refers to stale source context")
+        return {
+            "proposal_id":proposal_id,
+            "take_sha256":take_sha256,
+            "model_text_sha256":proposal["model_text_sha256"],
+            "verified_source_context_sha256":packet["context_sha256"],
+            "film_time_tick":str(proposal["film_time_tick"]),
+            "director_selected_action_kind":action_kind,
+        }, original["data"]
+
+    def wo6_review_model_proposal(self,request):
+        """Explicit human-selected *consultation*, never an execution approval."""
+        self._wo6_require(request,{
+            "project_id","proposal_id","take_id","take_sha256",
+            "model_text_sha256","verified_source_context_sha256",
+            "action_kind"})
+        context,take=self._wo6_verified_ai_reference(
+            request["project_id"],request["proposal_id"],
+            request["take_id"],request["take_sha256"],request["action_kind"])
+        if (request["model_text_sha256"]!=context["model_text_sha256"] or
+                request["verified_source_context_sha256"]!=
+                    context["verified_source_context_sha256"]):
+            raise PermissionError("Director must review exact displayed model suggestion")
+        with self._wo6_model_lock:
+            slot=self._wo6_model_proposals.get(request["proposal_id"])
+            if (self._wo6_closed or slot is None or
+                    slot["state"]!="READY_FOR_HUMAN_REVIEW" or
+                    slot.get("review",{}).get("consumed_task_id")):
+                raise PermissionError("AI consultation no longer available for review")
+            slot["review"]={
+                "context":dict(context),"in_flight":False,
+                "consumed_task_id":None,
+            }
+        return {
+            "format":FORMAT,
+            "status":"HUMAN_SELECTED_AI_CONSULTATION_NO_GRANT",
+            "proposal_id":context["proposal_id"],
+            "take_id":request["take_id"],
+            "take_sha256":context["take_sha256"],
+            "model_text_sha256":context["model_text_sha256"],
+            "verified_source_context_sha256":
+                context["verified_source_context_sha256"],
+            "action_kind":request["action_kind"],
+            "scene_id":take["scene_id"],
+            "scene_revision":take["scene_revision"],
+            "scene_sha256":take["scene_document_sha256"],
+            "model_proposed_shot_parameters":False,
+            "director_must_type_values":True,
+            "creative_approval_granted":False,
+            "native_worker_authorized":False,
+            "source_modified":False,
+            "film_delivered":False,
+        }
+
     def wo6_source_catalog(self,project_id):
         self._wo5_project(project_id)
         scenes,timelines,takes,grades=[],[],[],[]
@@ -394,26 +488,76 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         return self._wo6_result(queued,self._wo6_take)
 
     def wo6_create_shot(self,request):
-        scope=self._wo6_require(request,{
+        required={
             "project_id","action_kind","shot_id","take_id",
             "take_sha256","scene_id","scene_revision","scene_sha256",
             "start_tick","end_tick","changes","purpose",
-            "continuity_policy","reason","preview_sha256"})
-        self._wo6_host()
-        queued=self._wo6_shot.queue_shot(
-            scope,creator_decision_id=self._wo6_decision(),
-            action_kind=request["action_kind"],
-            shot_id=request["shot_id"],take_id=request["take_id"],
-            take_sha256=request["take_sha256"],
-            scene_id=request["scene_id"],
-            scene_revision=request["scene_revision"],
-            scene_sha256=request["scene_sha256"],
-            start_tick=request["start_tick"],end_tick=request["end_tick"],
-            changes=request["changes"],purpose=request["purpose"],
-            continuity_policy=request["continuity_policy"],
-            reason=request["reason"],
-            expected_preview_sha256=request["preview_sha256"])
-        return self._wo6_result(queued,self._wo6_shot)
+            "continuity_policy","reason","preview_sha256"}
+        has_review=(type(request) is dict and
+                    "reviewed_proposal_id" in request)
+        scope=self._wo6_require(
+            request,required | ({"reviewed_proposal_id"} if has_review else set()))
+        context=None
+        proposal_id=request.get("reviewed_proposal_id") if has_review else None
+        if has_review:
+            # An AI reply never supplies a worker parameter. Only an
+            # explicit preceding review click plus the human's fresh
+            # impact and typed operation may continue to native consent.
+            context,take=self._wo6_verified_ai_reference(
+                request["project_id"],proposal_id,
+                request["take_id"],request["take_sha256"],
+                request["action_kind"])
+            if (take["scene_id"]!=request["scene_id"] or
+                    take["scene_revision"]!=request["scene_revision"] or
+                    take["scene_document_sha256"]!=request["scene_sha256"] or
+                    type(request["reason"]) is not str or
+                    not 12<=len(request["reason"].strip())<=512):
+                raise PermissionError(
+                    "Director must enter independent bounded reasons for exact original source")
+            with self._wo6_model_lock:
+                slot=self._wo6_model_proposals.get(proposal_id)
+                review=slot.get("review") if slot else None
+                if (review is None or review["context"]!=context or
+                        review["in_flight"] or review["consumed_task_id"] is not None or
+                        self._wo6_closed):
+                    raise PermissionError("AI review has not been selected or was already consumed")
+                review["in_flight"]=True
+        try:
+            self._wo6_host()
+            queued=self._wo6_shot.queue_shot(
+                scope,creator_decision_id=self._wo6_decision(),
+                action_kind=request["action_kind"],
+                shot_id=request["shot_id"],take_id=request["take_id"],
+                take_sha256=request["take_sha256"],
+                scene_id=request["scene_id"],
+                scene_revision=request["scene_revision"],
+                scene_sha256=request["scene_sha256"],
+                start_tick=request["start_tick"],end_tick=request["end_tick"],
+                changes=request["changes"],purpose=request["purpose"],
+                continuity_policy=request["continuity_policy"],
+                reason=request["reason"],
+                expected_preview_sha256=request["preview_sha256"],
+                ai_review_context=context)
+        except BaseException:
+            if has_review:
+                with self._wo6_model_lock:
+                    slot=self._wo6_model_proposals.get(proposal_id)
+                    if slot and slot.get("review"):
+                        slot["review"]["in_flight"]=False
+            raise
+        if has_review:
+            with self._wo6_model_lock:
+                slot=self._wo6_model_proposals.get(proposal_id)
+                if slot and slot.get("review"):
+                    slot["review"].update(
+                        in_flight=False,consumed_task_id=queued["task_id"])
+        result=self._wo6_result(queued,self._wo6_shot)
+        if has_review:
+            result.update(
+                reviewed_ai_proposal_id=proposal_id,
+                reviewed_model_text_sha256=context["model_text_sha256"],
+                human_shot_parameters_separately_authorized=True)
+        return result
 
     def wo6_create_decision(self,request):
         scope=self._wo6_require(request,{
