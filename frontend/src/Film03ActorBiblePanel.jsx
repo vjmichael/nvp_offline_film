@@ -3,9 +3,9 @@ import React, {useEffect, useMemo, useState} from 'react';
 const FAMILIES = {
   scene: ['screenplay_scene', 'filmindex'],
   dialogue: ['filmindex'], performance: ['filmindex'],
-  voice: ['filmindex'], wardrobe: ['bible_prop', 'filmindex'],
-  prop: ['bible_prop', 'filmindex'], model: ['filmindex'],
-  mesh: ['filmindex'], texture: ['filmindex'], rig: ['filmindex'],
+  voice: ['filmindex'], wardrobe: ['bible_prop', 'filmindex', 'mesh_glb', 'rigged_glb'],
+  prop: ['bible_prop', 'filmindex', 'mesh_glb'], model: ['filmindex', 'mesh_glb', 'rigged_glb'],
+  mesh: ['filmindex', 'mesh_glb', 'rigged_glb'], texture: ['filmindex', 'texture_blob'], rig: ['filmindex', 'rigged_glb'],
   take: ['filmindex'], actor_prim: ['filmindex'],
 };
 const KINDS = {
@@ -25,6 +25,7 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
   const [scope, setScope] = useState('global');
   const [note, setNote] = useState('');
   const [prim, setPrim] = useState('/World/Engineer');
+  const [textureSha, setTextureSha] = useState('');
   const [editing, setEditing] = useState(null);
   const [reason, setReason] = useState('');
   const [notice, setNotice] = useState('');
@@ -64,7 +65,10 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
   function key(entry) {
     return entry.family + '|' + entry.target_id + '|' + entry.target_revision;
   }
-  const selected = choices.find(row => key(row) === target);
+  const selected = family === 'texture_blob'
+    ? (/^[a-f0-9]{64}$/.test(textureSha)
+       ? {family:'texture_blob', target_id:textureSha, target_revision:1, kind:'texture'} : null)
+    : choices.find(row => key(row) === target);
 
   function chooseRole(next) {
     setRole(next); setFamily(FAMILIES[next][0]); setEditing(null);
@@ -76,6 +80,7 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
     setScope(entry.production_scope);
     setNote(entry.director_note || '');
     setPrim(entry.actor_prim_path || '/World/Engineer');
+    if (entry.source_family === 'texture_blob') setTextureSha(entry.target_id);
     setNotice('Editing creates another relationship revision. Historical bindings remain intact.');
   }
   function submit() {
@@ -159,6 +164,10 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
           </option>)}
         </select>
       </label>
+      {family === 'texture_blob' && <label>Existing original FilmIndex PNG texture SHA-256
+        <input aria-label="Texture source SHA-256" value={textureSha} maxLength={64}
+          placeholder="64-character source SHA-256" onChange={e=>setTextureSha(e.target.value)} />
+      </label>}
       {role === 'actor_prim' && <label>Real OpenUSD actor prim path
         <input aria-label="OpenUSD actor prim path" value={prim} maxLength={240}
           onChange={e=>setPrim(e.target.value)} />
@@ -177,7 +186,8 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
         </button>
         {editing && <button className="secondary" onClick={()=>setEditing(null)}>Cancel revision</button>}
       </div>
-      {!choices.length && <p className="fineprint">Register a source asset, StoryBible prop or script scene first. NVP refuses invented resource IDs.</p>}
+      {!choices.length && family !== 'texture_blob' && <p className="fineprint">Register a source asset, StoryBible prop or script scene first. NVP refuses invented resource IDs.</p>}
+      {family === 'texture_blob' && <p className="fineprint">A texture SHA must already exist in this project's immutable PNG source blob store. NVP verifies its original bytes; pasted unrecognized hashes are refused.</p>}
       <h4>Immutable relationship history</h4>
       <details>
         <summary>Show all {detail.history.length} saved relationship revisions</summary>
