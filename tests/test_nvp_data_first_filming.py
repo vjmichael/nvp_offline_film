@@ -161,8 +161,8 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
 
     def test_existing_sound_timeline_preflight_does_not_publish_pcm(self):
         req=self.payload()
-        TemporalLedger(self.index).publish(
-            self.pid,"FilmingSoundTimeline",[],duration_tick=3*T,
+        self.capture.sources.publish(
+            self.pid,"FilmingSoundTimeline",[self.original],
             expected_revision=0)
         with self.assertRaisesRegex(ValueError,"output identity already published"):
             self.capture.capture(**req)
@@ -183,7 +183,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         req=self.payload()
         second=dict(req["recordings"][0])
         second.update(event_id="Speech002",source_id="SecondSpeech",
-                      pcm_chunks=[b"\\x00"])
+                      pcm_chunks=[b"\x00"])
         req["recordings"].append(second)
         with self.assertRaisesRegex(ValueError,"Invalid captured PCM16LE"):
             self.capture.capture(**req)
@@ -195,7 +195,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         req=self.payload()
         second=dict(req["recordings"][0])
         second.update(event_id="Speech002",source_id="SecondSpeech",
-                      pcm_chunks=[b"\\x00\\x00"])
+                      pcm_chunks=[b"\x00\x00"])
         req["recordings"].append(second)
         with self.assertRaisesRegex(ValueError,"shorter than"):
             self.capture.capture(**req)
@@ -255,7 +255,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         req["recordings"][0]["pcm_chunks"]=iter([self.original])
         second=dict(req["recordings"][0])
         second.update(event_id="Speech002",source_id="SecondSpeech",
-                      pcm_chunks=iter([b"\\x00\\x00"]))
+                      pcm_chunks=iter([b"\x00\x00"]))
         req["recordings"].append(second)
         with self.assertRaisesRegex(ValueError,"shorter than"):
             self.capture.capture(**req)
