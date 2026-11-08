@@ -142,7 +142,11 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                 began=time.monotonic()
                 try:
                     run=subprocess.run(
-                        args,cwd=root,capture_output=True,text=True,
+                        # Renderer diagnostics are untrusted and may be
+                        # arbitrarily large. Do not hold stdout/stderr in
+                        # memory or surface private source paths to callers.
+                        args,cwd=root,stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
                         timeout=timeout_seconds,check=False)
                 except subprocess.TimeoutExpired:
                     return {**base,"status":"HYDRA_RENDER_TIMEOUT",
