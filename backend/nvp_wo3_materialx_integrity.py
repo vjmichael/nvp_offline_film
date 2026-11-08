@@ -66,7 +66,7 @@ def isolate_materialx_only_on_derived_stage(derived_stage):
     unless a genuine source-bound OpenPBR network produces measured pixels.
     Do not use this on FilmIndex-authoritative scenes or asset layers.
     """
-    from pxr import Usd,UsdShade
+    from pxr import Sdf,Usd,UsdShade
     if not isinstance(derived_stage,Usd.Stage):
         raise TypeError("Disposable native USD stage required")
     selected=0
@@ -82,6 +82,8 @@ def isolate_materialx_only_on_derived_stage(derived_stage):
         if (len(connections)!=1 or not source or
                 source[2]!=UsdShade.AttributeType.Output or
                 str(source[1])!="out" or
+                not source[0].GetOutput("out") or
+                source[0].GetOutput("out").GetTypeName()!=Sdf.ValueTypeNames.Token or
                 UsdShade.Shader(source[0].GetPrim()).GetIdAttr().Get()!=
                 "ND_open_pbr_surface_surfaceshader"):
             raise RuntimeError("Derived MaterialX terminal is not trusted OpenPBR")
