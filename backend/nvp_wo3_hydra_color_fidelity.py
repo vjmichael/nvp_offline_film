@@ -48,6 +48,14 @@ def verify_relative_hydra_swatch_response(red,blue,*,required_context="dual"):
                 len(receipt["rendered_rgb_sha256"])!=64 or
                 not receipt.get("rendered_center_patch_pixels")):
             raise AssertionError("Real custody-bound external Hydra pixels required")
+    if required_context=="mtlx_only" and any(
+            r.get("materialx_only_terminal_isolated") is not True
+            for r in (red,blue)):
+        raise AssertionError("MaterialX-only probe retained universal shader fallback")
+    if any(type(r.get("derived_render_layer_sha256")) is not str or
+           len(r["derived_render_layer_sha256"])!=64
+           for r in (red,blue)):
+        raise AssertionError("Hash of actual temporary shader stage required")
     if red["renderer_executable_sha256"]!=blue["renderer_executable_sha256"]:
         raise AssertionError("Swatches came from different renderer binaries")
     if red["scene_document_sha256"]==blue["scene_document_sha256"]:
@@ -73,6 +81,9 @@ def verify_relative_hydra_swatch_response(red,blue,*,required_context="dual"):
         "red_source_scene_sha256":red["scene_document_sha256"],
         "blue_source_scene_sha256":blue["scene_document_sha256"],
         "renderer_executable_sha256":red["renderer_executable_sha256"],
+        "red_derived_render_layer_sha256":red["derived_render_layer_sha256"],
+        "blue_derived_render_layer_sha256":blue["derived_render_layer_sha256"],
+        "materialx_only_terminal_isolated":required_context=="mtlx_only",
         "red_rendered_rgb_sha256":red["rendered_rgb_sha256"],
         "blue_rendered_rgb_sha256":blue["rendered_rgb_sha256"],
         "red_center_mean_rgb8":a,
