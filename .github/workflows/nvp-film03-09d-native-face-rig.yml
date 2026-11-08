@@ -42,3 +42,64 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_nvp_film03_phoneme_alignment.py -v
           python -m unittest discover -s tests -p test_nvp_film03_independent_facial_direction.py -v
+
+  real-blender-facial-render:
+    name: Real Blender 5.2.3 import of original USD face, Cycles renders, independent reopen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM03_FACE_ARTIFACT_DIR: native-face-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native usd-core and real headless Blender CPU dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Verify Blender executable using Blender-published SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Actually import original USD skinned face, render Cycles, reopen in independent process
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM03_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p test_nvp_film03_real_blender_face.py -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder=Path("native-face-evidence")
+          assert (folder/"scene.blend").is_file()
+          assert all((folder/f"facial_at_{i}.png").is_file() for i in (1,2,3))
+          proof=json.loads((folder/"independent_reopen.json").read_text("utf8"))
+          status=json.loads((folder/"review_status.json").read_text("utf8"))
+          assert proof["passed"] and proof["three_authored_mouth_face_poses_independently_reopened"]
+          assert status["real_usd_import"] and status["real_fresh_blender_reopen"]
+          assert status["real_acoustic_model_executed"] is False
+          assert status["human_audible_lipsync_accepted"] is False
+          print("Real Blender USD actor/mouth geometry passed, audio lip-sync still unproven")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: nvp-FILM03-09D-REAL-USD-FACE-BLEND-CYCLES-THREE-POSES-UNAPPROVED
+          path: native-face-evidence/
+          if-no-files-found: error
+          retention-days: 14
