@@ -110,6 +110,7 @@ def original_take_manifest(source):
     # not an invented face/voice/character rig.
     return {
         "format":FORMAT,
+        "performance_variant":source.get("performance_variant","baseline"),
         "source_take_sha256":source["take_sha256"],
         "scene_sha256":source["scene_sha256"],
         "torus_mesh_sha256":original_sha,
@@ -291,7 +292,8 @@ def fixture(workspace,blender,*,ci_test_consent=False):
     if not version.startswith("Blender "):
         raise RuntimeError("Unexpected real Blender executable identity")
     root.mkdir(mode=0o700,parents=True)
-    source=build_frozen_donut_source(root/"original_frozen_take")
+    source=build_frozen_donut_source(
+        root/"original_frozen_take",performance="director_retake_01")
     ledger=TaskLedger(root/"activity")
     worker=BlenderWorkerSupervisor(
         root/"native_blender_worker",blender_executable=exe,
