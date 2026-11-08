@@ -37,6 +37,7 @@ jobs:
         run: |
           python -m pip install -r requirements-foundation.txt
           python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx2
       - name: Compile actual FILM03 script/performance/scene crew and native regression
         run: |
           python -m compileall -q backend/nvp_film03_object_dialogue.py backend/nvp_wo6_scene_context.py tests/test_nvp_film03_object_dialogue.py
