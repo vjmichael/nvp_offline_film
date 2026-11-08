@@ -272,18 +272,12 @@ def compose_usd_facial_overlay(index: FilmIndex, rig, *, phonemes,
         values = [float(value) for value in original_weights]
         if any(not math.isfinite(v) or v < 0 or v > 1 for v in values):
             raise PermissionError("Original actor facial source weights are invalid")
+        # Only actor-approved semantic controls are reauthored. All other
+        # source animation values, including joints, remain inherited.
         for name in controls["emotion_reset_targets"]:
             values[shape_index[name]] = 0.0
-        for i, direction in enumerate(face_track):
-            if direction["sample"] > at:
-                break
-            if direction["value"] in controls["emotions"]:
-                current_face = direction
-            else:
-                current_face = None
-        else:
-            current_face = locals().get("current_face", None)
-        # Reset once per key, never let a previous face value leak.
+        for name in controls["visemes"].values():
+            values[shape_index[name]] = 0.0
         current_face = next((ev for ev in reversed(face_track)
                              if ev["sample"] <= at), None)
         if current_face and current_face["value"] in controls["emotions"]:
