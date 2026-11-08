@@ -4,6 +4,9 @@ on:
   push:
     branches: [nvp/vlight-digital-preview-raster-20261108]
   pull_request:
+    # This complete-film matrix runs only for its own integration PR.
+    # The stacked donut PR has a faster dedicated real-image proof.
+    branches: [nvp/film01-original30s-digital-fx-20261108]
     paths:
       - backend/nvp_virtual_light_fx.py
       - tests/test_nvp_virtual_light_fx.py
