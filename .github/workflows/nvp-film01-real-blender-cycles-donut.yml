@@ -8,6 +8,7 @@ on:
     paths:
       - tools/nvp_film01_blender_cycles_worker.py
       - tools/nvp_film01_blender_cycles_acceptance.py
+      - tools/nvp_film01_cycles_reopen_audit.py
       - tests/test_nvp_film01_blender_cycles_source.py
       - tools/nvp_film01_donut_light_probe.py
       - backend/nvp_blender_worker.py
@@ -42,7 +43,7 @@ jobs:
           python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
       - name: Compile host staging and trusted first-party Blender script
         run: |
-          python -m compileall -q backend/nvp_film01_donut_actor.py tools/nvp_film01_blender_cycles_worker.py tools/nvp_film01_blender_cycles_acceptance.py tests/test_nvp_film01_blender_cycles_source.py
+          python -m compileall -q backend/nvp_film01_donut_actor.py tools/nvp_film01_blender_cycles_worker.py tools/nvp_film01_blender_cycles_acceptance.py tools/nvp_film01_cycles_reopen_audit.py tests/test_nvp_film01_blender_cycles_source.py
       - name: Prove true frozen USD torus/cube/sphere actor source, 72 exact poses and worker SHA isolation
         run: python -m unittest discover -s tests -p test_nvp_film01_blender_cycles_source.py -v
       - name: Protect established worker cancellation and durable journal contracts
@@ -89,6 +90,18 @@ jobs:
             --blender "$RUNNER_TEMP/nvp-approved-blender/blender" \
             --consent I_APPROVE_DISPOSABLE_ORIGINAL_BLENDER_CYCLES_TEST \
             | tee "$RUNNER_TEMP/nvp-film01-cycles-run-log.json"
+      - name: REOPEN saved original .blend in a second genuine Blender process and verify all original actors/motion/Cycles settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/nvp-film01-blender-cycles"
+          manifest="$(find "$root/native_blender_worker" -path '*/film01cycles_*/source.json' -type f -print -quit)"
+          if [ -z "$manifest" ]; then echo "No original pinned USD source manifest"; exit 1; fi
+          xvfb-run -a "$RUNNER_TEMP/nvp-approved-blender/blender" \
+            -b "$root/director_review/source_derived_Blender_Cycles_scene.blend" \
+            --python-exit-code 70 --python tools/nvp_film01_cycles_reopen_audit.py \
+            -- --manifest "$manifest" \
+               --audit "$root/director_review/independent_saved_Blender_reopen.json"
       - name: Independently decode Cycles GIF, variant stills and full 72 original PNGs and source audit
         shell: bash
         run: |
@@ -100,6 +113,13 @@ jobs:
           review=root/"director_review"
           receipt=json.loads((review/"verified_director_review_receipt.json").read_text())
           audit=json.loads((review/"original_source_and_cycles_audit.json").read_text())
+          reopened=json.loads((review/"independent_saved_Blender_reopen.json").read_text())
+          assert reopened["passed"] is True
+          assert reopened["actual_separate_Blender_process_reopened_blend"] is True
+          assert reopened["source_manifest_sha256"]==audit["source_manifest_sha256"]
+          assert reopened["original_film_take_sha256"]==audit["original_scene_take_sha256"]
+          assert reopened["original_donut_faces"]==1008
+          assert reopened["saved_72_frame_original_animation"] is True
           assert receipt["all_72_real_Blender_Cycles_PNGs_rendered_and_reopened"] is True
           assert receipt["real_supervised_blender_ran"] is True
           assert receipt["worker_durable_result"]=="SUCCEEDED"
