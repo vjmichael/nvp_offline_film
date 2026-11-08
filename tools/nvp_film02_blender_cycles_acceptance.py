@@ -237,7 +237,7 @@ def run_original_shot(source_root, manifest_path, out, blender, *,
     review = out / "review" / f"shot_{shot_no}"
     frames_dir = review / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
-    all_rows, chunks = [], []
+    all_rows, chunks, scene_samples = [], [], []
     start = shot_no * SHOT_FRAMES
     stop = start + SHOT_FRAMES
     for first in range(start, stop, BATCH):
@@ -258,6 +258,20 @@ def run_original_shot(source_root, manifest_path, out, blender, *,
             if not outcome or outcome.get("state") != "SUCCEEDED":
                 raise RuntimeError("Contained approved native Blender chunk failed: " + str(outcome))
         rows = inspect_chunk(plan, worker, op, packet, job)
+        if first in (start, stop - BATCH):
+            samples = review / "source_scene_samples"
+            samples.mkdir(parents=True, exist_ok=True)
+            scene_path = samples / f"frame_{first:04d}.blend"
+            source_path = samples / f"frame_{first:04d}.source.json"
+            _copy_verified(job / "scene.blend", scene_path)
+            _copy_verified(job / "source.json", source_path)
+            scene_samples.append({
+                "first_frame": first,
+                "scene_file": scene_path.name,
+                "scene_sha256": sha_file(scene_path),
+                "source_file": source_path.name,
+                "source_sha256": sha_file(source_path),
+            })
         for item in rows:
             n = item["frame_zero"]
             _copy_verified(job / "frames" / f"frame_{n:04d}.png",
@@ -303,6 +317,7 @@ def run_original_shot(source_root, manifest_path, out, blender, *,
         "blender_version": version,
         "blender_binary_sha256": sha_file(executable),
         "chunks": chunks, "frames": all_rows,
+        "saved_native_blender_scene_samples": scene_samples,
         "contact_sha256": sha_file(contact_path),
         "all_native_job_and_image_SHA_verified": True,
         "original_take_and_edit_unchanged": True,
