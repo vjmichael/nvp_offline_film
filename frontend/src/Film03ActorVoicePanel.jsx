@@ -244,7 +244,8 @@ export default function Film03ActorVoicePanel({
     {selectedCandidate && <button className="secondary" disabled={busy} onClick={()=>
       action(()=>audition(selectedCandidate.source_audio_id,
                          selectedCandidate.source_audio_revision,
-                         selectedCandidate.source_audio_sha256,144000,
+                         selectedCandidate.source_audio_sha256,
+                         selectedCandidate.source_sample_count,
                          'candidate'))}>
       Audition this exact recorded dialogue Take
     </button>}
