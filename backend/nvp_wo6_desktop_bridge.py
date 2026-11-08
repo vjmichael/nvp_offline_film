@@ -206,7 +206,7 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                     if self._wo6_closed:
                         continue
                 try:
-                    host.run_next(timeout_seconds=240)
+                    host.run_next(timeout_seconds=240,expected_task_id=trigger)
                 except Exception as exc:
                     # The actual host writes interrupted/failed task states
                     # durably; this is supplementary local diagnostic only.
