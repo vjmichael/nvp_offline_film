@@ -12,6 +12,7 @@ reconciliation, NOT automatically assigned to old recordings.
 """
 from __future__ import annotations
 
+from collections import Counter
 from difflib import SequenceMatcher
 from hashlib import sha256
 import json
@@ -84,11 +85,21 @@ def _script_scenes(script, script_id, revision, old=None):
             old_tokens = [(r["speaker"], r["text"]) for r in old_lines]
             new_tokens = [(r["speaker"], r["text"]) for r in source]
             matcher = SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
+            old_counts = Counter(old_tokens)
+            new_counts = Counter(new_tokens)
+            unchanged_whole_scene = old_tokens == new_tokens
             for tag, i0, i1, j0, j1 in matcher.get_opcodes():
                 if tag == "equal":
                     for old_index, new_index in zip(range(i0, i1), range(j0, j1)):
-                        identities[new_index] = old_lines[old_index]["line_id"]
-                        relation[new_index] = "unchanged"
+                        token = new_tokens[new_index]
+                        if (not unchanged_whole_scene and
+                                (old_counts[token] > 1 or new_counts[token] > 1)):
+                            # Repeated identical dialogue is not a trustworthy
+                            # identity key after nearby inserts/removals.
+                            relation[new_index] = "requires_director_reconciliation"
+                        else:
+                            identities[new_index] = old_lines[old_index]["line_id"]
+                            relation[new_index] = "unchanged"
                 elif tag == "replace" and i1-i0 == 1 and j1-j0 == 1 and (
                         old_lines[i0]["speaker"] == source[j0]["speaker"]):
                     identities[j0] = old_lines[i0]["line_id"]
