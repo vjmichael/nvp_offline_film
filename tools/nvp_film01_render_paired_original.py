@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import sys
+from zipfile import ZipFile
 
 from tools.nvp_film01_original_30s import (
     write_original_30s_source,render_original_30s_review,FRAMES)
@@ -62,10 +62,13 @@ def render_paired_original(source_root,output_dir,*,create_source=True):
         if (review["virtual_fx_enabled"] is not light or
                 review["human_visual_judgment_required"] is not True):
             raise RuntimeError("Artist light mode not confirmed in native QC")
+        with ZipFile(zip_path) as original:
+            source_manifest=json.loads(original.read(
+                "original_30s_preview_receipt.json"))
         images[name]={
             "source_png_pcm":str(zip_path),"playable_review_avi":str(movie),
             "movie_SHA256":avi["file_sha256"],
-            "original_source_WAV_SHA256":avi["source_archive_sha256"],
+            "original_source_WAV_SHA256":source_manifest["audio_wav_sha256"],
             "quality_control":str(qc),
             "frames":avi["frames"],
             "original_frozen_edit_sha256":report["edit_sha256"],
