@@ -194,8 +194,13 @@ export default function WO6RenderedDirectorPlayer({projectId}){
   }
 
   function fault(message){
+    // Any in-flight window returning after an underrun is invalid. It
+    // must never enqueue audio or display source pixels after STOP.
+    seq.current++;
     closeAudio();
     playing.current=null;
+    frames.current.clear();
+    windows.current.clear();
     setStatus('underrun');
     setMessage(message);
   }
@@ -228,8 +233,11 @@ export default function WO6RenderedDirectorPlayer({projectId}){
       const offset=Math.floor(seconds*RATE+1e-8);
       const target=session.start+offset;
       if(target>=total){
+        if(session.last!==total-1){
+          fault('Presentation reached the edit end without displaying every exact source frame.');return;
+        }
         closeAudio();playing.current=null;setStatus('completed');
-        setMessage('Reached the selected source edit end. Only this desktop source-preview session was observed; no film acceptance granted.');
+        setMessage('Reached the selected source edit end without a detected scheduler gap. This preview does not certify physical 24fps display or film acceptance.');
         return;
       }
       if(target>session.last){
