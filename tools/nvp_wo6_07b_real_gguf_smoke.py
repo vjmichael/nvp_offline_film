@@ -104,9 +104,15 @@ def _film_source(root):
 
 
 def run_real_gguf_acceptance(*,model_path,server_path,report_path=None,
-                             consent="",max_startup_seconds=180):
+                             consent="",max_startup_seconds=180,
+                             visible_webview2=False):
     if consent!="I_APPROVE_DISPOSABLE_LOCAL_GGUF_TEST":
         raise PermissionError("Explicit local GGUF acceptance consent required")
+    if (type(visible_webview2) is not bool or
+            (visible_webview2 and
+             (os.name!="nt" or not getattr(sys,"frozen",False)))):
+        raise PermissionError(
+            "Real visible GGUF WebView2 acceptance requires explicitly installed Windows NVP.exe")
     model=checked_path(model_path,model=True)
     binary=checked_path(server_path)
     if report_path is not None:
@@ -197,6 +203,29 @@ def run_real_gguf_acceptance(*,model_path,server_path,report_path=None,
                     "elapsed_model_ms":elapsed,
                     "provider_self_report_not_independent_model_attestation":True,
                 }
+                if visible_webview2:
+                    # The genuine installed React director panel must request
+                    # the SAME still-running native model via real JS IPC,
+                    # render its untrusted text and prove zero OS worker grants.
+                    # This is a separate, explicitly chosen acceptance mode;
+                    # never run it during normal NVP startup.
+                    before={key:os.environ.get(key) for key in (
+                        "NVP_LLM_URL","NVP_WO6_REAL_MODEL_ALIAS")}
+                    os.environ["NVP_LLM_URL"]=(
+                        f"http://127.0.0.1:{port}/v1/chat/completions")
+                    os.environ["NVP_WO6_REAL_MODEL_ALIAS"]=alias
+                    try:
+                        from tools.nvp_desktop_alpha import run_visible_window_smoke
+                        if run_visible_window_smoke()!=0:
+                            raise RuntimeError("Visible installed WebView2 model test failed")
+                        outcome["visible_webview2_checked"]=True
+                        outcome["visible_webview2_model_and_director_panel_verified"]=True
+                        if proc.poll() is not None:
+                            raise RuntimeError("Native model server exited during visible acceptance")
+                    finally:
+                        for key,old in before.items():
+                            if old is None:os.environ.pop(key,None)
+                            else:os.environ[key]=old
             finally:
                 # Acceptance-only server is not the creator's existing model.
                 # Never unload arbitrary instances or send a kill-all command.
@@ -243,10 +272,12 @@ def main(argv=None):
     parser.add_argument("--llama-server",required=True)
     parser.add_argument("--report")
     parser.add_argument("--consent",required=True)
+    parser.add_argument("--visible-webview2",action="store_true")
     args=parser.parse_args(argv)
     result=run_real_gguf_acceptance(
         model_path=args.model,server_path=args.llama_server,
-        report_path=args.report,consent=args.consent)
+        report_path=args.report,consent=args.consent,
+        visible_webview2=args.visible_webview2)
     print(json.dumps(result,sort_keys=True))
     return 0
 
