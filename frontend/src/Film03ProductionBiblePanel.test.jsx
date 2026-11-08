@@ -33,6 +33,13 @@ describe('FILM03-02 director ActorID and screenplay impact UI',()=>{
         project_id:pid,actor_id:actorId,candidates:[],
         no_automatic_voice_approval:true,
       };
+      if(url.endsWith('/asset-audit')) return {
+        format:'nvp.film03.actor_asset_source_audit.v1',
+        actor_id:actorId,all_current_sources_physically_verified:false,
+        links:[],source_failures:[],
+        director_review_required:[{role:'voice',reason:'No current approved VoiceID'}],
+        current_voice_id:null,no_assets_or_takes_modified:true,
+      };
       if(url.endsWith('/actors/'+actorId))return links;
       if(url.endsWith('/actors/'+actorId+'/links')&&method==='POST')
         return {...links,bible_revision:4,active_links:[{
@@ -61,6 +68,11 @@ describe('FILM03-02 director ActorID and screenplay impact UI',()=>{
     expect(wrote.body.link_id).toBe(null);
     expect(refreshBible).toHaveBeenCalledWith(pid);
     expect(await screen.findByText(/Linked at a new durable production-bible revision/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button',{
+      name:'Verify all source assets linked to this ActorID'}));
+    expect(await screen.findByText(/Asset\/source review required/)).toBeTruthy();
+    expect(screen.getByText(/No current approved VoiceID/)).toBeTruthy();
+    expect(calls.filter(x=>x.method==='POST')).toHaveLength(1);
   });
 
   it('requires actual trusted desktop host confirmation for immutable script source capture',async()=>{
