@@ -13,7 +13,7 @@ import wave
 
 import test_nvp_wo6_sound_editorial as original
 from backend.nvp_wo6_07e_source_review import (
-    sample_editorial_source,FORMAT,SAMPLE_RATE,SAMPLES_PER_FRAME)
+    sample_editorial_source,FORMAT,SAMPLE_RATE,SAMPLES_PER_FRAME,AUDIO_WINDOW_FRAMES)
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 
 
@@ -59,7 +59,7 @@ class OriginalEditorialFramePCMReview(unittest.TestCase):
         self.assertEqual(result["source_take_id"],"old_take")
         self.assertEqual(result["source_take_sha256"],self.parent_sha)
         self.assertTrue(result["source_audio_timeline_is_derived"])
-        self.assertEqual(result["source_pcm_samples"],SAMPLES_PER_FRAME)
+        self.assertEqual(result["source_pcm_samples"],SAMPLES_PER_FRAME*AUDIO_WINDOW_FRAMES)
         self.assertEqual(len(result["source_pcm_tracks"]),1)
         self.assertEqual(result["source_pcm_tracks"][0]["source_id"],
                          "original_recording")
@@ -79,8 +79,8 @@ class OriginalEditorialFramePCMReview(unittest.TestCase):
             self.assertEqual(media.getframerate(),SAMPLE_RATE)
             self.assertEqual(media.getnchannels(),1)
             self.assertEqual(media.getsampwidth(),2)
-            self.assertEqual(media.getnframes(),SAMPLES_PER_FRAME)
-            data=media.readframes(SAMPLES_PER_FRAME)
+            self.assertEqual(media.getnframes(),SAMPLES_PER_FRAME*AUDIO_WINDOW_FRAMES)
+            data=media.readframes(SAMPLES_PER_FRAME*AUDIO_WINDOW_FRAMES)
         self.assertEqual(data[:4],bytes([7,0])*2)
         self.assertEqual(self.index.read_revision(
             self.pid,"old_take",1)["document_sha256"],self.parent_sha)
