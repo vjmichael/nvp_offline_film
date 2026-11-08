@@ -185,6 +185,13 @@ class ActorDialogueManager:
                 not perf["first_tick"] <= tick < perf["end_tick"]):
             raise PermissionError("Authored scene timeline does not bind this line to this ActorID")
 
+        # Every character has one current approved VoiceID independent
+        # of its mutable outfit, model, USD prim and individual PCM clips.
+        # Reading a script is NOT permission to invent an audible voice.
+        from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
+        voice_bible = ProductionBibleVoiceIdentity(
+            self.index, verify_creator_action=lambda *_: False)
+        cast_voice = voice_bible.current(project_id, aid)["current"]
         voice = None
         if perf["recorded_voice_source"] is not None:
             sound = perf["recorded_voice_source"]
@@ -211,7 +218,25 @@ class ActorDialogueManager:
                     e["payload"].get("performance_id") !=
                         requested["selected_performance_id"]):
                 raise PermissionError("Original source PCM belongs to a different actor")
+            # Correct character and dialogue text are insufficient:
+            # recorded audio MUST be individually auditioned against
+            # this ActorID's exact VoiceID reference and signed into the
+            # production Bible. A file named "DonutVoice" is not proof.
+            voice_proof = voice_bible.verify_delivery(
+                project_id, aid, requested["selected_performance_id"],
+                require_current_cast=True)
+            if (cast_voice is None or
+                    voice_proof["voice_id"] != cast_voice["voice_id"] or
+                    voice_proof["cast_revision"] != cast_voice["cast_revision"] or
+                    voice_proof["original_audio_sha256"] != sound["audio_sha256"]):
+                raise PermissionError("Voice delivery does not match actor's current VoiceID")
             voice = {
+                "voice_id": voice_proof["voice_id"],
+                "voice_cast_revision": voice_proof["cast_revision"],
+                "voice_approval_revision": voice_proof["approval_revision"],
+                "voice_reference_audio_sha256": voice_proof["reference_audio_sha256"],
+                "director_reviewed_exact_audio": True,
+                "acoustically_same_speaker_automatically_proven": False,
                 "source_id": sound["audio_id"],
                 "source_revision": sound["audio_revision"],
                 "original_pcm_document_sha256": sound["audio_sha256"],
@@ -225,6 +250,10 @@ class ActorDialogueManager:
             "project_id": project_id,
             "actor_id": aid, "actor_event_subject": event_subject,
             "production_bible_actor_revision": bible["bible_revision"],
+            "canonical_voice_id": (cast_voice["voice_id"] if cast_voice else None),
+            "voice_identity_cast_revision": (
+                cast_voice["cast_revision"] if cast_voice else None),
+            "voice_change_requires_new_director_approval": True,
             "openusd_actor_prim_path": entry["openusd_actor_prim_path"],
             "source_take_id": source["source_take_id"],
             "source_take_sha256": source["source_take_sha256"],
