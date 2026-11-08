@@ -162,8 +162,8 @@ class NativePublishedViewerTests(unittest.TestCase):
                    "backend.nvp_wo5_finished_playback.inspect_j2k_header",
                    return_value={"raw_codestream_sha256":self.expected}):
             final=self.player.frame(ticket,3)
-            last_first_reel=self.player.window(ticket,2,4)
             next_reel=self.player.window(ticket,3,2)
+            last_first_reel=self.player.window(ticket,2,4)
         self.assertEqual(last_first_reel["frame_count"],1)
         self.assertEqual(last_first_reel["frames"][0]["frame_index"],2)
         self.assertEqual(next_reel["frame_count"],2)
@@ -183,11 +183,18 @@ class NativePublishedViewerTests(unittest.TestCase):
                          SAMPLES_PER_FRAME*4)
         self.assertTrue(base64.b64decode(final["picture_png_base64"]).startswith(
             b"\x89PNG\r\n\x1a\n"))
-        self.assertEqual(len(invocations),10)
+        self.assertEqual(len(invocations),9)
         self.assertEqual(invocations[0][1][1:4],["0","-d","1"])
-        self.assertEqual(invocations[2][1][1:4],["0","-d","1"])
+        self.assertEqual(invocations[2][1][1:4],["0","-d","3"])
+        sound_unwraps=[args for product,args in invocations
+                       if product=="ASDCP-asdcp_unwrap" and args[-1]=="snd"]
+        self.assertEqual(len(sound_unwraps),2)
+        self.assertEqual(
+            len([args for product,args in invocations
+                 if product=="OpenJPEG-opj_decompress"]),4)
         self.assertFalse(final["production_accepted"])
         self.player.stop(ticket)
+        self.assertIsNone(self.player._pcm_cache)
         with self.assertRaises(PermissionError):
             self.player.frame(ticket,4)
 
