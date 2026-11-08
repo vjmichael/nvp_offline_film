@@ -191,8 +191,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install independent image decoder
-        run: python -m pip install Pillow
+      - name: Install same audited source stack and independent image decoder
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
       - uses: actions/download-artifact@v4
         with:
           name: nvp-FILM02-ONE-FROZEN-ORIGINAL
