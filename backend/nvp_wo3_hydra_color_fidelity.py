@@ -38,7 +38,7 @@ def verify_relative_hydra_swatch_response(red,blue):
                 receipt.get("real_independent_frame_rendered") is not True or
                 receipt.get("derived_source_scope") is not True or
                 receipt.get("physical_display_calibrated") is not False or
-                receipt.get("renderer")!="Embree" or
+                receipt.get("renderer")!="Storm" or
                 type(receipt.get("renderer_executable_sha256")) is not str or
                 len(receipt["renderer_executable_sha256"])!=64 or
                 type(receipt.get("rendered_rgb_sha256")) is not str or
