@@ -80,6 +80,7 @@ class NativeSceneSoundCapture:
         # recording had already been published, leaving avoidable orphans.
         source_ids=set()
         event_ids=set()
+        prepared_chunks={}
         camera_events=self.timeline.events_in(
             project_id,camera_timeline_id,camera_timeline_revision,
             start_tick=0,end_tick=int(plan["duration_tick"]),limit=MAX_SHOTS+1)
@@ -134,6 +135,9 @@ class NativeSceneSoundCapture:
                 required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
                 if samples<required:
                     raise ValueError("Captured PCM is shorter than its Film Time event")
+                # Snapshot mutable caller lists before publication: a host must
+                # not alter a validated batch while earlier sources are saved.
+                prepared_chunks[sid]=tuple(chunks)
             event_ids.add(eid)
             source_ids.add(sid)
         events=[]
@@ -176,7 +180,7 @@ class NativeSceneSoundCapture:
                 not 0<=gain<=2):
                 raise ValueError("Captured sound has invalid timing/gain")
             receipt=self.sources.publish(
-                project_id,audio_id,entry["pcm_chunks"],expected_revision=0)
+                project_id,audio_id,prepared_chunks.get(audio_id,entry["pcm_chunks"]),expected_revision=0)
             source_record=self.index.read_revision(
                 project_id,audio_id,receipt["revision"])
             available=source_record["data"]["sample_count"]
