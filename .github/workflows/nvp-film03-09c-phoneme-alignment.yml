@@ -4,7 +4,7 @@ on:
   push:
     branches: [nvp/film03-09c-phoneme-alignment-scope-cleanup-20261108]
   pull_request:
-    branches: [nvp/film03-09-independent-facial-direction-20261108]
+    branches: [nvp/film03-06-supervised-voice-animation-workers-20261108]
   workflow_dispatch:
 
 permissions:
