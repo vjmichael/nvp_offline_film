@@ -62,6 +62,7 @@ def assemble_film_crew_context(
     tick: int, *, source_revision=None, screenplay_scene_id=None,
     shot_sequence_id=None, shot_sequence_revision=None,
     dialogue_selection_id=None, dialogue_selection_revision=None,
+    dialogue_route_request=None,
     max_prims: int = 32, max_events: int = 24,
 ) -> dict:
     if not isinstance(index, FilmIndex):
@@ -80,6 +81,15 @@ def assemble_film_crew_context(
         raise ValueError("Shot timeline ID and exact revision must be selected together")
     if (dialogue_selection_id is None) != (dialogue_selection_revision is None):
         raise ValueError("Selected dialogue requires exact source ID and revision")
+    if dialogue_route_request is not None:
+        if (type(dialogue_route_request) is not dict or
+                dialogue_selection_id is None or dialogue_selection_revision is None):
+            raise ValueError("Acted dialogue needs a selected source revision and exact actor request")
+        if (dialogue_route_request.get("selection_id") != dialogue_selection_id or
+                dialogue_route_request.get("selection_revision") != dialogue_selection_revision or
+                dialogue_route_request.get("source_take_id") != take_id or
+                dialogue_route_request.get("film_time_tick") != tick):
+            raise PermissionError("AI dialogue request does not match the chosen Take, time and selection")
     if dialogue_selection_id is not None:
         _id(dialogue_selection_id, "creator-selected object-actor dialogue")
         if (type(dialogue_selection_revision) is not int or
@@ -226,6 +236,13 @@ def assemble_film_crew_context(
             dialogue_selection_revision, tick=tick, expected_take_id=take_id)
         if selected_dialogue["source_take_sha256"] != take["document_sha256"]:
             raise PermissionError("Scene crew received a dialogue selection from another frozen Take")
+    canonical_dialogue_route = None
+    if dialogue_route_request is not None:
+        from backend.nvp_film03_dialogue_manager import ActorDialogueManager
+        canonical_dialogue_route = ActorDialogueManager(index).route(
+            project_id, dialogue_route_request)
+        if canonical_dialogue_route["source_take_sha256"] != take["document_sha256"]:
+            raise PermissionError("AI dialogue route points to another real frozen Take")
     screenplay = None
     approved_facts = []
     bible_status = "NO_SCREENPLAY_SCENE_SELECTED"
@@ -347,6 +364,9 @@ def assemble_film_crew_context(
         "sound_events_omitted": max(0, len(relevant_sound)-len(known_sound)),
         "authored_camera_selection": shot_selection,
         "authored_object_actor_dialogue_selection": selected_dialogue,
+        "authoritative_actorid_dialogue_route": canonical_dialogue_route,
+        "dialogue_source_inspection_is_not_permission_to_speak":
+            canonical_dialogue_route is None,
         "screenplay_scene_context": screenplay,
         "approved_story_facts": approved_facts,
         "approved_story_facts_omitted_at_least": approved_fact_omitted,
