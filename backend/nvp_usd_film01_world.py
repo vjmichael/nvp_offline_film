@@ -24,7 +24,7 @@ from tempfile import TemporaryDirectory
 from time import perf_counter
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid, _sha
-from backend.nvp_openusd_scene import OpenUSDSceneBridge, _usd
+from backend.nvp_openusd_scene import OpenUSDSceneBridge, _usd, LAYER_TYPE
 from backend.nvp_openusd_assets import OpenUSDAssetRegistry
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 
@@ -640,6 +640,17 @@ class OpenUSDWorldComposer:
         instancers = [] if instancers is None else instancers
         pieces, sources = _normalize(
             self.index,pid,sets,props,variants,instancers)
+        # The originals are checked by the existing FilmIndex/SceneBridge
+        # before deriving these disposable flattened USD source layers.
+        # Register the exact derived USD layer in the SAME project's SHA
+        # blob store. Later world opens can read it by digest instead of
+        # re-flattening every original scene; no independent asset database.
+        for source in sources.values():
+            data = source["bytes"]
+            digest = self.index.put_blob(
+                pid,data,media_type=LAYER_TYPE)
+            if digest != source["layer_sha256"]:
+                raise RuntimeError("Original derived source cache digest differs")
         doc = {
             "format": FORMAT, "coordinate_system": COORDINATE_SYSTEM,
             "ticks_per_second": TICKS_PER_SECOND,
@@ -651,6 +662,7 @@ class OpenUSDWorldComposer:
                 } for key,source in sorted(sources.items())
             },
             "external_source_paths_authoritative": False,
+            "scoped_layer_cache_registered": True,
             "film_frozen_takes_modified": False,
             "lazy_sets_default_unloaded": True,
             "renderer_pixels_verified": False,
@@ -690,6 +702,7 @@ class OpenUSDWorldComposer:
             doc.get("external_source_paths_authoritative") is not False or
             doc.get("lazy_sets_default_unloaded") is not True or
             doc.get("renderer_pixels_verified") is not False or
+            doc.get("scoped_layer_cache_registered") not in (None,True) or
             type(doc.get("sources")) is not dict):
             raise PermissionError("Not an original, source-locked NVP USD world revision")
         with TemporaryDirectory(prefix="nvp-usd-world-open-") as tmp:
@@ -705,13 +718,35 @@ class OpenUSDWorldComposer:
                 item = set_by_name[name]
                 key = ("scene",item["scene_id"],item["scene_revision"])
                 saved = doc["sources"]["|".join(map(str,key))]
-                actual = _record_source(
-                    self.index,pid,"scene",item["scene_id"],
-                    item["scene_revision"])
-                if {k:v for k,v in actual.items()
-                    if k not in ("bytes","texture_files")} != saved:
-                    raise PermissionError(
-                        "Original scene layer changed during lazy payload retrieval")
+                # New 01C worlds sealed the exact derived USD layer in
+                # FilmIndex during publication. This lookup rehashes the
+                # immutable project-owned blob with no original scene
+                # OpenUSD flatten, file picker, network or global resolver.
+                cached = doc.get("scoped_layer_cache_registered") is True
+                if cached:
+                    data = self.index.get_blob(
+                        pid,saved["layer_sha256"])
+                    texture_files = {}
+                    from backend.nvp_native_usd_texture import decode_png
+                    for texture_sha in saved.get("texture_sha256",[]):
+                        _sha(texture_sha)
+                        png = self.index.get_blob(pid,texture_sha)
+                        decode_png(png)
+                        texture_files[texture_sha] = png
+                else:
+                    # Older pre-01C worlds did not seal a derived source
+                    # blob. Reopen and verify their exact original scenes
+                    # individually ON DEMAND; do not eagerly walk all sets.
+                    actual = _record_source(
+                        self.index,pid,"scene",item["scene_id"],
+                        item["scene_revision"])
+                    if {k:v for k,v in actual.items()
+                        if k not in ("bytes","texture_files")} != saved:
+                        raise PermissionError(
+                            "Original scene layer changed during lazy payload retrieval")
+                    data,texture_files = actual["bytes"],actual["texture_files"]
+                if sha256(data).hexdigest() != saved["layer_sha256"]:
+                    raise PermissionError("Cached original film set layer hash changed")
                 dest = root / "scenes" / (saved["layer_sha256"]+".usda")
                 if dest.is_symlink():
                     raise PermissionError("Source world stage contains a symlink")
@@ -722,15 +757,23 @@ class OpenUSDWorldComposer:
                             saved["layer_sha256"]):
                         raise PermissionError("Staged set source was substituted")
                 else:
+                    new_bytes = len(data)
                     with dest.open("xb") as out:
-                        out.write(actual["bytes"])
-                    new_bytes = len(actual["bytes"])
+                        out.write(data)
                 from backend.nvp_usd_film01c_texture import (
                     write_verified_texture_files,
                 )
+                fresh_png_bytes = sum(
+                    len(png) for tex_sha,png in texture_files.items()
+                    if not (root/"textures"/(tex_sha+".png")).exists())
+                if (session.staged_bytes +
+                    session.loaded_stage_prepared_bytes +
+                    new_bytes + fresh_png_bytes > MAX_STAGING_BYTES):
+                    raise RuntimeError("Film world private stage exceeds source budget")
                 tex_paths = write_verified_texture_files(
-                    root/"textures",actual.get("texture_files",{}))
-                return {"new_staged_bytes":new_bytes,
+                    root/"textures",texture_files)
+                return {"new_staged_bytes":new_bytes+fresh_png_bytes,
+                        "sealed_cache_hit":cached,
                         "source_role_paths":list(self.index.read_revision(
                             pid,item["scene_id"],item["scene_revision"]
                         )["data"]["prim_roles"]),
