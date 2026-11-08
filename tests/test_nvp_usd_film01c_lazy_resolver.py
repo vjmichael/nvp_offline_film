@@ -63,21 +63,31 @@ class USDFilm01CLazyResolution(unittest.TestCase):
     def test_on_demand_materialization_only_one_set_then_restart(self):
         b=self.baseline
         source=b.publish()
-        with b.world.open(b.pid,"TownWorld",1) as world:
-            before=world.receipt()
-            self.assertEqual(before["materialized_scene_set_names"],[])
-            world.load(["Outside"])
-            during=world.receipt()
-            self.assertEqual(during["materialized_scene_set_names"],["Outside"])
-            self.assertEqual(during["loaded_set_names"],["Outside"])
-            self.assertGreater(
-                during["source_staging_bytes"],before["source_staging_bytes"])
-            self.assertTrue(world.stage.GetPrimAtPath(
-                "/World/Sets/Outside/Camera").IsA(UsdGeom.Camera))
-            self.assertFalse(world.stage.GetPrimAtPath(
-                "/World/Sets/Inside").IsLoaded())
-            world.unload(["Outside"])
-            self.assertEqual(world.receipt()["loaded_set_names"],[])
+        with patch.object(OpenUSDSceneBridge,"open",
+                side_effect=AssertionError("sealed USD layer cache must not re-flatten")):
+            with b.world.open(b.pid,"TownWorld",1) as world:
+                before=world.receipt()
+                self.assertEqual(before["materialized_scene_set_names"],[])
+                self.assertEqual(before["sha_verified_cached_set_loads"],0)
+                world.load(["Outside"])
+                during=world.receipt()
+                self.assertEqual(during["sha_verified_cached_set_loads"],1)
+                self.assertEqual(during["eager_original_scene_flatten_count"],0)
+                self.assertEqual(during["materialized_scene_set_names"],["Outside"])
+                self.assertEqual(during["loaded_set_names"],["Outside"])
+                self.assertGreater(
+                    during["source_staging_bytes"],before["source_staging_bytes"])
+                self.assertTrue(world.stage.GetPrimAtPath(
+                    "/World/Sets/Outside/Camera").IsA(UsdGeom.Camera))
+                self.assertFalse(world.stage.GetPrimAtPath(
+                    "/World/Sets/Inside").IsLoaded())
+                world.unload(["Outside"])
+                self.assertEqual(world.receipt()["loaded_set_names"],[])
+        # No later load of the cached set is allowed to trigger any original
+        # source scene Flatten even with its first-stage cache populated.
+        during=world.load_receipts[-1]
+        self.assertEqual(during["operation"],"unload")
+
         # Reopening same source world after dropping the session must NOT
         # unexpectedly persist lazy-set choices in the original FilmIndex.
         from backend.nvp_studio import Studio
