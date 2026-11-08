@@ -276,6 +276,30 @@ class Slate06NativeTests(unittest.TestCase):
         self.assertNotEqual(native,preview_cache_key(ticket,"thumbnail"))
         self.assertIn('scene.render.engine="CYCLES"',BLENDER_SCRIPT)
 
+    def test_pre_take_camera_binding_denial_revokes_unregistered_source_stage(self):
+        from backend.nvp_camera_workbench import lens_settings
+        with patch.object(self.host,"approve",return_value=True),patch.object(
+                self.host,"_approval_check",return_value=False):
+            with self.assertRaises(PermissionError):
+                self.host.request_camera_workbench(
+                    self.pid,"world",1,source_tick=0,
+                    camera_path="/World/Camera",
+                    settings=lens_settings(),quality="thumbnail",
+                    creator_event=self.trusted_event)
+        with self.activity._db() as db:
+            consent=db.execute("""SELECT task_id,revoked_at
+                FROM nvp_camera_preview_consents""").fetchone()
+            self.assertIsNotNone(consent)
+            self.assertIsNotNone(consent[1])
+            self.assertIsNone(db.execute(
+                "SELECT id FROM tasks WHERE id=?",
+                (consent[0],)).fetchone())
+        with self.cache._db() as db:
+            row=db.execute("""SELECT job_id,state FROM slate_preview_cache
+                WHERE project_id=?""",(self.pid,)).fetchone()
+        self.assertEqual(row["state"],"FAILED")
+        self.assertFalse((self.supervisor.root/row["job_id"]).exists())
+
     def test_geometry_binding_denial_revokes_without_hanging_resource_or_cache(self):
         with patch.object(self.host,"_approval_check",return_value=False):
             with self.assertRaises(PermissionError):
