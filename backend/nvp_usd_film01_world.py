@@ -359,6 +359,7 @@ class WorldSession:
             if item["load"] == "payload"
         }
         if (type(prop_names) is not list or
+            any(type(x) is not str for x in prop_names) or
             len(prop_names) != len(set(prop_names)) or
             not set(prop_names) <= allowed):
             raise ValueError("Only explicitly authored lazy prop payloads may be changed")
@@ -401,8 +402,8 @@ class WorldSession:
             raise ValueError("Director look is not a source-authored variant")
         prim = self.stage.GetPrimAtPath("/World/Variants/" + name)
         variant = prim.GetVariantSets().GetVariantSet("look")
-        if not variant or not variant.SetVariantSelection(choice) or
-            variant.GetVariantSelection() != choice:
+        if (not variant or not variant.SetVariantSelection(choice) or
+            variant.GetVariantSelection() != choice):
             raise RuntimeError("Native original world look did not switch")
         return {
             "variant": name, "selected": choice,
