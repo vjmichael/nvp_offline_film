@@ -211,6 +211,20 @@ class ObjectActorDialogue:
             previous = None
             rev = 0
         _, source_revision = self._current_script(pid)
+        if previous and previous["data"]["screenplay_revision"] == source_revision:
+            return {
+                "format": "nvp.film03.readonly_script_dialogue_impact.v1",
+                "screenplay_revision": source_revision,
+                "last_published_script_snapshot_revision": rev,
+                "new_or_changed_script_lines": [],
+                "impacted_historical_performances": [],
+                "production_bible": self.bible.report(pid),
+                "requires_manual_lineage_review": previous["data"]["lineage_ambiguous"],
+                "pending_script_source_changes": False,
+                "retakes_performed_automatically": False,
+                "old_audio_takes_modified": False,
+                "edit_selection_changed": False,
+            }
         data = self._snapshot_data(pid, script_id,
                                    expected_screenplay_revision=source_revision,
                                    previous_revision=rev)
@@ -281,6 +295,103 @@ class ObjectActorDialogue:
                     sha256(row["screenplay"].encode("utf8")).hexdigest() !=
                     data["screenplay_sha256"]):
                 raise RuntimeError("Screenplay changed during approved dialogue commit")
+        return self.index.register_revision(
+            pid, script_id, "dialogue", data,
+            expected_revision=expected_manifest_revision, precommit_guard=guard)
+
+    def reconcile_ambiguous_lineage(self, pid, script_id, *,
+                                    expected_manifest_revision, decisions,
+                                    creator_event):
+        """Approve ambiguous line ancestry with an APPEND-ONLY source revision.
+
+        A screenplay edit may replace several same-speaker lines. Guessing
+        which old recording to link to would be destructive. The director
+        explicitly maps new line identity to historical line identity.
+        Neither original screenplay text nor the old performance is edited.
+        """
+        _require_pid(pid)
+        _id(script_id, "script dialogue source")
+        if (type(expected_manifest_revision) is not int or
+                expected_manifest_revision < 2 or
+                type(decisions) is not list or not 1 <= len(decisions) <= MAX_LINES):
+            raise ValueError("Exactly one prior ambiguous published script revision is required")
+        current = self.index.read_revision(pid, script_id, expected_manifest_revision)
+        older = self.index.read_revision(pid, script_id, expected_manifest_revision - 1)
+        if (current["kind"] != "dialogue" or older["kind"] != "dialogue" or
+                current["data"].get("format") != SCRIPT_FORMAT or
+                older["data"].get("format") != SCRIPT_FORMAT or
+                current["data"]["screenplay_revision"] !=
+                older["data"]["screenplay_revision"] + 1 or
+                current["data"].get("lineage_reconciliations")):
+            raise PermissionError("Reconcile one newly changed script exactly once")
+        script, screenplay_revision = self._current_script(pid)
+        data = json.loads(json.dumps(current["data"]))
+        if (screenplay_revision != data["screenplay_revision"] or
+                sha256(script.encode("utf8")).hexdigest() != data["screenplay_sha256"]):
+            raise RuntimeError("Screenplay changed since ambiguous source was captured")
+        new_lines = _lines_by_id(data)
+        old_lines = _lines_by_id(older["data"])
+        occupied = set(new_lines)
+        old_used = set()
+        new_used = set()
+        accepted = []
+        for pair in decisions:
+            if type(pair) is not dict or set(pair) != {"new_line_id", "old_line_id"}:
+                raise ValueError("A director decision maps exactly one new and one original line")
+            new_id = _id(pair["new_line_id"], "new script line")
+            old_id = _id(pair["old_line_id"], "old script line")
+            if new_id in new_used or old_id in old_used or old_id in occupied:
+                raise ValueError("Ambiguous, repeated or already-assigned script ancestry")
+            new_source = new_lines.get(new_id)
+            prior_source = old_lines.get(old_id)
+            if not new_source or not prior_source:
+                raise KeyError("Exact ambiguous new and prior script lines required")
+            new_scene, new_line = new_source
+            old_scene, old_line = prior_source
+            if (new_line["lineage_status"] != "requires_director_reconciliation"
+                    or new_scene["scene_id"] != old_scene["scene_id"] or
+                    new_line["speaker"] != old_line["speaker"]):
+                raise PermissionError("Manual lineage may not recast or move an actor/scene")
+            new_line["line_id"] = old_id
+            new_line["lineage_status"] = "reconciled_by_director"
+            for entry in data["changes_from_previous_snapshot"]:
+                if entry["line_id"] == new_id and entry["kind"] == "requires_director_reconciliation":
+                    entry["line_id"] = old_id
+                    entry["kind"] = "reconciled_by_director"
+                    entry["old_text"] = old_line["text"]
+                    break
+            data["changes_from_previous_snapshot"] = [
+                entry for entry in data["changes_from_previous_snapshot"]
+                if not (entry["line_id"] == old_id and
+                        entry["kind"] == "removed_or_unmatched")
+            ]
+            old_used.add(old_id)
+            new_used.add(new_id)
+            accepted.append({
+                "old_line_id": old_id, "new_line_id_before_reconciliation": new_id,
+                "scene_id": new_scene["scene_id"], "speaker": new_line["speaker"],
+                "old_text_sha256": old_line["text_sha256"],
+                "new_text_sha256": new_line["text_sha256"],
+                "human_lineage_mapping": True,
+            })
+        data["lineage_reconciliations"] = accepted
+        data["lineage_ambiguous"] = any(
+            entry["kind"] in ("requires_director_reconciliation",
+                              "removed_or_unmatched", "scene_removed_or_renamed")
+            for entry in data["changes_from_previous_snapshot"])
+        self._auth("film03_reconcile_ambiguous_script_lines", {
+            "project_id": pid, "script_object_id": script_id,
+            "expected_manifest_revision": expected_manifest_revision,
+            "screenplay_sha256": data["screenplay_sha256"],
+            "decisions": accepted,
+        }, creator_event)
+        def guard(db):
+            row = db.execute("SELECT screenplay,revision FROM projects WHERE id=?",
+                             (pid,)).fetchone()
+            if (not row or row["revision"] != screenplay_revision or
+                    sha256(row["screenplay"].encode("utf8")).hexdigest() !=
+                    data["screenplay_sha256"]):
+                raise RuntimeError("Changed screenplay during creator lineage reconciliation")
         return self.index.register_revision(
             pid, script_id, "dialogue", data,
             expected_revision=expected_manifest_revision, precommit_guard=guard)
