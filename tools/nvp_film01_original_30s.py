@@ -254,7 +254,7 @@ def write_original_30s_source(destination,*,approve_test_only):
             len(reopened["data"]["segments"])!=3):
         raise RuntimeError("Original 30s three-shot editorial proof mismatched")
     sun=make_simple_virtual_fx(
-        "locked_summer_3pm_sun","/World/RelayCore",
+        "locked_summer_3pm_sun","/World/Scene",
         fx_id="RelaySummer3PM",intensity=1.15)
     gold=make_simple_virtual_fx(
         "gold_fill","/World/Engineer",
@@ -278,6 +278,7 @@ def write_original_30s_source(destination,*,approve_test_only):
         "original_sound_in_each_take":True,
         "timed_beacon_signal_event":True,
         "virtual_artistic_lighting_proposals":planned_fx,
+        "virtual_artistic_lighting_sources":[sun,gold],
         "virtual_artistic_lighting_rendered_in_pixels":False,
         "source_takes_frozen_and_verified":True,
         "rendered_picture_frames":0,
@@ -292,7 +293,8 @@ def write_original_30s_source(destination,*,approve_test_only):
     return report
 
 
-def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES):
+def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES,
+                               apply_virtual_fx=False):
     """Actual first-party OpenUSD CPU PNG + sample-aligned mono PCM export.
 
     Intended for a throwaway CI source fixture, not user-approved DCP.
@@ -300,6 +302,8 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES):
     """
     root=Path(source_root)
     out=Path(output_zip)
+    if type(apply_virtual_fx) is not bool:
+        raise ValueError("Explicit virtual cinematic lighting choice required")
     if (not root.is_absolute() or not out.is_absolute() or
             out.exists() or out.is_symlink() or
             type(max_frames) is not int or not 1<=max_frames<=FRAMES):
@@ -314,6 +318,10 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES):
     edit=index.read_revision(pid,report["edit_id"],1)
     if edit["document_sha256"]!=report["edit_sha256"]:
         raise PermissionError("Original 30s edit SHA changed")
+    fx=report.get("virtual_artistic_lighting_sources")
+    if apply_virtual_fx and (
+            type(fx) is not list or len(fx)!=2):
+        raise PermissionError("Original virtual lighting source intent missing")
     rows=[]
     all_samples=bytearray()
     # Never expose a partial/truncated ZIP under the user-facing final
@@ -329,7 +337,8 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES):
             count=min(6,max_frames-start)
             packet=rendered_source_window(
                 index,pid,report["edit_id"],1,report["edit_sha256"],
-                start,count,camera_path="/World/Camera")
+                start,count,camera_path="/World/Camera",
+                virtual_fx=(fx if apply_virtual_fx else None))
             if (packet["count"]!=count or
                     packet["actual_audio_sample_count"]!=2000*count or
                     packet["source_modified"] is not False):
@@ -340,6 +349,8 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES):
                                     validate=True)
                 if sha256(raw).hexdigest()!=image["frame_png_sha256"]:
                     raise RuntimeError("Native original source PNG SHA mismatch")
+                if bool(image["virtual_fx_actually_applied_to_pixels"])!=apply_virtual_fx:
+                    raise RuntimeError("Virtual FX preview did not affect real shader")
                 name=f"preview_frames/frame_{n:04d}.png"
                 bundle.writestr(name,raw)
                 rows.append({
@@ -348,6 +359,8 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES):
                     "source_segment_id":image["source_segment_id"],
                     "source_film_tick":image["original_source_tick"],
                     "preview_resolution":"640x360_not_DCI",
+                    "virtual_light_shader_used":apply_virtual_fx,
+                    "virtual_light_sha256":image["virtual_fx_sha256"],
                 })
             wav=base64.b64decode(
                 packet["source_audio_wav_data_url"].split(",",1)[1],validate=True)
@@ -383,7 +396,8 @@ def render_original_30s_review(source_root,output_zip,*,max_frames=FRAMES):
             "frame_receipts":rows,
             "native_raster_preview_only":True,
             "source_3d_geometry_not_photorealism_verified":True,
-            "virtual_gold_and_sun_fx_applied_to_render":False,
+            "virtual_gold_and_sun_fx_applied_to_render":apply_virtual_fx,
+            "virtual_digital_artist_light_not_photometric":True,
             "playable_muxed_movie_created":False,
             "dci_master_or_dcp_created":False,
             "independent_visual_review_needed":True,
@@ -418,6 +432,8 @@ def main():
     cli.add_argument("--render-preview-avi",type=Path,
                      help="Real native MJPEG/PCM16 playable 24fps review, requires ZIP")
     cli.add_argument("--max-frames",type=int,default=FRAMES)
+    cli.add_argument("--apply-virtual-fx",action="store_true",
+                     help="Actual optional virtual gold face fill and fixed 3 PM sun")
     cli.add_argument("--consent",required=True)
     args=cli.parse_args()
     if args.consent!="I_APPROVE_DISPOSABLE_ORIGINAL_30S_CI_SOURCE":
@@ -429,7 +445,8 @@ def main():
     if args.render_review_zip:
         result=render_original_30s_review(
             args.root.resolve(),args.render_review_zip.resolve(),
-            max_frames=args.max_frames)
+            max_frames=args.max_frames,
+            apply_virtual_fx=args.apply_virtual_fx)
         if args.render_preview_avi:
             from backend.nvp_film01_native_avi import mux_original_native_avi
             result["playable_review_avi"]=mux_original_native_avi(
