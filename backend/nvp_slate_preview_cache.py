@@ -70,7 +70,18 @@ class SlatePreviewCache:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("PRAGMA synchronous=FULL")
             db.execute("PRAGMA busy_timeout=15000")
+            # reserve/accept_verified/fail/evict explicitly BEGIN IMMEDIATE.
+            # Closing an uncommitted sqlite3 connection silently rolls these
+            # changes back. In particular it erased the PENDING reservation
+            # before ApprovedTaskBindings could verify creator consent.
+            # Commit only on a successful scope exit; exceptions roll back.
             yield db
+            if db.in_transaction:
+                db.commit()
+        except BaseException:
+            if db.in_transaction:
+                db.rollback()
+            raise
         finally:
             db.close()
 
