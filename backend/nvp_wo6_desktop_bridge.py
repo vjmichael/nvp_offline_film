@@ -169,6 +169,17 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                 type(manifest_rev) is not int or manifest_rev < 0):
             raise ValueError("Exact current script and manifest revisions required")
         from backend.nvp_film03_object_dialogue import ObjectActorDialogue
+        try:
+            current_source=self.index.read_revision(pid,sid)
+            source_head=current_source["revision"]
+            if (current_source["kind"]!="dialogue" or
+                    current_source["data"].get("format")!=
+                    "nvp.film03.script_dialogue_snapshot.v1"):
+                raise PermissionError("Script source identity belongs to another object")
+        except KeyError:
+            source_head=0
+        if source_head!=manifest_rev:
+            raise RuntimeError("Script snapshot changed; refresh before native director approval")
         nonce="film03_native_"+secrets.token_hex(16)
         # The service reopens the real Studio screenplay, previews line
         # ancestry, and rechecks the Studio source SHA in its commit lease.
