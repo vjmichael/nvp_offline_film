@@ -231,7 +231,8 @@ class ActorIdentityCore:
                     refreshed["revision"]!=expected_bible_revision):
                 raise RuntimeError("Production Bible ActorID changed during identity approval")
             previous=db.execute(
-                """SELECT profile_revision FROM nvp_bible_actor_identity_profiles
+                """SELECT profile_revision,profile_json,voice_id
+                   FROM nvp_bible_actor_identity_profiles
                    WHERE project_id=? AND actor_id=? ORDER BY profile_revision DESC LIMIT 1""",
                 (pid,actor_id)).fetchone()
             head=previous["profile_revision"] if previous else 0
@@ -246,6 +247,14 @@ class ActorIdentityCore:
                     (last_cast["cast_revision"] if last_cast else None)!=cast_revision or
                     (last_cast["reference_audio_sha256"] if last_cast else None)!=voice_sha):
                 raise RuntimeError("Approved ActorID VoiceID changed during profile publication")
+            if previous and previous["voice_id"]!=voice_id:
+                old_voice=json.loads(previous["profile_json"])["voice_generation"]
+                new_voice=normalized["voice_generation"]
+                if all(old_voice[k]==new_voice[k] for k in (
+                        "engine_id","model_id","model_revision",
+                        "engine_voice_id")):
+                    raise PermissionError(
+                        "New ActorID VoiceID must use a different generator voice selector; old timbre cannot be silently relabeled")
             # A generic voice *type* may be shared (e.g. low and resonant),
             # but the actual engine-specific VOICE SELECTOR must never be
             # reused as two different characters' approved identity.
