@@ -136,77 +136,115 @@ def author_pbr_maps(stage,material_path,preview,openpbr,maps):
                     "emission_luminance",Sdf.ValueTypeNames.Float).Set(1.)
 
 def verify_pbr_map_graph(stage,material_path,preview,openpbr,maps):
+    """Verify exact USD + MaterialX sockets, color policy, UV and normal graph.
+
+    Do not accept a matched node path with an arbitrary socket, a substituted
+    texcoord node or changed output data type as an immutable PBR source.
+    """
     if not maps:return
-    from pxr import UsdShade
+    from pxr import Sdf,UsdShade
+    from backend.nvp_wo3_materialx_integrity import (
+        verify_shader_id,verify_literal_input,verify_output_connection)
     for key,desc in maps.items():
         suffix=key.capitalize()
         path=material_path+"/Map_"+suffix
         uv_path=path+"_UV"
-        shader=UsdShade.Shader(stage.GetPrimAtPath(path))
-        uv=UsdShade.Shader(stage.GetPrimAtPath(uv_path))
-        if (not shader or shader.GetIdAttr().Get()!="UsdUVTexture" or
-            not uv or uv.GetIdAttr().Get()!="UsdPrimvarReader_float2" or
-            uv.GetInput("varname").GetAttr().Get()!="st" or
-            str(shader.GetInput("file").GetAttr().Get().path)!=
-                desc["usd_asset_path"] or
-            shader.GetInput("sourceColorSpace").GetAttr().Get()!=
-                ("sRGB" if key=="emission" else "raw")):
-            raise RuntimeError("Original PBR USD map source changed: "+key)
+        mtlx_path=material_path+"/MtlxMap_"+suffix
+        mtlx_uv_path=material_path+"/MtlxMapUV_"+suffix
+        shader=verify_shader_id(stage,path,"UsdUVTexture")
+        uv=verify_shader_id(stage,uv_path,"UsdPrimvarReader_float2")
+        mtlx=verify_shader_id(
+            stage,mtlx_path,
+            "ND_image_float" if key in ("roughness","metallic","opacity")
+            else "ND_image_color3")
+        mtlx_uv=verify_shader_id(stage,mtlx_uv_path,"ND_texcoord_vector2")
+        preview_file=shader.GetInput("file")
+        materialx_file=mtlx.GetInput("file")
+        if (not preview_file or
+                preview_file.GetTypeName()!=Sdf.ValueTypeNames.Asset or
+                preview_file.GetAttr().GetConnections() or
+                not materialx_file or
+                materialx_file.GetTypeName()!=Sdf.ValueTypeNames.Asset or
+                materialx_file.GetAttr().GetConnections() or
+                str(preview_file.GetAttr().Get().path)!=desc["usd_asset_path"] or
+                str(materialx_file.GetAttr().Get().path)!=desc["usd_asset_path"] or
+                materialx_file.GetAttr().GetColorSpace()!=(
+                    "srgb_texture" if key=="emission" else "raw")):
+            raise RuntimeError("Original PBR source file or color policy changed: "+key)
+        verify_literal_input(shader,"sourceColorSpace",
+            "sRGB" if key=="emission" else "raw",
+            type_name=Sdf.ValueTypeNames.Token)
         for axis in ("wrapS","wrapT"):
-            if shader.GetInput(axis).GetAttr().Get()!="repeat":
-                raise RuntimeError("Original PBR map wrapping changed")
-        if key=="opacity" and not abs(
-            float(preview.GetInput("opacityThreshold").GetAttr().Get())-.5)<1e-6:
-            raise RuntimeError("Original cutout opacity threshold changed")
+            verify_literal_input(shader,axis,"repeat",
+                type_name=Sdf.ValueTypeNames.Token)
+        for axis in ("uaddressmode","vaddressmode"):
+            verify_literal_input(mtlx,axis,"periodic",
+                type_name=Sdf.ValueTypeNames.String)
+        verify_literal_input(mtlx,"filtertype","closest",
+            type_name=Sdf.ValueTypeNames.String)
+        verify_literal_input(uv,"varname","st",
+            type_name=Sdf.ValueTypeNames.Token)
+        verify_literal_input(mtlx_uv,"index",0,
+            type_name=Sdf.ValueTypeNames.Int)
+        verify_output_connection(
+            shader.GetInput("st"),uv_path,"result",
+            output_type=Sdf.ValueTypeNames.Float2,
+            input_type=Sdf.ValueTypeNames.Float2)
+        verify_output_connection(
+            mtlx.GetInput("texcoord"),mtlx_uv_path,"out",
+            output_type=Sdf.ValueTypeNames.Float2,
+            input_type=Sdf.ValueTypeNames.Float2)
+        if key=="opacity":
+            verify_literal_input(preview,"opacityThreshold",.5,
+                type_name=Sdf.ValueTypeNames.Float)
         if key=="normal":
-            scale=shader.GetInput("scale").GetAttr().Get()
-            bias=shader.GetInput("bias").GetAttr().Get()
-            if (list(scale)!=[2.,2.,2.,1.] or
-                list(bias)!=[-1.,-1.,-1.,0.]):
-                raise RuntimeError("Original tangent normal conversion changed")
-        mtlx=UsdShade.Shader(stage.GetPrimAtPath(
-            material_path+"/MtlxMap_"+suffix))
-        expected_id=("ND_image_float" if key in ("roughness","metallic","opacity")
-                     else "ND_image_color3")
-        if (not mtlx or mtlx.GetIdAttr().Get()!=expected_id or
-            str(mtlx.GetInput("file").GetAttr().Get().path)!=
-                desc["usd_asset_path"] or
-            mtlx.GetInput("file").GetAttr().GetColorSpace()!=
-                ("srgb_texture" if key=="emission" else "raw")):
-            raise RuntimeError("Original MaterialX channel source changed: "+key)
-        for input_,expected in (
-            (shader.GetInput("st"),uv_path),
-            (mtlx.GetInput("texcoord"),material_path+"/MtlxMapUV_"+suffix),
-        ):
-            connected=input_.GetConnectedSource() if input_ else None
-            if not connected or str(connected[0].GetPrim().GetPath())!=expected:
-                raise RuntimeError("Original PBR UV input disconnected: "+key)
-        target={
+            from pxr import Gf
+            # Preserve tangent normal decoding (2*texture-1), including
+            # the literal type and *absence* of hidden USD inputs.
+            verify_literal_input(shader,"scale",Gf.Vec4f(2.,2.,2.,1.),
+                type_name=Sdf.ValueTypeNames.Float4)
+            verify_literal_input(shader,"bias",Gf.Vec4f(-1.,-1.,-1.,0.),
+                type_name=Sdf.ValueTypeNames.Float4)
+        preview_socket="r" if key in ("roughness","metallic","opacity") else "rgb"
+        preview_output_type=(
+            Sdf.ValueTypeNames.Float if preview_socket=="r"
+            else Sdf.ValueTypeNames.Float3)
+        preview_target={
             "roughness":"roughness","metallic":"metallic",
             "emission":"emissiveColor","normal":"normal",
             "opacity":"opacity"}[key]
-        connection=preview.GetInput(target).GetConnectedSource()
-        if not connection or str(connection[0].GetPrim().GetPath())!=path:
-            raise RuntimeError("PreviewSurface PBR input rewired: "+key)
+        preview_input_type=(
+            Sdf.ValueTypeNames.Normal3f if key=="normal" else
+            Sdf.ValueTypeNames.Color3f if key=="emission" else
+            Sdf.ValueTypeNames.Float)
+        verify_output_connection(
+            preview.GetInput(preview_target),path,preview_socket,
+            output_type=preview_output_type,
+            input_type=preview_input_type)
+        map_output_type=(
+            Sdf.ValueTypeNames.Float
+            if key in ("roughness","metallic","opacity")
+            else Sdf.ValueTypeNames.Color3f)
         if key=="normal":
-            normal=UsdShade.Shader(stage.GetPrimAtPath(
-                material_path+"/MtlxNormalMap"))
-            if not normal or normal.GetIdAttr().Get()!="ND_normalmap_vector3":
-                raise RuntimeError("Original tangent-space normal conversion missing")
-            out=openpbr.GetInput("geometry_normal").GetConnectedSource()
-            if not out or str(out[0].GetPrim().GetPath())!=(
-                material_path+"/MtlxNormalMap"):
-                raise RuntimeError("Original OpenPBR normal input rewired")
+            normal_path=material_path+"/MtlxNormalMap"
+            normal=verify_shader_id(stage,normal_path,"ND_normalmap_vector3")
+            verify_output_connection(
+                normal.GetInput("in"),mtlx_path,"out",
+                output_type=Sdf.ValueTypeNames.Color3f,
+                input_type=Sdf.ValueTypeNames.Color3f)
+            verify_output_connection(
+                openpbr.GetInput("geometry_normal"),normal_path,"out",
+                output_type=Sdf.ValueTypeNames.Vector3f,
+                input_type=Sdf.ValueTypeNames.Vector3f)
         else:
-            if key=="emission" and (
-                float(openpbr.GetInput(
-                    "emission_luminance").GetAttr().Get())!=1.):
-                raise RuntimeError("Original OpenPBR emission disabled")
-            input_name={"roughness":"specular_roughness",
-                        "metallic":"base_metalness",
-                        "emission":"emission_color",
-                        "opacity":"geometry_opacity"}[key]
-            connected=openpbr.GetInput(input_name).GetConnectedSource()
-            if not connected or str(connected[0].GetPrim().GetPath())!=(
-                material_path+"/MtlxMap_"+suffix):
-                raise RuntimeError("Original OpenPBR PBR channel rewired")
+            if key=="emission":
+                verify_literal_input(openpbr,"emission_luminance",1.,
+                    type_name=Sdf.ValueTypeNames.Float)
+            openpbr_target={
+                "roughness":"specular_roughness",
+                "metallic":"base_metalness",
+                "emission":"emission_color",
+                "opacity":"geometry_opacity"}[key]
+            verify_output_connection(
+                openpbr.GetInput(openpbr_target),mtlx_path,"out",
+                output_type=map_output_type,input_type=map_output_type)

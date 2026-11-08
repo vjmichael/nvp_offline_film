@@ -46,7 +46,8 @@ def _original_texture_descriptors(index,pid,scene):
 def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                            camera_path,renderer="Embree",width=256,
                            timeout_seconds=90,require_gpu=False,
-                           native_take=None,look_ref=None):
+                           native_take=None,look_ref=None,
+                           material_context_probe="dual"):
     if not isinstance(index,FilmIndex):
         raise TypeError("Original FilmIndex required")
     _require_pid(pid)
@@ -58,11 +59,14 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
         not 5<=timeout_seconds<=180 or
         type(camera_path) is not str or
         not camera_path.startswith("/World/") or
-        len(camera_path)>256):
+        len(camera_path)>256 or
+        material_context_probe not in ("dual","mtlx_only")):
         raise ValueError("Unsafe independent renderer acceptance request")
     if (renderer=="Storm" and not require_gpu) or (
             renderer=="Embree" and require_gpu):
         raise ValueError("Hydra renderer and GPU admission must agree")
+    if material_context_probe=="mtlx_only" and (renderer!="Storm" or native_take is not None or look_ref is not None):
+        raise ValueError("MaterialX-only audit requires isolated Storm source without look/Take")
     if native_take is not None:
         if (type(native_take) is not dict or
             set(native_take)!={"take_id","take_sha256","tick"} or
@@ -95,6 +99,7 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
     base={
         "format":FORMAT,"scene_document_sha256":record["document_sha256"],
         "camera_path":camera_path,"renderer":renderer,
+        "material_context_probe":material_context_probe,
         "original_modified":False,"ffmpeg_used":False,
         "hydra_shader_parity_accepted":False,
         "physical_display_calibrated":False,
@@ -108,6 +113,13 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
     }
     if not usdrecord:
         return {**base,"status":"HYDRA_BINARY_UNAVAILABLE"}
+    # The discovered native tool is not creator/model-supplied code. Bind
+    # exact executable essence for this probe: its bytes must not change
+    # while an independent image is produced.
+    native_tool=Path(usdrecord).resolve(strict=True)
+    if not native_tool.is_file():
+        raise PermissionError("Independent renderer must be a real native tool")
+    native_tool_sha=sha256(native_tool.read_bytes()).hexdigest()
     from pxr import UsdGeom
     camera=UsdGeom.Camera(stage.GetPrimAtPath(camera_path))
     if not camera:
@@ -118,16 +130,27 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
     source_ctx=(resolved_materialx_probe(index,pid,stage,descriptors)
                 if descriptors else nullcontext((stage,{
                     "original_layer_mutated":False})))
+    if material_context_probe=="mtlx_only" and not descriptors:
+        raise RuntimeError("MaterialX-only audit requires actual indexed textures")
     original_layer=stage.GetRootLayer().ExportToString()
     try:
         with source_ctx as (copy,evidence):
+            isolated_material_count=0
+            if material_context_probe=="mtlx_only":
+                if evidence.get("derived_probe_only") is not True:
+                    raise RuntimeError("MaterialX-only isolation forbidden on source stage")
+                from backend.nvp_wo3_materialx_integrity import (
+                    isolate_materialx_only_on_derived_stage)
+                isolated_material_count=isolate_materialx_only_on_derived_stage(copy)
             with TemporaryDirectory(prefix="nvp-wo2-hydra-") as directory:
                 root=Path(directory)
                 scene_path=root/"approved_derived_scene.usda"
                 image_path=root/"independent_hydra.png"
+                derived_scene_sha=sha256(
+                    copy.GetRootLayer().ExportToString().encode("utf-8")).hexdigest()
                 if not copy.GetRootLayer().Export(str(scene_path)):
                     raise RuntimeError("Approved USD probe layer export failed")
-                args=[usdrecord,"--camera",camera_path,
+                args=[str(native_tool),"--camera",camera_path,
                       "--renderer",renderer,"--imageWidth",str(width),
                       "--colorCorrectionMode","disabled","--abortOnError"]
                 if not require_gpu:args.append("--disableGpu")
@@ -135,26 +158,45 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                 began=time.monotonic()
                 try:
                     run=subprocess.run(
-                        args,cwd=root,capture_output=True,text=True,
+                        # Renderer diagnostics are untrusted and may be
+                        # arbitrarily large. Do not hold stdout/stderr in
+                        # memory or surface private source paths to callers.
+                        args,cwd=root,stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
                         timeout=timeout_seconds,check=False)
                 except subprocess.TimeoutExpired:
                     return {**base,"status":"HYDRA_RENDER_TIMEOUT",
                             "requested_gpu":bool(require_gpu)}
                 elapsed=round(time.monotonic()-began,4)
-                if run.returncode!=0 or not image_path.is_file():
+                if sha256(native_tool.read_bytes()).hexdigest()!=native_tool_sha:
+                    raise RuntimeError("Independent renderer binary changed during run")
+                # No symlink, arbitrary renderer output path or unbounded
+                # decompression input becomes evidence for a source render.
+                if (run.returncode!=0 or not image_path.is_file() or
+                    image_path.is_symlink() or
+                    not 0<image_path.stat().st_size<=64*1024*1024):
                     return {**base,"status":"HYDRA_RENDER_FAILED",
                             "requested_gpu":bool(require_gpu),
                             "render_wall_seconds":elapsed,
                             "exit_code":run.returncode,
-                            "stderr_tail":(run.stderr or "")[-600:]}
-                from PIL import Image
+                            "untrusted_or_missing_output":True}
+                from PIL import Image,ImageStat
                 with Image.open(image_path) as result:
                     if (result.width>width*4 or result.height>width*4 or
                         result.width<1 or result.height<1):
                         raise RuntimeError("Independent rendered frame size out of bounds")
                     result.load()
                     w,h=result.size
-                    rgb=result.convert("RGB").tobytes()
+                    rendered=result.convert("RGB")
+                    rgb=rendered.tobytes()
+                    # Actual center-surface image pixels, not shader metadata
+                    # or expected source RGB. No color-space calibration is
+                    # inferred from these unprofiled RGB8 output samples.
+                    bounds=(3*w//8,3*h//8,max(3*w//8+1,5*w//8),
+                            max(3*h//8+1,5*h//8))
+                    patch=rendered.crop(bounds)
+                    center_rgb=[round(v,3) for v in ImageStat.Stat(patch).mean]
+                    center_pixels=patch.width*patch.height
                 comparison=None
                 if native_take is not None:
                     from backend.nvp_native_scene_linear_raster import (
@@ -206,8 +248,13 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                     "rendered_width":w,"rendered_height":h,
                     "rendered_rgb_sha256":sha256(rgb).hexdigest(),
                     "rendered_rgb_mean":round(sum(rgb)/len(rgb),4),
-                    "renderer_executable_sha256":sha256(
-                        Path(usdrecord).read_bytes()).hexdigest(),
+                    "rendered_center_patch_mean_rgb8":center_rgb,
+                    "rendered_center_patch_pixels":center_pixels,
+                    "renderer_executable_sha256":native_tool_sha,
+                    "derived_render_layer_sha256":derived_scene_sha,
+                    "materialx_only_terminal_isolated":(
+                        material_context_probe=="mtlx_only" and
+                        isolated_material_count>0),
                     "derived_source_scope":True,
                     "original_modified":False,
                 }

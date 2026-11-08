@@ -1189,3 +1189,61 @@ Draft PR #94 (`nvp/wo1-integrated-native-regressions-20261107`) stacks on WO6 PR
 
 
 **WO2 root cause and repair update:** The original SLATE-05/06 positive creator-consent rejection is explained by `SlatePreviewCache._db` closing an explicit `BEGIN IMMEDIATE` transaction without commit. Thus `reserve()` returned PENDING but erased its cache row, so `_approval_check` saw no durable reservation and failed closed. Verified underlying SQLite rollback behavior locally; committed success-only commit/exception rollback and native multi-connection positive/negative tests, plus orphaned-consent cleanup for blocking, geometry and pre-Take camera. Dedicated four-cell workflow `.github/workflows/nvp-wo2-slate-native-approval.yml`. Draft PR #95 remains **open pending actual native results**. See `docs/NVP_WO2_SLATE_APPROVAL_CLOSEOUT.md`.
+
+
+## WO3 MaterialX and independent native renderer integrity — 2026-11-07
+
+- **Draft PR #96** `nvp/wo3-materialx-renderer-integrity-20261107`, stacked on WO2 #95/WO1 #94, **implementation submitted; exact-head native acceptance OPEN**.
+- Prior **real** DATA-AV job `128474807034` (PBR five channels) and 60s mixed scene job `128474807074` hit `RuntimeError: MaterialX source scalar changed` on valid connected roughness/metallic maps. Earlier WO1 code restricted only valid mapped scalar connections, still no passing native evidence.
+- WO3 requires *exact* shader output sockets, UsdShade output-kind/type, no extra/raw USD graph connections, source-bound UV selection and PBR normal/emission/opacity color contracts. Strengthened `nvp_wo2_openpbr.py`, `nvp_wo2_pbr_channels.py`, added `nvp_wo3_materialx_integrity.py`.
+- Independent disposable MaterialX texture source copies are read-only and re-hashed **after** the renderer operation, avoiding false custody receipts on native mutation; Hydra probes SHA-pin their executable across the call, reject untrusted image symlinks/oversize files and do not include raw stderr private source paths.
+- Added adversarial real USD tests `test_nvp_wo3_materialx_integrity.py` and Hydra-executable integrity tests; workflow `nvp-wo3-materialx-renderer-integrity.yml` runs Windows/Linux 3.11/3.13 plus 60s original USD CPU continuity. **Pending all real job results and repairs**; optional `usdrecord` is not evidence of shader parity if skipped. Installed Windows film parity remains separate.
+
+
+**WO3 hardening follow-up (2026-11-07):** Added raw USD connection-list checks for dangling shader and
+texture source edges, exact PreviewSurface/OpenPBR input types, untampered
+normal-map scale/bias literals, and resolver refusal of shadowed `file`
+inputs. Independent `usdrecord` stdout/stderr are discarded instead of
+buffered in unbounded RAM. Added native adversarial regressions in
+`tests/test_nvp_wo3_materialx_integrity.py` and diagnostic-cap test in
+`tests/test_nvp_wo2_hydra_probe.py`. **Final-head native execution remains
+OPEN**; original PR #96 workflow run `42435076173` was queued, and all
+subsequent commits require fresh exact-head evidence. No shader/Hydra parity,
+GPU or installed film acceptance is inferred.
+
+
+**WO3 post-render RAM bound:** Scoped MaterialX source integrity now validates
+regular-file type and exact original byte length and hashes in 64 KiB chunks
+without `Path.read_bytes()` on native worker output; adds oversized source
+adversarial regression. WO3 is still **OPEN pending latest exact-head CI**.
+
+
+### WO3 independent Hydra image and color acceptance gate — 2026-11-07
+
+- New **mandatory and non-skippable** real Hydra Storm render test and workflow
+  `nvp-wo3-real-hydra-color.yml`, stacked on PR #96. Uses independent
+  conda-forge OpenUSD 26.08, Mesa/Xvfb software OpenGL, genuine native
+  `usdrecord`; main 26.11 authoring matrix stays separate.
+- Publishes two immutable FilmIndex scenes with identical geometry/camera/
+  light/five PBR maps and different red/blue original sRGB textures. Compares
+  **actual decoded Storm image pixels** for center-swatch color dominance and
+  between-swatch Lab ΔE76 separation; hashes native renderer, scene and pixels.
+  Receipts leave theatrical color, absolute calibrated reference accuracy,
+  physical GPU and MaterialX-only terminal parity **FALSE/OPEN**.
+- **Do not claim accepted from code submission:** latest exact-head real native
+  job must actually finish successfully with a nonempty emitted color receipt.
+  Embree is explicitly unsuitable because OpenUSD's reference Embree renderer
+  does not use materials. 
+
+
+
+**WO3 continued native color audit:** Fixed duplicate PNG-SHA in real
+red/blue swatch fixture. Required Storm test now runs dual and isolated
+MaterialX-only contexts (four real images) and records derived USD layer SHA,
+actual pixel hashes, center RGB means, ΔE76 source separation, and exact
+renderer-entrypoint SHA. MaterialX-only mode strips universal fallback on
+a disposable source copy only; added positive and missing-terminal native USD
+regressions, and negative **synthetic verdict** contract tests kept separate
+from genuine renderer acceptance. OpenUSD 26.08 imaging and 26.11 source
+matrix remain distinct. **All acceptance still OPEN** pending final exact-head
+native jobs; no GPU/calibrated or production rendering claim.

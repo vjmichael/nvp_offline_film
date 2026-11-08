@@ -12,6 +12,7 @@ from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import os
+from stat import S_ISREG
 
 from backend.nvp_native_usd_texture import verified_texture,PREFIX
 
@@ -42,6 +43,11 @@ def resolved_materialx_probe(index, project_id, original_stage, descriptors):
         if not node:continue
         source=node.GetInput("file")
         if source:
+            # The authored nvp-blob URI may still be present while a
+            # connected USD output overrides the actual image to render.
+            # Reject even dangling edges, not only resolved connections.
+            if source.GetAttr().GetConnections():
+                raise PermissionError("Original USD image source has an upstream override")
             raw=source.GetAttr().Get()
             if not isinstance(raw,Sdf.AssetPath):
                 raise RuntimeError("MaterialX file input is not USD asset typed")
@@ -66,6 +72,10 @@ def resolved_materialx_probe(index, project_id, original_stage, descriptors):
             except Exception:
                 # fdopen owns fd after success; TemporaryDirectory cleans up.
                 raise
+            # The independent renderer only needs to read exact approved
+            # PNG essence. Lock its temporary source copy against writes.
+            # The digest is revalidated *after* the renderer exits, too.
+            dest.chmod(0o400)
             paths[PREFIX+digest]=str(dest)
         for source,key in files:
             # A temporary *derived* USD layer may reference an approved
@@ -79,4 +89,41 @@ def resolved_materialx_probe(index, project_id, original_stage, descriptors):
             "derived_probe_only":True,
             "independent_hydra_render_accepted":False,
         }
-        yield resolved,evidence
+        try:
+            yield resolved,evidence
+        finally:
+            # This runs even when the caller returns early, for example an
+            # independent Hydra zero exit. A native renderer that overwrote,
+            # replaced or removed a verified source cannot produce a
+            # successful custody receipt just because it drew a PNG.
+            for key,dest_name in paths.items():
+                target=Path(dest_name)
+                digest=key[len(PREFIX):]
+                exact_size=len(verified[digest])
+                refusal="Independent renderer changed a verified material source"
+                if target.is_symlink():
+                    raise RuntimeError(refusal)
+                # Renderer output may replace a tiny approved PNG with many
+                # gigabytes. Never read an untrusted file in one allocation.
+                flags=(os.O_RDONLY|getattr(os,"O_BINARY",0)|
+                       getattr(os,"O_NOFOLLOW",0)|getattr(os,"O_NONBLOCK",0))
+                try:
+                    fd=os.open(target,flags)
+                except OSError as exc:
+                    raise RuntimeError(refusal) from exc
+                with os.fdopen(fd,"rb") as stream:
+                    info=os.fstat(stream.fileno())
+                    if not S_ISREG(info.st_mode) or info.st_size!=exact_size:
+                        raise RuntimeError(refusal)
+                    observed=0
+                    checksum=sha256()
+                    while True:
+                        block=stream.read(min(65536,exact_size-observed+1))
+                        if not block:
+                            break
+                        observed+=len(block)
+                        if observed>exact_size:
+                            raise RuntimeError(refusal)
+                        checksum.update(block)
+                    if observed!=exact_size or checksum.hexdigest()!=digest:
+                        raise RuntimeError(refusal)

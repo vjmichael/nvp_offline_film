@@ -18,6 +18,96 @@ class WO2IndependentHydraGate(unittest.TestCase):
                 "path":"/World/Actor","asset_id":"body_geometry",
                 "asset_revision":1}])
 
+    def test_changed_renderer_executable_never_creates_frame_evidence(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        with TemporaryDirectory() as tmp:
+            tool=Path(tmp)/"native_usdrecord"
+            tool.write_bytes(b"original renderer fingerprint")
+            def swapped_binary(args,**kwargs):
+                tool.write_bytes(b"changed mid-render")
+                return SimpleNamespace(returncode=0,stderr="")
+            with patch("backend.nvp_wo2_hydra_probe.shutil.which",
+                       return_value=str(tool)),patch(
+                       "backend.nvp_wo2_hydra_probe.subprocess.run",
+                       side_effect=swapped_binary):
+                with self.assertRaisesRegex(RuntimeError,"binary changed"):
+                    capture_hydra_evidence(
+                        self.index,self.pid,"hydra_scene",1,
+                        camera_path="/World/Camera")
+
+    def test_independent_renderer_symlink_output_is_not_a_render_receipt(self):
+        import os
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        if os.name=="nt":
+            self.skipTest("Windows symlink privileges vary across native runners")
+        with TemporaryDirectory() as tmp:
+            tool=Path(tmp)/"usdrecord"
+            tool.write_bytes(b"native exact executable")
+            outside=Path(tmp)/"untrusted.png"
+            outside.write_bytes(b"not a source-confirmed renderer output")
+            def unexpected_symlink(args,**kwargs):
+                Path(args[-1]).symlink_to(outside)
+                return SimpleNamespace(returncode=0,stderr="")
+            with patch("backend.nvp_wo2_hydra_probe.shutil.which",
+                       return_value=str(tool)),patch(
+                       "backend.nvp_wo2_hydra_probe.subprocess.run",
+                       side_effect=unexpected_symlink):
+                result=capture_hydra_evidence(
+                    self.index,self.pid,"hydra_scene",1,
+                    camera_path="/World/Camera")
+        self.assertEqual(result["status"],"HYDRA_RENDER_FAILED")
+        self.assertFalse(result["real_independent_frame_rendered"])
+        self.assertTrue(result["untrusted_or_missing_output"])
+
+    def test_untrusted_renderer_failure_omits_private_worker_stderr(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        with TemporaryDirectory() as tmp:
+            tool=Path(tmp)/"native_usdrecord"
+            tool.write_bytes(b"native renderer unchanged")
+            with patch("backend.nvp_wo2_hydra_probe.shutil.which",
+                       return_value=str(tool)),patch(
+                       "backend.nvp_wo2_hydra_probe.subprocess.run",
+                       return_value=SimpleNamespace(
+                           returncode=17,stderr="private source /secret/path")):
+                result=capture_hydra_evidence(
+                    self.index,self.pid,"hydra_scene",1,
+                    camera_path="/World/Camera")
+        self.assertEqual(result["status"],"HYDRA_RENDER_FAILED")
+        self.assertFalse(result["real_independent_frame_rendered"])
+        self.assertNotIn("stderr_tail",result)
+        self.assertTrue(result["untrusted_or_missing_output"])
+
+    def test_renderer_diagnostics_are_not_captured_in_unbounded_ram(self):
+        # An external usdrecord can emit arbitrarily large diagnostics.
+        # Its output cannot be buffered in NVP or leak project paths.
+        import subprocess
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        with TemporaryDirectory() as tmp:
+            tool=Path(tmp)/"native_usdrecord"
+            tool.write_bytes(b"bounded native diagnostics fixture")
+            def assert_bounded(args,**kwargs):
+                self.assertEqual(kwargs.get("stdout"),subprocess.DEVNULL)
+                self.assertEqual(kwargs.get("stderr"),subprocess.DEVNULL)
+                self.assertNotIn("capture_output",kwargs)
+                return SimpleNamespace(returncode=9)
+            with patch("backend.nvp_wo2_hydra_probe.shutil.which",
+                       return_value=str(tool)),patch(
+                       "backend.nvp_wo2_hydra_probe.subprocess.run",
+                       side_effect=assert_bounded):
+                result=capture_hydra_evidence(
+                    self.index,self.pid,"hydra_scene",1,
+                    camera_path="/World/Camera")
+        self.assertEqual(result["status"],"HYDRA_RENDER_FAILED")
+        self.assertFalse(result["real_independent_frame_rendered"])
+
     def test_missing_independent_renderer_is_not_fabricated_success(self):
         with patch("backend.nvp_wo2_hydra_probe.shutil.which",
                    return_value=None):

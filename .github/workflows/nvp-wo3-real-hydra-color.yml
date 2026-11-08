@@ -1,0 +1,88 @@
+name: NVP WO3 Mandatory Real Hydra Pixel and Color Evidence (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/wo3-materialx-renderer-integrity-20261107]
+  pull_request:
+    paths:
+      - backend/nvp_wo3_hydra_color_fidelity.py
+      - backend/nvp_wo3_materialx_integrity.py
+      - tests/test_nvp_wo3_color_contract.py
+      - backend/nvp_wo2_hydra_probe.py
+      - tests/test_nvp_wo3_real_hydra_color.py
+      - .github/workflows/nvp-wo3-real-hydra-color.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-wo3-hydra-color-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-hydra-colored-textures:
+    name: Genuine Storm USD texture pixels / Mesa/Xvfb / Ubuntu Python 3.11
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      # Separate independently sourced renderer from the pinned 26.11
+      # source-authoring matrix. Conda-forge OpenUSD 26.08 supplies full
+      # native imaging executables, unlike a PyPI USD binding-only install.
+      # DO NOT call different renderer versions pixel-parity equivalent.
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: hydra-audit
+          create-args: >-
+            python=3.11
+            openusd=26.08
+            pillow
+            numpy
+            pyside6
+            pyopengl
+            pip
+          init-shell: bash
+      - name: Provide genuine Mesa software OpenGL and virtual X display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Install NVP first-party Python dependencies in renderer environment
+        shell: bash -el {0}
+        run: |
+          python -m pip install -r requirements-foundation.txt
+      - name: Mandatory native usdrecord, provenance, genuine USD bindings
+        shell: bash -el {0}
+        run: |
+          command -v usdrecord
+          test -f "$(command -v usdrecord)"
+          sha256sum "$(command -v usdrecord)"
+          usdrecord --help
+          python - <<'PY'
+          from pxr import Usd, UsdShade, UsdGeom
+          print("REAL_HYDRA_AUDIT_OPENUSD", Usd.GetVersion())
+          assert len(Usd.GetVersion()) >= 2  # Environment conda pins OpenUSD 26.08
+          PY
+      - name: Compile real swatch source and actual pixel measurement
+        shell: bash -el {0}
+        run: |
+          python -m compileall -q backend/nvp_wo3_hydra_color_fidelity.py backend/nvp_wo3_materialx_integrity.py backend/nvp_wo2_hydra_probe.py tests/test_nvp_wo3_color_contract.py tests/test_nvp_wo3_real_hydra_color.py
+      - name: Validate color-verdict refusal separately (synthetic test only)
+        shell: bash -el {0}
+        run: python -m unittest discover -s tests -p test_nvp_wo3_color_contract.py -v
+      - name: Real external Hydra renders and relative source-color fidelity (NO SKIP)
+        shell: bash -el {0}
+        run: |
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          export QT_QPA_PLATFORM=xcb
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24 +extension GLX +render" python -m unittest discover -s tests -p test_nvp_wo3_real_hydra_color.py -v
+          test -s wo3-hydra-color-evidence.json
+      - name: Preserve SHA-bound real Hydra measured pixel receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wo3-real-hydra-color-${{ github.sha }}
+          path: wo3-hydra-color-evidence.json
+          if-no-files-found: warn
+          retention-days: 30

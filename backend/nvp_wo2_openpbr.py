@@ -51,15 +51,18 @@ def verify_openpbr_scalar(stage,material_path,material,color,roughness,metallic)
         inp=shader.GetInput(name)
         if not inp:
             raise RuntimeError("Original OpenPBR scalar input missing")
-        if inp.HasConnectedSource():
+        if inp.GetAttr().GetConnections():
+            from pxr import Sdf
+            from backend.nvp_wo3_materialx_integrity import (
+                verify_output_connection)
             channel={"base_metalness":"Metallic",
                      "specular_roughness":"Roughness"}.get(name)
-            connected=inp.GetConnectedSource()
-            if (not channel or not connected or
-                str(connected[0].GetPrim().GetPath())!=
-                    material_path+"/MtlxMap_"+channel or
-                connected[1]!="out"):
+            if not channel:
                 raise RuntimeError("Untrusted MaterialX scalar channel connection")
+            verify_output_connection(
+                inp,material_path+"/MtlxMap_"+channel,"out",
+                output_type=Sdf.ValueTypeNames.Float,
+                input_type=Sdf.ValueTypeNames.Float)
         value=inp.GetAttr().Get()
         actual=(list(value) if name=="base_color" else [value])
         if (len(actual)!=len(expected) or
@@ -138,17 +141,34 @@ def verify_openpbr_texture(stage,material_path,material,
         image.GetInput("vaddressmode").GetAttr().Get()!="periodic" or
         image.GetInput("filtertype").GetAttr().Get()!="closest"):
         raise RuntimeError("Frozen MaterialX original image graph changed")
-    connections=[
-        (material.GetSurfaceOutput("mtlx"),material_path+"/OpenPBR","out"),
-        (shader.GetInput("base_color"),material_path+"/MtlxImage","out"),
-        (image.GetInput("texcoord"),material_path+"/MtlxTexcoord","out"),
-    ]
-    for input_,expected_path,expected_output in connections:
-        source=input_.GetConnectedSource() if input_ else None
-        if (not source or
-            str(source[0].GetPrim().GetPath())!=expected_path or
-            source[1]!=expected_output):
-            raise RuntimeError("Frozen MaterialX image graph rewired")
+    from pxr import Sdf
+    from backend.nvp_wo3_materialx_integrity import (
+        verify_output_connection,verify_literal_input)
+    verify_literal_input(uv,"index",0,type_name=Sdf.ValueTypeNames.Int)
+    # A USD input can retain its expected literal value *and* carry an
+    # upstream connection. The renderer would use that connection instead
+    # of the authorized source URI or filter mode. Reject both forms.
+    for setting in ("file","uaddressmode","vaddressmode","filtertype"):
+        input_=image.GetInput(setting)
+        if not input_ or input_.GetAttr().GetConnections():
+            raise RuntimeError("Frozen MaterialX image setting has upstream override")
+    if (image.GetInput("file").GetTypeName()!=Sdf.ValueTypeNames.Asset or
+        shader.GetInput("base_color").GetTypeName()!=Sdf.ValueTypeNames.Color3f):
+        raise RuntimeError("Frozen MaterialX image or base color type changed")
+    verify_output_connection(
+        material.GetSurfaceOutput("mtlx"),
+        material_path+"/OpenPBR","out",
+        output_type=Sdf.ValueTypeNames.Token)
+    verify_output_connection(
+        shader.GetInput("base_color"),
+        material_path+"/MtlxImage","out",
+        output_type=Sdf.ValueTypeNames.Color3f,
+        input_type=Sdf.ValueTypeNames.Color3f)
+    verify_output_connection(
+        image.GetInput("texcoord"),
+        material_path+"/MtlxTexcoord","out",
+        output_type=Sdf.ValueTypeNames.Float2,
+        input_type=Sdf.ValueTypeNames.Float2)
     for key,expected in (
         ("base_metalness",metallic),
         ("specular_roughness",roughness),
@@ -161,16 +181,14 @@ def verify_openpbr_texture(stage,material_path,material,
         # scalar inputs and prevented native WebView2 source scene loading.
         # Preserve source custody by allowing ONLY the expected typed
         # bounded MaterialX channel path, never arbitrary shader rewiring.
-        if value.HasConnectedSource():
+        if value.GetAttr().GetConnections():
             expected_channel={
                 "base_metalness":"Metallic",
                 "specular_roughness":"Roughness"}[key]
-            connection=value.GetConnectedSource()
-            if (not connection or
-                    str(connection[0].GetPrim().GetPath())!=
-                    material_path+"/MtlxMap_"+expected_channel or
-                    connection[1]!="out"):
-                raise RuntimeError("MaterialX source scalar changed")
+            verify_output_connection(
+                value,material_path+"/MtlxMap_"+expected_channel,"out",
+                output_type=Sdf.ValueTypeNames.Float,
+                input_type=Sdf.ValueTypeNames.Float)
         if not math.isclose(float(value.GetAttr().Get()),
                             float(expected),rel_tol=1e-5,abs_tol=1e-5):
             raise RuntimeError("MaterialX source scalar changed")
