@@ -70,16 +70,16 @@ def geometry_camera_light(root):
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     mesh = UsdGeom.Mesh.Define(stage, "/World/Mesh")
-    mesh.GetPointsAttr().Set(Vt.Vec3fArray([
+    mesh.CreatePointsAttr(Vt.Vec3fArray([
         Gf.Vec3f(-1, 0, 0), Gf.Vec3f(1, 0, 0),
         Gf.Vec3f(1, 0, 2), Gf.Vec3f(-1, 0, 2),
     ]))
-    mesh.GetFaceVertexCountsAttr().Set(Vt.IntArray([3, 3]))
-    mesh.GetFaceVertexIndicesAttr().Set(Vt.IntArray([0, 1, 2, 0, 2, 3]))
+    mesh.CreateFaceVertexCountsAttr(Vt.IntArray([3, 3]))
+    mesh.CreateFaceVertexIndicesAttr(Vt.IntArray([0, 1, 2, 0, 2, 3]))
     camera = UsdGeom.Camera.Define(stage, "/World/Camera")
-    camera.GetFocalLengthAttr().Set(0.5)
+    camera.CreateFocalLengthAttr(0.5)
     light = UsdLux.SphereLight.Define(stage, "/World/Light")
-    UsdLux.LightAPI(light.GetPrim()).GetIntensityAttr().Set(150.0)
+    UsdLux.LightAPI(light.GetPrim()).CreateIntensityAttr(150.0)
     stage.GetRootLayer().Save()
     reopened = Usd.Stage.Open(str(target))
     m = UsdGeom.Mesh(reopened.GetPrimAtPath("/World/Mesh"))
@@ -105,9 +105,9 @@ def composition_layers(root):
     weak = Sdf.Layer.CreateAnonymous("nvp_test_weak.usda")
     ws = Usd.Stage.Open(weak)
     cube = UsdGeom.Cube.Define(ws, "/World/Prop")
-    cube.GetSizeAttr().Set(1.5)
+    cube.CreateSizeAttr(1.5)
     ss = Usd.Stage.Open(strong)
-    UsdGeom.Cube.Define(ss, "/World/Prop").GetSizeAttr().Set(2.5)
+    UsdGeom.Cube.Define(ss, "/World/Prop").CreateSizeAttr(2.5)
     composed = Sdf.Layer.CreateAnonymous("nvp_test_composed.usda")
     composed.subLayerPaths = [strong.identifier, weak.identifier]
     stage = Usd.Stage.Open(composed)
@@ -128,7 +128,7 @@ def references_and_payloads(root):
     master = root / "scene_refs_payloads.usda"
     source = Usd.Stage.CreateNew(str(asset))
     geom = UsdGeom.Sphere.Define(source, "/Reusable")
-    geom.GetRadiusAttr().Set(1.25)
+    geom.CreateRadiusAttr(1.25)
     source.SetDefaultPrim(geom.GetPrim())
     source.GetRootLayer().Save()
     scene = Usd.Stage.CreateNew(str(master))
@@ -166,7 +166,7 @@ def variants(root):
         v.AddVariant(name)
         _require(v.SetVariantSelection(name), "Could not select USD variant")
         with v.GetVariantEditContext():
-            cube.GetSizeAttr().Set(size)
+            cube.CreateSizeAttr(size)
     stage.GetRootLayer().Save()
     reopened = Usd.Stage.Open(str(target))
     rv = reopened.GetPrimAtPath("/World/Variant").GetVariantSets().GetVariantSet("look")
@@ -185,12 +185,12 @@ def point_instancer(root):
     target = root / "instancing.usda"
     stage = Usd.Stage.CreateNew(str(target))
     proto = UsdGeom.Cube.Define(stage, "/World/PrototypeTree")
-    proto.GetSizeAttr().Set(1)
+    proto.CreateSizeAttr(1)
     inst = UsdGeom.PointInstancer.Define(stage, "/World/Trees")
-    _require(inst.GetPrototypesRel().SetTargets([proto.GetPath()]),
+    _require(inst.CreatePrototypesRel().SetTargets([proto.GetPath()]),
              "Could not set USD prototype")
-    inst.GetProtoIndicesAttr().Set(Vt.IntArray([0, 0, 0]))
-    inst.GetPositionsAttr().Set(Vt.Vec3fArray([
+    inst.CreateProtoIndicesAttr(Vt.IntArray([0, 0, 0]))
+    inst.CreatePositionsAttr(Vt.Vec3fArray([
         Gf.Vec3f(0, 0, 0), Gf.Vec3f(10, 0, 0), Gf.Vec3f(20, 0, 0),
     ]))
     stage.GetRootLayer().Save()
@@ -210,14 +210,14 @@ def skeletal_blendshapes(root):
     UsdSkel.Root.Define(stage, "/World/Actor/Rig")
     rig = UsdSkel.Skeleton.Define(stage, "/World/Actor/Rig/Skeleton")
     joints = Vt.TokenArray(["Root", "Root/Jaw"])
-    rig.GetJointsAttr().Set(joints)
+    rig.CreateJointsAttr(joints)
     poses = Vt.Matrix4dArray([Gf.Matrix4d(1.0), Gf.Matrix4d(1.0)])
-    rig.GetBindTransformsAttr().Set(poses)
-    rig.GetRestTransformsAttr().Set(poses)
+    rig.CreateBindTransformsAttr(poses)
+    rig.CreateRestTransformsAttr(poses)
     anim = UsdSkel.Animation.Define(stage, "/World/Actor/Rig/Animation")
-    anim.GetJointsAttr().Set(joints)
-    anim.GetBlendShapesAttr().Set(Vt.TokenArray(["MouthOpen"]))
-    anim.GetBlendShapeWeightsAttr().Set(Vt.FloatArray([0.0]), Usd.TimeCode(0))
+    anim.CreateJointsAttr(joints)
+    anim.CreateBlendShapesAttr(Vt.TokenArray(["MouthOpen"]))
+    anim.CreateBlendShapeWeightsAttr().Set(Vt.FloatArray([0.0]), Usd.TimeCode(0))
     anim.GetBlendShapeWeightsAttr().Set(Vt.FloatArray([1.0]), Usd.TimeCode(24))
     UsdSkel.BlendShape.Define(stage, "/World/Actor/Rig/MouthOpen")
     stage.GetRootLayer().Save()
@@ -291,7 +291,7 @@ def create_blender_fixture(path):
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     mesh = UsdGeom.Mesh.Define(stage, "/World/ProbeMesh")
-    mesh.GetPointsAttr().Set(Vt.Vec3fArray([
+    mesh.CreatePointsAttr(Vt.Vec3fArray([
         Gf.Vec3f(-1, -1, 0), Gf.Vec3f(1, -1, 0),
         Gf.Vec3f(1, 1, 0), Gf.Vec3f(-1, 1, 0),
     ]))
@@ -300,7 +300,7 @@ def create_blender_fixture(path):
     camera = UsdGeom.Camera.Define(stage, "/World/Camera")
     camera.GetFocalLengthAttr().Set(0.5)
     light = UsdLux.SphereLight.Define(stage, "/World/Light")
-    UsdLux.LightAPI(light.GetPrim()).GetIntensityAttr().Set(100)
+    UsdLux.LightAPI(light.GetPrim()).CreateIntensityAttr(100)
     stage.GetRootLayer().Save()
     return {"sha256": sha(path), "original_points": 4,
             "original_camera": True, "original_light": True}
