@@ -61,6 +61,7 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         self._wo6_dispatch_lock=threading.RLock()
         self._wo6_dispatch_queues={}
         self._wo6_dispatch_faults={}
+        self._wo6_dispatch_deferrals={}
         self._wo6_closed=False
 
     def _wo6_host(self):
@@ -206,7 +207,20 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                     if self._wo6_closed:
                         continue
                 try:
-                    host.run_next(timeout_seconds=240,expected_task_id=trigger)
+                    outcome=host.run_next(
+                        timeout_seconds=240,expected_task_id=trigger)
+                    if type(outcome) is dict and outcome.get("admitted") is False:
+                        # Native source and resource ledger still own state.
+                        # This notice was consumed without worker launch.
+                        state=outcome.get("state")
+                        category=("NOTICE_NOT_CLAIMED" if state=="NOT_CLAIMED"
+                                  else "RESOURCE_QUEUED" if state=="QUEUED"
+                                  else "NOT_ADMITTED")
+                        with self._wo6_dispatch_lock:
+                            self._wo6_dispatch_deferrals[trigger]=category
+                            if len(self._wo6_dispatch_deferrals)>MAX_DISPATCH_QUEUE*4:
+                                self._wo6_dispatch_deferrals.pop(
+                                    next(iter(self._wo6_dispatch_deferrals)))
                 except Exception as exc:
                     # The actual host writes interrupted/failed task states
                     # durably; this is supplementary local diagnostic only.
@@ -316,8 +330,11 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         evidence=self._wo6_recovery.status(task_id,owner_key=owner["owner_key"])
         with self._wo6_dispatch_lock:
             fault=self._wo6_dispatch_faults.get(task_id)
+            deferral=self._wo6_dispatch_deferrals.get(task_id)
         if fault is not None:
             evidence["local_dispatch_failure"]=fault
+        if deferral is not None and evidence.get("state")=="QUEUED":
+            evidence["local_notice_not_admitted"]=deferral
         return evidence
 
     def wo6_cancel_native_task(self,project_id,task_id):
