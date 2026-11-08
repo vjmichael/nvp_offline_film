@@ -185,9 +185,15 @@ class Slate06NativeTests(unittest.TestCase):
             self.pid,"cut",1,film_tick=0,quality="thumbnail")
 
     def request(self,**kw):
-        return self.host.request(
-            self.pid,"cut",1,film_tick=0,quality="thumbnail",
-            creator_event=self.trusted_event,presentation="geometry",**kw)
+        try:
+            return self.host.request(
+                self.pid,"cut",1,film_tick=0,quality="thumbnail",
+                creator_event=self.trusted_event,presentation="geometry",**kw)
+        except PermissionError as exc:
+            self.fail("Unexpected SLATE-06 approval refusal at trusted "
+                      "host gate: "+str(getattr(
+                          self.host,"_last_slate_approval_refusal","unknown"))+
+                      " ("+type(exc).__name__+")")
 
     def _publish_test_receipt(self,queued):
         row=self.cache._job(queued["job_id"])
