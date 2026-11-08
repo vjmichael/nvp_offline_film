@@ -1,4 +1,5 @@
 import React, {useEffect, useMemo, useState} from 'react';
+import Film03ActorVoicePanel from './Film03ActorVoicePanel.jsx';
 
 const FAMILIES = {
   scene: ['screenplay_scene', 'filmindex'],
@@ -226,6 +227,15 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
           Select each StoryBible character and link its real actor prim before acceptance.
         </p>}
       </>}
+      <Film03ActorVoicePanel project={project} actorId={actorId}
+        detail={detail} catalog={catalog} api={api} action={action} busy={busy}
+        onUpdated={async()=>{
+          const latest=await api(root + '/actors/' + encodeURIComponent(actorId));
+          if(latest?.actor_id!==actorId)
+            throw new Error('Voice cast update returned wrong ActorID');
+          setDetail(latest);
+          await refreshBible(pid);
+        }} />
       <h4>Immutable relationship history</h4>
       <details>
         <summary>Show all {detail.history.length} saved relationship revisions</summary>
