@@ -7,6 +7,8 @@ interpreted here. Human-typed values and WO6 host-sealed task are required.
 from __future__ import annotations
 
 import math
+from hashlib import sha256
+from backend.nvp_approved_tasks import canonical_bytes
 
 from backend.nvp_data_av_source import RecordedSoundSources, FORMAT as PCM_FORMAT
 from backend.nvp_digital_slate_branches import DigitalSlateBranches
@@ -207,3 +209,55 @@ def preview_sound_cue(index,pid,source_id,source_rev,source_sha,payload):
             "new_sound_cue_id":cue["event_id"],
             "authored_sample_count":cue["payload"]["source_sample_count"],
             "no_audio_rendered":True,"no_worker_authorized":True}
+
+
+def typed_decision_sha(spec):
+    """One SHA of the EXACT human-entered source+new decision+parameters."""
+    fields=("project_id","decision_kind","decision_id","source_id",
+            "source_revision","source_sha256","payload","duration_tick")
+    return sha256(canonical_bytes({k:spec[k] for k in fields})).hexdigest()
+
+
+def preview_typed_decision(index,spec):
+    """Source-verified read-only typed preview; NO creator/tool grant."""
+    pid=spec["project_id"]
+    _id(spec["decision_id"],"new exact decision object ID")
+    if spec["decision_id"]==spec["source_id"]:
+        raise ValueError("Cannot reuse original FilmIndex object identity")
+    try:
+        index.read_revision(pid,spec["decision_id"])
+    except KeyError:
+        pass
+    else:
+        raise PermissionError("Decision identity already exists")
+    kind=spec["decision_kind"]
+    if kind=="sound_cue":
+        source,existing,cue=preflight_sound_cue(index,spec)
+        detail={"inherited_event_count":len(existing),
+                "added_event_id":cue["event_id"],
+                "sample_count":cue["payload"]["source_sample_count"],
+                "original_duration_tick":source["data"]["duration_tick"]}
+    elif kind=="editorial_cut":
+        draft=preflight_editorial_cut(index,spec)
+        detail={"source_graph_sha256":draft["graph_document_sha256"],
+                "draft_sha256":draft["draft_sha256"],
+                "ordered_segment_sha256":_digest(draft["segments"]),
+                "segment_count":len(draft["segments"]),
+                "duration_tick":draft["duration_tick"]}
+    else:
+        raise ValueError("Only typed sound-cue or slate-edit preview supported")
+    return {
+        "format":"nvp.wo6.07d.read_only_typed_decision_preview.v1",
+        "status":"READ_ONLY_TYPED_DECISION_NO_GRANT",
+        "project_id":pid,
+        "decision_kind":kind,
+        "original_source_sha256":spec["source_sha256"],
+        "typed_preview_sha256":typed_decision_sha(spec),
+        "original_unchanged":True,
+        "native_worker_authorized":False,
+        "creative_approval_granted":False,
+        "rendered_sound":False,
+        "active_edit_committed":False,
+        "final_film_approved":False,
+        "details":detail,
+    }
