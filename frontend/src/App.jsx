@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import StoryTimeline from './StoryTimeline.jsx';
 import SceneMindPanel from './SceneMindPanel.jsx';
 import ScreenplayReviewPanel from './ScreenplayReviewPanel.jsx';
+import Film03ActorBiblePanel from './Film03ActorBiblePanel.jsx';
+import Film03ScriptChangeImpactPanel from './Film03ScriptChangeImpactPanel.jsx';
 import LineNumberedTextarea from './LineNumberedTextarea.jsx';
 import SceneStagePanel from './SceneStagePanel.jsx';
 import ProductionAuthoringPanel from './ProductionAuthoringPanel.jsx';
@@ -638,7 +640,10 @@ function MainApp() {
           <section className="card">
             <h2>{selectedBibleEntity?.name || 'Choose an entry'}</h2>
             {selectedBibleEntity && <>
-              <p className="fineprint">{selectedBibleEntity.kind} · stable ID {selectedBibleEntity.id}</p>
+              <p className="fineprint">{selectedBibleEntity.kind} ·
+                {selectedBibleEntity.actor_id
+                  ? ' canonical ActorID ' + selectedBibleEntity.actor_id
+                  : ' stable source ID ' + selectedBibleEntity.id}</p>
               <label>Rename (keeps old name as an alias)
                 <input maxLength={150} value={bibleRename} onChange={(e) => setBibleRename(e.target.value)} />
               </label>
@@ -692,6 +697,11 @@ function MainApp() {
             <button className="secondary" disabled={busy} onClick={() => action(async () => refreshBible(project.id))}>Refresh impact report</button>
           </section>
         </div>}
+        {tab === 'bible' && selectedBibleEntity?.actor_id && <Film03ActorBiblePanel
+          project={project} actor={selectedBibleEntity} api={api}
+          action={action} busy={busy} refreshBible={refreshBible} />}
+        {(tab === 'story' || tab === 'bible') &&
+          <Film03ScriptChangeImpactPanel project={project} api={api} />}
         {tab === 'timeline' && <StoryTimeline project={project} api={api} />}
         {tab === 'mind' && <SceneMindPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'review' && <ScreenplayReviewPanel project={project} api={api} action={action} busy={busy} />}

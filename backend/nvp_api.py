@@ -52,6 +52,8 @@ def run(action):
         raise HTTPException(status_code=422, detail=str(error)) from error
     except RuntimeError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
 
 
 @app.get("/api/status")
@@ -305,6 +307,93 @@ def story_bible_link_scene(project_id: str, entity_id: str, payload: BibleSceneL
 def story_bible_ack_change(project_id: str, change_id: str, payload: BibleAcknowledge):
     return run(lambda: StoryBible(studio).acknowledge_change(
         project_id, change_id, payload.expected_screenplay_revision))
+
+# FILM03-02: ActorID is always the existing StoryBible character entity ID.
+# Source relationships are creator-written local metadata, not worker commands.
+# Mutations require exact optimistic revisions; source originals stay immutable.
+from backend.nvp_production_bible_actors import ProductionBibleActors as _ProductionActors
+from backend.nvp_film_index import FilmIndex as _Film03Index
+from backend.nvp_film03_object_dialogue import ObjectActorDialogue as _ScriptDialogue
+
+
+class ActorResourceLink(BaseModel):
+    role: str = Field(min_length=1, max_length=32)
+    source_family: str = Field(min_length=1, max_length=32)
+    target_id: str = Field(min_length=1, max_length=100)
+    target_revision: int = Field(ge=0, le=1000000)
+    expected_actor_revision: int = Field(ge=0, le=1000000)
+    production_scope: str = Field(default="global", min_length=1, max_length=120)
+    director_note: str = Field(default="", max_length=1200)
+    actor_prim_path: str | None = Field(default=None, max_length=240)
+    link_id: str | None = Field(default=None, max_length=32)
+    expected_link_revision: int = Field(default=0, ge=0, le=1000000)
+
+
+class ActorResourceRetire(BaseModel):
+    expected_actor_revision: int = Field(ge=0, le=1000000)
+    expected_link_revision: int = Field(ge=1, le=1000000)
+    director_reason: str = Field(min_length=1, max_length=1200)
+
+
+@app.get("/api/projects/{project_id}/production-bible/actor-catalog")
+def production_bible_actor_catalog(project_id: str):
+    return run(lambda: _ProductionActors(studio).catalog(project_id))
+
+
+@app.get("/api/projects/{project_id}/production-bible/actors/{actor_id}")
+def production_bible_actor(project_id: str, actor_id: str):
+    return run(lambda: _ProductionActors(studio).actor(project_id, actor_id))
+
+
+@app.get("/api/projects/{project_id}/production-bible/takes/{take_id}/cast-coverage")
+def production_bible_cast_coverage(project_id: str, take_id: str):
+    return run(lambda: _ProductionActors(studio).casting_coverage(project_id,take_id))
+
+
+@app.post("/api/projects/{project_id}/production-bible/actors/{actor_id}/links", status_code=201)
+def production_bible_link_actor(project_id: str, actor_id: str, payload: ActorResourceLink):
+    return run(lambda: _ProductionActors(studio).link(
+        project_id, actor_id, **payload.model_dump()))
+
+
+@app.post("/api/projects/{project_id}/production-bible/actors/{actor_id}/links/{link_id}/retire")
+def production_bible_retire_actor_link(project_id: str, actor_id: str, link_id: str,
+                                      payload: ActorResourceRetire):
+    return run(lambda: _ProductionActors(studio).retire(
+        project_id, actor_id, link_id,
+        expected_actor_revision=payload.expected_actor_revision,
+        expected_link_revision=payload.expected_link_revision,
+        reason=payload.director_reason))
+
+
+@app.get("/api/projects/{project_id}/film03/script-sources")
+def film03_script_sources(project_id: str):
+    def gather():
+        index = _Film03Index(studio)
+        output = []
+        for row in index.list_objects(project_id, kind="dialogue"):
+            doc = index.read_revision(project_id, row["object_id"], row["head_revision"])
+            if doc["data"].get("format") == "nvp.film03.script_dialogue_snapshot.v1":
+                output.append({
+                    "script_id": row["object_id"],
+                    "revision": row["head_revision"],
+                    "screenplay_revision": doc["data"]["screenplay_revision"],
+                    "source_sha256": doc["document_sha256"],
+                })
+        return {"sources": output, "read_only": True,
+                "no_creator_approval_implied": True}
+    return run(gather)
+
+
+@app.get("/api/projects/{project_id}/film03/script-impact/{script_id}")
+def film03_script_impact(project_id: str, script_id: str):
+    # Authorizes NO creator action; this endpoint only compares source
+    # versions and StoryBible continuity. Never use a browser boolean or
+    # generic HTTP POST as trusted Digital Take/voice approval.
+    return run(lambda: _ScriptDialogue(
+        _Film03Index(studio), verify_creator_action=lambda *_: False
+    ).preview_script_changes(project_id, script_id))
+
 
 # Chronology belongs to the NVP film domain, not Lu or the model runtime.
 from backend.nvp_story_timeline import StoryTimeline

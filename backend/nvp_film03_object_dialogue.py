@@ -215,6 +215,7 @@ def read_scene_dialogue_selection(index, pid, selection_id, revision, *,
                 "selected_script_revision": doc["script_revision"],
                 "openusd_actor_prim_path": data["openusd_actor_prim_path"],
                 "production_bible_entity_id": data["production_bible"]["entity_id"],
+                "actor_id": data["production_bible"]["entity_id"],
                 "production_bible_revision_at_capture": data["production_bible"]["entity_revision"],
                 "voice_source_recorded": data["recorded_dialogue_present"],
                 "voice_synthesis_or_final_mix_claimed": False,
@@ -592,7 +593,7 @@ class ObjectActorDialogue:
             for f in bible["facts"] if f["status"] == "accepted"
         ], key=lambda x:(x["key"],x["scope"],x["id"]))[:32]
         bible_stamp = {
-            "entity_id": bible_entity_id, "name": bible["name"],
+            "entity_id": bible_entity_id, "actor_id": bible_entity_id, "name": bible["name"],
             "entity_revision": bible["revision"], "linked_scene_id": scene["scene_id"],
             "linked_scene_sha256": linked["scene_sha"],
             "screenplay_revision": linked["screenplay_revision"],
@@ -749,6 +750,7 @@ class ObjectActorDialogue:
                     "script_line_sha256": doc["script_line_text_sha256"],
                     "actor_prim_path": doc["openusd_actor_prim_path"],
                     "production_bible_entity_id": snapshot["entity_id"],
+                    "actor_id": snapshot["entity_id"],
                     "performance_id": oid,
                     "voice_source_recorded": doc["recorded_dialogue_present"],
                     "metadata_dialogue_not_assumed_playable": True,

@@ -150,6 +150,69 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             return True
         return False
 
+    def film03_publish_script_snapshot(self,request):
+        """Native DIRECTOR approval for a new append-only script source revision.
+
+        Never exposed through FastAPI. This is only source metadata: it does
+        not launch a worker, record speech, recast an actor, overwrite a Take
+        or silently approve a production film.
+        """
+        self._native_window()
+        self._wo6_require(request,{
+            "project_id","script_id","expected_screenplay_revision",
+            "expected_manifest_revision"})
+        pid=request["project_id"]
+        sid=_id(request["script_id"],"script dialogue source ID")
+        script_rev=request["expected_screenplay_revision"]
+        manifest_rev=request["expected_manifest_revision"]
+        if (type(script_rev) is not int or script_rev < 1 or
+                type(manifest_rev) is not int or manifest_rev < 0):
+            raise ValueError("Exact current script and manifest revisions required")
+        from backend.nvp_film03_object_dialogue import ObjectActorDialogue
+        try:
+            current_source=self.index.read_revision(pid,sid)
+            source_head=current_source["revision"]
+            if (current_source["kind"]!="dialogue" or
+                    current_source["data"].get("format")!=
+                    "nvp.film03.script_dialogue_snapshot.v1"):
+                raise PermissionError("Script source identity belongs to another object")
+        except KeyError:
+            source_head=0
+        if source_head!=manifest_rev:
+            raise RuntimeError("Script snapshot changed; refresh before native director approval")
+        nonce="film03_native_"+secrets.token_hex(16)
+        # The service reopens the real Studio screenplay, previews line
+        # ancestry, and rechecks the Studio source SHA in its commit lease.
+        source=ObjectActorDialogue(
+            self.index, verify_creator_action=lambda *_:False)
+        planned=source._snapshot_data(
+            pid,sid,expected_screenplay_revision=script_rev,
+            previous_revision=manifest_rev)
+        expected={
+            "operation":"film03_publish_script_dialogue",
+            "project_id":pid, "script_object_id":sid,
+            "screenplay_revision":script_rev,
+            "screenplay_sha256":planned["screenplay_sha256"],
+            "expected_manifest_revision":manifest_rev,
+            "changed_line_count":len(planned["changes_from_previous_snapshot"]),
+        }
+        def approve(event,scope):
+            return bool(
+                event==nonce and scope==expected and
+                self._wo6_confirm_creative(nonce,scope))
+        service=ObjectActorDialogue(self.index,verify_creator_action=approve)
+        result=service.publish_script_snapshot(
+            pid,sid,expected_screenplay_revision=script_rev,
+            expected_manifest_revision=manifest_rev,creator_event=nonce)
+        return {
+            "format":"nvp.film03.native_director_script_snapshot_result.v1",
+            **result,
+            "host_native_director_confirmation":True,
+            "original_spoken_voice_mutated":False,
+            "original_visual_take_mutated":False,
+            "film_or_native_worker_execution_authorized":False,
+        }
+
     def wo6_local_models(self,project_id):
         """Explicit user discovery of an existing loopback-only model service."""
         self._wo5_project(project_id)
