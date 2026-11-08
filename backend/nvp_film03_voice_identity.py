@@ -147,7 +147,17 @@ class ProductionBibleVoiceIdentity:
                 pid,sound["audio_id"],sound["audio_revision"])
             if source["kind"]!="audio" or source["document_sha256"]!=sound["audio_sha256"]:
                 raise PermissionError("Original candidate voice source no longer resolves")
+            with self.studio._connection() as db:
+                latest=db.execute(
+                    """SELECT approval_revision,voice_id,voice_cast_revision
+                       FROM nvp_bible_voice_take_approvals
+                       WHERE project_id=? AND actor_id=? AND performance_id=?
+                       ORDER BY approval_revision DESC LIMIT 1""",
+                    (pid,actor_id,item["object_id"])).fetchone()
             entries.append({
+                "approved_voice_id":(latest["voice_id"] if latest else None),
+                "voice_cast_revision":(latest["voice_cast_revision"] if latest else None),
+                "latest_approval_revision":(latest["approval_revision"] if latest else 0),
                 "performance_id":item["object_id"],
                 "performance_document_sha256":original["document_sha256"],
                 "source_audio_id":sound["audio_id"],
