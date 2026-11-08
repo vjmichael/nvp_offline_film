@@ -60,30 +60,61 @@ class NativeCodecWorkerProcessTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform=="win32",
                          "Genuine Windows inheritance security test only")
     def test_unlisted_inheritable_handle_cannot_reach_codec(self):
+        # A numeric HANDLE in a child may be *reused* for an unrelated
+        # object (including Python startup handles). GetHandleInformation
+        # alone falsely reports a leak in that case. Prove inheritance by
+        # attempting to WRITE a unique marker into the parent's exact pipe,
+        # then observing the actual parent-side pipe bytes.
+        import ctypes
+        from ctypes import wintypes
         import msvcrt
+        import secrets
         read_fd,write_fd=os.pipe()
         try:
             unlisted=msvcrt.get_osfhandle(write_fd)
             os.set_handle_inheritable(unlisted,True)
+            marker=secrets.token_bytes(24)
             probe=self.root/"probe_no_handle_leak.py"
             probe.write_text(
-                "import ctypes,sys\n"
-                "from ctypes import wintypes\n"
-                "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
-                "k.GetHandleInformation.argtypes=[wintypes.HANDLE,"
-                "ctypes.POINTER(wintypes.DWORD)]\n"
-                "flags=wintypes.DWORD()\n"
-                "access=k.GetHandleInformation(wintypes.HANDLE(int(sys.argv[1])),"
-                "ctypes.byref(flags))\n"
-                "print('UNLISTED_HANDLE_NOT_INHERITED' if not access "
-                "else 'UNLISTED_HANDLE_LEAKED',flush=True)\n")
+                "import ctypes,sys\\n"
+                "from ctypes import wintypes\\n"
+                "k=ctypes.WinDLL('kernel32',use_last_error=True)\\n"
+                "k.WriteFile.argtypes=[wintypes.HANDLE,ctypes.c_void_p,"
+                "wintypes.DWORD,ctypes.POINTER(wintypes.DWORD),ctypes.c_void_p]\\n"
+                "k.WriteFile.restype=wintypes.BOOL\\n"
+                "payload=bytes.fromhex(sys.argv[2])\\n"
+                "buf=ctypes.create_string_buffer(payload)\\n"
+                "written=wintypes.DWORD()\\n"
+                "ok=k.WriteFile(wintypes.HANDLE(int(sys.argv[1])),buf,"
+                "len(payload),ctypes.byref(written),None)\\n"
+                "print('NUMERIC_HANDLE_WRITABLE' if ok and "
+                "written.value==len(payload) else "
+                "'NUMERIC_HANDLE_NOT_WRITABLE',flush=True)\\n")
             record=run_supervised_codec(
-                self.codec,[str(probe),str(unlisted)],
+                self.codec,[str(probe),str(unlisted),marker.hex()],
                 workdir=self.root,check_cancel=lambda:False,
                 timeout=8,read_stdout=True)
-            self.assertIn(b"UNLISTED_HANDLE_NOT_INHERITED",
-                          record["stdout"])
-            self.assertNotIn(b"UNLISTED_HANDLE_LEAKED",record["stdout"])
+            self.assertIn(b"NUMERIC_HANDLE_",record["stdout"])
+            kernel=ctypes.WinDLL("kernel32",use_last_error=True)
+            kernel.PeekNamedPipe.argtypes=[
+                wintypes.HANDLE,ctypes.c_void_p,wintypes.DWORD,
+                ctypes.c_void_p,ctypes.POINTER(wintypes.DWORD),
+                ctypes.c_void_p]
+            kernel.PeekNamedPipe.restype=wintypes.BOOL
+            readable=msvcrt.get_osfhandle(read_fd)
+            available=wintypes.DWORD()
+            self.assertTrue(kernel.PeekNamedPipe(
+                wintypes.HANDLE(readable),None,0,None,
+                ctypes.byref(available),None))
+            actual=os.read(read_fd,available.value) if available.value else b""
+            self.assertNotIn(marker,actual,
+                "Unlisted parent pipe was writable by contained codec child")
+            # Positive control: this must really be the pipe we inspected.
+            os.write(write_fd,b"HOST_ONLY_CONTROL")
+            self.assertTrue(kernel.PeekNamedPipe(
+                wintypes.HANDLE(readable),None,0,None,
+                ctypes.byref(available),None))
+            self.assertEqual(os.read(read_fd,available.value),b"HOST_ONLY_CONTROL")
         finally:
             os.close(read_fd)
             os.close(write_fd)
