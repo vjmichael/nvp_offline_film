@@ -95,7 +95,7 @@ def mux_verified_av(plan, images, shots, wav, wav_proof, output):
     """Write only real, independently accepted Cycles pixels plus exact PCM."""
     validate_audio_proof(plan, wav, wav_proof)
     if (type(images) is not list or len(images) != FRAMES or
-            len(shots) != 3 or
+            len({row.get("take_sha256") for row in images}) != 3 or
             [r.get("frame_zero") for r in images] != list(range(FRAMES)) or
             any(item.get("take_sha256") != plan["frames"][i]["source_take_sha256"]
                 for i, item in enumerate(images))):
