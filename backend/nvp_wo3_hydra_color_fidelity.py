@@ -29,8 +29,10 @@ def _lab_d65(rgb):
     return (116*fy-16,500*(fx-fy),200*(fy-fz))
 
 
-def verify_relative_hydra_swatch_response(red,blue):
+def verify_relative_hydra_swatch_response(red,blue,*,required_context="dual"):
     """Fail closed if a renderer ignores source color, or reports no pixels."""
+    if required_context not in ("dual","mtlx_only"):
+        raise ValueError("Unsupported bounded USD material audit context")
     if type(red) is not dict or type(blue) is not dict:
         raise ValueError("Two independent native Hydra receipts required")
     for receipt in (red,blue):
@@ -39,6 +41,7 @@ def verify_relative_hydra_swatch_response(red,blue):
                 receipt.get("derived_source_scope") is not True or
                 receipt.get("physical_display_calibrated") is not False or
                 receipt.get("renderer")!="Storm" or
+                receipt.get("material_context_probe")!=required_context or
                 type(receipt.get("renderer_executable_sha256")) is not str or
                 len(receipt["renderer_executable_sha256"])!=64 or
                 type(receipt.get("rendered_rgb_sha256")) is not str or
@@ -79,7 +82,10 @@ def verify_relative_hydra_swatch_response(red,blue):
         "between_rendered_swatches_delta_e76_assuming_srgb":round(delta_e,4),
         "center_patch_pixel_count":red["rendered_center_patch_pixels"],
         "actual_independent_hydra_pixels_verified":True,
-        "usd_preview_surface_relative_color_response_verified":True,
+        "material_context_probe":required_context,
+        "dual_context_relative_color_response_verified":required_context=="dual",
+        "materialx_only_relative_color_response_verified":required_context=="mtlx_only",
+        "usd_preview_surface_relative_color_response_verified":False,
         "materialx_openpbr_shading_parity_verified":False,
         "absolute_reference_color_accuracy_verified":False,
         "reference_ocio_display_view_verified":False,
