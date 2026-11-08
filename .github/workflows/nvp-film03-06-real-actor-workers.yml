@@ -35,9 +35,11 @@ jobs:
           python -m pip install httpx2
       - name: Compile all reviewed source and native scripts
         run: |
-          python -m compileall -q backend/nvp_film03_actor_identity_core.py backend/nvp_film03_actor_animation_host.py backend/nvp_wo6_desktop_bridge.py tools/nvp_film03_actor_animation_worker.py tools/nvp_film03_actor_animation_reopen.py tests/test_nvp_film03_actor_native_workers.py
+          python -m compileall -q backend/nvp_film03_actor_identity_core.py backend/nvp_film03_expressive_voice_direction.py backend/nvp_film03_actor_animation_host.py backend/nvp_wo6_desktop_bridge.py tools/nvp_film03_actor_animation_worker.py tools/nvp_film03_actor_animation_reopen.py tests/test_nvp_film03_actor_native_workers.py tests/test_nvp_film03_expressive_voice_direction.py
       - name: Source verified ActorID voice source and film TTS quality denial; real motion tests
         run: python -m unittest discover -s tests -p test_nvp_film03_actor_native_workers.py -v
+      - name: Verify actual script word stress, pronunciation, emotion, dynamics and no unqualified voice worker
+        run: python -m unittest discover -s tests -p test_nvp_film03_expressive_voice_direction.py -v
       - name: Earlier script and identity continuity regressions
         run: |
           python -m unittest discover -s tests -p test_nvp_film03_actor_identity_core.py -v
