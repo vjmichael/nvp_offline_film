@@ -415,17 +415,27 @@ def main():
     cli=argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--root",type=Path,required=True)
     cli.add_argument("--render-review-zip",type=Path)
+    cli.add_argument("--render-preview-avi",type=Path,
+                     help="Real native MJPEG/PCM16 playable 24fps review, requires ZIP")
     cli.add_argument("--max-frames",type=int,default=FRAMES)
     cli.add_argument("--consent",required=True)
     args=cli.parse_args()
     if args.consent!="I_APPROVE_DISPOSABLE_ORIGINAL_30S_CI_SOURCE":
         cli.error("Only the opt-in disposable CI source workspace is supported")
+    if args.render_preview_avi and not args.render_review_zip:
+        cli.error("--render-preview-avi requires verified --render-review-zip")
     source=write_original_30s_source(
         args.root.resolve(),approve_test_only=True)
     if args.render_review_zip:
         result=render_original_30s_review(
             args.root.resolve(),args.render_review_zip.resolve(),
             max_frames=args.max_frames)
+        if args.render_preview_avi:
+            from backend.nvp_film01_native_avi import mux_original_native_avi
+            result["playable_review_avi"]=mux_original_native_avi(
+                args.render_review_zip.resolve(),
+                args.render_preview_avi.resolve(),
+                expected_frames=args.max_frames)
     else:
         result={"status":source["status"],"target_frames":source["target_frames"],
                 "source_project_id":source["project_id"]}
