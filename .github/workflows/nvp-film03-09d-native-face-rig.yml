@@ -35,7 +35,7 @@ jobs:
           python -m pip install httpx
       - name: Compile actual original actor facial source and regression modules
         run: |
-          python -m compileall -q backend/nvp_film03_facial_rig_compositor.py backend/nvp_film03_phoneme_alignment.py tests/test_nvp_film03_facial_rig_compositor.py
+          python -m compileall -q backend/nvp_film03_facial_rig_compositor.py backend/nvp_film03_phoneme_alignment.py backend/nvp_film03_blender_face_host.py tools/nvp_film03_real_face_blender_worker.py tools/nvp_film03_real_face_blender_reopen.py tests/test_nvp_film03_facial_rig_compositor.py tests/test_nvp_film03_real_blender_face.py
       - name: Real USD skinned geometry/BlendShape and director expression isolation tests
         run: python -m unittest discover -s tests -p test_nvp_film03_facial_rig_compositor.py -v
       - name: Preserve original phoneme and source facial-direction contract tests
