@@ -329,6 +329,18 @@ class FinishedFilmPlayer:
             raise ValueError("Exact reel-local mastered sound window required")
         segment=(local//PCM_CACHE_FRAMES)*PCM_CACHE_FRAMES
         frames=min(PCM_CACHE_FRAMES,reel.frames-segment)
+        # A 4-frame presentation window can straddle a 24-frame audio
+        # region (for example local frames 22..25). Split on the exact
+        # region boundary and concatenate the ORIGINAL PCM24 sample bytes;
+        # never return a truncated slice or borrow frames from a new reel.
+        remaining=segment+frames-local
+        if count>remaining:
+            left=self._pcm24_window(
+                ticket,reel,reel_index,local,remaining,work,cancel)
+            right=self._pcm24_window(
+                ticket,reel,reel_index,local+remaining,
+                count-remaining,work,cancel)
+            return left+right
         key=(ticket,reel_index,segment,frames,reel.sound_sha,reel.sound_stat)
         bytes_per_frame=SAMPLES_PER_FRAME*3*len(reel.channels)
         cache=self._pcm_cache
