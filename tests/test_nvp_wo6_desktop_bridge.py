@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import tempfile
+import threading
+import time
 from unittest.mock import patch
 import unittest
 
@@ -102,9 +104,13 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
 
         self.window.answers=[True,True]
         self.bridge._wo6_host()
-        with patch.object(self.bridge._wo6_take,"run_next",return_value=None):
+        # A worker cannot be allowed to run in a test of creator consent:
+        # patch the native-only dispatcher, leaving durable QUEUED evidence.
+        with patch.object(self.bridge,"_wo6_worker_loop"):
             queued=self.bridge.wo6_create_take(request)
-        self.assertEqual(queued["state"],"QUEUED_NOT_ADMITTED")
+        self.assertEqual(queued["state"],"QUEUED")
+        self.assertTrue(queued["native_dispatch_requested"])
+        self.assertFalse(queued["native_worker_success_verified"])
         task=queued["task_id"]
         evidence=self.bridge.wo6_task_status(self.pid,task)
         self.assertEqual(evidence["state"],"QUEUED")
@@ -116,6 +122,27 @@ class NativeWO6CreatorDesktop(unittest.TestCase):
         cancelled=self.bridge.wo6_cancel_native_task(self.pid,task)
         self.assertEqual(cancelled["state"],"CANCELLED")
         self.assertTrue(cancelled["cancel_intent_durable"])
+
+    def test_native_job_dispatch_does_not_block_director_ipc(self):
+        started=threading.Event()
+        resume=threading.Event()
+        class HeldHost:
+            owner="wo6_test_worker"
+            def run_next(self,*,timeout_seconds):
+                started.set()
+                resume.wait(timeout=6)
+                return None
+        task="wo6take_"+"7"*24
+        began=time.monotonic()
+        try:
+            result=self.bridge._wo6_result({"task_id":task},HeldHost())
+            self.assertEqual(result["queued_task_id"],task)
+            self.assertEqual(result["state"],"QUEUED")
+            self.assertFalse(result["native_worker_success_verified"])
+            self.assertLess(time.monotonic()-began,2.0)
+            self.assertTrue(started.wait(timeout=2))
+        finally:
+            resume.set()
 
     def test_foreign_origin_model_supplied_consent_and_bad_project_denied(self):
         request=self._request()
