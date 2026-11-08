@@ -53,7 +53,7 @@ def _strh(kind,codec,length,scale,rate,sample_bytes,width=0,height=0):
 
 def _header(count):
     image_format=struct.pack(
-        "<IiiHH4sIIiiII",
+        "<IiiHH4sIiiII",
         40,IMAGE_WIDTH,IMAGE_HEIGHT,1,24,b"MJPG",
         IMAGE_WIDTH*IMAGE_HEIGHT*3,0,0,0,0)
     pcm_format=struct.pack(
@@ -113,7 +113,7 @@ def _verify_source(z,expected_frames):
     rows=receipt.get("frame_receipts")
     if type(rows) is not list or len(rows)!=expected_frames:
         raise PermissionError("Original source frame manifest is incomplete")
-    if len(z.namelist())!=expected_frames+4:
+    if len(z.namelist())!=expected_frames+3:
         raise PermissionError("Unexpected native source review ZIP assets")
     for i,row in enumerate(rows):
         if (row.get("frame_zero")!=i or
