@@ -18,6 +18,45 @@ class WO2IndependentHydraGate(unittest.TestCase):
                 "path":"/World/Actor","asset_id":"body_geometry",
                 "asset_revision":1}])
 
+    def test_changed_renderer_executable_never_creates_frame_evidence(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        with TemporaryDirectory() as tmp:
+            tool=Path(tmp)/"native_usdrecord"
+            tool.write_bytes(b"original renderer fingerprint")
+            def swapped_binary(args,**kwargs):
+                tool.write_bytes(b"changed mid-render")
+                return SimpleNamespace(returncode=0,stderr="")
+            with patch("backend.nvp_wo2_hydra_probe.shutil.which",
+                       return_value=str(tool)),patch(
+                       "backend.nvp_wo2_hydra_probe.subprocess.run",
+                       side_effect=swapped_binary):
+                with self.assertRaisesRegex(RuntimeError,"binary changed"):
+                    capture_hydra_evidence(
+                        self.index,self.pid,"hydra_scene",1,
+                        camera_path="/World/Camera")
+
+    def test_untrusted_renderer_failure_omits_private_worker_stderr(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        with TemporaryDirectory() as tmp:
+            tool=Path(tmp)/"native_usdrecord"
+            tool.write_bytes(b"native renderer unchanged")
+            with patch("backend.nvp_wo2_hydra_probe.shutil.which",
+                       return_value=str(tool)),patch(
+                       "backend.nvp_wo2_hydra_probe.subprocess.run",
+                       return_value=SimpleNamespace(
+                           returncode=17,stderr="private source /secret/path")):
+                result=capture_hydra_evidence(
+                    self.index,self.pid,"hydra_scene",1,
+                    camera_path="/World/Camera")
+        self.assertEqual(result["status"],"HYDRA_RENDER_FAILED")
+        self.assertFalse(result["real_independent_frame_rendered"])
+        self.assertNotIn("stderr_tail",result)
+        self.assertTrue(result["untrusted_or_missing_output"])
+
     def test_missing_independent_renderer_is_not_fabricated_success(self):
         with patch("backend.nvp_wo2_hydra_probe.shutil.which",
                    return_value=None):
