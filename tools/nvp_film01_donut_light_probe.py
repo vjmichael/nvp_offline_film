@@ -49,8 +49,10 @@ SELECTED_TICK=TICKS_PER_SECOND
 LOOKS=("neutral","silver_fill","gold_fill","locked_summer_3pm_sun")
 
 
-def build_frozen_donut_source(workspace):
+def build_frozen_donut_source(workspace, *, performance="baseline"):
     """Create once from first-party NVP USD/FilmIndex and freeze true source."""
+    if performance not in ("baseline","director_retake_01"):
+        raise ValueError("Unsupported frozen three-actor performance")
     root=Path(workspace)
     if not root.is_absolute() or root.exists() or root.is_symlink():
         raise PermissionError("Diagnostic must use a new absolute workspace")
@@ -93,6 +95,17 @@ def build_frozen_donut_source(workspace):
     # Box: -X -> 0 -> +X strictly behind donut; sphere: -Z -> +Z
     # passes the ring without intersecting it. Source motion is in the
     # original immutable USD layer, not screen-space frame invention.
+    # Retake is a NEW source-authored performance, not a post-render
+    # animation edit. Original baseline remains in its earlier frozen
+    # FilmIndex and accepted Blender/Cycles evidence package.
+    sphere_middle=([0.,0.,-2.8] if performance=="director_retake_01"
+                   else [0.,0.,-3.7])
+    sphere_near=([0.,0.,-.45] if performance=="director_retake_01"
+                 else [0.,0.,-1.])
+    sphere_cross=([0.,0.,.7] if performance=="director_retake_01"
+                  else [0.,0.,.1])
+    sphere_exit=([0.,0.,1.7] if performance=="director_retake_01"
+                 else [0.,0.,1.45])
     curves=[
         {"path":DONUT_PATH,"samples":[
             {"tick":0,"position":[0.,0.,0.]},
@@ -106,10 +119,10 @@ def build_frozen_donut_source(workspace):
             {"tick":3*TICKS_PER_SECOND,"position":[2.8,0.,BOX_DEPTH]}]},
         {"path":SPHERE_PATH,"samples":[
             {"tick":0,"position":[0.,0.,-4.]},
-            {"tick":SELECTED_TICK,"position":[0.,0.,-3.7]},
-            {"tick":3*TICKS_PER_SECOND//2,"position":[0.,0.,-1.]},
-            {"tick":2*TICKS_PER_SECOND,"position":[0.,0.,.1]},
-            {"tick":5*TICKS_PER_SECOND//2,"position":[0.,0.,1.45]},
+            {"tick":SELECTED_TICK,"position":sphere_middle},
+            {"tick":3*TICKS_PER_SECOND//2,"position":sphere_near},
+            {"tick":2*TICKS_PER_SECOND,"position":sphere_cross},
+            {"tick":5*TICKS_PER_SECOND//2,"position":sphere_exit},
             {"tick":3*TICKS_PER_SECOND,"position":[0.,0.,2.2]}]},
     ]
     scene=OpenUSDSceneBridge(index).publish(
@@ -175,6 +188,7 @@ def build_frozen_donut_source(workspace):
             donut["hole_radius"]-SPHERE_RADIUS,6),
         "all_three_actors_authoritatively_animated":True,
         "geometry":donut,
+        "performance_variant":performance,
     }
 
 

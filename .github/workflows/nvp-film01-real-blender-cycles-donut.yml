@@ -1,0 +1,180 @@
+name: NVP FILM01 REAL BLENDER CYCLES Three Object Actor 72-Frame Render
+
+on:
+  push:
+    branches: [nvp/film01-real-blender-cycles-donut-20261108]
+  pull_request:
+    branches: [nvp/film01-donut-three-actor-occlusion-20261108]
+    paths:
+      - tools/nvp_film01_blender_cycles_worker.py
+      - tools/nvp_film01_blender_cycles_acceptance.py
+      - tools/nvp_film01_cycles_reopen_audit.py
+      - tests/test_nvp_film01_blender_cycles_source.py
+      - tools/nvp_film01_donut_light_probe.py
+      - backend/nvp_blender_worker.py
+      - backend/nvp_film01_donut_actor.py
+      - .github/workflows/nvp-film01-real-blender-cycles-donut.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film01-REAL-blender-cycles-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-original-take-safety:
+    name: Native source/Blender job contract (not picture acceptance) / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual OpenUSD source and bounded renderer test dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Compile host staging and trusted first-party Blender script
+        run: |
+          python -m compileall -q backend/nvp_film01_donut_actor.py tools/nvp_film01_blender_cycles_worker.py tools/nvp_film01_blender_cycles_acceptance.py tools/nvp_film01_cycles_reopen_audit.py tests/test_nvp_film01_blender_cycles_source.py
+      - name: Prove true frozen USD torus/cube/sphere actor source, 72 exact poses and worker SHA isolation
+        run: python -m unittest discover -s tests -p test_nvp_film01_blender_cycles_source.py -v
+      - name: Protect established worker cancellation and durable journal contracts
+        run: python -m unittest discover -s tests -p test_blender_worker.py -v
+
+  actual-72-frame-native-blender-cycles:
+    name: TRUE Blender 5.2.3 Cycles CPU ray-traced donut/box/sphere + 72 original frames + visual GIF
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install trusted native Blender/OpenUSD render prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download OFFICIAL Blender 5.2.3 and require upstream SHA-256 match
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/nvp-approved-blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/nvp-approved-blender" --strip-components=1
+          "$RUNNER_TEMP/nvp-approved-blender/blender" -b --version | head -n 2
+          echo "$RUNNER_TEMP/nvp-approved-blender" >> "$GITHUB_PATH"
+      - name: Actual resource-admitted supervised Blender/Cycles renders SAME original three object-actors for all 72 frames
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_film01_blender_cycles_acceptance \
+            --out "$RUNNER_TEMP/nvp-film01-blender-cycles" \
+            --blender "$RUNNER_TEMP/nvp-approved-blender/blender" \
+            --consent I_APPROVE_DISPOSABLE_ORIGINAL_BLENDER_CYCLES_TEST \
+            | tee "$RUNNER_TEMP/nvp-film01-cycles-run-log.json"
+      - name: REOPEN saved original .blend in a second genuine Blender process and verify all original actors/motion/Cycles settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/nvp-film01-blender-cycles"
+          manifest="$(find "$root/native_blender_worker" -path '*/film01cycles_*/source.json' -type f -print -quit)"
+          if [ -z "$manifest" ]; then echo "No original pinned USD source manifest"; exit 1; fi
+          xvfb-run -a "$RUNNER_TEMP/nvp-approved-blender/blender" \
+            -b "$root/director_review/source_derived_Blender_Cycles_scene.blend" \
+            --python-exit-code 70 --python tools/nvp_film01_cycles_reopen_audit.py \
+            -- --manifest "$manifest" \
+               --audit "$root/director_review/independent_saved_Blender_reopen.json"
+      - name: Independently decode Cycles GIF, variant stills and full 72 original PNGs and source audit
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,hashlib,os
+          from pathlib import Path
+          from PIL import Image
+          root=Path(os.environ["RUNNER_TEMP"])/"nvp-film01-blender-cycles"
+          review=root/"director_review"
+          receipt=json.loads((review/"verified_director_review_receipt.json").read_text())
+          audit=json.loads((review/"original_source_and_cycles_audit.json").read_text())
+          reopened=json.loads((review/"independent_saved_Blender_reopen.json").read_text())
+          assert reopened["passed"] is True
+          assert reopened["actual_separate_Blender_process_reopened_blend"] is True
+          assert reopened["source_manifest_sha256"]==audit["source_manifest_sha256"]
+          assert reopened["original_film_take_sha256"]==audit["original_scene_take_sha256"]
+          assert reopened["original_donut_faces"]==1008
+          assert reopened["saved_72_frame_original_animation"] is True
+          assert receipt["all_72_real_Blender_Cycles_PNGs_rendered_and_reopened"] is True
+          assert receipt["real_supervised_blender_ran"] is True
+          assert receipt["worker_durable_result"]=="SUCCEEDED"
+          assert receipt["real_creator_UI_approval_obtained"] is False
+          assert receipt["not_DCI_or_cinema_color_approved"] is True
+          assert audit["engine"]=="CYCLES" and audit["cycles_device"]=="CPU"
+          assert audit["samples"]>=8 and audit["indirect_glossy_bounces"]>=3
+          assert audit["cycles_traced_cast_shadows_enabled"] is True
+          assert audit["cycles_indirect_reflection_bounces_enabled"] is True
+          assert audit["actual_shadows_and_reflections_human_review_required"] is True
+          assert audit["rendered_frames"]==72 and len(audit["all_native_source_frames"])==72
+          folders=list((root/"native_blender_worker").glob("film01cycles_*/frames"))
+          assert len(folders)==1
+          for i,row in enumerate(audit["all_native_source_frames"]):
+              assert row["frame_zero"]==i
+              png=folders[0]/f"frame_{i:03d}.png"
+              assert png.is_file()
+              h=hashlib.sha256(png.read_bytes()).hexdigest()
+              assert h==row["image_sha256"]
+              with Image.open(png) as im:
+                  im.load()
+                  assert im.format=="PNG" and im.size==(640,360)
+          with Image.open(review/"donut_box_sphere_REAL_BLENDER_CYCLES_3sec.gif") as img:
+              assert img.format=="GIF" and img.n_frames==72
+          with Image.open(review/"donut_box_sphere_REAL_CYCLES_six_frames.png") as img:
+              assert img.size==(1968,816)
+          with Image.open(review/"donut_REAL_CYCLES_four_lights.png") as img:
+              assert img.size==(1316,816)
+          print(json.dumps({
+              "native_real_Blender_Cycles":"PASS",
+              "original_USD_authority":"PINNED",
+              "source_3D_actor_count":3,
+              "actual_GI_reflection_bounces":"ENABLED",
+              "human_visual_approval":"OPEN",
+              "installed_Windows_3D_render":"OPEN",
+              "DCI_master":"NOT_CLAIMED"},indent=2))
+          PY
+      - name: PUBLISH verified real Blender-rendered 3 second source motion and four-look images
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-FILM01-REAL-BLENDER-CYCLES-donut-box-sphere-3s
+          path: |
+            ${{ runner.temp }}/nvp-film01-blender-cycles/director_review/
+            ${{ runner.temp }}/nvp-film01-blender-cycles/native_blender_worker/film01cycles_*/frames/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain diagnostic worker logs separately when native Blender fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-FILM01-Cycles-FAILED-DIAGNOSTIC-LOGS-NOT-A-FILM
+          path: |
+            ${{ runner.temp }}/nvp-film01-blender-cycles/native_blender_worker/film01cycles_*/worker_stdout.log
+            ${{ runner.temp }}/nvp-film01-blender-cycles/native_blender_worker/film01cycles_*/worker_stderr.log
+            ${{ runner.temp }}/nvp-film01-cycles-run-log.json
+          if-no-files-found: warn
+          retention-days: 7
