@@ -148,6 +148,6 @@ export default function WO6DirectorSourceReview({projectId}){
         no model execution, no worker permission and no final mix approval.</p>
     </div>}
     {busy&&<p role="status">Verifying native source frame and original PCM…</p>}
-    {error&&<p role="alert">{error}</p>}
+    {error&&<p role="status">{error}</p>}
   </section>;
 }
