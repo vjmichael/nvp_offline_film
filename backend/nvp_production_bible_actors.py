@@ -533,9 +533,24 @@ class ProductionBibleActors:
                     needs_review = True
             entry["needs_director_source_review"] = bool(needs_review)
             entry["historical_original_link_retained"] = True
+        # The voice registry belongs to the SAME production Bible actor,
+        # and is independent of per-recording "voice" asset links. A source
+        # WAV link alone never establishes a consistent character VoiceID.
+        with self.studio._connection() as db:
+            voice_table=db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='nvp_bible_voice_casts'").fetchone()
+            voice_history=([dict(x) for x in db.execute(
+                """SELECT * FROM nvp_bible_voice_casts
+                   WHERE project_id=? AND actor_id=?
+                   ORDER BY cast_revision""", (project_id, actor_id))]
+                if voice_table else [])
         return {
             "format": FORMAT,
             "project_id": project_id, "actor_id": actor["id"],
+            "current_voice_identity": (voice_history[-1] if voice_history else None),
+            "immutable_voice_cast_history": voice_history,
+            "audio_asset_link_alone_cannot_approve_actors_voice": True,
             "actor_name": actor["name"], "bible_revision": actor["revision"],
             "aliases": actor["aliases"], "production_bible_entity_id": actor["id"],
             "character_canon_revision": actor["revision"],
