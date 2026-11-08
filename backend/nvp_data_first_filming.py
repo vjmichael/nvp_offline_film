@@ -94,6 +94,14 @@ class NativeSceneSoundCapture:
             raise RuntimeError("Partial camera observation history cannot be filmed")
         camera_ids={ev["event_id"] for ev in camera_events["events"]}
         duration=int(plan["duration_tick"])
+        # Bound checkpoint cardinality before consuming recording streams.
+        boundaries={0}
+        for ev in camera_events["events"]:
+            for tick in (ev["start_tick"],ev["end_tick"]):
+                if int(tick)<duration:
+                    boundaries.add(int(tick))
+        if len(boundaries)>MAX_CHECKPOINTS:
+            raise ValueError("Filming event boundaries exceed frozen Take checkpoint capacity")
         try:
             for entry in recordings:
                 if type(entry) is not dict or set(entry)!={
@@ -127,6 +135,12 @@ class NativeSceneSoundCapture:
                     pass
                 else:
                     raise ValueError("Original audio source identity already published")
+                # Reject overflow before opening this recording's PCM iterator.
+                for tick in (start,end):
+                    if tick<duration:
+                        boundaries.add(tick)
+                if len(boundaries)>MAX_CHECKPOINTS:
+                    raise ValueError("Filming event boundaries exceed frozen Take checkpoint capacity")
                 # Spool even one-shot streaming iterators before publishing ANY
                 # immutable source. A later truncated iterator must not leave
                 # earlier source revisions behind. Disk spill keeps RAM bounded.
@@ -192,17 +206,6 @@ class NativeSceneSoundCapture:
             # A frozen Take must checkpoint every original event boundary.
             # Reject an oversized boundary set before publishing any immutable
             # PCM source rather than silently truncating the Take's evidence.
-            boundaries={0}
-            for ev in camera_events["events"]:
-                for tick in (ev["start_tick"],ev["end_tick"]):
-                    if int(tick)<duration:
-                        boundaries.add(int(tick))
-            for entry in prepared_entries:
-                for tick in (entry["start_tick"],entry["end_tick"]):
-                    if tick<duration:
-                        boundaries.add(tick)
-            if len(boundaries)>MAX_CHECKPOINTS:
-                raise ValueError("Filming event boundaries exceed frozen Take checkpoint capacity")
             checkpoints=sorted(boundaries)
             # Verify every completed spool before publishing the first source.
             # A damaged later spool must not orphan an earlier immutable PCM
