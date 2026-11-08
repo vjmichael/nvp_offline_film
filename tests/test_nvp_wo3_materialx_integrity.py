@@ -219,7 +219,7 @@ class WO3NativeMaterialXIntegrity(unittest.TestCase):
             self.assertEqual(count,1)
             scoped_material=UsdShade.Material(derived.GetPrimAtPath(path))
             self.assertEqual(
-                scoped_material.GetSurfaceOutput().GetAttr().GetConnections(),[])
+                len(scoped_material.GetSurfaceOutput().GetAttr().GetConnections()),0)
             self.assertEqual(
                 len(scoped_material.GetSurfaceOutput("mtlx").GetAttr()
                     .GetConnections()),1)
