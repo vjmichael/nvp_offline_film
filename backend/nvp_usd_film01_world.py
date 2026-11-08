@@ -782,9 +782,6 @@ class OpenUSDWorldComposer:
                         raise PermissionError("Staged set source was substituted")
                 else:
                     new_bytes = len(data)
-                    with dest.open("xb") as out:
-                        out.write(data)
-                    dest.chmod(0o400)
                 from backend.nvp_usd_film01c_texture import (
                     write_verified_texture_files,
                 )
@@ -795,6 +792,10 @@ class OpenUSDWorldComposer:
                     session.loaded_stage_prepared_bytes +
                     new_bytes + fresh_png_bytes > MAX_STAGING_BYTES):
                     raise RuntimeError("Film world private stage exceeds source budget")
+                if new_bytes:
+                    with dest.open("xb") as out:
+                        out.write(data)
+                    dest.chmod(0o400)
                 tex_paths = write_verified_texture_files(
                     root/"textures",texture_files)
                 return {"new_staged_bytes":new_bytes+fresh_png_bytes,
