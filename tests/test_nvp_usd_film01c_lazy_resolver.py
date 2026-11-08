@@ -33,6 +33,12 @@ def png_bytes():
     return out.getvalue()
 
 
+def grayscale_png_bytes():
+    out=BytesIO()
+    Image.new("RGB",(16,16),(90,90,90)).save(out,format="PNG")
+    return out.getvalue()
+
+
 class USDFilm01CLazyResolution(unittest.TestCase):
     def setUp(self):
         original = NativeFilmWorld01("test_real_lazy_scene_payloads_and_original_authored_camera")
@@ -106,6 +112,7 @@ class USDFilm01CLazyResolution(unittest.TestCase):
     def test_original_png_and_pbr_source_shader_materialize_only_in_private_stage(self):
         b=self.baseline
         original_png=png_bytes()
+        roughness_png=grayscale_png_bytes()
         b.assets.publish(
             b.pid,"TexturedTile",shape="mesh",size_m=1,
             points=[[0.,0.,0.],[.8,0.,0.],[0.,.8,0.]],
@@ -116,6 +123,7 @@ class USDFilm01CLazyResolution(unittest.TestCase):
                 "roughness":.4,"metallic":.1,
             },
             texture_png=original_png,
+            pbr_maps_png={"roughness":roughness_png},
         )
         # Put the original exact source into a SCENE as well as an ordinary
         # background prop: only the prop image is eagerly staged at first.
@@ -152,6 +160,13 @@ class USDFilm01CLazyResolution(unittest.TestCase):
             real_uri=str(shader.GetInput("file").GetAttr().Get().path)
             self.assertEqual(real_uri,
                 "../textures/"+sha256(original_png).hexdigest()+".png")
+            mtlx=UsdShade.Shader(world.stage.GetPrimAtPath(
+                "/World/Props/TexturedProp/Material/MtlxMap_Roughness"))
+            self.assertEqual(
+                str(mtlx.GetInput("file").GetAttr().Get().path),
+                "../textures/"+sha256(roughness_png).hexdigest()+".png")
+            self.assertFalse(
+                real_uri.startswith("/home/") or real_uri.startswith("file:"))
             world.load(["Textured"])
             self.assertEqual(world.receipt()["materialized_scene_set_names"],
                              ["Textured"])
