@@ -1,0 +1,100 @@
+name: NVP USD-FILM-01 Real Scalable OpenUSD World Composition (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/usd-film01-scalable-world-composition-20261108]
+  pull_request:
+    branches: [nvp/usd-film00-native-capability-audit-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-usd-film01-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-composition:
+    name: Multi-set USD source/payload/look/restart / ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual source OpenUSD and NVP studio dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+          python -m pip install httpx
+      - name: Compile native source and workbench regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01_world.py tools/nvp_usd_film01_benchmark.py tests/test_nvp_usd_film01_world.py
+      - name: Exercise actual FilmIndex world, asset revisions, lazy loading and original frozen Take
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01_world.py" -v
+      - name: Preserve actual existing source-asset/scene/Take integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_openusd_reusable_assets.py" -v
+
+  native-large-world-benchmark:
+    name: 1200 USD instances + 2-set restart and RSS observations / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual studio source dependencies and pinned native USD
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Measure real original OpenUSD load-none, load, unload and source identity after restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p usd-film01-evidence
+          python tools/nvp_usd_film01_benchmark.py \
+            --instances 1200 \
+            --output usd-film01-evidence/working_set.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("usd-film01-evidence/working_set.json").read_text())
+          assert d["actual_instanced_prop_count"] == 1200
+          assert d["lazy_payload_load_unload_verified"] is True
+          assert d["original_source_hash_reopened"] is True
+          assert d["digital_take_or_original_scene_changed"] is False
+          assert d["renderer_pixels_generated"] is False
+          assert d["gpu_vram_bytes"] is None
+          print("Real native USD measured; not a GPU/rendering/visual quality result")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-usd-film01-native-world-${{ matrix.os }}-SOURCE-METRICS-UNREVIEWED
+          path: usd-film01-evidence/
+          if-no-files-found: warn
+          retention-days: 14
