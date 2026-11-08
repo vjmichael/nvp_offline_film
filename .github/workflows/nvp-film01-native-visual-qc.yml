@@ -103,7 +103,7 @@ jobs:
               "DCI":"NOT_ACCEPTED"},indent=2))
           PY
       - name: Upload two actual director-playable AVIs, two original source ZIPs, visual/sound QC and comparative contact PNG
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: nvp-relay30-two-real-30s-film-looks-plus-visual-sound-QC
