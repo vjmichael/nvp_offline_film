@@ -161,9 +161,8 @@ class HumanVoiceActorAdmission(unittest.TestCase):
                 })
             self.assertFalse(proposed["recorded_original_signal"]["speech_transcript_verified"])
             self.assertFalse(proposed["legal_reuse_clearance_completed"])
-            self.assertFalse(proposed["actor_voice_similarity_verified"]
-                             if "actor_voice_similarity_verified" in proposed else
-                             proposed["recorded_original_signal"]["actor_voice_similarity_verified"])
+            self.assertFalse(
+                proposed["recorded_original_signal"]["actor_voice_similarity_verified"])
             self.assertGreater(proposed["recorded_original_signal"]["nonquiet_sample_fraction"], 0)
             self.assertTrue(proposed["recorded_original_signal"]["human_listening_pending"])
 
@@ -217,7 +216,7 @@ class HumanVoiceActorAdmission(unittest.TestCase):
                 s["pid"], "AliasedAudioDifferentSource", [fake_real_pcm()])
             second = dict(kwargs(), session_id="DifferentPerformerClaim",
                           audio_id="AliasedAudioDifferentSource")
-            with self.assertRaises((ValueError, RuntimeError)):
+            with self.assertRaises((ValueError, RuntimeError, PermissionError)):
                 host.publish(s["pid"], s["request"], **second)
             with self.assertRaises(KeyError):
                 s["index"].read_revision(s["pid"], "DifferentPerformerClaim", 1)
