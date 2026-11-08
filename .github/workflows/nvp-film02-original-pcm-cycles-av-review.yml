@@ -1,0 +1,146 @@
+name: NVP FILM02-03 Original FilmIndex PCM and Genuine Cycles 30s Screen Review (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/film02-03-original-pcm-cycles-playback-20261108]
+  pull_request:
+    branches: [nvp/film02-30s-blender-handoff-20261108]
+  workflow_dispatch:
+    inputs:
+      original_cycles_render_run_id:
+        description: "Completed successful FILM02-02 real Cycles 720-frame run to AUDIT and mux (same frozen original)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nvp-film02-03-source-PCM-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  original-source-audio-unit:
+    name: Native FilmIndex PCM, hard-cut and 26s chirp verification / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual original frozen OpenUSD/FilmIndex/PCM prerequisites
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Compile native source sound and strict 720-frame AVI review mux
+        run: |
+          python -m compileall -q tools/nvp_film02_original_pcm.py tools/nvp_film02_original_av_review.py tools/nvp_film02_avi_independent_readback.py tests/test_nvp_film02_original_pcm_av.py tests/test_nvp_film02_avi_independent_readback.py
+      - name: Independently verify original 48kHz FilmIndex PCM at 0, 10s, 20s and beacon frame 624
+        run: |
+          python -m unittest discover -s tests -p test_nvp_film02_original_pcm_av.py -v
+          python -m unittest discover -s tests -p test_nvp_film02_avi_independent_readback.py -v
+
+  genuine-cycles-audio-video-review:
+    if: github.event_name == 'workflow_dispatch'
+    name: Audit a SUCCESSFUL 720-frame REAL Cycles run, mux verified original PCM + picture
+    needs: original-source-audio-unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      RENDER_RUN_ID: ${{ inputs.original_cycles_render_run_id }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real original source/image codec dependencies (no FFmpeg)
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Refuse unrelated, incomplete or failed render workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RENDER_RUN_ID" =~ ^[1-9][0-9]{5,19}$ ]] || { echo "Invalid render run ID"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RENDER_RUN_ID" > "$RUNNER_TEMP/cycles-run.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          row=json.loads((Path(os.environ["RUNNER_TEMP"])/"cycles-run.json").read_text())
+          assert row["status"]=="completed" and row["conclusion"]=="success"
+          assert row["head_branch"]=="nvp/film02-30s-blender-handoff-20261108"
+          assert row["name"]=="NVP FILM02 REAL Blender Cycles 30s Three-Shot 720-Frame Picture (NO FFMPEG)"
+          print("REAL Blender/Cycles source run is successful:", row["id"],row["head_sha"])
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: nvp-FILM02-ONE-FROZEN-ORIGINAL
+          run-id: ${{ inputs.original_cycles_render_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/film02-shared
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nvp-FILM02-REAL-CYCLES-original-shot-*
+          merge-multiple: true
+          run-id: ${{ inputs.original_cycles_render_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/film02-real-cycles
+      - name: SOURCE-AUDIT all 720 real Cycles pictures, mix only original PCM, construct real synchronized AVI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.nvp_film02_original_av_review \
+            --source "$RUNNER_TEMP/film02-shared/source" \
+            --handoff "$RUNNER_TEMP/film02-shared/handoff.json" \
+            --shots "$RUNNER_TEMP/film02-real-cycles" \
+            --out "$RUNNER_TEMP/film02-original-av-review"
+      - name: Independently decode EVERY actual AVI MJPEG frame and original PCM against all Cycles pictures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.nvp_film02_avi_independent_readback \
+            --source "$RUNNER_TEMP/film02-shared/source" \
+            --handoff "$RUNNER_TEMP/film02-shared/handoff.json" \
+            --shots "$RUNNER_TEMP/film02-real-cycles" \
+            --review "$RUNNER_TEMP/film02-original-av-review" \
+            --out "$RUNNER_TEMP/film02-audited-AVI-decoded"
+      - name: Reopen AVI and inspect 720-frame source / 1,440,000 PCM sample / exact 30-second receipt
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os,wave,hashlib
+          from pathlib import Path
+          out=Path(os.environ["RUNNER_TEMP"])/"film02-original-av-review"
+          receipt=json.loads((out/"FILM02_Cycles_original_AV_review_receipt.json").read_text())
+          avi=out/"FILM02_REAL_CYCLES_original_30sec_picture_and_sound.avi"
+          wav=out/"FILM02_source_original_48k_mono_pcm16.wav"
+          assert receipt["passed"] is True and receipt["real_original_Cycles_frames"]==720
+          assert receipt["duration_seconds"]==30 and receipt["fps"]==24
+          assert receipt["original_audio_sample_count"]==1440000
+          assert receipt["source_cut_frames"]==[240,480]
+          assert receipt["beacon_cue_frames"]==[624,636]
+          assert receipt["movie_sha256"]==hashlib.sha256(avi.read_bytes()).hexdigest()
+          assert receipt["source_original_WAV_sha256"]==hashlib.sha256(wav.read_bytes()).hexdigest()
+          assert receipt["human_audio_visual_approval"] is False
+          assert receipt["theatrical_DCP_accepted"] is False
+          with wave.open(str(wav),"rb") as fp:
+              assert fp.getframerate()==48000 and fp.getnframes()==1440000
+          print("Authentic original Cycles review picture+PCM produced. Human installed playback still OPEN.")
+          PY
+      - name: Publish genuine original 30s AVI+PCM review only after native Cycles and source SHA verification
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-FILM02-REAL-BLENDER-30S-ORIGINAL-PICTURE-AND-PCM-SCREEN-REVIEW-NOT-DCP
+          path: |
+            ${{ runner.temp }}/film02-original-av-review/
+            ${{ runner.temp }}/film02-audited-AVI-decoded/
+          if-no-files-found: error
+          retention-days: 14
