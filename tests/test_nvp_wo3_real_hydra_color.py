@@ -43,7 +43,7 @@ class RequiredRealHydraTextureColor(unittest.TestCase):
             pbr_maps_png={
                 "roughness":self.png((100,100,100)),
                 "metallic":self.png((0,0,0)),
-                "emission":self.png((0,0,0)),
+                "emission":self.png((7,9,11)),
                 "normal":self.png((128,128,255)),
                 "opacity":self.png((255,255,255)),
             })
