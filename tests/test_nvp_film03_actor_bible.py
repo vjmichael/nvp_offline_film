@@ -137,6 +137,8 @@ class ActorIDSourceProductionBible(unittest.TestCase):
             original_scene = next(x for x in before["active_links"]
                                   if x["role"] == "scene")
             self.assertEqual(original_scene["target_revision"], 1)
+            self.assertTrue(original_scene["needs_director_source_review"])
+            self.assertTrue(original_scene["historical_original_link_retained"])
             with self.assertRaises(RuntimeError):
                 registry.link(
                     pid, actor_id, role="scene", source_family="screenplay_scene",
