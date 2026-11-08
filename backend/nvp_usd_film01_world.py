@@ -488,13 +488,16 @@ class OpenUSDWorldComposer:
             raise PermissionError("World original source manifest changed since commit")
         for key, src in sources.items():
             if doc["sources"].get("|".join(map(str,key))) != {
-                    k:v for k,v in src.items() if k != "bytes"}:
+                    k:v for k,v in src.items()
+                    if k not in ("bytes","texture_files")}:
                 raise PermissionError("Original FilmIndex world asset hashes changed")
         if len(doc["sources"]) != len(sources):
             raise PermissionError("Original world source set was replaced")
         staging = Path(staging_dir)
         (staging / "scenes").mkdir()
         (staging / "assets").mkdir()
+        (staging / "textures").mkdir()
+        from backend.nvp_usd_film01c_texture import write_verified_texture_files
         written = set()
         total_bytes = 0
         paths = {}
@@ -505,13 +508,15 @@ class OpenUSDWorldComposer:
             dest = staging / rel
             if rel not in written:
                 data = src["bytes"]
-                total_bytes += len(data)
                 if data is not None:
+                    total_bytes += len(data)
                     if total_bytes > MAX_STAGING_BYTES:
                         raise RuntimeError("Bounded private world staging budget exceeded")
                     with dest.open("xb") as output:
                         output.write(data)
                     written.add(rel)
+                    write_verified_texture_files(
+                        staging / "textures",src.get("texture_files",{}))
             paths[key] = "./" + rel
         dest = staging / "world.usda"
         stage = Usd.Stage.CreateNew(str(dest))
@@ -616,7 +621,8 @@ class OpenUSDWorldComposer:
             **pieces,
             "sources": {
                 "|".join(map(str,key)):{
-                    field: val for field,val in source.items() if field != "bytes"
+                    field: val for field,val in source.items()
+                    if field not in ("bytes","texture_files")
                 } for key,source in sorted(sources.items())
             },
             "external_source_paths_authoritative": False,
