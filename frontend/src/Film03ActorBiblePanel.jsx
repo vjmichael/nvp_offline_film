@@ -29,6 +29,8 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
   const [editing, setEditing] = useState(null);
   const [reason, setReason] = useState('');
   const [notice, setNotice] = useState('');
+  const [castTake, setCastTake] = useState('');
+  const [castReport, setCastReport] = useState(null);
   const [error, setError] = useState('');
 
   const pid = project.id;
@@ -82,6 +84,16 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
     setPrim(entry.actor_prim_path || '/World/Engineer');
     if (entry.source_family === 'texture_blob') setTextureSha(entry.target_id);
     setNotice('Editing creates another relationship revision. Historical bindings remain intact.');
+  }
+  function reviewCastCoverage() {
+    if (!castTake) return;
+    action(async()=>{
+      const report = await api(root + '/takes/' + encodeURIComponent(castTake) +
+        '/cast-coverage');
+      if (report?.format !== 'nvp.film03.production_bible_actor_cast_coverage.v1')
+        throw new Error('Unverified native cast-coverage report');
+      setCastReport(report);
+    });
   }
   function submit() {
     if (!actorId || !detail || !selected) return;
@@ -188,6 +200,29 @@ export default function Film03ActorBiblePanel({project, actor, api, action, busy
       </div>
       {!choices.length && family !== 'texture_blob' && <p className="fineprint">Register a source asset, StoryBible prop or script scene first. NVP refuses invented resource IDs.</p>}
       {family === 'texture_blob' && <p className="fineprint">A texture SHA must already exist in this project's immutable PNG source blob store. NVP verifies its original bytes; pasted unrecognized hashes are refused.</p>}
+      <h4>Original OpenUSD actor cast completeness</h4>
+      <p className="fineprint">An actor in a frozen source Take must be tied to exactly one existing ActorID. Missing or ambiguous identity blocks complete-cast acceptance; no automatic recasting is permitted.</p>
+      <label>Source frozen Take
+        <select aria-label="Cast coverage source Take" value={castTake}
+          onChange={e=>{setCastTake(e.target.value);setCastReport(null);}}>
+          <option value="">Choose a Take to audit</option>
+          {(catalog?.sources || []).filter(x=>x.family==='filmindex'&&x.kind==='take')
+            .map(x=><option key={x.target_id} value={x.target_id}>{x.target_id}</option>)}
+        </select>
+      </label>
+      <button className="secondary" disabled={busy || !castTake}
+        onClick={reviewCastCoverage}>Check every source actor has an ActorID</button>
+      {castReport && <>
+        <p role="status">{castReport.complete ? 'Full original cast identified'
+          : 'Cast incomplete — cannot accept all actor identities'}</p>
+        {castReport.authored_actor_prims.map(path=><p key={path} className="fineprint">
+          {path} → {castReport.actor_id_by_prim[path] || 'UNCast / multiple ActorIDs'}
+        </p>)}
+        {!!castReport.uncast_prim_paths.length && <p role="alert">
+          Uncast OpenUSD actor prims: {castReport.uncast_prim_paths.join(', ')}.
+          Select each StoryBible character and link its real actor prim before acceptance.
+        </p>}
+      </>}
       <h4>Immutable relationship history</h4>
       <details>
         <summary>Show all {detail.history.length} saved relationship revisions</summary>
