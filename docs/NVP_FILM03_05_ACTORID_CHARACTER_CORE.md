@@ -165,3 +165,28 @@ with calibrated error rates, independent source-time/phoneme/camera
 spatial alignment, character procedural locomotion and gait enforcement,
 and full human-reviewed finished-film acceptance. FILM02's genuine
 30-second Blender/Cycles AVI and original audio are unchanged.
+
+
+## Source-verified AI scene crew identity context
+
+The existing WO6-03 scene reader now accepts an optional exact
+actor_identity_id and actor_profile_revision pair. It reopens the original
+frozen OpenUSD Take, requires a complete one-to-one source cast and confirms
+the requested ActorID corresponds to a native OpenUSD actor prim. Only then
+does it expose the immutable appearance, behavior, movement peculiarities,
+VoiceType and current VoiceID to the AI scene crew, with exact profile/Take
+SHAs and an explicit "not permission to generate" warning.
+
+This enables future animation, lighting, blocking and voice work to share
+one source of character behavior. A model cannot claim an arbitrary limp or
+persona by switching to another actor profile or stale revision.
+
+## Recasting cannot reuse old AI voice selector
+
+A new VoiceID alone is insufficient when the TTS engine continues using
+the old engine/model/voice selector. The actor profile publisher now
+requires a different engine/model/selector combination whenever an ActorID
+is recast to a different VoiceID. The earlier profile and recorded source
+remain in history. No selector may be current for two different ActorIDs
+in the same production. Director review, actual synthesis provenance
+and later acoustic checks are still required for generated output.
