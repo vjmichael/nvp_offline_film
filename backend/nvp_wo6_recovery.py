@@ -200,6 +200,11 @@ class WO6DurableRecovery:
                     receipt.get("project_id") != pid or
                     receipt.get("source_impact_sha256") != spec["preview_sha256"] or
                     receipt.get(receipt_id) != record["document_sha256"] or
+                    (spec.get("reviewed_ai_consultation") is not None and
+                     (receipt.get("reviewed_ai_consultation")!=
+                        spec["reviewed_ai_consultation"] or
+                      receipt.get("model_instruction_executed") is not False or
+                      receipt.get("model_approval_accepted") is not False)) or
                     receipt.get("existing_dcp_replaced") is not False or
                     receipt.get("rendered_frames") is not False):
                 raise ValueError("Worker receipt cannot be accepted")
@@ -352,6 +357,6 @@ class WO6DurableRecovery:
             # never replay model text as commands or resurrect permissions.
             "reviewed_ai_consultation":(
                 spec.get("reviewed_ai_consultation")
-                if spec["operation"]==SHOT_OP else None),
+                if spec["operation"] in (SHOT_OP,DATA_OP) else None),
             "reviewed_model_text_is_authority":False,
         }
