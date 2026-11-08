@@ -314,6 +314,83 @@ Different second line.
         self.assertGreaterEqual(
             sum(x["kind"] == "requires_director_reconciliation" for x in changes), 2)
 
+    def test_ambiguous_two_line_rewrite_requires_explicit_authoritative_mapping(self):
+        with TemporaryDirectory() as d:
+            studio = Studio(Path(d)/"film03-lineage.sqlite3")
+            project = studio.create_project("Object actor production bible", "Immutable script")
+            pid = project["id"]
+            original_script = """INT. RELAY - NIGHT
+
+DONUT
+First line.
+
+DONUT
+Second line.
+"""
+            revised_script = """INT. RELAY - NIGHT
+
+DONUT
+Rewritten first.
+
+DONUT
+Rewritten second.
+"""
+            studio.save_screenplay(pid, original_script, expected_revision=0)
+            index = FilmIndex(studio)
+            author = ObjectActorDialogue(index, verify_creator_action=approves)
+            author.publish_script_snapshot(
+                pid, "TwoLineSource", expected_screenplay_revision=1,
+                expected_manifest_revision=0, creator_event=EVENT)
+            original = index.read_revision(pid, "TwoLineSource", 1)
+            old_lines = original["data"]["scenes"][0]["lines"]
+            studio.save_screenplay(pid, revised_script, expected_revision=1)
+            author.publish_script_snapshot(
+                pid, "TwoLineSource", expected_screenplay_revision=2,
+                expected_manifest_revision=1, creator_event=EVENT)
+            before = index.read_revision(pid, "TwoLineSource", 2)
+            self.assertTrue(before["data"]["lineage_ambiguous"])
+            replacements = before["data"]["scenes"][0]["lines"]
+            self.assertTrue(all(x["lineage_status"] ==
+                                "requires_director_reconciliation"
+                                for x in replacements))
+            choices = [
+                {"new_line_id": replacements[n]["line_id"],
+                 "old_line_id": old_lines[n]["line_id"]}
+                for n in (0, 1)
+            ]
+            with self.assertRaises(ValueError):
+                author.reconcile_ambiguous_lineage(
+                    pid, "TwoLineSource", expected_manifest_revision=2,
+                    decisions=[choices[0], choices[0]], creator_event=EVENT)
+            denied = ObjectActorDialogue(index,
+                verify_creator_action=lambda *_: False)
+            with self.assertRaises(PermissionError):
+                denied.reconcile_ambiguous_lineage(
+                    pid, "TwoLineSource", expected_manifest_revision=2,
+                    decisions=choices, creator_event="NO")
+            reconciled = author.reconcile_ambiguous_lineage(
+                pid, "TwoLineSource", expected_manifest_revision=2,
+                decisions=choices, creator_event=EVENT)
+            self.assertEqual(reconciled["revision"], 3)
+            current = index.read_revision(pid, "TwoLineSource", 3)
+            current_lines = current["data"]["scenes"][0]["lines"]
+            self.assertFalse(current["data"]["lineage_ambiguous"])
+            self.assertEqual(len(current["data"]["lineage_reconciliations"]), 2)
+            self.assertEqual([x["line_id"] for x in current_lines],
+                             [x["line_id"] for x in old_lines])
+            self.assertTrue(all(x["lineage_status"] == "reconciled_by_director"
+                                for x in current_lines))
+            # All *three* source revisions survive. No screenplay was edited
+            # by the lineage decision; the one actual Studio revision stays 2.
+            self.assertEqual(index.read_revision(pid, "TwoLineSource", 1)[
+                "document_sha256"], original["document_sha256"])
+            self.assertEqual(index.read_revision(pid, "TwoLineSource", 2)[
+                "document_sha256"], before["document_sha256"])
+            self.assertEqual(studio.get_project(pid)["revision"], 2)
+            preview = author.preview_script_changes(pid, "TwoLineSource")
+            self.assertEqual(preview["new_or_changed_script_lines"], [])
+            self.assertFalse(preview["requires_manual_lineage_review"])
+
     def test_reject_creator_false_approval_before_any_script_snapshot(self):
         with TemporaryDirectory() as d:
             studio = Studio(Path(d)/"studio.sqlite3")
