@@ -108,6 +108,13 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
     }
     if not usdrecord:
         return {**base,"status":"HYDRA_BINARY_UNAVAILABLE"}
+    # The discovered native tool is not creator/model-supplied code. Bind
+    # exact executable essence for this probe: its bytes must not change
+    # while an independent image is produced.
+    native_tool=Path(usdrecord).resolve(strict=True)
+    if not native_tool.is_file():
+        raise PermissionError("Independent renderer must be a real native tool")
+    native_tool_sha=sha256(native_tool.read_bytes()).hexdigest()
     from pxr import UsdGeom
     camera=UsdGeom.Camera(stage.GetPrimAtPath(camera_path))
     if not camera:
@@ -127,7 +134,7 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                 image_path=root/"independent_hydra.png"
                 if not copy.GetRootLayer().Export(str(scene_path)):
                     raise RuntimeError("Approved USD probe layer export failed")
-                args=[usdrecord,"--camera",camera_path,
+                args=[str(native_tool),"--camera",camera_path,
                       "--renderer",renderer,"--imageWidth",str(width),
                       "--colorCorrectionMode","disabled","--abortOnError"]
                 if not require_gpu:args.append("--disableGpu")
@@ -141,12 +148,18 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                     return {**base,"status":"HYDRA_RENDER_TIMEOUT",
                             "requested_gpu":bool(require_gpu)}
                 elapsed=round(time.monotonic()-began,4)
-                if run.returncode!=0 or not image_path.is_file():
+                if sha256(native_tool.read_bytes()).hexdigest()!=native_tool_sha:
+                    raise RuntimeError("Independent renderer binary changed during run")
+                # No symlink, arbitrary renderer output path or unbounded
+                # decompression input becomes evidence for a source render.
+                if (run.returncode!=0 or not image_path.is_file() or
+                    image_path.is_symlink() or
+                    not 0<image_path.stat().st_size<=64*1024*1024):
                     return {**base,"status":"HYDRA_RENDER_FAILED",
                             "requested_gpu":bool(require_gpu),
                             "render_wall_seconds":elapsed,
                             "exit_code":run.returncode,
-                            "stderr_tail":(run.stderr or "")[-600:]}
+                            "untrusted_or_missing_output":True}
                 from PIL import Image
                 with Image.open(image_path) as result:
                     if (result.width>width*4 or result.height>width*4 or
@@ -206,8 +219,7 @@ def capture_hydra_evidence(index:FilmIndex,pid,scene_id,scene_revision,*,
                     "rendered_width":w,"rendered_height":h,
                     "rendered_rgb_sha256":sha256(rgb).hexdigest(),
                     "rendered_rgb_mean":round(sum(rgb)/len(rgb),4),
-                    "renderer_executable_sha256":sha256(
-                        Path(usdrecord).read_bytes()).hexdigest(),
+                    "renderer_executable_sha256":native_tool_sha,
                     "derived_source_scope":True,
                     "original_modified":False,
                 }
