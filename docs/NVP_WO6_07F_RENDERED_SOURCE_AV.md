@@ -48,6 +48,14 @@ selected *single derived* sound timeline is valid only for Takes whose
 original event manifests it correctly extends; other Takes fail closed.
 Later work can introduce a true scene/timeline-per-clip explicit mix map.
 
+**Shot-local presentation guard:** The existing first-party raster consumes
+the original frozen Take, not a stronger authored shot-local override layer.
+If a selected slate branch references such a shot, WO6-07F currently
+**refuses to render** rather than silently displaying unmodified Take
+pixels in place of the intended actor/camera/light shot. Composed
+shot-local presentation must be connected to the raster separately.
+This is an intentional open functionality gate, not a playback success.
+
 No FFmpeg, video generator, speculative source content, source overwrite,
 untrusted browser path, arbitrary model/renderer subprocess or new tool
 authorization appears in the window code.
