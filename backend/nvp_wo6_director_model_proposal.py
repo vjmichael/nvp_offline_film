@@ -106,6 +106,16 @@ def director_model_suggestion(index:FilmIndex, project_id, take_id,
         raise ValueError("Model response is not a bounded plain-text suggestion")
     if index.read_revision(project_id,take_id,1)["document_sha256"]!=take_sha256:
         raise PermissionError("Source Take changed while model proposed a change")
+    # An immutable historical Take is valid evidence, but if its surrounding
+    # live scene/timeline heads change while generation is active, the
+    # proposal no longer has a stable *current* source view. Refuse to
+    # present an old snapshot as advice for the newly edited scene.
+    for observed in context["source_heads"]:
+        latest=index.read_revision(
+            project_id,observed["object_id"])["revision"]
+        if latest!=observed["head_revision_observed"]:
+            raise RuntimeError(
+                "Source scene/timeline head changed during local inference; discard proposal")
     provider_receipt=getattr(model,"completion_receipt",None)
     if provider_receipt is not None:
         from backend.nvp_wo6_verified_local_model import FORMAT as PROVIDER_FORMAT
