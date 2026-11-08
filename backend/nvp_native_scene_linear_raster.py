@@ -410,7 +410,8 @@ class NativeSceneLinearRaster:
         self.index=index
 
     def render(self,project_id,take_id,take_sha256,*,tick,camera_path,
-               source_session=None,source_snapshot=None):
+               source_session=None,source_snapshot=None,
+               virtual_fx=None):
         _require_pid(project_id);_id(take_id,"original USD Take");_sha(take_sha256)
         _int(tick,"original scene Film Time")
         if type(camera_path) is not str or not camera_path.startswith("/World/"):
@@ -458,6 +459,21 @@ class NativeSceneLinearRaster:
             eye=next(_array3(o["world_translation"])
                      for o in snapshot["objects"] if o["path"]==camera_path)
             lights=_lights(snapshot)
+            fxmap={}
+            virtual_proof={
+                "fx_source_sha256":None,"effect_count":0,
+                "real_scene_pixel_shader_consumes_fx":False,
+                "artist_approved_final_lighting":False,
+            }
+            if virtual_fx is not None:
+                from backend.nvp_virtual_light_raster_adapter import (
+                    evaluate_scene_virtual_lighting)
+                targets=[
+                    obj["path"] for obj in visual["objects"]
+                    if obj["semantic_role"] not in ("light","camera") and
+                       obj["shape"] not in ("gizmo","missing_rig_geometry")]
+                fxmap,virtual_proof=evaluate_scene_virtual_lighting(
+                    virtual_fx,targets,tick)
             color=np.zeros((HEIGHT,WIDTH,4),dtype=np.float32)
             color[:,:,3]=1.
             depth=np.full((HEIGHT,WIDTH),np.inf,dtype=np.float32)
@@ -561,7 +577,8 @@ class NativeSceneLinearRaster:
                                  else [uvs[i] for i in face]
                                  if texture is not None or material_maps else None),
                         pbr_maps=(material_maps if
-                                  face_index not in face_surfaces else None)):
+                                  face_index not in face_surfaces else None),
+                         virtual_lights=fxmap.get(obj["path"],())):
                         rasterized+=1
                         textured_triangles+=int(
                             texture is not None and face_index not in face_surfaces)
@@ -585,6 +602,11 @@ class NativeSceneLinearRaster:
                 "source_working_space":"Linear Rec.709 (sRGB)",
                 "source_color_appearance_calibrated":False,
                 "actual_usd_light_spectrum_calibrated":False,
+                "virtual_artistic_fx_applied_to_real_pixels":(
+                    virtual_proof["real_scene_pixel_shader_consumes_fx"]),
+                "virtual_artistic_fx_count":virtual_proof["effect_count"],
+                "virtual_artistic_fx_source_sha256":virtual_proof["fx_source_sha256"],
+                "virtual_fx_not_photometric_or_path_traced":True,
                 "unclipped_linear_float_output":True,
                 "source_modified":False,
                 "ffmpeg_used":False,
