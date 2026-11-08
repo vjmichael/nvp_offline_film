@@ -74,6 +74,10 @@ def _encode_real_raster(rgba,proof):
         "color_display_transform":"approximate uncalibrated linear Rec709 to sRGB",
         "real_source_mesh_triangles":proof["source_geometry_triangles"],
         "actual_rasterized_triangles":proof["rasterized_triangles"],
+        "virtual_fx_actually_applied_to_pixels":proof.get(
+            "virtual_artistic_fx_applied_to_real_pixels",False),
+        "virtual_fx_sha256":proof.get("virtual_artistic_fx_source_sha256"),
+        "virtual_fx_count":proof.get("virtual_artistic_fx_count",0),
         "frame_image_data_url":"data:image/png;base64,"+
                                base64.b64encode(png).decode("ascii"),
     }
@@ -82,7 +86,8 @@ def _encode_real_raster(rgba,proof):
 def rendered_source_window(index,project_id,edit_id,edit_revision,edit_sha,
                            first_frame,count,*,camera_path=None,
                            sound_timeline_id=None,sound_timeline_revision=None,
-                           sound_timeline_sha256=None):
+                           sound_timeline_sha256=None,
+                           virtual_fx=None):
     if not isinstance(index,FilmIndex):
         raise TypeError("A real first-party NVP source index is required")
     _require_pid(project_id)
@@ -151,7 +156,8 @@ def rendered_source_window(index,project_id,edit_id,edit_revision,edit_sha,
             project_id,sample["source_take_id"],
             sample["source_take_sha256"],
             tick=int(sample["source_film_time_tick"]),
-            camera_path=active_camera)
+            camera_path=active_camera,
+            virtual_fx=virtual_fx)
         image=_encode_real_raster(color,proof)
         original_take=index.read_revision(
             project_id,sample["source_take_id"],1)
@@ -224,6 +230,8 @@ def rendered_source_window(index,project_id,edit_id,edit_revision,edit_sha,
         "images":rendered,
         "real_original_usd_pixels_rendered":True,
         "source_rasterizer_only_not_hydra":True,
+        "virtual_light_shader_enabled":bool(virtual_fx),
+        "virtual_light_not_necessarily_source_authorized":bool(virtual_fx),
         "color_management_not_reference_approved":True,
         "audio_clock_verified_by_installed_browser":False,
         "continuous_24fps_installed_acceptance":False,
