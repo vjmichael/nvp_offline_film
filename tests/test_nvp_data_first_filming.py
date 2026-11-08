@@ -179,6 +179,30 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"NewRecordedSpeech",1)
 
+    def test_later_materialized_pcm_corruption_preflight_preserves_first_source(self):
+        req=self.payload()
+        second=dict(req["recordings"][0])
+        second.update(event_id="Speech002",source_id="SecondSpeech",
+                      pcm_chunks=[b"\\x00"])
+        req["recordings"].append(second)
+        with self.assertRaisesRegex(ValueError,"Invalid captured PCM16LE"):
+            self.capture.capture(**req)
+        for identity in ("NewRecordedSpeech","SecondSpeech","FilmingSoundTimeline"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+
+    def test_later_materialized_pcm_shortfall_preflight_preserves_first_source(self):
+        req=self.payload()
+        second=dict(req["recordings"][0])
+        second.update(event_id="Speech002",source_id="SecondSpeech",
+                      pcm_chunks=[b"\\x00\\x00"])
+        req["recordings"].append(second)
+        with self.assertRaisesRegex(ValueError,"shorter than"):
+            self.capture.capture(**req)
+        for identity in ("NewRecordedSpeech","SecondSpeech","FilmingSoundTimeline"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
