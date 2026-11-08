@@ -154,7 +154,10 @@ class ProductionBibleVoiceIdentity:
                        WHERE project_id=? AND actor_id=? AND performance_id=?
                        ORDER BY approval_revision DESC LIMIT 1""",
                     (pid,actor_id,item["object_id"])).fetchone()
+            source_samples=RecordedSoundSources(self.index).describe(
+                pid,sound["audio_id"],sound["audio_revision"])["data"]["sample_count"]
             entries.append({
+                "source_sample_count":source_samples,
                 "approved_voice_id":(latest["voice_id"] if latest else None),
                 "voice_cast_revision":(latest["voice_cast_revision"] if latest else None),
                 "latest_approval_revision":(latest["approval_revision"] if latest else 0),
