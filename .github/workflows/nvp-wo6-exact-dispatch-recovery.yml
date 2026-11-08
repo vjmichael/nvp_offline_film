@@ -1,0 +1,63 @@
+name: NVP WO6 Exact Dispatch Cancellation and Recovery (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/wo6-exact-dispatch-recovery-20261107]
+  pull_request:
+    paths:
+      - backend/nvp_resource_ledger.py
+      - backend/nvp_approved_tasks.py
+      - backend/nvp_wo6_native_take_action.py
+      - backend/nvp_wo6_native_shot_action.py
+      - backend/nvp_wo6_native_data_action.py
+      - backend/nvp_wo6_desktop_bridge.py
+      - tests/test_resource_scheduler.py
+      - tests/test_nvp_wo6_desktop_bridge.py
+      - .github/workflows/nvp-wo6-exact-dispatch-recovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-wo6-exact-dispatch-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-exact-dispatch:
+    name: Real durable scheduler and WO6 workers / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual native OpenUSD and Python test framework
+        run: python -m pip install --only-binary=:all: "usd-core==26.11" "pytest>=8,<10"
+      - name: Install native Windows worker Job Object dependency
+        if: runner.os == 'Windows'
+        run: python -m pip install "pywin32>=310"
+      - name: Compile source and real tests at the exact commit
+        run: python -m compileall -q backend/nvp_resource_ledger.py backend/nvp_approved_tasks.py backend/nvp_wo6_native_take_action.py backend/nvp_wo6_native_shot_action.py backend/nvp_wo6_native_data_action.py backend/nvp_wo6_desktop_bridge.py tests/test_resource_scheduler.py tests/test_nvp_wo6_desktop_bridge.py tests/test_nvp_wo6_recovery.py
+      - name: Test durable SQLite head-of-line and canceled exact-task admission, including concurrent real processes
+        run: python -m unittest discover -s tests -p test_resource_scheduler.py -v
+      - name: Test exact creator-authorized native desktop notices, denied consent, queue pressure, close and dispatch faults
+        run: python -m unittest discover -s tests -p test_nvp_wo6_desktop_bridge.py -v
+      - name: Test actual contained immutable OpenUSD Take worker admission
+        run: python -m unittest discover -s tests -p test_nvp_wo6_native_take_action.py -v
+      - name: Test actual contained source-preserving camera blocking and lighting workers
+        run: python -m unittest discover -s tests -p test_nvp_wo6_native_shot_action.py -v
+      - name: Test actual contained native color and editorial data workers
+        run: python -m unittest discover -s tests -p test_nvp_wo6_native_data_action.py -v
+      - name: Test durable restart, cancel intent, crash-after-commit recovery and source receipt reconciliation
+        run: python -m unittest discover -s tests -p test_nvp_wo6_recovery.py -v
+      - name: Test actual Windows kernel Job Object cleanup when available
+        run: python -m unittest discover -s tests -p test_nvp_wo6_kernel_attestation.py -v
+      - name: Test first-party installed private worker entrypoint selection
+        run: python -m unittest discover -s tests -p test_nvp_wo6_frozen_worker_dispatch.py -v
