@@ -28,6 +28,11 @@ describe('FILM03-02 director ActorID and screenplay impact UI',()=>{
     const api=vi.fn(async(url,method,body)=>{
       calls.push({url,method,body});
       if(url.endsWith('/actor-catalog')) return catalog;
+      if(url.endsWith('/voice-candidates')) return {
+        format:'nvp.film03.voice_candidate_audition_catalog.v1',
+        project_id:pid,actor_id:actorId,candidates:[],
+        no_automatic_voice_approval:true,
+      };
       if(url.endsWith('/actors/'+actorId))return links;
       if(url.endsWith('/actors/'+actorId+'/links')&&method==='POST')
         return {...links,bible_revision:4,active_links:[{
@@ -40,7 +45,7 @@ describe('FILM03-02 director ActorID and screenplay impact UI',()=>{
     });
     render(<Film03ActorBiblePanel project={project} actor={actor} api={api}
       action={async fn=>fn()} busy={false} refreshBible={refreshBible}/>);
-    expect(await screen.findByText(actorId)).toBeTruthy();
+    await waitFor(()=>expect(screen.getAllByText(actorId).length).toBeGreaterThan(0));
     expect(api.mock.calls.every(([,method])=>!method||method==='GET')).toBe(true);
     fireEvent.change(screen.getByLabelText('Actor resource role'),
       {target:{value:'model'}});
