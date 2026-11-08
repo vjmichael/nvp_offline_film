@@ -350,13 +350,12 @@ class WorldSession:
         paths = []
         for name in set_names:
             path = "/World/Sets/" + name
-            if name not in self.materialized_set_names:
+            fresh = name not in self.materialized_set_names
+            info = None
+            if fresh:
                 if self._materialize_set is None:
                     raise RuntimeError("Lazy film-world set resolver is missing")
                 info = self._materialize_set(name)
-                self.loaded_stage_prepared_bytes += info["new_staged_bytes"]
-                self.sealed_cache_hits += int(info.get("sealed_cache_hit",False))
-                self.materialized_set_names.add(name)
             self.stage.Load(path)
             prim = self.stage.GetPrimAtPath(path)
             if not prim or not prim.IsLoaded():
@@ -368,6 +367,12 @@ class WorldSession:
                     path + original_path[len("/World"):]).IsDefined()
                     for original_path in source_roles):
                 raise RuntimeError("Native USD set loaded no original scene geometry")
+            # No positive cache/materialization receipt until verified USD
+            # children actually resolve from the selected original set.
+            if fresh:
+                self.loaded_stage_prepared_bytes += info["new_staged_bytes"]
+                self.sealed_cache_hits += int(info.get("sealed_cache_hit",False))
+                self.materialized_set_names.add(name)
             paths.append(path)
         duration_ms = round(1000 * (perf_counter()-started),3)
         after = _rss_bytes()
