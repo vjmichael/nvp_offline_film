@@ -4,6 +4,9 @@ on:
   push:
     branches: [nvp/film01-native-visual-audio-qc-20261108]
   pull_request:
+    # This complete-film matrix runs only for its own integration PR.
+    # The stacked donut PR has a faster dedicated real-image proof.
+    branches: [nvp/vlight-digital-preview-raster-20261108]
     paths:
       - tools/nvp_film01_original_30s.py
       - backend/nvp_film01_native_avi.py
