@@ -671,6 +671,64 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                 human_sound_or_editorial_parameters_separately_authorized=True)
         return result
 
+    def wo6_07e_source_review_catalog(self,project_id):
+        """Read-only source revisions only; not playback/cinematography proof."""
+        self._wo5_project(project_id)
+        from backend.nvp_slate_edit_assembly import FORMAT as EDIT_FORMAT
+        from backend.nvp_temporal_ledger import FORMAT as TIME_FORMAT
+        originals,derived_sound=[],[]
+        for entry in self.index.list_objects(project_id,kind="edit")[:MAX_LIST]:
+            rec=self.index.read_revision(
+                project_id,entry["object_id"],entry["head_revision"])
+            if rec["data"].get("format")!=EDIT_FORMAT:
+                continue
+            originals.append({
+                "edit_id":rec["object_id"],
+                "edit_revision":rec["revision"],
+                "edit_sha256":rec["document_sha256"],
+                "duration_tick":str(rec["data"]["duration_tick"]),
+                "segment_count":len(rec["data"]["segments"]),
+                "source_graph_id":rec["data"]["graph_id"],
+                "finished_picture_rendered":False,
+            })
+        for entry in self.index.list_objects(
+                project_id,kind="temporal")[:MAX_LIST]:
+            rec=self.index.read_revision(
+                project_id,entry["object_id"],entry["head_revision"])
+            if rec["data"].get("format")!=TIME_FORMAT:
+                continue
+            derived_sound.append({
+                "timeline_id":rec["object_id"],
+                "revision":rec["revision"],
+                "sha256":rec["document_sha256"],
+                "event_count":rec["data"]["event_count"],
+                "duration_tick":str(rec["data"]["duration_tick"]),
+                "source_authorization_implied":False,
+            })
+        return {
+            "format":"nvp.wo6_07e.original_source_review_catalog.v1",
+            "project_id":project_id,
+            "edits":originals,"timelines":derived_sound,
+            "finished_frame_pixels_available":False,
+            "original_sources_unmodified":True,
+            "native_worker_authorized":False,
+        }
+
+    def wo6_07e_review_source_frame(self,request):
+        """Real frozen USD pose + exact source PCM; never a rendered movie."""
+        self._wo6_require(request,{
+            "project_id","edit_id","edit_revision","edit_sha256",
+            "frame_zero","sound_timeline_id","sound_timeline_revision",
+            "sound_timeline_sha256"})
+        from backend.nvp_wo6_07e_source_review import sample_editorial_source
+        return sample_editorial_source(
+            self.index,request["project_id"],
+            request["edit_id"],request["edit_revision"],request["edit_sha256"],
+            request["frame_zero"],
+            sound_timeline_id=request["sound_timeline_id"],
+            sound_timeline_revision=request["sound_timeline_revision"],
+            sound_timeline_sha256=request["sound_timeline_sha256"])
+
     def wo6_task_status(self,project_id,task_id):
         self._wo5_project(project_id)
         self._wo6_host()
