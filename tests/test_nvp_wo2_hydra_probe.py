@@ -83,6 +83,31 @@ class WO2IndependentHydraGate(unittest.TestCase):
         self.assertNotIn("stderr_tail",result)
         self.assertTrue(result["untrusted_or_missing_output"])
 
+    def test_renderer_diagnostics_are_not_captured_in_unbounded_ram(self):
+        # An external usdrecord can emit arbitrarily large diagnostics.
+        # Its output cannot be buffered in NVP or leak project paths.
+        import subprocess
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        with TemporaryDirectory() as tmp:
+            tool=Path(tmp)/"native_usdrecord"
+            tool.write_bytes(b"bounded native diagnostics fixture")
+            def assert_bounded(args,**kwargs):
+                self.assertEqual(kwargs.get("stdout"),subprocess.DEVNULL)
+                self.assertEqual(kwargs.get("stderr"),subprocess.DEVNULL)
+                self.assertNotIn("capture_output",kwargs)
+                return SimpleNamespace(returncode=9)
+            with patch("backend.nvp_wo2_hydra_probe.shutil.which",
+                       return_value=str(tool)),patch(
+                       "backend.nvp_wo2_hydra_probe.subprocess.run",
+                       side_effect=assert_bounded):
+                result=capture_hydra_evidence(
+                    self.index,self.pid,"hydra_scene",1,
+                    camera_path="/World/Camera")
+        self.assertEqual(result["status"],"HYDRA_RENDER_FAILED")
+        self.assertFalse(result["real_independent_frame_rendered"])
+
     def test_missing_independent_renderer_is_not_fabricated_success(self):
         with patch("backend.nvp_wo2_hydra_probe.shutil.which",
                    return_value=None):
