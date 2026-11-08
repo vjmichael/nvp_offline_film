@@ -153,11 +153,16 @@ def rendered_source_window(index,project_id,edit_id,edit_revision,edit_sha,
             tick=int(sample["source_film_time_tick"]),
             camera_path=active_camera)
         image=_encode_real_raster(color,proof)
-        if (proof["original_take_sha256"]!=sample["source_take_sha256"] or
+        original_take=index.read_revision(
+            project_id,sample["source_take_id"],1)
+        if (original_take["document_sha256"]!=sample["source_take_sha256"] or
+                proof["original_take_sha256"]!=sample["source_take_sha256"] or
                 proof["time_tick"]!=sample["source_film_time_tick"] or
                 proof["scene_document_sha256"]!=
-                    next(p["authored_scene_revision_sha256"] for p
-                         in sample["scene_poses"] if p["role"]=="camera")):
+                    original_take["data"]["scene_document_sha256"]):
+            # OpenUSD visual pose records intentionally omit the source
+            # scene SHA; reopen the authentic frozen Take instead of
+            # guessing an absent field from UI-only pose metadata.
             raise PermissionError("Rendered original pixels and source Film Time diverge")
         if sample["audio_data_url"]:
             _,base64data=sample["audio_data_url"].split(",",1)
