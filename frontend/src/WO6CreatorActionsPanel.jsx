@@ -50,6 +50,13 @@ export default function WO6CreatorActionsPanel({projectId}){
   const [startTick,setStartTick]=useState('0');
   const [endTick,setEndTick]=useState(String(TICKS_PER_SECOND));
   const [color,setColor]=useState(DEFAULT_COLOR);
+  const [localModels,setLocalModels]=useState([]);
+  const [localModelState,setLocalModelState]=useState('');
+  const [localModelId,setLocalModelId]=useState('');
+  const [aiDirection,setAiDirection]=useState('');
+  const [aiFilmTick,setAiFilmTick]=useState('0');
+  const [aiProposalTicket,setAiProposalTicket]=useState(null);
+  const [aiProposal,setAiProposal]=useState(null);
   const native=()=>window.pywebview?.api;
   const currentScene=catalog?.scenes?.find(x=>x.id===sceneId)||null;
   const currentTake=catalog?.takes?.find(x=>x.id===takeId)||null;
@@ -71,6 +78,13 @@ export default function WO6CreatorActionsPanel({projectId}){
     impact?.data?.status==='READ_ONLY_IMPACT_PREVIEW_NO_CREATOR_GRANT' &&
     impact?.data?.indexed_downstream_truncated===false;
   useEffect(()=>{setImpact(null)},[fingerprint]);
+  // Never present prior Take/project suggestions as if selected for the
+  // currently viewed original source. The native receipt itself remains
+  // SHA-bound even if the user changes the panel selection mid-generation.
+  useEffect(()=>{
+    setAiProposalTicket(null);
+    setAiProposal(null);
+  },[projectId,takeId]);
   useEffect(()=>{
     let live=true;
     async function load(){
@@ -201,6 +215,37 @@ export default function WO6CreatorActionsPanel({projectId}){
     setImpact(null);
     await refresh();
   });
+  const discoverLocalModels=()=>run(async()=>{
+    if(typeof native()?.wo6_local_models!=='function')
+      throw new Error('Installed NVP host has no local model discovery');
+    const result=await native().wo6_local_models(projectId);
+    setLocalModelState(result.state);
+    setLocalModels(result.models||[]);
+    setLocalModelId(result.models?.[0]?.id||'');
+  });
+  const requestLocalSuggestion=()=>run(async()=>{
+    if(!currentTake||!localModelId)
+      throw new Error('Select a frozen original Take and connected local model');
+    if(!aiDirection.trim())
+      throw new Error('Enter the intended scene direction');
+    if(!/^(0|[1-9][0-9]{0,14})$/.test(aiFilmTick))
+      throw new Error('Choose canonical exact Film Time tick');
+    const result=await native().wo6_suggest_from_local_model({
+      project_id:projectId,
+      take_id:currentTake.id,take_sha256:currentTake.sha256,
+      film_tick:aiFilmTick,direction:aiDirection,model_id:localModelId,
+    });
+    if(result?.state!=='GENERATING'||!result.proposal_id)
+      throw new Error('No native read-only model proposal was admitted');
+    setAiProposalTicket(result.proposal_id);
+    setAiProposal(null);
+  });
+  const readLocalSuggestion=()=>run(async()=>{
+    if(!aiProposalTicket)throw new Error('No model proposal has been requested');
+    const result=await native().wo6_model_proposal_status(
+      projectId,aiProposalTicket);
+    setAiProposal(result);
+  });
   const selectedTask=receipt?.queued_task_id||receipt?.task_id;
   const readStatus=()=>run(async()=>{
     if(!selectedTask)throw new Error('No owned task has been queued');
@@ -217,6 +262,53 @@ export default function WO6CreatorActionsPanel({projectId}){
     <p className="muted">Source impact first, then separate OS creative and native
     execution permission. All operations preserve the original Take. No film or DCP is
     approved by this screen.</p>
+    <div aria-label="Local model director suggestion (read-only)">
+      <h3>Local AI scene advice — director review only</h3>
+      <p className="muted">Uses an existing local model and reopened immutable
+      Take context. Model text cannot select or execute a native tool, fill
+      an approval, save a Take, or approve a film. Review it manually.</p>
+      <div className="actions">
+        <button type="button" disabled={busy||!catalog} onClick={discoverLocalModels}>
+          Find local models</button>
+        <span role="status">Local model: {localModelState||'not checked'}</span>
+      </div>
+      <label>Available locally reported model<select value={localModelId}
+        disabled={busy||!localModels.length}
+        onChange={e=>setLocalModelId(e.target.value)}>
+        {!localModels.length&&<option value="">No verified local selection</option>}
+        {localModels.map(x=><option key={x.id} value={x.id}>
+          {x.id}</option>)}
+      </select></label>
+      <label>Direction for the current frozen Take<textarea
+        value={aiDirection} maxLength={1200} disabled={busy}
+        onChange={e=>setAiDirection(e.target.value)}
+        placeholder="Suggest a clearer camera or actor direction for this Take"/>
+      </label>
+      <label>Exact original Film Time tick<input value={aiFilmTick}
+        disabled={busy} onChange={e=>setAiFilmTick(e.target.value)}/></label>
+      <div className="actions">
+        <button type="button" disabled={busy||!currentTake||!localModelId||!aiDirection.trim()}
+          onClick={requestLocalSuggestion}>Ask local model for read-only advice</button>
+        <button type="button" disabled={busy||!aiProposalTicket}
+          onClick={readLocalSuggestion}>Read local model proposal status</button>
+      </div>
+      {aiProposalTicket&&<p>Read-only proposal ID: {aiProposalTicket}.
+        No native task has been dispatched.</p>}
+      {aiProposal&&<div role="status">
+        <p>Local AI state: {aiProposal.state}.
+          Creator and native execution approvals: not granted.</p>
+        {aiProposal.proposal&&<div>
+          <p>Bound original Take SHA: {aiProposal.proposal.take_sha256}</p>
+          <p>Verified context SHA: {aiProposal.proposal.verified_source_context_sha256}</p>
+          <pre style={{maxHeight:280,overflow:'auto',whiteSpace:'pre-wrap'}}>
+            {aiProposal.proposal.suggestion_text}
+          </pre>
+          <p>Untrusted advice only. To make a real change, choose and
+          review an operation below, inspect fresh source impact, and
+          independently confirm both native OS dialogs.</p>
+        </div>}
+      </div>}
+    </div>
     {!catalog&&<p role="status">Checking the installed native host and FilmIndex…</p>}
     <label>Operation<select value={kind} disabled={busy}
       onChange={e=>{setKind(e.target.value);setValue(e.target.value==='blocking'?'0,0,0':'50');setSelectedPath('');setImpact(null)}}>

@@ -29,17 +29,21 @@ from backend.nvp_wo6_native_take_action import NativeTakeActionHost
 from backend.nvp_wo6_native_shot_action import NativeShotActionHost
 from backend.nvp_wo6_native_data_action import NativeFilmDecisionHost
 from backend.nvp_wo6_recovery import WO6DurableRecovery
+from backend.nvp_wo6_director_model_proposal import (
+    director_model_suggestion, MAX_CREATIVE_CHARS)
+from backend.nvp_model_service import discover_models, writer_for
 
 FORMAT="nvp.wo6.director_desktop_native_consent.v1"
 MAX_LIST=64
 MAX_APPROVAL_TEXT=4096
 MAX_DISPATCH_QUEUE=64
+MAX_MODEL_PROPOSALS=4  # Not native workers or persistent approvals.
 
 
 class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
     """First-party Desktop IPC only, not NVP FastAPI or model execute catalog."""
 
-    def __init__(self,index,*,origin,**kwargs):
+    def __init__(self,index,*,origin,director_writer_factory=None,**kwargs):
         super().__init__(index,origin=origin,**kwargs)
         home=Path(os.environ.get("NVP_HOME",str(
             Path(index.studio.db_path).parent)))
@@ -63,6 +67,13 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
         self._wo6_dispatch_faults={}
         self._wo6_dispatch_deferrals={}
         self._wo6_closed=False
+        # Optional host-owned test injection; browser/LLM JSON never
+        # receives or supplies the provider, tool path, URL or callback.
+        if director_writer_factory is not None and not callable(director_writer_factory):
+            raise TypeError("Native model factory must be host-injected")
+        self._wo6_director_writer_factory=director_writer_factory or writer_for
+        self._wo6_model_lock=threading.RLock()
+        self._wo6_model_proposals={}
 
     def _wo6_host(self):
         self._native_window()
@@ -135,6 +146,107 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
             self._wo6_native_grants[spec_sha]=now+1200
             return True
         return False
+
+    def wo6_local_models(self,project_id):
+        """Explicit user discovery of an existing loopback-only model service."""
+        self._wo5_project(project_id)
+        result=discover_models()
+        return {**result, "model_execute_authorized":False,
+                "native_source_write_authorized":False,
+                "remote_model_endpoint_supported":False}
+
+    def _wo6_run_director_model(self,request_id,request):
+        try:
+            provider=self._wo6_director_writer_factory(request["model_id"])
+            proposal=director_model_suggestion(
+                self.index,request["project_id"],
+                request["take_id"],request["take_sha256"],
+                request["film_tick"],request["direction"],
+                request["model_id"],provider)
+        except Exception:
+            # Avoid leaking provider IP/paths, prompts and private NVP
+            # source descriptions to the browser on model failure.
+            with self._wo6_model_lock:
+                slot=self._wo6_model_proposals.get(request_id)
+                if slot is not None and not self._wo6_closed:
+                    slot.update(state="FAILED",reason="Local model or verified source unavailable")
+            return
+        with self._wo6_model_lock:
+            slot=self._wo6_model_proposals.get(request_id)
+            if slot is not None and not self._wo6_closed:
+                slot.update(state="READY_FOR_HUMAN_REVIEW",proposal=proposal)
+
+    def wo6_suggest_from_local_model(self,request):
+        """Nonblocking read-only AI proposal, not a WO6 worker admission."""
+        self._wo6_require(request,{
+            "project_id","take_id","take_sha256",
+            "film_tick","direction","model_id"})
+        if (type(request["direction"]) is not str or
+                not 1<=len(request["direction"].strip())<=MAX_CREATIVE_CHARS or
+                type(request["film_tick"]) is not str or
+                len(request["film_tick"])>16 or
+                type(request["model_id"]) is not str or
+                not 1<=len(request["model_id"])<=256 or
+                type(request["take_id"]) is not str or
+                len(request["take_id"])>80):
+            raise ValueError("Invalid bounded director suggestion request")
+        # Check immutable source identity before creating the local generation.
+        original=self.index.read_revision(
+            request["project_id"],request["take_id"],1)
+        if (original["kind"]!="take" or original["data"].get("frozen") is not True or
+                original["document_sha256"]!=request["take_sha256"]):
+            raise PermissionError("Proposals require a current original Take identity")
+        with self._wo6_model_lock:
+            if self._wo6_closed:
+                raise PermissionError("Native director session is closed")
+            # Refuse accumulation instead of dropping an active source-bound
+            # model completion in a different thread behind the user's back.
+            active=sum(x["state"]=="GENERATING" for x in
+                       self._wo6_model_proposals.values())
+            if active>=1:
+                raise RuntimeError("Previous local model generation has not finished")
+            while len(self._wo6_model_proposals)>=MAX_MODEL_PROPOSALS:
+                # Bounded retention of only completed review drafts. The
+                # oldest result is evicted; no persistent source, approval
+                # or model instruction is recovered or auto-applied.
+                oldest=next(iter(self._wo6_model_proposals))
+                if self._wo6_model_proposals[oldest]["state"]=="GENERATING":
+                    raise RuntimeError("No safe completed model result to evict")
+                del self._wo6_model_proposals[oldest]
+            proposal_id="wo6proposal_"+secrets.token_hex(12)
+            self._wo6_model_proposals[proposal_id]={
+                "state":"GENERATING","project_id":request["project_id"],
+                "actor_id":self._wo6_actor}
+            threading.Thread(
+                target=self._wo6_run_director_model,
+                args=(proposal_id,dict(request)),
+                name="NVP-WO6-read-only-model-suggestion",
+                daemon=True).start()
+        return {"format":FORMAT,"proposal_id":proposal_id,
+                "state":"GENERATING","native_worker_authorized":False,
+                "creative_approval_granted":False,
+                "film_delivered":False}
+
+    def wo6_model_proposal_status(self,project_id,proposal_id):
+        self._wo5_project(project_id)
+        if type(proposal_id) is not str or not (
+                proposal_id.startswith("wo6proposal_") and
+                len(proposal_id)==36):
+            raise ValueError("Exact native proposal identity required")
+        with self._wo6_model_lock:
+            if self._wo6_closed:
+                raise PermissionError("Native director model session closed")
+            slot=self._wo6_model_proposals.get(proposal_id)
+            if slot is None or slot["project_id"]!=project_id or (
+                    slot["actor_id"]!=self._wo6_actor):
+                raise PermissionError("Unknown actor or project model suggestion")
+            return {"format":FORMAT, "proposal_id":proposal_id,
+                    "state":slot["state"],
+                    "proposal":slot.get("proposal"),
+                    "failure_category":slot.get("reason"),
+                    "native_worker_authorized":False,
+                    "creative_approval_granted":False,
+                    "film_delivered":False}
 
     def wo6_source_catalog(self,project_id):
         self._wo5_project(project_id)
@@ -365,6 +477,10 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                     else:
                         queue.task_done()
                 queue.put_nowait(None)
+        with self._wo6_model_lock:
+            # An outstanding HTTP completion cannot be forcibly terminated
+            # through this read-only interface. Its result is discarded.
+            self._wo6_model_proposals.clear()
         self._wo6_decisions.clear()
         self._wo6_native_grants.clear()
         super()._close()
