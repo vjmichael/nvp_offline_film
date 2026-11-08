@@ -98,6 +98,7 @@ class FilmGuideConversionContracts(unittest.TestCase):
                 dict(plan_args(performance), guide_rights_evidence_sha256="unverifiable"),
                 dict(plan_args(performance), mode="voice_impersonation"),
                 dict(plan_args(performance), guide_origin="unauthenticated_mic"),
+                dict(plan_args(performance), guide_origin="tts_acted_guide"),
             ):
                 with self.subTest(wrong=wrong), self.assertRaises(
                     (ValueError, PermissionError, KeyError, RuntimeError)):
@@ -152,7 +153,6 @@ class FilmGuideConversionContracts(unittest.TestCase):
             revised = dict(kwargs)
             revised["expected_revision"] = 1
             revised["mode"] = "performance_to_target_voice"
-            revised["guide_origin"] = "tts_acted_guide"
             second = host.publish_intent(
                 pid, source["request"], **revised, creator_event="DIRECTOR")
             self.assertEqual(second["intent_revision"], 2)
