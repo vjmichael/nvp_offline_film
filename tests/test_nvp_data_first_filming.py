@@ -319,6 +319,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                     self.inner.write(bytes([first[0]^1]))
                     self.inner.seek(0)
                 return result
+            def flush(self):return self.inner.flush()
             def close(self):return self.inner.close()
         def spool_factory(**kwargs):
             wrapped=CorruptingSpool(actual_spool(**kwargs))
@@ -353,6 +354,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 return self.inner.write(data)
             def seek(self,*args):return self.inner.seek(*args)
             def read(self,*args):return self.inner.read(*args)
+            def flush(self):return self.inner.flush()
             def close(self):
                 self.closed=True
                 return self.inner.close()
