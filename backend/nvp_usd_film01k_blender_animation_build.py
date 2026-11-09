@@ -151,7 +151,9 @@ def author_original_blender_animation(index:FilmIndex,pid,rig_id,*,folder):
                 timeline.append({
                     "frame":frame,
                     "original_film_tick":state["original_film_tick"],
-                    "actor_state_sha256":state["source_actor_state_sha256"]})
+                    "actor_state_sha256":state["source_actor_state_sha256"],
+                    "source_actor_world_positions_m":state[
+                        "source_actor_world_positions_m"]})
         if len({x["actor_state_sha256"] for x in timeline})<2:
             raise RuntimeError("The original actor performance did not animate")
         proof={
