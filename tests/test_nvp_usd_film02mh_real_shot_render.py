@@ -234,18 +234,41 @@ class OriginalActorDistrictNativeRenderTests(unittest.TestCase):
                     job_id="shot02mh_denied",director_event="FAKE_CREATIVE_APPROVAL")
             with self.assertRaises(KeyError):
                 sup.inspect("shot02mh_denied")
-            completed=host.render(
-                self.pid,"Native02MHBinding1",
-                job_id="shot02mh_actor_world_real",director_event="REVIEW_RENDER_SOURCE")
+            compared=host.compare_approved_revisions(
+                self.pid,"Native02MHBinding1","Native02MHBinding2",
+                first_job_id="shot02mh_revision1",
+                second_job_id="shot02mh_revision2",
+                director_event="REVIEW_RENDER_SOURCE")
             self.assertEqual(
-                completed["state"],
-                "RENDERED_REAL_ORIGINAL_DISTRICT_ACTOR_CAMERA_SHOT")
-            self.assertTrue(completed["independent_saved_blend_reopened"])
-            self.assertTrue(completed["actual_film_frame_rendered"])
-            self.assertEqual(completed["original_world_take_sha256"],self.take_sha)
-            self.assertTrue(completed["source_actor_take_pcm_unchanged"])
-            self.assertGreaterEqual(len(decisions),2)
-            self.assertFalse(completed["final_film_accepted"])
+                compared["format"],
+                "nvp.usd_film02m_h.real_native_two_district_revision_comparison.v1")
+            self.assertTrue(compared["real_pixels_changed_significantly"])
+            self.assertGreaterEqual(compared["changed_pixels_over_12_rgb"],250)
+            self.assertEqual(
+                compared["original_world_take_sha256"],self.take_sha)
+            self.assertTrue(compared["independent_blender_reopened_both"])
+            self.assertTrue(compared["original_actor_take_pcm_unchanged"])
+            self.assertGreaterEqual(len(decisions),3)
+            self.assertFalse(compared["complete_film_accepted"])
+            # Preserve independently inspectable real PNG/Blend/worker
+            # receipts. A visual review remains a separate human gate.
+            destination=os.environ.get("NVP_FILM02MH_ARTIFACT_DIR")
+            if destination:
+                import shutil
+                root=Path(destination).resolve()
+                root.mkdir(parents=True,exist_ok=True)
+                (root/"district_revision_comparison.json").write_text(
+                    json.dumps(compared,sort_keys=True,indent=2),"utf8")
+                for number in (1,2):
+                    job=sup.root/("shot02mh_revision"+str(number))
+                    for name in ("frame.png","scene.blend","source.usda",
+                                 "source.json","district.json","audit.json"):
+                        shutil.copyfile(job/name,root/(
+                            "district"+str(number)+"_"+name))
+                    shutil.copyfile(
+                        sup.root/("shot02mh_revision"+str(number)+"_reopen")/
+                            "audit.json",
+                        root/("district"+str(number)+"_independent_blender.json"))
             self.assertEqual(
                 self.index.read_revision(self.pid,self.take_id,1)[
                     "document_sha256"],self.take_sha)
