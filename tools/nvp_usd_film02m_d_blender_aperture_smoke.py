@@ -98,6 +98,7 @@ def run():
         raise RuntimeError("Actual imported original rear/interior source meshes missing")
     source_faces=sum(len(o.data.polygons) for o in meshes)
     scene=bpy.context.scene
+    bpy.context.view_layer.update()
     depsgraph=bpy.context.evaluated_depsgraph_get()
     door=Vector(spec["front_door_world_center_m"])
     front_y=float(spec["front_wall_outer_y_m"])
