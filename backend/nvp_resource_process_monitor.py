@@ -42,6 +42,7 @@ class _ObservedChild:
     peak_rss_mb: float = 0.0
     last_rss_mb: float | None = None
     last_cpu_seconds: float | None = None
+    last_cpu_percent_one_core_100: float | None = None
     last_read_bytes: int | None = None
     last_write_bytes: int | None = None
     sampled_at: float | None = None
@@ -137,6 +138,15 @@ class NVPProcessResourceMonitor:
             observed.last_rss_mb=round(_mib(sum(x[1] for x in owned)),3)
             observed.peak_rss_mb=max(observed.peak_rss_mb,observed.last_rss_mb)
             cpu_total=sum(x[2] for x in owned)
+            monotonic=time.monotonic()
+            if (observed._last_cpu_seconds is not None and
+                observed._last_monotonic is not None and
+                monotonic>observed._last_monotonic):
+                observed.last_cpu_percent_one_core_100=round(
+                    max(0.,cpu_total-observed._last_cpu_seconds)/
+                    (monotonic-observed._last_monotonic)*100.,2)
+            observed._last_cpu_seconds=cpu_total
+            observed._last_monotonic=monotonic
             observed.last_cpu_seconds=round(cpu_total,4)
             observed.last_read_bytes=sum(x[3] for x in owned if x[3] is not None) if all(
                 x[3] is not None for x in owned) else None
@@ -208,10 +218,12 @@ class NVPProcessResourceMonitor:
                     "observed_rss_mb":row.last_rss_mb,
                     "peak_observed_rss_mb":round(row.peak_rss_mb,3),
                     "observed_cpu_time_seconds":row.last_cpu_seconds,
+                    "observed_cpu_percent_one_core_100":row.last_cpu_percent_one_core_100,
                     "observed_io_read_bytes":row.last_read_bytes,
                     "observed_io_write_bytes":row.last_write_bytes,
                     "sampled_at":row.sampled_at,
                     "observed_process_tree_only":True,
+                    "rss_sum_may_double_count_shared_memory":True,
                     "per_process_gpu_memory_mb":None,
                     "gpu_memory_attribution_supported":False,
                     "warning":row.last_error,
