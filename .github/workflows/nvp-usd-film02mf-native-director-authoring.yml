@@ -2,6 +2,11 @@ name: NVP USD-FILM-02M-F/G/H Grouped Native Director, Model and Original Shot Ac
 
 # Run ONCE per completed 02M-F/G/H task group, never on small pushes.
 on:
+  # One consolidated F/G/H acceptance batch after the completed task group.
+  # Restore manual-only after evaluating this one exact-head batch; do not
+  # create continuous per-edit CI runs.
+  push:
+    branches: [nvp/usd-film02mf-grouped-model-world-staging-20261109]
   workflow_dispatch:
 
 permissions:
