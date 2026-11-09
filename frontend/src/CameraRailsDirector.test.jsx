@@ -109,6 +109,31 @@ describe('CAM-FX installed original camera-rail director',()=>{
       project_id:PID,rail_id:'OriginalCameraRail',revision:1,film_tick:T}));
   });
 
+  it('inserts, moves, retimes, removes and undoes unapproved exact-time handles',async()=>{
+    const native=bridge();
+    render(<CameraRailsDirector projectId={PID} nativeBridge={native}/>);
+    await screen.findByRole('option',{name:'ShotCameraBank · revision 1'});
+    fireEvent.click(screen.getByRole('button',{
+      name:'Create editable camera rail handles from technique'}));
+    await screen.findByLabelText('Rail key 2 tick');
+    expect(screen.queryByLabelText('Rail key 3 tick')).toBeNull();
+    fireEvent.click(screen.getByRole('button',{name:'Insert handle after 1'}));
+    await screen.findByLabelText('Rail key 3 tick');
+    const middle=screen.getByLabelText('Rail key 1 tick');
+    expect(Number(middle.value)).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText('Rail key 1 position_m Z'),{
+      target:{value:'4.8'}});
+    expect(Number(screen.getByLabelText('Rail key 1 position_m Z').value)).toBe(4.8);
+    fireEvent.click(screen.getByRole('button',{
+      name:'Undo last unapproved camera-rail handle edit'}));
+    expect(Number(screen.getByLabelText('Rail key 1 position_m Z').value)).not.toBe(4.8);
+    fireEvent.click(screen.getByRole('button',{name:'Remove handle 2'}));
+    expect(screen.queryByLabelText('Rail key 3 tick')).toBeNull();
+    expect(native.camfx02_publish).not.toHaveBeenCalled();
+    expect(screen.getByRole('button',{
+      name:'OS approve exact director-editable camera rail revision'}).disabled).toBe(true);
+  });
+
   it('invalidates approval preview if the director changes any handle afterward',async()=>{
     const native=bridge();
     render(<CameraRailsDirector projectId={PID} nativeBridge={native}/>);
