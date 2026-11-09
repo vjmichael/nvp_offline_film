@@ -35,10 +35,13 @@ PROFILES=(
      "lighting":"soft_day"},
     {"id":"mid_oblique","lod":"mid","camera":"oblique",
      "resolution":[480,270],"cycles_samples":12,
-     "lighting":"side_day"},
+     "lighting":"soft_day"},
     {"id":"far_street","lod":"far","camera":"far",
      "resolution":[320,180],"cycles_samples":8,
-     "lighting":"late_day"})
+     "lighting":"soft_day"},
+    {"id":"near_front_relight","lod":"near","camera":"front",
+     "resolution":[640,360],"cycles_samples":24,
+     "lighting":"warm_side"})
 SOURCE_BUDGET=64*1024*1024
 ALLOWED_RGB_MAX=1.
 MAX_MODULES=48
