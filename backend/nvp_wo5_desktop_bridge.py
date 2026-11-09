@@ -52,6 +52,10 @@ class TrustedDesktopWO5Bridge(OriginalDistrictDesktopMixin,OriginalSelectedFilmD
         self._film01r_jobs = {}
         self._film01t_jobs = {}
         self._film01r_pool = None
+        # One bounded model-to-original-draft job per installed host. These
+        # slots hold cancellation flags, not model permissions or source edits.
+        self._film02mg_async_lock = threading.RLock()
+        self._film02mg_active = {}
 
     def _wo5_project(self, project_id):
         self._native_window()  # exact current first-party pywebview origin
