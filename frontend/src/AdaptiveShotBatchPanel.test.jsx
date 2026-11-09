@@ -61,8 +61,8 @@ describe('01S director camera batch controls',()=>{
     await waitFor(()=>expect(api).toHaveBeenCalledTimes(1));
     expect(api.mock.calls[0][2].renderer).toBe('gpu');
     expect(api.mock.calls[0][2].gpu_device_id).toBe('unverified-gpu');
-    expect(screen.getByText(/Safe measured resources/)).toBeTruthy();
-    expect(screen.getByText(/0 native workers/)).toBeTruthy();
+    expect(screen.getAllByText(/Safe measured resources/).length).toBe(2);
+    expect(screen.getAllByText(/0 native workers/).length).toBe(2);
   });
 
   it('refuses invalid final shot counts before any server call',()=>{
