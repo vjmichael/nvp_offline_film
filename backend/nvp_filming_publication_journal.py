@@ -32,6 +32,8 @@ class FilmingPublicationJournal:
         if (type(source_ids) is not list or not source_ids or
             len(set(source_ids)) != len(source_ids)):
             raise ValueError("Expected distinct original sound sources")
+        if take_id == sound_timeline_id or take_id in source_ids or sound_timeline_id in source_ids:
+            raise ValueError("Filming publication identities must be distinct")
         for sid in source_ids:
             _id(sid, "filming source")
         with self.index.studio._connection() as db:
