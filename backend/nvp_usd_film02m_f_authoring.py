@@ -311,6 +311,27 @@ class OriginalDistrictDrafts:
             except (KeyError,RuntimeError,PermissionError,ValueError,TypeError):
                 continue
             if len(districts)>=24:break
+        from backend.nvp_usd_film01e_world_take import FORMAT as WORLD_TAKE_FORMAT
+        world_takes=[]
+        for item in self.index.list_objects(pid,kind="take")[:128]:
+            try:
+                record=self.index.read_revision(
+                    pid,item["object_id"],item["head_revision"])
+                if (item["head_revision"]==1 and
+                    record["data"].get("format")==WORLD_TAKE_FORMAT and
+                    record["data"].get("frozen") is True):
+                    world_takes.append({
+                        "take_id":item["object_id"],
+                        "take_sha256":record["document_sha256"],
+                        "checkpoint_ticks":record["data"]["checkpoint_ticks"],
+                        "shot_id":record["data"]["camera_shot_id"],
+                        "shot_revision":record["data"]["camera_shot_revision"],
+                        "original_actor_count":len(record["data"][
+                            "canonical_original_actors"])})
+            except (KeyError,ValueError,TypeError,PermissionError):
+                continue
+            if len(world_takes)>=32:
+                break
         with self._db() as db:
             self._recover_model_attempts(db,pid)
             attempts=db.execute("""SELECT attempt_id,district_id,
@@ -328,6 +349,7 @@ class OriginalDistrictDrafts:
             "format":"nvp.usd_film02m_f.native_source_catalog.v1",
             "project_id":pid,"source_buildings":candidates,
             "approved_districts":districts,
+            "original_world_takes":world_takes,
             "drafts":[self._overview(dict(x)) for x in drafts],
             "model_attempts":[dict(x) for x in attempts],
             "native_blender_workers_started":0,
