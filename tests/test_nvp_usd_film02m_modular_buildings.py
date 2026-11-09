@@ -383,6 +383,252 @@ class OriginalModularBuildingSource(unittest.TestCase):
             "director_visual_quality_reviewed":False},
             sort_keys=True,indent=2),"utf8")
 
+    def _02m_d_original_building(self,tag,origin,seed,treatment):
+        from backend.nvp_usd_film02m_d_openings import (
+            facade_layout,publish_facade_with_detail,
+            publish_room_with_detail)
+        layout=facade_layout(
+            width_m=12,height_m=6,stories=2,bays=3,
+            treatment=treatment,seed=seed)
+        facade=publish_facade_with_detail(
+            self.index,self.pid,"AssetFacadeD"+tag,
+            "DetailFacadeD"+tag,layout=layout,
+            thickness_m=.4,color_rgb=[.65,.38,.22])
+        published_facade=self.kit.publish_module(
+            self.pid,"ModuleFacadeD"+tag,
+            asset_id="AssetFacadeD"+tag,asset_revision=1,
+            role="facade",style_family="UrbanFilm",
+            size_m=[12,.4,6],
+            sockets=self.catalog["ModuleFacadeRed"]["sockets"],
+            geometry_detail_id="DetailFacadeD"+tag,
+            geometry_detail_revision=1,
+            director_event=self.approval)
+        # Reuse the EXACT original floor mesh revision and only extend
+        # its director-authored floor socket metadata for the 3D room.
+        floor_sockets=list(self.catalog["ModuleFloor"]["sockets"])
+        floor_sockets.append(
+            sock("RoomMount",[0,0,.2],[0,0,1],4,"room_floor"))
+        floor=self.kit.publish_module(
+            self.pid,"ModuleFloorD"+tag,
+            asset_id="AssetModuleFloor",asset_revision=1,
+            role="floor",style_family="UrbanFilm",
+            size_m=[12,10,.4],sockets=floor_sockets,
+            director_event=self.approval)
+        room=publish_room_with_detail(
+            self.index,self.pid,"AssetInteriorD"+tag,
+            "DetailInteriorD"+tag,
+            width_m=11,depth_m=9,height_m=5.2,
+            wall_thickness_m=.08,
+            color_rgb=[.82,.78,.69])
+        interior=self.kit.publish_module(
+            self.pid,"ModuleInteriorD"+tag,
+            asset_id="AssetInteriorD"+tag,asset_revision=1,
+            role="interior",style_family="UrbanFilm",
+            size_m=[11,9,5.2],
+            sockets=[sock("Base",[0,0,-2.6],
+                          [0,0,-1],4,"room_floor")],
+            geometry_detail_id="DetailInteriorD"+tag,
+            geometry_detail_revision=1,
+            director_event=self.approval)
+        recipe=building_recipe(origin,["ModuleFacadeD"+tag])
+        recipe[0]["options"]=[{
+            "module_id":"ModuleFloorD"+tag,"revision":1}]
+        recipe.append(node(
+            "Interior","ModuleInteriorD"+tag,
+            parent="Floor",attached="RoomMount",own="Base"))
+        building_id="BuildingSourceD"+tag
+        building=self.kit.publish_building(
+            self.pid,building_id,seed=seed,
+            blueprint=recipe,director_event=self.approval)
+        return {
+            "id":building_id,"revision":1,
+            "building":building,"layout":layout,
+            "facade":facade,"room":room,
+            "facade_module":published_facade,
+            "room_module":interior,"floor_module":floor}
+
+    def test_02m_d_actual_opening_surface_geometry_and_story_variants(self):
+        from backend.nvp_usd_film02m_d_openings import (
+            facade_layout,apertured_wall_mesh,
+            prove_facade_geometry,original_through_opening,
+            room_shell_mesh)
+        for treatment in ("residential","shopfront","industrial"):
+            layout=facade_layout(
+                width_m=12,height_m=6,stories=2,bays=3,
+                treatment=treatment,seed=125)
+            self.assertEqual(len(layout["openings"]),6)
+            self.assertEqual(
+                len([x for x in layout["openings"]
+                     if x["kind"]=="door"]),1)
+            mesh=apertured_wall_mesh(
+                12,.4,6,layout["openings"])
+            proof=prove_facade_geometry(mesh)
+            self.assertTrue(proof["all_source_openings_ray_verified"])
+            self.assertTrue(mesh["real_jambs_and_wall_thickness"])
+            self.assertGreater(len(mesh["triangles"]),60)
+            self.assertFalse(original_through_opening(
+                mesh["points"],mesh["triangles"],
+                -5.94,0,.4))
+            for opening in mesh["openings"]:
+                x=opening["x_center_m"]
+                z=opening["bottom_m"]+opening["height_m"]/2
+                self.assertTrue(original_through_opening(
+                    mesh["points"],mesh["triangles"],x,z,.4))
+            if treatment=="shopfront":
+                self.assertGreater(
+                    len([x for x in layout["openings"]
+                         if x["kind"]=="storefront"]),0)
+        height=9.
+        tall=facade_layout(
+            width_m=12,height_m=height,stories=3,bays=4,
+            treatment="residential",seed=71)
+        self.assertEqual(len(tall["openings"]),12)
+        mesh=apertured_wall_mesh(12,.4,height,tall["openings"])
+        self.assertTrue(prove_facade_geometry(mesh)[
+            "all_source_openings_ray_verified"])
+        room=room_shell_mesh(11,9,5.2,.08)
+        self.assertTrue(room["front_portal_open"])
+        self.assertTrue(room["rear_wall_is_real_geometry"])
+        self.assertFalse(original_through_opening(
+            room["points"],room["triangles"],0,0,9))
+        # No source PBR opacity map can create this aperture; the
+        # actual source indexed triangle faces leave a real void.
+
+    def test_02m_d_source_asset_module_and_interior_continuity(self):
+        from backend.nvp_usd_film02m_d_openings import (
+            original_through_opening,verify_detail)
+        result=self._02m_d_original_building(
+            "Continuity",0,18,"shopfront")
+        source=verify_detail(
+            self.index,self.pid,"DetailFacadeDContinuity",1,
+            asset_id="AssetFacadeDContinuity",asset_revision=1,
+            required_kind="wall_with_real_apertures")
+        self.assertTrue(source["data"][
+            "through_wall_rays_independently_verified"])
+        self.assertFalse(source["data"]["native_cycles_pixels_verified"])
+        with self.kit.open_building(
+                self.pid,result["id"],1) as world:
+            self.assertEqual(world["mesh_count"],11)
+            self.assertEqual(world["building"]["module_count"],11)
+            stage=world["stage"]
+            facade=UsdGeom.Mesh(stage.GetPrimAtPath(
+                "/World/Buildings/Front/Geometry"))
+            room=UsdGeom.Mesh(stage.GetPrimAtPath(
+                "/World/Buildings/Interior/Geometry"))
+            self.assertTrue(facade)
+            self.assertTrue(room)
+            points=[[float(v[i]) for i in range(3)]
+                    for v in facade.GetPointsAttr().Get()]
+            counts=list(facade.GetFaceVertexCountsAttr().Get())
+            inds=list(facade.GetFaceVertexIndicesAttr().Get())
+            self.assertTrue(all(n==3 for n in counts))
+            triangles=[inds[i:i+3] for i in range(0,len(inds),3)]
+            entrance=next(x for x in result["layout"]["openings"]
+                          if x["kind"]=="door")
+            sight_x=entrance["x_center_m"]
+            sight_z=entrance["bottom_m"]+entrance["height_m"]*.5
+            self.assertTrue(original_through_opening(
+                points,triangles,sight_x,sight_z,.4))
+            room_verts=[[float(v[i]) for i in range(3)]
+                        for v in room.GetPointsAttr().Get()]
+            room_ids=list(room.GetFaceVertexIndicesAttr().Get())
+            room_faces=[room_ids[i:i+3]
+                        for i in range(0,len(room_ids),3)]
+            # Convert from original facade-local Z to original
+            # interior-local Z: 3.0m facade centre versus 2.8m room
+            # centre (actual attached authored floor/socket transforms).
+            self.assertFalse(original_through_opening(
+                room_verts,room_faces,sight_x,
+                sight_z+3.-2.8,9.))
+            placements=world["building"]["placements"]
+            floor=next(p for p in placements if p["node_id"]=="Floor")
+            inside=next(p for p in placements if p["node_id"]=="Interior")
+            self.assertTrue(inside["connector_fit"])
+            self.assertEqual(inside["parent_id"],"Floor")
+            self.assertGreater(
+                inside["world_bounds_m"][1][2],
+                floor["world_bounds_m"][1][2]+4)
+            self.assertEqual(world["building"][
+                "original_actors_untouched"],True)
+
+    def test_02m_d_published_cells_hysteresis_required_interiors(self):
+        from backend.nvp_usd_film02m_d_cells import (
+            OriginalBuildingCells,FORMAT)
+        kit=OriginalBuildingCells(
+            self.index,verify_director_action=lambda event,scope:
+                event==self.approval and
+                scope.get("operation")==
+                    "nvp.film02m.publish_original_building_cells.v1" and
+                len(scope.get("source_cell_manifest_sha256",""))==64)
+        choices=[]
+        for i,(tag,design) in enumerate(
+                (("West","residential"),
+                 ("Middle","shopfront"),
+                 ("East","industrial"))):
+            building=self._02m_d_original_building(
+                tag,origin=i*30,seed=8+i,treatment=design)
+            choices.append({
+                "cell_id":"Cell"+tag,
+                "building_id":building["id"],
+                "building_revision":1})
+        receipt=kit.publish(
+            self.pid,"OriginalCitySourceCellsD",
+            cells=choices,director_event=self.approval)
+        self.assertEqual(receipt["revision"],1)
+        with kit.open(self.pid,"OriginalCitySourceCellsD",1) as session:
+            stage=session.stage
+            self.assertEqual(UsdGeom.GetStageUpAxis(stage),"Z")
+            self.assertEqual(sorted(session.original),
+                             ["CellEast","CellMiddle","CellWest"])
+            self.assertFalse(stage.GetPrimAtPath(
+                "/World/Cells/CellMiddle").IsLoaded())
+            near=session.transition(
+                camera_positions_m=[[0,-12,2]],
+                required_cell_ids=["CellWest"],
+                next_shot_required_cell_ids=["CellMiddle"],
+                load_distance_m=10,unload_distance_m=25,
+                max_loaded_cells=2)
+            self.assertEqual(near["loaded_cell_ids"],
+                             ["CellMiddle","CellWest"])
+            self.assertTrue(near["native_usd_payload_load_verified"])
+            self.assertEqual(
+                {row["native_meshes_reopened"] for row in near[
+                    "source_original_building_mesh_receipts"]},{11})
+            self.assertFalse(stage.GetPrimAtPath(
+                "/World/Cells/CellEast").IsLoaded())
+            # Director-required cells stay loaded even when the
+            # camera crosses the unload threshold to the far set.
+            far=session.transition(
+                camera_positions_m=[[90,-12,2]],
+                required_cell_ids=["CellWest"],
+                next_shot_required_cell_ids=["CellEast"],
+                load_distance_m=10,unload_distance_m=25,
+                max_loaded_cells=2)
+            self.assertEqual(far["loaded_cell_ids"],
+                             ["CellEast","CellWest"])
+            self.assertIn("CellMiddle",far["newly_unloaded"])
+            self.assertTrue(far["director_required_geometry_retained"])
+            with self.assertRaises(MemoryError):
+                session.transition(
+                    camera_positions_m=[[30,0,2]],
+                    required_cell_ids=["CellWest","CellMiddle"],
+                    next_shot_required_cell_ids=["CellEast"],
+                    load_distance_m=10,unload_distance_m=25,
+                    max_loaded_cells=2)
+            self.assertEqual(sorted(session.loaded),
+                             ["CellEast","CellWest"])
+            # The on-disk original source manifest is unchanged by
+            # all temporary streaming/prefetch choices.
+            self.assertEqual(self.index.read_revision(
+                self.pid,"OriginalCitySourceCellsD",1)[
+                "document_sha256"],receipt["document_sha256"])
+        with self.assertRaises(PermissionError):
+            denied=OriginalBuildingCells(
+                self.index,verify_director_action=lambda *_:False)
+            denied.publish(
+                self.pid,"DeniedCellsD",cells=choices,
+                director_event="fake")
+
     def test_02m_original_geometry_collision_rejected(self):
         original=building_recipe(0,self.facades)
         overlapping=deepcopy(original)
