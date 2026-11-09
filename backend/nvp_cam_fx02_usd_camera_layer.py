@@ -95,6 +95,10 @@ def _author(stage,rail_id,spec):
     path=camera_rail_path(rail_id)
     UsdGeom.SetStageUpAxis(stage,UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage,1.0)
+    # Match NVP DATA-TIME-01: a USD timecode is one original Film Time
+    # tick, NOT a 24fps frame or an arbitrary animation second.
+    if not stage.SetTimeCodesPerSecond(float(T)):
+        raise RuntimeError("Director camera layer lost original Film Time clock")
     # Authored stronger camera opinions must not change the ORIGINAL
     # /World prim's type. An over preserves the weaker original Xform.
     stage.OverridePrim("/World")
