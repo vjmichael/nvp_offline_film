@@ -425,9 +425,11 @@ class OriginalBuildingKit:
             raw=layer.ExportToString().encode("utf8")
             if len(raw)>MAX_STAGE_BYTES:
                 raise RuntimeError("Reusable building USD stage exceeds review bound")
-            root_sha=sha256(raw).hexdigest()
             if not layer.Save():
                 raise RuntimeError("Original building USD layer not saved")
+            # Persist and verify actual source USD BYTES that Blender consumes,
+            # not an unsaved in-memory serialization that might differ.
+            root_sha=sha256(stage_path.read_bytes()).hexdigest()
             reopened=Usd.Stage.Open(str(stage_path))
             if reopened is None or not reopened.GetPrimAtPath(
                     "/World/Buildings").IsDefined():
