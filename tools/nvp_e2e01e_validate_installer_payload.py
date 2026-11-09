@@ -52,7 +52,7 @@ def verify_pe64_gui(exe: Path) -> dict:
     }
 
 
-def verify_bundle(folder: Path) -> dict:
+def verify_bundle(folder: Path, *, require_film02mh_workers: bool = False) -> dict:
     # Refuse links anywhere in the payload: NSIS must install only audited,
     # repository-built regular files, never follow an external filesystem path.
     if folder.is_symlink():
@@ -83,6 +83,26 @@ def verify_bundle(folder: Path) -> dict:
     js = list(assets.glob("*.js"))
     if not js or not all(p.stat().st_size > 0 for p in js):
         raise RuntimeError("Missing compiled React JavaScript")
+    worker_checks={}
+    if require_film02mh_workers:
+        required=(
+            "nvp_usd_film01f_blender_worker.py",
+            "nvp_usd_film02mh_blender_reopen.py")
+        workers=base/"tools"
+        if workers.is_symlink() or not workers.is_dir():
+            raise RuntimeError("Protected original actor/district Blender workers not bundled")
+        for name in required:
+            child=workers/name
+            if child.is_symlink() or not child.is_file():
+                raise RuntimeError("Required exact-source Blender worker not bundled: "+name)
+            contents=child.read_bytes()
+            if len(contents)<1000 or b"import bpy" not in contents:
+                raise RuntimeError("Bundled protected Blender script is incomplete: "+name)
+            worker_checks[name]=hashlib.sha256(contents).hexdigest()
+        bundled_js=b"".join(p.read_bytes() for p in js)
+        if (b"OS approve and render original actor/district Cycles frame" not in bundled_js
+            or b"Reopen independently verified saved Cycles image" not in bundled_js):
+            raise RuntimeError("Built React WebView2 assets lack protected render controls")
     files = [p for p in folder.rglob("*") if p.is_file()]
     if len(files) < MIN_BUNDLE_FILES:
         raise RuntimeError("NVP package does not contain a real runtime")
@@ -95,15 +115,20 @@ def verify_bundle(folder: Path) -> dict:
         "asset_js_count": len(js),
         "react_index_sha256": hashlib.sha256(entry.read_bytes()).hexdigest(),
         "runtime_verified_on_windows": False,
+        "film02mh_renderer_scripts_sha256":worker_checks,
+        "film02mh_renderer_worker_bundle_checked":require_film02mh_workers,
     }
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--bundle", required=True, type=Path)
+    ap.add_argument("--require-original-cycles-02mh", action="store_true",
+                    help="Require reviewed Blender workers and actual director render controls")
     ap.add_argument("--report", type=Path)
     args = ap.parse_args(argv)
-    report = verify_bundle(args.bundle)
+    report = verify_bundle(
+        args.bundle,require_film02mh_workers=args.require_original_cycles_02mh)
     serialized = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
