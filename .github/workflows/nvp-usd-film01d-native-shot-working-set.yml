@@ -1,0 +1,105 @@
+name: NVP USD-FILM-01D Camera-Aware Shot Working Set and Recovery (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/usd-film01d-shot-working-set-20261108]
+  pull_request:
+    branches: [nvp/usd-film01c-scoped-lazy-resolver-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-usd-film01d-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-native-shot-workflow:
+    name: True USD original camera, mandatory sets, preview layer and interruption / ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine OpenUSD runtime and FilmIndex dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+      - name: Compile native camera-shot planner, working-set host and inherited USD source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01d_shot_working_set.py tools/nvp_usd_film01d_benchmark.py tests/test_nvp_usd_film01d_shot_working_set.py backend/nvp_usd_film01_world.py
+      - name: Run native camera, constrained prefetch, original source, disposable edit layer and recovery tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01d_shot_working_set.py" -v
+      - name: Confirm inherited cached-world and actual image/source integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01c_lazy_resolver.py" -v
+          python -m unittest discover -s tests -p "test_nvp_usd_film01_world.py" -v
+
+  actual-camera-shot-performance:
+    name: Genuine native 20-shot USD replay, 1200-instance source and OS memory / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install actual Python FilmIndex and OpenUSD native runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Author real two-set film world and measure 20 camera-source shot transitions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p usd-film01d-evidence
+          python tools/nvp_usd_film01d_benchmark.py \
+            --instances 1200 --shots 20 \
+            --output usd-film01d-evidence/native_camera_shot_stream.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          row=json.loads(Path("usd-film01d-evidence/native_camera_shot_stream.json").read_text())
+          assert row["native_UsdGeom_original_cameras_verified"] is True
+          assert row["shot_transition_count"] == 20
+          assert row["genuine_point_instancer_positions"] == 1200
+          assert row["cancelled_receipt_persisted"] is True
+          assert row["native_fresh_restart_resumed"] is True
+          assert row["source_film_world_unchanged"] is True
+          assert all(x["source_camera_ok"] for x in row["per_shot"])
+          assert not row["gpu_vram_attributable_to_world_stage"]
+          assert not row["actual_editor_ui_latency_measured"]
+          assert not row["actual_renderer_pixels_produced"]
+          print("Native USD shot data and resource measurement, not a rendered film")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-USD-FILM01D-REAL-SHOT-CAMERA-RSS-${{ matrix.os }}-UNACCEPTED
+          path: usd-film01d-evidence/
+          if-no-files-found: warn
+          retention-days: 14
