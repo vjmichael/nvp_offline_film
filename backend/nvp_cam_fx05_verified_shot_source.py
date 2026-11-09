@@ -166,7 +166,7 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
         if (_actor_geometry_signature(frozen,actor_paths,at)!=actor_before or
             prior!=source_before or any(
             abs(float(frozen_rail[i][j])-rail_rows[i][j])>1e-5
-            for i in range(4) for j in range(4)):
+            for i in range(4) for j in range(4))):
             raise PermissionError("Disposable rail staging moved original camera or altered director pose")
         pending=job/"source.rail.pending.usda"
         if not frozen.Export(str(pending)):
