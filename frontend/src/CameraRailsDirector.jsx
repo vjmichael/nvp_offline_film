@@ -711,7 +711,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
         </div>}
       </section>
     </>}
-    {nodes.length>=2&&<CameraRailGizmo nodes={nodes} origin={origin}
+    {advanced&&<CameraRailGizmo nodes={nodes} origin={origin}
       guidance={sceneGuidance} disabled={busy||Boolean(modelAttempt)}
       onNodesChange={updated=>{
         remember();setNodes(updated);invalidate();
