@@ -168,7 +168,8 @@ class DurableOriginalCameraDrafts:
             "draft_id":row["draft_id"],"project_id":row["project_id"],
             "rail_id":row["rail_id"],"base_revision":row["base_revision"],
             "base_sha256":row["base_sha"],"version":row["version"],
-            "state":state if base_current else "STALE_SOURCE_REQUIRES_NEW_DRAFT",
+            "state":(state if base_current or state=="PUBLISHED" else
+                "STALE_SOURCE_REQUIRES_NEW_DRAFT"),
             "rail_spec":spec,
             "spec_sha256":row["spec_sha"],
             "proposal_sha256":row["preview_sha"],
