@@ -421,7 +421,8 @@ class DurableShotBatchQueue:
 
     def claim(self,plan_id,*,quality,shot_id,attempt,authorizer,
               director_event,prove_prior_worker_stopped,
-              snapshot,verified_cycles_gpu_ids=(),cpu_threads=None):
+              snapshot,verified_cycles_gpu_ids=(),cpu_threads=None,
+              reserved_ram_mb=0,reserved_gpu_mb=0):
         """One reviewed job admission; never treat a batch as a tool permission."""
         if (quality not in STAGES or not _valid_id(shot_id) or
             type(attempt) is not int or not 1<=attempt<=99 or
@@ -431,7 +432,9 @@ class DurableShotBatchQueue:
         preferences=BatchPreferences(**plan["preferences"])
         capacity=safe_parallelism(snapshot,preferences,quality=quality,
             verified_cycles_gpu_ids=verified_cycles_gpu_ids,
-            cpu_threads=cpu_threads)
+            cpu_threads=cpu_threads,
+            reserved_ram_mb=reserved_ram_mb,
+            reserved_gpu_mb=reserved_gpu_mb)
         if capacity["safe_workers"]==0:
             return {"admitted":False,"reason":capacity["reason"],
                     "state":"QUEUED_FOR_RESOURCES"}
