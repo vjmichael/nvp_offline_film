@@ -328,51 +328,24 @@ class ReviewedDistrictShotCyclesHost:
             "final_film_accepted":False}
 
     def _reopen_blend(self,pid,job_id,source,district,root):
-        from backend.nvp_usd_film01f_blender_host import REOPEN_SCRIPT
         reopen_id=job_id+"_reopen"
         _id(reopen_id,"independent original district Blender reopen")
         if len(reopen_id)>80:
-            raise ValueError("Independent reopen ID too long")
+            raise ValueError("Independent reopened Blender job identity is unbounded")
         location=self.supervisor.root/reopen_id
         if location.exists() or location.is_symlink():
-            raise FileExistsError("Independent Blender reopen job already exists")
+            raise FileExistsError("Cannot replace existing Blender source reopen receipt")
         location.mkdir(mode=0o700)
         shutil.copyfile(root/BLEND,location/BLEND)
-        evidence={
-            "source":source,
-            "district":district,
-            "source_blend_sha256":sha_file(location/BLEND)}
+        evidence={"source":source,"district":district,
+                  "source_blend_sha256":sha_file(location/BLEND)}
         (location/MANIFEST).write_bytes(_json(evidence))
-        worker=Path(__file__).resolve().parents[1]/"tools"/REOPEN_SCRIPT
-        if worker.is_symlink() or not worker.is_file():
-            raise RuntimeError("Independent first-party Blender source reopener unavailable")
-        shutil.copyfile(worker,location/REOPEN_SCRIPT)
-        # This second worker deliberately verifies existing 01F actor/camera
-        # scene source. District geometry is additionally checked by the
-        # distinct dedicated 02MH reopener below.
-        old_operation=BlenderOperation(
-            job_id=reopen_id,scene=BLEND,script=REOPEN_SCRIPT,
-            script_sha256=sha_file(location/REOPEN_SCRIPT),
-            inputs={BLEND:sha_file(location/BLEND),
-                    MANIFEST:sha_file(location/MANIFEST)},
-            outputs={AUDIT:"json_audit"},
-            arguments={"--manifest":MANIFEST,"--audit":AUDIT},
-            memory_limit_mb=8192,timeout_seconds=600,
-            require_linux_cgroup_v2=False)
-        self.supervisor._validate(old_operation)
-        # The separate dedicated 02MH verifier is used instead of the 01F
-        # contract because we also require native district mesh readback.
-        dedicated=Path(__file__).resolve().parents[1]/"tools"/REOPEN_SCRIPT_NAME
-        return self._run_district_reopen(
-            pid,job_id,location,evidence,old_operation,dedicated)
-
-    def _run_district_reopen(self,pid,job_id,location,evidence,operation,worker):
-        if worker.is_symlink() or not worker.is_file():
-            raise RuntimeError("Reviewed district/camera Blender verifier is missing")
-        shutil.copyfile(worker,location/REOPEN_SCRIPT_NAME)
-        job=BlenderOperation(
-            job_id=operation.job_id,scene=BLEND,
-            script=REOPEN_SCRIPT_NAME,
+        script=Path(__file__).resolve().parents[1]/"tools"/REOPEN_SCRIPT_NAME
+        if script.is_symlink() or not script.is_file():
+            raise RuntimeError("Independent reviewed native district Blender verifier absent")
+        shutil.copyfile(script,location/REOPEN_SCRIPT_NAME)
+        operation=BlenderOperation(
+            job_id=reopen_id,scene=BLEND,script=REOPEN_SCRIPT_NAME,
             script_sha256=sha_file(location/REOPEN_SCRIPT_NAME),
             inputs={BLEND:sha_file(location/BLEND),
                     MANIFEST:sha_file(location/MANIFEST)},
@@ -380,23 +353,26 @@ class ReviewedDistrictShotCyclesHost:
             arguments={"--manifest":MANIFEST,"--audit":AUDIT},
             memory_limit_mb=8192,timeout_seconds=600,
             require_linux_cgroup_v2=False)
-        self.supervisor._validate(job)
-        state=self.supervisor.run(job)
+        self.supervisor._validate(operation)
+        state=self.supervisor.run(operation)
         if state["state"]!="SUCCEEDED":
-            raise RuntimeError("Independent native Cycles district .blend reopen failed")
-        self.supervisor.verify_completed(operation.job_id)
+            raise RuntimeError("Independent native district/actor Cycles .blend reopen failed")
+        self.supervisor.verify_completed(reopen_id)
         proof=json.loads((location/AUDIT).read_text("utf8"))
         if (proof.get("format")!=REOPEN_FORMAT or
             proof.get("passed") is not True or
             proof.get("source_blend_sha256")!=evidence["source_blend_sha256"] or
-            proof.get("world_take_sha256")!=evidence["district"][
-                "world_take_sha256"] or
-            proof.get("source_usd_sha256")!=evidence["district"][
-                "derived_usd_sha256"] or
+            proof.get("world_take_sha256")!=district["world_take_sha256"] or
+            proof.get("source_usd_sha256")!=district["derived_usd_sha256"] or
+            proof.get("district_document_sha256")!=district[
+                "district_document_sha256"] or
+            proof.get("actor_count")!=district["original_actor_count"] or
+            proof.get("source_district_meshes_expected")!=district[
+                "district_render_meshes"] or
             proof.get("actual_saved_source_district_meshes_verified") is not True or
             proof.get("source_actor_camera_unchanged") is not True):
-            raise RuntimeError("Independent Cycles reopen lost original district/actor/camera source")
+            raise RuntimeError(
+                "Independent Blender reopen lost original district/actor/camera source")
         return proof
-
 
 REOPEN_SCRIPT_NAME="nvp_usd_film02mh_blender_reopen.py"
