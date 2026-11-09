@@ -41,7 +41,8 @@ def _json(x):
 
 
 class OriginalDistrictDrafts:
-    def __init__(self,index:FilmIndex,state_root:Path,*,confirm):
+    def __init__(self,index:FilmIndex,state_root:Path,*,confirm,
+                 model_session_id=None):
         if not isinstance(index,FilmIndex) or not callable(confirm):
             raise TypeError("Real original FilmIndex and native director confirmation required")
         root=Path(state_root)
@@ -52,6 +53,14 @@ class OriginalDistrictDrafts:
         self.db=self.root/"original-film02mf-proposals.sqlite3"
         self.index=index
         self.confirm=confirm
+        # Native bridge owns this across its service instances. A new installed
+        # process has a different host session, so orphaned attempts cannot
+        # become live merely because an old provider returns after restart.
+        self.model_session_id=model_session_id or secrets.token_hex(16)
+        if (type(self.model_session_id) is not str or
+            len(self.model_session_id)!=32 or
+            any(c not in "0123456789abcdef" for c in self.model_session_id)):
+            raise ValueError("Only host-minted model session identity")
         self.district=OriginalFilmDistrict(
             index,verify_director_action=lambda *_:False)
         self.lock=threading.RLock()
@@ -76,6 +85,23 @@ class OriginalDistrictDrafts:
               evidence_json TEXT NOT NULL,
               FOREIGN KEY(draft_id) REFERENCES authoring_drafts(draft_id)
             );
+            CREATE TABLE IF NOT EXISTS authoring_model_attempts(
+              attempt_id TEXT PRIMARY KEY,
+              project_id TEXT NOT NULL,
+              district_id TEXT NOT NULL,
+              expected_revision INTEGER NOT NULL,
+              model_id TEXT NOT NULL,
+              direction_sha256 TEXT NOT NULL,
+              catalog_sha256 TEXT NOT NULL,
+              host_session_id TEXT NOT NULL,
+              state TEXT NOT NULL,
+              draft_id TEXT,
+              failure_category TEXT,
+              started_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_film02mg_project
+              ON authoring_model_attempts(project_id,updated_at);
             """)
 
     @contextmanager
@@ -176,6 +202,64 @@ class OriginalDistrictDrafts:
             "original_actor_takes_modified":False,
             "native_blender_workers_started":0}
 
+    def _recover_model_attempts(self,db,pid):
+        """Old-process GENERATING is interrupted, not automatically resumed."""
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("""UPDATE authoring_model_attempts SET
+            state='INTERRUPTED_REQUIRES_NEW_GENERATION',
+            failure_category='host_session_terminated',
+            updated_at=?
+            WHERE project_id=? AND state='GENERATING'
+            AND host_session_id<>?""",
+            (now(),pid,self.model_session_id))
+        db.commit()
+
+    def start_model_attempt(self,pid,district_id,revision,model_id,
+                            direction_sha256,catalog_sha256):
+        _require_pid(pid)
+        _id(district_id,"world model attempt district")
+        for name,value in (
+                ("direction",direction_sha256),
+                ("catalog",catalog_sha256)):
+            if (type(value) is not str or len(value)!=64 or
+                any(c not in "0123456789abcdef" for c in value)):
+                raise ValueError("Model attempt requires exact "+name+" SHA")
+        if (type(model_id) is not str or not 1<=len(model_id)<=256):
+            raise ValueError("Host-selected model identity required")
+        with self.lock,self._db() as db:
+            self._base(pid,district_id,revision)
+            self._recover_model_attempts(db,pid)
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("""SELECT 1 FROM authoring_model_attempts
+                WHERE project_id=? AND state='GENERATING' LIMIT 1""",
+                (pid,)).fetchone():
+                raise RuntimeError("An earlier model proposal is still generating")
+            attempt=secrets.token_hex(12)
+            stamp=now()
+            db.execute("""INSERT INTO authoring_model_attempts
+                (attempt_id,project_id,district_id,expected_revision,
+                 model_id,direction_sha256,catalog_sha256,host_session_id,
+                 state,started_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,'GENERATING',?,?)""",
+                (attempt,pid,district_id,revision,model_id,
+                 direction_sha256,catalog_sha256,
+                 self.model_session_id,stamp,stamp))
+            db.commit()
+            return attempt
+
+    def fail_model_attempt(self,pid,attempt_id,category):
+        if category not in ("provider_failed","source_changed",
+                            "model_response_denied","session_closed"):
+            category="model_response_denied"
+        with self.lock,self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("""UPDATE authoring_model_attempts
+                SET state='FAILED',failure_category=?,updated_at=?
+                WHERE project_id=? AND attempt_id=? AND state='GENERATING'
+                AND host_session_id=?""",
+                (category,now(),pid,attempt_id,self.model_session_id))
+            db.commit()
+
     def catalog(self,pid):
         _require_pid(pid)
         self.index.studio.get_project(pid)
@@ -228,6 +312,13 @@ class OriginalDistrictDrafts:
                 continue
             if len(districts)>=24:break
         with self._db() as db:
+            self._recover_model_attempts(db,pid)
+            attempts=db.execute("""SELECT attempt_id,district_id,
+                expected_revision,model_id,direction_sha256,catalog_sha256,
+                state,draft_id,failure_category,started_at,updated_at
+                FROM authoring_model_attempts
+                WHERE project_id=? ORDER BY updated_at DESC LIMIT 20""",
+                (pid,)).fetchall()
             drafts=db.execute("""SELECT d.*,e.evidence_json AS model_evidence_json
                 FROM authoring_drafts d
                 LEFT JOIN authoring_model_evidence e ON e.draft_id=d.draft_id
@@ -238,11 +329,12 @@ class OriginalDistrictDrafts:
             "project_id":pid,"source_buildings":candidates,
             "approved_districts":districts,
             "drafts":[self._overview(dict(x)) for x in drafts],
+            "model_attempts":[dict(x) for x in attempts],
             "native_blender_workers_started":0,
             "original_film_takes_modified":False}
 
     def create(self,pid,district_id,*,expected_revision,params,
-               proposed_by,model_evidence=None):
+               proposed_by,model_evidence=None,model_attempt_id=None):
         _require_pid(pid)
         _id(district_id,"original film district proposed ID")
         if proposed_by not in ("director","ai"):
@@ -260,6 +352,12 @@ class OriginalDistrictDrafts:
                 model_evidence.get("worker_authorization_granted") is not False or
                 model_evidence.get("proposal_durable") is not False):
                 raise PermissionError("Host-bound source model evidence does not match draft")
+        if model_attempt_id is not None and (
+                type(model_attempt_id) is not str or
+                len(model_attempt_id)!=24 or
+                any(c not in "0123456789abcdef" for c in model_attempt_id)
+                or model_evidence is None):
+            raise PermissionError("Native model attempt identity/evidence required")
         with self.lock:
             base=self._base(pid,district_id,expected_revision)
             # A new director proposal based on an approved revision must
@@ -288,6 +386,19 @@ class OriginalDistrictDrafts:
                     db.execute("""INSERT INTO authoring_model_evidence(
                         draft_id,evidence_json) VALUES(?,?)""",
                         (draft_id,_json(model_evidence)))
+                if model_attempt_id is not None:
+                    changed=db.execute("""UPDATE authoring_model_attempts SET
+                        state='DRAFT_SAVED',draft_id=?,updated_at=?
+                        WHERE attempt_id=? AND project_id=? AND
+                        district_id=? AND expected_revision=? AND
+                        model_id=? AND state='GENERATING' AND
+                        host_session_id=?""",
+                        (draft_id,now(),model_attempt_id,pid,district_id,
+                         expected_revision,model_evidence["model_id"],
+                         self.model_session_id))
+                    if changed.rowcount!=1:
+                        raise RuntimeError(
+                            "Model attempt interrupted/stale before source draft publication")
                 db.commit()
             return self.reopen(pid,draft_id)
 
