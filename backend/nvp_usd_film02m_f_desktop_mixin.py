@@ -538,3 +538,179 @@ class OriginalDistrictDesktopMixin:
             pid,request["draft_id"],request["version"],
             request["source_plan_sha256"],
             request["usd_layer_root_sha256"])
+
+    def _camfx01_source(self,pid):
+        from backend.nvp_cam_fx01_camera_rails import OriginalCameraRails
+        return OriginalCameraRails(self.index,verify_director_action=lambda *_:False)
+
+    def camfx01_catalog(self,project_id):
+        """Existing 01M director banks + bounded native approved rail history."""
+        pid=self._wo5_project(project_id)
+        from backend.nvp_usd_film01m_director_camera_bank import (
+            FORMAT as BANK_FORMAT,DirectorCameraBank)
+        from backend.nvp_cam_fx01_camera_rails import FORMAT as RAIL_FORMAT
+        rows=self.index.list_objects(pid,kind="presentation")
+        if len(rows)>512:
+            raise RuntimeError("Browse scoped camera source objects, not unbounded film history")
+        banks,rails=[],[]
+        for row in rows:
+            record=self.index.read_revision(
+                pid,row["object_id"],row["head_revision"])
+            doc=record["data"]
+            if doc.get("format")==BANK_FORMAT:
+                verified=DirectorCameraBank(
+                    self.index,verify_director_action=lambda *_:False).verify(
+                        pid,row["object_id"],row["head_revision"])
+                banks.append({
+                    "bank_id":row["object_id"],
+                    "revision":row["head_revision"],
+                    "document_sha256":record["document_sha256"],
+                    "world_take_id":verified["world_take_id"],
+                    "world_take_sha256":verified["world_take_sha256"],
+                    "duration_ticks":verified["source_duration_ticks"],
+                    "cameras":[{"camera_id":x["camera_id"],
+                                "position_m":x["position_m"],
+                                "focal_length_mm":x["focal_length_mm"],
+                                "focus_distance_m":x["focus_distance_m"]}
+                               for x in verified["cameras"][:96]]})
+            elif doc.get("format")==RAIL_FORMAT:
+                rails.append({
+                    "rail_id":row["object_id"],
+                    "revision":row["head_revision"],
+                    "document_sha256":record["document_sha256"],
+                    "camera_bank_id":doc["camera_bank_id"],
+                    "world_take_sha256":doc["world_take_sha256"],
+                    "camera_id":doc["rail_spec"]["camera_id"],
+                    "film_start_tick":doc["rail_spec"]["film_start_tick"],
+                    "film_end_tick":doc["rail_spec"]["film_end_tick"],
+                    "layer_sha256":doc["rail_layer_sha256"],
+                    "technique":doc["rail_spec"]["technique"]})
+        return {
+            "format":"nvp.cam_fx01.trusted_director_rail_catalog.v1",
+            "project_id":pid,
+            "camera_banks":banks[:96],"rails":rails[:128],
+            "frozen_actor_takes_modified":False,
+            "native_worker_started":False}
+
+    def camfx01_preview(self,request):
+        if type(request) is not dict or set(request)!={
+                "project_id","rail_id","rail_spec","expected_revision"}:
+            raise PermissionError("Only reviewed original director camera rail proposal")
+        pid=self._wo5_project(request["project_id"])
+        return self._camfx01_source(pid).preview(
+            pid,request["rail_id"],request["rail_spec"],
+            expected_revision=request["expected_revision"])
+
+    def _camfx02_confirm(self,scope):
+        if (type(scope) is not dict or scope.get("operation")!=
+                "nvp.cam_fx02.publish_exact_director_camera_rail.v1" or
+            type(scope.get("project_id")) is not str or
+            type(scope.get("rail_id")) is not str or
+            type(scope.get("source_camera_id")) is not str or
+            type(scope.get("expected_revision")) is not int or
+            type(scope.get("film_start_tick")) is not int or
+            type(scope.get("film_end_tick")) is not int or
+            not all(type(scope.get(key)) is str and SHA.fullmatch(scope[key])
+                for key in ("world_take_sha256",
+                            "source_performance_sha256","camera_bank_sha256",
+                            "proposed_rail_sha256","stronger_usd_layer_sha256"))):
+            return False
+        message=(
+            "NVP — Approve an exact original film camera rail revision?\\n\\n"
+            "Project: "+scope["project_id"]+"\\n"
+            "Rail: "+scope["rail_id"]+"\\n"
+            "Original source camera: "+scope["source_camera_id"]+"\\n"
+            "Shot technique: "+str(scope["shot_technique"])+"\\n"
+            "Exact original Film Time ticks: "+str(scope["film_start_tick"])+
+                " → "+str(scope["film_end_tick"])+"\\n"
+            "Source camera bank SHA: "+scope["camera_bank_sha256"]+"\\n"
+            "Original ActorID/performance SHA: "+scope[
+                "source_performance_sha256"]+"\\n"
+            "Frozen world Take SHA: "+scope["world_take_sha256"]+"\\n"
+            "Director rail proposal SHA: "+scope["proposed_rail_sha256"]+"\\n"
+            "Stronger OpenUSD layer SHA: "+scope["stronger_usd_layer_sha256"]+"\\n"
+            "Previous rail revision: "+str(scope["expected_revision"])+"\\n\\n"
+            "This publishes ONE immutable director camera-layer revision. "
+            "It neither moves original actors nor alters the frozen PCM. "
+            "No render worker is authorized and no Cycles picture is approved.\\n"
+            "Approve this exact director-edited virtual rail?")
+        return self._native_window().create_confirmation_dialog(
+            "NVP — Approve Virtual Camera Rail",message) is True
+
+    def camfx02_publish(self,request):
+        if type(request) is not dict or set(request)!={
+                "project_id","rail_id","rail_spec","expected_revision",
+                "preview_sha256"}:
+            raise PermissionError("Only current source-pinned camera path publication")
+        pid=self._wo5_project(request["project_id"])
+        from backend.nvp_cam_fx01_camera_rails import OriginalCameraRails
+        nonce=object()
+        used=[False]
+        def confirm(event,scope):
+            if event is not nonce or used[0]:
+                return False
+            used[0]=True
+            return self._camfx02_confirm(scope)
+        return OriginalCameraRails(
+            self.index,verify_director_action=confirm).publish(
+            pid,request["rail_id"],request["rail_spec"],
+            expected_revision=request["expected_revision"],
+            preview_sha256=request["preview_sha256"],director_event=nonce)
+
+    def camfx02_reopen(self,request):
+        if type(request) is not dict or set(request)!={
+                "project_id","rail_id","revision"}:
+            raise PermissionError("Only exact authored virtual rail reopen")
+        pid=self._wo5_project(request["project_id"])
+        from backend.nvp_cam_fx02_usd_camera_layer import (
+            open_approved_camera_layer)
+        from backend.nvp_cam_fx01_camera_rails import OriginalCameraRails
+        from backend.nvp_film_index import _id
+        _id(request["rail_id"],"approved director rail")
+        rail=OriginalCameraRails(
+            self.index,verify_director_action=lambda *_:False).verify(
+            pid,request["rail_id"],request["revision"])
+        with open_approved_camera_layer(
+                self.index,pid,request["rail_id"],request["revision"]) as native:
+            sample_count=len(native["native_verified_time_samples"])
+            if not native["source_world_root_layer_unchanged"]:
+                raise RuntimeError("Original source was modified by rail recompose")
+        return {
+            "format":"nvp.cam_fx02.trusted_native_director_rail_reopen.v1",
+            "project_id":pid,"rail_id":request["rail_id"],
+            "revision":request["revision"],"rail_spec":rail["rail_spec"],
+            "layer_sha256":rail["rail_layer_sha256"],
+            "world_take_sha256":rail["world_take_sha256"],
+            "camera_bank_sha256":rail["camera_bank_sha256"],
+            "native_camera_path":native["camera_path"],
+            "native_reopened_sample_count":sample_count,
+            "native_stronger_layer_verified":True,
+            "frozen_actor_takes_and_pcm_unchanged":True,
+            "creative_render_approved":False}
+
+    def camfx02_sample(self,request):
+        if type(request) is not dict or set(request)!={
+                "project_id","rail_id","revision","film_tick"}:
+            raise PermissionError("Exact original film-timed rail readback only")
+        pid=self._wo5_project(request["project_id"])
+        from backend.nvp_cam_fx01_camera_rails import (
+            OriginalCameraRails,evaluate_rail)
+        from backend.nvp_cam_fx02_usd_camera_layer import (
+            open_approved_camera_layer)
+        rail=OriginalCameraRails(
+            self.index,verify_director_action=lambda *_:False).verify(
+            pid,request["rail_id"],request["revision"])
+        sample=evaluate_rail(rail["rail_spec"],request["film_tick"])
+        # Recompose the real native layer before exposing source-derived
+        # controls; do not allow browser-selected USD paths.
+        with open_approved_camera_layer(
+                self.index,pid,request["rail_id"],request["revision"]) as native:
+            if native["rail_layer_sha256"]!=rail["rail_layer_sha256"]:
+                raise RuntimeError("Stronger original camera layer changed")
+        return {"format":"nvp.cam_fx02.native_rail_film_tick_pose.v1",
+                "project_id":pid,"rail_id":request["rail_id"],
+                "revision":request["revision"],
+                "rail_layer_sha256":rail["rail_layer_sha256"],
+                "film_tick":request["film_tick"],"sample":sample,
+                "source_actor_pcm_changed":False,
+                "native_worker_started":False}
