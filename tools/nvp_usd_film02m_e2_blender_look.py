@@ -274,8 +274,6 @@ def _render(root,spec,profile):
     scene.render.image_settings.file_format="PNG"
     scene.render.use_file_extension=False
     scene.render.film_transparent=False
-    view_names={p.name for p in scene.view_settings.bl_rna.properties[
-        "view_transform"].enum_items} if False else None
     # Blender's built-in AgX is NOT an ACES/OCIO external config.
     scene.view_settings.view_transform="AgX"
     scene.view_layers[0].use_pass_z=True
@@ -308,9 +306,11 @@ def _render(root,spec,profile):
         scene.render.filepath=str(path)
         start_exr=time.perf_counter()
         bpy.ops.render.render(write_still=True)
-        if not path.is_file() or path.stat().st_size<500 or (
-            path.open("rb").read(4)!=b"\x76\x2f\x31\x01"):
+        if not path.is_file() or path.stat().st_size<500:
             raise RuntimeError("Actual multi-layer original OpenEXR was not created")
+        with path.open("rb") as handle:
+            if handle.read(4)!=b"\x76\x2f\x31\x01":
+                raise RuntimeError("Actual OpenEXR byte signature did not verify")
         exr_info={
             "requested":True,"actual_exr_rendered":True,
             "exr_name":name,"actual_exr_sha256":sha(path),
