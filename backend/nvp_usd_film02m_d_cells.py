@@ -217,6 +217,67 @@ class BuildingCellSession:
         self.stage=None
         self.loaded.clear()
 
+    def transition_from_original_camera(self,index,pid,bank_id,revision,
+                                        *,camera_id,frames,
+                                        required_cell_ids,
+                                        next_shot_required_cell_ids=None,
+                                        load_distance_m,unload_distance_m,
+                                        max_loaded_cells):
+        """Use actual original 01M UsdGeom.Camera pose, never a guessed camera.
+
+        This is source-verified camera-distance prefetch only. A building
+        isn't asserted to belong to a frozen source Take until its source
+        world composition is separately approved.
+        """
+        from pxr import Usd,UsdGeom
+        from backend.nvp_usd_film01m_director_camera_bank import (
+            DirectorCameraBank)
+        from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+        if (type(frames) is not list or
+            not 1<=len(frames)<=MAX_CAMERA_SAMPLES or
+            any(type(i) is not int or not 0<=i<720 for i in frames) or
+            frames!=sorted(set(frames))):
+            raise ValueError("Exact bounded increasing original film frames needed")
+        if not isinstance(index,FilmIndex):
+            raise TypeError("Original FilmIndex source camera required")
+        bank=DirectorCameraBank(
+            index,verify_director_action=lambda *_:False)
+        manifest=bank.verify(pid,bank_id,revision)
+        source=[]
+        with bank.open_source_views(pid,bank_id,revision) as view:
+            path=view["camera_paths"].get(camera_id)
+            if path is None:
+                raise PermissionError("Unknown original source film viewpoint")
+            camera=UsdGeom.Camera(view["stage"].GetPrimAtPath(path))
+            if not camera:
+                raise RuntimeError("Original director camera prim not available")
+            for frame in frames:
+                t=frame*TICKS_PER_SECOND//24
+                matrix=UsdGeom.Xformable(
+                    camera.GetPrim()).ComputeLocalToWorldTransform(
+                        Usd.TimeCode(float(t)))
+                vec=matrix.ExtractTranslation()
+                source.append(_vector(
+                    [float(vec[i]) for i in range(3)],
+                    "actual original director camera position"))
+        result=self.transition(
+            camera_positions_m=source,
+            required_cell_ids=required_cell_ids,
+            next_shot_required_cell_ids=next_shot_required_cell_ids,
+            load_distance_m=load_distance_m,
+            unload_distance_m=unload_distance_m,
+            max_loaded_cells=max_loaded_cells)
+        return {**result,
+                "camera_positions_m_are_hint_not_01d_identity":False,
+                "camera_positions_from_native_original_01m_usd":True,
+                "original_camera_bank_id":bank_id,
+                "original_camera_bank_revision":revision,
+                "original_camera_id":camera_id,
+                "source_original_performance_sha256":manifest[
+                    "source_performance_sha256"],
+                "sampled_original_film_frames":frames,
+                "cells_linked_to_original_take_not_yet_verified":True}
+
     def transition(self,*,camera_positions_m,required_cell_ids,
                    next_shot_required_cell_ids=None,
                    load_distance_m,unload_distance_m,max_loaded_cells):
