@@ -2,6 +2,8 @@
 
 **Creator direction (2026-11-08):** Close the visual-realism gap between contemporary AI-generated human imagery and reusable, rigged, persistent OpenUSD film actors. Investigate generative AI as an **assistant for physically responsive 3D skin and surface materials**, with photorealistic humans as the first quality target. Stylized/anime/cartoon looks remain alternate artistic presentations of the same enduring character/world, not a reason to rebuild actors.
 
+**Creator sequencing update:** HSURF-00 and all HSURF implementation are **deferred until the USD-FILM task family is finished**, including outstanding actual native render/acceptance work. Do not start HSURF-00 merely because USD-FILM-01F is underway. Modular architecture USD-FILM-02M and the rest of USD-FILM retain priority.
+
 **Status: ROADMAP ONLY.** This commit does not implement a skin generator, install a texture model, produce cinematic renders, or prove photorealism. All technical and perceptual acceptance gates below are OPEN. NVP remains exclusively filmmaking.
 
 ## Design principle

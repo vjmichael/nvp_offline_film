@@ -1,0 +1,29 @@
+name: NVP USD-FILM-01H Synchronized Three-Camera Source Contract
+
+on:
+  push:
+    branches: [nvp/usd-film01f-world-render-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  three-camera-coverage-contract:
+    name: Same original performance, 3 cameras, 2160 frames / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile multi-camera source verification and edit
+        run: python -m compileall -q backend/nvp_usd_film01h_multicam.py tests/test_nvp_usd_film01h_multicam.py
+      - name: Test same-frame ActorID source continuity and all three complete camera rolls
+        run: python -m unittest discover -s tests -p "test_nvp_usd_film01h_multicam.py" -v
