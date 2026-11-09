@@ -110,6 +110,27 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertIsNotNone(self.index.read_revision(
             self.pid,"InterruptedFilmingSource",1))
 
+    def test_restart_reconciliation_reports_actual_immutable_revisions(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        denied=NativeSceneSoundCapture(self.index,approve_take=lambda event,scope:False)
+        request=self.payload()
+        request["take_id"]="ReconcileTake"
+        request["sound_timeline_id"]="ReconcileTimeline"
+        request["recordings"][0]["source_id"]="ReconcileSource"
+        with self.assertRaises(PermissionError):
+            denied.capture(**request)
+        journal=FilmingPublicationJournal(self.index)
+        before=journal.reconcile(self.pid)
+        row=next(r for r in before if r["take_id"]=="ReconcileTake")
+        self.assertEqual(row["state"],"INTERRUPTED")
+        self.assertEqual(row["source_revisions_present"],{"ReconcileSource":True})
+        self.assertTrue(row["sound_timeline_present"])
+        self.assertFalse(row["take_present"])
+        self.assertEqual(row["resolution"],"INTERRUPTED_NO_FROZEN_TAKE")
+        self.assertEqual(journal.reconcile(self.pid),before)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"ReconcileTake",1)
+
     def test_successful_publication_is_not_unresolved(self):
         self.capture.capture(**self.payload())
         self.assertFalse(any(
