@@ -1,0 +1,112 @@
+name: NVP USD-FILM-02M-HR Native Actor District Cycles Shot Acceptance
+
+# One deliberate task-group gate, never a CI run after each source edit.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-source:
+    name: Real 01D/01E original actor and 02M district USD composition / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual OpenUSD original actor/world source and native dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11' Pillow numpy
+          python -m pip install httpx
+      - name: Compile exact source, approved district, first-party Blender worker and source test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film02m_h_render_handoff.py tools/nvp_usd_film02mh_blender_reopen.py tests/test_nvp_usd_film02mh_real_shot_render.py
+      - name: Native first-party source binding and two immutable district revisions with original actor/camera/PCM untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_usd_film02mh_real_shot_render.py -v
+          python -m unittest discover -s tests -p test_nvp_usd_film01e_world_take.py -k test_02m_h -v
+
+  real-cycles:
+    name: Official Blender 5.2.3 true Cycles actor/district frames plus independent saved source reopen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 160
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM02MH_ARTIFACT_DIR: original-02mh-real-actor-district-cycles
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native OpenUSD first-party original sources and display runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11' Pillow numpy
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download genuine upstream Blender source release and verify published SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Real supervised original actor+district Cycles, two source revisions, independent Blender readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM02MH_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          test -x "$NVP_FILM02MH_BLENDER_BIN"
+          xvfb-run -a python -m unittest discover -s tests -p test_nvp_usd_film02mh_real_shot_render.py -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path('original-02mh-real-actor-district-cycles')
+          d=json.loads((root/'district_revision_comparison.json').read_text('utf8'))
+          assert d['real_pixels_changed_significantly'] is True
+          assert d['changed_pixels_over_12_rgb']>=250
+          assert len(set(d['native_cycles_png_shas']))==2
+          assert d['original_actor_take_pcm_unchanged'] is True
+          assert d['independent_blender_reopened_both'] is True
+          assert d['human_shot_quality_approved'] is False
+          for number in (1,2):
+              with Image.open(root/f'district{number}_frame.png') as image:
+                  assert image.size==(320,180) and image.format=='PNG'
+                  image.verify()
+              receipt=json.loads((root/f'district{number}_independent_blender.json').read_text('utf8'))
+              assert receipt['passed'] is True
+              assert receipt['actual_saved_source_district_meshes_verified'] is True
+              assert receipt['source_actor_camera_unchanged'] is True
+          print('Actual native actor/district Cycles image comparison passed; human visual approval remains OPEN.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-02mh-real-actor-district-cycles-images-and-independent-source-proof
+          path: original-02mh-real-actor-district-cycles/
+          if-no-files-found: warn
+          retention-days: 14
