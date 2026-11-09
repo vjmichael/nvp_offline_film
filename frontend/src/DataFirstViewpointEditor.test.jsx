@@ -74,7 +74,7 @@ describe('01R editable source-first virtual film',()=>{
       {name:'Use selected camera for this shot'}));
     expect(screen.getByRole('button',{name:'Shot 2 using OTS'})).toBeTruthy();
     expect(screen.getByText(/2 cuts cover exactly 720 frames/)).toBeTruthy();
-    expect(screen.getByText(/original performance and soundtrack/)).toBeTruthy();
+    expect(screen.getByText(/original performance, or soundtrack/)).toBeTruthy();
     const last=api.mock.calls.filter(call=>call[0].includes('/preview?')).at(-1);
     expect(last[0]).toContain('frame=360');
     expect(api.mock.calls.every(call=>call[1]!=='POST')).toBe(true);
