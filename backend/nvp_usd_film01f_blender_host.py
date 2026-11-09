@@ -307,9 +307,20 @@ class ReviewedWorldTakeCyclesHost:
                 proof.get("actor_count")!=len(src["actor_sources"]) or
                 proof.get("real_saved_usd_actor_objects_reopened") is not True):
                 raise RuntimeError("Independent Blender .blend evidence differs from world Take")
+            from backend.nvp_usd_film01f_original_audio import (
+                render_original_source_stems)
+            original_sound=render_original_source_stems(
+                self.index,pid,src["original_world_take_id"],
+                job/"original_audio")
+            if (not original_sound["actual_original_pcm_readback_verified"] or
+                original_sound["world_take_sha256"] !=
+                    src["original_world_take_sha256"] or
+                original_sound["final_picture_sound_mux_verified"] is not False):
+                raise RuntimeError("Audio source stems cannot be bound to rendered original Take")
             completed.append({
                 "job_dir":job,"source":src,"audit":audit,
-                "independent_reopen_audit":proof,"independent_reopen_dir":folder})
+                "independent_reopen_audit":proof,"independent_reopen_dir":folder,
+                "original_audio_source_receipt":original_sound})
         return {
             "state":"RENDERED_TWO_UNAPPROVED_WORLD_SHOT_FRAMES",
             "world_sha256":first["original_world_sha256"],
