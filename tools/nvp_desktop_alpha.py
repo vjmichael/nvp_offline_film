@@ -213,6 +213,9 @@ def run_persistent_installed_smoke(mode):
     root.mkdir(parents=True,exist_ok=True)
     marker=root/"installed-smoke-project.json"
     app=create_app()
+    # Import before BOTH create/reopen branches. The earlier nested import
+    # made studio local for the entire function and broke installed create.
+    from backend.nvp_api import studio
     server,worker,port,sock=serve(app)
     base="http://127.0.0.1:"+str(port)
     try:
@@ -288,7 +291,6 @@ def run_persistent_installed_smoke(mode):
             if "film02mg_restart_draft" in expected:
                 from backend.nvp_film_index import FilmIndex
                 from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
-                from backend.nvp_api import studio
                 source=FilmIndex(studio)
                 drafts=OriginalDistrictDrafts(
                     source,root/"original-installed-director-drafts",
@@ -1148,6 +1150,11 @@ if __name__=="__main__":
         result=main()
     except BaseException:
         record_smoke_result("NVP_SMOKE_PYTHON_EXCEPTION",failure=True)
+        # Frozen --windowed binaries can display a modal crash dialog on
+        # an uncaught exception and hold CI forever. Diagnostic-only smoke
+        # modes instead exit nonzero AFTER fsyncing the real traceback.
+        if smoke:
+            raise SystemExit(1)
         raise
     else:
         record_smoke_result("NVP_SMOKE_PYTHON_EXIT="+str(result))
