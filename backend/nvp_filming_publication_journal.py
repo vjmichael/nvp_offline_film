@@ -39,6 +39,19 @@ class FilmingPublicationJournal:
         with self.index.studio._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             self.index._project(db, project_id)
+            # A second batch must not claim an identity already reserved by a
+            # different batch, including completed and interrupted batches.
+            # Keep reservations for historical provenance; never silently reuse
+            # a source or timeline after a crash.
+            existing = db.execute("""SELECT take_id,sound_timeline_id,source_ids_json
+                FROM nvp_filming_publications WHERE project_id=?""",
+                (project_id,)).fetchall()
+            claimed = {take_id, sound_timeline_id, *source_ids}
+            for prior in existing:
+                reserved = {prior["take_id"], prior["sound_timeline_id"],
+                            *json.loads(prior["source_ids_json"])}
+                if claimed.intersection(reserved):
+                    raise ValueError("Filming publication identity reserved by another batch")
             db.execute("""INSERT INTO nvp_filming_publications
                 (project_id,take_id,sound_timeline_id,source_ids_json,state,updated_at)
                 VALUES(?,?,?,?,'PREPARING',?)""",
