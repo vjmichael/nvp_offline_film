@@ -72,6 +72,7 @@ def run():
         "source_usd_file","source_usd_sha256",
         "source_usd_size_bytes","source_camera_id",
         "source_camera_prim","source_camera_position_m",
+        "source_camera_rotation_euler_deg",
         "source_camera_focal_length_mm","source_camera_ray_exclusions",
         "source_actor_positions","original_film_tick",
         "original_actor_source_not_replaced",
@@ -125,6 +126,14 @@ def run():
             float(camera.data.lens),source["source_camera_focal_length_mm"],
             rel_tol=0,abs_tol=0.1):
         raise RuntimeError("Native film focal length changed in Blender import")
+    source_forward=(
+        Euler(tuple(math.radians(float(angle)) for angle in
+                    source["source_camera_rotation_euler_deg"]),"XYZ").to_matrix()
+        @ Vector((0,0,-1))).normalized()
+    imported_forward=(
+        camera.matrix_world.to_quaternion() @ Vector((0,0,-1))).normalized()
+    if (source_forward-imported_forward).length>0.02:
+        raise RuntimeError("Director camera orientation changed during native USD import")
     checked=[]
     for actor in source["source_actor_positions"]:
         original=actor["source_prim"].split("/")[-1]
@@ -163,8 +172,6 @@ def run():
         if (source["source_camera_ray_exclusions"] and
             mask["masked_mesh_object_count"]==0):
             raise RuntimeError("Camera primary-ray mask did not affect source wall")
-        if any(o.type=="MESH" and o.name in checked for o in objects):
-            pass
         bpy.ops.render.render(write_still=True)
     if not files["--preview"].is_file() or files["--preview"].stat().st_size<100:
         raise RuntimeError("Native Cycles source camera did not render a real frame")
