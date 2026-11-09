@@ -1,6 +1,7 @@
 import React,{useCallback,useEffect,useMemo,useState} from 'react';
 import ModularWorldSourcePreview from './ModularWorldSourcePreview.jsx';
 import OriginalActorDistrictCyclesReview from './OriginalActorDistrictCyclesReview.jsx';
+import CameraRailsDirector from './CameraRailsDirector.jsx';
 
 const PROPOSAL='nvp.usd_film02m_f.durable_director_proposal.v1';
 const PREVIEW='nvp.usd_film02m_f.original_source_lowfi_preview.v1';
@@ -583,6 +584,7 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
           nativeBridge={nativeBridge} bindingId={shotBindingId}
           bindingReceipt={shotPublished}/>
       </section>}
+      <CameraRailsDirector projectId={projectId} nativeBridge={nativeBridge}/>
       {draft&&<div role="region" aria-label="Original world draft controls">
         <h4>Source proposal · {draft.district_id} · v{draft.version}</h4>
         <p role="status">Native draft: {draft.state}.
