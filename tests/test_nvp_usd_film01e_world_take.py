@@ -166,6 +166,172 @@ class OriginalWorldCinematicTakeTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.freeze()
 
+    def test_02m_h_actual_approved_building_in_original_actor_camera_shot(self):
+        """Full native pxr/FilmIndex 02M→01D→01E source integration test."""
+        from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+        from backend.nvp_usd_film02m_modular_buildings import OriginalBuildingKit
+        from backend.nvp_usd_film02m_e_district import OriginalFilmDistrict
+        from backend.nvp_usd_film02m_h_actor_camera_binding import (
+            OriginalDistrictShotBinding,FORMAT as SHOT_BINDING_FORMAT)
+        self.link_actor()
+        frozen=self.freeze()
+        self.assertEqual(frozen["revision"],1)
+        before_take=self.b.index.read_revision(
+            self.b.pid,"OriginalStreetTake",1)["document_sha256"]
+        before_world_take=self.b.index.read_revision(
+            self.b.pid,"WorldStreetTake",1)["document_sha256"]
+        before_shot=self.b.index.read_revision(
+            self.b.pid,"StreetWorldShot",1)["document_sha256"]
+        before_takes=self.b.index.list_objects(self.b.pid,kind="take")
+        def sock(name,where,normal,span,kind):
+            return {"name":name,"connector_type":kind,
+                    "gender":"universal","at_m":where,"normal":normal,
+                    "span_m":span,"tolerance_m":.01}
+        pieces=[
+            ("Floor","floor",[12,10,.4],[
+                sock("Front",[0,-5,0],[0,-1,0],12,"wall_base"),
+                sock("Rear",[0,5,0],[0,1,0],12,"wall_base"),
+                sock("Left",[-6,0,0],[-1,0,0],10,"side_base"),
+                sock("Right",[6,0,0],[1,0,0],10,"side_base")]),
+            ("Front","facade",[12,.4,6],[
+                sock("Back",[0,.2,-3],[0,1,0],12,"wall_base"),
+                sock("Top",[0,0,3],[0,0,1],12,"roof_edge")]),
+            ("Rear","rear",[12,.4,6],[
+                sock("Front",[0,-.2,-3],[0,-1,0],12,"wall_base")]),
+            ("Left","side",[.4,10,6],[
+                sock("Inner",[.2,0,-3],[1,0,0],10,"side_base")]),
+            ("Right","side",[.4,10,6],[
+                sock("Inner",[-.2,0,-3],[-1,0,0],10,"side_base")]),
+            ("Roof","roof",[12.8,10.8,.4],[
+                sock("FrontBottom",[0,-5.2,-.2],[0,0,-1],12,"roof_edge")]),
+        ]
+        def cube(size):
+            x,y,z=[n/2 for n in size]
+            return ([[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],
+                     [-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]],
+                    [[0,2,1],[0,3,2],[4,5,6],[4,6,7],
+                     [0,1,5],[0,5,4],[3,7,6],[3,6,2],
+                     [0,4,7],[0,7,3],[1,2,6],[1,6,5]])
+        kit=OriginalBuildingKit(
+            self.b.index,verify_director_action=lambda event,scope:
+            event=="SOURCE_NATIVE_TEST" and scope["operation"] in (
+                "nvp.film02m.publish_original_building_module.v1",
+                "nvp.film02m.publish_original_architecture.v1"))
+        assets=OpenUSDAssetRegistry(self.b.index)
+        for suffix,role,dimensions,sockets in pieces:
+            name="ShotModule"+suffix
+            asset="ShotAsset"+suffix
+            points,triangles=cube(dimensions)
+            assets.publish(
+                self.b.pid,asset,shape="mesh",size_m=max(dimensions),
+                points=points,triangles=triangles,
+                preview_material={"base_color_rgb":[.7,.4,.3],
+                                  "roughness":.6,"metallic":.04})
+            kit.publish_module(
+                self.b.pid,name,asset_id=asset,asset_revision=1,
+                role=role,style_family="OriginalShot",size_m=dimensions,
+                sockets=sockets,director_event="SOURCE_NATIVE_TEST")
+        def node(name,module,parent=None,attached=None,own=None,root=None):
+            return {"node_id":name,
+                    "options":[{"module_id":"ShotModule"+module,"revision":1}],
+                    "parent_id":parent,"parent_socket":attached,
+                    "own_socket":own,"yaw_deg":0,
+                    "root_position_m":root}
+        building=kit.publish_building(
+            self.b.pid,"ShotOriginalBuilding",seed=4,
+            blueprint=[
+                node("Floor","Floor",root=[0,0,0]),
+                node("Front","Front","Floor","Front","Back"),
+                node("Rear","Rear","Floor","Rear","Front"),
+                node("Left","Left","Floor","Left","Inner"),
+                node("Right","Right","Floor","Right","Inner"),
+                node("Roof","Roof","Front","Top","FrontBottom")],
+            director_event="SOURCE_NATIVE_TEST")
+        district=OriginalFilmDistrict(
+            self.b.index,verify_director_action=lambda event,scope:
+            event=="SOURCE_NATIVE_TEST" and scope["operation"]==
+            "nvp.film02m_e.publish_original_layered_district.v1")
+        params={
+            "seed":11,"source_buildings":[
+                {"building_id":"ShotOriginalBuilding","revision":1}],
+            "grid_cols":1,"grid_rows":1,"lot_spacing_m":30.,
+            "world_origin_m":[100.,0.,0.],
+            "source_triangle_budget":100000,
+            "source_instance_budget":1}
+        original=district.publish(
+            self.b.pid,"ShotApprovedDistrict",**params,
+            expected_revision=0,director_event="SOURCE_NATIVE_TEST")
+        approvals=[False]
+        granted=[]
+        def confirm(event,scope):
+            granted.append((event,dict(scope)))
+            return approvals[0] and event=="NATIVE_SHOT_APPROVAL"
+        bindings=OriginalDistrictShotBinding(
+            self.b.index,confirm=confirm)
+        result=bindings.preview(
+            self.b.pid,"ShotApprovedDistrict",1,"WorldStreetTake",T)
+        self.assertTrue(result["native_approved_district_layer_composed"])
+        self.assertTrue(result["native_original_camera_verified"])
+        self.assertTrue(result["native_original_actor_pose_verified"])
+        self.assertTrue(result["original_actor_takes_unchanged"])
+        self.assertEqual(result["native_original_instance_count"],1)
+        self.assertEqual(result["original_camera_path"],
+                         "/World/Sets/Outside/Camera")
+        self.assertEqual(result["original_actor_poses"][0]["actor_id"],
+                         self.actor["id"])
+        self.assertEqual(result["original_actor_poses"][0][
+            "world_translation_m"],[2.0,0.0,0.0])
+        with self.assertRaises(PermissionError):
+            bindings.publish(self.b.pid,"ApprovedActorDistrictShot",
+                district_id="ShotApprovedDistrict",district_revision=1,
+                world_take_id="WorldStreetTake",film_tick=T,
+                creator_event="NATIVE_SHOT_APPROVAL",
+                expected_preview_sha256="f"*64)
+        self.assertEqual(granted,[])
+        with self.assertRaises(PermissionError):
+            bindings.publish(self.b.pid,"ApprovedActorDistrictShot",
+                district_id="ShotApprovedDistrict",district_revision=1,
+                world_take_id="WorldStreetTake",film_tick=T,
+                creator_event="NATIVE_SHOT_APPROVAL",
+                expected_preview_sha256=result["binding_preview_sha256"])
+        with self.assertRaises(KeyError):
+            self.b.index.read_revision(self.b.pid,"ApprovedActorDistrictShot",1)
+        approvals[0]=True
+        published=bindings.publish(
+            self.b.pid,"ApprovedActorDistrictShot",
+            district_id="ShotApprovedDistrict",district_revision=1,
+            world_take_id="WorldStreetTake",film_tick=T,
+            creator_event="NATIVE_SHOT_APPROVAL",
+            expected_preview_sha256=result["binding_preview_sha256"])
+        self.assertEqual(published["revision"],1)
+        reopened=bindings.reopen(self.b.pid,"ApprovedActorDistrictShot")
+        self.assertEqual(reopened["format"],SHOT_BINDING_FORMAT)
+        self.assertTrue(reopened["native_source_reopened"])
+        self.assertEqual(reopened["source_preview"],result)
+        self.assertEqual(self.b.index.list_objects(
+            self.b.pid,kind="take"),before_takes)
+        self.assertEqual(self.b.index.read_revision(
+            self.b.pid,"OriginalStreetTake",1)["document_sha256"],before_take)
+        self.assertEqual(self.b.index.read_revision(
+            self.b.pid,"WorldStreetTake",1)["document_sha256"],before_world_take)
+        self.assertEqual(self.b.index.read_revision(
+            self.b.pid,"StreetWorldShot",1)["document_sha256"],before_shot)
+        # A second immutable district revision may stage a different world,
+        # but the previously approved shot binding retains source revision 1.
+        district.publish(
+            self.b.pid,"ShotApprovedDistrict",**{**params,"seed":12},
+            expected_revision=1,director_event="SOURCE_NATIVE_TEST")
+        self.assertEqual(bindings.reopen(
+            self.b.pid,"ApprovedActorDistrictShot")[
+            "binding_document_sha256"],published["document_sha256"])
+        with self.assertRaises(RuntimeError):
+            bindings.publish(
+                self.b.pid,"ApprovedActorDistrictShot",
+                district_id="ShotApprovedDistrict",district_revision=1,
+                world_take_id="WorldStreetTake",film_tick=T,
+                creator_event="NATIVE_SHOT_APPROVAL",
+                expected_preview_sha256=result["binding_preview_sha256"])
+
     def test_actor_casting_is_required_not_automatically_generated(self):
         with self.assertRaises((RuntimeError,PermissionError)):
             self.freeze(take="WorldTakeUncast")
