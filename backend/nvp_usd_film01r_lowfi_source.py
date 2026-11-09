@@ -76,6 +76,9 @@ class SourceViewpointWorkspace:
                     "position_m":camera["position_m"],
                     "rotation_euler_deg":camera["rotation_euler_deg"],
                     "focal_length_mm":camera["focal_length_mm"],
+                    "focus_distance_m":camera["focus_distance_m"],
+                    "clip_range_m":camera["clip_range_m"],
+                    "move_keys":camera["move_keys"],
                     "camera_ray_exclusions":camera["camera_ray_exclusions"]}
                     for camera in doc["cameras"]],
             })
