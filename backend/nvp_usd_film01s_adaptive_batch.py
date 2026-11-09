@@ -236,6 +236,46 @@ def plan_batches(plan_id,source_performance_sha256,shots,preferences,
     return {"plan":body,"plan_sha256":_sha(body)}
 
 
+def preview_batch_layout(viewpoint_count,selected_final_count,preferences,
+                         snapshot,*,verified_cycles_gpu_ids=(),
+                         cpu_threads=None):
+    """Safe UI estimation only; no fabricated FilmIndex source or worker job."""
+    if (type(viewpoint_count) is not int or not 1<=viewpoint_count<=96
+        or type(selected_final_count) is not int
+        or not 0<=selected_final_count<=viewpoint_count
+        or not isinstance(preferences,BatchPreferences)):
+        raise ValueError("Count original viewpoints and director-selected final shots")
+    capacities={
+        stage:safe_parallelism(
+            snapshot,preferences,quality=stage,
+            verified_cycles_gpu_ids=verified_cycles_gpu_ids,
+            cpu_threads=cpu_threads)
+        for stage in STAGES}
+    size=(preferences.shots_per_batch
+          if preferences.shots_per_batch is not None else
+          max(1,min(16,capacities[PREVIEW]["safe_workers"]*2)))
+    def groups(count):
+        return [{"batch":i+1,
+                 "first_shot_number":i*size+1,
+                 "shot_count":min(size,count-i*size)}
+                for i in range((count+size-1)//size)]
+    return {
+        "format":"nvp.film01s.read_only_batch_capacity_preview.v1",
+        "available_source_viewpoints":viewpoint_count,
+        "selected_final_shots":selected_final_count,
+        "batch_size_mode":"AUTO" if preferences.shots_per_batch is None
+                          else "DIRECTOR",
+        "shots_per_batch":size,
+        "lowfi_preview_batches":groups(viewpoint_count),
+        "hifi_selected_shot_batches":groups(selected_final_count),
+        "safe_parallel_workers":capacities,
+        "render_jobs_started":0,
+        "source_film_index_take_verified":False,
+        "browser_has_no_native_render_authority":True,
+        "real_dispatch_requires_original_source_and_native_broker":True,
+    }
+
+
 class DurableShotBatchQueue:
     """No render process is started here; NVP's broker remains authoritative."""
 
