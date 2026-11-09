@@ -242,9 +242,31 @@ def run_persistent_installed_smoke(mode):
                 saved=json.load(reply)
             if saved.get("revision")!=1:
                 raise RuntimeError("NVP installed screenplay save did not commit")
-            marker.write_text(json.dumps({"id":record["id"],
-                        "title":record["title"],"screenplay":screenplay,
-                        "revision":1}),encoding="utf8")
+            stamp={"id":record["id"],
+                   "title":record["title"],"screenplay":screenplay,
+                   "revision":1}
+            if os.environ.get("NVP_FILM02M_GROUP_ACCEPTANCE")=="1":
+                from backend.nvp_film_index import FilmIndex
+                from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
+                source=FilmIndex(studio)
+                params=_seed_original_world_smoke(source,record["id"])
+                drafts=OriginalDistrictDrafts(
+                    source,root/"original-installed-director-drafts",
+                    confirm=lambda *_:False)
+                unapproved=drafts.create(
+                    record["id"],"InstalledRecoveryWorld",
+                    expected_revision=0,params=params,proposed_by="director")
+                source_preview=drafts.preview(
+                    record["id"],unapproved["draft_id"])
+                if (unapproved["state"]!="DRAFT" or
+                    not source_preview["native_usd_source_reopened"] or
+                    source_preview["verified_openusd_point_instancer"]!=1):
+                    raise RuntimeError("Installed original USD draft source cannot reopen")
+                stamp["film02mg_restart_draft"]={
+                    "draft_id":unapproved["draft_id"],
+                    "plan_sha":unapproved["original_plan_sha256"],
+                    "usd_sha":unapproved["original_usd_root_sha256"]}
+            marker.write_text(json.dumps(stamp),encoding="utf8")
         else:
             expected=json.loads(marker.read_text("utf8"))
             with urllib.request.urlopen(
@@ -260,6 +282,32 @@ def run_persistent_installed_smoke(mode):
                 or durable["screenplay"]!=expected["screenplay"]
                 or durable["revision"]!=expected["revision"]):
                 raise RuntimeError("SQLite screenplay revision changed after reopening app")
+            if "film02mg_restart_draft" in expected:
+                from backend.nvp_film_index import FilmIndex
+                from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
+                from backend.nvp_api import studio
+                source=FilmIndex(studio)
+                drafts=OriginalDistrictDrafts(
+                    source,root/"original-installed-director-drafts",
+                    confirm=lambda *_:False)
+                prior=expected["film02mg_restart_draft"]
+                reopened_draft=drafts.reopen(
+                    expected["id"],prior["draft_id"])
+                live_preview=drafts.preview(
+                    expected["id"],prior["draft_id"])
+                if (reopened_draft["state"]!="DRAFT" or
+                    reopened_draft["original_plan_sha256"]!=prior["plan_sha"] or
+                    reopened_draft["original_usd_root_sha256"]!=prior["usd_sha"] or
+                    live_preview["source_plan_sha256"]!=prior["plan_sha"] or
+                    live_preview["usd_layer_root_sha256"]!=prior["usd_sha"] or
+                    not live_preview["native_usd_source_reopened"]):
+                    raise RuntimeError("Installed application lost original USD draft on process restart")
+                try:
+                    source.read_revision(expected["id"],"InstalledRecoveryWorld",1)
+                except KeyError:
+                    pass
+                else:
+                    raise RuntimeError("Restart illegally published unapproved AI/director world")
         return 0
     finally:
         server.should_exit=True
