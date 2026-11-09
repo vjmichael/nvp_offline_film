@@ -30,6 +30,7 @@ $ident | Out-File -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'p0f01-installed-id
 $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'p0f01-installed-original-film-projects'
 $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'p0f01-installed-window.log'
 $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
+$env:NVP_P0F01_TEST_DISPOSABLE='1'
 # First actual installed EXE creates original 3D source and durable draft.
 & $installed --smoke-create
 if ($LASTEXITCODE -ne 0) { throw 'First installed project creation failed' }
