@@ -1299,6 +1299,36 @@ def run_visible_window_smoke():
                                                 "document_sha256"]})
                                         _native_window_stage(
                                             "p0f01_real_gguf_model_source_draft_no_approval_passed")
+                                if os.environ.get("NVP_FILM02MH_GROUP_ACCEPTANCE")=="1":
+                                    _native_window_stage(
+                                        "film02mh_installed_render_review_controls_check")
+                                    render_controls=False
+                                    until=time.monotonic()+22
+                                    while time.monotonic()<until:
+                                        render_controls=window.evaluate_js(
+                                            "(()=>{const api=window.pywebview?.api;"
+                                            "const pane=document.querySelector("
+                                            "'section[aria-label=\\\"Original OpenUSD modular world director\\\"]');"
+                                            "const review=pane?.querySelector("
+                                            "'[aria-label=\\\"Protected original actor district Cycles review\\\"]');"
+                                            "if(!api||!review)return false;"
+                                            "return ['film02mh_render_begin',"
+                                            "'film02mh_render_poll','film02mh_render_image',"
+                                            "'film02mh_reopen_shot_binding'].every("
+                                            "name=>typeof api[name]==='function')&&"
+                                            "[...review.querySelectorAll('button')].some("
+                                            "x=>x.textContent.includes("
+                                            "'OS approve and render original actor/district Cycles frame'))&&"
+                                            "[...review.querySelectorAll('button')].some("
+                                            "x=>x.textContent.includes("
+                                            "'Reopen independently verified saved Cycles image'));})()")
+                                        if render_controls:break
+                                        time.sleep(.2)
+                                    if not render_controls:
+                                        raise RuntimeError(
+                                            "Real installed Windows WebView2 lacks protected Cycles controls or native source permissions")
+                                    _native_window_stage(
+                                        "film02mh_installed_source_review_controls_verified_no_worker_started")
                                 result["passed"]=True
                                 break
                     time.sleep(.2)
