@@ -1,0 +1,122 @@
+name: NVP USD-FILM-02M-D Real Openings, Interiors and Camera Cell Hysteresis
+
+on:
+  push:
+    branches: [nvp/usd-film02m-d-openings-interiors-cells-20261109]
+  pull_request:
+    branches: [nvp/usd-film02m-module-socket-assembly-20261109]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-usd-film02md-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-original-geometry-and-cells:
+    name: Native OpenUSD actual hole/room/topology, source SHA, 3 camera cells and hysteresis / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04,windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native original OpenUSD source/runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+      - name: Compile real native geometry, original cell loaders and Blender-reviewed aperture script
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film02m_d_openings.py backend/nvp_usd_film02m_d_cells.py backend/nvp_usd_film02m_modular_buildings.py tools/nvp_usd_film02m_d_blender_aperture_smoke.py tests/test_nvp_usd_film02m_modular_buildings.py
+      - name: Verify actual source doors/windows, independent real triangle ray checks, interior room and true USD payload loads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film02m_modular_buildings.py" -v
+
+  genuine-blender-through-door-inside-rear:
+    name: Real Blender 5.2.3 source-faithful doorway ray and 3-angle room/window Cycles pictures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 140
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM02MD_ARTIFACT_DIR: nvp-02md-genuine-3d-door-room-rear-cycles
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install original OpenUSD/Blender 3D source dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Pin actual official Blender 5.2.3 binary to upstream SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Real SHA-verified source 11-module facade-door/interior/reverse Blender Cycles and geometry raycast
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM02MD_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p "test_nvp_usd_film02m_modular_buildings.py" -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          p=Path("nvp-02md-genuine-3d-door-room-rear-cycles")
+          report=json.loads((p/"review_status.json").read_text("utf8"))
+          audit=json.loads((p/"audit.json").read_text("utf8"))
+          assert report["actual_native_source_geometry_used"] is True
+          assert report["real_through_door_raycast_proven"] is True
+          assert report["real_rear_room_geometry_hit"] is True
+          assert audit["actual_native_meshes"]==11
+          assert audit["door_ray_passed_original_wall"] is True
+          assert audit["room_rear_wall_ray_hit"] is True
+          assert audit["original_solid_pier_ray_blocked"] is True
+          assert audit["director_visual_look_accepted"] is False
+          hashes=set()
+          for angle in ("doorway","interior","reverse"):
+              with Image.open(p/f"film02m_d_{angle}.png") as im:
+                  assert im.format=="PNG" and im.size==(320,180)
+                  im.verify()
+              hashes.add(next(
+                  x["actual_cycles_png_sha256"]
+                  for x in audit["actual_blender_cycles_views"]
+                  if x["view"]==angle))
+          assert len(hashes)==3
+          print("Actual original authored 3D holes + interior Cycles source test PASS. Director look review OPEN.")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NVP-USD-FILM02MD-genuine-door-room-and-reverse-Blender-Cycles-UNREVIEWED
+          path: nvp-02md-genuine-3d-door-room-rear-cycles/
+          if-no-files-found: warn
+          retention-days: 14
