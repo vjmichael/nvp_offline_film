@@ -1175,6 +1175,71 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             "director_visual_acceptance":False},
             sort_keys=True,indent=2),"utf8")
 
+    def test_01t_native_webview_can_enqueue_exact_edit_without_browser_worker_authority(self):
+        import sys
+        from types import SimpleNamespace
+        from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+        self._selected_original_edit()
+        class MockInstalledWindow:
+            permitted=False
+            url="http://127.0.0.1:43141/"
+            def get_current_url(self):
+                return self.url
+            def create_confirmation_dialog(self,title,text):
+                self.last_confirmation=(title,text)
+                return self.permitted
+        window=MockInstalledWindow()
+        root=self.root/"01t_real_source_desktop_bridge_test"
+        # No actual Blender is launched in this source + authorization
+        # test. Genuine native Blender frames are separately mandatory
+        # in the dedicated 720-frame and 8-frame native OS jobs.
+        worker=BlenderWorkerSupervisor(
+            root/"fake_version_no_launch",
+            blender_executable=sys.executable,
+            blender_sha256=sha_file(sys.executable),
+            blender_version="Blender 5.2.3")
+        desktop=TrustedDesktopWO5Bridge(
+            self.index,origin="http://127.0.0.1:43141",
+            production_root=root/"original_host_runtime")
+        desktop._attach_window(window)
+        desktop._get_host=lambda:SimpleNamespace(supervisor=worker)
+        request={
+            "project_id":self.pid,"edit_id":"DataFirstOriginalSelectedShort",
+            "revision":1,"render_quality":"technical_smoke",
+            "shots_per_batch":12,"parallel_worker_limit":1}
+        try:
+            preview=desktop.film01t_preview_queue(request)
+            self.assertEqual(preview["selected_final_source_frames"],720)
+            self.assertEqual(preview["total_real_blender_frames_started"],0)
+            self.assertEqual(preview["effective_shots_per_batch"],12)
+            with self.assertRaises(PermissionError):
+                desktop.film01t_enqueue(request)
+            window.permitted=True
+            queued=desktop.film01t_enqueue(request)
+            self.assertEqual(queued["format"],
+                "nvp.film01t.native_queue_enqueued.v1")
+            self.assertEqual(queued["queue"]["progress_required"],180)
+            self.assertEqual(queued["native_workers_started"],0)
+            self.assertTrue(hasattr(window,"last_confirmation"))
+            self.assertIn("Original edit SHA:",
+                          window.last_confirmation[1])
+            self.assertEqual(desktop.film01t_status({
+                "project_id":self.pid,
+                "edit_id":"DataFirstOriginalSelectedShort",
+                "revision":1,
+                "render_quality":"technical_smoke"})["queue"][
+                "progress_completed"],0)
+            window.url="http://127.0.0.1:43141/foreign"
+            with self.assertRaises(PermissionError):
+                desktop.film01t_status({
+                    "project_id":self.pid,
+                    "edit_id":"DataFirstOriginalSelectedShort",
+                    "revision":1,
+                    "render_quality":"technical_smoke"})
+        finally:
+            desktop._close()
+
     def test_01t_actual_source_queue_first_group_and_restart_reconciliation(self):
         """Actual pxr source frames, fake ONLY resource hardware and test consent."""
         import sys
