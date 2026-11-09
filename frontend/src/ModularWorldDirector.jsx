@@ -27,6 +27,7 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
   const [modelId,setModelId]=useState('');
   const [modelDirection,setModelDirection]=useState('');
   const [observedModel,setObservedModel]=useState(null);
+  const [modelAttempt,setModelAttempt]=useState(null);
   const [localModels,setLocalModels]=useState([]);
   const [localModelStatus,setLocalModelStatus]=useState('not checked');
   const [worldTakeId,setWorldTakeId]=useState('');
@@ -79,6 +80,12 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
        !Array.isArray(result.drafts))
       throw Error('Trusted original OpenUSD building catalog failed');
     setCatalog(result);
+    // Reattach to an in-process generation after switching director tabs.
+    // A different host session has already marked old attempts interrupted.
+    if(typeof nativeBridge.film02mg_candidate_status==='function'){
+      setModelAttempt(current=>current||
+        result.model_attempts?.find(x=>x.state==='GENERATING')?.attempt_id||null);
+    }
     setWorldTakeId(current=>{
       if(result.original_world_takes?.some(x=>x.take_id===current))
         return current;
@@ -162,14 +169,31 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
     setNotice('Original USD proposal saved as a DRAFT. No published world or Blender job changed.');
   });
   const modelPropose=()=>transact(async()=>{
-    if(typeof nativeBridge.film02mg_generate_candidate!=='function')
-      throw Error('Installed NVP local model world planning is unavailable');
     if(!modelId.trim()||!modelDirection.trim())
       throw Error('Choose the locally configured model and provide director intent');
-    const response=await nativeBridge.film02mg_generate_candidate({
+    const request={
       project_id:projectId,district_id:districtId,
       expected_revision:Number(baseRevision),
-      model_id:modelId.trim(),direction:modelDirection.trim()});
+      model_id:modelId.trim(),direction:modelDirection.trim()};
+    // Native background task returns immediately. Source admission and
+    // cancellation are owned by the same host as the durable draft ledger.
+    if(typeof nativeBridge.film02mg_start_candidate==='function'&&
+       typeof nativeBridge.film02mg_candidate_status==='function'){
+      const begun=await nativeBridge.film02mg_start_candidate(request);
+      if(begun?.format!=='nvp.usd_film02m_g.durable_model_attempt_status.v1'||
+         begun.state!=='GENERATING'||begun.project_id!==projectId||
+         !/^[0-9a-f]{24}$/.test(begun.attempt_id)||
+         begun.director_approval_granted!==false||
+         begun.native_worker_authorized!==false)
+        throw Error('Trusted background world model did not return a host-owned attempt');
+      setModelAttempt(begun.attempt_id);
+      setNotice('Local model source proposal is generating. The director editor remains interactive.');
+      return;
+    }
+    if(typeof nativeBridge.film02mg_generate_candidate!=='function')
+      throw Error('Installed NVP local model world planning is unavailable');
+    // Older installed versions only: retain original sync bridge contract.
+    const response=await nativeBridge.film02mg_generate_candidate(request);
     if(response?.format!=='nvp.usd_film02m_g.model_saved_original_draft.v1'||
        response.director_approval_granted!==false||
        response.actor_takes_modified!==false||
@@ -177,11 +201,70 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
        response.proposal?.observed_model_evidence?.model_text_sha256!==
          response.model_evidence?.model_text_sha256)
       throw Error('Native model proposal lacks matching durable model evidence');
-    const receipt=requireDraft(response.proposal);
-    await loadPreview(receipt);
+    await loadPreview(requireDraft(response.proposal));
     await refresh();
     setObservedModel(response.model_evidence);
     setNotice('Host-observed local model generated a bounded source proposal. It is a durable unapproved draft.');
+  });
+  useEffect(()=>{
+    if(!modelAttempt||!ready||
+       typeof nativeBridge.film02mg_candidate_status!=='function')return;
+    let stopped=false,timer=null;
+    const poll=async()=>{
+      try{
+        const state=await nativeBridge.film02mg_candidate_status({
+          project_id:projectId,attempt_id:modelAttempt});
+        if(stopped)return;
+        if(state?.format!=='nvp.usd_film02m_g.durable_model_attempt_status.v1'||
+           state.project_id!==projectId||
+           state.attempt_id!==modelAttempt||
+           state.director_approval_granted!==false||
+           state.actor_takes_modified!==false)
+          throw Error('Local model generation status is not source-bound');
+        if(state.state==='GENERATING'){
+          timer=setTimeout(poll,800);
+          return;
+        }
+        if(state.state==='DRAFT_SAVED'){
+          if(state.model_evidence?.status!=='GENERATED_UNAPPROVED'||
+             state.proposal?.observed_model_evidence?.model_text_sha256!==
+               state.model_evidence?.model_text_sha256)
+            throw Error('Durable model draft has no matching completion receipt');
+          await loadPreview(requireDraft(state.proposal));
+          if(stopped)return;
+          await refresh();
+          if(stopped)return;
+          setObservedModel(state.model_evidence);
+          setNotice('Host-owned local model draft saved and reopened. It remains unapproved.');
+        }else{
+          await refresh();
+          if(stopped)return;
+          setNotice('Local model attempt '+state.state+
+            '. No original world revision was published or authorized.');
+        }
+        if(!stopped)setModelAttempt(null);
+      }catch(e){
+        if(!stopped){setModelAttempt(null);setError(
+          e?.message||'Source-locked model attempt could not be verified');}
+      }
+    };
+    timer=setTimeout(poll,250);
+    return()=>{stopped=true;clearTimeout(timer);};
+  },[modelAttempt,ready,nativeBridge,projectId]);
+  const cancelModel=()=>transact(async()=>{
+    if(!modelAttempt||typeof nativeBridge.film02mg_cancel_candidate!=='function')
+      throw Error('No cancellable native world model attempt');
+    const state=await nativeBridge.film02mg_cancel_candidate({
+      project_id:projectId,attempt_id:modelAttempt});
+    if(state?.format!=='nvp.usd_film02m_g.durable_model_attempt_status.v1'||
+       state.project_id!==projectId||
+       state.director_approval_granted!==false)
+      throw Error('Native cancellation did not return a durable attempt state');
+    setModelAttempt(null);
+    await refresh();
+    setNotice(state.state==='CANCELLED'?
+      'Model generation cancelled. Late completion cannot create a source draft or approval.':
+      'Model attempt finished before cancellation; inspect the existing unapproved draft.');
   });
   const previewOriginalShot=()=>transact(async()=>{
     if(!chosenDistrict||!chosenTake||
@@ -337,7 +420,8 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
           </select>
         </label>
       </div>
-      {typeof nativeBridge.film02mg_generate_candidate==='function'&&
+      {(typeof nativeBridge.film02mg_generate_candidate==='function'||
+         typeof nativeBridge.film02mg_start_candidate==='function')&&
         <fieldset disabled={busy} style={{
           padding:10,border:'1px solid #50606f',borderRadius:7}}>
           <legend>Loaded local AI · original world candidate</legend>
@@ -360,8 +444,16 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
             value={modelDirection}
             onChange={e=>setModelDirection(e.target.value)}/></label>
           <button disabled={!source.length||!modelId.trim()||
-              !modelDirection.trim()||localModelStatus!=='available'}
+              !modelDirection.trim()||localModelStatus!=='available'||
+              Boolean(modelAttempt)}
             onClick={modelPropose}>Generate and save unapproved AI world draft</button>
+          {modelAttempt&&<>
+            <p role="status">Native model generation in progress; the original
+              world and actor Takes remain unchanged. Attempt: {modelAttempt}</p>
+            {typeof nativeBridge.film02mg_cancel_candidate==='function'&&
+              <button onClick={cancelModel}>
+                Cancel local model generation</button>}
+          </>}
         </fieldset>}
       <fieldset disabled={busy||active} style={{
         padding:10,border:'1px solid #50606f',borderRadius:7}}>
