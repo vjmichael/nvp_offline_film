@@ -138,6 +138,9 @@ def stage_original_director_camera_frame(index:FilmIndex,pid,bank_id,
                 "source_camera_id":camera_id,
                 "source_camera_prim":camera_path,
                 "source_camera_position_m":camera_position,
+                "source_camera_rotation_euler_deg":[
+                    float(x) for x in cprim.GetAttribute(
+                        "xformOp:rotateXYZ").Get(time)],
                 "source_camera_focal_length_mm":camera["focal_length_mm"],
                 "source_camera_ray_exclusions":camera["camera_ray_exclusions"],
                 "source_actor_positions":actor_positions,
