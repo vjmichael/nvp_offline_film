@@ -294,10 +294,18 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
        pose.rail_layer_sha256!==reopened.layer_sha256||
        pose.film_tick!==sampleTick||
        pose.native_worker_started!==false||
-       pose.source_actor_pcm_changed!==false)
+       pose.source_actor_pcm_changed!==false||
+       typeof pose.native_layer_sample_authored_and_read_back!=='boolean'||
+       typeof pose.host_exact_film_time_interpolated!=='boolean'||
+       pose.native_layer_sample_authored_and_read_back===
+         pose.host_exact_film_time_interpolated)
       throw Error('Native source camera pose failed stronger-layer recheck');
-    setSample(pose.sample);
-    setNotice('Actual original camera rail independently sampled at this exact film tick.');
+    setSample({...pose.sample,
+      native_layer_sample_authored_and_read_back:
+        pose.native_layer_sample_authored_and_read_back});
+    setNotice(pose.native_layer_sample_authored_and_read_back?
+      'Exact source-time camera key was independently read from the stronger native USD layer.':
+      'Off-grid Film Time camera pose was evaluated by the deterministic host rail, not presented as a native authored USD key.');
   });
   if(!supported)return null;
   return <section aria-label="Director digital camera rails and shot techniques"
