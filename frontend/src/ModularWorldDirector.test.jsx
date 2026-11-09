@@ -164,3 +164,93 @@ describe('02M-F installed original source/world director',()=>{
       name:'OS director approval · publish exact world revision'})).toBeNull();
   });
 });
+
+describe('02M-G/H native-only model and actor/camera shot routing',()=>{
+  it('does not confuse a manual AI label with a host-observed model completion',async()=>{
+    const native=nativeHost();
+    const evidence={status:'GENERATED_UNAPPROVED',
+      model_id:'LocalTestModel',model_text_sha256:'9'.repeat(64)};
+    const draft={...p1(),observed_model_evidence:evidence};
+    native.wo6_local_models=vi.fn(async()=>({
+      state:'available',models:[{id:'LocalTestModel'}]}));
+    native.film02mf_preview=vi.fn(async()=>preview(draft));
+    native.film02mg_generate_candidate=vi.fn(async()=>({
+      format:'nvp.usd_film02m_g.model_saved_original_draft.v1',
+      proposal:draft,model_evidence:evidence,
+      director_approval_granted:false,actor_takes_modified:false}));
+    render(<ModularWorldDirector projectId={project} nativeBridge={native}/>);
+    await screen.findByLabelText('Original world local model ID');
+    await waitFor(()=>expect(
+      screen.getByLabelText('Original world local model ID').value
+    ).toBe('LocalTestModel'));
+    fireEvent.change(screen.getByLabelText('Original world model direction'),{
+      target:{value:'Build a camera-friendly original street'}});
+    fireEvent.click(screen.getByRole('button',{
+      name:'Generate and save unapproved AI world draft'}));
+    await waitFor(()=>expect(native.film02mg_generate_candidate).toHaveBeenCalledTimes(1));
+    expect(native.film02mg_generate_candidate.mock.calls[0][0]).toMatchObject({
+      project_id:project,district_id:'OriginalFilmDistrict',
+      model_id:'LocalTestModel',expected_revision:0,
+      direction:'Build a camera-friendly original street'});
+    await screen.findByText(/Host-observed local model generated a bounded source proposal/);
+    expect(screen.getByText(/Model weights are not independently attested/)).toBeTruthy();
+    expect(native.film02mf_commit).not.toHaveBeenCalled();
+  });
+
+  it('composes selected immutable 01E Take with approved 02M district through native 01D shot then OS binding',async()=>{
+    const native=nativeHost();
+    const origCatalog=native.film02mf_catalog;
+    native.film02mf_catalog=vi.fn(async()=>({
+      ...(await origCatalog()),
+      approved_districts:[{
+        district_id:'OriginalFilmDistrict',revision:1,
+        document_sha256:worldSHA,
+        base_parameters:{
+          seed:7,source_buildings:[{building_id:build,revision:1}],
+          grid_cols:1,grid_rows:1,lot_spacing_m:30,
+          world_origin_m:[0,0,0],source_triangle_budget:10000,
+          source_instance_budget:4}}],
+      original_world_takes:[{
+        take_id:'OriginalWorldTake',take_sha256:sourceSHA,
+        checkpoint_ticks:[0,100],shot_id:'OriginalShot',
+        shot_revision:1,original_actor_count:1}]}));
+    const nativeShot={
+      format:'nvp.usd_film02m_h.native_source_district_shot_preview.v1',
+      project_id:project,district_id:'OriginalFilmDistrict',
+      district_revision:1,district_document_sha256:worldSHA,
+      world_take_id:'OriginalWorldTake',world_take_sha256:sourceSHA,
+      film_tick:0,binding_preview_sha256:'f'.repeat(64),
+      native_original_instance_count:1,
+      native_original_actor_pose_verified:true,
+      native_original_camera_verified:true,
+      native_approved_district_layer_composed:true,
+      original_actor_takes_unchanged:true,
+      original_actor_poses:[{actor_id:'OriginalActor'}],
+      original_camera_path:'/World/Sets/Outside/Camera'};
+    native.film02mh_preview_shot=vi.fn(async()=>nativeShot);
+    native.film02mh_commit_shot_binding=vi.fn(async()=>({
+      revision:1,document_sha256:'e'.repeat(64)}));
+    native.film02mh_reopen_shot_binding=vi.fn(async request=>({
+      native_source_reopened:true,
+      binding_id:request.binding_id,
+      binding_document_sha256:'e'.repeat(64),
+      source_actor_takes_unchanged:true}));
+    render(<ModularWorldDirector projectId={project} nativeBridge={native}/>);
+    await screen.findByLabelText('Original 01E world Take');
+    fireEvent.click(screen.getByRole('button',{
+      name:'Preview native source actor/camera world'}));
+    await waitFor(()=>expect(native.film02mh_preview_shot).toHaveBeenCalledTimes(1));
+    expect(native.film02mh_preview_shot.mock.calls[0][0]).toMatchObject({
+      project_id:project,district_revision:1,
+      world_take_id:'OriginalWorldTake',film_tick:0});
+    fireEvent.click(screen.getByRole('button',{
+      name:'OS approve exact actor-camera-world binding'}));
+    await waitFor(()=>expect(native.film02mh_commit_shot_binding).toHaveBeenCalledTimes(1));
+    expect(native.film02mh_commit_shot_binding.mock.calls[0][0]).toMatchObject({
+      source_preview_sha256:'f'.repeat(64),
+      binding_id:'OriginalDistrictFilmShot'});
+    await screen.findByText(/Independent 3D source binding reopened/);
+    expect(native.film02mh_reopen_shot_binding).toHaveBeenCalledTimes(1);
+    expect(native.film02mf_commit).not.toHaveBeenCalled();
+  });
+});
