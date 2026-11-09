@@ -17,6 +17,7 @@ import json
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+from backend.nvp_usd_film01t_desktop_mixin import OriginalSelectedFilmDesktopMixin
 from backend.nvp_wo4_feature_journal import FeatureJournal, ASSEMBLY_FORMAT
 from backend.nvp_wo5_original_feature import inspect_original_feature_readiness
 from backend.nvp_wo5_director_review import (
@@ -27,7 +28,7 @@ FORMAT = "nvp.wo5.trusted_desktop_director_review.v1"
 MAX_CATALOG = 256
 
 
-class TrustedDesktopWO5Bridge(TrustedDesktopCameraBridge):
+class TrustedDesktopWO5Bridge(OriginalSelectedFilmDesktopMixin,TrustedDesktopCameraBridge):
     """Use the actual OS-confirmed WebView2 bridge; not FastAPI routes."""
 
     def __init__(self, index: FilmIndex, *, origin, production_root=None,
@@ -48,6 +49,7 @@ class TrustedDesktopWO5Bridge(TrustedDesktopCameraBridge):
         # never creates a browser-side privileged write/render endpoint.
         self._film01r_lock = threading.RLock()
         self._film01r_jobs = {}
+        self._film01t_jobs = {}
         self._film01r_pool = None
 
     def _wo5_project(self, project_id):
