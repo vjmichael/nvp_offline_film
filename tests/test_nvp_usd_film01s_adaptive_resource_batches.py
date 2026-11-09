@@ -17,7 +17,7 @@ from backend.nvp_resource_guard import (
 from backend.nvp_resource_process_monitor import (
     NVPProcessResourceMonitor,FORMAT as REPORT_FORMAT)
 from backend.nvp_usd_film01s_adaptive_batch import (
-    BatchPreferences,Shot,plan_batches,safe_parallelism,
+    BatchPreferences,Shot,plan_batches,preview_batch_layout,safe_parallelism,
     DurableShotBatchQueue,PREVIEW,FINAL)
 
 
@@ -34,6 +34,22 @@ def sample_shots(count=9):
 
 
 class HardwareBatchPlannerTest(unittest.TestCase):
+    def test_ui_estimate_counts_only_no_fake_filmindex_or_execution(self):
+        report=preview_batch_layout(
+            9,3,BatchPreferences(shots_per_batch=4,
+                parallel_worker_limit=1,preview_worker_ram_mb=512),
+            host(4096,2800),cpu_threads=2)
+        self.assertEqual(report["format"],
+            "nvp.film01s.read_only_batch_capacity_preview.v1")
+        self.assertEqual(report["shots_per_batch"],4)
+        self.assertEqual([x["shot_count"] for x in
+            report["lowfi_preview_batches"]],[4,4,1])
+        self.assertEqual([x["shot_count"] for x in
+            report["hifi_selected_shot_batches"]],[3])
+        self.assertEqual(report["render_jobs_started"],0)
+        self.assertFalse(report["source_film_index_take_verified"])
+        self.assertTrue(report["browser_has_no_native_render_authority"])
+
     def test_low_pc_automatically_limits_concurrency_without_losing_cameras(self):
         snap=host(4096,2800)
         pref=BatchPreferences(preview_worker_ram_mb=512)
