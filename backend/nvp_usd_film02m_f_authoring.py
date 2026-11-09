@@ -260,6 +260,64 @@ class OriginalDistrictDrafts:
                 (category,now(),pid,attempt_id,self.model_session_id))
             db.commit()
 
+    def model_attempt_status(self,pid,attempt_id):
+        """Read project-owned durable generation state; never expose provider text."""
+        _require_pid(pid)
+        if (type(attempt_id) is not str or len(attempt_id)!=24 or
+            any(c not in "0123456789abcdef" for c in attempt_id)):
+            raise PermissionError("Exact host-minted model attempt ID required")
+        self.index.studio.get_project(pid)
+        with self.lock,self._db() as db:
+            self._recover_model_attempts(db,pid)
+            row=db.execute("""SELECT state,district_id,model_id,draft_id,
+                failure_category FROM authoring_model_attempts
+                WHERE project_id=? AND attempt_id=?""",
+                (pid,attempt_id)).fetchone()
+        if row is None:
+            raise PermissionError("Unknown project-owned model attempt")
+        state=row["state"]
+        draft=None
+        if state=="DRAFT_SAVED":
+            if not row["draft_id"]:
+                raise RuntimeError("Completed model attempt lacks durable source draft")
+            draft=self.reopen(pid,row["draft_id"])
+            if (draft["state"]!="DRAFT" or
+                draft["district_id"]!=row["district_id"] or
+                draft.get("observed_model_evidence",{}).get("model_id")!=
+                    row["model_id"]):
+                raise RuntimeError("Model attempt draft/source receipt mismatch")
+        return {
+            "format":"nvp.usd_film02m_g.durable_model_attempt_status.v1",
+            "attempt_id":attempt_id,
+            "project_id":pid,
+            "district_id":row["district_id"],
+            "model_id":row["model_id"],
+            "state":state,
+            "failure_category":row["failure_category"],
+            "proposal":draft,
+            "model_evidence":draft["observed_model_evidence"] if draft else None,
+            "director_approval_granted":False,
+            "native_worker_authorized":False,
+            "actor_takes_modified":False,
+        }
+
+    def cancel_model_attempt(self,pid,attempt_id):
+        """Host-session scoped cancellation; late providers cannot save a draft."""
+        _require_pid(pid)
+        if (type(attempt_id) is not str or len(attempt_id)!=24 or
+            any(c not in "0123456789abcdef" for c in attempt_id)):
+            raise PermissionError("Exact host-minted model attempt ID required")
+        with self.lock,self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("""UPDATE authoring_model_attempts
+                SET state='CANCELLED',failure_category='director_cancelled',
+                    updated_at=?
+                WHERE project_id=? AND attempt_id=? AND state='GENERATING'
+                    AND host_session_id=?""",
+                (now(),pid,attempt_id,self.model_session_id))
+            db.commit()
+        return self.model_attempt_status(pid,attempt_id)
+
     def catalog(self,pid):
         _require_pid(pid)
         self.index.studio.get_project(pid)
