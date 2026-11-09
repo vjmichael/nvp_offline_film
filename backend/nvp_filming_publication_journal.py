@@ -232,6 +232,7 @@ class FilmingPublicationJournal:
                     source_data = revisions[sid]["data"] if sid in expected else {}
                     if (sid not in expected or sid in found or
                         event["source_revision"] != 1 or
+                        event.get("source_document_sha256") != revisions[sid]["document_sha256"] or
                         payload.get("original_recording") is not True or
                         payload.get("format") != "nvp.data_av.filming_capture.v1" or
                         payload.get("source_sample_rate") != SAMPLE_RATE or
