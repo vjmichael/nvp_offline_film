@@ -125,6 +125,84 @@ def run_smoke():
                 raise RuntimeError("NVP API server refused clean shutdown")
 
 
+def _seed_original_world_smoke(index,project_id):
+    """Real 3D original six-part source; ONLY throwaway alpha acceptance data."""
+    from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+    from backend.nvp_usd_film02m_modular_buildings import OriginalBuildingKit
+    def socket(name,at,normal,span,kind):
+        return {"name":name,"connector_type":kind,"gender":"universal",
+                "at_m":at,"normal":normal,"span_m":span,"tolerance_m":.01}
+    parts=[
+        ("Floor","floor",[12,10,.4],[
+            socket("Front",[0,-5,0],[0,-1,0],12,"wall_base"),
+            socket("Rear",[0,5,0],[0,1,0],12,"wall_base"),
+            socket("Left",[-6,0,0],[-1,0,0],10,"side_base"),
+            socket("Right",[6,0,0],[1,0,0],10,"side_base")]),
+        ("Front","facade",[12,.4,6],[
+            socket("Back",[0,.2,-3],[0,1,0],12,"wall_base"),
+            socket("Top",[0,0,3],[0,0,1],12,"roof_edge")]),
+        ("Rear","rear",[12,.4,6],[
+            socket("Front",[0,-.2,-3],[0,-1,0],12,"wall_base")]),
+        ("Left","side",[.4,10,6],[
+            socket("Inner",[.2,0,-3],[1,0,0],10,"side_base")]),
+        ("Right","side",[.4,10,6],[
+            socket("Inner",[-.2,0,-3],[-1,0,0],10,"side_base")]),
+        ("Roof","roof",[12.8,10.8,.4],[
+            socket("FrontBottom",[0,-5.2,-.2],[0,0,-1],12,"roof_edge")]),
+    ]
+    def cube(dims):
+        x,y,z=[v/2 for v in dims]
+        return ([[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],
+                 [-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]],
+                [[0,2,1],[0,3,2],[4,5,6],[4,6,7],
+                 [0,1,5],[0,5,4],[3,7,6],[3,6,2],
+                 [0,4,7],[0,7,3],[1,2,6],[1,6,5]])
+    kit=OriginalBuildingKit(
+        index,verify_director_action=lambda event,scope:
+        event=="NVP_INSTALLED_SOURCE_ONLY_SMOKE" and
+        scope.get("operation") in (
+            "nvp.film02m.publish_original_building_module.v1",
+            "nvp.film02m.publish_original_architecture.v1"))
+    registry=OpenUSDAssetRegistry(index)
+    for tag,role,dims,sockets in parts:
+        name="SmokeModule"+tag
+        geom="SmokeAsset"+tag
+        points,triangles=cube(dims)
+        registry.publish(
+            project_id,geom,shape="mesh",size_m=max(dims),
+            points=points,triangles=triangles,
+            preview_material={"base_color_rgb":[.55,.48,.44],
+                              "roughness":.65,"metallic":.02})
+        kit.publish_module(
+            project_id,name,asset_id=geom,asset_revision=1,
+            role=role,style_family="InstalledFilmSource",
+            size_m=dims,sockets=sockets,
+            director_event="NVP_INSTALLED_SOURCE_ONLY_SMOKE")
+    def part(name,tag,parent=None,parent_socket=None,own_socket=None,origin=None):
+        return {
+            "node_id":name,
+            "options":[{"module_id":"SmokeModule"+tag,"revision":1}],
+            "parent_id":parent,"parent_socket":parent_socket,
+            "own_socket":own_socket,"yaw_deg":0,
+            "root_position_m":origin}
+    kit.publish_building(
+        project_id,"InstalledSourceHouse",seed=11,
+        blueprint=[
+            part("Floor","Floor",origin=[0,0,0]),
+            part("Front","Front","Floor","Front","Back"),
+            part("Rear","Rear","Floor","Rear","Front"),
+            part("Left","Left","Floor","Left","Inner"),
+            part("Right","Right","Floor","Right","Inner"),
+            part("Roof","Roof","Front","Top","FrontBottom")],
+        director_event="NVP_INSTALLED_SOURCE_ONLY_SMOKE")
+    return {
+        "seed":11,
+        "source_buildings":[{"building_id":"InstalledSourceHouse","revision":1}],
+        "grid_cols":1,"grid_rows":1,"lot_spacing_m":30.,
+        "world_origin_m":[0.,0.,0.],
+        "source_triangle_budget":100000,"source_instance_budget":2}
+
+
 def run_persistent_installed_smoke(mode):
     """Installed-app launch, exit, reopen must retain SQLite project data."""
     import json
