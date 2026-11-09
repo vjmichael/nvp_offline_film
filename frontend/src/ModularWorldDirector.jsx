@@ -24,6 +24,9 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
   const [instanceBudget,setInstanceBudget]=useState(32);
   const [origin,setOrigin]=useState([0,0,0]);
   const [submission,setSubmission]=useState('director');
+  const [modelId,setModelId]=useState('');
+  const [modelDirection,setModelDirection]=useState('');
+  const [observedModel,setObservedModel]=useState(null);
   const [draft,setDraft]=useState(null),[preview,setPreview]=useState(null);
   const [selectedGenerated,setSelectedGenerated]=useState('');
   const [manualName,setManualName]=useState('DirectorShopfront');
@@ -128,6 +131,28 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
     await loadPreview(proposed);
     await refresh();
     setNotice('Original USD proposal saved as a DRAFT. No published world or Blender job changed.');
+  });
+  const modelPropose=()=>transact(async()=>{
+    if(typeof nativeBridge.film02mg_generate_candidate!=='function')
+      throw Error('Installed NVP local model world planning is unavailable');
+    if(!modelId.trim()||!modelDirection.trim())
+      throw Error('Choose the locally configured model and provide director intent');
+    const response=await nativeBridge.film02mg_generate_candidate({
+      project_id:projectId,district_id:districtId,
+      expected_revision:Number(baseRevision),
+      model_id:modelId.trim(),direction:modelDirection.trim()});
+    if(response?.format!=='nvp.usd_film02m_g.model_saved_original_draft.v1'||
+       response.director_approval_granted!==false||
+       response.actor_takes_modified!==false||
+       response.model_evidence?.status!=='GENERATED_UNAPPROVED'||
+       response.proposal?.observed_model_evidence?.model_text_sha256!==
+         response.model_evidence?.model_text_sha256)
+      throw Error('Native model proposal lacks matching durable model evidence');
+    const receipt=requireDraft(response.proposal);
+    await loadPreview(receipt);
+    await refresh();
+    setObservedModel(response.model_evidence);
+    setNotice('Host-observed local model generated a bounded source proposal. It is a durable unapproved draft.');
   });
   const reopen=id=>transact(async()=>{
     const receipt=await nativeBridge.film02mf_reopen({
@@ -238,6 +263,24 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
           </select>
         </label>
       </div>
+      {typeof nativeBridge.film02mg_generate_candidate==='function'&&
+        <fieldset disabled={busy} style={{
+          padding:10,border:'1px solid #50606f',borderRadius:7}}>
+          <legend>Loaded local AI · original world candidate</legend>
+          <p className="fineprint">This calls the existing host-selected WO6 local
+            model and independently reopens original source geometry.
+            Its provider receipt is evidence of a completed generation,
+            not proof of model weights or creative approval.</p>
+          <label>Configured local model ID<input
+            aria-label="Original world local model ID"
+            value={modelId} onChange={e=>setModelId(e.target.value)}/></label>
+          <label>Director instruction<textarea
+            aria-label="Original world model direction" maxLength={1200}
+            value={modelDirection}
+            onChange={e=>setModelDirection(e.target.value)}/></label>
+          <button disabled={!source.length||!modelId.trim()||!modelDirection.trim()}
+            onClick={modelPropose}>Generate and save unapproved AI world draft</button>
+        </fieldset>}
       <fieldset disabled={busy||active} style={{
         padding:10,border:'1px solid #50606f',borderRadius:7}}>
         <legend>Approved original building source prototypes</legend>
@@ -298,7 +341,11 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
         <p role="status">Native draft: {draft.state}.
           Original plan SHA: <code>{draft.original_plan_sha256}</code>.
           {draft.undo_steps} reversible draft changes.
-          Actor performances and Takes unchanged.</p>
+          Actor performances and Takes unchanged.
+          {draft.observed_model_evidence&&
+            <span> Host-observed model: {draft.observed_model_evidence.model_id}.
+              Model text SHA: {draft.observed_model_evidence.model_text_sha256}.
+              Model weights are not independently attested.</span>}</p>
         <div className="actions">
           <button disabled={busy||!active} onClick={()=>transact(
             ()=>loadPreview(draft))}>Verify 3D source preview and exact layer diff</button>
@@ -390,9 +437,11 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
           No film render or actor performance has been modified.</p>}
       </div>}
       <p className="fineprint">AI-generated plan values have no host authority.
-        The origin label describes submitted proposal data, not a verified
-        loaded-model planning session. Connecting a live local model's
-        output and full installed Windows acceptance remain independent gates.</p>
+        The manual AI origin selector is only a user-submitted label.
+        Only the separate loaded-model action produces a host-observed
+        completion receipt, atomically bound to the saved draft.
+        Genuine loaded GGUF and physical installed Windows acceptance
+        remain independent gates.</p>
     </>}
     {notice&&<p role="status">{notice}</p>}
     {error&&<p role="alert">{error}</p>}
