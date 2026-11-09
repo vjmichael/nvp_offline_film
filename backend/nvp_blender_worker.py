@@ -29,6 +29,8 @@ from typing import Mapping
 from backend.nvp_worker_containment import launch_contained
 from backend.nvp_worker_host_lease import exclusive_worker_host
 from backend.nvp_resource_guard import AdmissionRequest
+from backend.nvp_resource_process_monitor import (NVPProcessResourceMonitor,
+                                                  default_nvp_process_monitor)
 
 JOB_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,79}$")
 SHA = re.compile(r"^[a-f0-9]{64}$")
@@ -88,7 +90,8 @@ class BlenderWorkerSupervisor:
     """
 
     def __init__(self, workspace: str | Path, *, blender_executable: str | Path,
-                 blender_sha256: str, blender_version: str, activity_ledger=None):
+                 blender_sha256: str, blender_version: str, activity_ledger=None,
+                 resource_monitor=None):
         self.root=Path(workspace).resolve()
         self.root.mkdir(parents=True,exist_ok=True)
         if self.root.is_symlink():
@@ -105,6 +108,11 @@ class BlenderWorkerSupervisor:
         self.binary_sha256=blender_sha256
         self.blender_version=blender_version
         self.activity=activity_ledger
+        if resource_monitor is not None and not isinstance(
+                resource_monitor,NVPProcessResourceMonitor):
+            raise TypeError("Only NVP's source-scoped resource monitor may attach")
+        self.resource_monitor=resource_monitor or default_nvp_process_monitor()
+        self._monitor_errors={}
         self._lock=threading.RLock()
         self._running={}
         with self._connect() as db:
@@ -191,6 +199,18 @@ class BlenderWorkerSupervisor:
         with self._connect() as db:
             records=db.execute("SELECT at_utc,state,detail FROM worker_events WHERE job_id=? ORDER BY id",(job_id,)).fetchall()
         return [{"at":a,"state":b,"detail":c} for a,b,c in records]
+
+    def read_only_resources_for_lu(self):
+        """Explicitly read-only NVP-owned worker telemetry, no Lu authority."""
+        report=self.resource_monitor.read_only_report_for_lu()
+        with self._lock,self._connect() as db:
+            rows=db.execute("SELECT state,count(*) FROM worker_jobs GROUP BY state").fetchall()
+            errors=dict(self._monitor_errors)
+        report["nvp_blender_worker_journal_states"]={
+            state:count for state,count in rows}
+        report["owned_worker_monitor_warnings"]=errors
+        report["worker_supervision_authority"]="NVP_BROKER_ONLY"
+        return report
 
     def probe(self, *, strict_linux_cgroup=False, memory_limit_mb=8192):
         if sha_file(self.binary)!=self.binary_sha256:
@@ -448,6 +468,14 @@ class BlenderWorkerSupervisor:
                 proc=launch_contained(command,cwd=str(jobdir),stdout=stdout,stderr=stderr,
                                       memory_mb=op.memory_limit_mb,
                                       linux_cgroup_tree_required=op.require_linux_cgroup_v2)
+                try:
+                    self.resource_monitor.register_owned_child(op.job_id,proc.pid)
+                except (OSError,RuntimeError,PermissionError,ValueError) as monitor_exc:
+                    # A telemetry failure is explicit but does not weaken the
+                    # OS-contained render/termination broker. No fake zero.
+                    with self._lock:
+                        self._monitor_errors[op.job_id]=(
+                            type(monitor_exc).__name__+": "+str(monitor_exc))[:240]
                 self._transition(op.job_id,"RUNNING",worker_pid=proc.pid)
                 if self.activity is not None:
                     self.activity.update(self._activity_id(op.job_id),
@@ -456,6 +484,7 @@ class BlenderWorkerSupervisor:
                 started=time.monotonic()
                 pressure_count=0
                 last_pressure_check=started
+                last_monitor_sample=started
                 while proc.poll() is None:
                     if token.is_set():
                         self._transition(op.job_id,"CANCEL_REQUESTED")
@@ -479,6 +508,9 @@ class BlenderWorkerSupervisor:
                                 exit_code=proc.returncode,
                                 error=critical+"; NVP released its managed worker")
                             return self.inspect(op.job_id)
+                    if time.monotonic()-last_monitor_sample>=1.5:
+                        last_monitor_sample=time.monotonic()
+                        self.resource_monitor.sample_owned_processes()
                     time.sleep(.1)
                     self._transition(op.job_id,"RUNNING",progress=log.stat().st_size)
                 rc=proc.wait(timeout=10)
@@ -523,6 +555,7 @@ class BlenderWorkerSupervisor:
                 error=failure[:2000])
             return self.inspect(op.job_id)
         finally:
+            self.resource_monitor.finish_owned_child(op.job_id)
             if proc is not None and hasattr(proc,"close"):
                 try:
                     proc.close()
