@@ -120,9 +120,10 @@ export default function ModularWorldSourcePreview({preview}){
   const ymin=Math.min(0,...ys)-25,ymax=Math.max(0,...ys)+25;
   const sizeX=Math.max(1,xmax-xmin),sizeY=Math.max(1,ymax-ymin);
   return <div role="region" aria-label="Native USD source geometry preview">
-    {!error&&<div ref={mount} style={{
+    <div ref={mount} style={{
+      display:error?'none':'block',
       minHeight:250,width:'100%',background:'#17232c',
-      borderRadius:8,overflow:'hidden'}}/>}
+      borderRadius:8,overflow:'hidden'}}/>
     {error&&<p role="status">{error}. Using verified plan footprint map.</p>}
     <svg viewBox="0 0 800 270"
       style={{width:'100%',height:200,background:'#1e2b36',borderRadius:8}}
