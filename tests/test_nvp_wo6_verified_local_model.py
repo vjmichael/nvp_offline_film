@@ -108,6 +108,32 @@ class RealLoopbackProviderReceiptContract(unittest.TestCase):
             self.writer.complete_world_candidate(
                 "System","User",{"huge":"x"*16000})
 
+    def test_host_scoped_native_camera_json_schema_transport_never_grants_authority(self):
+        schema={
+            "type":"object","additionalProperties":False,
+            "properties":{"technique":{"type":"string","enum":["dolly"]},
+                          "nodes":{"type":"array","items":{
+                              "type":"object"}}},
+            "required":["technique","nodes"]}
+        Handler.reply={**real_like_reply(),
+            "choices":[{"finish_reason":"stop",
+                "message":{"content":'{"technique":"dolly","nodes":[]}'}}]}
+        text=self.writer.complete_camera_candidate(
+            "Return strict native film camera JSON",
+            "Source approved original actor, no OS approval",schema)
+        self.assertEqual(text,'{"technique":"dolly","nodes":[]}')
+        self.assertEqual(Handler.requests[-1]["response_format"],{
+            "type":"json_schema","json_schema":{
+                "name":"nvp_original_camera_rail",
+                "strict":True,"schema":schema}})
+        self.assertFalse(self.writer.completion_receipt[
+            "native_worker_authorized"])
+        self.assertFalse(self.writer.completion_receipt[
+            "model_weights_sha256_verified"])
+        with self.assertRaises(ValueError):
+            self.writer.complete_camera_candidate(
+                "System","User",{"huge":"y"*12000})
+
     def test_reject_spoofed_model_missing_usage_truncation_redirect_and_replay(self):
         variants=[
             dict(model="another-instance"),
