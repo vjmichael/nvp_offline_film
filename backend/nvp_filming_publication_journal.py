@@ -199,6 +199,7 @@ class FilmingPublicationJournal:
             if (take["kind"] != "take" or
                 take["data"].get("timeline_id") != row["sound_timeline_id"] or
                 take["data"].get("timeline_revision") != 1 or
+                take["data"].get("timeline_document_sha256") != timeline["document_sha256"] or
                 timeline["kind"] != "temporal"):
                 return {"take_id":take_id,"journaled":True,
                         "visible":False,"reason":"PUBLICATION_BINDING_MISMATCH"}
