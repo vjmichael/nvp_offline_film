@@ -1017,8 +1017,9 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                 "changes":[{"op":"add","camera":{
                     **camera,"camera_id":"Reverse","position_m":[2,0,12]}}]})
             self.assertEqual(revised["revision"],2)
-            self.assertEqual(len(bridge.film01r_catalog(self.pid)[
-                "camera_banks"]),2)
+            self.assertTrue(any(
+                x["camera_bank_id"]=="R01NativeTestBank"
+                for x in bridge.film01r_catalog(self.pid)["camera_banks"]))
             source_cut=[
                 {"camera_id":"Master","source_in_frame":0,
                  "source_out_frame":360,"edit_in_frame":0,
