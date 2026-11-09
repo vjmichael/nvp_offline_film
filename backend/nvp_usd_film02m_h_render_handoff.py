@@ -381,8 +381,8 @@ class ReviewedDistrictShotCyclesHost:
             raise RuntimeError(
                 "Reviewed district change did not produce a distinct original frame")
         from PIL import Image,ImageChops
-        with Image.open(self.supervisor.root/first_job_id/FRAME) as a, \\
-             Image.open(self.supervisor.root/second_job_id/FRAME) as b:
+        with (Image.open(self.supervisor.root/first_job_id/FRAME) as a,
+              Image.open(self.supervisor.root/second_job_id/FRAME) as b):
             if a.size!=b.size or a.size!=(320,180):
                 raise RuntimeError("Original comparison uses incompatible frames")
             delta=ImageChops.difference(a.convert("RGB"),b.convert("RGB"))
