@@ -6,6 +6,7 @@ required sets must remain loaded even when distant from the original camera.
 """
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -76,6 +77,9 @@ class RealUSDShotWorldStreaming(unittest.TestCase):
     def test_two_shot_transitions_unload_previous_set_without_changing_source(self):
         b=self.b
         with self.runtime() as runtime:
+            original_usd_root_sha = sha256(
+                runtime.session.stage.GetRootLayer().ExportToString().
+                encode("utf8")).hexdigest()
             first = runtime.transition(
                 "ShotOutside",1,receipt_id="OutsideWorkingSet")
             self.assertEqual(first["state"],"SUCCEEDED_SOURCE_WORKING_SET")
@@ -102,6 +106,11 @@ class RealUSDShotWorldStreaming(unittest.TestCase):
             self.assertEqual(second["resource_after"]["gpu_device_used_bytes"],None)
             self.assertFalse(second["director_look_layer_authoritative"])
             self.assertEqual(len(second["director_disposable_look_layer_sha256"]),64)
+            self.assertEqual(
+                sha256(runtime.session.stage.GetRootLayer().
+                       ExportToString().encode("utf8")).hexdigest(),
+                original_usd_root_sha)
+            self.assertTrue(runtime.session.stage.GetSessionLayer().subLayerPaths)
             undo=runtime.discard_temporary_look()
             self.assertEqual(undo["state"],"DIRECTOR_PREVIEW_REVERTED")
             self.assertEqual(
