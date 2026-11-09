@@ -384,7 +384,16 @@ class OriginalSelectedFilmBatch:
                         source_dir,source,wrapped,start)
                     native_id=None
                 else:
-                    rendered=self.film.run_chunk(
+                    # The 01Q broker receives a *new* step-specific,
+                    # single-use host grant derived from the creator's exact
+                    # group approval. The read-only verification host must
+                    # never silently acquire render authority.
+                    native=ReviewedSelectedViewFilm(
+                        self.index,self.supervisor,
+                        verify_director_action=authorize_step,
+                        prove_process_custody=self.custody,
+                        render_quality=self.profile["name"])
+                    rendered=native.run_chunk(
                         pid,edit_id,revision=revision,
                         start=start,attempt=claim["attempt"],
                         director_event=fresh)
