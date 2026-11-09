@@ -15,7 +15,7 @@ import shutil
 
 from backend.nvp_usd_film01i_ninecam_take import (
     FORMAT as RIG_FORMAT, GRID, T, FPS, FRAMES_PER_CAMERA,
-    OriginalNineCameraFilmSet)
+    OriginalNineCameraFilmSet,OriginalFilmPerformanceSampler)
 
 FORMAT="nvp.usd_film01j.nine_source_rolls_conformed_film.v1"
 CUT_FRAMES=80
@@ -37,7 +37,7 @@ def _sha(path):
     return hash.hexdigest()
 
 
-def validate_coverage_contract(rig, rolls):
+def validate_coverage_contract(rig, rolls, *, expected_original_actor_states=None):
     """Contract-only validation; no self-issued 'real Blender' attestation.
 
     Production must first verify the original FilmIndex rig and independently
@@ -50,6 +50,10 @@ def validate_coverage_contract(rig, rolls):
         tuple((x.angle,x.framing) for x in rolls)!=GRID or
         len(rig.get("cameras",[]))!=9):
         raise ValueError("Nine original source cameras and full roll manifests required")
+    if expected_original_actor_states is not None and (
+        type(expected_original_actor_states) is not list or
+        len(expected_original_actor_states)!=FRAMES_PER_CAMERA):
+        raise ValueError("All original authoritative actor-state samples required")
     states=[None]*FRAMES_PER_CAMERA
     out=[]
     size=None
@@ -91,6 +95,9 @@ def validate_coverage_contract(rig, rolls):
                 len(receipt["original_actor_state_sha256"])!=64):
                 raise PermissionError("Frame/tick/camera/performance/native receipt mismatch")
             actor=receipt["original_actor_state_sha256"]
+            if (expected_original_actor_states is not None and
+                actor!=expected_original_actor_states[i]):
+                raise PermissionError("Original ActorID performance differs from source USD")
             if states[i] is None:
                 states[i]=actor
             elif actor!=states[i]:
@@ -131,7 +138,14 @@ def verify_original_nine_rolls(index,pid,rig_id,rolls):
         index,verify_creator_action=lambda *_:False)
     source.verify(pid,rig_id)
     rig=index.read_revision(pid,rig_id,1)["data"]
-    return validate_coverage_contract(rig,rolls)
+    # Never accept nine mutually consistent but invented actor-state claims.
+    # Reevaluate the actual original source USD once per frame, independent
+    # of all renderer-provided JSON receipts.
+    with OriginalFilmPerformanceSampler(index,pid,rig_id) as sampler:
+        actual=[sampler.frame(i)["source_actor_state_sha256"]
+                for i in range(FRAMES_PER_CAMERA)]
+    return validate_coverage_contract(
+        rig,rolls,expected_original_actor_states=actual)
 
 
 def nine_camera_edit_decisions():
