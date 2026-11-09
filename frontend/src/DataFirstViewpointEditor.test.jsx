@@ -75,8 +75,11 @@ describe('01R editable source-first virtual film',()=>{
     expect(screen.getByRole('button',{name:'Shot 2 using OTS'})).toBeTruthy();
     expect(screen.getByText(/2 cuts cover exactly 720 frames/)).toBeTruthy();
     expect(screen.getByText(/original performance, or soundtrack/)).toBeTruthy();
-    const last=api.mock.calls.filter(call=>call[0].includes('/preview?')).at(-1);
-    expect(last[0]).toContain('frame=360');
+    // Source previews deliberately debounce for 160ms. Verify a real
+    // async preview of this exact frame/camera, never a zero-call instant read.
+    await waitFor(()=>expect(api.mock.calls.some(call=>
+      call[0].includes('/preview?')&&call[0].includes('frame=360')&&
+      call[0].includes('camera_id=OTS'))).toBe(true));
     expect(api.mock.calls.every(call=>call[1]!=='POST')).toBe(true);
   });
 
@@ -197,6 +200,7 @@ describe('01R editable source-first virtual film',()=>{
       film01r_create_bank:vi.fn(),film01r_revise_bank:vi.fn(),
       film01r_save_edit:vi.fn(async payload=>{
         expect(payload.project_id).toBe('project1');
+        expect(payload.edit_id).toBe('Edit_'+bankHash.slice(0,24));
         expect(payload.camera_bank_id).toBe('OriginalBank');
         expect(payload.expected_revision).toBe(0);
         expect(payload.cuts[0].edit_out_frame).toBe(720);

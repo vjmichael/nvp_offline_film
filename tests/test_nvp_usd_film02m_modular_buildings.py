@@ -1839,3 +1839,17 @@ class OriginalModularBuildingSource(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
+
+class NativeUsdPrimTokenBoundary(unittest.TestCase):
+    def test_building_node_prim_tokens_accept_valid_and_reject_unsafe(self):
+        # The parser feeds IDs to /World/Buildings/<Node>. Reject foreign
+        # paths and invalid node tokens, but accept approved Floor/Front IDs.
+        from backend.nvp_usd_film02m_modular_buildings import PRIM_TOKEN
+        for value in ("Floor", "Front_01", "A"+"b"*49):
+            with self.subTest(value=value):
+                self.assertIsNotNone(PRIM_TOKEN.fullmatch(value))
+        for value in ("", "_Floor", "1Floor", "Floor/../Unsafe",
+                      "Floor-2", "Floor\\\\Z", "A"+"b"*50, "Floor\\n"):
+            with self.subTest(value=value):
+                self.assertIsNone(PRIM_TOKEN.fullmatch(value))
