@@ -402,9 +402,13 @@ def main():
     if (len(argv)!=4 or set(argv[::2])!={"--manifest","--audit"}):
         raise PermissionError("Only native reviewed source look contract")
     flags=dict(zip(argv[::2],argv[1::2]))
-    if flags["--manifest"]!="manifest.json" or flags["--audit"]!="audit.json":
-        raise PermissionError("Original source look inputs/receipts use fixed names")
     root=Path.cwd().resolve(strict=True)
+    if (Path(flags["--manifest"]).resolve()!=root/"manifest.json" or
+        Path(flags["--audit"]).resolve()!=root/"audit.json" or
+        (root/"manifest.json").is_symlink() or
+        (root/"audit.json").is_symlink()):
+        raise PermissionError(
+            "Only exact original host-approved job input/output paths")
     path=root/"audit.json"
     if path.exists() or path.is_symlink():
         raise FileExistsError("Cannot overwrite 02M-E2 native look outcome")
