@@ -231,12 +231,12 @@ class OriginalActorDistrictNativeRenderTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 host.render(
                     self.pid,"Native02MHBinding1",
-                    job_id="02mh_denied",director_event="FAKE_CREATIVE_APPROVAL")
+                    job_id="shot02mh_denied",director_event="FAKE_CREATIVE_APPROVAL")
             with self.assertRaises(KeyError):
-                sup.inspect("02mh_denied")
+                sup.inspect("shot02mh_denied")
             completed=host.render(
                 self.pid,"Native02MHBinding1",
-                job_id="02mh_actor_world_real",director_event="REVIEW_RENDER_SOURCE")
+                job_id="shot02mh_actor_world_real",director_event="REVIEW_RENDER_SOURCE")
             self.assertEqual(
                 completed["state"],
                 "RENDERED_REAL_ORIGINAL_DISTRICT_ACTOR_CAMERA_SHOT")
