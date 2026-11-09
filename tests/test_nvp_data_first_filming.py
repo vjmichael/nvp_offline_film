@@ -732,6 +732,28 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(missing["reason"],"MISSING_IMMUTABLE_DEPENDENCY")
         self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
 
+    def test_take_reader_refuses_incomplete_journaled_publication(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        reader=OpenUSDTakeCapture(self.index,verify_creator_action=lambda *_: False)
+        # A complete filming publication remains independently verifiable.
+        self.assertIsNotNone(reader.verify_take(self.pid,"FilmedTake"))
+        # Model restart after a partial journal transition. Immutable Take and
+        # original PCM still exist, but must not be exposed by the reader.
+        with self.index.studio._connection() as db:
+            db.execute("""UPDATE nvp_filming_publications SET state='PREPARING'
+                WHERE project_id=? AND take_id=?""",(self.pid,"FilmedTake"))
+        with self.assertRaisesRegex(PermissionError,"PUBLICATION_PREPARING"):
+            reader.verify_take(self.pid,"FilmedTake")
+        with self.index.studio._connection() as db:
+            db.execute("""UPDATE nvp_filming_publications SET state='COMPLETED',
+                source_ids_json=? WHERE project_id=? AND take_id=?""",
+                ('["MissingOriginal"]',self.pid,"FilmedTake"))
+        with self.assertRaisesRegex(PermissionError,"MISSING_IMMUTABLE_DEPENDENCY"):
+            reader.verify_take(self.pid,"FilmedTake")
+        self.assertIsNotNone(self.index.read_revision(self.pid,"FilmedTake",1))
+        self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
