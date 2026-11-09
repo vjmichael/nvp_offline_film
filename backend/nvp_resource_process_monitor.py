@@ -258,3 +258,20 @@ class NVPProcessResourceMonitor:
                   if unknown else []),
             ],
         }
+
+
+# One live monitor per NVP Python host. Any BlenderWorkerSupervisor created
+# by this process registers its own child here. Another NVP OS process is
+# never silently claimed to be part of this measured ownership scope.
+_default_lock=threading.Lock()
+_default_owner=None
+_default_instance=None
+
+
+def default_nvp_process_monitor():
+    global _default_owner,_default_instance
+    with _default_lock:
+        if _default_owner!=os.getpid() or _default_instance is None:
+            _default_owner=os.getpid()
+            _default_instance=NVPProcessResourceMonitor()
+        return _default_instance
