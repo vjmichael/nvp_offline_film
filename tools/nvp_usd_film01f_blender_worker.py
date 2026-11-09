@@ -115,9 +115,18 @@ def run():
     # No generated placeholder/camera geometry. Use only actual imported USD.
     props=set(bpy.ops.wm.usd_import.get_rna_type().properties.keys())
     keyword={"filepath":str(usd)}
-    for key in ("import_cameras","import_lights","import_materials"):
+    for key in ("import_cameras","import_lights","import_materials",
+                "import_usd_preview","import_meshes",
+                "read_mesh_uvs","import_render","apply_unit_conversion_scale"):
         if key in props:
             keyword[key]=True
+    # Blender's default merge_parent_xform=True may eliminate the very
+    # source ActorID Xform used to prove original casting. Preserve each
+    # authored USD hierarchy and original camera/actor object identity.
+    if "merge_parent_xform" in props:
+        keyword["merge_parent_xform"]=False
+    if "set_frame_range" in props:
+        keyword["set_frame_range"]=False
     bpy.ops.wm.usd_import(**keyword)
     imported=list(bpy.data.objects)
     meshes=[o for o in imported if o.type=="MESH" and len(o.data.vertices)>=3]
