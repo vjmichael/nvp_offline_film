@@ -191,8 +191,12 @@ class OriginalSelectedFilmDesktopMixin:
             outcome=future.result()
         except (OSError,RuntimeError,ValueError,PermissionError,KeyError):
             return {**result,"state":"NATIVE_BATCH_INTERRUPTED_NEEDS_INSPECTION"}
-        if outcome.get("format")!=QUEUE_FORMAT:
-            return {**result,"state":"NOT_ADMITTED","reason":outcome.get("reason")}
+        if (outcome.get("format")!=QUEUE_FORMAT or
+            outcome.get("state")!="APPROVED_GROUP_ADVANCED"):
+            return {**result,"state":outcome.get("state","NOT_ADMITTED"),
+                    "reason":outcome.get("reason"),
+                    "queue":outcome.get("queue"),
+                    "full_film_claimed_complete":False}
         return {
             **result,"state":outcome["state"],
             "verified_shots_in_group":outcome["verified_shots_in_this_action"],
@@ -235,8 +239,11 @@ class OriginalSelectedFilmDesktopMixin:
         for part in (self._wo5_state,path):
             if part.is_symlink():
                 raise PermissionError("Source film output folder cannot be symlinked")
-        if pictures.exists() or film.exists():
-            raise FileExistsError("Do not overwrite a previous film master")
+        if film.exists() or film.is_symlink():
+            raise FileExistsError("Do not overwrite a previous verified film master")
+        # A previous director refusal may have left a checked gathered
+        # picture directory; 01T will independently reverify it before
+        # encoding rather than silently overwriting an original frame.
         executable=shutil.which("ffmpeg")
         inspector=shutil.which("ffprobe")
         if not executable or not inspector:
