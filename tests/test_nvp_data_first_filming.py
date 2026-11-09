@@ -825,6 +825,37 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertTrue(journal.visibility(self.pid, "FilmedTake")["visible"])
         self.assertIsNotNone(original_read(self.pid, "NewRecordedSpeech", 1))
 
+    def test_visibility_rejects_sound_event_source_hash_substitution(self):
+        from unittest.mock import patch
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        journal = FilmingPublicationJournal(self.index)
+        original_events = TemporalLedger.events_in
+        original_source = self.index.read_revision(
+            self.pid, "NewRecordedSpeech", 1)
+        original_take = self.index.read_revision(self.pid, "FilmedTake", 1)
+
+        def substituted(ledger, *args, **kwargs):
+            page = original_events(ledger, *args, **kwargs)
+            events = []
+            for event in page["events"]:
+                event = dict(event)
+                if event["event_kind"] in ("sound", "dialogue"):
+                    event["source_document_sha256"] = "0" * 64
+                events.append(event)
+            return dict(page, events=events)
+
+        with patch.object(TemporalLedger, "events_in", substituted):
+            decision = journal.visibility(self.pid, "FilmedTake")
+        self.assertFalse(decision["visible"])
+        self.assertEqual(decision["reason"],
+                         "PUBLICATION_SOURCE_BINDING_MISMATCH")
+        self.assertTrue(journal.visibility(self.pid, "FilmedTake")["visible"])
+        self.assertEqual(self.index.read_revision(
+            self.pid, "NewRecordedSpeech", 1), original_source)
+        self.assertEqual(self.index.read_revision(
+            self.pid, "FilmedTake", 1), original_take)
+
     def test_take_reader_refuses_incomplete_journaled_publication(self):
         from backend.nvp_filming_publication_journal import FilmingPublicationJournal
         self.capture.capture(**self.payload())
