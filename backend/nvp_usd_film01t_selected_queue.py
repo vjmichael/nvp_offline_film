@@ -520,9 +520,33 @@ class OriginalSelectedFilmBatch:
     def conform(self,pid,edit_id,revision,*,pictures_dir,destination_dir,
                 ffmpeg,ffprobe,director_event):
         attempts=self.finished_source_frames(pid,edit_id,revision)
-        self.film.gather(pid,edit_id,revision=revision,
-                         output_directory=pictures_dir,
-                         approved_attempts=attempts)
+        pictures=Path(pictures_dir)
+        if pictures.exists():
+            # A creator may deny the final export after verified PNG
+            # gathering. On a later attempt do not overwrite 720 images.
+            # Verify all immutable source picture bytes and receipt again.
+            receipt_file=pictures/"gather_receipt.json"
+            manifest_file=pictures/"source_selected_receipts.json"
+            if (pictures.is_symlink() or receipt_file.is_symlink() or
+                manifest_file.is_symlink() or not receipt_file.is_file() or
+                not manifest_file.is_file()):
+                raise PermissionError("Unverified prior source-selected gather")
+            summary=json.loads(receipt_file.read_text("utf8"))
+            _,_,planned,_=self._current(pid,edit_id,revision)
+            if (summary.get("format")!=
+                    "nvp.usd_film01q.gathered_source_selected_720frames.v1" or
+                summary.get("edit_sha256")!=planned["plan"][
+                    "edit_document_sha256"] or
+                summary.get("render_profile_sha256")!=planned["plan"][
+                    "render_profile_sha256"] or
+                summary.get("native_verified_frames")!=720 or
+                summary.get("source_selected_receipts_sha256")!=
+                    file_sha(manifest_file)):
+                raise RuntimeError("Existing gathered original picture bytes changed")
+        else:
+            self.film.gather(pid,edit_id,revision=revision,
+                             output_directory=pictures_dir,
+                             approved_attempts=attempts)
         # Film/conform has a separate exact native OS confirmation in
         # the original 01Q host (this coordinator does not bypass it).
         self.film.approve=self.approve
