@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from backend.nvp_film_index import _id, _require_pid
 from backend.nvp_studio import now
+from backend.nvp_temporal_ledger import TemporalLedger, MAX_QUERY
 
 
 class FilmingPublicationJournal:
@@ -200,5 +201,39 @@ class FilmingPublicationJournal:
                 timeline["kind"] != "temporal"):
                 return {"take_id":take_id,"journaled":True,
                         "visible":False,"reason":"PUBLICATION_BINDING_MISMATCH"}
+            # Verify semantic source ownership, not merely the existence of
+            # arbitrary FilmIndex objects with the expected identities. A
+            # completed receipt must bind every original source exactly once
+            # through the frozen temporal timeline.
+            expected = set(json.loads(row["source_ids_json"]))
+            found = set()
+            timeline_data = timeline["data"]
+            duration = timeline_data.get("duration_tick")
+            if duration is None:
+                return {"take_id":take_id,"journaled":True,
+                        "visible":False,"reason":"PUBLICATION_SOURCE_BINDING_MISMATCH"}
+            ledger = TemporalLedger(self.index)
+            cursor = None
+            while True:
+                page = ledger.events_in(project_id,row["sound_timeline_id"],1,
+                    start_tick=0,end_tick=int(duration),limit=MAX_QUERY,after=cursor)
+                for event in page["events"]:
+                    if event["event_kind"] not in ("sound","dialogue"):
+                        continue
+                    sid = event["source_id"]
+                    if (sid not in expected or sid in found or
+                        event["source_revision"] != 1 or
+                        event["payload"].get("original_recording") is not True or
+                        revisions[sid]["kind"] != "source_signal" and
+                        revisions[sid]["kind"] != "sound_source"):
+                        return {"take_id":take_id,"journaled":True,
+                                "visible":False,"reason":"PUBLICATION_SOURCE_BINDING_MISMATCH"}
+                    found.add(sid)
+                cursor = page["next_cursor"]
+                if cursor is None:
+                    break
+            if found != expected:
+                return {"take_id":take_id,"journaled":True,
+                        "visible":False,"reason":"PUBLICATION_SOURCE_BINDING_MISMATCH"}
             return {"take_id":take_id,"journaled":True,
                     "visible":True,"reason":"COMPLETED_DEPENDENCIES_PRESENT"}
