@@ -102,6 +102,32 @@ class FilmingPublicationJournal:
             if cur.rowcount != 1:
                 raise RuntimeError("Filming publication journal state conflict")
 
+    def interrupt_preparing(self, project_id, take_id, *, expected_updated_at):
+        """Explicit recovery transition after independent worker-termination proof.
+
+        The caller must establish OS custody and worker termination separately.
+        Compare-and-set prevents a stale recovery observer from interrupting a
+        publication whose journal has since advanced. Never delete or approve
+        immutable FilmIndex revisions during recovery.
+        """
+        _require_pid(project_id)
+        _id(take_id, "filming take")
+        if not isinstance(expected_updated_at, str) or not expected_updated_at:
+            raise ValueError("Expected observed publication timestamp")
+        with self.index.studio._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.index._project(db, project_id)
+            cur = db.execute("""UPDATE nvp_filming_publications
+                SET state='INTERRUPTED',updated_at=?
+                WHERE project_id=? AND take_id=? AND state='PREPARING'
+                AND updated_at=?""",
+                (now(), project_id, take_id, expected_updated_at))
+            if cur.rowcount != 1:
+                raise RuntimeError("Filming publication recovery state conflict")
+        return {"take_id": take_id, "state": "INTERRUPTED",
+                "immutable_revisions_modified": False,
+                "worker_termination_verified_by_journal": False}
+
     def unresolved(self, project_id):
         """Read-only recovery inventory; never auto-delete immutable originals."""
         _require_pid(project_id)
