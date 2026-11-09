@@ -40,6 +40,7 @@ jobs:
           python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k 'test_02m_f or test_02m_g'
           python -m pytest -q -s tests/test_nvp_usd_film01e_world_take.py -k 'test_02m_h'
           python -m pytest -q -s tests/test_nvp_usd_film02mg_model_world_candidate.py
+          python -m pytest -q -s tests/test_nvp_wo6_verified_local_model.py
 
   director-ui:
     name: Native-IPC React background model controls and production bundle
@@ -136,7 +137,7 @@ jobs:
       - name: One installed Windows executable group acceptance including genuine GGUF and native OS dialog
         shell: pwsh
         run: |
-          & 'tools/nvp_p0f01_installed_acceptance.ps1' -ModelPath $env:NVP_TEST_GGUF_PATH -LlamaServer $env:NVP_TEST_LLAMA_SERVER
+          & ./tools/nvp_p0f01_installed_acceptance.ps1 -ModelPath $env:NVP_TEST_GGUF_PATH -LlamaServer $env:NVP_TEST_LLAMA_SERVER
           if ($LASTEXITCODE -ne 0) { throw 'Installed P0-F-01 technical acceptance did not complete' }
       - uses: actions/upload-artifact@v4
         if: always()
