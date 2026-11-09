@@ -256,7 +256,9 @@ class OriginalModularBuildingSource(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.kit._resolve(self.pid,3,invalid)
         invalid=deepcopy(recipe)
-        invalid[1]["options"]=[{"module_id":"ModuleRoof","revision":1}]
+        invalid[1]["options"]=[
+            {"module_id":"ModuleRoof","revision":1},
+            {"module_id":"ModuleFacadeRed","revision":1}]
         with self.assertRaises(ValueError):
             self.kit._resolve(self.pid,3,invalid)
         invalid=deepcopy(recipe)
