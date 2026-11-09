@@ -1535,8 +1535,7 @@ class OriginalModularBuildingSource(unittest.TestCase):
             self.pid,"FilmDistrictFReconciled",**settings,
             expected_revision=0,director_event=object())
         self.assertEqual(published["revision"],1)
-        self.assertEqual(published["data"] if "data" in published else
-                         published["revision"],1)
+        self.assertEqual(published["revision"],1)
         restarted=OriginalDistrictDrafts(
             self.index,self.root/"02mf_crash_source",
             confirm=lambda scope:(requested.append(scope),True)[1])
