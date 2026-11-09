@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 import secrets
 import threading
+import json
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
@@ -496,6 +497,65 @@ class TrustedDesktopWO5Bridge(TrustedDesktopCameraBridge):
         return {**identity,"state":"REVERIFIED_SELECTED_FRAMES",
                 "native_result":answer,"original_film_complete":False}
 
+    def film01r_render_image(self,ticket_id,frame):
+        """Read one native Cycles PNG only after independent worker verification.
+
+        No arbitrary path or file opener is ever exposed to the WebView.
+        The native ticket and source edit determine the exact allowed PNG.
+        """
+        self._native_window()
+        if (type(ticket_id) is not str or len(ticket_id)>64 or
+            type(frame) is not int or not 0<=frame<720):
+            raise ValueError("One exact completed source frame and ticket required")
+        with self._film01r_lock:
+            row=self._film01r_jobs.get(ticket_id)
+            if row is None or not row["future"].done():
+                raise PermissionError("Only a completed original render ticket can show pixels")
+            data=dict(row)
+        result=data["future"].result()
+        start=result.get("start_frame")
+        job_id=result.get("job_id")
+        if (result.get("state")!="REVERIFIED_NATIVE_SELECTED_FRAMES" or
+            type(start) is not int or not start<=frame<start+8 or
+            type(job_id) is not str):
+            raise PermissionError("Native output has no accepted source camera frame")
+        from backend.nvp_usd_film01q_selected_view_host import ReviewedSelectedViewFilm
+        from backend.nvp_blender_worker import sha_file
+        import base64
+        host=ReviewedSelectedViewFilm(
+            self.index,self._get_host().supervisor,
+            verify_director_action=lambda *_:False,
+            prove_process_custody=lambda *_:False,
+            render_quality=data["quality"])
+        source_dir,source,plan=host.source_plan(
+            data["project_id"],data["edit_id"],data["revision"])
+        host._verify_completed(job_id,source_dir,source,plan,start,
+                               int(job_id[-2:]))
+        selected=plan["plan"]["frames"][frame]
+        filename="frame_"+str(frame).zfill(4)+".png"
+        image=self._get_host().supervisor.root/job_id/filename
+        if image.is_symlink() or not image.is_file() or image.stat().st_size>12*1024*1024:
+            raise RuntimeError("Native selected camera picture is missing or too large for inspection")
+        sha=sha_file(image)
+        audit=json.loads((self._get_host().supervisor.root/job_id/"audit.json").read_text("utf8"))
+        receipt=audit["selected_view_frames"][frame-start]
+        if (receipt["rendered_png_sha256"]!=sha or
+            receipt["selected_camera_id"]!=selected["camera_id"] or
+            receipt["view_cache_sha256"]!=selected["view_cache_sha256"]):
+            raise RuntimeError("Native picture does not match actual original camera/edit")
+        return {
+            "format":"nvp.film01r.verified_native_cycles_picture.v1",
+            "source_edit_document_sha256":plan["plan"]["edit_document_sha256"],
+            "original_performance_sha256":source["original_performance_sha256"],
+            "source_frame":frame,
+            "source_camera_id":selected["camera_id"],
+            "render_profile_sha256":plan["plan"]["render_profile_sha256"],
+            "image_sha256":sha,
+            "image_data_url":"data:image/png;base64,"+
+                base64.b64encode(image.read_bytes()).decode("ascii"),
+            "actual_blender_cycles_pixels":True,
+            "director_picture_approved":False}
+ 
     def _close(self):
         if self._film01r_pool is not None:
             # No new grant survives closing this window. The existing
