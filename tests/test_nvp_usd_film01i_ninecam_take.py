@@ -116,6 +116,14 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             path=cls.camera_paths[(angle,framing)]
             if not stage.GetPrimAtPath(path).IsA(UsdGeom.Camera):
                 raise RuntimeError("Nine native original camera prims not authored")
+        # One original 48k PCM recording belongs to the shared performance,
+        # not one independently duplicated soundtrack per camera. This
+        # test-only audio is an authored tonal sound source, not a final mix.
+        from backend.nvp_data_av_source import RecordedSoundSources
+        from tools.nvp_film01_original_30s import _audio_tone
+        cls.original_audio=RecordedSoundSources(cls.index).publish(
+            cls.pid,"OneThirtySecondOriginalSound",
+            _audio_tone(0,seconds=30))
         cls.timeline=TemporalLedger(cls.index).publish(
             cls.pid,"OneThirtySecondTimeline",[
                 {"event_id":"OriginalObjectActorsMove","event_kind":"action",
@@ -123,6 +131,12 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                  "end_tick":30*T,
                  "source_id":"NineCameraOriginalScene","source_revision":1,
                  "payload":{"usd_prim_path":"/World/Donut"}},
+                {"event_id":"OneOriginalRoomSound","event_kind":"sound",
+                 "subject_id":"RelayCore","start_tick":0,
+                 "end_tick":30*T,
+                 "source_id":"OneThirtySecondOriginalSound",
+                 "source_revision":1,
+                 "payload":{"gain":0.5,"original_recorded_pcm":True}},
                 {"event_id":"NineCamerasRecordOriginalEvent","event_kind":"camera",
                  "subject_id":"NineCameraDirector","start_tick":0,
                  "end_tick":30*T,
@@ -464,7 +478,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                 cameras=two,director_event="AUTHORIZE_WALL_SHOT")
         else:
             if existing["cameras"]!=two:
-                raise RuntimeError("Cached original camera test fixture changed")
+                raise RuntimeError("Cached film camera test fixture differs")
         return bank,wall
 
     def test_native_director_camera_snapshot_keeps_wall_and_performance(self):
@@ -580,6 +594,133 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             bank.create(self.pid,"InvalidActorHidingBank",
                 world_take_id="OneThirtySecondWorldTake",
                 cameras=[proposal],director_event="untrusted")
+
+    def _original_editorial_bank(self):
+        from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
+        bank=DirectorCameraBank(self.index,
+            verify_director_action=lambda event,scope:
+                event=="APPROVE_FILM01O_SOURCE" and
+                scope["operation"]=="nvp.film.director_camera_bank_revision.v1")
+        try:
+            original=bank.verify(self.pid,"FullCameraRollOriginalBank",1)
+        except KeyError:
+            bank.create_standard_nine_preset(
+                self.pid,"FullCameraRollOriginalBank",
+                original_nine_rig_id="OnePerformanceNineCamBank",
+                director_event="APPROVE_FILM01O_SOURCE")
+        else:
+            if original["camera_count"]!=9:
+                raise RuntimeError("Cached nine-camera original source fixture altered")
+        return bank
+
+    def test_01o_real_native_film_source_and_original_sound(self):
+        from backend.nvp_usd_film01o_original_camera_roll_source import (
+            original_camera_roll_source,STAGE,MANIFEST)
+        from backend.nvp_usd_film01p_source_multicam_film_conform import (
+            _read_pcm_mix_from_original)
+        from pxr import Usd
+        bank=self._original_editorial_bank()
+        folder=self.root/"full_original_source_01o"
+        source=original_camera_roll_source(
+            self.index,self.pid,"FullCameraRollOriginalBank",
+            revision=1,folder=folder)
+        self.assertEqual(source["frame_count"],720)
+        self.assertEqual(source["camera_count"],9)
+        self.assertEqual(len(source["original_frame_evidence"]),720)
+        self.assertEqual(len({
+            x["original_actor_state_sha256"]
+            for x in source["original_frame_evidence"]})>2,True)
+        self.assertTrue((folder/STAGE).is_file())
+        self.assertTrue((folder/MANIFEST).is_file())
+        stage=Usd.Stage.Open(str(folder/STAGE))
+        self.assertEqual(stage.GetTimeCodesPerSecond(),24)
+        self.assertEqual(stage.GetStartTimeCode(),1)
+        self.assertEqual(stage.GetEndTimeCode(),720)
+        mix=_read_pcm_mix_from_original(
+            self.index,self.pid,"OneThirtySecondWorldTake",
+            folder=self.root/"original_audio_mix_stems")
+        self.assertEqual(mix["sample_count"],30*48000)
+        self.assertEqual(mix["rate_hz"],48000)
+        self.assertEqual(len(mix["mixed_original_events"]),1)
+        self.assertEqual(
+            mix["mixed_original_events"][0]["original_event_gain"],0.5)
+        self.assertEqual(mix["clipped_pcm_samples"],0)
+        self.assertEqual(self.index.read_revision(
+            self.pid,"OneThirtySecondWorldTake",1)["document_sha256"],
+            self.world_take["document_sha256"])
+
+    def test_01o_native_resumable_original_camera_chunk(self):
+        import os
+        import subprocess
+        import shutil
+        from PIL import Image
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+        from backend.nvp_usd_film01o_recoverable_camera_roll_host import (
+            RecoverableOriginalCameraRolls)
+        blender=os.environ.get("NVP_FILM01O_BLENDER_BIN")
+        if not blender:
+            self.skipTest("Actual Blender 5.2 required for eight-frame native chunk")
+        binary=Path(blender).resolve(strict=True)
+        version=subprocess.run([str(binary),"-b","--version"],
+            capture_output=True,text=True,check=True,timeout=30
+        ).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        bank=self._original_editorial_bank()
+        sup=BlenderWorkerSupervisor(self.root/"full_roll_worker_jobs",
+            blender_executable=binary,blender_sha256=sha_file(binary),
+            blender_version=version)
+        def authorized(event,scope):
+            return (event=="APPROVE_EXACT_FRESH_EIGHT_FRAME_RENDER" and
+                scope["operation"]=="nvp.render.usd_film01o_chunk.v1" and
+                scope["camera_id"]=="Cam_A_wide" and
+                scope["start_frame"]==0 and scope["attempt"]==1)
+        host=RecoverableOriginalCameraRolls(
+            self.index,sup,verify_director_action=authorized,
+            prove_process_custody=lambda *_:False)
+        result=host.run_chunk(
+            self.pid,"FullCameraRollOriginalBank",revision=1,
+            camera_id="Cam_A_wide",start=0,attempt=1,
+            director_event="APPROVE_EXACT_FRESH_EIGHT_FRAME_RENDER")
+        self.assertEqual(result["native_frames_checked"],8)
+        self.assertEqual(result["state"],"REVERIFIED_COMPLETED")
+        fresh=RecoverableOriginalCameraRolls(
+            FilmIndex(Studio(self.db)),
+            BlenderWorkerSupervisor(self.root/"full_roll_worker_jobs",
+                blender_executable=binary,blender_sha256=sha_file(binary),
+                blender_version=version),
+            verify_director_action=lambda *_:False,
+            prove_process_custody=lambda *_:False)
+        previous=fresh.run_chunk(
+            self.pid,"FullCameraRollOriginalBank",revision=1,
+            camera_id="Cam_A_wide",start=0,attempt=1,
+            director_event="IGNORED_FOR_ALREADY_VERIFIED_JOURNAL")
+        self.assertEqual(previous["job_id"],result["job_id"])
+        self.assertEqual(previous["native_frames_checked"],8)
+        with self.assertRaises(PermissionError):
+            fresh.run_chunk(
+                self.pid,"FullCameraRollOriginalBank",revision=1,
+                camera_id="Cam_A_wide",start=8,attempt=1,
+                director_event="NO_NEW_APPROVAL")
+        artifact=Path(os.environ.get(
+            "NVP_FILM01O_ARTIFACT_DIR",
+            str(self.root/"verified_original_eight_frames"))).resolve()
+        artifact.mkdir(parents=True,exist_ok=True)
+        job=sup.root/result["job_id"]
+        for frame in range(8):
+            picture=job/f"frame_{frame:04d}.png"
+            with Image.open(picture) as im:
+                self.assertEqual(im.size,(320,180))
+                im.verify()
+            shutil.copyfile(picture,artifact/picture.name)
+        for name in ("audit.json","source.json","source.usda","chunk.json"):
+            shutil.copyfile(job/name,artifact/name)
+        (artifact/"restart_reverification.json").write_text(
+            json.dumps({"job_id":result["job_id"],
+                "native_cycles_frames":8,
+                "fresh_supervisor_reverified":True,
+                "different_chunk_without_authorization_rejected":True,
+                "whole_9_camera_30s_film_rendered":False,
+                "director_approved":False},indent=2,sort_keys=True),"utf8")
 
     def test_camera_swap_and_wrong_scene_are_not_new_source_performances(self):
         forged=deepcopy(self.camera_shots)
