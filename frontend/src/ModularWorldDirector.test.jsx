@@ -151,6 +151,8 @@ describe('02M-F installed original source/world director',()=>{
     const native=nativeHost();
     render(<ModularWorldDirector projectId={project} nativeBridge={native}/>);
     await screen.findByRole('checkbox',{name:'Use building '+build});
+    await waitFor(()=>expect(screen.getByRole('checkbox',{
+      name:'Use building '+build}).checked).toBe(true));
     fireEvent.click(screen.getByRole('button',{
       name:'Save source-verified draft proposal (no OS approval)'}));
     await screen.findByRole('img',{name:'Source-verified original USD 3D volumes'});
