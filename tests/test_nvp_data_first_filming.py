@@ -214,13 +214,15 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
 
     def test_restart_reconciliation_distinguishes_partial_source_publication(self):
         from backend.nvp_filming_publication_journal import FilmingPublicationJournal
-        # A previous successful Take supplies a real immutable source revision.
-        # The simulated next batch has published only its first source before
-        # process termination; inspection must never fabricate the missing one.
-        self.capture.capture(**self.payload())
+        # Reserve the identities before publishing any immutable source.
+        # Simulate a crash after the first source is committed, while the
+        # second source and timeline are still absent. A preexisting source
+        # is correctly rejected by begin() and cannot model this crash.
         journal=FilmingPublicationJournal(self.index)
         journal.begin(self.pid,"CrashedTake","CrashedTimeline",
                       ["NewRecordedSpeech","MissingSecondSource"])
+        self.capture.sources.publish(
+            self.pid,"NewRecordedSpeech",[self.original],expected_revision=0)
         before=journal.reconcile(self.pid)
         row=next(r for r in before if r["take_id"]=="CrashedTake")
         self.assertEqual(row["state"],"PREPARING")
