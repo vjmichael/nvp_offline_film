@@ -60,6 +60,8 @@ function bridge(){
       rail_id:r.rail_id,revision:r.revision,
       rail_layer_sha256:LAYER,film_tick:r.film_tick,
       native_worker_started:false,source_actor_pcm_changed:false,
+      native_layer_sample_authored_and_read_back:true,
+      host_exact_film_time_interpolated:false,
       sample:{position_m:[1,0,3],target_m:[1,8,3],
         focal_length_mm:35,focus_distance_m:8,f_stop:5.6}
     }))
