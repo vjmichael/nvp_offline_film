@@ -263,7 +263,53 @@ class ReviewedWorldTakeCyclesHost:
                 audit.get("saved_blend_sha256")!=sha_file(job/BLEND) or
                 audit.get("actual_native_cycles_image") is not True):
                 raise RuntimeError("Native Blender picture does not match frozen world Take")
-            completed.append({"job_dir":job,"source":src,"audit":audit})
+            # Independent second Blender process must reopen saved .blend,
+            # validate source world/Take/ActorID/camera tags and geometry,
+            # and produce a separate journaled proof. No Blender process
+            # result is accepted merely from the first worker's JSON.
+            secondary_id=staged["operation"].job_id+"_reopen"
+            if len(secondary_id)>80:
+                raise ValueError("Native Blender reopen ID exceeds bounded journal")
+            folder=self.supervisor.root/secondary_id
+            if folder.exists() or folder.is_symlink():
+                raise RuntimeError("Independent Blender reopen job already exists")
+            folder.mkdir(mode=0o700)
+            shutil.copyfile(job/BLEND,folder/BLEND)
+            reopen_source={
+                "source":src,"source_blend_sha256":sha_file(folder/BLEND)}
+            (folder/MANIFEST).write_bytes(_canonical(reopen_source))
+            script=Path(__file__).resolve().parents[1]/"tools"/REOPEN_SCRIPT
+            if script.is_symlink() or not script.is_file():
+                raise RuntimeError("Reviewed independent Blender reopener unavailable")
+            (folder/REOPEN_SCRIPT).write_bytes(script.read_bytes())
+            check_op=BlenderOperation(
+                job_id=secondary_id,scene=BLEND,
+                script=REOPEN_SCRIPT,
+                script_sha256=sha_file(folder/REOPEN_SCRIPT),
+                inputs={BLEND:sha_file(folder/BLEND),
+                        MANIFEST:sha_file(folder/MANIFEST)},
+                outputs={AUDIT:"json_audit"},
+                arguments={"--manifest":MANIFEST,"--audit":AUDIT},
+                memory_limit_mb=8192,timeout_seconds=600,
+                require_linux_cgroup_v2=False)
+            outcome=self.supervisor.run(check_op)
+            if outcome["state"]!="SUCCEEDED":
+                raise RuntimeError("Independent original Blender reopen failed")
+            self.supervisor.verify_completed(secondary_id)
+            proof=json.loads((folder/AUDIT).read_text("utf8"))
+            if (proof.get("passed") is not True or
+                proof.get("format")!=
+                  "nvp.usd_film01f.independent_cycles_scene_reopen.v1" or
+                proof.get("source_blend_sha256")!=sha_file(job/BLEND) or
+                proof.get("original_take_sha256")!=
+                  src["original_world_take_sha256"] or
+                proof.get("source_usd_sha256")!=src["source_usd_sha256"] or
+                proof.get("actor_count")!=len(src["actor_sources"]) or
+                proof.get("real_saved_usd_actor_objects_reopened") is not True):
+                raise RuntimeError("Independent Blender .blend evidence differs from world Take")
+            completed.append({
+                "job_dir":job,"source":src,"audit":audit,
+                "independent_reopen_audit":proof,"independent_reopen_dir":folder})
         return {
             "state":"RENDERED_TWO_UNAPPROVED_WORLD_SHOT_FRAMES",
             "world_sha256":first["original_world_sha256"],
@@ -273,7 +319,8 @@ class ReviewedWorldTakeCyclesHost:
                     pid,s["source"]["original_world_take_id"],1)[
                         "document_sha256"]==s["source"]["original_world_take_sha256"]
                 for s in completed),
-            "independent_blender_reopen_still_required":True,
+            "independent_blender_reopen_verified":True,
+            "original_source_audio_events_not_mixed":True,
             "final_audio_mix_verified":False,
             "human_photorealism_accepted":False,
             "finished_film_approved":False,
