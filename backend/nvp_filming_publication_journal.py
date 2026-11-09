@@ -99,7 +99,9 @@ class FilmingPublicationJournal:
             total = len(record["source_ids"])
             record["source_revision_count"] = present
             record["expected_source_revision_count"] = total
-            if record["take_present"]:
+            # A Take revision alone cannot establish a usable, approved film.\n            # Missing journaled source/timeline revisions require investigation\n            # before any playback, promotion, or recovery decision.\n            if record["take_present"] and (present != total or not record["sound_timeline_present"]):
+                record["resolution"] = "INCOMPLETE_FROZEN_TAKE_DEPENDENCIES"
+            elif record["take_present"]:
                 record["resolution"] = "VERIFY_FROZEN_TAKE_AND_APPROVAL"
             elif record["sound_timeline_present"]:
                 record["resolution"] = "INTERRUPTED_TIMELINE_WITHOUT_TAKE"
