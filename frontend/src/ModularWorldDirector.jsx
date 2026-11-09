@@ -49,6 +49,9 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
   const manual=useMemo(
     ()=>preview?.instances?.filter(x=>x.director_placed)||[],
     [preview]);
+  const proposalSourceBuildingIds=useMemo(
+    ()=>[...new Set((preview?.instances||[]).map(x=>x.building_id))],
+    [preview]);
   const refresh=useCallback(async()=>{
     if(!ready)return null;
     const result=await nativeBridge.film02mf_catalog(projectId);
@@ -98,6 +101,8 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
        data.original_world_takes_modified!==false)
       throw Error('Original director draft preview is not source-pinned');
     setDraft(receipt);setPreview(data);setCommitted(null);
+    setManualBuilding(current=>data.instances.some(
+      x=>x.building_id===current)?current:data.instances[0]?.building_id||'');
     return data;
   };
   const propose=()=>transact(async()=>{
@@ -340,9 +345,8 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
               <select aria-label="Manual original source building"
                 value={manualBuilding} onChange={e=>setManualBuilding(e.target.value)}>
                 <option value="">Choose original</option>
-                {source.filter(x=>buildingIds.includes(x.building_id)).map(x=>
-                  <option key={x.building_id} value={x.building_id}>
-                    {x.building_id}</option>)}
+                {proposalSourceBuildingIds.map(id=>
+                  <option key={id} value={id}>{id}</option>)}
               </select>
             </label>
             {['X','Y','Z'].map((axis,i)=><label key={axis}>
