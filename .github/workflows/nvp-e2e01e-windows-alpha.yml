@@ -8,7 +8,7 @@ permissions:
 jobs:
   native-installer:
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,6 +28,8 @@ jobs:
           Push-Location frontend
           npm install --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:ui -- src/ModularWorldDirector.test.jsx src/DataFirstViewpointEditor.test.jsx
+          if ($LASTEXITCODE -ne 0) { throw 'Native director UI/actor camera world contracts failed' }
           npm run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
@@ -39,12 +41,28 @@ jobs:
           python -m pip install -r requirements-foundation.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # SLATE-08B's bundled native scene readers must have real OpenUSD.
-          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install --only-binary=:all: 'usd-core==26.11' Pillow numpy
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Grouped native 02M-F/G/H model draft recovery and real 01D/01E original film source acceptance
+        shell: pwsh
+        run: |
+          python -m compileall -q backend/nvp_usd_film02m_f_authoring.py backend/nvp_usd_film02m_f_desktop_mixin.py backend/nvp_usd_film02m_g_model_world_candidate.py backend/nvp_usd_film02m_h_actor_camera_binding.py
+          if ($LASTEXITCODE -ne 0) { throw 'NVP original world model/shot integration did not compile' }
+          python -m unittest discover -s tests -p test_nvp_usd_film02mg_model_world_candidate.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Model JSON provenance acceptance failed' }
+          python -m unittest discover -s tests -p test_nvp_usd_film02m_modular_buildings.py -k test_02m_g -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native model-to-draft recovery failed' }
+          python -m unittest discover -s tests -p test_nvp_usd_film01e_world_take.py -k test_02m_h -v
+          if ($LASTEXITCODE -ne 0) { throw 'Actual OpenUSD district+01D+01E shot binding failed' }
+      - name: Confirm installed bundle collects original film world modules
+        shell: pwsh
+        run: |
+          python -c "import backend.nvp_usd_film02m_g_model_world_candidate, backend.nvp_usd_film02m_h_actor_camera_binding; print('Group F/G/H import verified; no installed UI acceptance inferred')"
+          if ($LASTEXITCODE -ne 0) { throw 'Original world model/shot module import failed' }
       - name: Compile actual desktop entry and build one-directory native EXE
         shell: pwsh
         run: |
@@ -52,6 +70,8 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-submodules backend tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
+          # Real bundle import collection; the underlying physical app/user
+          # still needs an independent OS-origin approval click test.
           python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
           if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }
           & 'dist/NVP/NVP.exe' --smoke
