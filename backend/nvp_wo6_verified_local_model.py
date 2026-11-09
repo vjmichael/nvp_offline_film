@@ -74,7 +74,16 @@ class ProvenLocalModelWriter:
             raise ValueError("Only bounded host-owned original-world schema")
         return self._complete_bounded(system,user,schema)
 
-    def _complete_bounded(self,system,user,schema=None):
+    def complete_camera_candidate(self,system,user,schema):
+        """Host-reviewed camera JSON grammar, not source/model authorization."""
+        if (type(schema) is not dict or len(json.dumps(
+                schema,sort_keys=True,separators=(",",":"),
+                allow_nan=False))>12000):
+            raise ValueError("Only bounded native source camera output schema")
+        return self._complete_bounded(system,user,schema,
+                                      schema_name="nvp_original_camera_rail")
+
+    def _complete_bounded(self,system,user,schema=None,*,schema_name="nvp_original_world_candidate"):
         if (type(system) is not str or type(user) is not str or
                 not 1<=len(system)<=4000 or
                 not 1<=len(user.encode("utf-8"))<=MAX_PROMPT_BYTES):
@@ -94,7 +103,7 @@ class ProvenLocalModelWriter:
             body_request["response_format"]={
                 "type":"json_schema",
                 "json_schema":{
-                    "name":"nvp_original_world_candidate",
+                    "name":schema_name,
                     "strict":True,
                     "schema":schema,
                 },
