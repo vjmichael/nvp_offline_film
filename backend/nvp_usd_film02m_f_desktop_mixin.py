@@ -64,6 +64,44 @@ class OriginalDistrictDesktopMixin:
         return OriginalDistrictDrafts(
             self.index,workspace,confirm=self._film02mf_confirm)
 
+    def film02mg_generate_candidate(self,request):
+        """Real host-selected model suggestion; still NO draft or approval.
+
+        Reuses the existing WO6 trusted provider factory. Browser JSON cannot
+        specify a model endpoint, a worker command or an OS authorization.
+        """
+        if (type(request) is not dict or set(request)!={
+                "project_id","district_id","expected_revision",
+                "direction","model_id"}):
+            raise PermissionError("Only bounded local-model world advice request")
+        pid=self._wo5_project(request["project_id"])
+        factory=getattr(self,"_wo6_director_writer_factory",None)
+        if not callable(factory):
+            raise PermissionError("Installed WO6 model provider is not available")
+        from backend.nvp_usd_film02m_g_model_world_candidate import (
+            generate_model_world_candidate)
+        service=self._film02mf_service(pid)
+        catalog=service.catalog(pid)
+        # The factory has already selected an approved local model through
+        # the existing NVP model service, not a client-selected endpoint.
+        model=factory(request["model_id"])
+        result=generate_model_world_candidate(
+            catalog,project_id=pid,district_id=request["district_id"],
+            expected_revision=request["expected_revision"],
+            direction=request["direction"],model_id=request["model_id"],
+            model=model)
+        # Recheck the host's project-bound current source catalog after
+        # generation; no stale candidate may be called current evidence.
+        newest=service.catalog(pid)
+        def identity(c):
+            return ([(b["building_id"],b["revision"],b["document_sha256"])
+                     for b in c["source_buildings"]],
+                    [(d["district_id"],d["revision"],d["document_sha256"])
+                     for d in c["approved_districts"]])
+        if identity(catalog)!=identity(newest):
+            raise RuntimeError("Original source catalog changed during model generation")
+        return result
+
     def film02mf_catalog(self,project_id):
         return self._film02mf_service(project_id).catalog(project_id)
 
