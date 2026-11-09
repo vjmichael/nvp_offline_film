@@ -131,7 +131,7 @@ def _snapshot_usd(index: FilmIndex, pid: str, take_id: str, tick: int,
         size=stagefile.stat().st_size
         if not 100<size<=MAX_RENDER_STAGE:
             raise RuntimeError("Original shot render stage is outside checked size")
-        reopened=Usd.Stage.Open(str(stagefile),Usd.Stage.LoadAll)
+        reopened=Usd.Stage.Open(str(stagefile),load=Usd.Stage.LoadAll)
         if not reopened or not reopened.GetPrimAtPath(camera_path).IsA(UsdGeom.Camera):
             raise RuntimeError("Independent native USD snapshot lacks original camera")
         for actor in world_actors:
