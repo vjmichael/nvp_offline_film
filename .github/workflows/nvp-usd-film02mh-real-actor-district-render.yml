@@ -2,6 +2,11 @@ name: NVP USD-FILM-02M-HR Native Actor District Cycles Shot Acceptance
 
 # One deliberate task-group gate, never a CI run after each source edit.
 on:
+  # One exact-head task-group dispatch. Ordinary source fixes do NOT run CI;
+  # only deliberately updating this group workflow schedules another batch.
+  push:
+    branches: [nvp/usd-film02mh-real-shot-cycles-20261109]
+    paths: [.github/workflows/nvp-usd-film02mh-real-actor-district-render.yml]
   workflow_dispatch:
 
 permissions:
