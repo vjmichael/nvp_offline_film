@@ -160,3 +160,34 @@ class FilmingPublicationJournal:
             else:
                 record["resolution"] = "INTERRUPTED_SOURCES_WITHOUT_TIMELINE"
         return records
+
+    def visibility(self, project_id, take_id):
+        """Fail-closed publication visibility for journaled filming Takes.
+
+        An absent journal entry is NOT proof of an approved legacy Take.
+        Readers must apply their separate legacy/creator approval policy.
+        This query is observational and does not change immutable revisions.
+        """
+        _require_pid(project_id)
+        _id(take_id, "filming take")
+        with self.index.studio._connection() as db:
+            self.index._project(db, project_id)
+            row = db.execute("""SELECT state,sound_timeline_id,source_ids_json
+                FROM nvp_filming_publications
+                WHERE project_id=? AND take_id=?""", (project_id,take_id)).fetchone()
+            if row is None:
+                return {"take_id":take_id,"journaled":False,
+                        "visible":False,"reason":"NO_JOURNAL_RECEIPT"}
+            if row["state"] != "COMPLETED":
+                return {"take_id":take_id,"journaled":True,
+                        "visible":False,"reason":"PUBLICATION_"+row["state"]}
+            identities = [take_id,row["sound_timeline_id"],
+                          *json.loads(row["source_ids_json"])]
+            for identity in identities:
+                try:
+                    self.index.read_revision(project_id,identity,1)
+                except KeyError:
+                    return {"take_id":take_id,"journaled":True,
+                            "visible":False,"reason":"MISSING_IMMUTABLE_DEPENDENCY"}
+            return {"take_id":take_id,"journaled":True,
+                    "visible":True,"reason":"COMPLETED_DEPENDENCIES_PRESENT"}
