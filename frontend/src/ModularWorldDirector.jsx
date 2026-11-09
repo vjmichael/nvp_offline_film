@@ -29,6 +29,11 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
   const [observedModel,setObservedModel]=useState(null);
   const [localModels,setLocalModels]=useState([]);
   const [localModelStatus,setLocalModelStatus]=useState('not checked');
+  const [worldTakeId,setWorldTakeId]=useState('');
+  const [filmTick,setFilmTick]=useState(0);
+  const [shotBindingId,setShotBindingId]=useState('OriginalDistrictFilmShot');
+  const [shotPreview,setShotPreview]=useState(null);
+  const [shotPublished,setShotPublished]=useState(null);
   const [draft,setDraft]=useState(null),[preview,setPreview]=useState(null);
   const [selectedGenerated,setSelectedGenerated]=useState('');
   const [manualName,setManualName]=useState('DirectorShopfront');
@@ -40,6 +45,9 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
   const [notice,setNotice]=useState(''),[committed,setCommitted]=useState(null);
   const source=catalog?.source_buildings||[];
   const approved=catalog?.approved_districts||[];
+  const worldTakes=catalog?.original_world_takes||[];
+  const chosenTake=worldTakes.find(x=>x.take_id===worldTakeId);
+  const chosenDistrict=approved.find(x=>x.district_id===districtId);
   const active=draft?.format===PROPOSAL&&draft.state==='DRAFT';
   const validPreview=active&&preview?.format===PREVIEW&&
     preview?.proposal?.draft_id===draft.draft_id&&
@@ -66,6 +74,11 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
        !Array.isArray(result.drafts))
       throw Error('Trusted original OpenUSD building catalog failed');
     setCatalog(result);
+    setWorldTakeId(current=>{
+      if(result.original_world_takes?.some(x=>x.take_id===current))
+        return current;
+      return result.original_world_takes?.[0]?.take_id||'';
+    });
     if(typeof nativeBridge.wo6_local_models==='function'){
       const found=await nativeBridge.wo6_local_models(projectId);
       if(!Array.isArray(found?.models)||typeof found.state!=='string')
@@ -164,6 +177,51 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
     await refresh();
     setObservedModel(response.model_evidence);
     setNotice('Host-observed local model generated a bounded source proposal. It is a durable unapproved draft.');
+  });
+  const previewOriginalShot=()=>transact(async()=>{
+    if(!chosenDistrict||!chosenTake||
+       typeof nativeBridge.film02mh_preview_shot!=='function')
+      throw Error('Select an approved world and an original frozen 01E film Take');
+    const result=await nativeBridge.film02mh_preview_shot({
+      project_id:projectId,district_id:chosenDistrict.district_id,
+      district_revision:chosenDistrict.revision,
+      world_take_id:chosenTake.take_id,film_tick:Number(filmTick)});
+    if(result?.format!=='nvp.usd_film02m_h.native_source_district_shot_preview.v1'||
+       result.district_document_sha256!==chosenDistrict.document_sha256||
+       result.world_take_sha256!==chosenTake.take_sha256||
+       result.native_approved_district_layer_composed!==true||
+       result.native_original_actor_pose_verified!==true||
+       result.native_original_camera_verified!==true||
+       result.original_actor_takes_unchanged!==true||
+       typeof result.binding_preview_sha256!=='string')
+      throw Error('Native USD actor/camera source binding failed independent verification');
+    setShotPreview(result);setShotPublished(null);
+    setNotice('The original district, actor Takes and camera now share one source-verified disposable USD shot view.');
+  });
+  const publishOriginalShot=()=>transact(async()=>{
+    if(!shotPreview||!chosenDistrict||!chosenTake||
+       shotPreview.district_id!==chosenDistrict.district_id||
+       shotPreview.district_revision!==chosenDistrict.revision||
+       shotPreview.world_take_id!==chosenTake.take_id||
+       shotPreview.film_tick!==Number(filmTick))
+      throw Error('Original district/actor/camera preview has changed');
+    const published=await nativeBridge.film02mh_commit_shot_binding({
+      project_id:projectId,binding_id:shotBindingId,
+      district_id:shotPreview.district_id,
+      district_revision:shotPreview.district_revision,
+      world_take_id:shotPreview.world_take_id,
+      film_tick:shotPreview.film_tick,
+      source_preview_sha256:shotPreview.binding_preview_sha256});
+    if(published?.revision!==1||typeof published.document_sha256!=='string')
+      throw Error('No original immutable 01D/01E scene binding receipt');
+    const reopened=await nativeBridge.film02mh_reopen_shot_binding({
+      project_id:projectId,binding_id:shotBindingId});
+    if(reopened?.native_source_reopened!==true||
+       reopened.binding_document_sha256!==published.document_sha256||
+       reopened.source_actor_takes_unchanged!==true)
+      throw Error('New shot source binding failed independent reopen');
+    setShotPublished(reopened);
+    setNotice('OS-approved immutable actor/camera/district binding saved; actor Takes and shot source remain unchanged.');
   });
   const reopen=id=>transact(async()=>{
     const receipt=await nativeBridge.film02mf_reopen({
@@ -364,6 +422,66 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
           </button>)}
         </div>
       </div>}
+      {typeof nativeBridge.film02mh_preview_shot==='function'&&
+       <section aria-label="Original film actor camera world integration">
+        <h4>24 · Place approved world in an original actor-and-camera shot</h4>
+        <p className="fineprint">This reads an existing immutable 01E actor
+          world Take and its 01D authored camera. Preview composes the actual
+          approved district USD as a disposable stronger session reference;
+          it never changes frozen performances, camera, dialogue or PCM.</p>
+        <label>Approved original building district
+          <select aria-label="Shot approved district"
+            value={chosenDistrict?.district_id||''}
+            onChange={e=>{selectApproved(e.target.value);setShotPreview(null);}}>
+            <option value="">Select approved district</option>
+            {approved.map(x=><option key={x.district_id} value={x.district_id}>
+              {x.district_id} · rev {x.revision}</option>)}
+          </select>
+        </label>
+        <label>Frozen original actor world Take
+          <select aria-label="Original 01E world Take"
+            value={worldTakeId}
+            onChange={e=>{setWorldTakeId(e.target.value);
+              setFilmTick((worldTakes.find(x=>x.take_id===e.target.value)
+                ?.checkpoint_ticks||[0])[0]);setShotPreview(null);}}>
+            <option value="">Select 01E Take</option>
+            {worldTakes.map(x=><option key={x.take_id} value={x.take_id}>
+              {x.take_id} · {x.original_actor_count} original actors</option>)}
+          </select>
+        </label>
+        <label>Original authored film checkpoint
+          <select aria-label="Original film tick"
+            value={filmTick}
+            onChange={e=>{setFilmTick(Number(e.target.value));setShotPreview(null);}}>
+            {(chosenTake?.checkpoint_ticks||[0]).map(n=>
+              <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <button disabled={busy||!chosenDistrict||!chosenTake}
+          onClick={previewOriginalShot}>Preview native source actor/camera world</button>
+        {shotPreview&&<div role="status">
+          <p>Actual original USD instances: {shotPreview.native_original_instance_count}.
+            Original actors: {shotPreview.original_actor_poses.length}.
+            Camera: {shotPreview.original_camera_path}.
+            Film tick: {shotPreview.film_tick}.
+            No actor Takes or source camera changed.</p>
+          <p>Approved district SHA: <code>
+            {shotPreview.district_document_sha256}</code></p>
+          <p>Original frozen 01E world Take SHA: <code>
+            {shotPreview.world_take_sha256}</code></p>
+          <label>New immutable shot-world binding ID
+            <input aria-label="Original actor camera shot binding ID"
+              value={shotBindingId}
+              onChange={e=>setShotBindingId(e.target.value)}/></label>
+          <button disabled={busy||!shotBindingId}
+            onClick={publishOriginalShot}>
+            OS approve exact actor-camera-world binding</button>
+        </div>}
+        {shotPublished&&<p role="status">Independent 3D source binding
+          reopened: {shotPublished.binding_id}.
+          Source SHA: {shotPublished.binding_document_sha256}.
+          Original performances unchanged; movie frames not rendered.</p>}
+      </section>}
       {draft&&<div role="region" aria-label="Original world draft controls">
         <h4>Source proposal · {draft.district_id} · v{draft.version}</h4>
         <p role="status">Native draft: {draft.state}.
