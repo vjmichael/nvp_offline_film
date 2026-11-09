@@ -48,6 +48,11 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
   const worldTakes=catalog?.original_world_takes||[];
   const chosenTake=worldTakes.find(x=>x.take_id===worldTakeId);
   const chosenDistrict=approved.find(x=>x.district_id===districtId);
+  useEffect(()=>{
+    if(chosenTake?.checkpoint_ticks?.length)
+      setFilmTick(current=>chosenTake.checkpoint_ticks.includes(current)?
+        current:chosenTake.checkpoint_ticks[0]);
+  },[worldTakeId,catalog]);
   const active=draft?.format===PROPOSAL&&draft.state==='DRAFT';
   const validPreview=active&&preview?.format===PREVIEW&&
     preview?.proposal?.draft_id===draft.draft_id&&
