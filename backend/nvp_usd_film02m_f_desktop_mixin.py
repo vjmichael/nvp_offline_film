@@ -138,6 +138,89 @@ class OriginalDistrictDesktopMixin:
             "actor_takes_modified":False,
         }
 
+    def _film02mh_confirm(self,scope):
+        if (type(scope) is not dict or
+            scope.get("operation")!=
+                "nvp.film02m_h.approve_original_district_shot_binding.v1" or
+            not all(type(scope.get(k)) is str and SHA.fullmatch(scope[k])
+                for k in ("district_document_sha256","district_usd_root_sha256",
+                          "world_take_sha256","original_camera_shot_sha256",
+                          "source_preview_sha256")) or
+            type(scope.get("actor_count")) is not int or
+            type(scope.get("film_tick")) is not int):
+            return False
+        message=(
+            "Approve one immutable original 3D building world in this FILM shot?\n\n"
+            "Film project: "+str(scope["project_id"])+"\n"
+            "Binding: "+str(scope["binding_id"])+"\n"
+            "Approved world: "+str(scope["district_id"])+" rev "+
+            str(scope["district_revision"])+"\n"
+            "Original building source SHA: "+scope["district_document_sha256"]+"\n"
+            "Actual OpenUSD layer SHA: "+scope["district_usd_root_sha256"]+"\n"
+            "Immutable actor world Take: "+str(scope["world_take_id"])+"\n"
+            "Original actor Take SHA: "+scope["world_take_sha256"]+"\n"
+            "Original camera shot SHA: "+scope["original_camera_shot_sha256"]+"\n"
+            "Exact source preview SHA: "+scope["source_preview_sha256"]+"\n"
+            "Film tick: "+str(scope["film_tick"])+"\n"
+            "Verified original actors: "+str(scope["actor_count"])+"\n\n"
+            "This binds existing approved sources. It does NOT alter actors, "
+            "camera, dialogue, original PCM, USD building layers or source Takes. "
+            "It is NOT approval of a rendered film or native render worker.\n"
+            "Publish this one immutable original source binding?")
+        return self._native_window().create_confirmation_dialog(
+            "NVP — Original Actor/Camera World Binding",message) is True
+
+    def _film02mh_host(self):
+        from backend.nvp_usd_film02m_h_actor_camera_binding import (
+            OriginalDistrictShotBinding)
+        token=object()
+        used=[False]
+        def approve(event,scope):
+            if event is not token or used[0]:
+                return False
+            used[0]=True
+            return self._film02mh_confirm(scope)
+        return OriginalDistrictShotBinding(
+            self.index,confirm=approve),token
+
+    def film02mh_preview_shot(self,request):
+        if (type(request) is not dict or set(request)!={
+                "project_id","district_id","district_revision",
+                "world_take_id","film_tick"}):
+            raise PermissionError("Only immutable 01D/01E source shot preview")
+        pid=self._wo5_project(request["project_id"])
+        host,_=self._film02mh_host()
+        return host.preview(
+            pid,request["district_id"],request["district_revision"],
+            request["world_take_id"],request["film_tick"])
+
+    def film02mh_commit_shot_binding(self,request):
+        if (type(request) is not dict or set(request)!={
+                "project_id","binding_id","district_id","district_revision",
+                "world_take_id","film_tick","source_preview_sha256"}):
+            raise PermissionError("Only exact-native-approved original shot binding")
+        pid=self._wo5_project(request["project_id"])
+        if (type(request["source_preview_sha256"]) is not str or
+            not SHA.fullmatch(request["source_preview_sha256"])):
+            raise PermissionError("Current source-locked preview SHA required")
+        host,token=self._film02mh_host()
+        return host.publish(
+            pid,request["binding_id"],
+            district_id=request["district_id"],
+            district_revision=request["district_revision"],
+            world_take_id=request["world_take_id"],
+            film_tick=request["film_tick"],
+            creator_event=token,
+            expected_preview_sha256=request["source_preview_sha256"])
+
+    def film02mh_reopen_shot_binding(self,request):
+        if type(request) is not dict or set(request)!={
+                "project_id","binding_id"}:
+            raise PermissionError("Only immutable source shot binding reopen")
+        pid=self._wo5_project(request["project_id"])
+        host,_=self._film02mh_host()
+        return host.reopen(pid,request["binding_id"])
+
     def film02mf_catalog(self,project_id):
         return self._film02mf_service(project_id).catalog(project_id)
 
