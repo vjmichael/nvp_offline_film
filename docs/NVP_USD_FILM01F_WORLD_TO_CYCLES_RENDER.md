@@ -42,6 +42,14 @@
 - A separate actual official Blender **5.2.3 SHA-verified Ubuntu** job that renders **two source frames** with actual Cycles and two independent fresh Blender reopen passes, uploads PNG, .blend, original source USD and original/independent audits.
 - Source job success does not imply Blender import success; a queued/cancelled job cannot count toward acceptance. Inspect actual exact-head logs, media and renderer settings and repair genuine failures. Standard hosted CI does not prove installed desktop Windows GPU performance or visually acceptable human filmmaking.
 
+## Independently verified original audio source staging (additional implemented source task)
+
+`backend/nvp_usd_film01f_original_audio.py` now consumes **the same independently verified 01E world Take** as the Cycles renderer, reads original 48 kHz PCM source signal windows through the existing `RecordedSoundSources.read()` (8,192 samples maximum per read), and writes each real original timeline audio event's **separate, unaltered** mono PCM16 WAV file with original source ID/revision/SHA and exact source event start/end Film Time. The output is checked by independently reopening every WAV and comparing its full decoded PCM essence digest; duplicate/missing/altered source bytes, wrong clock/sample counts or overly large signals refuse success. The two original Donut/Box/Sphere test shots include two WAV stems on the final source shot because that source contains an additional authored beacon chirp event.
+
+These original PCM review stems now accompany the two independent Blender/Cycles frames in the test artifacts. **They are NOT mixed, gain-adjusted, shifted onto the final cut, normalized, stereo-mastered or muxed into an actual film file.** Authoritative final sound/picture synchronization and signed source-to-master output must go through the existing AUDIO01/NVP film-edit pipeline and remain an OPEN 01F-D work order.
+
+**Blender 5.2 interoperability correction:** The original-actor importer explicitly sets `merge_parent_xform=False` when supported, preserving USD actor Xform roots for original ActorID checks. It uses `import_usd_preview=True` to bring native source USD PreviewSurface materials toward Blender Principled BSDF, but this **conversion is acknowledged lossy**; MaterialX physically calibrated pixel parity is not claimed. Blender source/import API references: https://docs.blender.org/api/5.2/bpy.ops.wm.html and https://docs.blender.org/manual/en/5.2/files/import_export/usd.html.
+
 ## What is still OPEN in 01F / family
 
 1. **01F-A:** Native authored source/reopen code and test contracts committed; exact-head genuine Windows/Linux results OPEN.
