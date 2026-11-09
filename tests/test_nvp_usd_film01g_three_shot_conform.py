@@ -39,10 +39,10 @@ class ThreeShotConformContract(unittest.TestCase):
             receipts=[]
             for n in range(240):
                 value=bytes([(i*13+n)%256])
-                raw=b"\\x89PNG\\r\\n\\x1a\\n"
+                raw=b"\x89PNG\r\n\x1a\n"
                 raw+=chunk(b"IHDR",struct.pack(">IIBBBBB",1,1,8,2,0,0,0))
                 raw+=chunk(b"tEXt",f"source_tick={i*10*T+n*T//FPS}".encode())
-                raw+=chunk(b"IDAT",zlib.compress(b"\\x00"+value*3))
+                raw+=chunk(b"IDAT",zlib.compress(b"\x00"+value*3))
                 raw+=chunk(b"IEND",b"")
                 frame=folder/f"frame_{n:04d}.png"
                 frame.write_bytes(raw)
