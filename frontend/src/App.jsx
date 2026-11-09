@@ -16,6 +16,7 @@ import ColorGradingGuide from './ColorGradingGuide.jsx';
 import NativeColorGradePanel from './NativeColorGradePanel.jsx';
 import ResourceActivityPanel from './ResourceActivityPanel.jsx';
 import AdaptiveShotBatchPanel from './AdaptiveShotBatchPanel.jsx';
+import DataFirstViewpointEditor from './DataFirstViewpointEditor.jsx';
 import FilmCameraSourcePanel from './FilmCameraSourcePanel.jsx';
 import DataFirstAVPanel from './DataFirstAVPanel.jsx';
 import WorkspaceLock from './WorkspaceLock.jsx';
@@ -457,6 +458,7 @@ function MainApp() {
           <button className={tab === 'film-review' ? 'active' : ''} onClick={() => setTab('film-review')}>19 · Watch & review film</button>
           <button className={tab === 'creator-native' ? 'active' : ''} onClick={() => setTab('creator-native')}>20 · Native director approvals</button>
           <button className={tab === 'batch-camera' ? 'active' : ''} onClick={() => setTab('batch-camera')}>21 · Batch camera shots</button>
+          <button className={tab === 'data-first-editor' ? 'active' : ''} onClick={() => setTab('data-first-editor')}>22 · Direct the data</button>
           <button className={tab === 'color-guide' ? 'active' : ''} onClick={() => setTab('color-guide')}>Help · Color grading</button>
         </nav>
         {tab === 'camera' && <FilmCameraSourcePanel projectId={project.id} api={api}/>}
@@ -464,6 +466,7 @@ function MainApp() {
         {tab === 'film-review' && <DirectorFilmReviewPanel projectId={project.id}/>}
         {tab === 'creator-native' && <WO6CreatorActionsPanel projectId={project.id}/>}
         {tab === 'batch-camera' && <AdaptiveShotBatchPanel api={api}/>}
+        {tab === 'data-first-editor' && <DataFirstViewpointEditor projectId={project.id} api={api}/>}
         {tab === 'develop' && <div className="columns">
           <section className="card">
             <h2>Develop your story</h2>
