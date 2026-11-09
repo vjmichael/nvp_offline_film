@@ -87,6 +87,27 @@ class RealLoopbackProviderReceiptContract(unittest.TestCase):
             self.writer.completion_receipt["model_weights_sha256_verified"])
         self.assertFalse(self.writer.completion_receipt["native_worker_authorized"])
 
+    def test_host_selected_original_world_schema_is_delivered_to_real_loopback_http(self):
+        schema={"type":"object","properties":{"params":{"type":"object"}},
+                "required":["params"],"additionalProperties":False}
+        Handler.reply={**real_like_reply(),
+            "choices":[{"finish_reason":"stop",
+                "message":{"content":'{"params":{}}'}}]}
+        generated=self.writer.complete_world_candidate(
+            "Return only JSON","Use approved original source buildings",schema)
+        self.assertEqual(generated,'{"params":{}}')
+        self.assertEqual(len(Handler.requests),1)
+        self.assertEqual(Handler.requests[0]["response_format"],{
+            "type":"json_schema",
+            "json_schema":{"name":"nvp_original_world_candidate",
+                           "strict":True,"schema":schema}})
+        self.assertFalse(self.writer.completion_receipt[
+            "model_weights_sha256_verified"])
+        self.assertFalse(self.writer.completion_receipt["native_worker_authorized"])
+        with self.assertRaises(ValueError):
+            self.writer.complete_world_candidate(
+                "System","User",{"huge":"x"*16000})
+
     def test_reject_spoofed_model_missing_usage_truncation_redirect_and_replay(self):
         variants=[
             dict(model="another-instance"),
