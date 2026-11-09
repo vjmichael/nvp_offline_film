@@ -456,9 +456,15 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
         two=[
             {"camera_id":"WallNormal","camera_ray_exclusions":[],**origin},
             {"camera_id":"WallGhost","camera_ray_exclusions":[wall],**origin}]
-        bank.create(self.pid,"TwoWallComparisonCameras",
-            world_take_id="OneThirtySecondWorldTake",
-            cameras=two,director_event="AUTHORIZE_WALL_SHOT")
+        try:
+            existing=bank.verify(self.pid,"TwoWallComparisonCameras",1)
+        except KeyError:
+            bank.create(self.pid,"TwoWallComparisonCameras",
+                world_take_id="OneThirtySecondWorldTake",
+                cameras=two,director_event="AUTHORIZE_WALL_SHOT")
+        else:
+            if existing["cameras"]!=two:
+                raise RuntimeError("Cached original camera test fixture changed")
         return bank,wall
 
     def test_native_director_camera_snapshot_keeps_wall_and_performance(self):
