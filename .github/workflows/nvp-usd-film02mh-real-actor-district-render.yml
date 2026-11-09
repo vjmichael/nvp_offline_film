@@ -145,6 +145,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m compileall -q backend/nvp_usd_film02m_h_render_handoff.py tools/nvp_usd_film02mh_blender_reopen.py tests/test_nvp_usd_film02mh_real_shot_render.py
+          python -m unittest discover -s tests -p test_nvp_e2e01e_package_guard.py -v
       - name: Native first-party source binding and two immutable district revisions with original actor/camera/PCM untouched
         shell: bash
         run: |
