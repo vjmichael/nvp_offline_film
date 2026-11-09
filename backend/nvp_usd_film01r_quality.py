@@ -11,10 +11,10 @@ import json
 
 FORMAT="nvp.usd_film01r.reviewed_cycles_quality_profile.v1"
 PROFILES={
-    "technical_smoke":(320,180,8,600,8192),
-    "draft_360p":(640,360,16,900,8192),
-    "final_720p":(1280,720,48,1800,12288),
-    "final_1080p":(1920,1080,96,3600,16384),
+    "technical_smoke":(320,180,8,600,2048),
+    "draft_360p":(640,360,16,900,3072),
+    "final_720p":(1280,720,48,1800,6144),
+    "final_1080p":(1920,1080,96,3600,12288),
 }
 
 def reviewed_quality(name):
