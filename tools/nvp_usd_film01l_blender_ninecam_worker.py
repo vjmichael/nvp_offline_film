@@ -13,6 +13,7 @@ import math
 import sys
 
 import bpy
+from mathutils import Euler, Vector
 
 FORMAT="nvp.usd_film01l.native_cycles_nine_camera_smoke_packet.v1"
 AUDIT="nvp.usd_film01l.native_cycles_nine_camera_smoke_receipt.v1"
@@ -141,6 +142,17 @@ def run():
             if not math.isclose(lens,expected["focal_length_mm"],
                                 rel_tol=0,abs_tol=0.1):
                 raise RuntimeError("Original wide/medium/close USD lens changed in Blender")
+            # Film angles must remain optically real. Check native imported
+            # Blender camera world forward direction, not merely USD path or
+            # lens label. For our authored source camera rigs only Euler-Y
+            # yaw varies; XYZ composition is exact for that limited case.
+            source_direction=Euler(tuple(math.radians(float(x))
+                for x in expected["rotation_euler_deg"]),"XYZ")
+            intended=(source_direction.to_matrix() @ Vector((0,0,-1))).normalized()
+            actual=(camera.matrix_world.to_quaternion() @
+                    Vector((0,0,-1))).normalized()
+            if (actual-intended).length>0.02:
+                raise RuntimeError("Original USD cinematic camera direction changed in Blender")
             scene.camera=camera
             filename=f"{angle}_{framing}.png"
             frame=work/filename
