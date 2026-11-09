@@ -957,6 +957,177 @@ def run_visible_window_smoke():
                                             "Installed draft-only WebView2 used an OS worker grant")
                                     _native_window_stage(
                                         "film02m_installed_native_editor_draft_recovery_passed")
+                                    # P0-F-01: genuine installed WebView2 IPC
+                                    # + same-process Windows native OS dialogs
+                                    # on one *throwaway* approved district.
+                                    # TEST AUTOMATION IS NOT HUMAN CONSENT.
+                                    if os.environ.get("NVP_P0F01_TEST_OS_DIALOGS")=="1":
+                                        from tools.nvp_p0f01_windows_dialog_driver import (
+                                            start_disposable_dialog_driver,
+                                            finish_disposable_dialog_driver)
+                                        native_pid=project["id"]
+                                        native_draft=bridge.film02mf_propose({
+                                            "project_id":native_pid,
+                                            "district_id":"InstalledP0F01ApprovedWorld",
+                                            "expected_revision":0,
+                                            "params":smoke_world_params,
+                                            "proposed_by":"director"})
+                                        exact=bridge.film02mf_preview({
+                                            "project_id":native_pid,
+                                            "draft_id":native_draft["draft_id"]})
+                                        if (native_draft["state"]!="DRAFT" or
+                                            exact["source_plan_sha256"]!=
+                                                native_draft["original_plan_sha256"]):
+                                            raise RuntimeError(
+                                                "Native installed OS consent preview changed")
+                                        original_take_sha=smoke_index.read_revision(
+                                            native_pid,"smoke_frozen_take",1)[
+                                                "document_sha256"]
+                                        def submit_native_consent(tag):
+                                            payload={
+                                                "project_id":native_pid,
+                                                "draft_id":native_draft["draft_id"],
+                                                "version":native_draft["version"],
+                                                "source_plan_sha256":
+                                                    exact["source_plan_sha256"],
+                                                "usd_layer_root_sha256":
+                                                    exact["usd_layer_root_sha256"]}
+                                            state_key="__nvpP0F01"+tag
+                                            import json
+                                            window.evaluate_js(
+                                                "window["+json.dumps(state_key)+"]='PENDING';"
+                                                "window.pywebview.api.film02mf_commit("+
+                                                json.dumps(payload,separators=(",",":"))+
+                                                ").then(r=>{window["+
+                                                json.dumps(state_key)+
+                                                "]=(r.state==='COMMITTED'&&r.published_revision===1)"
+                                                "?'COMMITTED':'BAD_RECEIPT';}).catch(e=>{window["+
+                                                json.dumps(state_key)+
+                                                "]='DENIED';});")
+                                            return state_key
+                                        def wait_native_consent(state_key):
+                                            until=time.monotonic()+30
+                                            while time.monotonic()<until:
+                                                value=window.evaluate_js(
+                                                    "window["+json.dumps(state_key)+"]")
+                                                if value!='PENDING':
+                                                    return value
+                                                time.sleep(.15)
+                                            raise TimeoutError(
+                                                "Installed NVP native OS consent never completed")
+                                        _native_window_stage("p0f01_real_native_os_dialog_deny")
+                                        no_thread,no_record=start_disposable_dialog_driver("no")
+                                        no_key=submit_native_consent("Deny")
+                                        no_receipt=finish_disposable_dialog_driver(
+                                            no_thread,no_record)
+                                        if (wait_native_consent(no_key)!="DENIED" or
+                                            not no_receipt["real_native_windows_dialog_observed"]):
+                                            raise RuntimeError(
+                                                "Installed Windows native OS denial not enforced")
+                                        try:
+                                            smoke_index.read_revision(
+                                                native_pid,"InstalledP0F01ApprovedWorld",1)
+                                        except KeyError:
+                                            pass
+                                        else:
+                                            raise RuntimeError(
+                                                "Denied native dialog published original world")
+                                        _native_window_stage("p0f01_real_native_os_dialog_approve")
+                                        yes_thread,yes_record=start_disposable_dialog_driver("yes")
+                                        yes_key=submit_native_consent("Approve")
+                                        yes_receipt=finish_disposable_dialog_driver(
+                                            yes_thread,yes_record)
+                                        if (wait_native_consent(yes_key)!="COMMITTED" or
+                                            not yes_receipt["real_native_windows_dialog_observed"] or
+                                            yes_receipt["human_director_consent"] is not False):
+                                            raise RuntimeError(
+                                                "Installed Windows native OS approval missing")
+                                        reopened=smoke_index.read_revision(
+                                            native_pid,"InstalledP0F01ApprovedWorld",1)
+                                        if (reopened["kind"]!="presentation" or
+                                            smoke_index.read_revision(
+                                                native_pid,"smoke_frozen_take",1)[
+                                                    "document_sha256"]!=original_take_sha):
+                                            raise RuntimeError(
+                                                "Installed OS approval changed original Take")
+                                        with bridge._film02mf_service(native_pid).district.open(
+                                                native_pid,"InstalledP0F01ApprovedWorld",1):
+                                            pass
+                                        _native_window_stage(
+                                            "p0f01_installed_native_os_deny_approve_source_reopen_passed")
+                                    if model_alias:
+                                        # The *same* installed WebView2 page
+                                        # invokes the *real* alias-selected GGUF
+                                        # through the new P0-F-01 async IPC.
+                                        # Never fake a valid JSON completion:
+                                        # malformed tiny-model output FAILS.
+                                        _native_window_stage(
+                                            "p0f01_real_gguf_source_generation_start")
+                                        model_request={
+                                            "project_id":project["id"],
+                                            "district_id":"InstalledRealGGUFWorld",
+                                            "expected_revision":0,
+                                            "model_id":model_alias,
+                                            "direction":"Generate a one-building, one-lot original film district from InstalledSourceHouse, seed 7, grid 1 by 1, spacing 30, origin [0,0,0], triangle budget 100000, instance budget 2. Return exactly the eight params fields and strict JSON only."}
+                                        window.evaluate_js(
+                                            "window.__nvpP0F01Model='PENDING';"
+                                            "window.pywebview.api.film02mg_start_candidate("+
+                                            json.dumps(model_request,separators=(",",":"))+
+                                            ").then(x=>{window.__nvpP0F01Model=x;})"
+                                            ".catch(e=>{window.__nvpP0F01Model="
+                                            "'FAILED:'+String(e&&e.message||e);});")
+                                        until=time.monotonic()+25
+                                        started=None
+                                        while time.monotonic()<until:
+                                            started=window.evaluate_js(
+                                                "window.__nvpP0F01Model")
+                                            if isinstance(started,dict) or (
+                                                    isinstance(started,str) and
+                                                    started.startswith("FAILED:")):
+                                                break
+                                            time.sleep(.15)
+                                        if (type(started) is not dict or
+                                            started.get("state")!="GENERATING" or
+                                            started.get("director_approval_granted") is not False):
+                                            raise RuntimeError(
+                                                "Installed WebView2 did not launch original GGUF model draft: "+
+                                                str(started))
+                                        model_attempt=started["attempt_id"]
+                                        until=time.monotonic()+150
+                                        done=None
+                                        while time.monotonic()<until:
+                                            done=bridge.film02mg_candidate_status({
+                                                "project_id":project["id"],
+                                                "attempt_id":model_attempt})
+                                            if done["state"]!="GENERATING":
+                                                break
+                                            time.sleep(.4)
+                                        if (done is None or
+                                            done["state"]!="DRAFT_SAVED" or
+                                            done["model_evidence"]["status"]!=
+                                                "GENERATED_UNAPPROVED" or
+                                            done["model_evidence"][
+                                                "model_completion_receipt"][
+                                                "provider_reported_completion_tokens"]<1 or
+                                            done["proposal"]["state"]!="DRAFT"):
+                                            raise RuntimeError(
+                                                "Actual installed GGUF did not generate a verified original USD draft: "+
+                                                str(done and done["state"]))
+                                        if not bridge.film02mf_preview({
+                                                "project_id":project["id"],
+                                                "draft_id":done["proposal"]["draft_id"]
+                                                })["native_usd_source_reopened"]:
+                                            raise RuntimeError(
+                                                "GGUF candidate failed original native USD reopen")
+                                        try:
+                                            smoke_index.read_revision(
+                                                project["id"],"InstalledRealGGUFWorld",1)
+                                        except KeyError:pass
+                                        else:
+                                            raise RuntimeError(
+                                                "Model completion illegally approved a world")
+                                        _native_window_stage(
+                                            "p0f01_real_gguf_model_source_draft_no_approval_passed")
                                 result["passed"]=True
                                 break
                     time.sleep(.2)
