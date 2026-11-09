@@ -1639,6 +1639,8 @@ class OriginalModularBuildingSource(unittest.TestCase):
             production_root=self.root/"02mf_webview_runtime")
         bridge._attach_window(window)
         try:
+            # Catalog is read-only; create the original approved source fixtures first.
+            self._02m_e_source_prototypes()
             catalog=bridge.film02mf_catalog(self.pid)
             self.assertEqual(catalog["format"],
                 "nvp.usd_film02m_f.native_source_catalog.v1")
