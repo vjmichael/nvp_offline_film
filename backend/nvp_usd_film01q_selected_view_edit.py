@@ -49,7 +49,7 @@ class OriginalSelectedViewEdit:
                 pid,bank_id,bank_revision)
         if bank["camera_count"]<1:
             raise ValueError("A finished film needs at least one virtual viewpoint")
-        source=index_bank=self.index.read_revision(pid,bank_id,bank_revision)
+        source=self.index.read_revision(pid,bank_id,bank_revision)
         take=self.index.read_revision(pid,bank["world_take_id"],1)
         _validate_edl(cuts,[c["camera_id"] for c in bank["cameras"]])
         if bank["source_duration_ticks"]<30*bank["source_ticks_per_second"]:
