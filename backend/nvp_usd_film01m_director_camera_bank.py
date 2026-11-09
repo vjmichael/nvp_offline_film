@@ -351,7 +351,7 @@ class DirectorCameraBank:
                 UsdGeom.Scope.Define(world.stage, root)
                 for c in doc["cameras"]:
                     cam = UsdGeom.Camera.Define(
-                        world.stage, root + "/" + c["camera_id"])
+                        world.stage, root + "/NVPDirector_" + c["camera_id"])
                     cam.GetFocalLengthAttr().Set(
                         c["focal_length_mm"] / MM_PER_CAMERA_UNIT)
                     cam.GetFocusDistanceAttr().Set(
@@ -371,7 +371,7 @@ class DirectorCameraBank:
                 "original_world": world,
                 "stage": world.stage,
                 "camera_paths": {
-                    c["camera_id"]: root + "/" + c["camera_id"]
+                    c["camera_id"]: root + "/NVPDirector_" + c["camera_id"]
                     for c in doc["cameras"]},
                 "camera_source_manifest": doc,
                 "camera_has_physical_collision": False,
