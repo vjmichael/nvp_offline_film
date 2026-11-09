@@ -1329,6 +1329,35 @@ def run_visible_window_smoke():
                                             "Real installed Windows WebView2 lacks protected Cycles controls or native source permissions")
                                     _native_window_stage(
                                         "film02mh_installed_source_review_controls_verified_no_worker_started")
+                                if os.environ.get("NVP_CAMFX_GROUP_ACCEPTANCE")=="1":
+                                    _native_window_stage("camfx_installed_native_camera_rail_control_check")
+                                    camera_ready=False
+                                    until=time.monotonic()+24
+                                    while time.monotonic()<until:
+                                        camera_ready=window.evaluate_js(
+                                            "(()=>{const api=window.pywebview?.api;"
+                                            "const pane=document.querySelector("
+                                            "'section[aria-label=\\\"Director digital camera rails and shot techniques\\\"]');"
+                                            "if(!api||!pane)return false;"
+                                            "const methods=['camfx01_catalog','camfx01_preview',"
+                                            "'camfx02_publish','camfx02_reopen','camfx02_sample'];"
+                                            "return methods.every(name=>typeof api[name]==='function')&&"
+                                            "[...pane.querySelectorAll('button')].some("
+                                            "x=>x.textContent.includes("
+                                            "'Preview exact-time stronger camera USD layer'))&&"
+                                            "[...pane.querySelectorAll('button')].some("
+                                            "x=>x.textContent.includes("
+                                            "'OS approve exact director-editable camera rail revision'))&&"
+                                            "[...pane.querySelectorAll('button')].some("
+                                            "x=>x.textContent.includes("
+                                            "'Undo last unapproved camera-rail handle edit'));})()")
+                                        if camera_ready:break
+                                        time.sleep(.25)
+                                    if not camera_ready:
+                                        raise RuntimeError(
+                                            "Actual installed WebView2 lacks reviewable time-sampled camera-rail editor or trusted OS methods")
+                                    _native_window_stage(
+                                        "camfx_installed_camera_rail_editor_source_controls_verified")
                                 result["passed"]=True
                                 break
                     time.sleep(.2)
