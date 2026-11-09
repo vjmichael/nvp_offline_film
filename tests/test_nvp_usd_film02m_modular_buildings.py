@@ -1142,9 +1142,10 @@ class OriginalModularBuildingSource(unittest.TestCase):
             with Image.open(job/(p["id"]+".png")) as image:
                 self.assertEqual(image.size,tuple(p["resolution"]))
                 self.assertEqual(image.format,"PNG")
-                rgb=image.convert("RGB")
-                self.assertGreater(max(ImageStat.Stat(rgb).var),1.)
                 image.verify()
+            with Image.open(job/(p["id"]+".png")) as decoded:
+                rgb=decoded.convert("RGB")
+                self.assertGreater(max(ImageStat.Stat(rgb).var),1.)
             observed.add(sha_file(job/(p["id"]+".png")))
         self.assertEqual(len(observed),5)
         self.assertEqual(records[0]["native_imported_source_triangles"],
