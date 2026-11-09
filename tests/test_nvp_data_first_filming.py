@@ -572,6 +572,32 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             with self.assertRaises(KeyError):
                 self.index.read_revision(self.pid,identity,1)
 
+    def test_recovery_does_not_trust_take_with_missing_recorded_dependencies(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        journal=FilmingPublicationJournal(self.index)
+        # Model a crash/corrupt publication receipt whose Take revision exists
+        # but whose claimed source and timeline revisions are unavailable.
+        with self.index.studio._connection() as db:
+            db.execute("""UPDATE nvp_filming_publications
+                SET state='PREPARING', source_ids_json=?,
+                    sound_timeline_id=?
+                WHERE project_id=? AND take_id=?""",
+                ('["MissingRecordedSource"]', "MissingRecordedTimeline",
+                 self.pid, "FilmedTake"))
+        row=next(r for r in journal.reconcile(self.pid)
+                 if r["take_id"]=="FilmedTake")
+        self.assertTrue(row["take_present"])
+        self.assertFalse(row["sound_timeline_present"])
+        self.assertEqual(row["source_revisions_present"],
+                         {"MissingRecordedSource":False})
+        self.assertEqual(row["resolution"],
+                         "INCOMPLETE_FROZEN_TAKE_DEPENDENCIES")
+        self.assertEqual(journal.reconcile(self.pid)[0],row)
+        # Recovery never rewrites the real immutable Take or original PCM.
+        self.assertIsNotNone(self.index.read_revision(self.pid,"FilmedTake",1))
+        self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
