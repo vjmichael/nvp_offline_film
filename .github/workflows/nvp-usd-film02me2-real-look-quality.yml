@@ -87,6 +87,7 @@ jobs:
           set -euo pipefail
           export NVP_FILM02ME2_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
           xvfb-run -a python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k "test_02m_e2_actual_blender_cycles_material_lighting_lod_exr"
+          xvfb-run -a python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k "test_02m_e2_genuine_native_blender_district_materials_and_reverse_camera"
           python - <<'PY'
           import json
           from pathlib import Path
@@ -104,6 +105,18 @@ jobs:
           names=["near_front","near_rear","mid_oblique","far_street","near_front_relight"]
           assert [x["shot"] for x in report["rendered_views"]]==names
           assert len({x["actual_png_sha256"] for x in report["rendered_views"]})==5
+          district=json.loads((root/"district_audit.json").read_text("utf8"))
+          assert district["passed"] is True
+          assert district["original_instance_source_count"]==6
+          assert district["actual_visible_original_buildings"]==6
+          assert district["actual_imported_first_party_meshes"]==60
+          assert district["actual_principled_pbr_materials"]>=3
+          assert district["original_point_instancer_not_rewritten"] is True
+          assert district["director_cinematic_look_approved"] is False
+          for shot in ("street_front","street_reverse"):
+              with Image.open(root/f"district_{shot}.png") as im:
+                  assert im.format=="PNG" and im.size==(480,270)
+                  im.verify()
           for shot in names:
               with Image.open(root/f"{shot}.png") as im:
                   assert im.format=="PNG"
@@ -130,6 +143,13 @@ jobs:
                   sheet.paste(im,pos)
               draw.text((pos[0]+7,pos[1]+7),name,fill=(250,240,214))
           sheet.save(root/"actual_original_lod_lighting_contact_sheet.png")
+          # Show the real E1 instanced district compiled to native 3D
+          # alongside the original single-building Cycles look ladder.
+          district=Image.new("RGB",(960,270),(24,30,36))
+          for i,shot in enumerate(("street_front","street_reverse")):
+              with Image.open(root/f"district_{shot}.png") as original:
+                  district.paste(original.convert("RGB"),(i*480,0))
+          district.save(root/"actual_original_district_reverse_angle_pair.png")
           PY
       - uses: actions/upload-artifact@v4
         if: always()
