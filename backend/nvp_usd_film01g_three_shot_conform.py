@@ -17,7 +17,7 @@ import subprocess
 FPS = 24
 FRAMES_PER_SHOT = 240
 TOTAL_FRAMES = 720
-FRAME_NAME = re.compile(r"^frame_[0-9]{4}\\.png$")
+FRAME_NAME = re.compile(r"^frame_[0-9]{4}\.png$")
 SHOT_NAMES = ("establishing", "action", "detail")
 
 
@@ -170,7 +170,7 @@ def conform_short(shots: list[FilmShot], *, ticks_per_second: int,
         # Use an explicit safe concat list of files created inside the new
         # output directory; no external text is evaluated by FFmpeg.
         concat = output/"edit_list.txt"
-        concat.write_text("".join(f"file '{p.name}'\\n" for p in clips), "utf8")
+        concat.write_text("".join(f"file '{p.name}'\n" for p in clips), "utf8")
         picture = output/"picture_workprint.mkv"
         _run([ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error",
               "-f", "concat", "-safe", "1", "-i", str(concat),
