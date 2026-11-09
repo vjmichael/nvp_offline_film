@@ -13,6 +13,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 
@@ -152,12 +153,21 @@ def stage_approved_original_shot(index:FilmIndex,pid,binding_id,folder):
         if set(actor_geometry)!=initial_actor_paths:
             raise RuntimeError("Original actor source shape changed")
         output=src.Flatten(addSourceFileComment=False)
-        if not output.Export(str(job/USD)):
+        # Do not write a live-cached Sdf layer in place and then mistake
+        # another Stage.Open() of the cached identifier for disk readback.
+        pending=job/"combined-original-shot.pending.usda"
+        if not output.Export(str(pending)):
             raise RuntimeError("Combined original 3D USD shot cannot export")
+        os.replace(pending,job/USD)
         derived.unlink()
         if not 100<(job/USD).stat().st_size<=MAX_RENDER_STAGE:
             raise MemoryError("Combined 3D film snapshot exceeds source render budget")
-        reopened=Usd.Stage.Open(str(job/USD),load=Usd.Stage.LoadAll)
+        # Anonymous imported bytes force an INDEPENDENT read of the exact
+        # exported file even if the original Sdf layer is still cached.
+        physical=Sdf.Layer.CreateAnonymous("original-district-disk-readback.usda")
+        if not physical.ImportFromString((job/USD).read_text("utf8")):
+            raise RuntimeError("Derived USD file could not parse from disk bytes")
+        reopened=Usd.Stage.Open(physical,load=Usd.Stage.LoadAll)
         if not reopened:
             raise RuntimeError("Combined original native USD shot cannot reopen")
         checked,materials=_view_material_count(reopened,district_path)
