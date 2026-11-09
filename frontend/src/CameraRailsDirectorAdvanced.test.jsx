@@ -162,8 +162,8 @@ describe('CAM-FX-03/04 installed director native source/AI recovery',()=>{
       name:'Read actual original USD ActorID framing and bounded occlusion'}));
     await screen.findByRole('region',{
       name:'Verified original ActorID scene and ray guidance'});
-    expect(screen.getByText(/ActorID SourceActorOne/)).toBeTruthy();
-    expect(screen.getByText(/Full frame visibility never certified by one ray/)).toBeTruthy();
+    expect(screen.getAllByText(/ActorID SourceActorOne/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Full frame visibility never certified by one ray/).length).toBe(3);
     expect(screen.getByRole('img',{
       name:'Editable 3D projected original camera rail and source ActorID bounds'})).toBeTruthy();
     expect(host.camfx03_scene_guidance.mock.calls[0][0].actor_id).toBe(null);
