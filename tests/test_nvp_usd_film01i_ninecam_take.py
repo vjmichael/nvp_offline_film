@@ -1175,6 +1175,146 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             "director_visual_acceptance":False},
             sort_keys=True,indent=2),"utf8")
 
+    def test_01t_complete_real_720_selected_original_frames_and_pcm(self):
+        """Heavy actual native acceptance; never manufacture a 30s movie."""
+        import os
+        import shutil
+        import subprocess
+        import json
+        from PIL import Image,ImageOps,ImageDraw
+        from backend.nvp_blender_worker import (
+            BlenderWorkerSupervisor,sha_file)
+        from backend.nvp_usd_film01s_adaptive_batch import BatchPreferences
+        from backend.nvp_usd_film01t_selected_queue import OriginalSelectedFilmBatch
+        from backend.nvp_usd_film01r_quality import reviewed_quality
+        from backend.nvp_resource_ledger import TaskLedger
+        binary=os.environ.get("NVP_FILM01T_FULL_BLENDER_BIN")
+        if not binary:
+            self.skipTest("Heavy original 720-frame Blender film only in explicit native CI")
+        executable=Path(binary).resolve(strict=True)
+        version=subprocess.run(
+            [str(executable),"-b","--version"],capture_output=True,
+            text=True,check=True,timeout=30).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        ffmpeg=shutil.which("ffmpeg")
+        ffprobe=shutil.which("ffprobe")
+        if not ffmpeg or not ffprobe:
+            raise RuntimeError("Actual original film needs native FFmpeg/FFprobe")
+        self._selected_original_edit()
+        native_root=self.root/"nvp01t_original_720_source_jobs"
+        queue_dir=self.root/"nvp01t_original_720_queue"
+        ledger=TaskLedger(self.root/"nvp01t_native_measured_resource_ledger")
+        action="CI_DISPOSABLE_SOURCE_720_FRAME_BATCH_TEST"
+        permitted={
+            "nvp.film01t.enqueue_original_selected_scene.v1",
+            "nvp.film01t.approve_exact_original_selected_group.v1",
+            "nvp.film01q.conform_original_selected_film.v1"}
+        approve=lambda event,scope:(
+            event==action and scope.get("operation") in permitted)
+        supervisor=BlenderWorkerSupervisor(
+            native_root,blender_executable=executable,
+            blender_sha256=sha_file(executable),
+            blender_version=version,activity_ledger=ledger)
+        def host_for(owned_supervisor):
+            return OriginalSelectedFilmBatch(
+                self.index,owned_supervisor,queue_workspace=queue_dir,
+                verify_director_action=approve,
+                prove_process_custody=lambda *_:False,
+                render_quality="technical_smoke")
+        h=host_for(supervisor)
+        preferences=BatchPreferences(
+            shots_per_batch=12,parallel_worker_limit=1,
+            renderer="cpu",preview_worker_ram_mb=768,
+            final_worker_ram_mb=reviewed_quality(
+                "technical_smoke")["max_worker_ram_mb"])
+        original_edit="DataFirstOriginalSelectedShort"
+        prepared=h.prepare(self.pid,original_edit,1,preferences)
+        self.assertEqual(prepared["expected_selected_frames"],720)
+        self.assertEqual(len(prepared["wrapped_queue"]["plan"]["source_shots"]),90)
+        initial=h.enqueue(prepared,director_event=action)
+        self.assertEqual(initial["progress_required"],180)
+        self.assertEqual(initial["progress_completed"],0)
+        count=0
+        while True:
+            status=h.status(self.pid,original_edit,1)["queue"]
+            if status["all_shots_finished"]:
+                break
+            if count>20:
+                raise RuntimeError("Complete original source film exceeded bounded 16 group jobs")
+            result=h.advance_group(self.pid,original_edit,1,
+                                   director_event=action)
+            if (result.get("state")!="APPROVED_GROUP_ADVANCED" or
+                result.get("verified_shots_in_this_action",0)<1):
+                raise RuntimeError("Actual 30s source-shot queue stalled: "+str(result))
+            self.assertEqual(result["authorized_shots"],
+                             result["verified_shots_in_this_action"])
+            print("01T source movie progress",
+                  result["quality"],result["queue"]["progress_completed"],
+                  "/ 180 actual original source tickets",flush=True)
+            count+=1
+            if count==1:
+                # Reopen on the same source and native SQLite records.
+                # Nothing is automatically re-authorized on restart.
+                h=host_for(BlenderWorkerSupervisor(
+                    native_root,blender_executable=executable,
+                    blender_sha256=sha_file(executable),
+                    blender_version=version,activity_ledger=ledger))
+                self.assertEqual(
+                    h.status(self.pid,original_edit,1)["queue"][
+                        "progress_completed"],12)
+        self.assertEqual(count,16)
+        final_state=h.status(self.pid,original_edit,1)["queue"]
+        self.assertEqual(final_state["states"]["SUCCEEDED"],180)
+        self.assertEqual(final_state["states"]["QUEUED"],0)
+        self.assertEqual(len(h.finished_source_frames(
+            self.pid,original_edit,1)),90)
+        destination=Path(os.environ.get(
+            "NVP_FILM01T_ARTIFACT_DIR",
+            str(self.root/"nvp01t_complete_original_film"))).resolve()
+        destination.mkdir(parents=True,exist_ok=True)
+        pictures=destination/"genuine_selected_720_source_frames"
+        output=destination/"verified_original_film_with_pcm"
+        finished=h.conform(
+            self.pid,original_edit,1,pictures_dir=pictures,
+            destination_dir=output,
+            ffmpeg=ffmpeg,ffprobe=ffprobe,director_event=action)
+        self.assertEqual(finished["native_selected_frames_verified"],720)
+        self.assertEqual(finished["native_selected_chunks_verified"],90)
+        self.assertTrue(finished["decoded_film_picture_and_pcm_verified"])
+        self.assertFalse(finished["director_picture_audio_approval"])
+        self.assertTrue((output/finished["film_file"]).is_file())
+        self.assertEqual(sha_file(output/finished["film_file"]),
+                         finished["final_original_picture_audio_sha256"])
+        frames=[pictures/f"frame_{frame:04d}.png"
+                for frame in (0,3,4,79,239,360,480,719)]
+        for frame in frames:
+            with Image.open(frame) as image:
+                self.assertEqual(image.size,(320,180))
+                image.verify()
+        self.assertGreater(len({sha_file(frame) for frame in frames}),3)
+        contact=Image.new("RGB",(640,720),(22,27,31))
+        draw=ImageDraw.Draw(contact)
+        for j,source in enumerate(frames):
+            with Image.open(source) as image:
+                contact.paste(image.convert("RGB"),
+                    ((j%2)*320,(j//2)*180))
+            draw.text(((j%2)*320+6,(j//2)*180+6),
+                      source.stem,fill=(252,245,220))
+        contact.save(destination/"actual_original_camera_cut_contact_sheet.png")
+        (destination/"complete_native_30s_film_receipt.json").write_text(
+            json.dumps({
+                "format":"nvp.usd_film01t.real_720_original_selected_film.v1",
+                "source_720_blender_cycles_pixels":True,
+                "unique_native_source_chunks_reverified":90,
+                "queue_original_source_tickets_independently_verified":180,
+                "source_actor_performance_count":1,
+                "unselected_camera_rolls_rendered":0,
+                "original_pcm_48khz_redecoded_and_sha_checked":True,
+                "actual_film_sha256":finished[
+                    "final_original_picture_audio_sha256"],
+                "director_creative_approval":False},
+                sort_keys=True,indent=2),"utf8")
+
     def test_camera_swap_and_wrong_scene_are_not_new_source_performances(self):
         forged=deepcopy(self.camera_shots)
         forged[1]["shot_id"]=forged[0]["shot_id"]
