@@ -40,8 +40,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_openusd_scene.py backend/nvp_usd_film01i_ninecam_take.py backend/nvp_usd_film01j_ninecam_edit.py tests/test_nvp_usd_film01i_ninecam_take.py tests/test_nvp_usd_film01j_ninecam_edit.py
-      - name: Native original actors, 9 lens/orientation cameras, immutable source and SQLite restart
+          python -m compileall -q backend/nvp_openusd_scene.py backend/nvp_usd_film01i_ninecam_take.py backend/nvp_usd_film01j_ninecam_edit.py backend/nvp_usd_film01k_blender_animation_build.py tests/test_nvp_usd_film01i_ninecam_take.py tests/test_nvp_usd_film01j_ninecam_edit.py
+      - name: Native source 9 cameras, 720-frame USD animation bake, original actors and SQLite restart
         shell: bash
         run: |
           set -euo pipefail
