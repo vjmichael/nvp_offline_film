@@ -17,6 +17,7 @@ import shutil
 from backend.nvp_blender_worker import (
     BlenderOperation,BlenderWorkerSupervisor,sha_file)
 from backend.nvp_film_index import FilmIndex,_id
+from backend.nvp_usd_film01r_quality import reviewed_quality,quality_hash
 from backend.nvp_usd_film01o_recoverable_camera_roll_host import (
     RecoverableOriginalCameraRolls)
 from backend.nvp_usd_film01o_original_camera_roll_source import (
@@ -34,25 +35,31 @@ AUDIT="audit.json"
 AUDIT_FORMAT="nvp.usd_film01q.native_selected_view_cycles_chunk_audit.v1"
 FILM_FORMAT="nvp.usd_film01q.selected_original_720frame_film_with_pcm.v1"
 
-def chunk_job_id(edit_document_sha256,start,attempt=1):
+def chunk_job_id(edit_document_sha256,start,attempt=1,render_profile_sha256=None):
     if (type(start) is not int or start not in range(0,FRAMES,CHUNK) or
         type(attempt) is not int or not 1<=attempt<=99 or
         type(edit_document_sha256) is not str or
         len(edit_document_sha256)!=64 or any(c not in "0123456789abcdef"
                                            for c in edit_document_sha256)):
         raise ValueError("Exact source edit, chunk and one bounded attempt required")
-    return f"filmQ_{edit_document_sha256[:20]}_{start:04d}_a{attempt:02d}"
+    profile=render_profile_sha256 or quality_hash(reviewed_quality("technical_smoke"))
+    if (type(profile) is not str or len(profile)!=64 or
+        any(c not in "0123456789abcdef" for c in profile)):
+        raise ValueError("Only source-hashed original film render profiles are admitted")
+    return f"filmQ_{edit_document_sha256[:12]}_{profile[:8]}_{start:04d}_a{attempt:02d}"
 
 
 class ReviewedSelectedViewFilm:
     def __init__(self,index:FilmIndex,supervisor:BlenderWorkerSupervisor,
-                 *,verify_director_action,prove_process_custody):
+                 *,verify_director_action,prove_process_custody,
+                 render_quality='technical_smoke'):
         if (not isinstance(index,FilmIndex) or
             not isinstance(supervisor,BlenderWorkerSupervisor) or
             not callable(verify_director_action) or
             not callable(prove_process_custody)):
             raise TypeError("Original source FilmIndex, existing native broker and host approvals required")
         self.index=index
+        self.render_quality=reviewed_quality(render_quality)['name']
         self.supervisor=supervisor
         self.approve=verify_director_action
         self.custody=prove_process_custody
@@ -68,7 +75,8 @@ class ReviewedSelectedViewFilm:
             pid,edit["camera_bank_id"],edit["camera_bank_revision"])
         planned=selected_render_plan(
             self.index,pid,edit_id,revision,
-            original_source_directory=source_dir)
+            original_source_directory=source_dir,
+            render_quality=self.render_quality)
         record=self.index.read_revision(pid,edit_id,revision)
         if (planned["plan"]["edit_document_sha256"]!=record["document_sha256"]
             or planned["plan"]["source_bank_sha256"]!=
@@ -123,6 +131,10 @@ class ReviewedSelectedViewFilm:
             "original_performance_sha256":planned[
                 "plan"]["original_performance_sha256"],
             "start_frame":start,"frame_count":CHUNK,
+            "render_profile_sha256":planned["plan"]["render_profile_sha256"],
+            "render_resolution_x":planned["plan"]["render_profile"]["resolution_x"],
+            "render_resolution_y":planned["plan"]["render_profile"]["resolution_y"],
+            "render_samples":planned["plan"]["render_profile"]["samples"],
             "attempt":attempt,"native_rendered_frames":CHUNK,
             "passed":True}
         if any(receipt.get(k)!=v for k,v in fields.items()):
@@ -151,7 +163,9 @@ class ReviewedSelectedViewFilm:
                 row.get("camera_ray_mask_restored") is not True):
                 raise RuntimeError("A source-selected original frame receipt did not verify")
             with Image.open(picture) as image:
-                if image.format!="PNG" or image.size!=(320,180):
+                if image.format!="PNG" or image.size!=(
+                    planned["plan"]["render_profile"]["resolution_x"],
+                    planned["plan"]["render_profile"]["resolution_y"]):
                     raise RuntimeError("Selected viewpoint is not an actual expected PNG")
                 image.verify()
         return {
@@ -167,7 +181,8 @@ class ReviewedSelectedViewFilm:
         _id(edit_id,"reviewed source edit")
         source_dir,source,planned=self.source_plan(pid,edit_id,revision)
         edit_sha256=planned["plan"]["edit_document_sha256"]
-        job_id=chunk_job_id(edit_sha256,start,attempt)
+        job_id=chunk_job_id(edit_sha256,start,attempt,
+                            planned['plan']['render_profile_sha256'])
         try:
             previous=self.supervisor.inspect(job_id)
         except KeyError:
@@ -180,7 +195,8 @@ class ReviewedSelectedViewFilm:
         if attempt>1:
             histories=[]
             for a in range(1,attempt):
-                ident=chunk_job_id(edit_sha256,start,a)
+                ident=chunk_job_id(edit_sha256,start,a,
+                    planned['plan']['render_profile_sha256'])
                 try:
                     histories.append(self.supervisor.inspect(ident))
                 except KeyError:
@@ -207,7 +223,8 @@ class ReviewedSelectedViewFilm:
             "start_frame":start,"frame_count":CHUNK,"attempt":attempt,
             "camera_ids":[x["camera_id"] for x in selection],
             "selected_source_frames_sha256":spec["source_frames_sha256"],
-            "native_worker_job_id":job_id}
+            "native_worker_job_id":job_id,
+            "render_profile_sha256":planned["plan"]["render_profile_sha256"]}
         if self.approve(director_event,scope) is not True:
             raise PermissionError("Fresh director approval for exact EDL camera chunk required")
         job=self.supervisor.root/job_id
@@ -239,7 +256,8 @@ class ReviewedSelectedViewFilm:
                     MASK:file_sha(job/MASK)},
                 outputs=outputs,
                 arguments={"--manifest":"chunk.json","--audit":AUDIT},
-                timeout_seconds=600,memory_limit_mb=8192,
+                timeout_seconds=planned['plan']['render_profile']['timeout_seconds'],
+                memory_limit_mb=planned['plan']['render_profile']['max_worker_ram_mb'],
                 require_linux_cgroup_v2=False,gpu_memory_mb=0)
             self.supervisor._validate(op)
             actual=self.supervisor.run(op)
@@ -266,7 +284,8 @@ class ReviewedSelectedViewFilm:
         for start in range(0,FRAMES,CHUNK):
             attempt=attempts.get(start,1)
             job=chunk_job_id(planned["plan"]["edit_document_sha256"],
-                             start,attempt)
+                             start,attempt,
+                             planned["plan"]["render_profile_sha256"])
             try:
                 status=self.supervisor.inspect(job)
             except KeyError:
@@ -318,7 +337,8 @@ class ReviewedSelectedViewFilm:
         for start in range(0,FRAMES,CHUNK):
             attempt=attempts.get(start,1)
             ident=chunk_job_id(
-                planned["plan"]["edit_document_sha256"],start,attempt)
+                planned["plan"]["edit_document_sha256"],start,attempt,
+                planned["plan"]["render_profile_sha256"])
             checked.append(self._verify_completed(
                 ident,source_dir,source,planned,start,attempt))
         directory=Path(output_directory)
@@ -347,6 +367,7 @@ class ReviewedSelectedViewFilm:
                     "original_performance_sha256"],
                 "native_verified_frames":FRAMES,
                 "native_verified_chunks":CHUNKS,
+                "render_profile_sha256":planned["plan"]["render_profile_sha256"],
                 "source_selected_receipts_sha256":file_sha(
                     directory/"source_selected_receipts.json"),
                 "all_original_camera_rolls_required":False,
@@ -389,7 +410,8 @@ class ReviewedSelectedViewFilm:
                 row.get("rendered_png_sha256")!=file_sha(path)):
                 raise RuntimeError("Edited film pixels differ from source-locked EDL")
             job=chunk_job_id(planned["plan"]["edit_document_sha256"],(i//CHUNK)*CHUNK,
-                             int(row.get("native_worker_job_id","_a00")[-2:]))
+                             int(row.get("native_worker_job_id","_a00")[-2:]),
+                             planned["plan"]["render_profile_sha256"])
             if row.get("native_worker_job_id")!=job:
                 raise RuntimeError("Unrecognized restarted worker attempt")
             jobs[(i//CHUNK)*CHUNK]=job
