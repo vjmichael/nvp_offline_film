@@ -150,7 +150,8 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
 
     def test_native_technique_variants_have_exact_camera_matrix_not_just_style_tags(self):
         from backend.nvp_cam_fx02_usd_camera_layer import (
-            generate_camera_director_layer,camera_matrix_rows)
+            generate_camera_director_layer,camera_matrix_rows,
+            MM_PER_CAMERA_UNIT)
         from backend.nvp_cam_fx01_camera_rails import (
             normalize_rail,evaluate_rail)
         from pxr import Sdf
@@ -197,7 +198,7 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
                                 float(native[i][j]),expected[i][j],places=4)
                     self.assertAlmostEqual(
                         camera.GetFocalLengthAttr().Get(
-                            Usd.TimeCode(float(tick)))*10,
+                            Usd.TimeCode(float(tick)))*MM_PER_CAMERA_UNIT,
                         sample["focal_length_mm"],places=3)
 
     def test_stale_unpublished_foreign_time_and_dirty_job_fail_closed(self):
