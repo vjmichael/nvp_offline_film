@@ -78,6 +78,21 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             self.pid,"NewRecordedSpeech",1)["data"]["sample_count"],
                          48000)
 
+    def test_journal_rejects_cross_batch_identity_reuse(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        journal = FilmingPublicationJournal(self.index)
+        journal.begin(self.pid, "ReservedTake", "ReservedTimeline", ["ReservedSource"])
+        for take_id, timeline_id, source_id in (
+            ("OtherTake", "OtherTimeline", "ReservedSource"),
+            ("OtherTake", "ReservedTimeline", "OtherSource"),
+            ("ReservedSource", "OtherTimeline", "OtherSource"),
+        ):
+            with self.subTest(take_id=take_id, timeline_id=timeline_id, source_id=source_id):
+                with self.assertRaisesRegex(ValueError, "reserved"):
+                    journal.begin(self.pid, take_id, timeline_id, [source_id])
+        self.assertEqual([entry["take_id"] for entry in journal.unresolved(self.pid)],
+                         ["ReservedTake"])
+
     def test_denied_take_is_not_falsely_frozen(self):
         capture=NativeSceneSoundCapture(
             self.index,approve_take=lambda event,scope:False)
