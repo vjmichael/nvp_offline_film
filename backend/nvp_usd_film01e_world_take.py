@@ -538,14 +538,54 @@ class OpenUSDWorldTakeCapture:
         # can appear in multiple original sound/voice events in one film.
         dedup={(e["object_id"],e["revision"]):e for e in edges}
         edges=[dedup[k] for k in sorted(dedup)]
+        source_shas = {
+            (e["object_id"],e["revision"]):
+                self.index.read_revision(
+                    pid,e["object_id"],e["revision"])["document_sha256"]
+            for e in edges
+        }
+        if (source_shas[(world_id,world_revision)]!=world["document_sha256"] or
+            source_shas[(shot_id,shot_revision)]!=shot["document_sha256"] or
+            any(source_shas[(x["take_id"],1)]!=x["take_sha256"] for x in takes)):
+            raise RuntimeError("World Take source SHA changed before publication")
         def guard(db):
             for e in edges:
                 row=db.execute(
                     "SELECT document_sha FROM film_object_revisions "
                     "WHERE project_id=? AND object_id=? AND revision=?",
                     (pid,e["object_id"],e["revision"])).fetchone()
-                if row is None:
-                    raise RuntimeError("World Take original source lost at commit")
+                if (row is None or row["document_sha"] !=
+                    source_shas[(e["object_id"],e["revision"])]):
+                    raise RuntimeError("World Take original source changed at commit")
+            # First freeze must observe exactly the cast and VoiceID history
+            # it already sampled. Later recasts remain allowed; old source
+            # and historical VoiceID are not updated.
+            for actor in cast:
+                linked=db.execute(
+                    "SELECT 1 FROM nvp_bible_actor_links WHERE "
+                    "project_id=? AND actor_id=? AND role='actor_prim' "
+                    "AND source_family='filmindex' AND target_id=? "
+                    "AND target_revision=1 AND actor_prim_path=? "
+                    "AND source_sha256=? AND status='active' LIMIT 1",
+                    (pid,actor["actor_id"],actor["source_take_id"],
+                     actor["original_actor_prim"],
+                     actor["source_take_sha256"])).fetchone()
+                if linked is None:
+                    raise RuntimeError("Actor's original source link changed during freeze")
+                latest=db.execute(
+                    "SELECT voice_id,cast_revision,reference_audio_sha256 "
+                    "FROM nvp_bible_voice_casts WHERE project_id=? AND "
+                    "actor_id=? ORDER BY cast_revision DESC LIMIT 1",
+                    (pid,actor["actor_id"])).fetchone()
+                expected=(
+                    actor["voice_id"],actor["voice_cast_revision"],
+                    actor["voice_reference_sha256"])
+                observed=(
+                    (latest["voice_id"],latest["cast_revision"],
+                     latest["reference_audio_sha256"])
+                    if latest is not None else (None,None,None))
+                if expected != observed:
+                    raise RuntimeError("Actor VoiceID changed during world Take freeze")
         return self.index.register_revision(
             pid,take_id,"take",doc,expected_revision=0,
             dependencies=edges,precommit_guard=guard)
