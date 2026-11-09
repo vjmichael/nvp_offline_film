@@ -71,6 +71,11 @@ class OriginalDistrictDrafts:
             );
             CREATE INDEX IF NOT EXISTS idx_film02mf_project
               ON authoring_drafts(project_id,updated_at);
+            CREATE TABLE IF NOT EXISTS authoring_model_evidence(
+              draft_id TEXT PRIMARY KEY,
+              evidence_json TEXT NOT NULL,
+              FOREIGN KEY(draft_id) REFERENCES authoring_drafts(draft_id)
+            );
             """)
 
     @contextmanager
@@ -121,8 +126,10 @@ class OriginalDistrictDrafts:
                 len(draft_id)==24 and all(x in "0123456789abcdef"
                                           for x in draft_id)):
             raise PermissionError("Only host-minted original proposal identity")
-        row=db.execute("""SELECT * FROM authoring_drafts
-                          WHERE draft_id=? AND project_id=?""",
+        row=db.execute("""SELECT d.*,e.evidence_json AS model_evidence_json
+                          FROM authoring_drafts d
+                          LEFT JOIN authoring_model_evidence e ON e.draft_id=d.draft_id
+                          WHERE d.draft_id=? AND d.project_id=?""",
                        (draft_id,pid)).fetchone()
         if row is None:
             raise KeyError("Unknown project-bound original scene proposal")
@@ -154,6 +161,9 @@ class OriginalDistrictDrafts:
             "format":FORMAT,"draft_id":row["draft_id"],
             "project_id":row["project_id"],"district_id":row["district_id"],
             "proposed_by":row["proposed_by"],
+            "observed_model_evidence": (
+                json.loads(row["model_evidence_json"])
+                if row.get("model_evidence_json") else None),
             "base_revision":row["base_revision"],
             "base_source_sha256":row["base_sha"] or None,
             "version":row["version"],"state":row["state"],
@@ -218,8 +228,10 @@ class OriginalDistrictDrafts:
                 continue
             if len(districts)>=24:break
         with self._db() as db:
-            drafts=db.execute("""SELECT * FROM authoring_drafts
-                WHERE project_id=? ORDER BY updated_at DESC LIMIT 40""",
+            drafts=db.execute("""SELECT d.*,e.evidence_json AS model_evidence_json
+                FROM authoring_drafts d
+                LEFT JOIN authoring_model_evidence e ON e.draft_id=d.draft_id
+                WHERE d.project_id=? ORDER BY d.updated_at DESC LIMIT 40""",
                 (pid,)).fetchall()
         return {
             "format":"nvp.usd_film02m_f.native_source_catalog.v1",
@@ -230,11 +242,24 @@ class OriginalDistrictDrafts:
             "original_film_takes_modified":False}
 
     def create(self,pid,district_id,*,expected_revision,params,
-               proposed_by):
+               proposed_by,model_evidence=None):
         _require_pid(pid)
         _id(district_id,"original film district proposed ID")
         if proposed_by not in ("director","ai"):
             raise PermissionError("A proposal needs an explicit director/AI provenance")
+        if model_evidence is not None:
+            from backend.nvp_usd_film02m_g_model_world_candidate import FORMAT as MODEL_FORMAT
+            if (proposed_by!="ai" or type(model_evidence) is not dict or
+                model_evidence.get("format")!=MODEL_FORMAT or
+                model_evidence.get("status")!="GENERATED_UNAPPROVED" or
+                model_evidence.get("project_id")!=pid or
+                model_evidence.get("district_id")!=district_id or
+                model_evidence.get("expected_revision")!=expected_revision or
+                model_evidence.get("params")!=params or
+                model_evidence.get("creative_approval_granted") is not False or
+                model_evidence.get("worker_authorization_granted") is not False or
+                model_evidence.get("proposal_durable") is not False):
+                raise PermissionError("Host-bound source model evidence does not match draft")
         with self.lock:
             base=self._base(pid,district_id,expected_revision)
             # A new director proposal based on an approved revision must
@@ -259,6 +284,10 @@ class OriginalDistrictDrafts:
                     (draft_id,pid,district_id,proposed_by,expected_revision,
                      base or "",_json(params),_json(base_ops),"[]",_sha(plan),
                      receipt["district_root_sha256"],stamp,stamp))
+                if model_evidence is not None:
+                    db.execute("""INSERT INTO authoring_model_evidence(
+                        draft_id,evidence_json) VALUES(?,?)""",
+                        (draft_id,_json(model_evidence)))
                 db.commit()
             return self.reopen(pid,draft_id)
 
