@@ -1,0 +1,154 @@
+name: NVP CAM-FX-03/04 Source Actor Framing, 3D Gizmos, Durable Camera Drafts and AI Group
+
+# ONE manual group-end gate. No per-commit jobs or automatic branch PR runs.
+# CAM-FX-05 moving-Cycles camera work has a separate later acceptance.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-actor-guidance:
+    name: Real ActorID/district USD framing, native camera, SQLite recovery, local model contracts / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 115
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Native OpenUSD, original film source, SQLite and HTTP contract dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11' Pillow numpy
+          python -m pip install pytest httpx
+      - name: Compile exact native camera source, installed host, model and durable journal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q             backend/nvp_cam_fx01_camera_rails.py             backend/nvp_cam_fx02_usd_camera_layer.py             backend/nvp_cam_fx03_source_guidance.py             backend/nvp_cam_fx03_durable_drafts.py             backend/nvp_cam_fx03_04_desktop_mixin.py             backend/nvp_cam_fx04_model_camera_candidate.py             backend/nvp_wo6_verified_local_model.py             backend/nvp_usd_film02m_f_desktop_mixin.py             tests/test_nvp_cam_fx03_04_native_director.py
+      - name: Genuine native actor bounds, real approved building ray-triangle geometry and original immutable PCM
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_cam_fx03_04_native_director.py -v
+          python -m unittest discover -s tests -p test_nvp_cam_fx01_02_native_rails.py -v
+      - name: Loopback schema provider receipts are untrusted; no native approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_wo6_verified_local_model.py -v
+
+  original-director-react:
+    name: Orbitable 3D original ActorID rail handles, exact-tick source guidance, SQLite autosave and cancellable AI proposals
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install existing NVP offline director React tests
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Prove 3D projected handles, native source bounded framing and durable AI source-revision UX contracts
+        working-directory: frontend
+        run: npm run test:ui -- src/CameraRailGizmo.test.jsx src/CameraRailsDirectorAdvanced.test.jsx src/CameraRailsDirector.test.jsx src/ModularWorldDirector.test.jsx
+      - name: Build actual bundled offline WebView2 director and check source controls
+        working-directory: frontend
+        run: npm run build
+      - name: Refuse shipment of UI without native 3D/durable source and OS grant boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -l '3D director rail editor' frontend/dist/assets/*.js >/dev/null
+          grep -R -l 'Create source-bound durable camera-rail draft' frontend/dist/assets/*.js >/dev/null
+          grep -R -l 'Read actual original USD ActorID framing' frontend/dist/assets/*.js >/dev/null
+          grep -R -l 'Suggest and save unapproved source-grounded AI camera rail' frontend/dist/assets/*.js >/dev/null
+          grep -R -l 'OS approve exact saved and source-verified camera rail draft' frontend/dist/assets/*.js >/dev/null
+
+  installed-windows-director:
+    name: Actual NSIS installed WebView2 3D rail/draft/AI source IPC with preserved filmmaker data
+    runs-on: windows-2025
+    timeout-minutes: 135
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install real USD, NSIS and protected desktop runtime
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { throw 'NVP native foundation unavailable' }
+          python -m pip install --only-binary=:all: 'usd-core==26.11' Pillow numpy
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows USD unavailable' }
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19' pytest httpx
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows WebView2 test dependencies unavailable' }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Real NSIS unavailable' }
+      - name: Build and test native original director with 3D camera rails
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Native installed React dependencies failed' }
+          npm run test:ui -- src/CameraRailGizmo.test.jsx src/CameraRailsDirectorAdvanced.test.jsx
+          if ($LASTEXITCODE -ne 0) { throw 'Real installed director source editor DOM gate failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Native installed NVP bundle failed' }
+          Pop-Location
+      - name: Freeze verified first-party NVP.exe with actual WebView2 and source render workers
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --add-data 'tools/nvp_usd_film01f_blender_worker.py;tools' --add-data 'tools/nvp_usd_film02mh_blender_reopen.py;tools' --collect-all webview --collect-all pxr --collect-submodules backend tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native NVP.exe PyInstaller build failed' }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --require-original-cycles-02mh --report "$env:RUNNER_TEMP/camfx034-native-bundle.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Native movie source or protected Cycles script is not packaged' }
+      - name: Install and exercise actual WebView2 native IPC, 3D gizmo and SQLite/model draft controls
+        shell: pwsh
+        run: |
+          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'Actual NSIS source camera installer failed' }
+          $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
+          $process=Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Installed NVP director did not install' }
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          if (-not (Test-Path $installed)) { throw 'Native NVP.exe not installed' }
+          if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) { throw 'Installed app does not match verified NVP bundle' }
+          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'camfx034-original-film-data'
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'camfx034-installed-webview2.log'
+          $env:NVP_CAMFX034_GROUP_ACCEPTANCE='1'
+          & $installed --smoke-window
+          if ($LASTEXITCODE -ne 0) { throw 'Real installed source director 3D editor and native IPC failed' }
+          $log=Get-Content "$env:RUNNER_TEMP/camfx034-installed-webview2.log" -Raw
+          if (-not $log.Contains('camfx034_installed_gizmo_durable_ai_controls_verified_no_worker_started')) { throw 'No actual 3D gizmo / durable model and one-use OS native source controls' }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'Installed source film project was never persisted' }
+          $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
+          $un=Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
+          if ($un.ExitCode -ne 0) { throw 'NSIS uninstall failed' }
+          Start-Sleep -Seconds 2
+          if (Test-Path $installed) { throw 'Installed native app survived uninstall' }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted the original filmmakers film data' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: camfx034-windows-installed-source-editor-and-3d-camera-rail-smoke
+          path: |
+            ${{ runner.temp }}/camfx034-native-bundle.json
+            ${{ runner.temp }}/camfx034-installed-webview2.log
+          if-no-files-found: warn
+          retention-days: 14
