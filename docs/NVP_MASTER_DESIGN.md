@@ -330,6 +330,16 @@ Each line has a canonical speaker and approved voice identity; synthetic voice u
 
 Editorial references immutable take versions by stable clip ID, source in/out frame, rate, audio stem ID, transition and approval. OpenTimelineIO is a candidate interchange, not a dependency already deployed. A cut points to source takes; it cannot quietly erase the underlying production state. Final video requires real frame encoding, coherent audio sync, project/source manifest, and independent decode/playback inspection.
 
+### 8.x Director-owned camera rails and cinematic technique language (creator decision, 2026-11-09)
+
+- **Film Time is authoritative.** New CAM-FX virtual camera rigs/rails are exact-time source-linked data, not prerecorded footage or a new actor performance. Keyed 3D control nodes/eases/targets/roll/lens/focus are bounded, deterministic, versioned and individually director-editable.
+- **Native OpenUSD scene rule:** rail and shot-camera overrides are authored to a distinct stronger director opinion layer; never rewrite the authoritative original camera/actor/PCM or source Take. The user can move a rail and compare results while the identical frozen 01E actors repeat at original Film Time.
+- **Film grammar:** add source-verified built-in shot techniques beyond wide/medium/close—establishing, two-shot, POV, OTS, reaction, insert; dolly/truck/crane/orbit/reveal/track; pan/tilt/Dutch/zoom/whip, rack focus/dolly zoom, handheld and compounded movement—with arbitrary user changes and explicit approval.
+- **AI operates as adviser only:** typed defaults, verified native geometry/camera path and scene/actor SHA, never direct arbitrary script or authorization. Real installed editor 01R/P0-F-01 owns interaction, independent OS approval and recovery.
+- **Rendering:** Blender/Cycles is the existing production worker for actual camera FX, depth of field, motion blur, shading and occlusion. Native USD transform tests do not prove photorealism.
+- **Current status:** CAM-FX-01–05 planned; original 02M-F/G/H acceptance run 42650335958 queued when first inspected. Source-specific acceptance and sequencing: [NVP camera-rails task plan](NVP_CAMERA_RAILS_SHOT_FX_AND_P0F01_SEQUENTIAL_PLAN_20261109.md).
+
+
 ## 9. Verification, quality and release gates
 
 **Evidence ladder:** static schema/AST → local unit tests → integration and restart tests → native engine save/reopen plus independent audit → licensed external asset acceptance → rendered media QA → end-to-end playable film → target-OS user and hardware acceptance. Passing one level does not imply later levels.
