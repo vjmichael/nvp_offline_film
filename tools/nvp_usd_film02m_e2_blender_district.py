@@ -31,10 +31,16 @@ def main():
     if "--" not in sys.argv:
         raise PermissionError("Reviewed NVP district render worker only")
     argv=sys.argv[sys.argv.index("--")+1:]
-    if (argv!=["--manifest","manifest.json","--audit","audit.json"] and
-        argv!=["--audit","audit.json","--manifest","manifest.json"]):
+    if len(argv)!=4 or set(argv[::2])!={"--manifest","--audit"}:
         raise PermissionError("Only fixed NVP film district render contract")
+    args=dict(zip(argv[::2],argv[1::2]))
     root=Path.cwd().resolve(strict=True)
+    if (Path(args["--manifest"]).resolve()!=root/"manifest.json" or
+        Path(args["--audit"]).resolve()!=root/"audit.json" or
+        (root/"manifest.json").is_symlink() or
+        (root/"audit.json").is_symlink()):
+        raise PermissionError(
+            "Original district worker only accepts NVP host-approved paths")
     spec=json.loads((root/"manifest.json").read_text("utf8"))
     if (type(spec) is not dict or spec.get("format")!=SOURCE_FORMAT or
         spec.get("compiled_from_source_no_actor_performance_modification") is not True or
