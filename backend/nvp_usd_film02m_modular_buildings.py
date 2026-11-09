@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from hashlib import sha256
 import json
 import math
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -38,6 +39,7 @@ MIN_SIZE=.025
 MAX_SIZE=500
 MAX_STAGING=32*1024*1024
 EPS=.001
+PRIM_TOKEN=re.compile(r'[A-Za-z][A-Za-z0-9_]{0,49}\\Z')
 
 
 def _sha(payload):
@@ -255,6 +257,8 @@ class OriginalBuildingKit:
                     "own_socket","yaw_deg","root_position_m"}:
                 raise ValueError("Typed ordered building assembly node required")
             node=_id(part["node_id"],"original building node")
+            if not PRIM_TOKEN.fullmatch(node):
+                raise ValueError("Building node ID must be a safe native USD prim token")
             if node in by_id:
                 raise ValueError("Duplicate piece in original building")
             yaw=part["yaw_deg"]
@@ -334,7 +338,9 @@ class OriginalBuildingKit:
         styles={x["style_family"] for x in placements}
         if len(styles)!=1:
             raise ValueError("All original building pieces must share an approved style")
-        return placements,list(dependencies.values())
+        return placements,sorted(
+            dependencies.values(),key=lambda x:(
+                x["object_id"],x["revision"],x["role"]))
 
     def publish_building(self,pid,building_id,*,seed,blueprint,
                          expected_revision=0,director_event):
@@ -466,10 +472,16 @@ class OriginalBuildingKit:
         if record["kind"]!="world" or doc.get("format")!=BUILD_FORMAT:
             raise PermissionError("Original modular architecture world not published")
         placed,edges=self._resolve(pid,doc["seed"],doc["blueprint"])
-        compare={k:v for k,v in doc.items() if k not in (
-            "original_usd_root_sha256","actual_reopened_mesh_count",
-            "source_references_reopened")}
-        if (doc.get("placements")!=placed or
+        if (doc.get("coordinate_system")!="meters_Z_up" or
+            doc.get("meters_per_unit")!=1.0 or
+            doc.get("source_dependencies_only") is not True or
+            doc.get("original_actors_untouched") is not True or
+            doc.get("real_3d_source_not_flat_facade") is not True or
+            doc.get("external_usd_paths_authoritative") is not False or
+            doc.get("renderer_pixels_verified") is not False or
+            doc.get("source_geometry_quality_accepted") is not False or
+            doc.get("style_family")!=placed[0]["style_family"] or
+            doc.get("placements")!=placed or
             doc.get("module_count")!=len(placed) or
             doc.get("building_id")!=building_id or
             record["dependencies"]!=edges):
