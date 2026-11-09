@@ -73,25 +73,27 @@ class FilmingPublicationJournal:
         _require_pid(project_id)
         _id(take_id, "filming take")
         state = "COMPLETED" if completed else "INTERRUPTED"
-        # A success receipt must not be issued for an incomplete publication.
-        # Inspect immutable revisions before changing the journal state; failure
-        # leaves PREPARING visible to restart reconciliation.
-        if completed:
-            with self.index.studio._connection() as db:
-                row = db.execute("""SELECT sound_timeline_id,source_ids_json
-                    FROM nvp_filming_publications WHERE project_id=? AND take_id=?
-                    AND state='PREPARING'""", (project_id,take_id)).fetchone()
-            if row is None:
-                raise RuntimeError("Filming publication journal state conflict")
-            identities = [take_id,row["sound_timeline_id"],
-                          *json.loads(row["source_ids_json"])]
-            for identity in identities:
-                try:
-                    self.index.read_revision(project_id,identity,1)
-                except KeyError as exc:
-                    raise RuntimeError("Cannot complete filming publication with missing immutable dependencies") from exc
+        # Hold the SQLite writer reservation throughout dependency validation
+        # and the terminal-state update. Previously validation used a separate
+        # connection before BEGIN IMMEDIATE, allowing an interleaved writer to
+        # change the observed publication state between those operations.
         with self.index.studio._connection() as db:
             db.execute("BEGIN IMMEDIATE")
+            row = db.execute("""SELECT sound_timeline_id,source_ids_json
+                FROM nvp_filming_publications WHERE project_id=? AND take_id=?
+                AND state='PREPARING'""", (project_id,take_id)).fetchone()
+            if row is None:
+                raise RuntimeError("Filming publication journal state conflict")
+            if completed:
+                identities = [take_id,row["sound_timeline_id"],
+                              *json.loads(row["source_ids_json"])]
+                for identity in identities:
+                    try:
+                        self.index.read_revision(project_id,identity,1)
+                    except KeyError as exc:
+                        raise RuntimeError(
+                            "Cannot complete filming publication with missing immutable dependencies"
+                        ) from exc
             cur = db.execute("""UPDATE nvp_filming_publications
                 SET state=?,updated_at=? WHERE project_id=? AND take_id=?
                 AND state='PREPARING'""", (state,now(),project_id,take_id))
