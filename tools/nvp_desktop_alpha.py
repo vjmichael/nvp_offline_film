@@ -407,7 +407,7 @@ def _native_window_stage(message):
     if not path.is_absolute() or path.is_symlink() or not path.parent.is_dir():
         return
     with path.open("a",encoding="utf8") as stream:
-        stream.write("NVP_INSTALLED_WINDOW_STAGE="+message+"\\n")
+        stream.write("NVP_INSTALLED_WINDOW_STAGE="+message+"\n")
         stream.flush()
         os.fsync(stream.fileno())
 
@@ -427,7 +427,7 @@ def _native_window_receipt(name,payload):
     with path.open("a",encoding="utf8") as stream:
         stream.write("NVP_SOURCE_RECEIPT_"+name+"="+
                      json.dumps(payload,sort_keys=True,separators=(",",":"),
-                                ensure_ascii=True,allow_nan=False)+"\\n")
+                                ensure_ascii=True,allow_nan=False)+"\n")
         stream.flush()
         os.fsync(stream.fileno())
 
@@ -445,7 +445,7 @@ def _native_window_failure(exc):
     import traceback
     with path.open("a",encoding="utf8") as stream:
         stream.write("NVP_INSTALLED_WINDOW_FAILURE="+
-                     type(exc).__name__+":"+str(exc)[:600]+"\\n")
+                     type(exc).__name__+":"+str(exc)[:600]+"\n")
         traceback.print_exception(type(exc),exc,exc.__traceback__,
                                   limit=12,file=stream)
         stream.flush()
