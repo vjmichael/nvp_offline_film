@@ -165,7 +165,8 @@ def safe_parallelism(snapshot:ResourceSnapshot,preferences:BatchPreferences,
 
 
 def plan_batches(plan_id,source_performance_sha256,shots,preferences,
-                 snapshot,*,verified_cycles_gpu_ids=(),cpu_threads=None):
+                 snapshot,*,final_shot_ids=None,
+                 verified_cycles_gpu_ids=(),cpu_threads=None):
     if not _valid_id(plan_id) or not isinstance(
             source_performance_sha256,str) or not SHA.fullmatch(
                 source_performance_sha256):
@@ -174,6 +175,16 @@ def plan_batches(plan_id,source_performance_sha256,shots,preferences,
         any(not isinstance(x,Shot) for x in shots) or
         len({x.shot_id for x in shots})!=len(shots)):
         raise ValueError("Up to 96 unique director-selected shot IDs required")
+    chosen={x.shot_id for x in shots}
+    if final_shot_ids is None:
+        final_ids=chosen
+    else:
+        if (type(final_shot_ids) not in (list,tuple,set) or
+            any(not _valid_id(x) for x in final_shot_ids) or
+            len(set(final_shot_ids))!=len(final_shot_ids) or
+            not set(final_shot_ids).issubset(chosen)):
+            raise ValueError("Hi-fi shots must be a unique subset of selected low-fi viewpoints")
+        final_ids=set(final_shot_ids)
     capacity={
         stage:safe_parallelism(
             snapshot,preferences,quality=stage,
@@ -191,10 +202,12 @@ def plan_batches(plan_id,source_performance_sha256,shots,preferences,
         batch_mode="DIRECTOR"
     groups=[]
     for quality in STAGES:
-        for start in range(0,len(shots),size):
+        included=([shot for shot in shots if shot.shot_id in final_ids]
+                  if quality==FINAL else shots)
+        for start in range(0,len(included),size):
             number=start//size
             entries=[]
-            for shot in shots[start:start+size]:
+            for shot in included[start:start+size]:
                 entries.append({**asdict(shot),"quality":quality,
                     "source_performance_sha256":source_performance_sha256})
             groups.append({
@@ -212,6 +225,8 @@ def plan_batches(plan_id,source_performance_sha256,shots,preferences,
         "director_requested_shots_per_batch":preferences.shots_per_batch,
         "preferences":asdict(preferences),
         "source_shots":[asdict(shot) for shot in shots],
+        "selected_final_shot_ids":[x.shot_id for x in shots
+                                   if x.shot_id in final_ids],
         "batches":groups,
         "capacity_at_plan_time":capacity,
         "zero_capacity_jobs_remain_queued":True,
@@ -328,7 +343,7 @@ class DurableShotBatchQueue:
             "quality":q,"batch_index":b,"shot_id":s,"state":state,
             "attempt":a,"ticket_sha256":sha,"receipt_sha256":receipt}
             for q,b,s,state,a,sha,receipt in rows]
-        expected=2*len(plan["source_shots"])
+        expected=len(plan["source_shots"])+len(plan["selected_final_shot_ids"])
         originals={(batch["quality"],shot["shot_id"]):_sha(shot)
             for batch in plan["batches"] for shot in batch["shots"]}
         if (len(tickets)!=expected or len(originals)!=expected or
