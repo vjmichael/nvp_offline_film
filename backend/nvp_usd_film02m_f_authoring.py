@@ -186,6 +186,23 @@ class OriginalDistrictDrafts:
                 continue
             if len(candidates)>=24:
                 break
+        districts=[]
+        for row in self.index.list_objects(pid,kind="presentation")[:128]:
+            try:
+                saved=self.index.read_revision(pid,row["object_id"],row["revision"])
+                if saved["data"].get("format")==DISTRICT_FORMAT:
+                    with self.district.open(pid,row["object_id"],row["revision"]):
+                        pass
+                    districts.append({
+                        "district_id":row["object_id"],
+                        "revision":row["revision"],
+                        "document_sha256":saved["document_sha256"],
+                        "source_instance_count":len(saved["data"][
+                            "generated_instances"]),
+                        "source_seed":saved["data"]["seed"]})
+            except (KeyError,RuntimeError,PermissionError,ValueError,TypeError):
+                continue
+            if len(districts)>=24:break
         with self._db() as db:
             drafts=db.execute("""SELECT * FROM authoring_drafts
                 WHERE project_id=? ORDER BY updated_at DESC LIMIT 40""",
@@ -193,6 +210,7 @@ class OriginalDistrictDrafts:
         return {
             "format":"nvp.usd_film02m_f.native_source_catalog.v1",
             "project_id":pid,"source_buildings":candidates,
+            "approved_districts":districts,
             "drafts":[self._overview(dict(x)) for x in drafts],
             "native_blender_workers_started":0,
             "original_film_takes_modified":False}
