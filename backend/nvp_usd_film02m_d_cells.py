@@ -57,6 +57,7 @@ class OriginalBuildingCells:
         result=[]
         edges=[]
         names=set()
+        source_buildings=set()
         for cell in cells:
             if type(cell) is not dict or set(cell)!={
                     "cell_id","building_id","building_revision"}:
@@ -71,6 +72,10 @@ class OriginalBuildingCells:
             revision=cell["building_revision"]
             if type(revision) is not int or revision<1:
                 raise ValueError("Exact original building source revision required")
+            if (bid,revision) in source_buildings:
+                raise ValueError(
+                    "One original building source revision cannot occupy two identical untransformed world cells")
+            source_buildings.add((bid,revision))
             with self.kit.open_building(pid,bid,revision) as original:
                 row=original["record"]
                 if row["kind"]!="world" or row["data"]["format"]!=BUILD_FORMAT:
@@ -244,6 +249,8 @@ class BuildingCellSession:
             raise ValueError("Exact bounded increasing original film frames needed")
         if not isinstance(index,FilmIndex):
             raise TypeError("Original FilmIndex source camera required")
+        if self.record["project_id"]!=pid:
+            raise PermissionError("Original source camera and building cells must belong to same film project")
         bank=DirectorCameraBank(
             index,verify_director_action=lambda *_:False)
         manifest=bank.verify(pid,bank_id,revision)
