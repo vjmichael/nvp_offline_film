@@ -412,6 +412,26 @@ def _native_window_stage(message):
         os.fsync(stream.fileno())
 
 
+def _native_window_receipt(name,payload):
+    """Disposable source-only SHA evidence for installed acceptance artifacts."""
+    if (os.environ.get("NVP_FILM02M_GROUP_ACCEPTANCE")!="1" or
+        name not in ("P0F01_REAL_GGUF_DRAFT","P0F01_NATIVE_OS_WORLD")):
+        return
+    dest=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+    if not dest or type(payload) is not dict:
+        return
+    path=Path(dest)
+    if not path.is_absolute() or path.is_symlink() or not path.parent.is_dir():
+        return
+    import json
+    with path.open("a",encoding="utf8") as stream:
+        stream.write("NVP_SOURCE_RECEIPT_"+name+"="+
+                     json.dumps(payload,sort_keys=True,separators=(",",":"),
+                                ensure_ascii=True,allow_nan=False)+"\\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
 def _native_window_failure(exc):
     """Opt-in disposable Windows smoke diagnostics; never normal project logs."""
     if os.environ.get("NVP_FILM02M_GROUP_ACCEPTANCE")!="1":
@@ -1135,6 +1155,15 @@ def run_visible_window_smoke():
                                         with bridge._film02mf_service(native_pid).district.open(
                                                 native_pid,"InstalledP0F01ApprovedWorld",1):
                                             pass
+                                        _native_window_receipt("P0F01_NATIVE_OS_WORLD",{
+                                            "district_id":"InstalledP0F01ApprovedWorld",
+                                            "district_revision":reopened["revision"],
+                                            "district_document_sha256":reopened["document_sha256"],
+                                            "original_take_sha256":original_take_sha,
+                                            "native_denial_observed":True,
+                                            "native_approval_observed":True,
+                                            "test_automated_not_human_consent":True,
+                                            "original_actor_take_unchanged":True})
                                         _native_window_stage(
                                             "p0f01_installed_native_os_deny_approve_source_reopen_passed")
                                     if model_alias:
@@ -1245,6 +1274,29 @@ def run_visible_window_smoke():
                                         else:
                                             raise RuntimeError(
                                                 "Model completion illegally approved a world")
+                                        model_info=done["model_evidence"]
+                                        request_proof=model_info[
+                                            "model_completion_receipt"]
+                                        _native_window_receipt("P0F01_REAL_GGUF_DRAFT",{
+                                            "attempt_id":done["attempt_id"],
+                                            "draft_id":done["proposal"]["draft_id"],
+                                            "draft_original_plan_sha256":
+                                                done["proposal"]["original_plan_sha256"],
+                                            "draft_original_usd_sha256":
+                                                done["proposal"]["original_usd_root_sha256"],
+                                            "model_text_sha256":
+                                                model_info["model_text_sha256"],
+                                            "provider_request_sha256":
+                                                request_proof.get("request_sha256"),
+                                            "provider_response_sha256":
+                                                request_proof.get("response_sha256"),
+                                            "completion_tokens_reported":
+                                                request_proof[
+                                                    "provider_reported_completion_tokens"],
+                                            "native_source_reopened":True,
+                                            "creative_approval_granted":False,
+                                            "original_take_sha256":smoke_take_record[
+                                                "document_sha256"]})
                                         _native_window_stage(
                                             "p0f01_real_gguf_model_source_draft_no_approval_passed")
                                 result["passed"]=True
