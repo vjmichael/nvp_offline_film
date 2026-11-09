@@ -82,6 +82,11 @@ def _source_preview(index,pid,district_id,district_revision,
             from pxr import Usd, UsdGeom, Gf, Sdf
             stage=original_world.stage
             original_root=stage.GetRootLayer().ExportToString()
+            # Apply only the shot's authored look variants in this session,
+            # exactly as the 01E checkpoint sampler does.
+            with Usd.EditContext(stage,stage.GetSessionLayer()):
+                for variant,look in shot_doc["director_looks"].items():
+                    original_world.switch_variant(variant,look)
             path,position=_camera_native(
                 original_world,shot_doc["camera_set"],
                 shot_doc["camera_prim_path"],[film_tick])
@@ -117,6 +122,7 @@ def _source_preview(index,pid,district_id,district_revision,
             session=stage.GetSessionLayer()
             child="/World/OriginalFilmDistricts/"+district_id
             with Usd.EditContext(stage,session):
+                UsdGeom.Xform.Define(stage,"/World/OriginalFilmDistricts")
                 prim=UsdGeom.Xform.Define(stage,child)
                 if not prim.GetPrim().GetReferences().AddReference(
                         str(approved["root_path"]),Sdf.Path("/World")):
@@ -210,11 +216,14 @@ class OriginalDistrictShotBinding:
         return {**result,"binding_preview_sha256":_digest(result)}
 
     def publish(self,pid,binding_id,*,district_id,district_revision,
-                world_take_id,film_tick,creator_event):
+                world_take_id,film_tick,creator_event,
+                expected_preview_sha256):
         _id(binding_id,"immutable film district shot binding")
         snapshot=self.preview(
             pid,district_id,district_revision,world_take_id,film_tick)
         key=snapshot["binding_preview_sha256"]
+        if expected_preview_sha256!=key:
+            raise PermissionError("Native shot binding preview source SHA stale")
         scope={
             "operation":"nvp.film02m_h.approve_original_district_shot_binding.v1",
             "project_id":pid,"binding_id":binding_id,
