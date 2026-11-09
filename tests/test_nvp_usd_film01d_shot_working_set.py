@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 import unittest
 
 from pxr import Usd, UsdGeom
@@ -17,6 +18,7 @@ from backend.nvp_studio import Studio
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
 from backend.nvp_usd_film01d_shot_working_set import (
     FORMAT, RECEIPT_FORMAT, FilmWorldShotPlanner, FilmShotWorkingSet,
+    native_gpu_device_sampler,
 )
 from test_nvp_usd_film01_world import NativeFilmWorld01
 
@@ -227,6 +229,76 @@ class RealUSDShotWorldStreaming(unittest.TestCase):
                     "ShotOutside",1,receipt_id="WrongWorldReceipt")
         with self.assertRaises(KeyError):
             b.index.read_revision(b.pid,"WrongWorldReceipt",1)
+
+    def test_real_os_gpu_adapter_labels_windows_budget_vs_global_sensor(self):
+        from backend.nvp_resource_guard import ResourceSnapshot, GPUResource
+        snapshots=ResourceSnapshot(
+            1.0,16384,12288,None,(
+                GPUResource("dxgi:0","Test Windows Adapter",
+                            "windows_dxgi_process_budget",2048,512,False),
+                GPUResource("nvidia:0","Test NVIDIA Adapter",
+                            "nvml_global",8192,3072,True),
+            ))
+        with patch("backend.nvp_resource_guard.collect_resources",
+                   return_value=snapshots):
+            dxgi=native_gpu_device_sampler("dxgi:0")()
+            self.assertEqual(dxgi["scope"],"os_process_video_budget")
+            self.assertEqual(dxgi["used_bytes"],512*1024*1024)
+            self.assertEqual(dxgi["total_bytes"],2048*1024*1024)
+            global_gpu=native_gpu_device_sampler("nvidia:0")()
+            self.assertEqual(global_gpu["scope"],"device_global")
+            with self.assertRaises(RuntimeError):
+                native_gpu_device_sampler("missing:0")()
+        # These are synthetic sensor contracts, NOT native hardware evidence.
+        with self.runtime(gpu_probe=lambda:global_gpu) as runtime:
+            done=runtime.transition(
+                "ShotOutside",1,receipt_id="LabeledGpuContract")
+            self.assertEqual(
+                done["resource_after"]["gpu_measurement_scope"],
+                "device_global")
+            self.assertFalse(done["gpu_attributable_to_stage_verified"])
+
+    def test_missing_required_os_rss_sensor_refuses_budget_bypass(self):
+        with self.runtime(max_process_rss_bytes=100*1024*1024) as r:
+            with patch("backend.nvp_usd_film01d_shot_working_set._rss_bytes",
+                       return_value=None):
+                with self.assertRaises(RuntimeError):
+                    r.transition(
+                        "ShotOutside",1,receipt_id="UnmeasuredMemoryRejected")
+        row=self.b.index.read_revision(
+            self.b.pid,"UnmeasuredMemoryRejected",1)
+        self.assertEqual(row["data"]["state"],"FAILED")
+        self.assertEqual(row["data"]["failure_type"],"RuntimeError")
+
+    def test_typed_shot_rejects_spoofed_prim_unknown_set_or_broken_ticks(self):
+        b=self.b
+        base={
+            "world_id":"TownWorld","world_revision":1,
+            "camera_set":"Outside","camera_prim":"/World/Camera",
+            "sample_ticks":[0,T],"required_sets":["Outside"],
+            "max_loaded_sets":1,
+        }
+        variants=[
+            {"sample_ticks":[T,0]},
+            {"sample_ticks":[True]},
+            {"required_sets":["Outside","Unknown"]},
+            {"director_looks":{"Facade":"NotAnOriginalLook"}},
+            {"spatial_hints":[{
+                "set":"NotASet","center_m":[0,0,0],"radius_m":1
+            }]},
+            {"prefetch_distance_m":float("inf")},
+            {"camera_prim":"/World/Key"},
+            {"camera_prim":"/World/StreetLamp"},
+        ]
+        for i,change in enumerate(variants):
+            with self.subTest(case=i):
+                with self.assertRaises((ValueError,PermissionError,RuntimeError)):
+                    self.planner.publish(
+                        b.pid,"RejectedShot"+str(i),
+                        **{**base,**change})
+                with self.assertRaises(KeyError):
+                    b.index.read_revision(
+                        b.pid,"RejectedShot"+str(i),1)
 
     def test_concise_source_query_does_not_dump_usda_or_invent_actor_ids(self):
         with self.runtime() as r:
