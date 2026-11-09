@@ -224,8 +224,7 @@ class FilmingPublicationJournal:
                     if (sid not in expected or sid in found or
                         event["source_revision"] != 1 or
                         event["payload"].get("original_recording") is not True or
-                        revisions[sid]["kind"] != "source_signal" and
-                        revisions[sid]["kind"] != "sound_source"):
+                        revisions[sid]["kind"] != "audio"):
                         return {"take_id":take_id,"journaled":True,
                                 "visible":False,"reason":"PUBLICATION_SOURCE_BINDING_MISMATCH"}
                     found.add(sid)
