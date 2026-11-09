@@ -595,12 +595,45 @@ class OpenUSDWorldTakeCapture:
                 selection["document_sha256"]!=
                 selected["selection_document_sha256"]):
                 raise RuntimeError("Historical original dialogue source SHA changed")
+            performance=perf["data"]
+            if (perf["kind"]!="performance" or
+                performance["source_take_id"]!=selected["source_take_id"] or
+                performance["source_take_sha256"]!=selected["source_take_sha256"] or
+                performance["production_bible"]["actor_id"]!=selected["actor_id"] or
+                performance["script_line_id"]!=selected["script_line_id"] or
+                performance["script_id"]!=selected["script_id"] or
+                performance["script_revision"]!=selected["script_revision"] or
+                performance["script_document_sha256"]!=
+                    selected["script_document_sha256"] or
+                performance["script_line_text_sha256"]!=
+                    selected["exact_dialogue_text_sha256"] or
+                performance["first_tick"]!=selected["source_line_start_tick"] or
+                performance["end_tick"]!=selected["source_line_end_tick"] or
+                not performance["first_tick"]<=selected["source_selection_tick"]<
+                    performance["end_tick"] or
+                selection["kind"]!="presentation" or
+                selection["data"]["source_take_id"]!=
+                    selected["source_take_id"] or
+                selected["composed_actor_prim"] not in {
+                    x["composed_actor_prim"] for x in cast
+                    if x["actor_id"]==selected["actor_id"] and
+                       x["source_take_id"]==selected["source_take_id"]
+                }):
+                raise PermissionError("Stored historical dialogue does not match source actor or script")
             if selected["original_recorded_voice"] is not None:
                 voice=selected["original_recorded_voice"]
                 sound=originals.describe(
                     pid,voice["source_id"],voice["source_revision"])
                 if sound["document_sha256"]!=voice["original_pcm_document_sha256"]:
                     raise RuntimeError("Selected original recorded dialogue PCM lost")
+                src=performance.get("recorded_voice_source")
+                if (src is None or
+                    src["audio_id"]!=voice["source_id"] or
+                    src["audio_revision"]!=voice["source_revision"] or
+                    src["audio_sha256"]!=voice["original_pcm_document_sha256"] or
+                    selected["voice_id"]!=voice["voice_id"] or
+                    selected["voice_cast_revision"]!=voice["voice_cast_revision"]):
+                    raise PermissionError("Selected PCM or VoiceID differs from original performance")
                 _verify_original_pcm_chunks(self.index,pid,sound)
                 # Recast should NOT destroy playback of an old original
                 # Take, but historical VoiceID decision must remain stored.
