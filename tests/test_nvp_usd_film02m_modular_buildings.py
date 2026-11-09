@@ -1549,6 +1549,17 @@ class OriginalModularBuildingSource(unittest.TestCase):
             self.pid,"FilmDistrictFApproved",1)["document_sha256"],
             receipt["published_sha256"])
         self.assertEqual(len(approvals),3)
+        inherited=host.create(
+            self.pid,"FilmDistrictFApproved",expected_revision=2,
+            params=params,proposed_by="director")
+        inherited_preview=host.preview(self.pid,inherited["draft_id"])
+        self.assertEqual(
+            [x["instance_id"] for x in inherited_preview["instances"]
+             if x["hidden"]],[2])
+        self.assertEqual(inherited_preview["diff"][
+            "added_director_opinions"],[])
+        self.assertEqual(inherited_preview["diff"][
+            "removed_director_opinions"],[])
 
     def test_02m_f_crash_reconcile_after_os_grant_never_replays_permission(self):
         from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
@@ -1648,6 +1659,14 @@ class OriginalModularBuildingSource(unittest.TestCase):
                     "version":proposal["version"],
                     "source_plan_sha256":snapshot["source_plan_sha256"],
                     "usd_layer_root_sha256":snapshot["usd_layer_root_sha256"]})
+            self.assertEqual(window.confirmations,1)
+            with self.assertRaises(PermissionError):
+                bridge.film02mf_commit({
+                    "project_id":self.pid,"draft_id":proposal["draft_id"],
+                    "version":proposal["version"],
+                    "source_plan_sha256":snapshot["source_plan_sha256"],
+                    "usd_layer_root_sha256":snapshot["usd_layer_root_sha256"],
+                    "creator_approved":True})
             self.assertEqual(window.confirmations,1)
             self.assertIn("Exact proposed plan SHA:",window.last_message)
             self.assertIn("An AI draft is NOT an approval",window.last_message)
