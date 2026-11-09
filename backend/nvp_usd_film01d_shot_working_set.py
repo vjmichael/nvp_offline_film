@@ -311,6 +311,8 @@ class FilmShotWorkingSet:
         self.closed = False
         self._last_receipt = None
         self._planner = FilmWorldShotPlanner(index)
+        self._shot_layer = None
+        self._shot_layer_sha256 = None
 
     def __enter__(self):
         if self.closed or self.session is not None:
@@ -324,8 +326,44 @@ class FilmShotWorkingSet:
         if not self.closed:
             if self._context is not None:
                 self._context.__exit__(None,None,None)
+            self._shot_layer = None
             self.session = None
             self.closed = True
+
+    def _new_disposable_shot_layer(self):
+        """Separate stronger preview opinions from the source USD world."""
+        from pxr import Sdf
+        self.session._check()
+        stage = self.session.stage
+        root = stage.GetRootLayer()  # private temporary world.usda
+        if self._shot_layer is not None:
+            old_id = self._shot_layer.identifier
+            if old_id in root.subLayerPaths:
+                root.subLayerPaths.remove(old_id)
+        layer = Sdf.Layer.CreateAnonymous("nvp_film01d_director_look.usda")
+        root.subLayerPaths.insert(0,layer.identifier)
+        self._shot_layer = layer
+        self._shot_layer_sha256 = sha256(
+            layer.ExportToString().encode("utf8")).hexdigest()
+        return layer
+
+    def discard_temporary_look(self):
+        """Undo ONLY preview opinions; never change FilmIndex source USD."""
+        if self.closed or self.session is None:
+            raise RuntimeError("Original source shot working set is closed")
+        self._new_disposable_shot_layer()
+        return {
+            "state":"DIRECTOR_PREVIEW_REVERTED",
+            "original_world_unchanged":True,
+            "film_take_modified":False,
+        }
+
+    def query_loaded_scene(self):
+        """Short semantic source query, not an editable raw USD dump."""
+        if self.closed or self.session is None:
+            raise RuntimeError("Original USD film session is closed")
+        loaded=self.session.receipt()["loaded_set_names"]
+        return _source_query(self.index,self.pid,self.session,loaded)
 
     def __exit__(self, *args):
         self.close()
@@ -424,8 +462,16 @@ class FilmShotWorkingSet:
                 or any(math.dist(p,q) > 1e-6 for p,q in zip(
                     actual_positions,doc["original_camera_positions_m"]))):
                 raise PermissionError("Original moving camera no longer matches shot source")
-            for name, look in doc["director_looks"].items():
-                self.session.switch_variant(name,look)
+            from pxr import Usd
+            overlay=self._new_disposable_shot_layer()
+            # The model/director only passes typed, source-verified look
+            # choices. USD writes every opinion to a dedicated ephemeral
+            # shot layer that can be discarded without touching originals.
+            with Usd.EditContext(self.session.stage, overlay):
+                for name, look in doc["director_looks"].items():
+                    self.session.switch_variant(name,look)
+            self._shot_layer_sha256=sha256(
+                overlay.ExportToString().encode("utf8")).hexdigest()
             after = self._resource_sample()
             selected_actual = sorted(self.session.receipt()["loaded_set_names"])
             if not required <= set(selected_actual) or len(selected_actual) > doc["max_loaded_sets"]:
@@ -437,6 +483,8 @@ class FilmShotWorkingSet:
                 "state": "SUCCEEDED_SOURCE_WORKING_SET",
                 "sets_actually_loaded": selected_actual,
                 "camera_positions_reopened_exactly": True,
+                "director_disposable_look_layer_sha256":self._shot_layer_sha256,
+                "director_look_layer_authoritative":False,
                 "source_semantic_scene_summary": scene_query,
                 "load_transition_seconds": round(perf_counter()-start,6),
                 "resource_before":before,"resource_after":after,
@@ -447,7 +495,7 @@ class FilmShotWorkingSet:
             self._persist(receipt_id,result,shot_id,shot_revision)
             self._last_receipt = result
             return result
-        except BaseException as exc:
+        except Exception as exc:
             # A failed in-memory transition may have partially loaded USD;
             # destroy this disposable context. Never label it successful.
             self.close()
