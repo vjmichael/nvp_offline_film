@@ -154,6 +154,19 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"MissingSecondSource",1)
 
+    def test_journal_cannot_complete_missing_immutable_dependencies(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        journal=FilmingPublicationJournal(self.index)
+        journal.begin(self.pid,"IncompleteReceiptTake","IncompleteReceiptTimeline",
+                      ["IncompleteReceiptSource"])
+        with self.assertRaisesRegex(RuntimeError,"missing immutable dependencies"):
+            journal.finish(self.pid,"IncompleteReceiptTake",completed=True)
+        row=next(r for r in journal.reconcile(self.pid)
+                 if r["take_id"]=="IncompleteReceiptTake")
+        self.assertEqual(row["state"],"PREPARING")
+        self.assertEqual(row["resolution"],"INTERRUPTED_BEFORE_SOURCE_PUBLICATION")
+        self.assertFalse(row["take_present"])
+
     def test_successful_publication_is_not_unresolved(self):
         self.capture.capture(**self.payload())
         self.assertFalse(any(
