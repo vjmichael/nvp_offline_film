@@ -966,6 +966,223 @@ class OriginalModularBuildingSource(unittest.TestCase):
                 **settings,"source_buildings":[{
                     "building_id":"GlobalOffsetPrototypeE","revision":1}]})
 
+    def test_02m_e2_actual_openusd_source_material_and_true_3d_lod_stages(self):
+        """Independent native USD geometry/material proof: NO fake pixel claims."""
+        from backend.nvp_usd_film02m_e2_look import (
+            OriginalBuildingLookReview,FORMAT,PROFILES,_hex)
+        import json
+        from pxr import Usd,UsdGeom,UsdShade
+        original=self._02m_d_original_building(
+            "E2LookSource",0,39,"shopfront")
+        review=OriginalBuildingLookReview(self.index)
+        with review.prepare(self.pid,original["id"],1) as prepared:
+            root=prepared["root"]
+            manifest=prepared["manifest"]
+            self.assertEqual(manifest["format"],FORMAT)
+            self.assertEqual(manifest["building_document_sha256"],
+                             original["building"]["document_sha256"])
+            self.assertEqual(manifest["source_look_model"],"UsdPreviewSurface")
+            self.assertTrue(manifest["original_world_take_unchanged"])
+            self.assertFalse(manifest["native_blender_material_import_verified"])
+            self.assertFalse(manifest["cinematic_picture_approved"])
+            self.assertFalse(manifest["materialx_parity_verified"])
+            self.assertFalse(manifest["ocio_aces_config_verified"])
+            self.assertFalse(manifest["exr_multilayer_rendered"])
+            expected=manifest["actual_geometry_triangle_counts"]
+            self.assertGreater(expected["near"],expected["mid"])
+            self.assertGreater(expected["mid"],expected["far"])
+            self.assertEqual(expected["mid"],11*12)
+            self.assertEqual(expected["far"],12)
+            self.assertEqual(len(manifest["first_party_reviewed_profiles"]),5)
+            self.assertEqual(
+                [p["id"] for p in manifest["first_party_reviewed_profiles"]],
+                [p["id"] for p in PROFILES])
+            self.assertEqual(
+                {p["lighting"] for p in PROFILES if
+                 p["id"]!="near_front_relight"},{"soft_day"})
+            self.assertEqual(
+                len(manifest["source_material_contract"]),11)
+            colors={tuple(p["base_color_rgb"]) for p in
+                    manifest["source_material_contract"]}
+            self.assertGreaterEqual(len(colors),3)
+            for lod,sha_name in (
+                    ("near","original_near_stage_sha256"),
+                    ("mid","mid_lod_stage_sha256"),
+                    ("far","far_lod_stage_sha256")):
+                self.assertEqual(_hex(root/(lod+".usda")),
+                                 manifest[sha_name])
+                native=Usd.Stage.Open(str(root/(lod+".usda")))
+                self.assertTrue(native)
+                self.assertEqual(UsdGeom.GetStageUpAxis(native),"Z")
+                self.assertEqual(UsdGeom.GetStageMetersPerUnit(native),1.)
+                self.assertEqual(
+                    len([p for p in native.Traverse() if
+                         p.IsA(UsdGeom.Mesh)]),
+                    11 if lod!="far" else 1)
+                self.assertGreater(len(native.GetRootLayer().ExportToString()),200)
+            mid=Usd.Stage.Open(str(root/"mid.usda"))
+            for expected_mesh in prepared["mid_components"]:
+                mesh=UsdGeom.Mesh.Get(mid,expected_mesh["mesh_prim"])
+                self.assertTrue(mesh)
+                self.assertTrue(
+                    UsdShade.MaterialBindingAPI(
+                        mesh.GetPrim()).ComputeBoundMaterial()[0])
+                self.assertTrue(expected_mesh[
+                    "source_derived_not_original_hero_geometry"])
+            near=Usd.Stage.Open(str(root/"near.usda"))
+            facade=UsdGeom.Mesh.Get(near,"/World/Buildings/Front/Geometry")
+            self.assertGreater(
+                len(facade.GetFaceVertexCountsAttr().Get()),12)
+            self.assertTrue(
+                UsdShade.MaterialBindingAPI(
+                    facade.GetPrim()).ComputeBoundMaterial()[0])
+            self.assertEqual(
+                json.loads((root/"manifest.json").read_text("utf8")),
+                manifest)
+            self.assertTrue(prepared["source_has_actual_pbr_surfaces"])
+            self.assertTrue(prepared["original_source_never_modified"])
+        with self.kit.open_building(self.pid,original["id"],1) as reopening:
+            self.assertEqual(
+                reopening["record"]["document_sha256"],
+                original["building"]["document_sha256"])
+
+    def test_02m_e2_actual_blender_cycles_material_lighting_lod_exr(self):
+        """Optional *actual* Blender: no native render means the test skips."""
+        import os
+        import json
+        import shutil
+        import subprocess
+        from PIL import Image,ImageStat
+        from backend.nvp_blender_worker import (
+            BlenderOperation,BlenderWorkerSupervisor,sha_file)
+        from backend.nvp_usd_film02m_e2_look import (
+            OriginalBuildingLookReview,PROFILES)
+        executable=os.environ.get("NVP_FILM02ME2_BLENDER_BIN")
+        if not executable:
+            self.skipTest(
+                "Real Blender 5.2/Cycles and native USD material import required")
+        blender=Path(executable).resolve(strict=True)
+        version=subprocess.run(
+            [str(blender),"-b","--version"],
+            check=True,capture_output=True,text=True,timeout=30
+        ).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        original=self._02m_d_original_building(
+            "E2TrueCycles",0,46,"shopfront")
+        review=OriginalBuildingLookReview(self.index)
+        host_root=self.root/"02me2_real_native_cycles_jobs"
+        worker=BlenderWorkerSupervisor(
+            host_root,blender_executable=blender,
+            blender_sha256=sha_file(blender),blender_version=version)
+        job=host_root/"Film02ME2ActualUSDLook"
+        job.mkdir(parents=True,mode=0o700)
+        script=Path(__file__).resolve().parents[1]/"tools"/(
+            "nvp_usd_film02m_e2_blender_look.py")
+        shutil.copyfile(script,job/script.name)
+        with review.prepare(self.pid,original["id"],1) as prepared:
+            root=prepared["root"]
+            for name in ("near.usda","mid.usda","far.usda","manifest.json"):
+                shutil.copyfile(root/name,job/name)
+            shutil.copytree(root/"assets",job/"assets")
+        inputs={
+            script.name:sha_file(job/script.name),
+            **{name:sha_file(job/name) for name in (
+                "near.usda","mid.usda","far.usda","manifest.json")}}
+        for item in (job/"assets").glob("*.usda"):
+            inputs["assets/"+item.name]=sha_file(item)
+        self.assertLessEqual(len(inputs),32)
+        outputs={
+            **{p["id"]+".png":"png" for p in PROFILES},
+            "near_front_passes.exr":"exr",
+            "audit.json":"json_audit"}
+        op=BlenderOperation(
+            job_id="Film02ME2ActualUSDLook",
+            script=script.name,script_sha256=sha_file(job/script.name),
+            inputs=inputs,outputs=outputs,
+            arguments={"--manifest":"manifest.json","--audit":"audit.json"},
+            timeout_seconds=600,memory_limit_mb=8192,
+            gpu_memory_mb=0,require_linux_cgroup_v2=False)
+        executed=worker.run(op)
+        self.assertEqual(executed["state"],"SUCCEEDED")
+        self.assertEqual(worker.verify_completed(
+            "Film02ME2ActualUSDLook")["state"],"SUCCEEDED")
+        receipt=json.loads((job/"audit.json").read_text("utf8"))
+        self.assertTrue(receipt["passed"])
+        self.assertEqual(receipt["original_building_sha256"],
+                         original["building"]["document_sha256"])
+        self.assertEqual(receipt["reviewed_original_material_shader"],
+                         "UsdPreviewSurface")
+        self.assertTrue(receipt["actual_imported_original_shader_parity"])
+        self.assertTrue(receipt["true_geometry_lods_verified"])
+        self.assertTrue(receipt["actual_native_linear_exr_with_source_passes"])
+        self.assertFalse(receipt["aces_external_ocio_config_verified"])
+        self.assertFalse(receipt["materialx_parity_verified"])
+        self.assertFalse(receipt["director_picture_quality_approved"])
+        self.assertFalse(receipt["gpu_vram_measured"])
+        self.assertGreater(receipt["actual_worker_peak_process_rss_mb"],0)
+        records=receipt["rendered_views"]
+        self.assertEqual(len(records),5)
+        self.assertEqual(
+            [row["shot"] for row in records],
+            [p["id"] for p in PROFILES])
+        observed=set()
+        for p,row in zip(PROFILES,records):
+            self.assertEqual(row["actual_cycles_samples"],
+                             p["cycles_samples"])
+            self.assertEqual(row["actual_pixel_dimensions"],p["resolution"])
+            self.assertEqual(row["actual_builtin_color_view_transform"],"AgX")
+            self.assertGreater(row["cycles_render_wall_seconds"],0)
+            self.assertGreater(row["actual_worker_process_peak_rss_mb"],0)
+            self.assertEqual(row["source_lod"],p["lod"])
+            self.assertGreater(
+                row["source_look"]["actual_assigned_principled_materials"],0)
+            if p["lod"]=="near":
+                self.assertTrue(row["source_look"][
+                    "native_source_shader_binding_verified"])
+            with Image.open(job/(p["id"]+".png")) as image:
+                self.assertEqual(image.size,tuple(p["resolution"]))
+                self.assertEqual(image.format,"PNG")
+                rgb=image.convert("RGB")
+                self.assertGreater(max(ImageStat.Stat(rgb).var),1.)
+                image.verify()
+            observed.add(sha_file(job/(p["id"]+".png")))
+        self.assertEqual(len(observed),5)
+        self.assertEqual(records[0]["native_imported_source_triangles"],
+                         records[1]["native_imported_source_triangles"])
+        self.assertEqual(records[0]["native_imported_source_triangles"],
+                         records[4]["native_imported_source_triangles"])
+        self.assertGreater(records[0]["native_imported_source_triangles"],
+                           records[2]["native_imported_source_triangles"])
+        self.assertGreater(records[2]["native_imported_source_triangles"],
+                           records[3]["native_imported_source_triangles"])
+        exr=job/"near_front_passes.exr"
+        with exr.open("rb") as f:
+            self.assertEqual(f.read(4),bytes.fromhex("762f3101"))
+        self.assertTrue(records[0]["exr"]["actual_exr_rendered"])
+        self.assertEqual(sha_file(exr),
+                         records[0]["exr"]["actual_exr_sha256"])
+        artifacts=Path(os.environ.get(
+            "NVP_FILM02ME2_ARTIFACT_DIR",
+            str(self.root/"nvp_02me2_real_look_acceptance"))).resolve()
+        artifacts.mkdir(parents=True,exist_ok=True)
+        for name in list(outputs)+["manifest.json","near.usda",
+                                   "mid.usda","far.usda"]:
+            shutil.copyfile(job/name,artifacts/name)
+        (artifacts/"creative_review_status.json").write_text(
+            json.dumps({
+                "actual_native_cycles_source_material_import":True,
+                "original_openusd_world_geometry_immutable":True,
+                "actual_geometry_near_mid_far_views":True,
+                "actual_cpu_cycles_render_times":True,
+                "actual_cpu_process_peak_rss":True,
+                "actual_native_multilayer_openexr":True,
+                "same_world_separate_relit_view":True,
+                "director_cinematic_look_accepted":False,
+                "aces_external_ocio_verified":False,
+                "materialx_parity_verified":False,
+                "gpu_performance_measured":False},
+                sort_keys=True,indent=2),"utf8")
+
     def test_02m_original_geometry_collision_rejected(self):
         original=building_recipe(0,self.facades)
         overlapping=deepcopy(original)
