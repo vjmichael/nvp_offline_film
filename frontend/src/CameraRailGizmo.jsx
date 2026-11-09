@@ -121,7 +121,7 @@ export default function CameraRailGizmo({
   const stopDrag=()=>{gesture.current=null;};
   const keyboard=(e,index,kind)=>{
     if(disabled)return;
-    const step=e.shiftKey?.1:.25;
+    const step=e.shiftKey ? 0.1 : 0.25;
     const movement={
       ArrowLeft:[-step,0,0],ArrowRight:[step,0,0],
       ArrowUp:[0,step,0],ArrowDown:[0,-step,0],
