@@ -183,11 +183,22 @@ class FilmingPublicationJournal:
                         "visible":False,"reason":"PUBLICATION_"+row["state"]}
             identities = [take_id,row["sound_timeline_id"],
                           *json.loads(row["source_ids_json"])]
+            revisions = {}
             for identity in identities:
                 try:
-                    self.index.read_revision(project_id,identity,1)
+                    revisions[identity] = self.index.read_revision(project_id,identity,1)
                 except KeyError:
                     return {"take_id":take_id,"journaled":True,
                             "visible":False,"reason":"MISSING_IMMUTABLE_DEPENDENCY"}
+            # Presence alone is insufficient: a corrupted completion receipt
+            # must not authorize an unrelated frozen Take or sound timeline.
+            take = revisions[take_id]
+            timeline = revisions[row["sound_timeline_id"]]
+            if (take["kind"] != "take" or
+                take["data"].get("timeline_id") != row["sound_timeline_id"] or
+                take["data"].get("timeline_revision") != 1 or
+                timeline["kind"] != "temporal"):
+                return {"take_id":take_id,"journaled":True,
+                        "visible":False,"reason":"PUBLICATION_BINDING_MISMATCH"}
             return {"take_id":take_id,"journaled":True,
                     "visible":True,"reason":"COMPLETED_DEPENDENCIES_PRESENT"}
