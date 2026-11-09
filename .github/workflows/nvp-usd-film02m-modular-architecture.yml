@@ -1,0 +1,117 @@
+name: NVP USD-FILM-02M Real Modular Architecture Source and Three-View Cycles
+
+on:
+  push:
+    branches: [nvp/usd-film02m-module-socket-assembly-20261109]
+  pull_request:
+    branches: [nvp/usd-film01t-durable-selected-conform-20261109]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-usd-film02m-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-original-module-assembly:
+    name: Actual 4-building OpenUSD mesh/socket/reference/FIlmIndex reopen / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04,windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual first-party source geometry and native OpenUSD
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+      - name: Compile original 02M source modules, socket fit solver and native Blender smoke script
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film02m_modular_buildings.py tools/nvp_usd_film02m_blender_three_views.py tests/test_nvp_usd_film02m_modular_buildings.py
+      - name: Actual pxr four different saved source buildings, reverse angle 3D meshes, revisions and rejected overlaps
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film02m_modular_buildings.py" -v
+
+  official-blender-three-native-views:
+    name: Actual Blender 5.2.3/Cycles front, rear and oblique verified source building pixels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM02M_ARTIFACT_DIR: original-02m-real-building-three-cycle-views
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install source-authoritative USD and real Cycles runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download original official Blender 5.2.3 and verify upstream SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Execute actual 10-module source street building under NVP supervisor, render 3 genuine non-identical directions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM02M_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p "test_nvp_usd_film02m_modular_buildings.py" -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("original-02m-real-building-three-cycle-views")
+          report=json.loads((root/"native_view_status.json").read_text("utf8"))
+          assert report["real_original_building_meshes"]==10
+          assert report["authentic_blender_cycles_views"]==3
+          assert report["different_front_rear_oblique_images"] is True
+          assert report["original_building_source_unchanged"] is True
+          assert report["director_visual_quality_reviewed"] is False
+          audit=json.loads((root/"audit.json").read_text("utf8"))
+          assert audit["actual_original_native_meshes"]==10
+          assert audit["front_rear_and_oblique_cameras_rendered"] is True
+          assert audit["cycles_samples"]==8
+          assert [x["view"] for x in audit["rendered_views"]]==["front","rear","oblique"]
+          for view in ("front","rear","oblique"):
+              with Image.open(root/f"film02m_{view}.png") as image:
+                  assert image.size==(320,180) and image.format=="PNG"
+                  image.verify()
+          print("Real original 02M 3-view Cycles/Blender evidence exists. Human look approval OPEN.")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NVP-USD-FILM02M-original-modular-building-three-real-Cycles-views-UNREVIEWED
+          path: original-02m-real-building-three-cycle-views/
+          if-no-files-found: warn
+          retention-days: 14
