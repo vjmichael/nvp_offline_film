@@ -18,6 +18,7 @@ from backend.nvp_film_index import FilmIndex
 from backend.nvp_studio import Studio
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_production_bible_actors import ProductionBibleActors
+from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
 from backend.nvp_temporal_ledger import TemporalLedger,TICKS_PER_SECOND
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_usd_film01d_shot_working_set import (
@@ -194,6 +195,51 @@ class OriginalWorldCinematicTakeTests(unittest.TestCase):
         self.assertEqual(
             self.b.index.read_revision(
                 self.b.pid,"OriginalStreetTake",1)["document_sha256"],original_sha)
+
+    def test_later_voiceid_recast_does_not_replace_historical_world_take_voice(self):
+        self.link_actor()
+        pid=self.b.pid
+        actor_id=self.actor["id"]
+        voice=ProductionBibleVoiceIdentity(
+            self.b.index,verify_creator_action=lambda event,scope:
+                event=="APPROVE_CREATIVE_RECAST" and
+                scope["operation"]=="film03_cast_actor_voice_identity")
+        voice.cast_voice(
+            pid,actor_id,voice_id="Voice_Street_Original",
+            reference_audio_id="MicOriginal",reference_audio_revision=1,
+            expected_cast_revision=0,
+            director_review_note="Original captured 48k mono audio for this cast",
+            creator_event="APPROVE_CREATIVE_RECAST")
+        frozen=self.freeze(take="HistoricalVoiceWorldTake")
+        old=self.b.index.read_revision(
+            pid,"HistoricalVoiceWorldTake",1)["data"]
+        self.assertEqual(old["canonical_original_actors"][0]["voice_id"],
+                         "Voice_Street_Original")
+        original_pcm_sha=self.audio["document_sha256"]
+        changed_pcm=RecordedSoundSources(self.b.index).publish(
+            pid,"DifferentVoiceReference",
+            [b"\x00\x01"*SAMPLE_RATE],expected_revision=0)
+        self.assertNotEqual(changed_pcm["document_sha256"],original_pcm_sha)
+        voice.cast_voice(
+            pid,actor_id,voice_id="Voice_Street_Recast",
+            reference_audio_id="DifferentVoiceReference",
+            reference_audio_revision=1,
+            expected_cast_revision=1,
+            director_review_note="Second recording is for a later independent Take",
+            voice_recast_reason="Director changed the character voice for a future retake",
+            creator_event="APPROVE_CREATIVE_RECAST")
+        self.assertEqual(voice.current(pid,actor_id)["current"]["voice_id"],
+                         "Voice_Street_Recast")
+        restored=OpenUSDWorldTakeCapture(
+            FilmIndex(Studio(self.b.db)),
+            verify_creator_action=lambda *_:False)
+        same=restored.verify_take(pid,"HistoricalVoiceWorldTake")
+        self.assertEqual(same["take_document_sha256"],
+                         frozen["document_sha256"])
+        stored=self.b.index.read_revision(
+            pid,"HistoricalVoiceWorldTake",1)["data"]
+        self.assertEqual(stored["canonical_original_actors"][0]["voice_id"],
+                         "Voice_Street_Original")
 
     def test_wrong_camera_time_foreign_set_and_source_hash_fail_closed(self):
         self.link_actor()
