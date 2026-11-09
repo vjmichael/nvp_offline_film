@@ -8,6 +8,31 @@ permissions:
   contents: read
 
 jobs:
+  installed-director-ui:
+    name: Original native Cycles source/render/restart React director and offline production assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install existing NVP React desktop dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Test bound render tickets, OS refusal, independent picture and restart readback
+        working-directory: frontend
+        run: npm run test:ui -- src/OriginalActorDistrictCyclesReview.test.jsx src/ModularWorldDirector.test.jsx
+      - name: Compile real shipped offline director and Cycles picture review
+        working-directory: frontend
+        run: npm run build
+      - name: Require actual protected Cycles review controls in shipped bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -l 'Reopen independently verified saved Cycles image' frontend/dist/assets/*.js >/dev/null
+          grep -R -l 'OS approve and render original actor/district Cycles frame' frontend/dist/assets/*.js >/dev/null
+
   native-source:
     name: Real 01D/01E original actor and 02M district USD composition / ${{ matrix.os }} Py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
