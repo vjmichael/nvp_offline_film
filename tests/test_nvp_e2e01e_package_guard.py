@@ -82,6 +82,41 @@ class PackageGuardTests(unittest.TestCase):
                 verify_bundle(root)
 
 
+    def test_real_02mh_installer_must_bundle_exact_reviewed_cycles_workers(self):
+        """Synthetic PE checks only packaging policy, never execution."""
+        with TemporaryDirectory() as temp:
+            root=Path(temp)/"NVP"
+            root.mkdir()
+            make_pe(root/"NVP.exe")
+            base=root/"_internal"
+            assets=base/"frontend"/"dist"/"assets"
+            assets.mkdir(parents=True)
+            (base/"base_library.zip").write_bytes(b"test")
+            (base/"python311.dll").write_bytes(b"test")
+            (base/"frontend"/"dist"/"index.html").write_text(
+                '<div id="root"></div><script src="/assets/app.js"></script>',
+                encoding="utf8")
+            (assets/"app.js").write_text(
+                'OS approve and render original actor/district Cycles frame; '
+                'Reopen independently verified saved Cycles image',
+                encoding="utf8")
+            for n in range(4):
+                (base/("module"+str(n)+".bin")).write_bytes(b"test")
+            with self.assertRaisesRegex(RuntimeError,"Blender workers"):
+                verify_bundle(root,require_film02mh_workers=True)
+            workers=base/"tools"
+            workers.mkdir()
+            for name in ("nvp_usd_film01f_blender_worker.py",
+                         "nvp_usd_film02mh_blender_reopen.py"):
+                (workers/name).write_bytes(
+                    b"import bpy\\n"+b"# review-only fixture\\n"*120)
+            receipt=verify_bundle(root,require_film02mh_workers=True)
+            self.assertTrue(receipt["film02mh_renderer_worker_bundle_checked"])
+            self.assertEqual(len(receipt["film02mh_renderer_scripts_sha256"]),2)
+            (assets/"app.js").write_text("missing",encoding="utf8")
+            with self.assertRaisesRegex(RuntimeError,"render controls"):
+                verify_bundle(root,require_film02mh_workers=True)
+
     def test_production_nsis_script_restricts_recursive_uninstall(self):
         script = (Path(__file__).resolve().parents[1] / "packaging" / "nvp-alpha.nsi").read_text(encoding="utf8")
         self.assertIn('StrCmp "$INSTDIR" "$LOCALAPPDATA\\Programs\\NVP" safe_remove', script)
