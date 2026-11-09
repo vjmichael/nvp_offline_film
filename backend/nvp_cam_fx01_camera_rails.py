@@ -141,17 +141,20 @@ def _validate_nodes(nodes,start,end,origin):
         dt=(b["tick"]-a["tick"])/T
         if not 1/T<=dt<=90:
             raise ValueError("Rail segment duration outside exact Film Time limits")
+        if (a["segment_mode"]=="hold" and
+            _norm(_sub(a["position_m"],b["position_m"]))>1e-6):
+            raise ValueError("Held camera cannot teleport at the next Film Time key")
         positions=[_interpolate(a,b,i/16,dt) for i in range(17)]
-        speed=[_norm(_sub(x,y))*16/dt
-               for x,y in zip(positions[1:],positions)]
-        if max(speed)>MAX_SPEED_MPS+1e-5:
+        velocity=[[v*16/dt for v in _sub(x,y)]
+                  for x,y in zip(positions[1:],positions)]
+        if any(_norm(v)>MAX_SPEED_MPS+1e-5 for v in velocity):
             raise ValueError("Camera rail would exceed bounded travel velocity")
         if any(abs(value)>MAX_COORD_M for pt in positions for value in pt):
             raise ValueError("Cubic overshoot escapes camera world bounds")
-        accel=[abs(v1-v0)*16/dt
-               for v0,v1 in zip(speed,speed[1:])]
+        accel=[_norm(_sub(v1,v0))*16/dt
+               for v0,v1 in zip(velocity,velocity[1:])]
         if accel and max(accel)>MAX_ACCEL_MPS2+1e-5:
-            raise ValueError("Camera rail would exceed bounded acceleration")
+            raise ValueError("Camera rail would exceed bounded vector acceleration")
     return seen
 
 
