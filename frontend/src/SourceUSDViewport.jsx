@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useRef,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -93,7 +93,7 @@ export default function SourceUSDViewport({snapshot,orbit=false}){
           (v+actor.world_bbox_max_m[i])/2);
         controls.target.set(...center);
       }
-      controls.update();
+      if(orbit)controls.update();
       const resize=()=>{
         if(!active)return;
         const width=Math.max(320,target.clientWidth||640);
