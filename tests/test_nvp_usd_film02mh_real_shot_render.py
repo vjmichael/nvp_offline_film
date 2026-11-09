@@ -190,12 +190,13 @@ class OriginalActorDistrictNativeRenderTests(unittest.TestCase):
                 self.index.read_revision(
                     self.pid,"WorldCameraShot0",1)["document_sha256"],
                 self.world_shot_sha)
-            self.assertEqual([
-                self.index.read_revision(
-                    self.pid,t,1)["document_sha256"]
-                for t in self.source.shots[0:2] if False],[])
-            self.assertEqual(self.index.list_objects(
-                self.pid,kind="take")[0]["head_revision"],1)
+            for row,sha in zip(self.source.shots,
+                               self.original_actor_take_shas):
+                self.assertEqual(self.index.read_revision(
+                    self.pid,row["take_id"],1)["document_sha256"],sha)
+            self.assertTrue(all(
+                row["head_revision"]==1 for row in self.index.list_objects(
+                    self.pid,kind="take")))
 
     def test_native_render_admission_does_not_reuse_original_binding_approval(self):
         # Source-only staged approval is a separate operation. It cannot
