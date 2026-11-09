@@ -197,6 +197,79 @@ describe('02M-G/H native-only model and actor/camera shot routing',()=>{
     expect(native.film02mf_commit).not.toHaveBeenCalled();
   });
 
+  it('keeps the installed editor responsive while a native model attempt saves a source-verified draft',async()=>{
+    const native=nativeHost();
+    const id='f'.repeat(24);
+    const evidence={status:'GENERATED_UNAPPROVED',
+      model_id:'LocalTestModel',model_text_sha256:'9'.repeat(64)};
+    const draft={...p1(),observed_model_evidence:evidence};
+    native.wo6_local_models=vi.fn(async()=>({
+      state:'available',models:[{id:'LocalTestModel'}]}));
+    native.film02mg_start_candidate=vi.fn(async()=>({
+      format:'nvp.usd_film02m_g.durable_model_attempt_status.v1',
+      attempt_id:id,project_id:project,state:'GENERATING',
+      director_approval_granted:false,native_worker_authorized:false,
+      actor_takes_modified:false}));
+    native.film02mg_candidate_status=vi.fn(async()=>({
+      format:'nvp.usd_film02m_g.durable_model_attempt_status.v1',
+      attempt_id:id,project_id:project,state:'DRAFT_SAVED',
+      proposal:draft,model_evidence:evidence,
+      director_approval_granted:false,native_worker_authorized:false,
+      actor_takes_modified:false}));
+    native.film02mf_preview=vi.fn(async()=>preview(draft));
+    render(<ModularWorldDirector projectId={project} nativeBridge={native}/>);
+    await screen.findByLabelText('Original world local model ID');
+    fireEvent.change(screen.getByLabelText('Original world model direction'),{
+      target:{value:'Original tracked camera-friendly street'}});
+    fireEvent.click(screen.getByRole('button',{
+      name:'Generate and save unapproved AI world draft'}));
+    await waitFor(()=>expect(native.film02mg_start_candidate).toHaveBeenCalledTimes(1));
+    // Long inference must not hold all other director controls hostage.
+    await screen.findByRole('button',{name:'Cancel local model generation'});
+    expect(screen.getByRole('button',{
+      name:'Refresh original building catalog'}).disabled).toBe(false);
+    await waitFor(()=>expect(native.film02mg_candidate_status).toHaveBeenCalled(),{
+      timeout:3000});
+    await screen.findByText(/Host-owned local model draft saved and reopened/);
+    expect(screen.getByText(/Model weights are not independently attested/)).toBeTruthy();
+    expect(native.film02mf_commit).not.toHaveBeenCalled();
+  });
+
+  it('revokes a running model attempt without granting publication or persisting a late draft',async()=>{
+    const native=nativeHost();
+    const id='e'.repeat(24);
+    native.wo6_local_models=vi.fn(async()=>({
+      state:'available',models:[{id:'LocalTestModel'}]}));
+    native.film02mg_start_candidate=vi.fn(async()=>({
+      format:'nvp.usd_film02m_g.durable_model_attempt_status.v1',
+      attempt_id:id,project_id:project,state:'GENERATING',
+      director_approval_granted:false,native_worker_authorized:false,
+      actor_takes_modified:false}));
+    native.film02mg_candidate_status=vi.fn(async()=>({
+      format:'nvp.usd_film02m_g.durable_model_attempt_status.v1',
+      attempt_id:id,project_id:project,state:'GENERATING',
+      director_approval_granted:false,actor_takes_modified:false}));
+    native.film02mg_cancel_candidate=vi.fn(async()=>({
+      format:'nvp.usd_film02m_g.durable_model_attempt_status.v1',
+      attempt_id:id,project_id:project,state:'CANCELLED',
+      director_approval_granted:false,actor_takes_modified:false}));
+    render(<ModularWorldDirector projectId={project} nativeBridge={native}/>);
+    await screen.findByLabelText('Original world local model ID');
+    fireEvent.change(screen.getByLabelText('Original world model direction'),{
+      target:{value:'Cancelled original geometry proposal'}});
+    fireEvent.click(screen.getByRole('button',{
+      name:'Generate and save unapproved AI world draft'}));
+    const cancel=await screen.findByRole('button',{
+      name:'Cancel local model generation'});
+    fireEvent.click(cancel);
+    await waitFor(()=>expect(native.film02mg_cancel_candidate).toHaveBeenCalledTimes(1));
+    await screen.findByText(/Model generation cancelled/);
+    expect(native.film02mg_cancel_candidate.mock.calls[0][0]).toEqual({
+      project_id:project,attempt_id:id});
+    expect(native.film02mf_commit).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button',{name:'Cancel local model generation'})).toBeNull();
+  });
+
   it('composes selected immutable 01E Take with approved 02M district through native 01D shot then OS binding',async()=>{
     const native=nativeHost();
     const origCatalog=native.film02mf_catalog;
