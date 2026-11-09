@@ -296,7 +296,7 @@ class BlenderWorkerSupervisor:
         if op.timeout_seconds>600:
             # The long-running CPU cinema frame is a reviewed profile,
             # not a blanket unbounded exception for arbitrary Blender jobs.
-            from backend.nvp_usd_film01r_quality import verify_quality
+            from backend.nvp_usd_film01r_quality import verify_quality,quality_hash
             if ("plan.json" not in op.inputs or
                 "chunk.json" not in op.inputs or
                 "source.usda" not in op.inputs or
@@ -309,7 +309,7 @@ class BlenderWorkerSupervisor:
             if (op.timeout_seconds!=profile["timeout_seconds"] or
                 op.memory_limit_mb!=profile["max_worker_ram_mb"] or
                 profile["timeout_seconds"]<=600 or
-                planned.get("render_profile_sha256") is None):
+                planned.get("render_profile_sha256")!=quality_hash(profile)):
                 raise PermissionError("Requested extended timeout differs from reviewed film profile")
 
         if op.scene is not None and op.scene not in op.inputs:
