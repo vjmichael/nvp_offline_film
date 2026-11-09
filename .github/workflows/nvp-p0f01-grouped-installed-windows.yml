@@ -1,0 +1,160 @@
+name: NVP P0-F-01 Grouped Native, Installed NSIS, Real GGUF and Director Acceptance
+# Only one acceptance run after the task group. No automatic per-edit runs.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nvp-p0f01-group-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  native-source:
+    name: Real native FilmIndex/OpenUSD model draft cancel and recovery / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real original USD source and test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11' numpy Pillow
+          python -m pip install pytest httpx
+      - name: Compile actual source / installed host and cross-process acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film02m_f_authoring.py backend/nvp_usd_film02m_f_desktop_mixin.py backend/nvp_usd_film02m_g_model_world_candidate.py backend/nvp_usd_film02m_h_actor_camera_binding.py backend/nvp_wo5_desktop_bridge.py backend/nvp_wo6_desktop_bridge.py tools/nvp_desktop_alpha.py tools/nvp_p0f01_windows_dialog_driver.py
+      - name: Native draft/source, model provider, cancellation, exact authorizations and 01D/01E actor integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k 'test_02m_f or test_02m_g'
+          python -m pytest -q -s tests/test_nvp_usd_film01e_world_take.py -k 'test_02m_h'
+          python -m pytest -q -s tests/test_nvp_usd_film02mg_model_world_candidate.py
+
+  director-ui:
+    name: Native-IPC React background model controls and production bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install actual React/Vite sources
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Test installed editor's async model status, cancellation and source-only workflows
+        working-directory: frontend
+        run: npm run test:ui -- src/ModularWorldDirector.test.jsx src/DataFirstViewpointEditor.test.jsx
+      - name: Build actual offline WebView assets
+        working-directory: frontend
+        run: npm run build
+      - name: Check native model cancellation, real source and OS confirmation controls in production JS
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -l 'Cancel local model generation' frontend/dist/assets/*.js >/dev/null
+          grep -R -l 'OS director approval' frontend/dist/assets/*.js >/dev/null
+          grep -R -l 'Original OpenUSD modular world director' frontend/dist/assets/*.js >/dev/null
+
+  installed-windows:
+    name: Actual NSIS installed exe, real GGUF source, two native consent dialogs and forced restart / Windows
+    runs-on: windows-2025
+    timeout-minutes: 210
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: master
+          path: deps/llama.cpp
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install native OpenUSD, NSIS, desktop packaging and genuine model transport
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { throw 'NVP source dependencies failed' }
+          python -m pip install --only-binary=:all: 'usd-core==26.11' Pillow numpy
+          if ($LASTEXITCODE -ne 0) { throw 'OpenUSD unavailable on Windows' }
+          python -m pip install 'huggingface_hub>=0.28,<2' 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19' pytest
+          if ($LASTEXITCODE -ne 0) { throw 'Installed desktop dependencies failed' }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Native NSIS unavailable' }
+      - name: Compile actual llama.cpp server, capture revision and binary hash
+        shell: pwsh
+        run: |
+          git -C deps/llama.cpp rev-parse HEAD | Out-File -Encoding ascii "$env:RUNNER_TEMP/p0f01-llama-source-sha.txt"
+          cmake -S deps/llama.cpp -B deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_CURL=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Real llama.cpp configure failed' }
+          cmake --build deps/llama.cpp/build --config Release --target llama-server --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Real llama-server build failed' }
+          python -m tools.nvp_wo6_07b_locate_server deps/llama.cpp/build
+          if ($LASTEXITCODE -ne 0) { throw 'Actual llama-server cannot be located' }
+      - name: Resolve and hash genuine tiny acceptance-only model GGUF
+        shell: pwsh
+        run: |
+          python -m tools.nvp_wo6_07b_ci_model_download --directory "$env:RUNNER_TEMP/p0f01-gguf" --manifest "$env:RUNNER_TEMP/p0f01-model-manifest.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot use a fake GGUF when real model acquisition fails' }
+      - name: Compile real shipped offline React and Windows PyInstaller executable
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'React dependency installation failed' }
+          npm run test:ui -- src/ModularWorldDirector.test.jsx
+          if ($LASTEXITCODE -ne 0) { throw 'Director UI acceptance failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Offline React build failed' }
+          Pop-Location
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-submodules backend --hidden-import tools.nvp_wo6_07b_real_gguf_smoke --hidden-import tools.nvp_p0f01_windows_dialog_driver tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { throw 'Real NVP.exe build failed' }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/p0f01-bundle-audit.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Original source bundle identity invalid' }
+      - name: Build actual NSIS installer
+        shell: pwsh
+        run: |
+          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'Actual NSIS build failed' }
+      - name: One installed Windows executable group acceptance including genuine GGUF and native OS dialog
+        shell: pwsh
+        run: |
+          & 'tools/nvp_p0f01_installed_acceptance.ps1' -ModelPath $env:NVP_TEST_GGUF_PATH -LlamaServer $env:NVP_TEST_LLAMA_SERVER
+          if ($LASTEXITCODE -ne 0) { throw 'Installed P0-F-01 technical acceptance did not complete' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p0f01-installed-windows-nsis-gguf-original-source-evidence
+          path: |
+            ${{ runner.temp }}/p0f01-installed-identity.txt
+            ${{ runner.temp }}/p0f01-installed-window.log
+            ${{ runner.temp }}/p0f01-bundle-audit.json
+            ${{ runner.temp }}/p0f01-real-gguf-installed.json
+            ${{ runner.temp }}/p0f01-model-manifest.json
+            ${{ runner.temp }}/p0f01-llama-source-sha.txt
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p0f01-nsis-installer-candidate-native-gates-not-yet-accepted
+          path: dist/NVP-Alpha-Setup.exe
+          if-no-files-found: warn
+          retention-days: 7
