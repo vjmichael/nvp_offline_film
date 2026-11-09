@@ -97,14 +97,15 @@ describe('01R editable source-first virtual film',()=>{
 
   it('enqueues approved original shot groups and never declares movie before 720 actual frames and PCM',async()=>{
     const sourceSha='f'.repeat(64);
-    let saved=null,completed=false;
+    let saved=null,completed=false,verified=0;
     const api=buildApi(()=>catalog(saved?[saved]:[]));
     const queue=()=>({
       format:'nvp.usd_film01t.original_selected_durable_queue.v1',
       source_edit_sha256:'e'.repeat(64),
-      queue:{progress_completed:completed?180:0,
+      queue:{progress_completed:completed?180:verified,
         progress_required:180,all_shots_finished:completed,
-        states:{QUEUED:completed?0:180,SUCCEEDED:completed?180:0,
+        states:{QUEUED:completed?0:180-verified,
+          SUCCEEDED:completed?180:verified,
           INTERRUPTED:0}}});
     const native={
       film01r_create_bank:vi.fn(),film01r_revise_bank:vi.fn(),
@@ -134,7 +135,7 @@ describe('01R editable source-first virtual film',()=>{
         state:'QUEUED_APPROVED_NATIVE_GROUP',ticket_id:'first-group',
         source_edit_sha256:'e'.repeat(64)})),
       film01t_poll:vi.fn(async()=>{
-        completed=true;
+        verified=12;
         return {format:'nvp.film01t.native_group_progress.v1',
           ticket_id:'first-group',
           source_edit_sha256:'e'.repeat(64),
@@ -172,6 +173,13 @@ describe('01R editable source-first virtual film',()=>{
       name:'OS approve next source shot group'}));
     await waitFor(()=>expect(native.film01t_advance).toHaveBeenCalledTimes(1));
     await waitFor(()=>expect(native.film01t_poll).toHaveBeenCalledTimes(1));
+    await waitFor(()=>expect(screen.getByText(/Persistent 01S queue/)).toBeTruthy());
+    expect(screen.getByRole('button',{
+      name:'Conform 30-second picture + original PCM'}).disabled).toBe(true);
+    // Only a later independently reported 180/180 verified queue can unlock
+    // native final conform. One group of 12 must NOT suffice.
+    completed=true;
+    fireEvent.click(screen.getByRole('button',{name:'Reopen persistent queue'}));
     await waitFor(()=>expect(screen.getByRole('button',{
       name:'Conform 30-second picture + original PCM'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
