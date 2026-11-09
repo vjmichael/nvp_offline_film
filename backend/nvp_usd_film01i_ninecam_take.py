@@ -292,6 +292,7 @@ class OriginalFilmPerformanceSampler:
         # sampling pass evaluates original cast actor transforms and all
         # native time-sampled descendant attributes, including authored rigs.
         state=[]
+        actor_positions=[]
         for item in self.actors:
             prim=self.world.stage.GetPrimAtPath(item["composed_actor_prim"])
             if not prim or not prim.IsDefined():
@@ -307,6 +308,10 @@ class OriginalFilmPerformanceSampler:
             matrix=UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(time)
             transform=[[round(float(matrix[i][j]),9) for j in range(4)]
                        for i in range(4)]
+            xyz=matrix.ExtractTranslation()
+            actor_positions.append({"actor_id":item["actor_id"],
+                "source_prim":item["composed_actor_prim"],
+                "position_m":[round(float(xyz[i]),9) for i in range(3)]})
             state.append({"actor_id":item["actor_id"],
                 "composed_actor_prim":item["composed_actor_prim"],
                 "world_transform":transform,
@@ -329,5 +334,6 @@ class OriginalFilmPerformanceSampler:
         return {"frame":index,"original_film_tick":tick,
                 "source_actor_count":len(state),
                 "source_actor_state_sha256":state_sha,
+                "source_actor_world_positions_m":actor_positions,
                 "nine_synchronized_original_camera_views":cameras,
                 "original_source_evaluated_not_rendered":True}
