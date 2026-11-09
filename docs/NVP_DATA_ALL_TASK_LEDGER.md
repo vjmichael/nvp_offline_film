@@ -16,6 +16,17 @@ non-destructive assembly manifests. Hardware renders ephemeral samples
 and visuals as requested. Only an explicit final 2D presentation freezes
 output raster/video/audio; samples/frames never define a Digital Take.
 
+## 2026-11-09 — F/G/H grouped evidence, P0-F-01 return, and director-editable camera rails
+
+**Acceptance contract:** F/G/H consolidated run [42650335958](https://github.com/vjmichael/nvp_offline_film/actions/runs/42650335958) is tied to exact SHA `389960c6a53cbf7c3842e5cfd972ff2d9a45f01a`. At the latest inspection six Windows/Linux/OpenUSD and React jobs were **QUEUED**, not running or completed: **no job logs exist yet**, and **no F/G/H OS acceptance can be marked passed**. We must inspect real Windows/Linux matrix output, fix reported failures, then rerun **one** replacement group gate only if required. Do not update the CI-watched staging head mid-acceptance; this documentation lives on a separate branch.
+
+**P0-F-01 (next):** Complete the original installed OpenUSD world editor and NSIS/WebView2 workflow: catalog → proposed original district → source USD preview/diff → edits/undo/discard → app restart/reopen, actual local GGUF model proposal with recorded receipt, explicit one-use native OS approval/denial and interruption recovery. Existing source-implemented UI and durable F/G/H foundation are **not** physical installed acceptance.
+
+**CAM-FX-01–05 (new, planned, not implemented):** director-editable, immutable 3D digital camera rails and richer typed shot-technique vocabulary; exact Film Time rail control points/easing/orientation/filmback/focus, native stronger OpenUSD shot layer, user-editable GUI gizmos and numeric controls, typed AI proposals only with director approval, and real Blender/Cycles render + ActorID source preservation tests. Initial techniques include dolly/truck/crane/arc/track, pan/tilt/Dutch/handheld, POV/OTS/reaction/establishing/insert and rack focus/dolly zoom. The actor's original Take/PCM remains unchanged; a rail is a virtual camera path, not a physical model. Full scoped specification and the **sequential task-group order** are in [NVP camera rails and P0-F-01 plan](NVP_CAMERA_RAILS_SHOT_FX_AND_P0F01_SEQUENTIAL_PLAN_20261109.md).
+
+**Ordered groups:** (0) finish F/G/H native matrix; (1) P0-F-01 installed editor/GGUF/NSIS; (2) approved district 01D/01E actual frame quality; (3) CAM-FX-01/02 source+native layer; (4) CAM-FX-03/04 installed editor/AI; (5) CAM-FX-05 + 01Q/01S/01T 720-frame original film; then 02M richness/actors, DA/WO professional finishing, HSURF after the USD-FILM family, and longform/Lu integrations. Run acceptance **once per group** after implementation, never on every edit.
+
+
 ## Ordered implementation and acceptance tasks
 
 | ID | Task | Evidence required | Implementation | Native acceptance |
