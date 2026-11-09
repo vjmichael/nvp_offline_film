@@ -313,6 +313,28 @@ def run_persistent_installed_smoke(mode):
                     pass
                 else:
                     raise RuntimeError("Restart illegally published unapproved AI/director world")
+            if "p0f01_forced_model_attempt" in expected:
+                from backend.nvp_film_index import FilmIndex
+                from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
+                from backend.nvp_api import studio
+                source=FilmIndex(studio)
+                attempts=OriginalDistrictDrafts(
+                    source,root/".native-production-runtime"/
+                    "original-film02m-director-proposals",
+                    confirm=lambda *_:False)
+                recovered=attempts.model_attempt_status(
+                    expected["id"],expected["p0f01_forced_model_attempt"])
+                if (recovered["state"]!=
+                        "INTERRUPTED_REQUIRES_NEW_GENERATION" or
+                    recovered["proposal"] is not None or
+                    recovered["director_approval_granted"] is not False):
+                    raise RuntimeError(
+                        "Forced-kill installed model attempt revived or approved")
+                try:
+                    source.read_revision(expected["id"],"P0F01KilledModelWorld",1)
+                except KeyError:pass
+                else:
+                    raise RuntimeError("Killed installed model attempt published a world")
         return 0
     finally:
         server.should_exit=True
@@ -320,6 +342,43 @@ def run_persistent_installed_smoke(mode):
         sock.close()
         if worker.is_alive():
             raise RuntimeError("Installed NVP failed to exit cleanly")
+
+
+def run_forcibly_interrupted_installed_model_smoke():
+    """Test-only installed host admission killed by the Windows runner.
+
+    This proves orphaned model state cannot become live across a real process
+    crash. It does NOT assert an actual GGUF provider was invoked here.
+    """
+    import json
+    home=os.environ.get("NVP_HOME")
+    if not home:
+        raise RuntimeError("Explicit test NVP_HOME required")
+    root=Path(home)
+    marker=root/"installed-smoke-project.json"
+    expected=json.loads(marker.read_text(encoding="utf8"))
+    from backend.nvp_studio import Studio
+    from backend.nvp_film_index import FilmIndex
+    from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
+    store=OriginalDistrictDrafts(
+        FilmIndex(Studio(root/"nvp_studio.sqlite3")),
+        root/".native-production-runtime"/
+        "original-film02m-director-proposals",
+        confirm=lambda *_:False)
+    attempt=store.start_model_attempt(
+        expected["id"],"P0F01KilledModelWorld",0,
+        "TEST_NO_MODEL_STARTED","d"*64,"e"*64)
+    expected["p0f01_forced_model_attempt"]=attempt
+    temporary=marker.with_name("installed-smoke-project.tmp.json")
+    with temporary.open("x",encoding="utf8") as handle:
+        handle.write(json.dumps(expected,sort_keys=True))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary,marker)
+    _native_window_stage("p0f01_durable_model_attempt_ready_for_force_kill")
+    import time
+    time.sleep(120)
+    raise RuntimeError("Installed model interruption test was never killed")
 
 
 def create_trusted_camera_bridge(port):
@@ -1203,6 +1262,8 @@ def main(argv=None):
                         help="Create persistent project for cross-process installed acceptance")
     parser.add_argument("--smoke-reopen",action="store_true",
                         help="Reopen same project after fully exiting previous installed app")
+    parser.add_argument("--smoke-model-interrupt",action="store_true",
+                        help="Test-only durable model attempt awaiting external forced termination")
     parser.add_argument("--smoke-window",action="store_true",
                         help="Launch a real native Windows WebView2 and verify page loaded")
     parser.add_argument("--smoke-data-av",action="store_true",
@@ -1223,6 +1284,7 @@ def main(argv=None):
                         help="Run actual native GGUF through visible installed React director panel")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
+            args.smoke_model_interrupt,
             args.smoke_window,args.smoke_data_av,
             args.smoke_finished_playback,args.smoke_visible_finished_av,
             args.smoke_wo6_native_actions,args.smoke_wo6_real_gguf))>1:
@@ -1260,6 +1322,8 @@ def main(argv=None):
                 measured["human_director_reviewed"] is not False):
             raise RuntimeError("Native model test did not complete")
         return 0
+    if args.smoke_model_interrupt:
+        return run_forcibly_interrupted_installed_model_smoke()
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
             "create" if args.smoke_create else "reopen")
@@ -1295,6 +1359,7 @@ if __name__=="__main__":
     diagnostic=None
     smoke=any(flag in sys.argv for flag in (
         "--smoke","--smoke-create","--smoke-reopen",
+        "--smoke-model-interrupt",
         "--smoke-window","--smoke-data-av","--smoke-finished-playback",
         "--smoke-visible-finished-av","--smoke-wo6-real-gguf"))
     if smoke:
