@@ -124,3 +124,11 @@ that same authoritative data.
   designer UI persistent queue/edit controls, and Lu-side read-only
   connector acceptance remain OPEN. No full scene render or Lu
   controlling NVP is asserted from these tests.
+
+
+## Deferred NVP↔Lu model residency handoff (MUST RETAIN)
+
+**Not superseded by RES-01/01S.** The original post-Lu-v1.0 requirement is recorded in [POST-LU-1.0 recoverable model/resource handoff](NVP_POST_LU10_RECOVERABLE_MODEL_HANDOFF.md). NVP may **request** that Lu safely checkpoint/quiesce its inference and eject/unload its existing model, allowing a production-specific model or heavy film rendering to use the freed RAM/VRAM. On NVP job completion, verified release of NVP-owned resources allows Lu to safely **reload its previously loaded model** and rehydrate durable conversation/task context without replaying tool authority. No automatic double-loading, model-kill command issued by NVP, or unchecked reloading is permitted; Lu and the future authenticated shared resource broker retain final authority and creator consent/policy gates.
+
+**Current state:** source design only; runtime NVP↔Lu handoff is deferred until after Lu v1.0. RES-01 measures NVP-owned workers and 01S batches camera jobs; neither currently sends model-eject or model-reload commands to Lu. Read-only resource telemetry is **not** a model lifecycle control API. Native cross-app handshake, authenticated AF_UNIX transport on supported Windows/Linux targets, exclusive resource leases, verified unload/reload and crash/power-loss recovery remain acceptance gates. Do not treat generic available VRAM readings or absent worker PIDs as verified resource release.
+
