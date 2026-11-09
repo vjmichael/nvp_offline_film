@@ -98,8 +98,13 @@ def _author(stage,rail_id,spec):
     # Match NVP DATA-TIME-01: a USD timecode is one original Film Time
     # tick, NOT a 24fps frame or an arbitrary animation second.
     stage.SetTimeCodesPerSecond(float(T))
-    if abs(stage.GetTimeCodesPerSecond()-float(T))>.5:
-        raise RuntimeError("Director camera layer lost original Film Time clock")
+    stage.SetFramesPerSecond(float(FILM_FPS))
+    stage.SetStartTimeCode(float(spec["film_start_tick"]))
+    stage.SetEndTimeCode(float(spec["film_end_tick"]))
+    if (abs(stage.GetTimeCodesPerSecond()-float(T))>.5 or
+        stage.GetStartTimeCode()!=float(spec["film_start_tick"]) or
+        stage.GetEndTimeCode()!=float(spec["film_end_tick"])):
+        raise RuntimeError("Director camera layer lost original Film Time range/clock")
     # Authored stronger camera opinions must not change the ORIGINAL
     # /World prim's type. An over preserves the weaker original Xform.
     stage.OverridePrim("/World")
@@ -185,6 +190,10 @@ def generate_camera_director_layer(rail_id,spec):
     reopened=Usd.Stage.Open(source,load=Usd.Stage.LoadAll)
     if not reopened:
         raise RuntimeError("Original director camera rail USD cannot reopen")
+    if (abs(reopened.GetTimeCodesPerSecond()-float(T))>.5 or
+        reopened.GetStartTimeCode()!=float(spec["film_start_tick"]) or
+        reopened.GetEndTimeCode()!=float(spec["film_end_tick"])):
+        raise RuntimeError("Independently reopened director layer lost original clock")
     if _check_native(reopened,path,spec,ticks)!=ticks:
         raise RuntimeError("Source-native director camera rail readback incomplete")
     return data
@@ -213,6 +222,8 @@ def open_approved_camera_layer(index:FilmIndex,pid,rail_id,revision):
             pid,doc["world_id"],doc["world_revision"]) as world:
         world.load([shot_set])
         stage=world.stage
+        if abs(stage.GetTimeCodesPerSecond()-float(T))>.5:
+            raise RuntimeError("Original 01E world and director camera rail use different clocks")
         path=camera_rail_path(rail_id)
         if stage.GetPrimAtPath(CAMERA_ROOT).IsDefined():
             raise PermissionError("Original source world already owns the rail rig namespace")
