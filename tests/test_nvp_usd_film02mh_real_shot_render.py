@@ -234,6 +234,8 @@ class OriginalActorDistrictNativeRenderTests(unittest.TestCase):
                     job_id="shot02mh_denied",director_event="FAKE_CREATIVE_APPROVAL")
             with self.assertRaises(KeyError):
                 sup.inspect("shot02mh_denied")
+            self.assertFalse((sup.root/"shot02mh_denied").exists(),
+                "Rejected predispatch native USD source was not removed")
             compared=host.compare_approved_revisions(
                 self.pid,"Native02MHBinding1","Native02MHBinding2",
                 first_job_id="shot02mh_revision1",
@@ -248,6 +250,21 @@ class OriginalActorDistrictNativeRenderTests(unittest.TestCase):
                 compared["original_world_take_sha256"],self.take_sha)
             self.assertTrue(compared["independent_blender_reopened_both"])
             self.assertTrue(compared["original_actor_take_pcm_unchanged"])
+            for revision in (1,2):
+                job="shot02mh_revision"+str(revision)
+                checked=host.reopen_verified_render(
+                    self.pid,"Native02MHBinding"+str(revision),job)
+                self.assertEqual(checked["format"],
+                    "nvp.usd_film02m_h.verified_native_cycles_picture.v1")
+                self.assertEqual(checked["world_take_sha256"],self.take_sha)
+                self.assertTrue(checked[
+                    "native_worker_and_independent_reopen_verified"])
+                self.assertFalse(checked["director_picture_approved"])
+                self.assertEqual(checked["picture_sha256"],
+                    sha_file(sup.root/job/"frame.png"))
+            with self.assertRaises((RuntimeError,PermissionError,KeyError)):
+                host.reopen_verified_render(
+                    self.pid,"Native02MHBinding2","shot02mh_revision1")
             self.assertGreaterEqual(len(decisions),3)
             self.assertFalse(compared["complete_film_accepted"])
             # Preserve independently inspectable real PNG/Blend/worker
