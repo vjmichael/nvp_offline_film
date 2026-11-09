@@ -1904,6 +1904,78 @@ class OriginalModularBuildingSource(unittest.TestCase):
             release.set()
             bridge._close()
 
+    def test_02m_g_async_app_shutdown_prevents_post_restart_late_draft(self):
+        """A real new host session may not inherit a blocked provider grant."""
+        import threading,time
+        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+        from backend.nvp_wo6_verified_local_model import FORMAT as PROVIDER_FORMAT
+        from hashlib import sha256
+        import json
+        entered=threading.Event()
+        release=threading.Event()
+        settings=self._02m_e_settings()
+        root=self.root/"02mg_async_abrupt_host_close"
+        class Window:
+            def get_current_url(self):
+                return "http://127.0.0.1:43141/"
+            def create_confirmation_dialog(self,*_):
+                raise AssertionError("No model operation grants native authority")
+        class LongModel:
+            def __init__(self,identity):
+                self.identity=identity
+            def complete(self,*_):
+                entered.set()
+                if not release.wait(10):
+                    raise RuntimeError("No bounded test model completion")
+                reply=json.dumps({"params":settings})
+                self.completion_receipt={
+                    "format":PROVIDER_FORMAT,
+                    "selected_model_id":self.identity,
+                    "provider_reported_model_id":self.identity,
+                    "generated_text_sha256":sha256(reply.encode()).hexdigest(),
+                    "provider_reported_completion_tokens":14,
+                    "provider_self_report_not_attestation":True,
+                    "native_worker_authorized":False}
+                return reply
+        def opened():
+            host=TrustedDesktopWO6Bridge(
+                self.index,origin="http://127.0.0.1:43141",
+                production_root=root,
+                director_writer_factory=lambda identity:LongModel(identity))
+            host._attach_window(Window())
+            return host
+        old=opened()
+        attempt=None
+        try:
+            result=old.film02mg_start_candidate({
+                "project_id":self.pid,"district_id":"AsyncClosedWorld",
+                "expected_revision":0,"model_id":"LocalTestModel",
+                "direction":"Generate director scene but terminate the app first"})
+            attempt=result["attempt_id"]
+            self.assertTrue(entered.wait(5))
+            old._close()
+        finally:
+            release.set()
+        for _ in range(100):
+            with old._film02mg_async_lock:
+                finished=not old._film02mg_active
+            if finished:break
+            time.sleep(.05)
+        self.assertTrue(finished)
+        restarted=opened()
+        try:
+            status=restarted.film02mg_candidate_status({
+                "project_id":self.pid,"attempt_id":attempt})
+            self.assertIn(status["state"],(
+                "CANCELLED","INTERRUPTED_REQUIRES_NEW_GENERATION"))
+            self.assertIsNone(status["proposal"])
+            self.assertFalse(any(x["district_id"]=="AsyncClosedWorld"
+                for x in restarted.film02mf_catalog(self.pid)["drafts"]))
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,"AsyncClosedWorld",1)
+        finally:
+            restarted._close()
+
     def test_02m_g_model_failure_and_orphan_attempt_do_not_publish(self):
         """Interrupted worker does not create drafts or replay model authority."""
         from hashlib import sha256
