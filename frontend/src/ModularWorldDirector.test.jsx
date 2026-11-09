@@ -129,7 +129,8 @@ describe('02M-F installed original source/world director',()=>{
     await waitFor(()=>expect(native.film02mf_edit).toHaveBeenCalledTimes(1));
     expect(native.film02mf_edit.mock.calls[0][0]).toMatchObject({
       action:{op:'hide_generated',instance_id:1},version:1});
-    await screen.findByText(/Native draft: DRAFT/);
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Undo last draft change'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Undo last draft change'}));
     await waitFor(()=>expect(native.film02mf_undo).toHaveBeenCalledTimes(1));
