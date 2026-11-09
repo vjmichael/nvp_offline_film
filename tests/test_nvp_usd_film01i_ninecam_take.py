@@ -474,7 +474,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                 revision=1,camera_id=camera,tick=15*T,folder=root)
             scene=Usd.Stage.Open(str(root/STAGE))
             self.assertTrue(scene.GetPrimAtPath(
-                "/World/NVPDirectorCameraRig/"+camera).IsA(UsdGeom.Camera))
+                "/World/NVPDirectorCameraRig/NVPDirector_"+camera).IsA(UsdGeom.Camera))
             self.assertTrue(scene.GetPrimAtPath(wall).IsDefined())
             self.assertEqual(packet["source"]["original_film_tick"],15*T)
             self.assertTrue(packet["source"]["source_world_visibility_not_modified"])
