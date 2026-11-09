@@ -25,6 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p test_nvp_e2e01e_package_guard.py -v
+          python -m unittest discover -s tests -p test_nvp_p0f01_windows_process_gate.py -v
       - name: Build offline React application
         shell: pwsh
         run: |
@@ -109,8 +110,8 @@ jobs:
         shell: pwsh
         run: |
           $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
-          $process=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw 'NSIS silent install failed' }
+          python tools/nvp_p0f01_windows_process_gate.py --stage nsis-install --timeout-seconds 300 --stage-log "$env:RUNNER_TEMP/nvp-alpha-process-stages.jsonl" -- $setup /S
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded NSIS silent install failed; inspect process stages artifact' }
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           if (-not (Test-Path $installed)) { throw 'Installed NVP.exe missing' }
           $builtHash=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash
@@ -122,15 +123,15 @@ jobs:
           # second installed process independently reopens exact USD SHA.
           $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'nvp-alpha-installed-create.log'
-          $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru -Wait
-          if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed; inspect native log' }
+          python tools/nvp_p0f01_windows_process_gate.py --stage installed-create --timeout-seconds 240 --stage-log "$env:RUNNER_TEMP/nvp-alpha-process-stages.jsonl" --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-create
+          if ($LASTEXITCODE -ne 0) { throw 'Installed first launch failed or timed out; inspect process stages and native diagnostics' }
           if (-not (Test-Path $env:NVP_NATIVE_SMOKE_DIAGNOSTICS) -or
               -not (Select-String -LiteralPath $env:NVP_NATIVE_SMOKE_DIAGNOSTICS -Pattern 'NVP_SMOKE_PYTHON_EXIT=0' -Quiet)) {
             throw 'Installed first-process native Python completion receipt missing'
           }
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'nvp-alpha-installed-reopen.log'
-          $second=Start-Process -FilePath $installed -ArgumentList '--smoke-reopen' -PassThru -Wait
-          if ($second.ExitCode -ne 0) { throw 'Second fresh native app launch lost SQLite film project; inspect native log' }
+          python tools/nvp_p0f01_windows_process_gate.py --stage installed-reopen --timeout-seconds 240 --stage-log "$env:RUNNER_TEMP/nvp-alpha-process-stages.jsonl" --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-reopen
+          if ($LASTEXITCODE -ne 0) { throw 'Second fresh installed app launch failed/timed out; inspect process stages and native log' }
           if (-not (Test-Path $env:NVP_NATIVE_SMOKE_DIAGNOSTICS) -or
               -not (Select-String -LiteralPath $env:NVP_NATIVE_SMOKE_DIAGNOSTICS -Pattern 'NVP_SMOKE_PYTHON_EXIT=0' -Quiet)) {
             throw 'Installed second-process original USD reopening receipt missing'
@@ -146,9 +147,9 @@ jobs:
           # and invokes actual native catalog/propose/edit/undo/discard IPC.
           $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'nvp-alpha-installed-webview2.log'
-          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru -Wait
-          if ($window.ExitCode -ne 0) {
-            throw 'Real desktop WebView2 window did not load; inspect native window trace'
+          python tools/nvp_p0f01_windows_process_gate.py --stage installed-webview2 --timeout-seconds 300 --stage-log "$env:RUNNER_TEMP/nvp-alpha-process-stages.jsonl" --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-window
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Installed WebView2 process failed/timed out; inspect process stages and native window trace'
           }
           $trace=$env:NVP_NATIVE_SMOKE_DIAGNOSTICS
           if (-not (Test-Path $trace)) { throw 'No installed native WebView2 diagnostics' }
@@ -169,8 +170,8 @@ jobs:
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) {
             throw 'Missing creator SQLite film database before uninstall'
           }
-          $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
-          if ($result.ExitCode -ne 0) { throw 'Uninstall failed' }
+          python tools/nvp_p0f01_windows_process_gate.py --stage nsis-uninstall --timeout-seconds 240 --stage-log "$env:RUNNER_TEMP/nvp-alpha-process-stages.jsonl" -- $uninstaller /S
+          if ($LASTEXITCODE -ne 0) { throw 'Uninstall failed/timed out; inspect process stages' }
           Start-Sleep -Seconds 2
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
@@ -179,6 +180,7 @@ jobs:
         with:
           name: nvp-alpha-windows-source-identity-and-installed-recovery
           path: |
+            ${{ runner.temp }}/nvp-alpha-process-stages.jsonl
             ${{ runner.temp }}/nvp-alpha-group-manifest.json
             ${{ runner.temp }}/nvp-alpha-installed-create.log
             ${{ runner.temp }}/nvp-alpha-installed-reopen.log

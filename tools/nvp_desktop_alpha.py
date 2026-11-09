@@ -222,6 +222,7 @@ def run_persistent_installed_smoke(mode):
         with urllib.request.urlopen(base+"/",timeout=10) as reply:
             if "assets/" not in reply.read().decode("utf8"):
                 raise RuntimeError("React desktop bundle unavailable after install")
+        _native_window_stage("installed_persistent_"+mode+"_server_ready")
         if mode=="create":
             if marker.exists():
                 raise RuntimeError("Persistent test project marker already exists")
@@ -267,7 +268,9 @@ def run_persistent_installed_smoke(mode):
                     "plan_sha":unapproved["original_plan_sha256"],
                     "usd_sha":unapproved["original_usd_root_sha256"]}
             marker.write_text(json.dumps(stamp),encoding="utf8")
+            _native_window_stage("installed_persistent_created_draft_saved")
         else:
+            _native_window_stage("installed_persistent_reopen_started")
             expected=json.loads(marker.read_text("utf8"))
             with urllib.request.urlopen(
                     base+"/api/projects/"+expected["id"],timeout=10) as reply:
@@ -308,13 +311,16 @@ def run_persistent_installed_smoke(mode):
                     pass
                 else:
                     raise RuntimeError("Restart illegally published unapproved AI/director world")
+        _native_window_stage("installed_persistent_"+mode+"_validated")
         return 0
     finally:
+        _native_window_stage("installed_persistent_"+mode+"_shutdown_start")
         server.should_exit=True
         worker.join(timeout=12)
         sock.close()
         if worker.is_alive():
             raise RuntimeError("Installed NVP failed to exit cleanly")
+        _native_window_stage("installed_persistent_"+mode+"_shutdown_complete")
 
 
 def create_trusted_camera_bridge(port):
@@ -340,7 +346,7 @@ def _native_window_stage(message):
     if not path.is_absolute() or path.is_symlink() or not path.parent.is_dir():
         return
     with path.open("a",encoding="utf8") as stream:
-        stream.write("NVP_INSTALLED_WINDOW_STAGE="+message+"\\n")
+        stream.write("NVP_INSTALLED_WINDOW_STAGE="+message+"\n")
         stream.flush()
         os.fsync(stream.fileno())
 
