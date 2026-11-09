@@ -166,7 +166,8 @@ def safe_parallelism(snapshot:ResourceSnapshot,preferences:BatchPreferences,
 
 def plan_batches(plan_id,source_performance_sha256,shots,preferences,
                  snapshot,*,final_shot_ids=None,
-                 verified_cycles_gpu_ids=(),cpu_threads=None):
+                 verified_cycles_gpu_ids=(),cpu_threads=None,
+                 reserved_ram_mb=0,reserved_gpu_mb=0):
     if not _valid_id(plan_id) or not isinstance(
             source_performance_sha256,str) or not SHA.fullmatch(
                 source_performance_sha256):
@@ -189,7 +190,9 @@ def plan_batches(plan_id,source_performance_sha256,shots,preferences,
         stage:safe_parallelism(
             snapshot,preferences,quality=stage,
             verified_cycles_gpu_ids=verified_cycles_gpu_ids,
-            cpu_threads=cpu_threads)
+            cpu_threads=cpu_threads,
+            reserved_ram_mb=reserved_ram_mb,
+            reserved_gpu_mb=reserved_gpu_mb)
         for stage in STAGES
     }
     if preferences.shots_per_batch is None:
@@ -238,7 +241,8 @@ def plan_batches(plan_id,source_performance_sha256,shots,preferences,
 
 def preview_batch_layout(viewpoint_count,selected_final_count,preferences,
                          snapshot,*,verified_cycles_gpu_ids=(),
-                         cpu_threads=None):
+                         cpu_threads=None,
+                         reserved_ram_mb=0,reserved_gpu_mb=0):
     """Safe UI estimation only; no fabricated FilmIndex source or worker job."""
     if (type(viewpoint_count) is not int or not 1<=viewpoint_count<=96
         or type(selected_final_count) is not int
@@ -249,7 +253,9 @@ def preview_batch_layout(viewpoint_count,selected_final_count,preferences,
         stage:safe_parallelism(
             snapshot,preferences,quality=stage,
             verified_cycles_gpu_ids=verified_cycles_gpu_ids,
-            cpu_threads=cpu_threads)
+            cpu_threads=cpu_threads,
+            reserved_ram_mb=reserved_ram_mb,
+            reserved_gpu_mb=reserved_gpu_mb)
         for stage in STAGES}
     size=(preferences.shots_per_batch
           if preferences.shots_per_batch is not None else
