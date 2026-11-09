@@ -1122,44 +1122,68 @@ def run_visible_window_smoke():
                                         # malformed tiny-model output FAILS.
                                         _native_window_stage(
                                             "p0f01_real_gguf_source_generation_start")
-                                        model_request={
-                                            "project_id":project["id"],
-                                            "district_id":"InstalledRealGGUFWorld",
-                                            "expected_revision":0,
-                                            "model_id":model_alias,
-                                            "direction":"Generate a one-building, one-lot original film district from InstalledSourceHouse, seed 7, grid 1 by 1, spacing 30, origin [0,0,0], triangle budget 100000, instance budget 2. Return exactly the eight params fields and strict JSON only."}
-                                        window.evaluate_js(
-                                            "window.__nvpP0F01Model='PENDING';"
-                                            "window.pywebview.api.film02mg_start_candidate("+
-                                            json.dumps(model_request,separators=(",",":"))+
-                                            ").then(x=>{window.__nvpP0F01Model=x;})"
-                                            ".catch(e=>{window.__nvpP0F01Model="
-                                            "'FAILED:'+String(e&&e.message||e);});")
-                                        until=time.monotonic()+25
-                                        started=None
-                                        while time.monotonic()<until:
-                                            started=window.evaluate_js(
-                                                "window.__nvpP0F01Model")
-                                            if isinstance(started,dict) or (
-                                                    isinstance(started,str) and
-                                                    started.startswith("FAILED:")):
-                                                break
-                                            time.sleep(.15)
-                                        if (type(started) is not dict or
-                                            started.get("state")!="GENERATING" or
-                                            started.get("director_approval_granted") is not False):
+                                        # Exercise actual shipped React
+                                        # controls, not an invented HTTP model
+                                        # endpoint or a backend-only method.
+                                        # React calls native host IPC itself.
+                                        model_alias_json=json.dumps(model_alias)
+                                        enter=window.evaluate_js(
+                                            "(()=>{const pane=document.querySelector("
+                                            "'section[aria-label=\\\"Original OpenUSD modular world director\\\"]');"
+                                            "if(!pane)return 'PANEL_MISSING';"
+                                            "const model=pane.querySelector("
+                                            "'select[aria-label=\\\"Original world local model ID\\\"]');"
+                                            "if(!model||![...model.options].some(o=>o.value==="+
+                                            model_alias_json+"))return 'MODEL_MISSING';"
+                                            "const id=pane.querySelector("
+                                            "'input[aria-label=\\\"Original district ID\\\"]');"
+                                            "const direction=pane.querySelector("
+                                            "'textarea[aria-label=\\\"Original world model direction\\\"]');"
+                                            "if(!id||!direction)return 'INPUT_MISSING';"
+                                            "const inputSet=Object.getOwnPropertyDescriptor("
+                                            "HTMLInputElement.prototype,'value').set;"
+                                            "inputSet.call(id,'InstalledRealGGUFWorld');"
+                                            "id.dispatchEvent(new Event('input',{bubbles:true}));"
+                                            "const textSet=Object.getOwnPropertyDescriptor("
+                                            "HTMLTextAreaElement.prototype,'value').set;"
+                                            "textSet.call(direction,'Generate a one-building, one-lot "
+                                            "original film street from InstalledSourceHouse. "
+                                            "Seed 7; grid 1 by 1; lot spacing 30; origin [0,0,0]; "
+                                            "source triangle budget 100000; instance budget 2. "
+                                            "Return exactly eight params fields as strict JSON.');"
+                                            "direction.dispatchEvent(new Event('input',{bubbles:true}));"
+                                            "return 'READY';})()")
+                                        if enter!='READY':
                                             raise RuntimeError(
-                                                "Installed WebView2 did not launch original GGUF model draft: "+
-                                                str(started))
-                                        model_attempt=started["attempt_id"]
+                                                "Installed world director cannot enter real model intent: "+
+                                                str(enter))
+                                        until=time.monotonic()+25
+                                        pressed=False
+                                        while time.monotonic()<until:
+                                            pressed=window.evaluate_js(
+                                                "(()=>{const pane=document.querySelector("
+                                                "'section[aria-label=\\\"Original OpenUSD modular world director\\\"]');"
+                                                "const b=[...pane.querySelectorAll('button')]"
+                                                ".find(x=>x.textContent.includes("
+                                                "'Generate and save unapproved AI world draft'));"
+                                                "if(!b||b.disabled)return false;b.click();return true;})()")
+                                            if pressed:break
+                                            time.sleep(.2)
+                                        if not pressed:
+                                            raise RuntimeError(
+                                                "Installed React did not submit selected real GGUF model")
                                         until=time.monotonic()+150
                                         done=None
                                         while time.monotonic()<until:
-                                            done=bridge.film02mg_candidate_status({
-                                                "project_id":project["id"],
-                                                "attempt_id":model_attempt})
-                                            if done["state"]!="GENERATING":
-                                                break
+                                            current=bridge.film02mf_catalog(project["id"])
+                                            attempts=[x for x in current["model_attempts"]
+                                                      if x["district_id"]=="InstalledRealGGUFWorld"]
+                                            if attempts:
+                                                done=bridge.film02mg_candidate_status({
+                                                    "project_id":project["id"],
+                                                    "attempt_id":attempts[0]["attempt_id"]})
+                                                if done["state"]!="GENERATING":
+                                                    break
                                             time.sleep(.4)
                                         if (done is None or
                                             done["state"]!="DRAFT_SAVED" or
@@ -1170,14 +1194,27 @@ def run_visible_window_smoke():
                                                 "provider_reported_completion_tokens"]<1 or
                                             done["proposal"]["state"]!="DRAFT"):
                                             raise RuntimeError(
-                                                "Actual installed GGUF did not generate a verified original USD draft: "+
+                                                "Actual installed GGUF could not produce valid original 3D USD draft: "+
                                                 str(done and done["state"]))
                                         if not bridge.film02mf_preview({
                                                 "project_id":project["id"],
                                                 "draft_id":done["proposal"]["draft_id"]
                                                 })["native_usd_source_reopened"]:
                                             raise RuntimeError(
-                                                "GGUF candidate failed original native USD reopen")
+                                                "GGUF candidate failed original USD reopen")
+                                        until=time.monotonic()+18
+                                        shown=False
+                                        while time.monotonic()<until:
+                                            shown=window.evaluate_js(
+                                                "(()=>{const pane=document.querySelector("
+                                                "'section[aria-label=\\\"Original OpenUSD modular world director\\\"]');"
+                                                "return !!pane&&pane.textContent.includes("
+                                                "'Host-owned local model draft saved and reopened');})()")
+                                            if shown:break
+                                            time.sleep(.3)
+                                        if not shown:
+                                            raise RuntimeError(
+                                                "Native model succeeded but React did not visibly reopen draft")
                                         try:
                                             smoke_index.read_revision(
                                                 project["id"],"InstalledRealGGUFWorld",1)
