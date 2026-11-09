@@ -237,6 +237,37 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                 self.pid,"OneThirtySecondSourceTake",1)["document_sha256"],
             self.scene_take["document_sha256"])
 
+    def test_genuine_original_720_frame_blender_animation_stage(self):
+        from backend.nvp_usd_film01k_blender_animation_build import (
+            author_original_blender_animation,STAGE)
+        from pxr import Usd
+        output=self.root/"derived_720_frame_nine_original_cameras"
+        proof=author_original_blender_animation(
+            self.index,self.pid,"OnePerformanceNineCamBank",folder=output)
+        self.assertEqual(proof["source_camera_count"],9)
+        self.assertEqual(proof["original_frame_count_per_camera"],720)
+        self.assertEqual(len(proof["original_actor_state_per_frame"]),720)
+        self.assertEqual(len(proof["native_actor_reopen_checkpoints"]),7)
+        self.assertGreater(proof["original_native_animated_attributes_resampled"],0)
+        self.assertTrue(proof["original_film_source_unchanged"])
+        self.assertFalse(proof["renderer_frames_created"])
+        stage=Usd.Stage.Open(str(output/STAGE))
+        self.assertEqual(stage.GetFramesPerSecond(),24.0)
+        self.assertEqual(stage.GetStartTimeCode(),1.)
+        self.assertEqual(stage.GetEndTimeCode(),720.)
+
+    def test_native_camera_rejects_nonphysical_focal_length(self):
+        camera="/World/TestCamera"
+        with self.assertRaises(ValueError):
+            OpenUSDSceneBridge(self.index).publish(
+                self.pid,"InvalidForeignCameraLens",
+                prims=[{"path":camera,"role":"camera","position":[0,0,9]}],
+                curves=[],native_schemas=True,
+                native_camera_specs=[{"path":camera,
+                    "rotation_euler_deg":[0,0,0],
+                    "focal_length_mm":0,
+                    "focus_distance_m":9}])
+
     def test_camera_swap_and_wrong_scene_are_not_new_source_performances(self):
         forged=deepcopy(self.camera_shots)
         forged[1]["shot_id"]=forged[0]["shot_id"]
