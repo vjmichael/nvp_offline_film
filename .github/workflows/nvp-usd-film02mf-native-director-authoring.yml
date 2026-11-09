@@ -1,18 +1,15 @@
-name: NVP USD-FILM-02M-F Trusted Installed Director + AI Draft/Approval Integration
+name: NVP USD-FILM-02M-F/G/H Grouped Native Director, Model and Original Shot Acceptance
 
+# Run ONCE per completed 02M-F/G/H task group, never on small pushes.
 on:
-  push:
-    branches: [nvp/usd-film02m-f-trusted-director-authoring-20261109]
-  pull_request:
-    branches: [nvp/usd-film02m-e2-native-material-light-lod-20261109]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: nvp-film02mf-native-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  group: nvp-film02m-fgh-grouped-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   native-durable-original-film-source:
@@ -40,12 +37,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_usd_film02m_f_authoring.py backend/nvp_usd_film02m_f_desktop_mixin.py backend/nvp_wo5_desktop_bridge.py backend/nvp_usd_film02m_e_district.py backend/nvp_usd_film02m_modular_buildings.py tests/test_nvp_usd_film02m_modular_buildings.py
+          python -m compileall -q backend/nvp_usd_film02m_f_authoring.py backend/nvp_usd_film02m_f_desktop_mixin.py backend/nvp_usd_film02m_g_model_world_candidate.py backend/nvp_usd_film02m_h_actor_camera_binding.py backend/nvp_wo5_desktop_bridge.py backend/nvp_wo6_desktop_bridge.py backend/nvp_usd_film01d_shot_working_set.py backend/nvp_usd_film01e_world_take.py backend/nvp_usd_film02m_e_district.py backend/nvp_usd_film02m_modular_buildings.py tests/test_nvp_usd_film02m_modular_buildings.py tests/test_nvp_usd_film01e_world_take.py
       - name: Real native OpenUSD original source proposal, independently reopened draft, undo/discard, OS-denied and approved publisher, crash proof and strict installed origin
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k "test_02m_f"
+          python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k "test_02m_f or test_02m_g"
+          python -m pytest -q -s tests/test_nvp_usd_film01e_world_take.py -k "test_02m_h"
+          python -m pytest -q -s tests/test_nvp_usd_film02mg_model_world_candidate.py
       - name: Prevent accidentally publishing 02M source from HTTP or browser
         shell: bash
         run: |
@@ -54,11 +53,13 @@ jobs:
           from backend.nvp_usd_film02m_f_authoring import FORMAT,PREVIEW_FORMAT
           from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
           names=["film02mf_propose","film02mf_preview","film02mf_edit",
-                 "film02mf_undo","film02mf_discard","film02mf_commit"]
+                 "film02mf_undo","film02mf_discard","film02mf_commit",
+                 "film02mh_preview_shot","film02mh_commit_shot_binding",
+                 "film02mh_reopen_shot_binding"]
           assert all(hasattr(TrustedDesktopWO5Bridge,x) for x in names)
           assert FORMAT.endswith("durable_director_proposal.v1")
           assert PREVIEW_FORMAT.endswith("original_source_lowfi_preview.v1")
-          print("Exact native NVP WO5→WO6 original authoring methods installed; not asserting a completed .exe yet.")
+          print("Original world + actor/camera native bridge methods exist; actual installed .exe and loaded GGUF still require separate acceptance.")
           PY
 
   native-ui-editor:
@@ -86,6 +87,7 @@ jobs:
           grep -R -l "Build the world from data" frontend/dist/assets/*.js >/dev/null
           grep -R -l "OS director approval" frontend/dist/assets/*.js >/dev/null
           grep -R -l "Discard unapproved draft" frontend/dist/assets/*.js >/dev/null
+          grep -R -l "original actor-and-camera shot" frontend/dist/assets/*.js >/dev/null
 
   real-Windows-desktop-bridge-surface:
     name: Real Windows Py3.11 exact-origin, original source grant and native authoring bridge with project-local persistence
@@ -105,8 +107,9 @@ jobs:
       - name: Actual Windows native origin-and-approval service on project test database
         shell: pwsh
         run: |
-          python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k "test_02m_f_installed_original_webview_no_http_os_denial_and_origin"
+          python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k "test_02m_f_installed_original_webview_no_http_os_denial_and_origin or test_02m_g"
+          python -m pytest -q -s tests/test_nvp_usd_film01e_world_take.py -k "test_02m_h"
       - name: Disclose physical Windows installed-app acceptance gap
         shell: pwsh
         run: |
-          Write-Output "Real Windows native bridge contract tested. A packaged WebView2 .exe workflow, UI human click/approval observation and uninstall/reopen acceptance remain open."
+          Write-Output "Model/provider fixture, real USD scene, Windows native bridge contract: no real 7B+ GGUF or actual installed human WebView click is attested by this job. Run the separate manual NSIS installed-app acceptance."
