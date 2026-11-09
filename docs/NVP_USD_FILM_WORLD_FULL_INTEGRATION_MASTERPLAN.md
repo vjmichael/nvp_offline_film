@@ -145,6 +145,14 @@ The creator has additionally approved an **AI-assisted 3D human surface/material
 
 **First priority:** audit existing source meshes/UVs/MaterialX/Blender capabilities, then build the repeatable neutral human-head multi-light baseline and the typed ActorID-bound PBR map contract before attempting open-ended image generation. This roadmap makes no implementation/CI/photorealism acceptance claim.
 
+## 2026-11-09 — actual original approved district + actor/camera Cycles shot integration
+
+**USD-FILM-02M-HR source bridge implementation:** The first-party 01F frozen world-Take renderer and 02M-E2 derived bounded visible-instance district view now feed one disposable stronger USD camera-shot snapshot. The approved district's original PointInstancer and director edit layers remain authoritative; expansion into actual source mesh/PBR objects is renderer-only, with original 01E ActorID/performance/PCM and 01D camera locked by exact source SHA and Film Time. Native stage readback is independent of Sdf cached layers. Actual Cycles work uses the existing protected Blender worker and a distinct second-process `.blend` mesh/material/actor/camera reopen. A two-revision comparison must produce visibly different source scene pixels without any change to original actor/camera SHA.
+
+**Status:** implementation authored and committed; real Windows/Linux OpenUSD, Blender 5.2/Cycles results, physical installed GUI/native consent, cinematic image-quality review and final film remain **OPEN**. No native render acceptance follows from source-only tests. Detail: [02M-HR original actor/district renderer acceptance](NVP_USD_FILM02MH_REAL_RENDER_TASK_GROUP_20261109.md).
+
+**Execution boundary:** 02M-HR native proof precedes CAM-FX virtual camera rails, movement presets and all 01Q/01S/01T film mastering. Do not merge unaccepted prior F/G/H or P0-F-01 statuses into an implied pass.
+
 ## 2026-11-09 — director-owned virtual camera rails, advanced shot language and effects
 
 **New creator direction, planned rather than implemented:** A filmmaker can author, drag and retime a **virtual rail** for an original `UsdGeom.Camera`, adjust dolly/crane/orbit/tracking paths and pan/tilt/roll independently, change lenses, focus, aperture and shot technique, and see all resulting overrides reflected in a **stronger, replaceable OpenUSD director layer**. All such changes refer to the existing 01D/01E/01M/01Q source time and immutable original performances; no camera edit changes ActorID Take, original PCM or canonical source scene geometry.
