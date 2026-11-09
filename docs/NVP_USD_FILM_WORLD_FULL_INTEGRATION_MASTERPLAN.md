@@ -135,6 +135,14 @@ All earlier native CI gates keep their own status. Do **not** infer acceptance f
 6. **Keep world history through immutable sources and explicit revisions.** Do not rewrite a prior frozen Take to make a later version look correct. Later changes can coexist and be compared at original timeline ticks.
 7. **No frame-rate-locked authoritative world.** The Film Time/48-kHz sample mapping and source-time semantics remain intact; presentation FPS is an output choice.
 
+## Linked HUMAN-SURFACE photoreal human and AI-assisted material workstream [ROADMAP; ALL OPEN]
+
+The creator has additionally approved an **AI-assisted 3D human surface/material authoring roadmap**, emphasizing photoreal skin and believable eyes/lips/hair *under multiple lights, cameras and expressions*, not single-view generated portraits. The authoritative task specification is **`docs/NVP_HUMAN_SURFACE_AI_MATERIAL_AUTHORING_ROADMAP.md`** (HSURF-00 through HSURF-10). It expands—**does not replace**—USD-FILM-02 (geometry/UV/scan), USD-FILM-03 (performing actors), USD-FILM-05 (skin shaders/lighting), USD-FILM-07 (typed AI scene operations), USD-FILM-08 (real renderer asset builds), USD-FILM-09 (photoreal visual acceptance) and USD-FILM-10 (actual short).
+
+**AI-driven NVP is an intentional creator workflow, not an autonomous source-of-truth model.** Existing WO6 creator-approved AI operations and native host supervision remain the foundation: AI plans, reads bounded exact source records, proposes source-bound map variants, selects the proper specialized image/Blender worker, obtains real render evidence and offers revisions. Only creator-reviewed material/ActorID appearance changes become source revisions; old Digital Takes are immutable. AI image/video candidate outputs are not passed off as physical 3D measurements, independently rendered Cycles frames or consistent skin across angles. The director can reject or undo proposed looks. Preserve native-tool default, optional MCP, and filmmaking-only scope.
+
+**First priority:** audit existing source meshes/UVs/MaterialX/Blender capabilities, then build the repeatable neutral human-head multi-light baseline and the typed ActorID-bound PBR map contract before attempting open-ended image generation. This roadmap makes no implementation/CI/photorealism acceptance claim.
+
 ## Recommended immediate sequence
 
 1. Finish **FILM03-09E** real phoneme+rig+Blender/auditory integration and inspect exact-head native 09C/09D results. Continue film production while CI reports; don't declare pass on queued work.
