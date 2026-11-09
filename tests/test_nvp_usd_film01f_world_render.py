@@ -28,6 +28,7 @@ from backend.nvp_usd_film01d_shot_working_set import FilmWorldShotPlanner
 from backend.nvp_usd_film01e_world_take import OpenUSDWorldTakeCapture
 from backend.nvp_usd_film01f_blender_host import (
     _snapshot_usd, ReviewedWorldTakeCyclesHost)
+from backend.nvp_usd_film01f_original_audio import render_original_source_stems
 from backend.nvp_blender_worker import BlenderWorkerSupervisor, sha_file
 from tools.nvp_film01_original_30s import write_original_30s_source
 
@@ -185,6 +186,35 @@ class OriginalTwoShotWorldTakeSource(unittest.TestCase):
             self.assertFalse(composed["data"]["final_audio_mixed"])
             self.assertFalse(composed["data"]["finished_picture_rendered"])
 
+    def test_real_original_pcm_event_stems_keep_exact_film_time_and_wav_bytes(self):
+        import wave
+        for i,take in enumerate(self.ids):
+            folder=self.root/("original-audio-"+str(i))
+            row=render_original_source_stems(
+                self.index,self.pid,take,folder)
+            self.assertEqual(row["world_take_sha256"],self.take_shas[i])
+            self.assertTrue(row["actual_original_pcm_readback_verified"])
+            self.assertFalse(row["final_picture_sound_mux_verified"])
+            stems=row["original_source_stems"]
+            self.assertEqual(len(stems),1 if i==0 else 2)
+            for item in stems:
+                path=folder/item["wave_file"]
+                self.assertEqual(item["real_wav_sha256"],sha_file(path))
+                self.assertFalse(item["gain_processing_applied"])
+                with wave.open(str(path),"rb") as wav:
+                    self.assertEqual(wav.getframerate(),48000)
+                    self.assertEqual(wav.getnchannels(),1)
+                    self.assertEqual(wav.getsampwidth(),2)
+                    self.assertEqual(wav.getnframes(),item["sample_count"])
+                    essence=sha256()
+                    while True:
+                        data=wav.readframes(8192)
+                        if not data:
+                            break
+                        essence.update(data)
+                    self.assertEqual(
+                        essence.hexdigest(),item["original_pcm_essence_sha256"])
+
     def test_actual_two_original_shot_cycles_frames_and_fresh_reopen(self):
         executable=os.environ.get("NVP_FILM01F_BLENDER_BIN")
         if not executable:
@@ -236,6 +266,15 @@ class OriginalTwoShotWorldTakeSource(unittest.TestCase):
                     render["independent_reopen_audit"]["source_blend_sha256"],
                     sha_file(job/"scene.blend"))
                 png_hashes.append(sha_file(photo))
+                source_sound=render["original_audio_source_receipt"]
+                self.assertTrue(source_sound["actual_original_pcm_readback_verified"])
+                self.assertGreaterEqual(len(source_sound["original_source_stems"]),1)
+                (destination/("cut"+str(i)+"_original_audio.json")).write_text(
+                    json.dumps(source_sound,sort_keys=True,indent=2),"utf8")
+                for stem in source_sound["original_source_stems"]:
+                    shutil.copyfile(
+                        job/"original_audio"/stem["wave_file"],
+                        destination/("cut"+str(i)+"_"+stem["wave_file"]))
                 for name in ("frame.png","scene.blend","source.usda",
                              "source.json","audit.json"):
                     shutil.copyfile(job/name,destination/("cut"+str(i)+"_"+name))
@@ -248,6 +287,7 @@ class OriginalTwoShotWorldTakeSource(unittest.TestCase):
                 "source_world_sha256":self.world["document_sha256"],
                 "original_source_takes":self.take_shas,
                 "rendered_png_sha256":png_hashes,
+                "original_pcm_wav_source_stems_independently_verified":True,
                 "test_only_original_pcm_not_mixed":True,
                 "film_master_ready":False,
                 "photorealism_approved":False,
