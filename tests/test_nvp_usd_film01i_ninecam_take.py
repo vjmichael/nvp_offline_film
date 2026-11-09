@@ -1216,9 +1216,8 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
         self.assertEqual(len(prepared["wrapped_queue"]["plan"]["source_shots"]),90)
         self.assertEqual(len(prepared["wrapped_queue"]["plan"][
             "selected_final_shot_ids"]),90)
-        self.assertEqual(prepared["render_quality"] if "render_quality" in prepared
-                         else prepared["profile_sha256"],
-                         prepared.get("render_quality",prepared["profile_sha256"]))
+        self.assertEqual(len(prepared["profile_sha256"]),64)
+        self.assertFalse(prepared["renderer_started"])
         status=host.enqueue(prepared,director_event=approved)
         self.assertEqual(status["progress_required"],180)
         self.assertEqual(status["progress_completed"],0)
