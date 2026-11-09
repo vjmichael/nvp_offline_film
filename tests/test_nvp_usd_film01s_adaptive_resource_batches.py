@@ -72,6 +72,28 @@ class HardwareBatchPlannerTest(unittest.TestCase):
         self.assertEqual(plan["batches"][0]["planned_shot_count"],12)
         self.assertEqual(plan["batches"][0]["safe_parallel_workers_at_plan_time"],1)
 
+    def test_data_first_many_viewpoint_previews_only_selected_shots_final(self):
+        names=sample_shots(9)
+        plan=plan_batches(
+            "SelectiveEdit","d"*64,names,
+            BatchPreferences(shots_per_batch=3,parallel_worker_limit=2),
+            host(32768,27000),cpu_threads=12,
+            final_shot_ids=["Shot01","Shot04","Shot08"])["plan"]
+        preview=[batch for batch in plan["batches"]
+                 if batch["quality"]==PREVIEW]
+        final=[batch for batch in plan["batches"]
+               if batch["quality"]==FINAL]
+        self.assertEqual(len(preview),3)
+        self.assertEqual(len(final),1)
+        self.assertEqual(sum(x["planned_shot_count"] for x in preview),9)
+        self.assertEqual(sum(x["planned_shot_count"] for x in final),3)
+        self.assertEqual(plan["selected_final_shot_ids"],
+                         ["Shot01","Shot04","Shot08"])
+        with self.assertRaises(ValueError):
+            plan_batches("InvalidSelected","d"*64,names,BatchPreferences(),
+                         host(32768,27000),cpu_threads=12,
+                         final_shot_ids=["DoesNotExist"])
+
     def test_missing_verified_gpu_backend_queues_even_with_reported_vram(self):
         gpu=GPUResource("nvidia:0","GPU","nvml_global",16384,1000,True)
         policy=BatchPreferences(renderer="gpu",gpu_device_id="nvidia:0")
