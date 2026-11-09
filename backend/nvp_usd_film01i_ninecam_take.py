@@ -95,7 +95,7 @@ def _native_cameras(index, pid, world_take, entries):
                 raise PermissionError("Camera coordinates changed from source-locked shot")
             cameras.append({
                 "angle":angle, "framing":framing,
-                "camera_shot_id":shot_record["id"],
+                "camera_shot_id":shot_record["object_id"],
                 "camera_shot_revision":shot_record["revision"],
                 "camera_shot_sha256":shot_record["document_sha256"],
                 "camera_prim":shot["camera_prim_path"],
@@ -267,15 +267,15 @@ class OriginalFilmPerformanceSampler:
         take=self.index.read_revision(
             self.pid,self.data["world_take_id"],1)["data"]
         self.actors=take["canonical_original_actors"]
-        self.world=OpenUSDWorldComposer(self.index).open(
+        self._context=OpenUSDWorldComposer(self.index).open(
             self.pid,take["world_id"],take["world_revision"])
-        self.world.__enter__()
+        self.world=self._context.__enter__()
         self.world.load([take["original_scene_takes"][0]["set"]])
         return self
 
     def __exit__(self,*args):
         if self.world is not None:
-            self.world.__exit__(*args)
+            self._context.__exit__(*args)
             self.world=None
 
     def frame(self,index):
