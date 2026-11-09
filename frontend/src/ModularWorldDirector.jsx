@@ -27,6 +27,8 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
   const [modelId,setModelId]=useState('');
   const [modelDirection,setModelDirection]=useState('');
   const [observedModel,setObservedModel]=useState(null);
+  const [localModels,setLocalModels]=useState([]);
+  const [localModelStatus,setLocalModelStatus]=useState('not checked');
   const [draft,setDraft]=useState(null),[preview,setPreview]=useState(null);
   const [selectedGenerated,setSelectedGenerated]=useState('');
   const [manualName,setManualName]=useState('DirectorShopfront');
@@ -64,6 +66,15 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
        !Array.isArray(result.drafts))
       throw Error('Trusted original OpenUSD building catalog failed');
     setCatalog(result);
+    if(typeof nativeBridge.wo6_local_models==='function'){
+      const found=await nativeBridge.wo6_local_models(projectId);
+      if(!Array.isArray(found?.models)||typeof found.state!=='string')
+        throw Error('Native model discovery did not provide a typed receipt');
+      setLocalModels(found.models);
+      setLocalModelStatus(found.state);
+      setModelId(current=>found.models.some(x=>x.id===current)?
+        current:found.models[0]?.id||'');
+    }
     setBuildingIds(ids=>ids.length?ids.filter(id=>result.source_buildings.some(
       x=>x.building_id===id)):(result.source_buildings[0]?
       [result.source_buildings[0].building_id]:[]));
@@ -271,14 +282,22 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
             model and independently reopens original source geometry.
             Its provider receipt is evidence of a completed generation,
             not proof of model weights or creative approval.</p>
-          <label>Configured local model ID<input
-            aria-label="Original world local model ID"
-            value={modelId} onChange={e=>setModelId(e.target.value)}/></label>
+          <label>Configured local model
+            <select aria-label="Original world local model ID"
+              value={modelId} onChange={e=>setModelId(e.target.value)}>
+              <option value="">Select a discovered local model</option>
+              {localModels.map(model=><option key={model.id} value={model.id}>
+                {model.id}</option>)}
+            </select>
+          </label>
+          <small>Local model status: {localModelStatus}. Refresh the catalog
+            to repeat local model discovery. No remote model endpoints are accepted.</small>
           <label>Director instruction<textarea
             aria-label="Original world model direction" maxLength={1200}
             value={modelDirection}
             onChange={e=>setModelDirection(e.target.value)}/></label>
-          <button disabled={!source.length||!modelId.trim()||!modelDirection.trim()}
+          <button disabled={!source.length||!modelId.trim()||
+              !modelDirection.trim()||localModelStatus!=='available'}
             onClick={modelPropose}>Generate and save unapproved AI world draft</button>
         </fieldset>}
       <fieldset disabled={busy||active} style={{
@@ -326,6 +345,15 @@ export default function ModularWorldDirector({projectId,nativeBridge}){
         <button onClick={propose} disabled={!source.length||!buildingIds.length}>
           Save source-verified draft proposal (no OS approval)</button>
       </fieldset>
+      {catalog?.model_attempts?.length>0&&<div>
+        <h4>Native model attempt recovery</h4>
+        <div role="status">
+          {catalog.model_attempts.slice(0,8).map(x=>
+            <p key={x.attempt_id}>{x.district_id} · {x.model_id} ·
+              {x.state}. {x.failure_category||''}
+              {x.draft_id&&' · draft '+x.draft_id}</p>)}
+        </div>
+      </div>}
       {catalog?.drafts?.length>0&&<div>
         <h4>Durable original proposal history</h4>
         <div className="actions">
