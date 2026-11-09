@@ -1086,6 +1086,94 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
         with self.assertRaises(ValueError):
             reviewed_quality("unreviewed_GPU_4K")
 
+    def test_01r_real_draft_quality_blender_8_selected_frames(self):
+        import os
+        import shutil
+        import subprocess
+        from PIL import Image
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+        from backend.nvp_usd_film01q_selected_view_host import ReviewedSelectedViewFilm
+        binary=os.environ.get("NVP_FILM01R_BLENDER_BIN")
+        if not binary:
+            self.skipTest("Actual native Blender 5.2 required for 01R draft-quality proof")
+        executable=Path(binary).resolve(strict=True)
+        first=subprocess.run(
+            [str(executable),"-b","--version"],check=True,
+            capture_output=True,text=True,timeout=30).stdout.splitlines()[0]
+        self.assertTrue(first.startswith("Blender 5.2."),first)
+        self._selected_original_edit()
+        root=self.root/"01r_real_draft_jobs"
+        supervisor=BlenderWorkerSupervisor(
+            root,blender_executable=executable,
+            blender_sha256=sha_file(executable),blender_version=first)
+        host=ReviewedSelectedViewFilm(
+            self.index,supervisor,
+            verify_director_action=lambda event,scope:
+                event=="APPROVE_EXACT_REAL_DRAFT_01R" and
+                scope["operation"]==
+                  "nvp.render.usd_film01q_selected_source_chunk.v1" and
+                scope["start_frame"]==0 and
+                scope["camera_ids"]==["Cam_A_wide"]*4+["Cam_B_medium"]*4 and
+                type(scope.get("render_profile_sha256")) is str,
+            prove_process_custody=lambda *_:False,
+            render_quality="draft_360p")
+        result=host.run_chunk(
+            self.pid,"DataFirstOriginalSelectedShort",
+            revision=1,start=0,attempt=1,
+            director_event="APPROVE_EXACT_REAL_DRAFT_01R")
+        self.assertEqual(result["native_selected_views_rendered"],8)
+        self.assertEqual(result["camera_ids"],
+                         ["Cam_A_wide"]*4+["Cam_B_medium"]*4)
+        job=supervisor.root/result["job_id"]
+        audit=json.loads((job/"audit.json").read_text("utf8"))
+        self.assertEqual(audit["render_resolution_x"],640)
+        self.assertEqual(audit["render_resolution_y"],360)
+        self.assertEqual(audit["render_samples"],16)
+        self.assertEqual(audit["native_rendered_frames"],8)
+        self.assertTrue(audit["passed"])
+        self.assertEqual([x["selected_camera_id"] for x in
+                          audit["selected_view_frames"]],
+                         ["Cam_A_wide"]*4+["Cam_B_medium"]*4)
+        images=[]
+        for i in range(8):
+            p=job/f"frame_{i:04d}.png"
+            with Image.open(p) as image:
+                self.assertEqual(image.size,(640,360))
+                image.verify()
+            images.append(sha_file(p))
+        self.assertGreater(len(set(images)),1)
+        # Restart cannot silently use a prior approval or a different profile.
+        reopened=ReviewedSelectedViewFilm(
+            FilmIndex(Studio(self.db)),BlenderWorkerSupervisor(
+                root,blender_executable=executable,
+                blender_sha256=sha_file(executable),blender_version=first),
+            verify_director_action=lambda *_:False,
+            prove_process_custody=lambda *_:False,
+            render_quality="draft_360p")
+        recovered=reopened.run_chunk(
+            self.pid,"DataFirstOriginalSelectedShort",
+            revision=1,start=0,attempt=1,
+            director_event="MUST_NOT_REUSE_PERMISSION")
+        self.assertEqual(recovered["job_id"],result["job_id"])
+        artifact=Path(os.environ.get(
+            "NVP_FILM01R_ARTIFACT_DIR",
+            str(self.root/"01r_draft_native_artifacts"))).resolve()
+        artifact.mkdir(parents=True,exist_ok=True)
+        for i in range(8):
+            name=f"frame_{i:04d}.png"
+            shutil.copyfile(job/name,artifact/name)
+        for name in ("audit.json","source.json","source.usda",
+                     "chunk.json","plan.json"):
+            shutil.copyfile(job/name,artifact/name)
+        (artifact/"01r_native_receipt.json").write_text(json.dumps({
+            "actual_selected_view_frames":8,
+            "actual_blender_cycles_draft_640x360":True,
+            "same_original_performance_for_two_cameras":True,
+            "restarted_worker_source_reverified":True,
+            "full_30s_film_not_yet_rendered":True,
+            "director_visual_acceptance":False},
+            sort_keys=True,indent=2),"utf8")
+
     def test_camera_swap_and_wrong_scene_are_not_new_source_performances(self):
         forged=deepcopy(self.camera_shots)
         forged[1]["shot_id"]=forged[0]["shot_id"]
