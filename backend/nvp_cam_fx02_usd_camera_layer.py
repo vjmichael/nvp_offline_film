@@ -95,6 +95,9 @@ def _author(stage,rail_id,spec):
     path=camera_rail_path(rail_id)
     UsdGeom.SetStageUpAxis(stage,UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage,1.0)
+    # Authored stronger camera opinions must not change the ORIGINAL
+    # /World prim's type. An over preserves the weaker original Xform.
+    stage.OverridePrim("/World")
     UsdGeom.Scope.Define(stage,CAMERA_ROOT)
     cam=UsdGeom.Camera.Define(stage,path)
     transform=cam.AddTransformOp(
@@ -206,8 +209,8 @@ def open_approved_camera_layer(index:FilmIndex,pid,rail_id,revision):
         world.load([shot_set])
         stage=world.stage
         path=camera_rail_path(rail_id)
-        if stage.GetPrimAtPath(path).IsDefined():
-            raise PermissionError("Original source world already owns rail camera namespace")
+        if stage.GetPrimAtPath(CAMERA_ROOT).IsDefined():
+            raise PermissionError("Original source world already owns the rail rig namespace")
         root_before=stage.GetRootLayer().ExportToString()
         at=[spec["film_start_tick"],
             (spec["film_start_tick"]+spec["film_end_tick"])//2,
