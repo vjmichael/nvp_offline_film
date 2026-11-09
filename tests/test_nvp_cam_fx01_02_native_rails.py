@@ -10,7 +10,7 @@ from hashlib import sha256
 import math
 import unittest
 
-from pxr import UsdGeom
+from pxr import Usd,UsdGeom
 
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
 from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
@@ -146,7 +146,7 @@ class OriginalCAMFX01And02NativeRailTests(unittest.TestCase):
             self.assertTrue(usd)
             self.assertGreater(len(stage["native_verified_time_samples"]),48)
             self.assertAlmostEqual(
-                float(usd.GetFocalLengthAttr().Get(float(T)))*100,45,places=4)
+                float(usd.GetFocalLengthAttr().Get(Usd.TimeCode(float(T))))*100,45,places=4)
             self.assertTrue(stage["original_actor_takes_pcm_unchanged"])
             self.assertTrue(stage["source_world_root_layer_unchanged"])
             self.assertEqual(stage["native_cycles_frames_rendered"],0)
@@ -197,7 +197,7 @@ class OriginalCAMFX01And02NativeRailTests(unittest.TestCase):
                 self.index,self.pid,"EditableRail",1) as old:
             old_pos=UsdGeom.Xformable(old["stage"].GetPrimAtPath(
                 old["camera_path"])).GetLocalTransformation(
-                    float(T)).ExtractTranslation()
+                    Usd.TimeCode(float(T))).ExtractTranslation()
             old_sha=old["rail_layer_sha256"]
         with open_approved_camera_layer(
                 self.index,self.pid,"EditableRail",2) as new:
