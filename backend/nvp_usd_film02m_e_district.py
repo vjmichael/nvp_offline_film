@@ -43,15 +43,18 @@ def _source_rows(index,pid,references):
     kit=OriginalBuildingKit(index,verify_director_action=lambda *_:False)
     found=[]
     seen=set()
+    seen_building_ids=set()
     for item in references:
         if (type(item) is not dict or
             set(item)!={"building_id","revision"}):
             raise ValueError("Only exact original FilmIndex building refs")
         bid=_id(item["building_id"],"source building ID")
         revision=item["revision"]
-        if type(revision) is not int or revision<1 or (bid,revision) in seen:
-            raise ValueError("Duplicate/missing original building revision")
+        if (type(revision) is not int or revision<1 or
+            (bid,revision) in seen or bid in seen_building_ids):
+            raise ValueError("Duplicate/ambiguous original building prototype")
         seen.add((bid,revision))
+        seen_building_ids.add(bid)
         with kit.open_building(pid,bid,revision) as original:
             doc=original["building"]
             if (doc["renderer_pixels_verified"] is not False or
