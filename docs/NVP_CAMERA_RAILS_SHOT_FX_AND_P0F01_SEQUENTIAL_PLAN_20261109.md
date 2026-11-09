@@ -1,7 +1,14 @@
 # NVP task-group order — F/G/H closeout, P0-F-01, and director camera rails / shot FX
 
-**Decision:** 2026-11-09. **Status:** architecture and acceptance register; camera-rail FX are **NOT implemented** by this document.
+**Decision:** 2026-11-09. **Status:** architecture register; CAM-FX-01–04 have authored source implementation, CAM-FX-05A has authored derived rail-camera USD staging and native regression source, and **no CAM-FX-05 Cycles moving-shot native acceptance is yet verified**.
 **Authoritative:** `docs/NVP_DATA_ALL_TASK_LEDGER.md`, `docs/NVP_MASTER_DESIGN.md`, `docs/NVP_USD_FILM_WORLD_FULL_INTEGRATION_MASTERPLAN.md`.
+
+## 2026-11-09 — actual native results and current engineering handoff
+
+- 02M-F/G/H grouped run [42650335958](https://github.com/vjmichael/nvp_offline_film/actions/runs/42650335958) **completed 6/6 FAILED**, revealing strict USD prim-token regex overescape, a missing source fixture, undefined JS edit identity, and too-early debounced preview assertion. Those defects were repaired on the active CAM branch, but repaired native results have not been collected.
+- P0-F-01 installed/model group [42664870777](https://github.com/vjmichael/nvp_offline_film/actions/runs/42664870777) **completed 4/4 FAILED**, revealing WO6 shutdown Python indentation, a missing React fixture host cancellation method, and the deleted Q4_K_M GGUF filename at the current hosted model revision. Fixes preserve the OS-consent boundary; no GGUF, installer or production model proof is accepted yet.
+- CAM-FX-05A: `backend/nvp_cam_fx05_verified_shot_source.py` composes a genuinely approved CAM-FX-02 rail into an independently reopened, disposable derived 02M-H/01E USD snapshot at the *original* binding tick. The separate virtual camera is baked for rendering only; source 01D camera fields, actor mesh/poses and original PCM remain unchanged. The paired `tests/test_nvp_cam_fx05_staged_rail_source.py` covers two approved rail revisions, eight technique contracts and hostile admission. These are staged native source tests, **not executed real Blender frames**.
+- CAM-FX-05B next: first-party separately verified rail-aware Blender/Cycles worker, exact fresh OS grant, dual worker receipt/readback, measurable difference in actual camera-rendered pixels, shot continuity over original Film Time, and installed view/artist direction. Only after that can 01Q/01S/01T consume the rail in selected-view film. Do not run small CI jobs for each edit; the grouped gate follows the completed implementation batch. 02M-H render gate [42671262108](https://github.com/vjmichael/nvp_offline_film/actions/runs/42671262108) was queued when checked.
 
 ## 0. Current acceptance: USD-FILM-02M-F/G/H
 
