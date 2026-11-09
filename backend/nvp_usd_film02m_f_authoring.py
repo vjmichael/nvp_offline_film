@@ -255,9 +255,54 @@ class OriginalDistrictDrafts:
                 db.commit()
             return self.reopen(pid,draft_id)
 
+    def _reconcile_pending(self,db,pid,row):
+        """Never reuse old approval: reconcile one already-granted exact commit."""
+        if row["state"]!="APPROVED_PENDING_PUBLISH":
+            return row
+        params,ops,_=self._values(row)
+        plan=self._plan(pid,params,ops)
+        if _sha(plan)!=row["original_plan_sha"]:
+            raise RuntimeError("Cannot reconcile altered original proposal bytes")
+        try:
+            current=self.index.read_revision(pid,row["district_id"])
+        except KeyError:
+            current=None
+        head=current["revision"] if current else 0
+        if head==row["base_revision"]:
+            state="INTERRUPTED_NEEDS_NEW_APPROVAL"
+            completed=None
+        elif head==row["base_revision"]+1:
+            data=current["data"]
+            original={k:v for k,v in data.items() if k!="native_source_receipt"}
+            if (data.get("format")!=DISTRICT_FORMAT or
+                original!=plan or data.get("native_source_receipt",{}).get(
+                    "district_root_sha256")!=row["original_usd_root_sha"]):
+                state="CONFLICT_NEEDS_REVIEW"
+                completed=None
+            else:
+                with self.district.open(pid,row["district_id"],head):
+                    pass
+                state="COMMITTED"
+                completed=current
+        else:
+            state="CONFLICT_NEEDS_REVIEW"
+            completed=None
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("""UPDATE authoring_drafts SET state=?,
+            published_revision=?,published_sha=?,version=version+1,
+            updated_at=? WHERE project_id=? AND draft_id=? AND
+            state='APPROVED_PENDING_PUBLISH'""",
+            (state,completed["revision"] if completed else None,
+             completed["document_sha256"] if completed else None,
+             now(),pid,row["draft_id"]))
+        db.commit()
+        return self._one(db,pid,row["draft_id"])
+
     def reopen(self,pid,draft_id):
         with self.lock,self._db() as db:
             row=self._one(db,pid,draft_id)
+            if row["state"]=="APPROVED_PENDING_PUBLISH":
+                row=self._reconcile_pending(db,pid,row)
             if row["state"]=="DRAFT":
                 self._reopen(pid,row,rebuild_stage=True)
             return self._overview(row)
@@ -476,7 +521,7 @@ class OriginalDistrictDrafts:
                     scope.get("expected_revision")!=row["base_revision"]):
                     return False
                 fired[0]=True
-                return self.confirm({
+                granted=self.confirm({
                     "operation":"nvp.film02m_f.commit_exact_original_district.v1",
                     "project_id":pid,
                     "district_id":row["district_id"],
@@ -490,6 +535,17 @@ class OriginalDistrictDrafts:
                     "source_triangles_estimated":plan[
                         "actual_source_triangles_estimated"],
                     "manual_opinion_count":len(operations)}) is True
+                if granted:
+                    # Make the real OS-confirmed one-use approval durable
+                    # BEFORE the separate FilmIndex source write. A crash
+                    # cannot cause it to be used again.
+                    db.execute("""UPDATE authoring_drafts SET
+                        state='APPROVED_PENDING_PUBLISH',updated_at=?
+                        WHERE draft_id=? AND project_id=? AND
+                        state='DRAFT' AND version=?""",
+                        (now(),draft_id,pid,version))
+                    db.commit()
+                return granted
             host=OriginalFilmDistrict(
                 self.index,verify_director_action=approve)
             published=host.publish(
@@ -498,9 +554,11 @@ class OriginalDistrictDrafts:
                 expected_revision=row["base_revision"],director_event=grant)
             if not fired[0]:
                 raise RuntimeError("Native creator consent callback was not actually reached")
+            db.execute("BEGIN IMMEDIATE")
             db.execute("""UPDATE authoring_drafts SET state='COMMITTED',
                 published_revision=?,published_sha=?,version=version+1,
-                updated_at=? WHERE draft_id=? AND state='DRAFT' AND version=?""",
+                updated_at=? WHERE draft_id=? AND
+                state='APPROVED_PENDING_PUBLISH' AND version=?""",
                 (published["revision"],published["document_sha256"],
                  now(),draft_id,version))
             db.commit()
