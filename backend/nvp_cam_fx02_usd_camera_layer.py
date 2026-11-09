@@ -222,6 +222,23 @@ def open_approved_camera_layer(index:FilmIndex,pid,rail_id,revision):
             spec["film_end_tick"]]
         actors=[a["composed_actor_prim"]
                 for a in doc["canonical_original_actors"]]
+        from backend.nvp_usd_film01d_shot_working_set import FilmWorldShotPlanner
+        original_shot=FilmWorldShotPlanner(index).inspect(
+            pid,doc["camera_shot_id"],doc["camera_shot_revision"],
+            expected_world_sha=doc["world_document_sha256"])
+        if original_shot["document_sha256"]!=doc["camera_shot_document_sha256"]:
+            raise RuntimeError("Authoritative 01D camera shot changed")
+        raw_camera=original_shot["data"]["camera_prim_path"]
+        if not raw_camera.startswith("/World/"):
+            raise RuntimeError("Original 01D camera prim was invalid")
+        source_camera_path="/World/Sets/"+shot_set+raw_camera[len("/World"):]
+        original_camera=UsdGeom.Camera.Get(stage,source_camera_path)
+        if not original_camera or not original_camera.GetPrim().IsDefined():
+            raise RuntimeError("No original 01D source camera in current USD set")
+        camera_before=[
+            UsdGeom.Xformable(original_camera).ComputeLocalToWorldTransform(
+                Usd.TimeCode(float(t))) for t in at]
+        original_world_type=stage.GetPrimAtPath("/World").GetTypeName()
         original={}
         for actor_path in actors:
             prim=stage.GetPrimAtPath(actor_path)
@@ -243,6 +260,13 @@ def open_approved_camera_layer(index:FilmIndex,pid,rail_id,revision):
                         Usd.TimeCode(float(t)))!=before
                        for t,before in zip(at,matrices)):
                     raise RuntimeError("Strong director camera changed original ActorID pose")
+            source_camera_after=UsdGeom.Xformable(
+                stage.GetPrimAtPath(source_camera_path))
+            if (stage.GetPrimAtPath("/World").GetTypeName()!=original_world_type or
+                any(source_camera_after.ComputeLocalToWorldTransform(
+                    Usd.TimeCode(float(t)))!=before
+                    for t,before in zip(at,camera_before))):
+                raise RuntimeError("Stronger rail layer changed original 01D camera or world root")
             if stage.GetRootLayer().ExportToString()!=root_before:
                 raise RuntimeError("Director rail contaminated original source world USD layer")
             yield {
@@ -256,6 +280,7 @@ def open_approved_camera_layer(index:FilmIndex,pid,rail_id,revision):
                 "native_verified_time_samples":verified,
                 "film_time_ticks_per_second":T,
                 "original_actor_takes_pcm_unchanged":True,
+                "original_01d_source_camera_unchanged":True,
                 "source_world_root_layer_unchanged":True,
                 "native_cycles_frames_rendered":0,
                 "human_picture_approved":False}
