@@ -40,12 +40,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_usd_film01q_selected_view_edit.py backend/nvp_usd_film01q_selected_view_host.py tools/nvp_usd_film01q_blender_selected_views.py tests/test_nvp_usd_film01i_ninecam_take.py
+          python -m compileall -q backend/nvp_usd_film01q_selected_view_edit.py backend/nvp_usd_film01q_selected_view_host.py tools/nvp_usd_film01q_blender_selected_views.py tests/test_nvp_usd_film01i_ninecam_take.py tests/test_nvp_usd_film01q_selected_contract.py
       - name: Original source/ActorID native USD, revised viewpoint source SHA, arbitrary camera-cut cache identity and rejection
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python -m unittest discover -s tests -p "test_nvp_usd_film01q_selected_contract.py" -v
 
   actual-selected-camera-cycles:
     name: Real official Blender 5.2/Cycles eight frames with a source camera CUT at frame 4, restart recovery
