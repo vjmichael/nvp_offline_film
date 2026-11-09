@@ -722,6 +722,212 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                 "whole_9_camera_30s_film_rendered":False,
                 "director_approved":False},indent=2,sort_keys=True),"utf8")
 
+    def _selected_original_edit(self):
+        from backend.nvp_usd_film01q_selected_view_edit import OriginalSelectedViewEdit
+        self._original_editorial_bank()
+        edit=OriginalSelectedViewEdit(self.index,
+            verify_director_action=lambda event,scope:
+                event=="AUTHORIZE_EXACT_SELECTED_EDIT" and
+                scope["operation"]=="nvp.film01q.publish_selected_view_edit.v1")
+        # The first 8-frame native job contains a REAL camera cut at frame 4.
+        cuts=[
+            {"camera_id":"Cam_A_wide","source_in_frame":0,
+             "source_out_frame":4,"edit_in_frame":0,
+             "edit_out_frame":4},
+            {"camera_id":"Cam_B_medium","source_in_frame":4,
+             "source_out_frame":720,"edit_in_frame":4,
+             "edit_out_frame":720}]
+        try:
+            old=edit.verify(self.pid,"DataFirstOriginalSelectedShort",1)
+        except KeyError:
+            edit.create(
+                self.pid,"DataFirstOriginalSelectedShort",
+                camera_bank_id="FullCameraRollOriginalBank",
+                camera_bank_revision=1,cuts=cuts,
+                director_event="AUTHORIZE_EXACT_SELECTED_EDIT")
+        else:
+            self.assertEqual(old["cuts"],cuts)
+        return edit
+
+    def test_01q_source_verified_selected_views_without_nine_full_camera_rolls(self):
+        from backend.nvp_usd_film01q_selected_view_edit import (
+            selected_render_plan,OriginalSelectedViewEdit)
+        from backend.nvp_usd_film01o_original_camera_roll_source import (
+            original_camera_roll_source)
+        edit=self._selected_original_edit()
+        source_folder=self.root/"q_selected_frame_source"
+        if not source_folder.exists():
+            original_camera_roll_source(
+                self.index,self.pid,"FullCameraRollOriginalBank",
+                revision=1,folder=source_folder)
+        wrapped=selected_render_plan(
+            self.index,self.pid,"DataFirstOriginalSelectedShort",1,
+            original_source_directory=source_folder)
+        plan=wrapped["plan"]
+        self.assertEqual(plan["selected_final_frame_count"],720)
+        self.assertEqual(len(plan["chunks"]),90)
+        self.assertFalse(plan["all_original_camera_rolls_required"])
+        self.assertEqual(plan["frames"][3]["camera_id"],"Cam_A_wide")
+        self.assertEqual(plan["frames"][4]["camera_id"],"Cam_B_medium")
+        self.assertEqual(plan["chunks"][0]["camera_ids"],
+                         ["Cam_A_wide","Cam_B_medium"])
+        self.assertEqual(plan["chunks"][1]["camera_ids"],["Cam_B_medium"])
+        self.assertEqual(plan["frames"][0]["original_film_tick"],0)
+        self.assertEqual(plan["frames"][-1]["original_film_tick"],719*T//24)
+        self.assertEqual(len({
+            frame["original_actor_state_sha256"] for frame in plan["frames"]
+        })>2,True)
+        self.assertEqual(
+            plan["original_world_take_sha256"],
+            self.world_take["document_sha256"])
+        for frame in plan["frames"]:
+            self.assertEqual(frame["source_camera_prim"].split("/")[-1][:12],
+                             "NVPDirector_")
+
+        # An edit can change viewpoint AFTER original actor performance
+        # was captured. Only changed frame-view keys are invalidated.
+        updated=[
+            {"camera_id":"Cam_A_wide","source_in_frame":0,
+             "source_out_frame":8,"edit_in_frame":0,
+             "edit_out_frame":8},
+            {"camera_id":"Cam_B_medium","source_in_frame":8,
+             "source_out_frame":720,"edit_in_frame":8,
+             "edit_out_frame":720}]
+        edit.revise(
+            self.pid,"DataFirstOriginalSelectedShort",
+            expected_revision=1,cuts=updated,
+            director_event="AUTHORIZE_EXACT_SELECTED_EDIT")
+        old=edit.verify(self.pid,"DataFirstOriginalSelectedShort",1)
+        new=edit.verify(self.pid,"DataFirstOriginalSelectedShort",2)
+        self.assertEqual(old["original_performance_sha256"],
+                         new["original_performance_sha256"])
+        edited=selected_render_plan(
+            self.index,self.pid,"DataFirstOriginalSelectedShort",2,
+            original_source_directory=source_folder)["plan"]
+        self.assertEqual(
+            plan["frames"][4]["original_actor_state_sha256"],
+            edited["frames"][4]["original_actor_state_sha256"])
+        self.assertNotEqual(plan["frames"][4]["view_cache_sha256"],
+                            edited["frames"][4]["view_cache_sha256"])
+        self.assertEqual(plan["frames"][8]["view_cache_sha256"],
+                         edited["frames"][8]["view_cache_sha256"])
+        self.assertEqual(plan["chunks"][1]["source_frames_sha256"],
+                         edited["chunks"][1]["source_frames_sha256"])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"OneThirtySecondWorldTake",1)["document_sha256"],
+            self.world_take["document_sha256"])
+
+    def test_01q_reject_unauthorized_or_gapped_editorial_source(self):
+        from backend.nvp_usd_film01q_selected_view_edit import OriginalSelectedViewEdit
+        self._original_editorial_bank()
+        edit=OriginalSelectedViewEdit(
+            self.index,verify_director_action=lambda *_:False)
+        with self.assertRaises(PermissionError):
+            edit.create(self.pid,"UnapprovedOriginalEdit",
+                camera_bank_id="FullCameraRollOriginalBank",
+                camera_bank_revision=1,
+                cuts=[{"camera_id":"Cam_A_wide","source_in_frame":0,
+                    "source_out_frame":720,"edit_in_frame":0,
+                    "edit_out_frame":720}],
+                director_event="BROWSER_IMPERSONATED_DIRECTOR")
+        with self.assertRaises(PermissionError):
+            edit.create(self.pid,"UnapprovedOriginalEdit",
+                camera_bank_id="FullCameraRollOriginalBank",
+                camera_bank_revision=1,
+                cuts=[{"camera_id":"Cam_A_wide","source_in_frame":0,
+                    "source_out_frame":719,"edit_in_frame":0,
+                    "edit_out_frame":719}],
+                director_event="BROWSER_IMPERSONATED_DIRECTOR")
+        with self.assertRaises(PermissionError):
+            edit.create(self.pid,"UnapprovedOriginalEdit",
+                camera_bank_id="FullCameraRollOriginalBank",
+                camera_bank_revision=1,
+                cuts=[{"camera_id":"CameraNotInSource","source_in_frame":0,
+                    "source_out_frame":720,"edit_in_frame":0,
+                    "edit_out_frame":720}],
+                director_event="BROWSER_IMPERSONATED_DIRECTOR")
+
+    def test_01q_genuine_cycles_selected_camera_switch_and_recovery(self):
+        import os
+        import shutil
+        import subprocess
+        from PIL import Image
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+        from backend.nvp_usd_film01q_selected_view_host import ReviewedSelectedViewFilm
+        binary=os.environ.get("NVP_FILM01Q_BLENDER_BIN")
+        if not binary:
+            self.skipTest("Requires official Blender 5.2 to render real selected-view pictures")
+        resolved=Path(binary).resolve(strict=True)
+        version=subprocess.run([str(resolved),"-b","--version"],
+            capture_output=True,text=True,check=True,timeout=30
+        ).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        self._selected_original_edit()
+        directory=self.root/"selected_real_cycles_jobs"
+        supervisor=BlenderWorkerSupervisor(
+            directory,blender_executable=resolved,
+            blender_sha256=sha_file(resolved),
+            blender_version=version)
+        host=ReviewedSelectedViewFilm(
+            self.index,supervisor,
+            verify_director_action=lambda event,scope:
+                event=="AUTHORIZE_REAL_SOURCE_SELECTED_EIGHT" and
+                scope["operation"]==
+                    "nvp.render.usd_film01q_selected_source_chunk.v1" and
+                scope["start_frame"]==0 and
+                scope["camera_ids"][:5]==[
+                    "Cam_A_wide"]*4+["Cam_B_medium"],
+            prove_process_custody=lambda *_:False)
+        result=host.run_chunk(
+            self.pid,"DataFirstOriginalSelectedShort",revision=1,
+            start=0,attempt=1,
+            director_event="AUTHORIZE_REAL_SOURCE_SELECTED_EIGHT")
+        self.assertEqual(result["native_selected_views_rendered"],8)
+        self.assertEqual(result["camera_ids"],
+                         ["Cam_A_wide"]*4+["Cam_B_medium"]*4)
+        # Recreate both trusted source store and host, then verify
+        # persisted worker results instead of replaying the authorization.
+        reopened=ReviewedSelectedViewFilm(
+            FilmIndex(Studio(self.db)),
+            BlenderWorkerSupervisor(
+                directory,blender_executable=resolved,
+                blender_sha256=sha_file(resolved),
+                blender_version=version),
+            verify_director_action=lambda *_:False,
+            prove_process_custody=lambda *_:False)
+        recovered=reopened.run_chunk(
+            self.pid,"DataFirstOriginalSelectedShort",revision=1,
+            start=0,attempt=1,director_event="MUST_NOT_AUTHORIZE_REPLAY")
+        self.assertEqual(result["job_id"],recovered["job_id"])
+        self.assertEqual(recovered["native_selected_views_rendered"],8)
+        with self.assertRaises(PermissionError):
+            reopened.run_chunk(
+                self.pid,"DataFirstOriginalSelectedShort",revision=1,
+                start=8,attempt=1,director_event="NO_FRESH_APPROVAL")
+        dest=Path(os.environ.get(
+            "NVP_FILM01Q_ARTIFACT_DIR",
+            str(self.root/"selected_original_cut_evidence"))).resolve()
+        dest.mkdir(parents=True,exist_ok=True)
+        job=directory/result["job_id"]
+        for i in range(8):
+            picture=job/f"frame_{i:04d}.png"
+            with Image.open(picture) as img:
+                self.assertEqual(img.size,(320,180))
+                img.verify()
+            shutil.copyfile(picture,dest/picture.name)
+        for name in ("audit.json","source.json","source.usda",
+                     "chunk.json","plan.json"):
+            shutil.copyfile(job/name,dest/name)
+        (dest/"source_selected_native_status.json").write_text(
+            json.dumps({"genuine_rendered_frames":8,
+                        "same_original_actor_performance":True,
+                        "actual_two_camera_cut_in_first_chunk":True,
+                        "fresh_worker_host_restart_reverified":True,
+                        "no_other_camera_roll_rendered":True,
+                        "complete_final_30_second_film":False,
+                        "director_visual_approval":False},
+                       sort_keys=True,indent=2),"utf8")
+
     def test_camera_swap_and_wrong_scene_are_not_new_source_performances(self):
         forged=deepcopy(self.camera_shots)
         forged[1]["shot_id"]=forged[0]["shot_id"]
