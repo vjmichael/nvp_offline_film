@@ -69,3 +69,30 @@ class FilmingPublicationJournal:
                  "source_ids":json.loads(r["source_ids_json"]),
                  "state":r["state"],"updated_at":r["updated_at"]}
                 for r in rows]
+
+    def reconcile(self, project_id):
+        """Read-only restart evidence; never promote, delete, or retry a Take.
+
+        A journal state alone is not proof of immutable publication. Report
+        each revision's actual presence separately so operators can distinguish
+        an interrupted batch from a crash after the Take was committed.
+        """
+        records = self.unresolved(project_id)
+        def revision_exists(identity):
+            try:
+                self.index.read_revision(project_id, identity, 1)
+            except KeyError:
+                return False
+            return True
+        for record in records:
+            record["source_revisions_present"] = {
+                sid: revision_exists(sid) for sid in record["source_ids"]
+            }
+            record["sound_timeline_present"] = revision_exists(
+                record["sound_timeline_id"])
+            record["take_present"] = revision_exists(record["take_id"])
+            record["resolution"] = (
+                "VERIFY_FROZEN_TAKE_AND_APPROVAL" if record["take_present"]
+                else "INTERRUPTED_NO_FROZEN_TAKE"
+            )
+        return records
