@@ -39,7 +39,7 @@ MIN_SIZE=.025
 MAX_SIZE=500
 MAX_STAGING=32*1024*1024
 EPS=.001
-PRIM_TOKEN=re.compile(r'[A-Za-z][A-Za-z0-9_]{0,49}\\Z')
+PRIM_TOKEN=re.compile(r'[A-Za-z][A-Za-z0-9_]{0,49}\Z')
 
 
 def _sha(payload):
