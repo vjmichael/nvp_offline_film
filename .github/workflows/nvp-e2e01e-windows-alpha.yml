@@ -98,6 +98,10 @@ jobs:
           $installedHash=(Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
           if ($installedHash -ne $builtHash) { throw 'Installed NVP.exe does not match verified build payload' }
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
+          # One consolidated F/G/H group: real installed EXE creates native
+          # approved building assets + UNAPPROVED draft in SQLite and a
+          # second installed process independently reopens exact USD SHA.
+          $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
           $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru -Wait
           if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed' }
           $second=Start-Process -FilePath $installed -ArgumentList '--smoke-reopen' -PassThru -Wait
@@ -109,6 +113,9 @@ jobs:
         shell: pwsh
         run: |
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          # The real installed WebView2 window navigates React section 22/23
+          # and invokes actual native catalog/propose/edit/undo/discard IPC.
+          $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
           $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru -Wait
           if ($window.ExitCode -ne 0) {
             throw 'Real desktop WebView2 window did not load; headless smoke alone cannot accept NVP alpha'
