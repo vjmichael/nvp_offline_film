@@ -204,8 +204,45 @@ class OriginalFilmDistrict:
             if r["building_id"]==p["building_id"]) for p in manual)
         if face_estimate>source_triangle_budget:
             raise MemoryError("District exceeds real source triangle budget")
-        if len(chosen)*len(original)>MAX_SOURCE_MESHES:
-            raise MemoryError("Unreviewed mesh-count estimate")
+        mesh_estimate=sum(original[p["prototype_index"]][
+            "mesh_count"] for p in chosen
+                          if p["instance_id"] not in hidden)
+        mesh_estimate+=sum(next(
+            r["mesh_count"] for r in original
+            if r["building_id"]==p["building_id"]) for p in manual)
+        if mesh_estimate>MAX_SOURCE_MESHES:
+            raise MemoryError("Instanced source mesh-equivalent count exceeds bound")
+        # Check actual source AABB footprints before any world is approved.
+        # Do not interpret this as full structural/collider validation.
+        by_id={p["building_id"]:p for p in original}
+        occupied=[]
+        def footprint(row,pos,yaw):
+            bounds=row["original_bounds_m"]
+            xmin,ymin=bounds[0][:2]
+            xmax,ymax=bounds[1][:2]
+            xy=[(xmin,ymin),(xmax,ymin),(xmax,ymax),(xmin,ymax)]
+            from backend.nvp_usd_film02m_modular_buildings import _rotate
+            points=[_rotate([x,y,0.],yaw) for x,y in xy]
+            return [min(v[0] for v in points)+pos[0],
+                    max(v[0] for v in points)+pos[0],
+                    min(v[1] for v in points)+pos[1],
+                    max(v[1] for v in points)+pos[1]]
+        for item in chosen:
+            if item["instance_id"] not in hidden:
+                occupied.append((str(item["instance_id"]),footprint(
+                    original[item["prototype_index"]],
+                    item["position_local_m"],item["yaw_deg"])))
+        for item in manual:
+            proposed=footprint(by_id[item["building_id"]],
+                               item["position_m"],item["yaw_deg"])
+            for name,old in occupied:
+                overlap_x=min(proposed[1],old[1])-max(proposed[0],old[0])
+                overlap_y=min(proposed[3],old[3])-max(proposed[2],old[2])
+                if overlap_x>.02 and overlap_y>.02:
+                    raise ValueError(
+                        "Manual director building collides with original "+
+                        "prototype "+name)
+            occupied.append((item["name"],proposed))
         return {
             "format":FORMAT,
             "coordinate_system":"meters_Z_up",
@@ -226,9 +263,10 @@ class OriginalFilmDistrict:
             "source_triangle_budget":source_triangle_budget,
             "source_instance_budget":source_instance_budget,
             "actual_source_triangles_estimated":face_estimate,
+            "actual_source_mesh_equivalents_estimated":mesh_estimate,
             "generated_repetition_uses_point_instancer":True,
             "hand_edits_are_separate_stronger_usd_layer":True,
-            "material_only_looks_do_not_rebuild_meshes":True,
+            "material_only_look_variants_implemented":False,
             "actual_gpu_draw_calls_measured":False,
             "real_lod_mesh_variants_verified":False,
             "cinematic_cycles_picture_reviewed":False,
