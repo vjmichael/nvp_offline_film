@@ -60,3 +60,22 @@ jobs:
           assert callable(DurableShotBatchQueue.claim)
           print("Resource status does not grant Lu process or NVP task authority")
           PY
+
+  director-batch-ui:
+    name: Actual React director shot-batch and owned-process activity UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install NVP director UI dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Test Auto/manual resource batching and native-worker owned status
+        working-directory: frontend
+        run: npm run test:ui -- src/AdaptiveShotBatchPanel.test.jsx src/ResourceActivityPanel.test.jsx
+      - name: Build true director frontend including Batch camera shots tab
+        working-directory: frontend
+        run: npm run build
