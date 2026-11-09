@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 REPO="tensorblock/SmolLM2-135M-Instruct-GGUF"
-FILE="SmolLM2-135M-Instruct-Q4_K_M.gguf"
+FILE="SmolLM2-135M-Instruct-Q3_K_M.gguf"
 
 
 def main():
