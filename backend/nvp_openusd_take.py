@@ -207,6 +207,15 @@ class OpenUSDTakeCapture:
             ])
 
     def verify_take(self, project_id, take_id):
+        # A journaled filming Take is not readable while its multi-object
+        # publication is incomplete. Historical Takes without a filming
+        # receipt retain their existing independent creator-approval checks.
+        # Import locally to avoid making the capture publisher a dependency
+        # of the ordinary immutable Take reader.
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        publication=FilmingPublicationJournal(self.index).visibility(project_id,take_id)
+        if publication["journaled"] and not publication["visible"]:
+            raise PermissionError("Filming Take publication unavailable: "+publication["reason"])
         take=self.index.read_revision(project_id,take_id,1)
         manifest=take["data"]
         if (take["kind"]!="take" or manifest.get("format")!=FORMAT or
