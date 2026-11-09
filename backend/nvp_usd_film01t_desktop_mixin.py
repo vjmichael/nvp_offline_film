@@ -23,6 +23,9 @@ class OriginalSelectedFilmDesktopMixin:
     def _film01t_host(self,quality,approve):
         self._native_window()
         worker=self._get_host().supervisor
+        if not worker.blender_version.startswith("Blender 5.2."):
+            raise RuntimeError(
+                "Original source-selected 01T renderer requires reviewed Blender 5.2; native source-only camera scrubbing remains available without this worker")
         workspace=self._wo5_state/"original-selected-film-queues"
         if workspace.is_symlink():
             raise PermissionError("Original source queue may not be symlinked")
