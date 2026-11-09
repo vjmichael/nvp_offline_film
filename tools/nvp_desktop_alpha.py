@@ -1358,6 +1358,43 @@ def run_visible_window_smoke():
                                             "Actual installed WebView2 lacks reviewable time-sampled camera-rail editor or trusted OS methods")
                                     _native_window_stage(
                                         "camfx_installed_camera_rail_editor_source_controls_verified")
+                                if os.environ.get("NVP_CAMFX034_GROUP_ACCEPTANCE")=="1":
+                                    _native_window_stage(
+                                        "camfx034_installed_native_gizmo_and_draft_controls_check")
+                                    advanced_ready=False
+                                    until=time.monotonic()+26
+                                    while time.monotonic()<until:
+                                        advanced_ready=window.evaluate_js(
+                                            "(()=>{const api=window.pywebview?.api;"
+                                            "const pane=document.querySelector("
+                                            "'section[aria-label=\\\"Director digital camera rails and shot techniques\\\"]');"
+                                            "const gizmo=pane?.querySelector("
+                                            "'[aria-label=\\\"Interactive native-source 3D camera rail gizmo\\\"]');"
+                                            "const drafts=pane?.querySelector("
+                                            "'[aria-label=\\\"Durable camera rail editing and model proposals\\\"]');"
+                                            "const methods=['camfx03_scene_guidance','camfx03_draft_create',"
+                                            "'camfx03_draft_save','camfx03_draft_undo',"
+                                            "'camfx03_draft_reopen','camfx03_draft_publish',"
+                                            "'camfx03_draft_recover_publish',"
+                                            "'camfx04_start_candidate','camfx04_candidate_status',"
+                                            "'camfx04_cancel_candidate'];"
+                                            "if(!api||!pane||!drafts||!gizmo)return false;"
+                                            "return methods.every(x=>typeof api[x]==='function')&&"
+                                            "[...pane.querySelectorAll('button')].some(x=>"
+                                            "x.textContent.includes('Create source-bound durable camera-rail draft'))&&"
+                                            "[...pane.querySelectorAll('button')].some(x=>"
+                                            "x.textContent.includes('Read actual original USD ActorID framing'))&&"
+                                            "[...pane.querySelectorAll('button')].some(x=>"
+                                            "x.textContent.includes('Suggest and save unapproved source-grounded AI camera rail'))&&"
+                                            "[...pane.querySelectorAll('button')].some(x=>"
+                                            "x.textContent.includes('OS approve exact saved and source-verified camera rail draft'));})()")
+                                        if advanced_ready:break
+                                        time.sleep(.25)
+                                    if not advanced_ready:
+                                        raise RuntimeError(
+                                            "Installed WebView2 missing native CAMFX 3D gizmo, durable SQLite source, AI advisory or one-use OS controls")
+                                    _native_window_stage(
+                                        "camfx034_installed_gizmo_durable_ai_controls_verified_no_worker_started")
                                 result["passed"]=True
                                 break
                     time.sleep(.2)
