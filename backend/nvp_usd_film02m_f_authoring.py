@@ -237,7 +237,14 @@ class OriginalDistrictDrafts:
             raise PermissionError("A proposal needs an explicit director/AI provenance")
         with self.lock:
             base=self._base(pid,district_id,expected_revision)
-            plan=self._plan(pid,params,[])
+            # A new director proposal based on an approved revision must
+            # preserve its existing stronger USD layer opinions by default,
+            # not silently erase hidden buildings and hand placements.
+            base_ops=(self.index.read_revision(
+                pid,district_id,expected_revision)["data"].get(
+                    "original_director_operations",[])
+                if expected_revision else [])
+            plan=self._plan(pid,params,base_ops)
             receipt=self._verify_stage(pid,plan)
             draft_id=secrets.token_hex(12)
             stamp=now()
@@ -250,7 +257,7 @@ class OriginalDistrictDrafts:
                     created_at,updated_at)
                     VALUES(?,?,?,?,?,?,?,?,?,1,'DRAFT',?,?,?,?)""",
                     (draft_id,pid,district_id,proposed_by,expected_revision,
-                     base or "",_json(params),"[]","[]",_sha(plan),
+                     base or "",_json(params),_json(base_ops),"[]",_sha(plan),
                      receipt["district_root_sha256"],stamp,stamp))
                 db.commit()
             return self.reopen(pid,draft_id)
