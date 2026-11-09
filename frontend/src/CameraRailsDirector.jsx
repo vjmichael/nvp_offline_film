@@ -126,6 +126,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     'camfx04_cancel_candidate'].every(
       name=>typeof nativeBridge[name]==='function');
   const [sceneGuidance,setSceneGuidance]=useState(null);
+  const [knownSourceActors,setKnownSourceActors]=useState([]);
   const [selectedActor,setSelectedActor]=useState('');
   const [districtBinding,setDistrictBinding]=useState('');
   const [durableDraft,setDurableDraft]=useState(null);
@@ -164,6 +165,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     editEpoch.current+=1;
     setPreview(null);setPublished(null);setReopened(null);
     setSample(null);setSceneGuidance(null);
+    setKnownSourceActors([]);setSelectedActor('');
     if(durableDraft?.state==='DRAFT')setDraftDirty(true);
   };
   const run=async action=>{
@@ -355,6 +357,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     setFilmback(body.filmback_mm);setNodes(body.nodes);
     setSampleTick(body.film_start_tick);setUndoHandles([]);
     setPreview(null);setReopened(null);setSceneGuidance(null);
+    setKnownSourceActors([]);setSelectedActor('');
     editEpoch.current+=1;
   };
   const refreshDrafts=useCallback(async()=>{
@@ -401,6 +404,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
        report.source_guided_frames.length!==3)
       throw Error('Native original actor/district framing receipt was not source-bound');
     setSceneGuidance(report);
+    setKnownSourceActors(report.source_guided_frames[0].original_actor_views);
     setNotice('Three exact-time native ActorID camera framings inspected. Center-ray occlusion is advisory, not a proof of a clear full image.');
   });
   const startDurable=()=>run(async()=>{
@@ -639,7 +643,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
         onClick={openRail}>Reopen exact approved rail and its handles</button>
     </div>
     <label>Shot technique / editable first-party starting preset
-      <select aria-label="Camera rail shot technique" disabled={busy}
+      <select aria-label="Camera rail shot technique" disabled={busy||Boolean(modelAttempt)}
         value={technique}
         onChange={e=>editSpec(setTechnique,e.target.value)}>
         {TECHNIQUES.map(([id,label])=><option key={id}
@@ -654,7 +658,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
       <input aria-label="Camera rail end tick" type="number" step={1}
         value={end} disabled={busy} onChange={e=>
           editSpec(setEnd,fix(e.target.value))}/></label>
-    <button disabled={busy||!camera||!bank}
+    <button disabled={busy||!camera||!bank||Boolean(modelAttempt)}
       onClick={()=>run(preset)}>Create editable camera rail handles from technique</button>
     <p className="fineprint">Source length: {bank?.duration_ticks||0} ticks.
       The selected preset is only a suggested path—drag/numeric rail edits
@@ -672,8 +676,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
             value={selectedActor} disabled={busy}
             onChange={e=>{setSelectedActor(e.target.value);setSceneGuidance(null);}}>
             <option value="">All original actors; select one to test center ray</option>
-            {(sceneGuidance?.source_guided_frames?.[0]?.original_actor_views||[])
-              .map(a=><option key={a.actor_id} value={a.actor_id}>
+            {knownSourceActors.map(a=><option key={a.actor_id} value={a.actor_id}>
                 ActorID {a.actor_id}</option>)}
           </select>
         </label>
@@ -756,7 +759,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
           {label} {axis}
           <input type="number" step={.1}
             aria-label={'Rail key '+i+' '+key+' '+axis}
-            value={n[key][k]} disabled={busy}
+            value={n[key][k]} disabled={busy||Boolean(modelAttempt)}
             onChange={e=>editNode(i,key,e.target.value,k)}/></label>)}
       </div>)}
       <div className="actions">
@@ -764,13 +767,13 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
           ['roll_deg','Roll °'],['focal_length_mm','Focal mm'],
           ['focus_distance_m','Focus m'],['f_stop','F-stop']
         ].map(([key,label])=><label key={key}>{label}
-          <input type="number" step={.1} disabled={busy}
+          <input type="number" step={.1} disabled={busy||Boolean(modelAttempt)}
             aria-label={'Rail key '+i+' '+key} value={n[key]}
             onChange={e=>editNode(i,key,fix(e.target.value))}/></label>)}
       </div>
       <label>Interpolation
         <select aria-label={'Rail key '+i+' mode'}
-          value={n.segment_mode} disabled={busy}
+          value={n.segment_mode} disabled={busy||Boolean(modelAttempt)}
           onChange={e=>editNode(i,'segment_mode',e.target.value)}>
           {['hold','linear','hermite'].map(x=><option key={x} value={x}>
             {x}</option>)}
@@ -778,7 +781,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
       </label>
       <label>Easing
         <select aria-label={'Rail key '+i+' easing'}
-          value={n.easing} disabled={busy}
+          value={n.easing} disabled={busy||Boolean(modelAttempt)}
           onChange={e=>editNode(i,'easing',e.target.value)}>
           <option value="linear">linear</option>
           <option value="smoothstep">smoothstep</option>
