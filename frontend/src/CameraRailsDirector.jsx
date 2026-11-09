@@ -96,7 +96,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     'camfx02_reopen','camfx02_sample'].every(
     name=>typeof nativeBridge[name]==='function');
   const [catalog,setCatalog]=useState(null);
-  const [bankId,setBankId]=useState('');
+  const [bankSelection,setBankSelection]=useState('');
   const [cameraId,setCameraId]=useState('');
   const [railId,setRailId]=useState('OriginalCameraRail');
   const [expectedRevision,setExpectedRevision]=useState(0);
@@ -116,7 +116,9 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
   const [notice,setNotice]=useState('');
   const banks=catalog?.camera_banks||[];
   const rails=catalog?.rails||[];
-  const bank=banks.find(x=>x.bank_id===bankId);
+  const bank=banks.find(x=>
+    x.bank_id+'@'+x.revision===bankSelection);
+  const bankId=bank?.bank_id||'';
   const camera=bank?.cameras.find(x=>x.camera_id===cameraId);
   const valid=Boolean(preview)&&preview.format===PREVIEW&&
     preview.expected_revision===expectedRevision&&
@@ -131,7 +133,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     camera_id:cameraId,
     film_start_tick:start,film_end_tick:end,
     technique,rail_origin_m:origin,filmback_mm:filmback,nodes
-  }),[bankId,bank?.revision,cameraId,start,end,technique,origin,filmback,nodes]);
+  }),[bankSelection,bank?.revision,cameraId,start,end,technique,origin,filmback,nodes]);
   const invalidate=()=>{setPreview(null);setPublished(null);setReopened(null);
     setSample(null);};
   const run=async action=>{
@@ -148,8 +150,10 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
        result.native_worker_started!==false)
       throw Error('Trusted source camera bank catalog is unavailable');
     setCatalog(result);
-    setBankId(current=>result.camera_banks.some(x=>x.bank_id===current)?
-      current:result.camera_banks[0]?.bank_id||'');
+    setBankSelection(current=>result.camera_banks.some(
+      x=>x.bank_id+'@'+x.revision===current)?current:
+      (result.camera_banks[0]?
+       result.camera_banks[0].bank_id+'@'+result.camera_banks[0].revision:''));
     return result;
   },[nativeBridge,projectId]);
   useEffect(()=>{
@@ -162,7 +166,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     if(!bank)return;
     if(!bank.cameras.some(x=>x.camera_id===cameraId))
       setCameraId(bank.cameras[0]?.camera_id||'');
-  },[bankId,bank?.revision,catalog,cameraId]);
+  },[bankSelection,bank?.revision,catalog,cameraId]);
   const preset=()=>{
     if(!camera||!bank)throw Error('Choose a real original 01M director camera');
     const begin=clamp(Math.floor(start),0,bank.duration_ticks-1);
@@ -233,7 +237,8 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
       throw Error('Verified source rail revision cannot be reopened');
     setReopened(opened);
     const data=opened.rail_spec;
-    setBankId(data.camera_bank_id);setCameraId(data.camera_id);
+    setBankSelection(data.camera_bank_id+'@'+data.camera_bank_revision);
+    setCameraId(data.camera_id);
     setStart(data.film_start_tick);setEnd(data.film_end_tick);
     setOrigin(data.rail_origin_m);setFilmback(data.filmback_mm);
     setTechnique(data.technique);setNodes(data.nodes);
@@ -271,10 +276,12 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
       Refresh frozen source cameras and approved rails</button>
     <label>Original director camera bank
       <select aria-label="Rail source camera bank" disabled={busy}
-        value={bankId} onChange={e=>{editSpec(setBankId,e.target.value);
+        value={bankSelection} onChange={e=>{
+          editSpec(setBankSelection,e.target.value);
           setCameraId('');setNodes([]);}}>
         <option value="">Select original camera bank</option>
-        {banks.map(x=><option key={x.bank_id} value={x.bank_id}>
+        {banks.map(x=><option key={x.bank_id+'@'+x.revision}
+          value={x.bank_id+'@'+x.revision}>
           {x.bank_id} · revision {x.revision}</option>)}
       </select>
     </label>
