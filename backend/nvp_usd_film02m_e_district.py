@@ -383,6 +383,10 @@ class OriginalFilmDistrict:
                 raise RuntimeError("Director stronger original layer cannot save")
             root_path=base/"district.usda"
             main=Usd.Stage.CreateNew(str(root_path))
+            # The authoritative district root also has explicit units;
+            # never trust composed or DCC-dependent implicit defaults.
+            UsdGeom.SetStageMetersPerUnit(main,1.)
+            UsdGeom.SetStageUpAxis(main,UsdGeom.Tokens.z)
             main.GetRootLayer().subLayerPaths=[
                 "./director.usda","./generated.usda"]
             main.GetRootLayer().customLayerData={
@@ -394,6 +398,11 @@ class OriginalFilmDistrict:
             loaded=Usd.Stage.Open(str(root_path))
             if loaded is None:
                 raise RuntimeError("Original district layer stack did not compose")
+            if (abs(UsdGeom.GetStageMetersPerUnit(loaded)-1.)>1e-9 or
+                str(UsdGeom.GetStageUpAxis(loaded))!="Z" or
+                list(loaded.GetRootLayer().subLayerPaths)!=[
+                    "./director.usda","./generated.usda"]):
+                raise RuntimeError("Original film district layer units or strength changed")
             point=UsdGeom.PointInstancer.Get(
                 loaded,"/World/GeneratedBuildings")
             indices=list(point.GetProtoIndicesAttr().Get() or [])
