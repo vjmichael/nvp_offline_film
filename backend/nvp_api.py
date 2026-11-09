@@ -52,11 +52,14 @@ def shot_batch_estimate(payload: DirectorShotBatchEstimate):
             parallel_worker_limit=payload.parallel_worker_limit,
             renderer=payload.renderer,
             gpu_device_id=payload.gpu_device_id)
+        reservations=(resource_activity.snapshot().get("reservations") or {})
         return preview_batch_layout(
             payload.viewpoint_count,payload.selected_final_shots,
             policy,collect_resources(),
             verified_cycles_gpu_ids=(),
-            cpu_threads=usable_cpu_threads())
+            cpu_threads=usable_cpu_threads(),
+            reserved_ram_mb=reservations.get("ram_mb",0),
+            reserved_gpu_mb=reservations.get("gpu_mb",0))
     except (ValueError,TypeError) as error:
         raise HTTPException(status_code=422,detail=str(error)) from error
 
