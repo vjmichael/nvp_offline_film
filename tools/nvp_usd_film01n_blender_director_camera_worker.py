@@ -112,7 +112,8 @@ def run():
     cameras=[o for o in objects if o.type=="CAMERA"]
     if len(meshes)<3 or not cameras:
         raise RuntimeError("Real original actor geometry or camera not imported")
-    name=source["source_camera_id"]
+    label=source["source_camera_id"]
+    name=source["source_camera_prim"].split("/")[-1]
     matching=[o for o in cameras if o.name==name or
               o.name.rsplit(".",1)[0]==name]
     if len(matching)!=1:
@@ -162,7 +163,7 @@ def run():
     scene.render.use_file_extension=False
     scene["nvp_original_director_bank_sha256"]=source["source_bank_sha256"]
     scene["nvp_original_take_sha256"]=source["source_world_take_sha256"]
-    scene["nvp_director_camera_id"]=name
+    scene["nvp_director_camera_id"]=label
     scene["nvp_source_usd_sha256"]=source["source_usd_sha256"]
     scene["nvp_original_film_tick"]=source["original_film_tick"]
     scene["nvp_original_actor_ids_json"]=json.dumps(sorted(checked))
@@ -188,7 +189,7 @@ def run():
         "source_performance_sha256":source["source_performance_sha256"],
         "source_usd_sha256":source["source_usd_sha256"],
         "original_film_tick":source["original_film_tick"],
-        "camera_id":name,
+        "camera_id":label,
         "native_camera_position_m":observed,
         "camera_focal_length_mm":float(camera.data.lens),
         "original_actor_count":len(checked),
