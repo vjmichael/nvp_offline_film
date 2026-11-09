@@ -358,7 +358,7 @@ class ReviewedSelectedViewFilm:
             raise
 
     def conform_edited_film(self,pid,edit_id,*,revision,pictures_dir,
-                           destination_dir,ffmpeg,ffprobe):
+                           destination_dir,ffmpeg,ffprobe,director_event):
         """Full genuine 30s video + one original PCM sound, no camera rolls."""
         source_dir,source,planned=self.source_plan(pid,edit_id,revision)
         pictures=Path(pictures_dir)
@@ -396,6 +396,25 @@ class ReviewedSelectedViewFilm:
         for start,job in jobs.items():
             self._verify_completed(job,source_dir,source,planned,start,
                                    int(job[-2:]))
+        # Final picture/audio publication requires NEW, exact host approval.
+        # A completed render chunk approval cannot authorize final export.
+        authorization={
+            "operation":"nvp.film01q.conform_original_selected_film.v1",
+            "project_id":pid,"edit_id":edit_id,
+            "edit_revision":revision,
+            "edit_document_sha256":planned["plan"]["edit_document_sha256"],
+            "original_world_take_sha256":planned["plan"][
+                "original_world_take_sha256"],
+            "original_performance_sha256":planned["plan"][
+                "original_performance_sha256"],
+            "selected_picture_receipts_sha256":summary[
+                "source_selected_receipts_sha256"],
+            "selected_native_frames":FRAMES,
+            "original_pcm_48khz_required":True,
+            "destination_dir":str(Path(destination_dir).resolve())}
+        if self.approve(director_event,authorization) is not True:
+            raise PermissionError(
+                "A source chunk render authorization cannot silently approve final movie export")
         output=Path(destination_dir)
         if output.exists() or output.is_symlink():
             raise FileExistsError("Cannot overwrite original film edit output")
