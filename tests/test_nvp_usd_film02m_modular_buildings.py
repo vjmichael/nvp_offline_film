@@ -268,8 +268,118 @@ class OriginalModularBuildingSource(unittest.TestCase):
         with self.assertRaises(PermissionError):
             denied.publish_building(self.pid,"DeniedArchitecture",
                 seed=0,blueprint=recipe,director_event="fake-permission")
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"DeniedArchitecture",1)
+
+    def test_02m_real_native_blender_three_view_reverse_oblique_smoke(self):
+        import os
+        import sys
+        import shutil
+        import subprocess
+        import json
+        from PIL import Image
+        from backend.nvp_blender_worker import (
+            BlenderOperation,BlenderWorkerSupervisor,sha_file)
+        executable=os.environ.get("NVP_FILM02M_BLENDER_BIN")
+        if not executable:
+            self.skipTest("Actual Blender 5.2 native front/rear/oblique pixels required")
+        binary=Path(executable).resolve(strict=True)
+        version=subprocess.run(
+            [str(binary),"-b","--version"],
+            check=True,capture_output=True,text=True,timeout=30
+        ).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        building="NativeReviewBuilding"
+        saved=self.kit.publish_building(
+            self.pid,building,
+            seed=0,blueprint=building_recipe(0,self.facades),
+            director_event=self.approval)
+        workspace=self.root/"02m_protected_native_jobs"
+        runner=BlenderWorkerSupervisor(
+            workspace,blender_executable=binary,
+            blender_sha256=sha_file(binary),blender_version=version)
+        script=Path(__file__).resolve().parents[1]/"tools"/(
+            "nvp_usd_film02m_blender_three_views.py")
+        job=workspace/"Film02MThreeViews"
+        job.mkdir(mode=0o700,parents=True)
+        shutil.copyfile(script,job/script.name)
+        with self.kit.open_building(self.pid,building,1) as opened:
+            stage=Path(opened["stage"].GetRootLayer().realPath)
+            self.assertEqual(sha_file(stage),
+                             opened["building"]["original_usd_root_sha256"])
+            shutil.copyfile(stage,job/"building.usda")
+            shutil.copytree(stage.parent/"assets",job/"assets")
+            references={}
+            for item in opened["building"]["placements"]:
+                sha=item["source_layer_sha256"]
+                references[sha]=sha
+            self.assertEqual(len(references),
+                             len(list((job/"assets").glob("*.usda"))))
+            manifest={
+                "format":"nvp.usd_film02m.cycles_three_angle_request.v1",
+                "building_source_format":BUILD_FORMAT,
+                "source_building_sha256":saved["document_sha256"],
+                "usd_root_sha256":sha_file(job/"building.usda"),
+                "assets":references,"expected_modules":10,
+                "camera_views":["front","rear","oblique"]}
+        (job/"manifest.json").write_text(json.dumps(
+            manifest,sort_keys=True,separators=(",",":")),"utf8")
+        inputs={"building.usda":sha_file(job/"building.usda"),
+                "manifest.json":sha_file(job/"manifest.json")}
+        for path in (job/"assets").glob("*.usda"):
+            inputs["assets/"+path.name]=sha_file(path)
+        inputs[script.name]=sha_file(job/script.name)
+        op=BlenderOperation(
+            job_id="Film02MThreeViews",
+            script=script.name,script_sha256=sha_file(job/script.name),
+            inputs=inputs,
+            outputs={
+                "film02m_front.png":"png",
+                "film02m_rear.png":"png",
+                "film02m_oblique.png":"png",
+                "audit.json":"json_audit"},
+            arguments={"--manifest":"manifest.json","--audit":"audit.json"},
+            timeout_seconds=600,memory_limit_mb=6144,
+            require_linux_cgroup_v2=False)
+        result=runner.run(op)
+        self.assertEqual(result["state"],"SUCCEEDED")
+        self.assertEqual(runner.verify_completed(
+            "Film02MThreeViews")["state"],"SUCCEEDED")
+        audit=json.loads((job/"audit.json").read_text("utf8"))
+        self.assertTrue(audit["passed"])
+        self.assertEqual(audit["source_building_sha256"],
+                         saved["document_sha256"])
+        self.assertEqual(audit["actual_original_native_meshes"],10)
+        self.assertGreaterEqual(audit["actual_original_native_faces"],120)
+        self.assertEqual(
+            [x["view"] for x in audit["rendered_views"]],
+            ["front","rear","oblique"])
+        self.assertFalse(audit["director_visual_quality_reviewed"])
+        hashes=set()
+        for view in ("front","rear","oblique"):
+            image=job/("film02m_"+view+".png")
+            with Image.open(image) as png:
+                self.assertEqual(png.format,"PNG")
+                self.assertEqual(png.size,(320,180))
+                png.verify()
+            hashes.add(sha_file(image))
+        self.assertEqual(len(hashes),3)
+        destination=Path(os.environ.get(
+            "NVP_FILM02M_ARTIFACT_DIR",
+            str(self.root/"02m_native_three_view_evidence"))).resolve()
+        destination.mkdir(parents=True,exist_ok=True)
+        for name in ("film02m_front.png","film02m_rear.png",
+                     "film02m_oblique.png","audit.json","manifest.json",
+                     "building.usda"):
+            shutil.copyfile(job/name,destination/name)
+        (destination/"native_view_status.json").write_text(json.dumps({
+            "real_original_building_meshes":10,
+            "authentic_blender_cycles_views":3,
+            "different_front_rear_oblique_images":True,
+            "camera_visible_rear_and_roof_meshes_preserved":True,
+            "original_building_source_unchanged":True,
+            "director_visual_quality_reviewed":False},
+            sort_keys=True,indent=2),"utf8")
 
     def test_02m_original_geometry_collision_rejected(self):
         original=building_recipe(0,self.facades)
