@@ -222,6 +222,47 @@ class DurableBatchQueueTest(unittest.TestCase):
         self.assertEqual(status["progress_required"],6)
 
 
+class NVPResourceServiceIntegrationTest(unittest.TestCase):
+    def test_supervisor_plus_queue_emit_lu_read_only_local_resource_status(self):
+        from pathlib import Path
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+        from backend.nvp_usd_film01s_resource_service import NVPAdaptiveShotService
+        with tempfile.TemporaryDirectory(prefix="nvp-01s-service-") as dirname:
+            binary=Path(sys.executable).resolve(strict=True)
+            supervisor=BlenderWorkerSupervisor(
+                Path(dirname)/"native_worker_journal",
+                blender_executable=binary,blender_sha256=sha_file(binary),
+                blender_version="Blender test-only placeholder")
+            queue=DurableShotBatchQueue(Path(dirname)/"shot_queue")
+            service=NVPAdaptiveShotService(supervisor,queue,
+                collect_host_resources=lambda:host(8192,5900))
+            plan=service.prepare("LuVisible","4"*64,sample_shots(4),
+                BatchPreferences(shots_per_batch=2,
+                    parallel_worker_limit=1))
+            service.enqueue(plan,director_event="APPROVE",
+                authorize=lambda event,scope:event=="APPROVE" and
+                    scope["operation"]==
+                    "nvp.film01s.enqueue_virtual_shot_batches.v1")
+            report=service.read_only_lu_status("LuVisible")
+            self.assertEqual(report["format"],
+                "nvp.film01s.lu_read_only_resource_and_batch_report.v1")
+            self.assertEqual(report["reporting_application"],"NVP")
+            self.assertTrue(report["lu_can_view_only"])
+            self.assertTrue(report["lu_cannot_launch_cancel_or_override_approval"])
+            self.assertEqual(report["camera_shot_queue"]["progress_required"],8)
+            self.assertEqual(report["effective_shots_per_batch"],2)
+            self.assertEqual(report["safe_parallel_workers_now"][
+                             "lofi"]["safe_workers"],1)
+            self.assertEqual(report["owned_nvp_resource_usage"]["format"],
+                REPORT_FORMAT)
+            self.assertEqual(report["owned_nvp_resource_usage"][
+                "nvp_blender_worker_journal_states"],{})
+            suggested=service.suggest_next("LuVisible")
+            self.assertEqual(suggested["state"],
+                             "READY_FOR_NVP_AUTHORIZATION")
+            self.assertEqual(suggested["ticket"]["quality"],"lofi")
+
+
 class OwnedWorkerUsageTest(unittest.TestCase):
     def test_lu_sees_only_registered_nvp_child_usage_and_no_permissions(self):
         import os
