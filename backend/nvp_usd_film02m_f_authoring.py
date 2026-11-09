@@ -173,10 +173,10 @@ class OriginalDistrictDrafts:
         for row in self.index.list_objects(pid,kind="world")[:128]:
             try:
                 with self.district.kit.open_building(
-                        pid,row["object_id"],row["revision"]) as opened:
+                        pid,row["object_id"],row["head_revision"]) as opened:
                     candidates.append({
                         "building_id":row["object_id"],
-                        "revision":row["revision"],
+                        "revision":row["head_revision"],
                         "document_sha256":opened["record"]["document_sha256"],
                         "source_triangles":sum(
                             int(x["source_mesh_triangle_count"]) for x in
@@ -189,13 +189,13 @@ class OriginalDistrictDrafts:
         districts=[]
         for row in self.index.list_objects(pid,kind="presentation")[:128]:
             try:
-                saved=self.index.read_revision(pid,row["object_id"],row["revision"])
+                saved=self.index.read_revision(pid,row["object_id"],row["head_revision"])
                 if saved["data"].get("format")==DISTRICT_FORMAT:
-                    with self.district.open(pid,row["object_id"],row["revision"]):
+                    with self.district.open(pid,row["object_id"],row["head_revision"]):
                         pass
                     districts.append({
                         "district_id":row["object_id"],
-                        "revision":row["revision"],
+                        "revision":row["head_revision"],
                         "document_sha256":saved["document_sha256"],
                         "source_instance_count":len(saved["data"][
                             "generated_instances"]),
