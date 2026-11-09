@@ -358,6 +358,12 @@ def _render(root,spec,profile):
         scene.render.image_settings.file_format="OPEN_EXR_MULTILAYER"
         scene.render.image_settings.color_depth="32"
         scene.render.image_settings.exr_codec="ZIP"
+        # Select the deliberately supported single-part/interleaved EXR
+        # layout. Blender 5.2 may otherwise emit a multipart EXR that
+        # requires a different independently reviewed channel parser.
+        if not hasattr(scene.render.image_settings,"use_exr_interleave"):
+            raise RuntimeError("Blender EXR output cannot pin reviewed channel layout")
+        scene.render.image_settings.use_exr_interleave=True
         scene.render.filepath=str(path)
         start_exr=time.perf_counter()
         bpy.ops.render.render(write_still=True)
