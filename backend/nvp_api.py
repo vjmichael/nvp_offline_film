@@ -1570,3 +1570,22 @@ def native_color_read(project_id:str,grade_id:str,
                       revision:int|None=_FilmCameraQuery(default=None,ge=1,le=1000000)):
     return run(lambda:_NativeColor(_FilmCameraIndex(studio)).read(
         project_id,grade_id,revision))
+
+
+# USD-FILM-01R: native USD source geometry/time, READ-ONLY only.
+# Director camera EDIT, approval, batch dispatch and final render stay on
+# the exact-origin, OS-confirmed installed pywebview native bridge.
+from backend.nvp_usd_film01r_lowfi_source import SourceViewpointWorkspace as _Source01R
+
+@app.get('/api/projects/{project_id}/film/data-first-viewpoints')
+def film01r_source_viewpoint_catalog(project_id: str):
+    return run(lambda:_Source01R(_FilmCameraIndex(studio)).catalog(project_id))
+
+@app.get('/api/projects/{project_id}/film/data-first-viewpoints/{bank_id}/preview')
+def film01r_original_viewpoint_preview(
+    project_id: str,bank_id: str,
+    revision: int = _FilmCameraQuery(ge=1,le=1000000),
+    frame: int = _FilmCameraQuery(ge=0,le=719),
+    camera_id: str = _FilmCameraQuery(min_length=1,max_length=80)):
+    return run(lambda:_Source01R(_FilmCameraIndex(studio)).snapshot(
+        project_id,bank_id,revision,camera_id=camera_id,frame=frame))

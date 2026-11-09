@@ -1,0 +1,144 @@
+name: NVP USD-FILM-01R Installed Data-First Director Editor and Quality Pipeline
+
+on:
+  push:
+    branches: [nvp/usd-film01r-interactive-editor-20261108]
+  pull_request:
+    branches: [nvp/usd-film01q-selective-view-render-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-usd-film01r-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  original-usd-editor-source:
+    name: Real OpenUSD low-fi meshes, native WebView director consent, quality source / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install original USD/native source dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+      - name: Compile 01R source, actual native camera bridge, and protected selected-view worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01r_lowfi_source.py backend/nvp_usd_film01r_quality.py backend/nvp_wo5_desktop_bridge.py backend/nvp_usd_film01q_selected_view_edit.py backend/nvp_usd_film01q_selected_view_host.py tools/nvp_usd_film01q_blender_selected_views.py tests/test_nvp_usd_film01i_ninecam_take.py
+      - name: Real native source-locked geometry frame, new camera after freeze, exact OS confirmation denial, 720-frame quality identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python -m unittest discover -s tests -p "test_nvp_usd_film01q_selected_contract.py" -v
+          python -m unittest discover -s tests -p "test_nvp_usd_film01r_timeout_admission.py" -v
+
+  director-installed-interface:
+    name: Actual 01R React edit/scrub/batch/original source permission UI and production build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install director UI toolchain
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Source-first editable camera/EDL unit tests and source-activity UI regression
+        working-directory: frontend
+        run: npm run test:ui -- src/DataFirstViewpointEditor.test.jsx src/AdaptiveShotBatchPanel.test.jsx src/FilmCameraSourcePanel.test.jsx
+      - name: Build source-first full production UI
+        working-directory: frontend
+        run: npm run build
+      - name: Confirm original director workbench compiled into installed UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -l "Direct the data" frontend/dist/assets/*.js >/dev/null
+          grep -R -l "Native approve next 8 selected frames" frontend/dist/assets/*.js >/dev/null
+
+  actual-source-draft-8-frame-cycles:
+    name: Genuine Blender 5.2/Cycles source-native draft 640x360 two-camera cut and restart re-verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM01R_ARTIFACT_DIR: original-01r-native-640x360-two-camera-cut
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install verified source/native runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Verify actual official Blender 5.2.3 published SHA before native worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Render eight original source pictures, native 640x360 reviewed draft, verified source-camera cut frame 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM01R_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("original-01r-native-640x360-two-camera-cut")
+          source=json.loads((root/"01r_native_receipt.json").read_text("utf8"))
+          assert source["actual_selected_view_frames"]==8
+          assert source["actual_blender_cycles_draft_640x360"] is True
+          assert source["restarted_worker_source_reverified"] is True
+          assert source["full_30s_film_not_yet_rendered"] is True
+          audit=json.loads((root/"audit.json").read_text("utf8"))
+          assert audit["render_resolution_x"]==640 and audit["render_resolution_y"]==360
+          assert audit["render_samples"]==16
+          assert [x["selected_camera_id"] for x in audit["selected_view_frames"]]==(
+              ["Cam_A_wide"]*4+["Cam_B_medium"]*4)
+          assert len(list(root.glob("frame_*.png")))==8
+          for i in range(8):
+              with Image.open(root/f"frame_{i:04d}.png") as img:
+                  assert img.size==(640,360)
+                  img.verify()
+          print("01R first 8 source-selected original Cycles frames, 720 final still OPEN.")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: USD-FILM01R-real-original-8-640p-Cycles-frames-unapproved
+          path: original-01r-native-640x360-two-camera-cut/
+          if-no-files-found: warn
+          retention-days: 14

@@ -15,6 +15,7 @@ from pathlib import Path
 import sys
 
 import bpy
+from nvp_usd_film01r_quality import verify_quality,quality_hash
 from nvp_usd_film01m_camera_ray_mask import per_camera_primary_ray_exclusions
 
 SOURCE_FORMAT="nvp.usd_film01o.original_720frame_director_rig_source.v1"
@@ -78,6 +79,9 @@ def run():
         plan.get("source_manifest_sha256")!=digest(manifest) or
         plan.get("original_usd_sha256")!=digest(stage)):
         raise PermissionError("Selected source viewpoint plan or source USD altered")
+    profile=verify_quality(plan.get("render_profile"))
+    if quality_hash(profile)!=plan.get("render_profile_sha256"):
+        raise PermissionError("Selected view profile changed after director render plan")
     start=chunk["start_frame"]
     count=chunk["frame_count"]
     if (type(start) is not int or start not in range(0,720,8) or
@@ -132,9 +136,9 @@ def run():
         actual_cameras[camera_id]=match[0]
     scene.render.engine="CYCLES"
     scene.cycles.device="CPU"
-    scene.cycles.samples=8
-    scene.render.resolution_x=320
-    scene.render.resolution_y=180
+    scene.cycles.samples=profile["samples"]
+    scene.render.resolution_x=profile["resolution_x"]
+    scene.render.resolution_y=profile["resolution_y"]
     scene.render.resolution_percentage=100
     scene.render.image_settings.file_format="PNG"
     scene.render.use_file_extension=False
@@ -210,6 +214,10 @@ def run():
         "original_world_take_sha256":plan["original_world_take_sha256"],
         "original_performance_sha256":plan["original_performance_sha256"],
         "start_frame":start,"frame_count":count,
+        "render_profile_sha256":plan["render_profile_sha256"],
+        "render_resolution_x":profile["resolution_x"],
+        "render_resolution_y":profile["resolution_y"],
+        "render_samples":profile["samples"],
         "attempt":chunk["attempt"],"selected_view_frames":rows,
         "native_rendered_frames":len(rows),
         "native_blender_version":bpy.app.version_string,
