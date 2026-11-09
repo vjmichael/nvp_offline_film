@@ -419,13 +419,19 @@ class OriginalFilmDistrict:
                 hidden_ids!=doc["director_invisible_instance_ids"]):
                 raise RuntimeError("True USD instancing/override composition altered")
             for i,proto in enumerate(doc["original_prototypes"]):
-                prim=loaded.GetPrimAtPath(
-                    "/World/GeneratedBuildings/Prototypes/Building_"+str(i))
-                if not prim.IsDefined() or not loaded.GetPrimAtPath(
-                        "/World/GeneratedBuildings/Prototypes/Building_"+str(i)+
-                        "/"+self._first_module_prim(pid,proto)
-                        ).IsDefined():
-                    raise RuntimeError("Original prototype mesh reference did not reopen")
+                path=(
+                    "/World/GeneratedBuildings/Prototypes/Building_"+
+                    str(i)+"/"+self._first_module_prim(pid,proto))
+                # Prototypes live below a pure 'over' ancestor so USD
+                # deliberately excludes them from default raw traversal.
+                # Prim.IsDefined() is FALSE with that ancestor; inspect
+                # the actual composed mesh topology instead.
+                geom=UsdGeom.Mesh.Get(loaded,path)
+                if (not geom or
+                    len(geom.GetPointsAttr().Get() or [])<8 or
+                    len(geom.GetFaceVertexCountsAttr().Get() or [])<12):
+                    raise RuntimeError(
+                        "Original instanced prototype mesh reference did not reopen")
             for item in doc["director_manual_overrides"]:
                 if not loaded.GetPrimAtPath(
                         "/World/DirectorOverrides/"+item["name"]
