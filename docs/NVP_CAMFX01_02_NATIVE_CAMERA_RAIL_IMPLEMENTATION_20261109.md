@@ -29,6 +29,10 @@ The existing trusted `OriginalDistrictDesktopMixin` and `TrustedDesktopWO5Bridge
 
 Current typed **starting presets**, not verified final cinematography: stationary, dolly, truck, crane, arc/orbit, pan/tilt, rack focus, dolly zoom, over-shoulder, POV/reaction, establishing, reveal, Dutch, custom/compound and others. These are editable numeric starting trajectories, **not** an assertion that an AI framed the intended ActorID subject, that the lens effect is correct under Cycles, or that advanced whip/handheld/focus tracking already has human-approved cinematic quality. The UI is not yet a drag-and-drop 3D path gizmo.
 
+### Exact Film Time vs derived USD presentation samples
+
+The host rail evaluates deterministic Hermite at any integer original Film Time tick. The stronger OpenUSD layer explicitly **authors 24fps derived presentation ticks, handle ticks and segment midpoints**; regular USD interpolation between those authored samples is not a native cubic-Hermite guarantee. `camfx02_sample` therefore returns mutually exclusive `native_layer_sample_authored_and_read_back` and `host_exact_film_time_interpolated` flags; the installed director reports which kind of camera position is being shown. No claim that an off-grid host-computed value was explicitly authored in USD is permitted. Motion blur/subframe path parity, timebase conversion and independent Cycles verification remain CAM-FX-05 acceptance rather than a claimed result of the source layer.
+
 ## Tests and acceptance, segregated from implementation
 
 - Native regression `tests/test_nvp_cam_fx01_02_native_rails.py` builds a **real first-party 01E/01M actor/PCM/Town scene** and real USD layer; checks exact Hermite/time/optics, approved/denied/stale/changed rail revisions, source SHA immutability, independently reopened source USD, original 01D camera/ActorID matrices, and invalid/nonfinite control rejection. These tests are authored, not passed on native runners.
