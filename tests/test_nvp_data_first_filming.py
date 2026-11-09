@@ -732,6 +732,26 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(missing["reason"],"MISSING_IMMUTABLE_DEPENDENCY")
         self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
 
+    def test_completed_receipt_cannot_rebind_frozen_take_to_other_timeline(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        journal=FilmingPublicationJournal(self.index)
+        original=self.index.read_revision(self.pid,"FilmedTake",1)
+        # Existing camera timeline revision 1 is real, but it is not the
+        # immutable sound timeline bound into the frozen Take manifest.
+        with self.index.studio._connection() as db:
+            db.execute("""UPDATE nvp_filming_publications
+                SET sound_timeline_id=? WHERE project_id=? AND take_id=?""",
+                ("CameraTimeline",self.pid,"FilmedTake"))
+        decision=journal.visibility(self.pid,"FilmedTake")
+        self.assertFalse(decision["visible"])
+        self.assertEqual(decision["reason"],"PUBLICATION_BINDING_MISMATCH")
+        reader=OpenUSDTakeCapture(self.index,verify_creator_action=lambda *_: False)
+        with self.assertRaisesRegex(PermissionError,"PUBLICATION_BINDING_MISMATCH"):
+            reader.verify_take(self.pid,"FilmedTake")
+        self.assertEqual(self.index.read_revision(self.pid,"FilmedTake",1),original)
+        self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
+
     def test_take_reader_refuses_incomplete_journaled_publication(self):
         from backend.nvp_filming_publication_journal import FilmingPublicationJournal
         self.capture.capture(**self.payload())
