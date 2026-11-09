@@ -78,6 +78,27 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             self.pid,"NewRecordedSpeech",1)["data"]["sample_count"],
                          48000)
 
+    def test_completed_publication_rejects_timeline_digest_mismatch(self):
+        from unittest.mock import patch
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        journal = FilmingPublicationJournal(self.index)
+        original_read = self.index.read_revision
+        def substitute_timeline_digest(project_id, identity, revision):
+            record = original_read(project_id, identity, revision)
+            if identity == "FilmedTake":
+                record = dict(record)
+                record["data"] = dict(record["data"])
+                record["data"]["timeline_document_sha256"] = "0" * 64
+            return record
+        with patch.object(self.index, "read_revision", side_effect=substitute_timeline_digest):
+            result = journal.visibility(self.pid, "FilmedTake")
+        self.assertFalse(result["visible"])
+        self.assertEqual(result["reason"], "PUBLICATION_BINDING_MISMATCH")
+        self.assertTrue(journal.visibility(self.pid, "FilmedTake")["visible"])
+        self.assertEqual(original_read(self.pid, "FilmedTake", 1)["data"]["timeline_document_sha256"],
+                         original_read(self.pid, "FilmingSoundTimeline", 1)["document_sha256"])
+
     def test_completion_holds_writer_lock_during_dependency_verification(self):
         import sqlite3
         from unittest.mock import patch
