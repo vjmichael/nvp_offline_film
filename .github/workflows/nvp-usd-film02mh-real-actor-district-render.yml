@@ -33,6 +33,92 @@ jobs:
           grep -R -l 'Reopen independently verified saved Cycles image' frontend/dist/assets/*.js >/dev/null
           grep -R -l 'OS approve and render original actor/district Cycles frame' frontend/dist/assets/*.js >/dev/null
 
+  installed-windows:
+    name: Real NSIS NVP.exe/WebView2 protected original Cycles review and packaged first-party Blender workers
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install native OpenUSD, PyInstaller, WebView2 and NSIS
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { throw 'NVP foundations unavailable' }
+          python -m pip install --only-binary=:all: 'usd-core==26.11' Pillow numpy
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Windows OpenUSD unavailable' }
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native desktop runtime unavailable' }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS unavailable' }
+      - name: Compile bundled original-world director and real review controls
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'React dependencies failed' }
+          npm run test:ui -- src/OriginalActorDistrictCyclesReview.test.jsx src/ModularWorldDirector.test.jsx
+          if ($LASTEXITCODE -ne 0) { throw 'Protected rendered-shot review UI failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Actual offline director UI did not compile' }
+          Pop-Location
+      - name: Build real Windows native EXE with both pinned reviewed Blender worker scripts
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --add-data 'tools/nvp_usd_film01f_blender_worker.py;tools' --add-data 'tools/nvp_usd_film02mh_blender_reopen.py;tools' --collect-all webview --collect-all pxr --collect-submodules backend tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { throw 'Actual native NVP.exe build failed' }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --require-original-cycles-02mh --report "$env:RUNNER_TEMP/02mh-windows-nsis-payload.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed package does not contain source-verified Cycles workers' }
+      - name: NSIS install and real WebView2 protected shot review, then preserve film on uninstall
+        shell: pwsh
+        run: |
+          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'Actual NSIS build failed' }
+          $installer=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
+          $r=Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+          if ($r.ExitCode -ne 0) { throw 'Real NSIS install failed' }
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          if (-not (Test-Path $installed)) { throw 'Installed Windows executable missing' }
+          if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) { throw 'Installed EXE differs from verified compiled build' }
+          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP '02mh-installed-original-films'
+          $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
+          $env:NVP_FILM02MH_GROUP_ACCEPTANCE='1'
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP '02mh-windows-webview2.log'
+          & $installed --smoke-window
+          if ($LASTEXITCODE -ne 0) { throw 'Real installed WebView2/Cycles review controls did not execute' }
+          $log=Get-Content "$env:RUNNER_TEMP/02mh-windows-webview2.log" -Raw
+          if (-not $log.Contains('film02mh_installed_source_review_controls_verified_no_worker_started')) { throw 'Installed actor/district Cycles native review IPC/UI missing' }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'FilmIndex source was not persisted by installed app' }
+          $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
+          $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
+          if ($result.ExitCode -ne 0) { throw 'NSIS uninstall failed' }
+          Start-Sleep -Seconds 2
+          if (Test-Path $installed) { throw 'Uninstall left protected native EXE' }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'Uninstall erased filmmaker original source' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-02mh-installed-windows-source-review-and-bundled-render-worker-evidence
+          path: |
+            ${{ runner.temp }}/02mh-windows-nsis-payload.json
+            ${{ runner.temp }}/02mh-windows-webview2.log
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-02mh-nsis-technical-candidate-not-human-approved
+          path: dist/NVP-Alpha-Setup.exe
+          if-no-files-found: warn
+          retention-days: 7
+
   native-source:
     name: Real 01D/01E original actor and 02M district USD composition / ${{ matrix.os }} Py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
