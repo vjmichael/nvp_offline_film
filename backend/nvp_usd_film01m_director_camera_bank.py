@@ -354,6 +354,14 @@ class DirectorCameraBank:
                         world.stage, root + "/NVPDirector_" + c["camera_id"])
                     cam.GetFocalLengthAttr().Set(
                         c["focal_length_mm"] / MM_PER_CAMERA_UNIT)
+                    # USD camera dimensions use scene units; the project
+                    # native_schema conversion is exactly mm/100 here.
+                    # Both low-fi THREE projection and native Cycles import
+                    # must use this reviewed 36 × 20.25 mm sensor aperture.
+                    cam.GetHorizontalApertureAttr().Set(
+                        36.0 / MM_PER_CAMERA_UNIT)
+                    cam.GetVerticalApertureAttr().Set(
+                        20.25 / MM_PER_CAMERA_UNIT)
                     cam.GetFocusDistanceAttr().Set(
                         c["focus_distance_m"] / METERS_PER_UNIT)
                     cam.GetClippingRangeAttr().Set(Gf.Vec2f(*c["clip_range_m"]))
