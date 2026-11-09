@@ -2,6 +2,27 @@
 
 Status: **NOT YET ACCEPTED**. This document defines the execution sequence; it is not evidence of an installed Windows run, loaded model, or final filmed shot.
 
+## F/G/H live closeout — native evidence checkpoint (2026-11-09)
+
+**Observed exact-head run:** [#42650335958](https://github.com/vjmichael/nvp_offline_film/actions/runs/42650335958), `nvp/usd-film02mf-grouped-model-world-staging-20261109`, head commit `389960c6a53cbf7c3842e5cfd972ff2d9a45f01a`, attempt 1.
+
+**Current finding: BLOCKED BY CI SCHEDULING, NOT A VERIFIED BUILD/TEST FAILURE.** GitHub reports all six F/G/H jobs queued without start/completion timestamps; trying to download the Linux Py3.11 job log yielded GitHub `BlobNotFound` (404) because the job has not generated a log. A repository-wide status query recorded approximately 159 queued runs and a small number in progress. That observation is a queue-pressure indicator, not proof of a GitHub outage or a code defect.
+
+| Native group job | Job ID | Last observed | Proof needed to close |
+|---|---:|---|---|
+| Windows native OpenUSD + sqlite Py3.11 | 129274666738 | QUEUED | actual test process, pass/fail, trace and SHA |
+| Windows native OpenUSD + sqlite Py3.13 | 129274666720 | QUEUED | same |
+| Linux native OpenUSD + sqlite Py3.11 | 129274666742 | QUEUED; log 404 | same |
+| Linux native OpenUSD + sqlite Py3.13 | 129274667133 | QUEUED | same |
+| Windows trusted desktop bridge method test | 129274666604 | QUEUED | source/OS denial and exact origin logs |
+| Linux React DOM/Vite production build | 129274666768 | QUEUED | test count, build, actual bundle |
+
+**Repository preflight (not native acceptance):** the grouped workflow invokes the F/G/H tests, the associated Python bridge exposes model-to-draft and 01E actor/camera binding methods, and the React component contains the bundle text expected by the workflow. The selected F/G tests use an **injected fake model provider** and simulated OS confirmation; they do not prove a loaded GGUF, actual interactive Windows installer, Blender/Cycles pixels or physical director consent. Those separately remain P0-F-01 and 02M-H gates.
+
+**Closeout procedure and no-run-amplification policy:** Preserve original test-run SHA while queued. After runner execution, retrieve each failed job's full log and identify command, failing test and source line. Repair only demonstrated problems, add focused regression(s), and schedule **one replacement group run** at the new exact head after collecting group repairs; do not create per-fix workflow bursts. A run with any pending/queued/cancelled/skipped matrix without independent replacement is **not accepted**. If all six jobs pass, record their result IDs and no rerun is needed. Restore workflow to manual-only triggering at an appropriate subsequent group boundary so future source commits do not recreate queue churn.
+
+**Closure remains OPEN.** Approval of an original source binding is distinct from actual actor-in-building rendered pixels and physical installed-app/model performance, which retain separate gates.
+
 ## CI policy (2026-11-09 creator decision)
 
 Do **not** run a separate GitHub Actions matrix after each incremental file change. Work on one task group, collect changes into its head commit, then run one deliberate exact-head Windows/Linux acceptance batch for that group. While jobs queue, implement unrelated work without repeatedly pushing the same CI-triggering branch. Do not interpret queued, skipped, cancelled or superseded jobs as passing. Inspect logs and downloadable receipts; consolidate genuine repairs and rerun only the failed or final group gate. Do not cancel useful in-flight exact-head jobs merely to make a new queue.
