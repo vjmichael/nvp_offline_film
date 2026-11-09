@@ -629,5 +629,18 @@ class RecordedActorVoiceWorldTakeTests(unittest.TestCase):
                         s["pid"],"InvalidWorldVoice"+str(i),1)
 
 
+class StoryBibleHistoricalActorIDContract(unittest.TestCase):
+    def test_uuid4_hex_actor_ids_reopen_independently_of_filmindex_tokens(self):
+        from backend.nvp_usd_film01e_world_take import _story_actor_id
+        for good in ("0"*32, "9"*32, "a"*32, "f"*32):
+            with self.subTest(value=good):
+                self.assertEqual(_story_actor_id(good),good)
+        for bad in ("", "1", "G"*32, "A"*32, "a"*31,
+                    "a"*33, "../"+"a"*32, "a"*31+"/"):
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    _story_actor_id(bad)
+
+
 if __name__=="__main__":
     unittest.main()

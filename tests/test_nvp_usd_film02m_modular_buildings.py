@@ -1639,7 +1639,14 @@ class OriginalModularBuildingSource(unittest.TestCase):
             production_root=self.root/"02mf_webview_runtime")
         bridge._attach_window(window)
         try:
+            # Isolated -k F/G native jobs do NOT run the older 02M-B
+            # world-publishing tests. Create exact approved source fixtures
+            # before inspecting the read-only source catalog.
+            expected_sources={x["building_id"] for x in
+                              self._02m_e_source_prototypes()}
             catalog=bridge.film02mf_catalog(self.pid)
+            self.assertTrue(expected_sources.issubset(
+                {x["building_id"] for x in catalog["source_buildings"]}))
             self.assertEqual(catalog["format"],
                 "nvp.usd_film02m_f.native_source_catalog.v1")
             self.assertGreaterEqual(len(catalog["source_buildings"]),2)
@@ -1837,10 +1844,6 @@ class OriginalModularBuildingSource(unittest.TestCase):
             self.kit._resolve(self.pid,0,overlapping)
 
 
-if __name__=="__main__":
-    unittest.main()
-
-
 class NativeUsdPrimTokenBoundary(unittest.TestCase):
     def test_building_node_prim_tokens_accept_valid_and_reject_unsafe(self):
         # The parser feeds IDs to /World/Buildings/<Node>. Reject foreign
@@ -1853,3 +1856,6 @@ class NativeUsdPrimTokenBoundary(unittest.TestCase):
                       "Floor-2", "Floor\\\\Z", "A"+"b"*50, "Floor\\n"):
             with self.subTest(value=value):
                 self.assertIsNone(PRIM_TOKEN.fullmatch(value))
+
+if __name__=="__main__":
+    unittest.main()

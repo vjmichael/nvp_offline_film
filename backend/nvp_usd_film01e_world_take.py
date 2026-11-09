@@ -19,6 +19,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 import math
+import re
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid, _sha
 from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND
@@ -39,6 +40,14 @@ MAX_REQUIRED_SETS = 8
 MAX_ORIGINAL_AUDIO_EVENTS = 256
 MAX_DIALOGUE_ROUTES = 32
 AUDIO_TICKS_PER_SAMPLE = TICKS_PER_SECOND // SAMPLE_RATE
+
+# StoryBible actor entities use uuid4().hex, NOT FilmIndex object tokens.
+# Preserve exact lowercase 32-hex identity before project-bound cast lookup.
+STORY_ACTOR_ID = re.compile(r"[0-9a-f]{32}")
+def _story_actor_id(value):
+    if type(value) is not str or STORY_ACTOR_ID.fullmatch(value) is None:
+        raise ValueError("Invalid original StoryBible actor identifier")
+    return value
 MAX_AUDIO_CHUNKS_PER_SOURCE = 512
 MAX_AUDIO_SOURCE_BYTES = 256 * 1024 * 1024
 
@@ -199,7 +208,7 @@ def _actor_and_take_sources(index, pid, shot, scene_takes, *,
                     "/World/Sets/"+set_name+prim[len("/World"):]):
                     raise PermissionError("Original historical ActorID source has changed")
                 aid = identity["actor_id"]
-                _id(aid,"original StoryBible actor identifier")
+                _story_actor_id(aid)
                 # Cast links may subsequently be retired/recast. Read exact
                 # historical source link evidence, NOT just current cast.
                 with index.studio._connection() as db:

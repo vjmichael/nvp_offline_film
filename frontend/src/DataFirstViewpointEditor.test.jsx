@@ -158,8 +158,9 @@ describe('01R editable source-first virtual film',()=>{
     fireEvent.click(screen.getByRole('button',
       {name:'Native approve & save edit'}));
     await screen.findByText(/Source edit saved/);
-    expect(screen.getByRole('button',{
-      name:'Conform 30-second picture + original PCM'}).disabled).toBe(true);
+    // No persistent queue exists yet; final conform is intentionally hidden.
+    expect(screen.queryByRole('button',{
+      name:'Conform 30-second picture + original PCM'})).toBe(null);
     fireEvent.click(screen.getByRole('button',{
       name:'Preview exact native queue'}));
     await waitFor(()=>expect(native.film01t_preview_queue).toHaveBeenCalledTimes(1));
