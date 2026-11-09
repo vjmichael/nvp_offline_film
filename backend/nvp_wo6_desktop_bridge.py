@@ -1112,9 +1112,6 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
     def _close(self):
         with self._wo6_dispatch_lock:
             self._wo6_closed=True
-        # End any outstanding source generation before disconnecting the
-        # installed WebView. Late provider results must never save a draft.
-        self._film02mg_shutdown()
             for queue in self._wo6_dispatch_queues.values():
                 # Drop unstarted in-memory dispatch notices. Durable tasks
                 # remain QUEUED and require fresh user approval on restart.
@@ -1126,6 +1123,9 @@ class TrustedDesktopWO6Bridge(TrustedDesktopWO5Bridge):
                     else:
                         queue.task_done()
                 queue.put_nowait(None)
+        # End outstanding source generation before disconnecting the
+        # installed WebView. Late provider results must never save a draft.
+        self._film02mg_shutdown()
         with self._wo6_model_lock:
             # An outstanding HTTP completion cannot be forcibly terminated
             # through this read-only interface. Its result is discarded.
