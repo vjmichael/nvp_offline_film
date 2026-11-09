@@ -45,13 +45,26 @@ class NVPAdaptiveShotService:
         self._collect=collect_host_resources
         self._verified_devices=frozenset(verified_cycles_gpu_ids)
 
+    def _reservations(self):
+        ledger=self.supervisor.activity
+        if ledger is None:
+            return {"ram_mb":0,"gpu_mb":0}
+        report=ledger.snapshot()
+        totals=report.get("reservations") or {}
+        values={name:totals.get(name,0) for name in ("ram_mb","gpu_mb")}
+        if any(type(v) is not int or v<0 or v>65536 for v in values.values()):
+            raise RuntimeError("Unverified NVP resource ledger reservations")
+        return values
+
     def prepare(self,plan_id,source_performance_sha256,shots,preferences):
         """Auto-measured plan; no renderer command and no implicit consent."""
         snapshot=self._collect()
         return plan_batches(
             plan_id,source_performance_sha256,shots,preferences,
             snapshot,verified_cycles_gpu_ids=self._verified_devices,
-            cpu_threads=usable_cpu_threads())
+            cpu_threads=usable_cpu_threads(),
+            reserved_ram_mb=self._reservations()["ram_mb"],
+            reserved_gpu_mb=self._reservations()["gpu_mb"])
 
     def enqueue(self,planned,*,director_event,authorize):
         return self.queue.enqueue(
@@ -64,10 +77,13 @@ class NVPAdaptiveShotService:
         prefs=BatchPreferences(**manifest["preferences"])
         snapshot=self._collect()
         threads=usable_cpu_threads()
+        reserved=self._reservations()
         caps={
             stage:safe_parallelism(snapshot,prefs,quality=stage,
                 verified_cycles_gpu_ids=self._verified_devices,
-                cpu_threads=threads)
+                cpu_threads=threads,
+                reserved_ram_mb=reserved["ram_mb"],
+                reserved_gpu_mb=reserved["gpu_mb"])
             for stage in (PREVIEW,FINAL)}
         for ticket in status["shot_tickets"]:
             if ticket["state"]=="INTERRUPTED" or ticket["state"]=="FAILED":
@@ -108,7 +124,9 @@ class NVPAdaptiveShotService:
             prove_prior_worker_stopped=prove_prior_worker_stopped,
             snapshot=self._collect(),
             verified_cycles_gpu_ids=self._verified_devices,
-            cpu_threads=usable_cpu_threads())
+            cpu_threads=usable_cpu_threads(),
+            reserved_ram_mb=self._reservations()["ram_mb"],
+            reserved_gpu_mb=self._reservations()["gpu_mb"])
 
     def read_only_lu_status(self,plan_id):
         """Versioned telemetry payload: NVP remains the one execution owner."""
@@ -117,11 +135,14 @@ class NVPAdaptiveShotService:
         manifest=self.queue._load(plan_id)
         policy=BatchPreferences(**manifest["preferences"])
         snapshot=self._collect()
+        reserved=self._reservations()
         capacity={
             quality:safe_parallelism(
                 snapshot,policy,quality=quality,
                 verified_cycles_gpu_ids=self._verified_devices,
-                cpu_threads=usable_cpu_threads())
+                cpu_threads=usable_cpu_threads(),
+                reserved_ram_mb=reserved["ram_mb"],
+                reserved_gpu_mb=reserved["gpu_mb"])
             for quality in (PREVIEW,FINAL)}
         return {
             "format":FORMAT,
