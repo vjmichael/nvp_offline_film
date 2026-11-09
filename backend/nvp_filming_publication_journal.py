@@ -91,8 +91,22 @@ class FilmingPublicationJournal:
             record["sound_timeline_present"] = revision_exists(
                 record["sound_timeline_id"])
             record["take_present"] = revision_exists(record["take_id"])
-            record["resolution"] = (
-                "VERIFY_FROZEN_TAKE_AND_APPROVAL" if record["take_present"]
-                else "INTERRUPTED_NO_FROZEN_TAKE"
-            )
+            # Recovery is deliberately observational. Distinguish a crash
+            # before any source publication from a partially committed batch,
+            # and from a batch whose sources/timeline were fully committed.
+            # None of these states authorizes deleting or approving a Take.
+            present = sum(record["source_revisions_present"].values())
+            total = len(record["source_ids"])
+            record["source_revision_count"] = present
+            record["expected_source_revision_count"] = total
+            if record["take_present"]:
+                record["resolution"] = "VERIFY_FROZEN_TAKE_AND_APPROVAL"
+            elif record["sound_timeline_present"]:
+                record["resolution"] = "INTERRUPTED_TIMELINE_WITHOUT_TAKE"
+            elif present == 0:
+                record["resolution"] = "INTERRUPTED_BEFORE_SOURCE_PUBLICATION"
+            elif present < total:
+                record["resolution"] = "INTERRUPTED_PARTIAL_SOURCE_PUBLICATION"
+            else:
+                record["resolution"] = "INTERRUPTED_SOURCES_WITHOUT_TIMELINE"
         return records
