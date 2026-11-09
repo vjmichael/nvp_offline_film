@@ -54,8 +54,9 @@ def _capture(index):
     return OpenUSDTakeCapture(index,verify_creator_action=lambda *_:False)
 
 
-def _actor_and_take_sources(index, pid, shot, scene_takes):
-    """Verify every actor-visible REQUIRED scene has an original immutable Take."""
+def _actor_and_take_sources(index, pid, shot, scene_takes, *,
+                            historic_cast=None):
+    """Verify REQUIRED original scene Takes; preserve historical cast on replay."""
     if (type(scene_takes) is not list or
         not 1 <= len(scene_takes) <= MAX_REQUIRED_SETS):
         raise ValueError("One to eight exact original source Take bindings required")
@@ -76,11 +77,20 @@ def _actor_and_take_sources(index, pid, shot, scene_takes):
     original_sets = {item["name"]:item for item in wdoc["sets"]}
     required = shot["director_required_sets"]
     if (set(requested) - set(required) or
-        shot["camera_set"] not in requested):
+        shot["camera_set"] not in requested or
+        len({x["take_id"] for x in requested.values()}) != len(requested)):
+        # A single original actor scene Take cannot be silently duplicated
+        # as two independently performing world-set instances.
         raise PermissionError("Source Take must be camera-set based, not a foreign film set")
     verified = []
     cast_members = []
     audio_sources = []
+    historical={(x["set"],x["original_actor_prim"]):x
+                for x in (historic_cast or [])}
+    if historic_cast is not None and (
+        type(historic_cast) is not list or
+        len(historical) != len(historic_cast)):
+        raise RuntimeError("Historical original actor casting is ambiguous")
     registry = ProductionBibleActors(index.studio)
     voice_bible = ProductionBibleVoiceIdentity(
         index,verify_creator_action=lambda *_:False)
@@ -116,31 +126,67 @@ def _actor_and_take_sources(index, pid, shot, scene_takes):
         if take_host.verify_take(pid,inp["take_id"])[
                 "take_document_sha256"] != frozen["document_sha256"]:
             raise RuntimeError("Original authored scene Take cannot be independently verified")
-        cast = registry.require_complete_cast(
-            pid,inp["take_id"]) if has_actors else None
+        cast = (registry.require_complete_cast(pid,inp["take_id"])
+                if has_actors and historic_cast is None else None)
         for prim, role in sorted(roles.items()):
             if role!="actor":
                 continue
-            if cast is None or prim not in cast["actor_id_by_prim"]:
-                raise PermissionError("Original performing actor is missing from StoryBible cast")
-            aid = cast["actor_id_by_prim"][prim]
-            actor = registry.actor(pid,aid)
-            if actor["actor_id"] != aid:
-                raise RuntimeError("Authoritative StoryBible ActorID changed")
-            voice = voice_bible.current(pid,aid)["current"]
-            cast_members.append({
-                "set":set_name, "original_actor_prim":prim,
-                "composed_actor_prim":"/World/Sets/"+set_name+
-                                      prim[len("/World"):],
-                "actor_id":aid,
-                "source_take_id":inp["take_id"],
-                "source_take_sha256":frozen["document_sha256"],
-                "voice_id":voice["voice_id"] if voice else None,
-                "voice_cast_revision":voice["cast_revision"] if voice else None,
-                "voice_reference_sha256":(
-                    voice["reference_audio_sha256"] if voice else None),
-                "voice_not_synthesized_from_identity":True,
-            })
+            if historic_cast is None:
+                if cast is None or prim not in cast["actor_id_by_prim"]:
+                    raise PermissionError("Original actor lacks StoryBible source casting")
+                aid = cast["actor_id_by_prim"][prim]
+                voice = voice_bible.current(pid,aid)["current"]
+                identity = {
+                    "set":set_name, "original_actor_prim":prim,
+                    "composed_actor_prim":"/World/Sets/"+set_name+
+                                          prim[len("/World"):],
+                    "actor_id":aid,"source_take_id":inp["take_id"],
+                    "source_take_sha256":frozen["document_sha256"],
+                    "voice_id":voice["voice_id"] if voice else None,
+                    "voice_cast_revision":voice["cast_revision"] if voice else None,
+                    "voice_reference_sha256":(
+                        voice["reference_audio_sha256"] if voice else None),
+                    "voice_not_synthesized_from_identity":True,
+                }
+            else:
+                identity = historical.get((set_name,prim))
+                if (identity is None or
+                    identity["source_take_id"]!=inp["take_id"] or
+                    identity["source_take_sha256"]!=frozen["document_sha256"] or
+                    identity["composed_actor_prim"]!=
+                    "/World/Sets/"+set_name+prim[len("/World"):]):
+                    raise PermissionError("Original historical ActorID source has changed")
+                aid = identity["actor_id"]
+                _id(aid,"original StoryBible actor identifier")
+                # Cast links may subsequently be retired/recast. Read exact
+                # historical source link evidence, NOT just current cast.
+                with index.studio._connection() as db:
+                    linked = db.execute(
+                        "SELECT 1 FROM nvp_bible_actor_links WHERE "
+                        "project_id=? AND actor_id=? AND role='actor_prim' "
+                        "AND source_family='filmindex' AND target_id=? "
+                        "AND target_revision=1 AND actor_prim_path=? "
+                        "AND source_sha256=? AND status='active' LIMIT 1",
+                        (pid,aid,inp["take_id"],prim,
+                         frozen["document_sha256"])).fetchone()
+                if linked is None:
+                    raise PermissionError("Historical ActorID source-cast link missing")
+                if identity["voice_id"] is not None:
+                    with index.studio._connection() as db:
+                        old_voice = db.execute(
+                            "SELECT reference_audio_sha256 FROM "
+                            "nvp_bible_voice_casts WHERE project_id=? "
+                            "AND actor_id=? AND voice_id=? AND cast_revision=?",
+                            (pid,aid,identity["voice_id"],
+                             identity["voice_cast_revision"])).fetchone()
+                    if old_voice is None or (
+                        old_voice["reference_audio_sha256"] !=
+                        identity["voice_reference_sha256"]):
+                        raise RuntimeError("Historical ActorID VoiceID was substituted")
+            actor=registry.actor(pid,aid)
+            if actor["actor_id"]!=aid:
+                raise RuntimeError("Original StoryBible ActorID is missing")
+            cast_members.append(identity)
         timeline=source_time._revision(
             pid,fdoc["timeline_id"],fdoc["timeline_revision"])
         if timeline["document_sha256"]!=fdoc["timeline_document_sha256"]:
@@ -352,7 +398,7 @@ class OpenUSDWorldTakeCapture:
         self._approve=verify_creator_action
 
     def _prepare(self,pid,world_id,world_revision,shot_id,shot_revision,
-                 scene_takes,dialogue_requests):
+                 scene_takes,dialogue_requests,*,historic_cast=None):
         shot_record=FilmWorldShotPlanner(self.index).inspect(pid,shot_id,shot_revision)
         shot=shot_record["data"]
         world=self.index.read_revision(pid,world_id,world_revision)
@@ -361,7 +407,8 @@ class OpenUSDWorldTakeCapture:
             shot["world_document_sha256"]!=world["document_sha256"]):
             raise PermissionError("World Take must use exact original camera/world source")
         takes,cast,audio=_actor_and_take_sources(
-            self.index,pid,shot,scene_takes)
+            self.index,pid,shot,scene_takes,
+            historic_cast=historic_cast)
         chosen=_selected_dialogue(
             self.index,pid,dialogue_requests,takes,cast)
         checkpoints=[
@@ -479,7 +526,9 @@ class OpenUSDWorldTakeCapture:
             [{"set":t["set"],"take_id":t["take_id"],
               "take_sha256":t["take_sha256"]}
              for t in doc["original_scene_takes"]],
-            [])  # Historical selected dialogue verified below, not re-routed
+            [],historic_cast=doc["canonical_original_actors"])
+        # Historical dialogue is checked by its source SHA and old VoiceID,
+        # not re-routed through the latest screenplay or later voice recasts.
         if (world["document_sha256"]!=doc["world_document_sha256"] or
             shot["document_sha256"]!=doc["camera_shot_document_sha256"] or
             takes!=doc["original_scene_takes"] or
