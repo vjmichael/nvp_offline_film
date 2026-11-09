@@ -558,21 +558,29 @@ class OriginalDistrictDesktopMixin:
                 pid,row["object_id"],row["head_revision"])
             doc=record["data"]
             if doc.get("format")==BANK_FORMAT:
-                verified=DirectorCameraBank(
-                    self.index,verify_director_action=lambda *_:False).verify(
-                        pid,row["object_id"],row["head_revision"])
-                banks.append({
-                    "bank_id":row["object_id"],
-                    "revision":row["head_revision"],
-                    "document_sha256":record["document_sha256"],
-                    "world_take_id":verified["world_take_id"],
-                    "world_take_sha256":verified["world_take_sha256"],
-                    "duration_ticks":verified["source_duration_ticks"],
-                    "cameras":[{"camera_id":x["camera_id"],
-                                "position_m":x["position_m"],
-                                "focal_length_mm":x["focal_length_mm"],
-                                "focus_distance_m":x["focus_distance_m"]}
-                               for x in verified["cameras"][:96]]})
+                # Film bank revisions are immutable. Expose the old exact
+                # source bank as well, otherwise editing an old rail after
+                # camera-bank revision 2 would silently select revision 2.
+                if row["head_revision"]>32:
+                    raise RuntimeError("Camera history too large for one scoped catalog")
+                for revision in range(1,row["head_revision"]+1):
+                    original=self.index.read_revision(
+                        pid,row["object_id"],revision)
+                    verified=DirectorCameraBank(
+                        self.index,verify_director_action=lambda *_:False).verify(
+                            pid,row["object_id"],revision)
+                    banks.append({
+                        "bank_id":row["object_id"],
+                        "revision":revision,
+                        "document_sha256":original["document_sha256"],
+                        "world_take_id":verified["world_take_id"],
+                        "world_take_sha256":verified["world_take_sha256"],
+                        "duration_ticks":verified["source_duration_ticks"],
+                        "cameras":[{"camera_id":x["camera_id"],
+                                    "position_m":x["position_m"],
+                                    "focal_length_mm":x["focal_length_mm"],
+                                    "focus_distance_m":x["focus_distance_m"]}
+                                   for x in verified["cameras"][:96]]})
             elif doc.get("format")==RAIL_FORMAT:
                 rails.append({
                     "rail_id":row["object_id"],
@@ -585,6 +593,8 @@ class OriginalDistrictDesktopMixin:
                     "film_end_tick":doc["rail_spec"]["film_end_tick"],
                     "layer_sha256":doc["rail_layer_sha256"],
                     "technique":doc["rail_spec"]["technique"]})
+        if len(banks)>96 or len(rails)>128:
+            raise RuntimeError("Scoped rail catalog must remain bounded")
         return {
             "format":"nvp.cam_fx01.trusted_director_rail_catalog.v1",
             "project_id":pid,
