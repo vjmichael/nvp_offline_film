@@ -282,7 +282,15 @@ class ReviewedDistrictShotCyclesHost:
             "actual_district_meshes":district["district_render_meshes"],
             "original_actor_count":district["original_actor_count"],
         }
-        if self.confirm(director_event,scope) is not True:
+        try:
+            granted=self.confirm(director_event,scope) is True
+        except Exception:
+            # No worker was dispatched, and the approved source is already
+            # immutable. Do not leave rejected derived USD copies behind.
+            shutil.rmtree(prepared["job_dir"])
+            raise
+        if not granted:
+            shutil.rmtree(prepared["job_dir"])
             raise PermissionError("Native source render requires fresh exact director approval")
         # Reopen the approved binding and immutable original source AGAIN
         # after consent and immediately before executing the reviewed worker.
