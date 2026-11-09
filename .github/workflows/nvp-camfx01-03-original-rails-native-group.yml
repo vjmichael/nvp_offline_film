@@ -1,0 +1,151 @@
+name: NVP CAM-FX-01/02/03 Original Camera Rails, Stronger USD and Installed Director Group
+
+# Planned single end-of-task-group manual gate. DO NOT automatically run per
+# source edit or stack behind an unaccepted 02M-H native render group.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-native-camera-rails:
+    name: Native 01E ActorID PCM + 01M bank → exact 3D director rail/stronger USD / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine native original film OpenUSD and first-party source dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11' numpy Pillow
+          python -m pip install httpx
+      - name: Compile exact rail authoring, stronger camera layer, trusted Windows director bridge and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_cam_fx01_camera_rails.py backend/nvp_cam_fx02_usd_camera_layer.py backend/nvp_usd_film02m_f_desktop_mixin.py tests/test_nvp_cam_fx01_02_native_rails.py
+      - name: Source-pinned original ActorID PCM, 01M camera bank, hermite/hold/dolly/rebase/optics, exact-time native USD and immutable two-revision recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_cam_fx01_02_native_rails.py -v
+      - name: Original 01E source Take camera and PCM regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_usd_film01e_world_take.py -k test_world_take_binds_actual_actor -v
+
+  real-director-ui:
+    name: Source-owned rail handle edit/undo, bounded advanced shot technique presets and native OS approval UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build actual installed offline React director
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Exercise director rail creation, handle edits, preview invalidation and native OS publish contract
+        working-directory: frontend
+        run: npm run test:ui -- src/CameraRailsDirector.test.jsx src/ModularWorldDirector.test.jsx
+      - name: Compile bundled Vite source-time camera rail UI
+        working-directory: frontend
+        run: npm run build
+      - name: Assert rail and real OS-gated source terms survived production minification
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -l 'Preview exact-time stronger camera USD layer' frontend/dist/assets/*.js >/dev/null
+          grep -R -l 'OS approve exact director-editable camera rail revision' frontend/dist/assets/*.js >/dev/null
+          grep -R -l 'Undo last unapproved camera-rail handle edit' frontend/dist/assets/*.js >/dev/null
+
+  installed-windows-editor:
+    name: Actual NSIS NVP.exe + real WebView2 rail/advanced shot controls, source immutable after uninstall
+    runs-on: windows-2025
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install real original pxr, pywebview, native executable and installer toolchains
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Native film foundation failed' }
+          python -m pip install --only-binary=:all: 'usd-core==26.11' numpy Pillow
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows OpenUSD source unavailable' }
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen Windows desktop runtime unavailable' }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Actual NSIS not available' }
+      - name: Build real offline React camera rail interface
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'React dependencies failed' }
+          npm run test:ui -- src/CameraRailsDirector.test.jsx
+          if ($LASTEXITCODE -ne 0) { throw 'Original film rail UI failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Actual offline camera director build failed' }
+          Pop-Location
+      - name: Freeze actual Windows WebView2 host including protected original film source tool scripts
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --add-data 'tools/nvp_usd_film01f_blender_worker.py;tools' --add-data 'tools/nvp_usd_film02mh_blender_reopen.py;tools' --collect-all webview --collect-all pxr --collect-submodules backend tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { throw 'Actual NVP.exe camera editor freeze failed' }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --require-original-cycles-02mh --report "$env:RUNNER_TEMP/camfx-real-nsis-payload.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Shipped original-film source camera viewer or reviewed Blender scripts missing' }
+      - name: Install real NSIS NVP and exercise native WebView2 camera rail controls
+        shell: pwsh
+        run: |
+          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'Actual NSIS camera editor build failed' }
+          $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
+          $installation=Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          if ($installation.ExitCode -ne 0) { throw 'NSIS install failed' }
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          if (-not (Test-Path $installed)) { throw 'Real NVP.exe not installed' }
+          if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) { throw 'Installed NVP.exe source identity mismatch' }
+          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'camfx-native-original-film-projects'
+          $env:NVP_CAMFX_GROUP_ACCEPTANCE='1'
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'camfx-actual-webview2.log'
+          & $installed --smoke-window
+          if ($LASTEXITCODE -ne 0) { throw 'Actual installed WebView2 camera rail editor was not interactive' }
+          $log=Get-Content "$env:RUNNER_TEMP/camfx-actual-webview2.log" -Raw
+          if (-not $log.Contains('camfx_installed_camera_rail_editor_source_controls_verified')) { throw 'Trusted native 01M rail controls absent from actual installed Windows UI' }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'Source FilmIndex not persisted by NVP.exe' }
+          $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
+          $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
+          if ($result.ExitCode -ne 0) { throw 'Real NSIS uninstall failed' }
+          Start-Sleep -Seconds 2
+          if (Test-Path $installed) { throw 'Uninstall retained executable' }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'NSIS deleted original filmmaker sources' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: camfx-source-rails-real-windows-installed-editor-proof
+          path: |
+            ${{ runner.temp }}/camfx-real-nsis-payload.json
+            ${{ runner.temp }}/camfx-actual-webview2.log
+          if-no-files-found: warn
+          retention-days: 14
