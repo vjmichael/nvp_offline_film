@@ -98,6 +98,16 @@ class RealUSDShotWorldStreaming(unittest.TestCase):
                     "/World/Variants/Facade").GetVariantSets().
                     GetVariantSet("look").GetVariantSelection(),"High")
             self.assertEqual(second["resource_after"]["gpu_device_used_bytes"],None)
+            self.assertFalse(second["director_look_layer_authoritative"])
+            self.assertEqual(len(second["director_disposable_look_layer_sha256"]),64)
+            undo=runtime.discard_temporary_look()
+            self.assertEqual(undo["state"],"DIRECTOR_PREVIEW_REVERTED")
+            self.assertEqual(
+                runtime.session.stage.GetPrimAtPath(
+                    "/World/Variants/Facade").GetVariantSets().
+                    GetVariantSet("look").GetVariantSelection(),"Low")
+            summary=runtime.query_loaded_scene()
+            self.assertIn("camera",{e["role"] for e in summary["entries"]})
         for receipt,source in (
             ("OutsideWorkingSet","ShotOutside"),
             ("InsideWorkingSet","ShotInside"),
