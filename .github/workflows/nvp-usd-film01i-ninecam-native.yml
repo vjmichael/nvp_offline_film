@@ -1,0 +1,58 @@
+name: NVP USD-FILM-01I/01J One Actor Performance, Nine Native Source Cameras
+
+on:
+  push:
+    branches: [nvp/usd-film01i-ninecam-source-20261108]
+  pull_request:
+    branches: [nvp/usd-film01f-world-render-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-ninecam-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  nine-native-original-cameras:
+    name: 1 Original 30s Actor Take, 9 true UsdGeom Cameras / ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install real pinned native OpenUSD and image dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+      - name: Compile native original USD camera authoring and source verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_openusd_scene.py backend/nvp_usd_film01i_ninecam_take.py backend/nvp_usd_film01j_ninecam_edit.py tests/test_nvp_usd_film01i_ninecam_take.py tests/test_nvp_usd_film01j_ninecam_edit.py
+      - name: Native original actors, 9 lens/orientation cameras, immutable source and SQLite restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+      - name: Verify all 6480 synthetic contract-only PNG frames and 9 editorial cuts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01j_ninecam_edit.py" -v
+      - name: Preserve existing native USD source and 01E World Take contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01e_world_take.py" -v
