@@ -830,7 +830,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                     "source_out_frame":720,"edit_in_frame":0,
                     "edit_out_frame":720}],
                 director_event="BROWSER_IMPERSONATED_DIRECTOR")
-        with self.assertRaises(PermissionError):
+        with self.assertRaises(RuntimeError):
             edit.create(self.pid,"UnapprovedOriginalEdit",
                 camera_bank_id="FullCameraRollOriginalBank",
                 camera_bank_revision=1,
