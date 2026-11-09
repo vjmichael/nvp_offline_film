@@ -966,6 +966,384 @@ class OriginalModularBuildingSource(unittest.TestCase):
                 **settings,"source_buildings":[{
                     "building_id":"GlobalOffsetPrototypeE","revision":1}]})
 
+    def test_02m_e2_actual_openusd_source_material_and_true_3d_lod_stages(self):
+        """Independent native USD geometry/material proof: NO fake pixel claims."""
+        from backend.nvp_usd_film02m_e2_look import (
+            OriginalBuildingLookReview,FORMAT,PROFILES,_hex)
+        import json
+        from pxr import Usd,UsdGeom,UsdShade
+        original=self._02m_d_original_building(
+            "E2LookSource",0,39,"shopfront")
+        review=OriginalBuildingLookReview(self.index)
+        with review.prepare(self.pid,original["id"],1) as prepared:
+            root=prepared["root"]
+            manifest=prepared["manifest"]
+            self.assertEqual(manifest["format"],FORMAT)
+            self.assertEqual(manifest["building_document_sha256"],
+                             original["building"]["document_sha256"])
+            self.assertEqual(manifest["source_look_model"],"UsdPreviewSurface")
+            self.assertTrue(manifest["original_world_take_unchanged"])
+            self.assertFalse(manifest["native_blender_material_import_verified"])
+            self.assertFalse(manifest["cinematic_picture_approved"])
+            self.assertFalse(manifest["materialx_parity_verified"])
+            self.assertFalse(manifest["ocio_aces_config_verified"])
+            self.assertFalse(manifest["exr_multilayer_rendered"])
+            expected=manifest["actual_geometry_triangle_counts"]
+            self.assertGreater(expected["near"],expected["mid"])
+            self.assertGreater(expected["mid"],expected["far"])
+            self.assertEqual(expected["mid"],11*12)
+            self.assertEqual(expected["far"],12)
+            self.assertEqual(len(manifest["first_party_reviewed_profiles"]),5)
+            self.assertEqual(
+                [p["id"] for p in manifest["first_party_reviewed_profiles"]],
+                [p["id"] for p in PROFILES])
+            self.assertEqual(
+                {p["lighting"] for p in PROFILES if
+                 p["id"]!="near_front_relight"},{"soft_day"})
+            self.assertEqual(
+                len(manifest["source_material_contract"]),11)
+            colors={tuple(p["base_color_rgb"]) for p in
+                    manifest["source_material_contract"]}
+            self.assertGreaterEqual(len(colors),3)
+            for lod,sha_name in (
+                    ("near","original_near_stage_sha256"),
+                    ("mid","mid_lod_stage_sha256"),
+                    ("far","far_lod_stage_sha256")):
+                self.assertEqual(_hex(root/(lod+".usda")),
+                                 manifest[sha_name])
+                native=Usd.Stage.Open(str(root/(lod+".usda")))
+                self.assertTrue(native)
+                self.assertEqual(UsdGeom.GetStageUpAxis(native),"Z")
+                self.assertEqual(UsdGeom.GetStageMetersPerUnit(native),1.)
+                self.assertEqual(
+                    len([p for p in native.Traverse() if
+                         p.IsA(UsdGeom.Mesh)]),
+                    11 if lod!="far" else 1)
+                self.assertGreater(len(native.GetRootLayer().ExportToString()),200)
+            mid=Usd.Stage.Open(str(root/"mid.usda"))
+            for expected_mesh in prepared["mid_components"]:
+                mesh=UsdGeom.Mesh.Get(mid,expected_mesh["mesh_prim"])
+                self.assertTrue(mesh)
+                self.assertTrue(
+                    UsdShade.MaterialBindingAPI(
+                        mesh.GetPrim()).ComputeBoundMaterial()[0])
+                self.assertTrue(expected_mesh[
+                    "source_derived_not_original_hero_geometry"])
+            near=Usd.Stage.Open(str(root/"near.usda"))
+            facade=UsdGeom.Mesh.Get(near,"/World/Buildings/Front/Geometry")
+            self.assertGreater(
+                len(facade.GetFaceVertexCountsAttr().Get()),12)
+            self.assertTrue(
+                UsdShade.MaterialBindingAPI(
+                    facade.GetPrim()).ComputeBoundMaterial()[0])
+            self.assertEqual(
+                json.loads((root/"manifest.json").read_text("utf8")),
+                manifest)
+            self.assertTrue(prepared["source_has_actual_pbr_surfaces"])
+            self.assertTrue(prepared["original_source_never_modified"])
+        with self.kit.open_building(self.pid,original["id"],1) as reopening:
+            self.assertEqual(
+                reopening["record"]["document_sha256"],
+                original["building"]["document_sha256"])
+
+    def test_02m_e2_actual_blender_cycles_material_lighting_lod_exr(self):
+        """Optional *actual* Blender: no native render means the test skips."""
+        import os
+        import json
+        import shutil
+        import subprocess
+        from PIL import Image,ImageStat
+        from backend.nvp_blender_worker import (
+            BlenderOperation,BlenderWorkerSupervisor,sha_file)
+        from backend.nvp_usd_film02m_e2_look import (
+            OriginalBuildingLookReview,PROFILES)
+        executable=os.environ.get("NVP_FILM02ME2_BLENDER_BIN")
+        if not executable:
+            self.skipTest(
+                "Real Blender 5.2/Cycles and native USD material import required")
+        blender=Path(executable).resolve(strict=True)
+        version=subprocess.run(
+            [str(blender),"-b","--version"],
+            check=True,capture_output=True,text=True,timeout=30
+        ).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        original=self._02m_d_original_building(
+            "E2TrueCycles",0,46,"shopfront")
+        review=OriginalBuildingLookReview(self.index)
+        host_root=self.root/"02me2_real_native_cycles_jobs"
+        worker=BlenderWorkerSupervisor(
+            host_root,blender_executable=blender,
+            blender_sha256=sha_file(blender),blender_version=version)
+        job=host_root/"Film02ME2ActualUSDLook"
+        job.mkdir(parents=True,mode=0o700)
+        script=Path(__file__).resolve().parents[1]/"tools"/(
+            "nvp_usd_film02m_e2_blender_look.py")
+        shutil.copyfile(script,job/script.name)
+        with review.prepare(self.pid,original["id"],1) as prepared:
+            root=prepared["root"]
+            for name in ("near.usda","mid.usda","far.usda","manifest.json"):
+                shutil.copyfile(root/name,job/name)
+            shutil.copytree(root/"assets",job/"assets")
+        inputs={
+            script.name:sha_file(job/script.name),
+            **{name:sha_file(job/name) for name in (
+                "near.usda","mid.usda","far.usda","manifest.json")}}
+        for item in (job/"assets").glob("*.usda"):
+            inputs["assets/"+item.name]=sha_file(item)
+        self.assertLessEqual(len(inputs),32)
+        outputs={
+            **{p["id"]+".png":"png" for p in PROFILES},
+            "near_front_passes.exr":"exr",
+            "audit.json":"json_audit"}
+        op=BlenderOperation(
+            job_id="Film02ME2ActualUSDLook",
+            script=script.name,script_sha256=sha_file(job/script.name),
+            inputs=inputs,outputs=outputs,
+            arguments={"--manifest":"manifest.json","--audit":"audit.json"},
+            timeout_seconds=600,memory_limit_mb=8192,
+            gpu_memory_mb=0,require_linux_cgroup_v2=False)
+        executed=worker.run(op)
+        self.assertEqual(executed["state"],"SUCCEEDED")
+        self.assertEqual(worker.verify_completed(
+            "Film02ME2ActualUSDLook")["state"],"SUCCEEDED")
+        receipt=json.loads((job/"audit.json").read_text("utf8"))
+        self.assertTrue(receipt["passed"])
+        self.assertEqual(receipt["original_building_sha256"],
+                         original["building"]["document_sha256"])
+        self.assertEqual(receipt["reviewed_original_material_shader"],
+                         "UsdPreviewSurface")
+        self.assertTrue(receipt["actual_imported_original_shader_parity"])
+        self.assertTrue(receipt["true_geometry_lods_verified"])
+        self.assertTrue(receipt["actual_native_linear_exr_with_source_passes"])
+        self.assertFalse(receipt["aces_external_ocio_config_verified"])
+        self.assertFalse(receipt["materialx_parity_verified"])
+        self.assertFalse(receipt["director_picture_quality_approved"])
+        self.assertFalse(receipt["gpu_vram_measured"])
+        self.assertGreater(receipt["actual_worker_peak_process_rss_mb"],0)
+        records=receipt["rendered_views"]
+        self.assertEqual(len(records),5)
+        self.assertEqual(
+            [row["shot"] for row in records],
+            [p["id"] for p in PROFILES])
+        observed=set()
+        for p,row in zip(PROFILES,records):
+            self.assertEqual(row["actual_cycles_samples"],
+                             p["cycles_samples"])
+            self.assertEqual(row["actual_pixel_dimensions"],p["resolution"])
+            self.assertEqual(row["actual_builtin_color_view_transform"],"AgX")
+            self.assertGreater(row["cycles_render_wall_seconds"],0)
+            self.assertGreater(row["actual_worker_process_peak_rss_mb"],0)
+            self.assertEqual(row["source_lod"],p["lod"])
+            self.assertGreater(
+                row["source_look"]["actual_assigned_principled_materials"],0)
+            if p["lod"]=="near":
+                self.assertTrue(row["source_look"][
+                    "native_source_shader_binding_verified"])
+            with Image.open(job/(p["id"]+".png")) as image:
+                self.assertEqual(image.size,tuple(p["resolution"]))
+                self.assertEqual(image.format,"PNG")
+                image.verify()
+            with Image.open(job/(p["id"]+".png")) as decoded:
+                rgb=decoded.convert("RGB")
+                self.assertGreater(max(ImageStat.Stat(rgb).var),1.)
+            observed.add(sha_file(job/(p["id"]+".png")))
+        self.assertEqual(len(observed),5)
+        self.assertEqual(records[0]["native_imported_source_triangles"],
+                         records[1]["native_imported_source_triangles"])
+        self.assertEqual(records[0]["native_imported_source_triangles"],
+                         records[4]["native_imported_source_triangles"])
+        self.assertGreater(records[0]["native_imported_source_triangles"],
+                           records[2]["native_imported_source_triangles"])
+        self.assertGreater(records[2]["native_imported_source_triangles"],
+                           records[3]["native_imported_source_triangles"])
+        exr=job/"near_front_passes.exr"
+        with exr.open("rb") as f:
+            self.assertEqual(f.read(4),bytes.fromhex("762f3101"))
+        self.assertTrue(records[0]["exr"]["actual_exr_rendered"])
+        self.assertEqual(sha_file(exr),
+                         records[0]["exr"]["actual_exr_sha256"])
+        artifacts=Path(os.environ.get(
+            "NVP_FILM02ME2_ARTIFACT_DIR",
+            str(self.root/"nvp_02me2_real_look_acceptance"))).resolve()
+        artifacts.mkdir(parents=True,exist_ok=True)
+        for name in list(outputs)+["manifest.json","near.usda",
+                                   "mid.usda","far.usda"]:
+            shutil.copyfile(job/name,artifacts/name)
+        (artifacts/"creative_review_status.json").write_text(
+            json.dumps({
+                "actual_native_cycles_source_material_import":True,
+                "original_openusd_world_geometry_immutable":True,
+                "actual_geometry_near_mid_far_views":True,
+                "actual_cpu_cycles_render_times":True,
+                "actual_cpu_process_peak_rss":True,
+                "actual_native_multilayer_openexr":True,
+                "same_world_separate_relit_view":True,
+                "director_cinematic_look_accepted":False,
+                "aces_external_ocio_verified":False,
+                "materialx_parity_verified":False,
+                "gpu_performance_measured":False},
+                sort_keys=True,indent=2),"utf8")
+
+    def _02m_e2_original_district(self,identifier):
+        district=self._02m_e_host()
+        settings=self._02m_e_settings()
+        original_building=settings["source_buildings"][0]["building_id"]
+        overrides=[
+            {"op":"hide_generated","instance_id":1},
+            {"op":"place_original","name":"DirectorExtraBuilding",
+             "building_id":original_building,
+             "position_m":[0.,60.,0.],"yaw_deg":90}]
+        published=district.publish(
+            self.pid,identifier,**settings,
+            director_overrides=overrides,
+            director_event=self.approval)
+        return district,published
+
+    def test_02m_e2_original_point_instancer_compiles_only_disposable_native_render_view(self):
+        from backend.nvp_usd_film02m_e2_district_render_view import (
+            source_district_render_view,FORMAT)
+        from pxr import Usd,UsdGeom,UsdShade
+        district,published=self._02m_e2_original_district(
+            "DistrictE2SourceRender")
+        with district.open(self.pid,"DistrictE2SourceRender",1) as before:
+            original_generated=before["receipt"]["generated_layer_sha256"]
+            original_director=before["receipt"][
+                "director_override_layer_sha256"]
+            original_root=before["receipt"]["district_root_sha256"]
+        with source_district_render_view(
+                self.index,self.pid,"DistrictE2SourceRender",1) as output:
+            manifest=output["manifest"]
+            self.assertEqual(manifest["format"],FORMAT)
+            self.assertEqual(manifest["original_generated_layer_sha256"],
+                             original_generated)
+            self.assertEqual(manifest["original_director_layer_sha256"],
+                             original_director)
+            self.assertEqual(manifest["original_point_instancer_root_sha256"],
+                             original_root)
+            self.assertEqual(manifest["source_original_point_instances"],6)
+            self.assertEqual(manifest["source_original_invisible_ids"],[1])
+            self.assertEqual(manifest["source_visible_and_hand_placed_instances"],6)
+            self.assertEqual(manifest["expected_actual_original_meshes"],60)
+            self.assertEqual(manifest["original_native_usd_pbr_bound_meshes"],60)
+            self.assertEqual(manifest["source_approved_world_origin_m"],
+                             [1_000_000.,-2_000_000.,0.])
+            self.assertEqual(manifest["render_view_local_origin_m"],
+                             [0.,0.,0.])
+            self.assertTrue(output[
+                "original_point_instancer_retained_as_authority"])
+            self.assertFalse(manifest["gpu_instancing_performance_verified"])
+            self.assertFalse(manifest["native_blender_cycles_parity_verified"])
+            self.assertFalse(manifest["cinematic_picture_approved"])
+            render=Usd.Stage.Open(str(output["root"]/
+                                      "district_render_view.usda"))
+            self.assertEqual(UsdGeom.GetStageUpAxis(render),"Z")
+            self.assertEqual(UsdGeom.GetStageMetersPerUnit(render),1.)
+            actual=[p for p in render.Traverse() if p.IsA(UsdGeom.Mesh)]
+            self.assertEqual(len(actual),60)
+            self.assertTrue(all(UsdShade.MaterialBindingAPI(
+                x).ComputeBoundMaterial()[0] for x in actual))
+        with district.open(self.pid,"DistrictE2SourceRender",1) as after:
+            self.assertEqual(after["receipt"]["generated_layer_sha256"],
+                             original_generated)
+            self.assertEqual(after["receipt"]["director_override_layer_sha256"],
+                             original_director)
+            self.assertEqual(after["receipt"]["district_root_sha256"],
+                             original_root)
+            self.assertEqual(after["record"]["document_sha256"],
+                             published["document_sha256"])
+
+    def test_02m_e2_genuine_native_blender_district_materials_and_reverse_camera(self):
+        import os
+        import json
+        import shutil
+        import subprocess
+        from PIL import Image,ImageStat
+        from backend.nvp_usd_film02m_e2_district_render_view import (
+            source_district_render_view)
+        from backend.nvp_blender_worker import (
+            BlenderOperation,BlenderWorkerSupervisor,sha_file)
+        executable=os.environ.get("NVP_FILM02ME2_BLENDER_BIN")
+        if not executable:
+            self.skipTest(
+                "Requires actual Blender5.2 and native 6-building district Cycles")
+        blender=Path(executable).resolve(strict=True)
+        version=subprocess.run(
+            [str(blender),"-b","--version"],
+            check=True,capture_output=True,text=True,timeout=30
+        ).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        _,published=self._02m_e2_original_district(
+            "DistrictE2TrueCycles")
+        worker_root=self.root/"nvp02me2_native_district_jobs"
+        supervisor=BlenderWorkerSupervisor(
+            worker_root,blender_executable=blender,
+            blender_sha256=sha_file(blender),blender_version=version)
+        job=worker_root/"Film02ME2ActualDistrict"
+        job.mkdir(parents=True,mode=0o700)
+        script=Path(__file__).resolve().parents[1]/"tools"/(
+            "nvp_usd_film02m_e2_blender_district.py")
+        shutil.copyfile(script,job/script.name)
+        with source_district_render_view(
+                self.index,self.pid,"DistrictE2TrueCycles",1) as generated:
+            base=generated["root"]
+            for filename in ("manifest.json","district_render_view.usda"):
+                shutil.copyfile(base/filename,job/filename)
+            shutil.copytree(base/"sources",job/"sources")
+        inputs={
+            script.name:sha_file(job/script.name),
+            "manifest.json":sha_file(job/"manifest.json"),
+            "district_render_view.usda":sha_file(job/"district_render_view.usda")}
+        for path in (job/"sources").rglob("*.usda"):
+            inputs[str(path.relative_to(job)).replace("\\","/")]=sha_file(path)
+        self.assertLessEqual(len(inputs),32)
+        outputs={
+            "street_front.png":"png",
+            "street_reverse.png":"png",
+            "audit.json":"json_audit"}
+        op=BlenderOperation(
+            job_id="Film02ME2ActualDistrict",
+            script=script.name,script_sha256=sha_file(job/script.name),
+            inputs=inputs,outputs=outputs,
+            arguments={"--manifest":"manifest.json","--audit":"audit.json"},
+            timeout_seconds=600,memory_limit_mb=8192,
+            gpu_memory_mb=0)
+        produced=supervisor.run(op)
+        self.assertEqual(produced["state"],"SUCCEEDED")
+        self.assertEqual(supervisor.verify_completed(
+            "Film02ME2ActualDistrict")["state"],"SUCCEEDED")
+        audit=json.loads((job/"audit.json").read_text("utf8"))
+        self.assertTrue(audit["passed"])
+        self.assertEqual(audit["original_district_document_sha256"],
+                         published["document_sha256"])
+        self.assertEqual(audit["original_instance_source_count"],6)
+        self.assertEqual(audit["actual_visible_original_buildings"],6)
+        self.assertEqual(audit["actual_imported_first_party_meshes"],60)
+        self.assertGreaterEqual(audit["actual_principled_pbr_materials"],3)
+        self.assertFalse(audit["director_cinematic_look_approved"])
+        self.assertFalse(audit["materialx_parity_verified"])
+        self.assertFalse(audit["gpu_draw_call_savings_claimed"])
+        self.assertTrue(audit["original_point_instancer_not_rewritten"])
+        self.assertTrue(audit["renderer_specific_expanded_usd_is_derived"])
+        self.assertGreater(audit["native_peak_rss_mb"],0)
+        hashes=set()
+        for name in ("street_front","street_reverse"):
+            path=job/(name+".png")
+            with Image.open(path) as image:
+                self.assertEqual(image.size,(480,270))
+                image.verify()
+            with Image.open(path) as image:
+                self.assertGreater(
+                    max(ImageStat.Stat(image.convert("RGB")).var),1.)
+            hashes.add(sha_file(path))
+        self.assertEqual(len(hashes),2)
+        artifacts=Path(os.environ.get(
+            "NVP_FILM02ME2_ARTIFACT_DIR",
+            str(self.root/"nvp02me2_look_and_district"))).resolve()
+        artifacts.mkdir(parents=True,exist_ok=True)
+        for name in ["street_front.png","street_reverse.png",
+                     "audit.json","manifest.json",
+                     "district_render_view.usda"]:
+            shutil.copyfile(job/name,artifacts/("district_"+name))
     def test_02m_original_geometry_collision_rejected(self):
         original=building_recipe(0,self.facades)
         overlapping=deepcopy(original)
