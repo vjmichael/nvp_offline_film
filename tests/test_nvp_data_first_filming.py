@@ -773,6 +773,34 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
         self.assertIsNotNone(self.index.read_revision(self.pid,"UnboundOriginalPCM",1))
 
+    def test_visibility_rejects_invalid_original_recording_contract(self):
+        from unittest.mock import patch
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        journal = FilmingPublicationJournal(self.index)
+        original = TemporalLedger.events_in
+        for field, invalid in (("source_sample_rate", 44100),
+                               ("format", "unrelated.format"),
+                               ("acoustic_mix_frozen", True)):
+            def altered(ledger, *args, **kwargs):
+                page = original(ledger, *args, **kwargs)
+                events = []
+                for event in page["events"]:
+                    event = dict(event)
+                    if event["event_kind"] in ("sound", "dialogue"):
+                        event["payload"] = dict(event["payload"], **{field: invalid})
+                    events.append(event)
+                return dict(page, events=events)
+            with self.subTest(field=field):
+                with patch.object(TemporalLedger, "events_in", altered):
+                    decision = journal.visibility(self.pid, "FilmedTake")
+                self.assertFalse(decision["visible"])
+                self.assertEqual(decision["reason"],
+                                 "PUBLICATION_SOURCE_BINDING_MISMATCH")
+        # Mocked reads must not rewrite immutable originals.
+        self.assertTrue(journal.visibility(self.pid, "FilmedTake")["visible"])
+        self.assertIsNotNone(self.index.read_revision(self.pid, "NewRecordedSpeech", 1))
+
     def test_take_reader_refuses_incomplete_journaled_publication(self):
         from backend.nvp_filming_publication_journal import FilmingPublicationJournal
         self.capture.capture(**self.payload())
