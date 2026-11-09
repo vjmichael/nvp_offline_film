@@ -32,6 +32,7 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
   const [groupSize,setGroupSize]=useState('auto'),[parallel,setParallel]=useState('auto');
   const [estimate,setEstimate]=useState(null),[ticket,setTicket]=useState(null);
   const [renderStatus,setRenderStatus]=useState(null);
+  const [renderImage,setRenderImage]=useState(null);
   const [error,setError]=useState(''),[notice,setNotice]=useState('');
   const undo=useRef([]),generation=useRef(0);
   const banks=catalog?.camera_banks||[];
@@ -70,7 +71,7 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
   useEffect(()=>{
     const first=cameras[0]?.camera_id||'';
     setCameraId(first);setFrame(0);setSnapshot(null);setPlaying(false);
-    undo.current=[];setTicket(null);setRenderStatus(null);setEstimate(null);
+    undo.current=[];setTicket(null);setRenderStatus(null);setRenderImage(null);setEstimate(null);
     const prior=catalog?.edits?.find(x=>x.camera_bank_id===bankId&&
       x.camera_bank_revision===bank?.revision);
     setSavedEdit(prior||null);
@@ -118,6 +119,19 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
            state.ticket_id!==ticket)
           throw Error('Native selected-view job receipt lost its identity');
         setRenderStatus(state);
+        if(state.state==='REVERIFIED_SELECTED_FRAMES' &&
+           state.native_result?.start_frame!==undefined &&
+           typeof native.film01r_render_image==='function'){
+          const start=state.native_result.start_frame;
+          const image=await native.film01r_render_image(ticket,start);
+          if(!alive)return;
+          if(image?.format!=='nvp.film01r.verified_native_cycles_picture.v1'||
+             image.source_frame!==start||image.actual_blender_cycles_pixels!==true||
+             !image.image_data_url?.startsWith('data:image/png;base64,')||
+             image.original_performance_sha256!==bank?.original_performance_sha256)
+            throw Error('Original native rendered image/source identity did not verify');
+          setRenderImage(image);setFrame(start);
+        }
         if(['REVERIFIED_SELECTED_FRAMES','NATIVE_FAILED_NEEDS_INSPECTION',
           'DENIED_OR_RECOVERY_REQUIRED','RECOVERY_REQUIRED'].includes(state.state))
           setTicket(null);
@@ -126,12 +140,12 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
     };
     poll();const timer=setInterval(poll,1300);
     return ()=>{alive=false;clearInterval(timer);};
-  },[ticket,native]);
+  },[ticket,native,bank?.original_performance_sha256]);
   const modify=next=>{
     if(!exactCuts(next,cameras.map(x=>x.camera_id)))
       throw Error('Cuts must cover all 720 original frames with valid cameras');
     undo.current=[...undo.current.slice(-24),cuts.map(x=>({...x}))];
-    setCuts(next);setSavedEdit(null);setEstimate(null);
+    setCuts(next);setSavedEdit(null);setEstimate(null);setRenderImage(null);
   };
   const split=()=>{
     try{
@@ -359,6 +373,16 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
         {estimate.shots_per_batch} shots per group,
         {estimate.safe_parallel_workers?.hifi?.safe_workers??0}
         safe concurrent hi-fi workers measured now.</p>}
+      {renderImage&&<div role="region" aria-label="Source-verified higher-quality Cycles picture">
+        <h4>Actual Cycles frame · {renderImage.source_camera_id}</h4>
+        <img alt={'Verified original source Cycles frame '+renderImage.source_frame}
+          src={renderImage.image_data_url}
+          style={{maxWidth:'100%',height:'auto',borderRadius:8}}/>
+        <p className="fineprint">Source Film Time frame: {renderImage.source_frame};
+          exact native image SHA: <code>{renderImage.image_sha256}</code>.
+          This picture was independently verified against the frozen actor
+          performance and edit; it is not yet director-approved.</p>
+      </div>}
       {renderStatus&&<p role="status">Native render: {renderStatus.state}.
         {renderStatus.native_result?.start_frame!==undefined&&
           ' Independently checked frames '+
