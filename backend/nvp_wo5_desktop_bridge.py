@@ -50,6 +50,7 @@ class TrustedDesktopWO5Bridge(OriginalDistrictDesktopMixin,OriginalSelectedFilmD
         # never creates a browser-side privileged write/render endpoint.
         self._film01r_lock = threading.RLock()
         self._film01r_jobs = {}
+        self._film02mh_jobs = {}
         self._film01t_jobs = {}
         self._film01r_pool = None
         # One bounded model-to-original-draft job per installed host. These
