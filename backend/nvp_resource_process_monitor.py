@@ -121,7 +121,10 @@ class NVPProcessResourceMonitor:
                     with child.oneshot():
                         info=child.memory_info()
                         cpu=child.cpu_times()
-                        io=child.io_counters() if hasattr(child,"io_counters") else None
+                    try:
+                        io=child.io_counters()
+                    except (AttributeError, psutil.Error, OSError):
+                        io=None
                     owned.append((identity,info.rss,
                                   float(cpu.user+cpu.system),
                                   int(io.read_bytes) if io else None,
@@ -145,6 +148,15 @@ class NVPProcessResourceMonitor:
         except (psutil.Error, OSError, ValueError):
             observed.last_error="Worker process telemetry unavailable (exited or inaccessible)"
             return []
+
+    def sample_owned_processes(self):
+        """Bounded polling of only active NVP-owned descendants; no system GPU probe."""
+        with self._lock:
+            now=self._clock()
+            for row in self._jobs.values():
+                if not row.stopped and psutil is not None:
+                    self._sample_child(row,now)
+            return sum(not row.stopped for row in self._jobs.values())
 
     def finish_owned_child(self,job_id):
         """Preserve last observed/peak evidence after the process exits."""
