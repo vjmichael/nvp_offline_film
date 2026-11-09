@@ -78,6 +78,9 @@ export default function ResourceActivityPanel({endpoint='/api/system/activity',p
   const recent=tasks.filter(t=>terminal.has(t.state)).slice(0,4);
   const waiting=active.filter(t=>t.state==='QUEUED').length;
   const sample=report?.sample;
+  const owned=report?.nvp_owned_process_usage;
+  const activeOwned=(owned?.owned_workers||[]).filter(x=>x.state!=='STOPPED');
+
 
   return <section className="ra-panel" aria-label="Computer resources and production activity">
     <button type="button" className="ra-toggle" aria-expanded={open} onClick={()=>setOpen(!open)}>
@@ -98,6 +101,33 @@ export default function ResourceActivityPanel({endpoint='/api/system/activity',p
               hint="Unknown VRAM budget. NVP queues GPU-heavy work."/>}
         {sample.memory_psi_full10!=null && <p className="ra-desc">Linux memory stall pressure (10 seconds): {sample.memory_psi_full10.toFixed(1)}%</p>}
       </>:<p className="ra-desc">Checking hardware telemetry…</p>}
+      {owned && <div className="ra-section" role="region" aria-label="NVP-owned process usage">
+        <strong>NVP's own process usage</strong>
+        <span>{activeOwned.length} tracked Blender workers</span>
+        <p className="ra-desc">
+          NVP host RAM: {owned.host_process_rss_mb==null?'Unknown':owned.host_process_rss_mb.toFixed(1)+' MiB'}.
+          {' '}Tracked worker RAM: {owned.unmeasured_running_worker_count
+            ?'Incomplete measurement'
+            :owned.running_workers_observed_rss_mb.toFixed(1)+' MiB'}.
+          {' '}Worker GPU memory: not reliably attributable on every device.
+        </p>
+        {activeOwned.map(job=><p key={job.job_id} className="ra-desc">
+          <strong>{job.job_id}</strong> ·
+          {' '}RAM {job.observed_rss_mb==null?'unknown':job.observed_rss_mb.toFixed(1)+' MiB'} ·
+          {' '}CPU {job.observed_cpu_percent_one_core_100==null
+             ?'warming up':job.observed_cpu_percent_one_core_100.toFixed(0)+'% of one core'}
+          {job.warning&&' · '+job.warning}
+        </p>)}
+        {!activeOwned.length&&<p className="ra-desc">
+          No Blender workers currently registered by this NVP host.
+          Only NVP-owned processes are counted; external AI models are excluded.
+        </p>}
+        <p className="ra-disclaimer">
+          These are observed process-tree measurements, not GPU per-process
+          attribution or proof of kernel descendant custody. Lu can read this
+          report but cannot command NVP workers.
+        </p>
+      </div>}
       <div className="ra-reservations" role="status">
         <strong>NVP task reservations:</strong> {((report?.reservations?.ram_mb||0)/1024).toFixed(1)} GiB RAM · {((report?.reservations?.gpu_mb||0)/1024).toFixed(1)} GiB VRAM
       </div>
