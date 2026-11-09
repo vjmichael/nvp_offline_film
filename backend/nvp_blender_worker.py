@@ -29,7 +29,8 @@ from typing import Mapping
 from backend.nvp_worker_containment import launch_contained
 from backend.nvp_worker_host_lease import exclusive_worker_host
 from backend.nvp_resource_guard import AdmissionRequest
-from backend.nvp_resource_process_monitor import NVPProcessResourceMonitor
+from backend.nvp_resource_process_monitor import (NVPProcessResourceMonitor,
+                                                  default_nvp_process_monitor)
 
 JOB_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,79}$")
 SHA = re.compile(r"^[a-f0-9]{64}$")
@@ -110,7 +111,7 @@ class BlenderWorkerSupervisor:
         if resource_monitor is not None and not isinstance(
                 resource_monitor,NVPProcessResourceMonitor):
             raise TypeError("Only NVP's source-scoped resource monitor may attach")
-        self.resource_monitor=resource_monitor or NVPProcessResourceMonitor()
+        self.resource_monitor=resource_monitor or default_nvp_process_monitor()
         self._monitor_errors={}
         self._lock=threading.RLock()
         self._running={}
