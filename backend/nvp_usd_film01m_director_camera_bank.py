@@ -230,6 +230,37 @@ class DirectorCameraBank:
             pid, bank_id, world_take_id, cameras,
             expected_revision=0, previous=None, director_event=director_event)
 
+    def create_standard_nine_preset(self, pid, bank_id, *,
+                                    original_nine_rig_id, director_event):
+        """Use nine ALREADY verified original 01I source camera placements.
+
+        This preset is optional. Later edits can add/remove/reframe any view
+        without changing the one original actor performance.
+        """
+        from backend.nvp_usd_film01i_ninecam_take import OriginalNineCameraFilmSet
+        _id(original_nine_rig_id, "original nine-camera preset source")
+        OriginalNineCameraFilmSet(
+            self.index, verify_creator_action=lambda *_: False).verify(
+                pid, original_nine_rig_id)
+        source = self.index.read_revision(pid, original_nine_rig_id, 1)["data"]
+        cameras = []
+        for cam in source["cameras"]:
+            cameras.append({
+                "camera_id": "Cam_" + cam["angle"] + "_" + cam["framing"],
+                "setup": "Angle " + cam["angle"],
+                "framing": cam["framing"],
+                "position_m": list(cam["source_world_positions_m"][0]),
+                "rotation_euler_deg": list(cam["rotation_euler_deg"]),
+                "focal_length_mm": cam["focal_length_mm"],
+                "focus_distance_m": 11.0,
+                "clip_range_m": [.01, 10000.0],
+                "move_keys": [],
+                "camera_ray_exclusions": [],
+            })
+        return self.create(
+            pid, bank_id, world_take_id=source["world_take_id"],
+            cameras=cameras, director_event=director_event)
+
     def revise(self, pid, bank_id, *, expected_revision, changes, director_event):
         _require_pid(pid)
         _id(bank_id, "original director camera bank")
