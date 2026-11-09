@@ -1,0 +1,62 @@
+name: NVP RES-01 and USD-FILM-01S Native Resource Monitor + Adaptive Shot Batching
+
+on:
+  push:
+    branches: [nvp/usd-film01s-adaptive-resource-batching-20261108]
+  pull_request:
+    branches: [nvp/usd-film01o-resumable-camera-rolls-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-resource-shot-batches-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-os-telemetry-and-batch-admission:
+    name: NVP-owned process telemetry and source-shot queue / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install measured per-process telemetry dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: "psutil>=7.0,<8"
+      - name: Compile monitor, existing supervisor integration, resource scheduler and Lu-facing status
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_resource_guard.py backend/nvp_resource_process_monitor.py backend/nvp_blender_worker.py backend/nvp_usd_film01s_adaptive_batch.py backend/nvp_usd_film01s_resource_service.py tests/test_nvp_usd_film01s_adaptive_resource_batches.py
+      - name: Test real OS-owned child RSS/CPU monitoring, low/high PC planning, GPU fail-closed, director controls, durable queue recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01s_adaptive_resource_batches.py" -v
+      - name: Check resource service is read-only for Lu and not an executable broker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import inspect
+          from backend.nvp_resource_process_monitor import NVPProcessResourceMonitor
+          from backend.nvp_usd_film01s_resource_service import NVPAdaptiveShotService
+          from backend.nvp_usd_film01s_adaptive_batch import DurableShotBatchQueue
+          assert callable(NVPProcessResourceMonitor.read_only_report_for_lu)
+          assert callable(NVPAdaptiveShotService.read_only_lu_status)
+          assert not hasattr(NVPProcessResourceMonitor, "run")
+          assert not hasattr(NVPAdaptiveShotService, "start_blender")
+          assert callable(DurableShotBatchQueue.claim)
+          print("Resource status does not grant Lu process or NVP task authority")
+          PY
