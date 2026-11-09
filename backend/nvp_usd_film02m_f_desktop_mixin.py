@@ -706,21 +706,27 @@ class OriginalDistrictDesktopMixin:
         from backend.nvp_cam_fx01_camera_rails import (
             OriginalCameraRails,evaluate_rail)
         from backend.nvp_cam_fx02_usd_camera_layer import (
-            open_approved_camera_layer)
+            open_approved_camera_layer,film_time_samples,_check_native)
         rail=OriginalCameraRails(
             self.index,verify_director_action=lambda *_:False).verify(
             pid,request["rail_id"],request["revision"])
         sample=evaluate_rail(rail["rail_spec"],request["film_tick"])
         # Recompose the real native layer before exposing source-derived
         # controls; do not allow browser-selected USD paths.
+        authored=request["film_tick"] in film_time_samples(rail["rail_spec"])
         with open_approved_camera_layer(
                 self.index,pid,request["rail_id"],request["revision"]) as native:
             if native["rail_layer_sha256"]!=rail["rail_layer_sha256"]:
                 raise RuntimeError("Stronger original camera layer changed")
+            if authored:
+                _check_native(native["stage"],native["camera_path"],
+                              rail["rail_spec"],[request["film_tick"]])
         return {"format":"nvp.cam_fx02.native_rail_film_tick_pose.v1",
                 "project_id":pid,"rail_id":request["rail_id"],
                 "revision":request["revision"],
                 "rail_layer_sha256":rail["rail_layer_sha256"],
                 "film_tick":request["film_tick"],"sample":sample,
+                "native_layer_sample_authored_and_read_back":authored,
+                "host_exact_film_time_interpolated":not authored,
                 "source_actor_pcm_changed":False,
                 "native_worker_started":False}
