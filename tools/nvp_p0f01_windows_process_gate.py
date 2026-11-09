@@ -45,7 +45,7 @@ def _read_diagnostics(path_text: str | None) -> None:
         return
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     print(f"NVP_P0F01_APP_DIAGNOSTICS_LINES={len(lines)}", flush=True)
-    for line in lines[-35:]:
+    for line in lines[-110:]:
         print(line[:250], flush=True)
 
 

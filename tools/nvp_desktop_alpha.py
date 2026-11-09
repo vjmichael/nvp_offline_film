@@ -489,12 +489,18 @@ def run_visible_window_smoke():
                 _native_window_stage("source_webview_inspection_started")
                 if not loaded.wait(timeout=25):
                     raise RuntimeError("Native WebView2 did not fire page-loaded event")
+                _native_window_stage("source_webview_loaded_event_received")
                 # HTML loaded is insufficient: require actual React DOM mount.
                 deadline=time.monotonic()+20
+                _native_window_stage("source_webview_root_js_eval_begin")
+                root_js_first=True
                 while time.monotonic()<deadline:
                     mounted=window.evaluate_js(
                         "Boolean(document.querySelector('#root') && "
                         "document.querySelector('#root').children.length > 0)")
+                    if root_js_first:
+                        _native_window_stage("source_webview_root_js_eval_returned")
+                        root_js_first=False
                     if mounted is True:
                         ipc=window.evaluate_js(
                             "Boolean(window.pywebview && window.pywebview.api && "
@@ -972,7 +978,24 @@ def run_visible_window_smoke():
                 _native_window_stage("source_webview_destroy_request")
                 window.destroy()
         _native_window_stage("source_webview_message_loop_start")
-        webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
+        # Only in the opt-in installed smoke: a C-level watchdog writes
+        # Windows Python thread stacks even when WebView2/COM hangs inside
+        # a synchronous native call. This never injects JS or grants API
+        # authority, and preserves the full trace for artifact inspection.
+        diagnostic_target=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+        diagnostic_path=Path(diagnostic_target) if diagnostic_target else None
+        if (diagnostic_path is not None and diagnostic_path.is_absolute() and
+                not diagnostic_path.is_symlink() and diagnostic_path.parent.is_dir()):
+            import faulthandler
+            with diagnostic_path.open("a",encoding="utf8") as watchdog_output:
+                faulthandler.dump_traceback_later(
+                    35, repeat=True, file=watchdog_output)
+                try:
+                    webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
+                finally:
+                    faulthandler.cancel_dump_traceback_later()
+        else:
+            webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
         _native_window_stage("source_webview_message_loop_returned")
         if not result["passed"]:
             raise RuntimeError(
