@@ -33,6 +33,30 @@ describe('NVP real computer/task activity UX',()=>{
     expect(screen.getByText('Waiting for GPU memory headroom')).toBeTruthy();
     expect(screen.getByText(/Priority: interactive/)).toBeTruthy();
   });
+  it('shows NVP-owned worker measurements separately from external AI usage',async()=>{
+    const owned={
+      format:'nvp.resources.owned_process_report.v1',
+      host_process_rss_mb:124.5,
+      running_workers_observed_rss_mb:512.25,
+      unmeasured_running_worker_count:0,
+      owned_workers:[{job_id:'nativeCycles_A',
+        state:'OBSERVING',observed_rss_mb:512.25,
+        observed_cpu_percent_one_core_100:93.7,
+        per_process_gpu_memory_mb:null,warning:null}],
+    };
+    globalThis.fetch.mockResolvedValue({ok:true,
+      json:async()=>({...data,nvp_owned_process_usage:owned})});
+    render(<ResourceActivityPanel pollMs={50000}/>);
+    fireEvent.click(screen.getByRole('button',
+      {name:/computer & production activity/i}));
+    expect(await screen.findByText('nativeCycles_A')).toBeTruthy();
+    expect(screen.getByText(/NVP host RAM: 124.5 MiB/)).toBeTruthy();
+    expect(screen.getByText(/Tracked worker RAM: 512.3 MiB/)).toBeTruthy();
+    expect(screen.getByText(/RAM 512.3 MiB/)).toBeTruthy();
+    expect(screen.getByText(/CPU 94% of one core/)).toBeTruthy();
+    expect(screen.getByText(/Lu can read this/)).toBeTruthy();
+  });
+
   it('never invents unknown VRAM or provider load progress',async()=>{
     globalThis.fetch.mockResolvedValue({ok:true,json:async()=>({
       ...data,sample:{...data.sample,gpus:[]},tasks:[]})});
