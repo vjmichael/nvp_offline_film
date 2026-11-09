@@ -15,6 +15,7 @@ from pathlib import Path
 import sys
 
 import bpy
+from mathutils import Euler, Vector
 
 from nvp_usd_film01m_camera_ray_mask import per_camera_primary_ray_exclusions
 
