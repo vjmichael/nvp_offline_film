@@ -1,0 +1,94 @@
+name: NVP USD-FILM-01N Actual Cycles Virtual Camera Through-Wall Acceptance
+
+on:
+  push:
+    branches: [nvp/usd-film01n-render-director-cameras-20261108]
+  pull_request:
+    branches: [nvp/usd-film01m-director-flex-camera-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-01n-wall-ghost-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-original-wall-camera-cycles:
+    name: Same original actor scene, two source cameras, wall normal vs primary-ray ghost
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM01N_ARTIFACT_DIR: real-original-director-camera-wall-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pinned actual USD and Blender runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Verify actual official Blender 5.2 SHA-256 before running source worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Compile host-locked USD stage, Cycles worker, original ray-mask helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01m_director_camera_bank.py backend/nvp_usd_film01n_director_camera_snapshot.py backend/nvp_usd_film01n_director_camera_host.py tools/nvp_usd_film01m_camera_ray_mask.py tools/nvp_usd_film01n_blender_director_camera_worker.py tests/test_nvp_usd_film01i_ninecam_take.py
+      - name: Render two actual native Cycles pictures from the same frozen actor performance and compare wall visibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM01N_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          folder=Path("real-original-director-camera-wall-evidence")
+          evidence=json.loads((folder/"wall_comparison.json").read_text("utf8"))
+          assert evidence["native_cycles_views"]==2
+          assert evidence["same_actor_performance"] is True
+          assert evidence["distinct_rendered_png_sha256"] is True
+          assert evidence["complete_nine_camera_film"] is False
+          for name in ("WallNormal","WallGhost"):
+              with Image.open(folder/(name+"_frame.png")) as image:
+                  assert image.format=="PNG"
+                  assert image.size==(320,180)
+                  image.verify()
+              audit=json.loads((folder/(name+"_audit.json")).read_text("utf8"))
+              assert audit["passed"] is True
+              assert audit["actual_native_cycles_image"] is True
+              assert audit["per_camera_ray_mask_restored"] is True
+              if name=="WallGhost":
+                  assert audit["actual_ray_masked_meshes"] > 0
+              else:
+                  assert audit["actual_ray_masked_meshes"] == 0
+              assert (folder/(name+"_scene.blend")).is_file()
+          print("Source-authentic camera-ray Cycles comparison. Full film remains OPEN.")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-USD-FILM01N-real-original-wall-through-camera-rays-UNAPPROVED
+          path: real-original-director-camera-wall-evidence/
+          if-no-files-found: warn
+          retention-days: 14
