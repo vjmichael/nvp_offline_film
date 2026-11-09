@@ -48,6 +48,24 @@ def _reopened_prims(stage, actor_paths, source_camera_path, rail_path, time):
     return original,rail
 
 
+def _actor_geometry_signature(stage,paths,at):
+    from pxr import UsdGeom
+    signature=[]
+    for path in paths:
+        prim=stage.GetPrimAtPath(path)
+        if not prim.IsDefined() or not prim.IsA(UsdGeom.Gprim):
+            raise RuntimeError("Original actor geometry is missing or no longer a USD Gprim")
+        xform=UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(at)
+        row_data=[[float(xform[i][j]) for j in range(4)] for i in range(4)]
+        if prim.IsA(UsdGeom.Mesh):
+            points=UsdGeom.Mesh(prim).GetPointsAttr().Get(at)
+            position_data=[[float(v) for v in p] for p in (points or [])]
+        else:
+            position_data=None
+        signature.append([path,prim.GetTypeName(),row_data,position_data])
+    return _canonical(signature)
+
+
 def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
                               rail_id: str, rail_revision: int, folder: Path):
     """Stage a single approved original 02M-H source tick from an approved rail.
@@ -92,6 +110,7 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
     at=Usd.TimeCode(1.0)
     source_before=UsdGeom.Xformable(
         src.GetPrimAtPath(source_camera)).ComputeLocalToWorldTransform(at)
+    actor_before=_actor_geometry_signature(src,actor_paths,at)
     source_layer_before=src.GetRootLayer().ExportToString()
     if src.GetPrimAtPath("/World/NVPDirectorRails").IsDefined():
         raise PermissionError("Authoritative source already owns the director rail namespace")
@@ -144,7 +163,8 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
         frozen.SetFramesPerSecond(24.0)
         prior,frozen_rail=_reopened_prims(
             frozen,actor_paths,source_camera,rail_path,at)
-        if prior!=source_before or any(
+        if (_actor_geometry_signature(frozen,actor_paths,at)!=actor_before or
+            prior!=source_before or any(
             abs(float(frozen_rail[i][j])-rail_rows[i][j])>1e-5
             for i in range(4) for j in range(4)):
             raise PermissionError("Disposable rail staging moved original camera or altered director pose")
@@ -160,6 +180,7 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
         source_after,rail_after=_reopened_prims(
             independent,actor_paths,source_camera,rail_path,at)
         if (source_after!=source_before or
+            _actor_geometry_signature(independent,actor_paths,at)!=actor_before or
             any(abs(float(rail_after[i][j])-rail_rows[i][j])>1e-5
                 for i in range(4) for j in range(4))):
             raise RuntimeError("Independent physical OpenUSD readback differs from rail")
