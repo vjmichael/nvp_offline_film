@@ -1,0 +1,122 @@
+name: NVP USD-FILM-01F Real Persistent USD World Take to Blender/Cycles (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/usd-film01f-world-render-20261108]
+  pull_request:
+    branches: [nvp/human-surface-ai-material-roadmap-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-usd-film01f-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  original-usd-world-render-source:
+    name: Two original World Digital Takes, native USD snapshots and exact original ActorIDs / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual pinned native OpenUSD and project image dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+      - name: Compile original world-Take-to-Cycles host, fixed native workers, tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01f_blender_host.py tools/nvp_usd_film01f_blender_worker.py tools/nvp_usd_film01f_blender_reopen.py tests/test_nvp_usd_film01f_world_render.py
+      - name: Reopen original source scenes, four StoryBible ActorIDs, original PCM and two distinct world-shots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01f_world_render.py" -v
+      - name: Preserve old immutable world/Take, source cache and original film-time contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01e_world_take.py" -v
+
+  real-blender-two-world-shots:
+    name: Official Blender 5.2.3 actual USD actors + two CPU Cycles frames + independent .blend reopens
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM01F_ARTIFACT_DIR: native-world-take-cycles-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install actual native original USD and Blender display dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download official Blender binary and verify SHA-256 against its published checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Render actual original USD world from two distinct original Takes, then reopen twice in fresh Blender
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM01F_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p "test_nvp_usd_film01f_world_render.py" -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          folder=Path("native-world-take-cycles-evidence")
+          data=json.loads((folder/"two_cut_proof.json").read_text("utf8"))
+          assert data["actual_native_cycles_frames"]==2
+          assert data["independent_real_blender_scene_reopens"]==2
+          assert len(set(data["rendered_png_sha256"]))==2, "Different original shots must not yield identical media bytes"
+          assert data["test_only_original_pcm_not_mixed"] is True
+          assert data["film_master_ready"] is False
+          assert data["photorealism_approved"] is False
+          for i in range(2):
+              with Image.open(folder/f"cut{i}_frame.png") as img:
+                  assert img.size == (320,180)
+                  img.verify()
+              report=json.loads((folder/f"cut{i}_audit.json").read_text("utf8"))
+              reopen=json.loads((folder/f"cut{i}_independent_reopen.json").read_text("utf8"))
+              assert report["actual_native_cycles_image"] and report["passed"]
+              assert reopen["real_saved_usd_actor_objects_reopened"] and reopen["passed"]
+          print("Independent original-world Cycles frame source evidence; audio/master/photoreal still OPEN")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-USD-FILM01F-original-world-2-shots-Blender-Cycles-reopen-UNAPPROVED
+          path: native-world-take-cycles-evidence/
+          if-no-files-found: warn
+          retention-days: 14
