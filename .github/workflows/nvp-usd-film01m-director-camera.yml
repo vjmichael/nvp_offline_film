@@ -1,0 +1,53 @@
+name: NVP USD-FILM-01M Director Editable Virtual Camera Rig
+
+on:
+  push:
+    branches: [nvp/usd-film01m-director-flex-camera-20261108]
+  pull_request:
+    branches: [nvp/usd-film01i-ninecam-source-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film01m-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  flexible-director-camera-native:
+    name: Editable virtual source rig + camera-ray visibility / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install pinned native source dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+      - name: Compile first-party camera bank and Blender ray-mask adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01m_director_camera_bank.py tools/nvp_usd_film01m_camera_ray_mask.py tests/test_nvp_usd_film01m_camera_ray_mask.py tests/test_nvp_usd_film01i_ninecam_take.py
+      - name: Source-native USD add/revise/remove/drone/OTS/low-angle and original ActorID integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+      - name: Verify per-shot camera ray-only wall visibility and rollback on failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01m_camera_ray_mask.py" -v
