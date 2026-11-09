@@ -199,7 +199,21 @@ class OriginalDistrictDrafts:
                         "document_sha256":saved["document_sha256"],
                         "source_instance_count":len(saved["data"][
                             "generated_instances"]),
-                        "source_seed":saved["data"]["seed"]})
+                        "source_seed":saved["data"]["seed"],
+                        "base_parameters":{
+                            "seed":saved["data"]["seed"],
+                            "source_buildings":[{
+                                "building_id":p["building_id"],
+                                "revision":p["revision"]} for p in
+                                saved["data"]["original_prototypes"]],
+                            "grid_cols":saved["data"]["grid_cols"],
+                            "grid_rows":saved["data"]["grid_rows"],
+                            "lot_spacing_m":saved["data"]["lot_spacing_m"],
+                            "world_origin_m":saved["data"]["world_origin_m"],
+                            "source_triangle_budget":saved["data"][
+                                "source_triangle_budget"],
+                            "source_instance_budget":saved["data"][
+                                "source_instance_budget"]}})
             except (KeyError,RuntimeError,PermissionError,ValueError,TypeError):
                 continue
             if len(districts)>=24:break
