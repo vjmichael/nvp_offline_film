@@ -1,4 +1,5 @@
-import React,{useCallback,useEffect,useMemo,useState} from 'react';
+import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import CameraRailGizmo from './CameraRailGizmo.jsx';
 
 const T=7056000000; // DATA-TIME-01, exact original Film Time ticks per second.
 const CATALOG='nvp.cam_fx01.trusted_director_rail_catalog.v1';
@@ -115,6 +116,30 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
+  const advanced=Boolean(nativeBridge)&&[
+    'camfx03_scene_guidance','camfx03_draft_catalog',
+    'camfx03_draft_create','camfx03_draft_reopen',
+    'camfx03_draft_save','camfx03_draft_undo',
+    'camfx03_draft_discard','camfx03_draft_publish',
+    'camfx03_draft_recover_publish',
+    'camfx04_start_candidate','camfx04_candidate_status',
+    'camfx04_cancel_candidate'].every(
+      name=>typeof nativeBridge[name]==='function');
+  const [sceneGuidance,setSceneGuidance]=useState(null);
+  const [selectedActor,setSelectedActor]=useState('');
+  const [districtBinding,setDistrictBinding]=useState('');
+  const [durableDraft,setDurableDraft]=useState(null);
+  const [drafts,setDrafts]=useState([]);
+  const [draftDirty,setDraftDirty]=useState(false);
+  const [journalNotice,setJournalNotice]=useState('');
+  const [modelList,setModelList]=useState([]);
+  const [modelId,setModelId]=useState('');
+  const [modelDirection,setModelDirection]=useState('');
+  const [modelAttempt,setModelAttempt]=useState('');
+  const [modelState,setModelState]=useState('');
+  const [modelNotice,setModelNotice]=useState('');
+  const editEpoch=useRef(0);
+  const autoSaving=useRef(false);
   const banks=catalog?.camera_banks||[];
   const rails=catalog?.rails||[];
   const bank=banks.find(x=>
@@ -135,8 +160,12 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     film_start_tick:start,film_end_tick:end,
     technique,rail_origin_m:origin,filmback_mm:filmback,nodes
   }),[bankSelection,bank?.revision,cameraId,start,end,technique,origin,filmback,nodes]);
-  const invalidate=()=>{setPreview(null);setPublished(null);setReopened(null);
-    setSample(null);};
+  const invalidate=()=>{
+    editEpoch.current+=1;
+    setPreview(null);setPublished(null);setReopened(null);
+    setSample(null);setSceneGuidance(null);
+    if(durableDraft?.state==='DRAFT')setDraftDirty(true);
+  };
   const run=async action=>{
     if(!supported||busy)return;
     setBusy(true);setError('');setNotice('');
