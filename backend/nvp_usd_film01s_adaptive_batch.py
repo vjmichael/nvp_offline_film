@@ -14,6 +14,7 @@ The actual Blender worker remains the existing protected broker.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from contextlib import contextmanager
 from hashlib import sha256
 import json
 import math
@@ -245,8 +246,17 @@ class DurableShotBatchQueue:
                     PRIMARY KEY(plan_id,quality,shot_id));
                 """)
 
+    @contextmanager
     def _open(self):
-        return sqlite3.connect(self.db,timeout=15,isolation_level=None)
+        # Closing explicitly matters for Windows reinstall and job recovery.
+        db=sqlite3.connect(self.db,timeout=15,isolation_level=None)
+        try:
+            db.execute("PRAGMA busy_timeout=15000")
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("PRAGMA synchronous=FULL")
+            yield db
+        finally:
+            db.close()
 
     def enqueue(self,wrapped_plan,*,director_event,authorize):
         if not callable(authorize):
@@ -319,8 +329,12 @@ class DurableShotBatchQueue:
             "attempt":a,"ticket_sha256":sha,"receipt_sha256":receipt}
             for q,b,s,state,a,sha,receipt in rows]
         expected=2*len(plan["source_shots"])
-        if len(tickets)!=expected:
-            raise RuntimeError("Durable shot queue ticket inventory changed")
+        originals={(batch["quality"],shot["shot_id"]):_sha(shot)
+            for batch in plan["batches"] for shot in batch["shots"]}
+        if (len(tickets)!=expected or len(originals)!=expected or
+            {(ticket["quality"],ticket["shot_id"]):ticket["ticket_sha256"]
+             for ticket in tickets}!=originals):
+            raise RuntimeError("Durable shot queue source ticket inventory changed")
         counts={s:sum(t["state"]==s for t in tickets)
                 for s in ("QUEUED","RUNNING","SUCCEEDED","FAILED","INTERRUPTED")}
         return {"plan_id":plan_id,
@@ -362,8 +376,10 @@ class DurableShotBatchQueue:
                     "state":"QUEUED_FOR_RESOURCES"}
         with self._lock,self._open() as db:
             db.execute("BEGIN IMMEDIATE")
+            # NVP render concurrency is shared by ALL batches/plans, not
+            # separately allocated to every director project or Lu request.
             active=db.execute("""SELECT count(*) FROM tickets
-                WHERE plan_id=? AND state='RUNNING'""",(plan_id,)).fetchone()[0]
+                WHERE state='RUNNING'""").fetchone()[0]
             if active>=capacity["safe_workers"]:
                 db.rollback()
                 return {"admitted":False,
