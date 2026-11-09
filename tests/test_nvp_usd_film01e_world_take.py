@@ -308,6 +308,61 @@ class OriginalWorldCinematicTakeTests(unittest.TestCase):
         self.assertEqual(reopened["format"],SHOT_BINDING_FORMAT)
         self.assertTrue(reopened["native_source_reopened"])
         self.assertEqual(reopened["source_preview"],result)
+        # Installed bridge: exact first-party origin and genuine OS window
+        # confirmation required, never a model-supplied creator_approved flag.
+        from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+        class InstalledWindow:
+            url="http://127.0.0.1:43141/"
+            allowed=False
+            confirmations=0
+            def get_current_url(self):
+                return self.url
+            def create_confirmation_dialog(self,title,message):
+                self.confirmations+=1
+                self.last_title=title
+                self.last_message=message
+                return self.allowed
+        window=InstalledWindow()
+        bridge=TrustedDesktopWO5Bridge(
+            self.b.index,origin="http://127.0.0.1:43141",
+            production_root=Path(self.b.tmp.name)/"02mh_installed_bridge")
+        bridge._attach_window(window)
+        try:
+            request={
+                "project_id":self.b.pid,"district_id":"ShotApprovedDistrict",
+                "district_revision":1,"world_take_id":"WorldStreetTake",
+                "film_tick":T}
+            reviewed=bridge.film02mh_preview_shot(request)
+            self.assertEqual(reviewed["binding_preview_sha256"],
+                             result["binding_preview_sha256"])
+            with self.assertRaises(PermissionError):
+                bridge.film02mh_commit_shot_binding({
+                    **request,"binding_id":"InstalledActorDistrictShot",
+                    "source_preview_sha256":reviewed[
+                        "binding_preview_sha256"]})
+            self.assertEqual(window.confirmations,1)
+            with self.assertRaises(PermissionError):
+                bridge.film02mh_commit_shot_binding({
+                    **request,"binding_id":"InstalledActorDistrictShot",
+                    "source_preview_sha256":reviewed[
+                        "binding_preview_sha256"],"creator_approved":True})
+            self.assertEqual(window.confirmations,1)
+            window.url="https://untrusted.example/"
+            with self.assertRaises(PermissionError):
+                bridge.film02mh_preview_shot(request)
+            window.url="http://127.0.0.1:43141/"
+            window.allowed=True
+            published_via_bridge=bridge.film02mh_commit_shot_binding({
+                **request,"binding_id":"InstalledActorDistrictShot",
+                "source_preview_sha256":reviewed["binding_preview_sha256"]})
+            self.assertEqual(published_via_bridge["revision"],1)
+            self.assertEqual(window.confirmations,2)
+            self.assertTrue(bridge.film02mh_reopen_shot_binding({
+                "project_id":self.b.pid,
+                "binding_id":"InstalledActorDistrictShot"})[
+                    "native_source_reopened"])
+        finally:
+            bridge._close()
         self.assertEqual(self.b.index.list_objects(
             self.b.pid,kind="take"),before_takes)
         self.assertEqual(self.b.index.read_revision(
