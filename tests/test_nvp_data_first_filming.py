@@ -704,6 +704,34 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"FilmedTake",1)
 
+    def test_journaled_take_visibility_is_fail_closed(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        journal=FilmingPublicationJournal(self.index)
+        self.assertEqual(journal.visibility(self.pid,"UnknownTake")["reason"],
+                         "NO_JOURNAL_RECEIPT")
+        self.assertFalse(journal.visibility(self.pid,"UnknownTake")["visible"])
+        journal.begin(self.pid,"ReservedTake","ReservedTimeline",["ReservedSource"])
+        pending=journal.visibility(self.pid,"ReservedTake")
+        self.assertFalse(pending["visible"])
+        self.assertEqual(pending["reason"],"PUBLICATION_PREPARING")
+        journal.finish(self.pid,"ReservedTake",completed=False)
+        self.assertEqual(journal.visibility(self.pid,"ReservedTake")["reason"],
+                         "PUBLICATION_INTERRUPTED")
+        self.capture.capture(**self.payload())
+        completed=journal.visibility(self.pid,"FilmedTake")
+        self.assertTrue(completed["journaled"])
+        self.assertTrue(completed["visible"])
+        self.assertEqual(completed["reason"],"COMPLETED_DEPENDENCIES_PRESENT")
+        # Corrupt a journal reference, not the immutable historical source.
+        with self.index.studio._connection() as db:
+            db.execute("""UPDATE nvp_filming_publications
+                SET source_ids_json=? WHERE project_id=? AND take_id=?""",
+                ('["MissingOriginal"]',self.pid,"FilmedTake"))
+        missing=journal.visibility(self.pid,"FilmedTake")
+        self.assertFalse(missing["visible"])
+        self.assertEqual(missing["reason"],"MISSING_IMMUTABLE_DEPENDENCY")
+        self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
