@@ -40,6 +40,20 @@ class SourceViewpointWorkspace:
     def catalog(self,pid):
         """Only actual published native camera-bank and selected edit revisions."""
         _require_pid(pid)
+        from backend.nvp_usd_film01e_world_take import (
+            FORMAT as ORIGINAL_WORLD_TAKE_FORMAT)
+        takes=[]
+        for row in self.index.list_objects(pid,kind="take")[:192]:
+            record=self.index.read_revision(pid,row["object_id"],
+                                            row["head_revision"])
+            doc=record["data"]
+            if doc.get("format")!=ORIGINAL_WORLD_TAKE_FORMAT:
+                continue
+            takes.append({
+                "world_take_id":row["object_id"],
+                "original_take_sha256":record["document_sha256"],
+                "duration_ticks":doc["original_scene_takes"][0][
+                    "duration_tick"] if doc.get("original_scene_takes") else None})
         banks=[]
         edits=[]
         for row in self.index.list_objects(pid,kind="presentation")[:192]:
@@ -84,6 +98,7 @@ class SourceViewpointWorkspace:
         return {
             "format":CATALOG,"project_id":pid,
             "camera_banks":banks[:64],"edits":edits[:64],
+            "original_world_takes":takes[:64],
             "read_only":True,"camera_video_rolls_loaded":False,
             "blender_worker_started":False,
             "no_original_performance_modified":True}
