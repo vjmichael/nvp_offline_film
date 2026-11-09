@@ -61,7 +61,8 @@ class OriginalWorldCinematicTakeTests(unittest.TestCase):
                         *[3000 if i%64<32 else -3000
                           for i in range(SAMPLE_RATE)])
         self.audio=RecordedSoundSources(b.index).publish(
-            b.pid,"MicOriginal",[pcm],expected_revision=0)
+            b.pid,"MicOriginal",[pcm[:48000],pcm[48000:]],
+            expected_revision=0)
         self.acting=self.tick.publish(
             b.pid,"StreetOriginalEvents",[
                 {"event_id":"ActorTurns","event_kind":"action",
@@ -195,6 +196,24 @@ class OriginalWorldCinematicTakeTests(unittest.TestCase):
         self.assertEqual(
             self.b.index.read_revision(
                 self.b.pid,"OriginalStreetTake",1)["document_sha256"],original_sha)
+
+    def test_corrupted_second_original_pcm_chunk_invalidates_world_take_replay(self):
+        self.link_actor()
+        frozen=self.freeze(take="SourcePCM2ChunkTake")
+        manifest=self.b.index.read_revision(
+            self.b.pid,"MicOriginal",1)["data"]
+        self.assertEqual(len(manifest["chunks"]),2)
+        second_sha=manifest["chunks"][1]["blob_sha256"]
+        disk=self.b.index._blob_path(self.b.pid,second_sha)
+        original=disk.read_bytes()
+        self.assertGreater(len(original),0)
+        disk.write_bytes(b"X"*len(original))
+        with self.assertRaises((RuntimeError,PermissionError,ValueError)):
+            self.capture.verify_take(self.b.pid,"SourcePCM2ChunkTake")
+        self.assertEqual(
+            self.b.index.read_revision(
+                self.b.pid,"SourcePCM2ChunkTake",1)["document_sha256"],
+            frozen["document_sha256"])
 
     def test_later_voiceid_recast_does_not_replace_historical_world_take_voice(self):
         self.link_actor()
