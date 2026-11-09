@@ -47,6 +47,61 @@ def _within(root,relative):
     return file
 
 
+def _multilayer_exr_channels(path):
+    """Read actual OpenEXR channel table, not just the four-byte file magic.
+
+    Blender 5.2 default single-part ZIP EXR header; fail closed on
+    unsupported/oversize/multipart layouts instead of claiming AOV proof.
+    """
+    import struct
+    path=Path(path)
+    if path.stat().st_size<1024:
+        raise RuntimeError("Native OpenEXR too small for real channels")
+    with path.open("rb") as handle:
+        data=handle.read(min(path.stat().st_size,2*1024*1024))
+    if data[:4]!=bytes.fromhex("762f3101"):
+        raise RuntimeError("Real OpenEXR signature missing")
+    version=struct.unpack_from("<I",data,4)[0]
+    if version&0x1000:
+        raise RuntimeError("Multipart EXR requires separately reviewed channel parser")
+    pos=8
+    found=[]
+    def terminated(buffer,start,upper):
+        finish=buffer.find(b"\\0",start,upper)
+        if finish<0:
+            raise RuntimeError("OpenEXR channel/header name not terminated")
+        return buffer[start:finish].decode("ascii"),finish+1
+    for _ in range(128):
+        name,pos=terminated(data,pos,len(data))
+        if not name:break
+        typ,pos=terminated(data,pos,len(data))
+        if pos+4>len(data):
+            raise RuntimeError("Truncated OpenEXR header attribute")
+        size=struct.unpack_from("<I",data,pos)[0];pos+=4
+        if size>len(data)-pos:
+            raise RuntimeError("OpenEXR header attribute beyond trusted bound")
+        if name=="channels" and typ=="chlist":
+            end=pos+size
+            cursor=pos
+            for _ in range(256):
+                ch,cursor=terminated(data,cursor,end)
+                if not ch:break
+                if cursor+16>end:
+                    raise RuntimeError("Malformed OpenEXR pixel channel descriptor")
+                cursor+=16
+                found.append(ch)
+            else:
+                raise RuntimeError("Too many EXR channels in native render")
+        pos+=size
+    if not found:
+        raise RuntimeError("Real multi-pass OpenEXR channel list absent")
+    if (not any("Normal" in n for n in found) or
+        not any("Z" in n or "Depth" in n for n in found) or
+        not any("Diff" in n for n in found)):
+        raise RuntimeError("Actual native EXR lacks depth, normal or diffuse pass")
+    return found
+
+
 def _memory_mb():
     # Linux ru_maxrss is KiB. The reviewed 02M E2 Blender job is
     # explicitly scheduled on Linux; do not mislabel this as VRAM.
@@ -311,9 +366,12 @@ def _render(root,spec,profile):
         with path.open("rb") as handle:
             if handle.read(4)!=b"\x76\x2f\x31\x01":
                 raise RuntimeError("Actual OpenEXR byte signature did not verify")
+        native_channels=_multilayer_exr_channels(path)
         exr_info={
             "requested":True,"actual_exr_rendered":True,
             "exr_name":name,"actual_exr_sha256":sha(path),
+            "actual_native_exr_channels":native_channels,
+            "depth_normal_diffuse_channels_independently_read":True,
             "exr_render_wall_seconds":time.perf_counter()-start_exr,
             "view_layer_z_enabled":True,
             "view_layer_normal_enabled":True,
