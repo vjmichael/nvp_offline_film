@@ -47,6 +47,7 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
           python -m unittest discover -s tests -p "test_nvp_usd_film01q_selected_contract.py" -v
+          python -m unittest discover -s tests -p "test_nvp_usd_film01r_timeout_admission.py" -v
 
   director-installed-interface:
     name: Actual 01R React edit/scrub/batch/original source permission UI and production build
