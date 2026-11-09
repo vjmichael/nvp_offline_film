@@ -96,7 +96,7 @@ jobs:
             bundled_exe_sha256=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
             human_os_dialog_approval_attested=$false
             loaded_model_completion_attested=$false
-            720_frame_pcm_movie_attested=$false
+            '720_frame_pcm_movie_attested'=$false
           }
           $manifest | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'nvp-alpha-group-manifest.json') -Encoding UTF8
       - name: Silent install and execute installed native alpha
