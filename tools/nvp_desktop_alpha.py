@@ -351,6 +351,9 @@ def run_forcibly_interrupted_installed_model_smoke():
     crash. It does NOT assert an actual GGUF provider was invoked here.
     """
     import json
+    if (os.environ.get("NVP_FILM02M_GROUP_ACCEPTANCE")!="1" or
+        os.environ.get("NVP_P0F01_TEST_DISPOSABLE")!="1"):
+        raise PermissionError("Forced kill only inside explicit disposable P0-F-01 acceptance")
     home=os.environ.get("NVP_HOME")
     if not home:
         raise RuntimeError("Explicit test NVP_HOME required")
