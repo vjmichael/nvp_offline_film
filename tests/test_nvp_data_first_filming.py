@@ -801,6 +801,30 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertTrue(journal.visibility(self.pid, "FilmedTake")["visible"])
         self.assertIsNotNone(self.index.read_revision(self.pid, "NewRecordedSpeech", 1))
 
+    def test_visibility_rejects_non_native_or_flattened_source_manifest(self):
+        from unittest.mock import patch
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        journal = FilmingPublicationJournal(self.index)
+        original_read = self.index.read_revision
+        for field, invalid in (("channels", 2),
+                               ("sample_encoding", "float32"),
+                               ("flattened_soundtrack", True)):
+            def altered(project_id, identity, revision):
+                record = original_read(project_id, identity, revision)
+                if identity == "NewRecordedSpeech":
+                    record = dict(record)
+                    record["data"] = dict(record["data"], **{field: invalid})
+                return record
+            with self.subTest(field=field):
+                with patch.object(self.index, "read_revision", side_effect=altered):
+                    decision = journal.visibility(self.pid, "FilmedTake")
+                self.assertFalse(decision["visible"])
+                self.assertEqual(decision["reason"],
+                                 "PUBLICATION_SOURCE_BINDING_MISMATCH")
+        self.assertTrue(journal.visibility(self.pid, "FilmedTake")["visible"])
+        self.assertIsNotNone(original_read(self.pid, "NewRecordedSpeech", 1))
+
     def test_take_reader_refuses_incomplete_journaled_publication(self):
         from backend.nvp_filming_publication_journal import FilmingPublicationJournal
         self.capture.capture(**self.payload())
