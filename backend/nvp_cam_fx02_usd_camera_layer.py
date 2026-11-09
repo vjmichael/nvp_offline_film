@@ -22,7 +22,7 @@ RAIL_TOKEN=re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
 FORMAT="nvp.cam_fx02.native_immutable_stronger_director_camera_layer.v1"
 CAMERA_ROOT="/World/NVPDirectorRails"
 FILM_FPS=24
-MAX_CAMERA_SAMPLES=2165
+MAX_CAMERA_SAMPLES=2305
 MAX_LAYER_BYTES=12*1024*1024
 
 
@@ -256,3 +256,5 @@ def open_approved_camera_layer(index:FilmIndex,pid,rail_id,revision):
             # or save original root, actor/camera bank or source Take.
             if layer.identifier in session.subLayerPaths:
                 session.subLayerPaths.remove(layer.identifier)
+            if stage.GetRootLayer().ExportToString()!=root_before:
+                raise RuntimeError("Original root layer changed while camera rig was in session")
