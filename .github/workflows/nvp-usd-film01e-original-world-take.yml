@@ -1,0 +1,103 @@
+name: NVP USD-FILM-01E Original World Digital Take + ActorID/VoiceID/PCM (NO FFMPEG)
+
+on:
+  push:
+    branches: [nvp/usd-film01e-world-digital-take-20261108]
+  pull_request:
+    branches: [nvp/usd-film01d-shot-working-set-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-usd-film01e-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  world-take-actor-voice-audio-native:
+    name: Real original USD world Take, Bible ActorID, VoiceID and 48k source / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine pinned OpenUSD, original film source/PCM dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+      - name: Compile new world Take/casting/voice and inherited source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01e_world_take.py tools/nvp_usd_film01e_benchmark.py tests/test_nvp_usd_film01e_world_take.py backend/nvp_openusd_take.py backend/nvp_film03_dialogue_manager.py backend/nvp_usd_film01d_shot_working_set.py
+      - name: Real original multi-set Take, actor casting, director voice, PCM, recast and restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01e_world_take.py" -v
+      - name: Preserve previous original Take checkpoint and source sample invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_openusd_take_native.py" -v
+
+  independent-original-30s-source-evidence:
+    name: Original 30s Donut/Box/Sphere 3D world Take and source restart / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install native USD authoring and original film PCM source readers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+      - name: Build real original 3D film source and independently verify world Take from reopened FilmIndex
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p usd-film01e-evidence
+          python tools/nvp_usd_film01e_benchmark.py \
+            --output usd-film01e-evidence/original_30s_world_take.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          evidence=json.loads(Path("usd-film01e-evidence/original_30s_world_take.json").read_text())
+          assert evidence["original_source_take_unchanged"] is True
+          assert evidence["original_actor_count"] == 4
+          assert evidence["original_pcm_event_count"] >= 1
+          assert evidence["exact_checkpoint_count"] == 3
+          assert evidence["native_source_take_reopened_after_restart"] is True
+          assert evidence["source_original_audio_not_voice_model"] is True
+          assert evidence["native_render_frame_count"] == 0
+          assert evidence["finished_original_audio_mix"] is False
+          assert evidence["human_photorealism_accepted"] is False
+          assert evidence["original_render_pipeline_consumes_world_take"] is False
+          print("Native original world Digital Take is source-bound; picture/audio mastering remains open")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-usd-film01e-real-original-world-take-${{ matrix.os }}-UNACCEPTED
+          path: usd-film01e-evidence/
+          if-no-files-found: warn
+          retention-days: 14
