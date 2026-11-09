@@ -105,3 +105,14 @@ Required to close:
 Longer-form practical workflow should render only the scene's selected
 camera coverage. Cameras can be unlimited in shot grammar; the current
 per-bank 96-camera resource budget is reviewed separately.
+
+
+### Resource decision — 2026-11-08: FULL NINE-CAMERA CYCLES ACCEPTANCE DEFERRED UNTIL QUALIFIED GPU HOST
+
+Director decision: Preserve **one original 30-second performance with 9 synchronized original cameras**, 720 frames per camera (6,480 full-frame pictures), 30s edited short with original 48k PCM as a **mandatory acceptance gate before longer film production**, but do **NOT** attempt to execute all 810 eight-frame Cycles worker jobs on generic CPU-only GitHub CI. The blocker is **deferred for full native execution**, not waived, downgraded, or falsely closed; source implementation and smaller functional tests may continue.
+
+**Validation ladder while working on other USD-FILM tasks:** (A) original FilmIndex/USD/ActorID/9-camera source/time and 48k PCM tests on Windows/Linux CPU CI; (B) genuine tiny 2-camera wall/ghost and 8-frame native Cycles smoke, with real PNG/.blend and native journal evidence; (C) on qualified accelerated physical host measure **actual** Blender Cycles backend/device selection (compatible GPU, VRAM, driver), real per-frame render latency, memory, source camera and material parity, cancellation and descendant cleanup; (D) render one 720-frame camera roll and test restart, recovery and film clock parity; (E) 3-camera 30s scaled scene; (F) full 9-camera/6,480-frame coverage and final 30-second edit with original sound. No stages C–F on default CI or unsupported GPU hardware. Allow a measured faster **preview render** as diagnostic only, never substitute it for real Cycles final-quality acceptance.
+
+**GPU caution:** Lu/llama.cpp Vulkan GPU inference support does NOT establish Blender/Cycles GPU readiness. Use only a GPU backend Blender actually supports on the selected OS/device, with verified selected-device provenance (and do not silently fall back to CPU), adequate VRAM, and host-side resource supervision. A qualified physical workstation or explicitly selected GPU runner is required; do not claim a particular card passes before testing it. Rendering images from multiple synchronized source cameras can occur **sequentially** on one GPU because identical original Film Time is what matters.
+
+**Development unblocked:** Continue USD-FILM source/animation/material/camera/editor integrity and other 00–10 tasks while tracking 01I–01P native smoke/test results. **Later long-scene creative/quality acceptance stays BLOCKED** until final full camera coverage, film editing, original audio, and director visual review actually pass. No deadline or unattended full render was authorized by this decision.
