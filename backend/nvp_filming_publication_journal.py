@@ -47,6 +47,17 @@ class FilmingPublicationJournal:
                 FROM nvp_filming_publications WHERE project_id=?""",
                 (project_id,)).fetchall()
             claimed = {take_id, sound_timeline_id, *source_ids}
+            # Reserve against the actual FilmIndex namespace too. A legacy
+            # source or a non-journal writer may already own revision 1;
+            # journal-only collision checks cannot detect that identity.
+            # BEGIN IMMEDIATE serializes SQLite writers through admission.
+            for identity in claimed:
+                try:
+                    self.index.read_revision(project_id, identity, 1)
+                except KeyError:
+                    pass
+                else:
+                    raise ValueError("Filming publication identity already exists in FilmIndex")
             for prior in existing:
                 reserved = {prior["take_id"], prior["sound_timeline_id"],
                             *json.loads(prior["source_ids_json"])}
