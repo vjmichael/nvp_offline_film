@@ -1,0 +1,159 @@
+name: NVP USD-FILM-01T 720 Authentic Selected-View Frames + Original PCM Full-Film Acceptance
+
+on:
+  push:
+    branches: [nvp/usd-film01t-durable-selected-conform-20261109]
+  pull_request:
+    branches: [nvp/usd-film01r-interactive-editor-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-01t-source-720-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-durable-source-queue:
+    name: Actual FilmIndex/OpenUSD → 01S SQLite 180 tickets → 01Q source checks and restart / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04,windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine native USD and NVP Python dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+      - name: Compile actual 01T source queue, built-in OS WebView and final PCM conform
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01t_selected_queue.py backend/nvp_usd_film01t_desktop_mixin.py backend/nvp_usd_film01s_adaptive_batch.py backend/nvp_wo5_desktop_bridge.py backend/nvp_usd_film01q_selected_view_host.py backend/nvp_usd_film01q_selected_view_edit.py tests/test_nvp_usd_film01i_ninecam_take.py
+      - name: Exercise actual source USD 8-frame per-camera Film Time and SQLite crash/reopen non-replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python -m unittest discover -s tests -p "test_nvp_usd_film01s_adaptive_resource_batches.py" -v
+
+  director-queue-interface:
+    name: Actual React 01T director durable source group approvals/status and installed app build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Vite and React test toolchain
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Source-first director EDL/queue UI and original selected resource tests
+        working-directory: frontend
+        run: npm run test:ui -- src/DataFirstViewpointEditor.test.jsx src/AdaptiveShotBatchPanel.test.jsx src/FilmCameraSourcePanel.test.jsx
+      - name: Build 01T installed director frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Verify durable original film queue controls compiled
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -l "Conform 30-second picture" frontend/dist/assets/*.js >/dev/null
+          grep -R -l "OS approve next source shot group" frontend/dist/assets/*.js >/dev/null
+
+  genuine-entire-30-second-original-film:
+    name: 720 actual original-source Blender/Cycles frames (90 selected chunks), FFV1 movie + exact original 48kHz PCM
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM01T_ARTIFACT_DIR: nvp-actual-30-second-data-first-selected-film
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install authentic OpenUSD, FFmpeg, measured resources and native headless Blender dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx pytest
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth ffmpeg libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+          ffmpeg -version | head -n 2
+      - name: Pin actual official Blender 5.2.3 binary to upstream SHA-256, fail closed on missing hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Execute ALL genuine 90 source-selected guarded eight-frame chunks and independent actual 30s original PCM film conform
+        shell: bash
+        timeout-minutes: 335
+        run: |
+          set -euo pipefail
+          export NVP_FILM01T_FULL_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m pytest -s -q tests/test_nvp_usd_film01i_ninecam_take.py -k "test_01t_complete_real_720_selected_original_frames_and_pcm"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("nvp-actual-30-second-data-first-selected-film")
+          report=json.loads((root/"complete_native_30s_film_receipt.json").read_text("utf8"))
+          assert report["source_720_blender_cycles_pixels"] is True
+          assert report["unique_native_source_chunks_reverified"]==90
+          assert report["queue_original_source_tickets_independently_verified"]==180
+          assert report["source_actor_performance_count"]==1
+          assert report["unselected_camera_rolls_rendered"]==0
+          assert report["original_pcm_48khz_redecoded_and_sha_checked"] is True
+          assert report["director_creative_approval"] is False
+          finished=root/"verified_original_film_with_pcm"/"verified_film_receipt.json"
+          film=json.loads(finished.read_text("utf8"))
+          assert film["native_selected_frames_verified"]==720
+          assert film["native_selected_chunks_verified"]==90
+          movie=root/"verified_original_film_with_pcm"/film["film_file"]
+          assert movie.is_file() and movie.stat().st_size>4096
+          with Image.open(root/"actual_original_camera_cut_contact_sheet.png") as img:
+              assert img.size==(640,720)
+              img.verify()
+          print("ACTUAL 30-second original film & 48kHz PCM created with 720 authentic selected Cycles source frames. Director visual approval OPEN.")
+          PY
+      - name: FFprobe real final file's video and PCM, fail closed on missing movie
+        shell: bash
+        run: |
+          set -euo pipefail
+          movie="$NVP_FILM01T_ARTIFACT_DIR/verified_original_film_with_pcm/original_30s_data_first_film_with_sound.mkv"
+          ffprobe -v error -show_entries stream=codec_type,codec_name,r_frame_rate,nb_frames,sample_rate -of json "$movie"
+          ffmpeg -v error -i "$movie" -f null -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: USD-FILM01T-GENUINE-30s-original-720-Cycles-selected-picture-and-PCM-UNREVIEWED
+          path: |
+            nvp-actual-30-second-data-first-selected-film/complete_native_30s_film_receipt.json
+            nvp-actual-30-second-data-first-selected-film/actual_original_camera_cut_contact_sheet.png
+            nvp-actual-30-second-data-first-selected-film/verified_original_film_with_pcm/
+            nvp-actual-30-second-data-first-selected-film/genuine_selected_720_source_frames/gather_receipt.json
+            nvp-actual-30-second-data-first-selected-film/genuine_selected_720_source_frames/source_selected_receipts.json
+          if-no-files-found: warn
+          retention-days: 14
