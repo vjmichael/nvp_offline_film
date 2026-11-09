@@ -1,0 +1,180 @@
+"""CAM-FX-05A native OpenUSD exact-time rail camera / frozen source tests.
+
+Tests require first-party pxr and real FilmIndex 01E world/actor/PCM plus
+02M-H approved district source, not a mocked camera or fake film frames.
+The separate full CAM-FX-05 protected Blender/Cycles gate is still open.
+"""
+from __future__ import annotations
+
+from copy import deepcopy
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import json
+import unittest
+
+from pxr import Usd,UsdGeom
+
+from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
+from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
+from backend.nvp_cam_fx01_camera_rails import OriginalCameraRails
+from backend.nvp_cam_fx02_usd_camera_layer import camera_rail_path
+from backend.nvp_cam_fx05_verified_shot_source import (
+    stage_approved_rail_frame,FORMAT,RECEIPT)
+from backend.nvp_usd_film01f_blender_host import USD,MANIFEST
+
+
+def node(tick,x,*,focus=8.0,focal=35.0):
+    return {
+        "tick":tick,"position_m":[x,-8.,5.],
+        "target_m":[0.,0.,1.],
+        "tangent_in_mps":[0.,0.,0.],
+        "tangent_out_mps":[0.,0.,0.],
+        "roll_deg":0.,"focal_length_mm":focal,
+        "focus_distance_m":focus,"f_stop":5.6,
+        "segment_mode":"hermite","easing":"smoothstep"}
+
+
+class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # The real 02M-H fixture brings source-only, first-party USD materials,
+        # actual ActorID geometry, an original PCM Take and an approved district.
+        # It is NOT the native Cycles subprocess acceptance test.
+        from test_nvp_usd_film02mh_real_shot_render import (
+            OriginalActorDistrictNativeRenderTests)
+        cls.fixture=OriginalActorDistrictNativeRenderTests
+        cls.fixture.setUpClass()
+        cls.index=cls.fixture.index
+        cls.pid=cls.fixture.pid
+        cls.take=cls.fixture.take_id
+        cls.take_sha=cls.fixture.take_sha
+        cls.original_actor_pcm_sha=list(cls.fixture.original_actor_take_shas)
+        bank=DirectorCameraBank(cls.index,
+            verify_director_action=lambda event,scope:
+            event=="TEST_FX05_BANK" and
+            scope["operation"]=="nvp.film.director_camera_bank_revision.v1")
+        bank.create(cls.pid,"CAMFX05OriginalBank",
+            world_take_id=cls.take,
+            cameras=[{
+                "camera_id":"CAMFX05SourceCam","setup":"Moving original street",
+                "framing":"medium","position_m":[0.,-8.,5.],
+                "rotation_euler_deg":[0.,0.,0.],
+                "focal_length_mm":35.,"focus_distance_m":8.,
+                "clip_range_m":[.01,10000.],
+                "move_keys":[],"camera_ray_exclusions":[]}],
+            director_event="TEST_FX05_BANK")
+        cls.rails=OriginalCameraRails(cls.index,
+            verify_director_action=lambda event,scope:
+            event=="TEST_FX05_RAIL" and
+            scope["operation"]==
+            "nvp.cam_fx02.publish_exact_director_camera_rail.v1")
+        cls.base={
+            "camera_bank_id":"CAMFX05OriginalBank",
+            "camera_bank_revision":1,
+            "camera_id":"CAMFX05SourceCam",
+            "film_start_tick":4*T,"film_end_tick":6*T,
+            "technique":"dolly","rail_origin_m":[0.,0.,0.],
+            "filmback_mm":[36.,20.25],
+            "nodes":[node(4*T,-1.),node(5*T,0.,focus=7.0,focal=45.),
+                     node(6*T,1.,focus=6.0,focal=60.)]}
+        first=cls.rails.preview(cls.pid,"CAMFX05ReviewedRail",cls.base)
+        cls.rails.publish(cls.pid,"CAMFX05ReviewedRail",cls.base,
+            expected_revision=0,
+            preview_sha256=first["proposal_sha256"],
+            director_event="TEST_FX05_RAIL")
+        changed=deepcopy(cls.base)
+        changed["nodes"][1]["position_m"]=[2.,-8.,5.]
+        changed["nodes"][1]["focal_length_mm"]=55.
+        second=cls.rails.preview(
+            cls.pid,"CAMFX05ReviewedRail",changed,expected_revision=1)
+        cls.rails.publish(cls.pid,"CAMFX05ReviewedRail",changed,
+            expected_revision=1,
+            preview_sha256=second["proposal_sha256"],
+            director_event="TEST_FX05_RAIL")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fixture.tearDownClass()
+
+    def test_two_approved_rail_revisions_different_real_3d_camera_same_actor_and_original_pcm(self):
+        frozen_before=self.index.list_objects(self.pid,kind="take")
+        with TemporaryDirectory(prefix="nvp-fx05-source-real-") as temp:
+            root=Path(temp).resolve()
+            results=[]
+            for rev in (1,2):
+                job=root/("camera"+str(rev))
+                job.mkdir()
+                staged=stage_approved_rail_frame(
+                    self.index,self.pid,"Native02MHBinding1",
+                    "CAMFX05ReviewedRail",rev,job)
+                evidence=staged["receipt"]
+                self.assertEqual(evidence["format"],FORMAT)
+                self.assertTrue(evidence["source_camera_matrix_unchanged"])
+                self.assertTrue(evidence["original_actor_takes_and_pcm_unchanged"])
+                self.assertEqual(evidence["source_film_tick"],5*T)
+                self.assertEqual(evidence["original_world_take_sha256"],self.take_sha)
+                self.assertFalse(evidence["actual_blender_cycles_pixels"])
+                self.assertEqual(staged["native_blender_workers_started"],0)
+                self.assertEqual(evidence,json.loads((job/RECEIPT).read_text("utf8")))
+                packet=json.loads((job/MANIFEST).read_text("utf8"))
+                self.assertEqual(packet,staged["packet"])
+                src=Usd.Stage.Open(str(job/USD),load=Usd.Stage.LoadAll)
+                rail_path=camera_rail_path("CAMFX05ReviewedRail")
+                camera=UsdGeom.Camera.Get(src,rail_path)
+                self.assertTrue(camera.GetPrim().IsDefined())
+                self.assertTrue(src.GetPrimAtPath(
+                    evidence["original_camera_path"]).IsA(UsdGeom.Camera))
+                self.assertEqual(camera.GetFocalLengthAttr().Get(
+                    Usd.TimeCode(1.0)),45. if rev==1 else 55.)
+                self.assertEqual(
+                    camera.GetFocalLengthAttr().GetTimeSamples(),[1.0])
+                self.assertEqual(src.GetStartTimeCode(),1.)
+                self.assertEqual(src.GetEndTimeCode(),1.)
+                results.append((evidence,staged))
+            first,second=results
+            self.assertEqual(
+                first[0]["original_02mh_usd_sha256"],
+                second[0]["original_02mh_usd_sha256"])
+            self.assertEqual(
+                first[0]["original_camera_shot_sha256"],
+                second[0]["original_camera_shot_sha256"])
+            self.assertNotEqual(
+                first[0]["derived_with_rail_usd_sha256"],
+                second[0]["derived_with_rail_usd_sha256"])
+            self.assertNotEqual(
+                first[1]["director_camera_sample"]["position_m"],
+                second[1]["director_camera_sample"]["position_m"])
+        self.assertEqual(self.index.list_objects(self.pid,kind="take"),frozen_before)
+        self.assertEqual(self.fixture.original_actor_take_shas,
+                         self.original_actor_pcm_sha)
+
+    def test_stale_unpublished_foreign_time_and_dirty_job_fail_closed(self):
+        with TemporaryDirectory(prefix="nvp-fx05-reject-") as temp:
+            root=Path(temp).resolve()
+            fresh=root/"invalid"
+            fresh.mkdir()
+            with self.assertRaises((KeyError,PermissionError,RuntimeError)):
+                stage_approved_rail_frame(
+                    self.index,self.pid,"Native02MHBinding1",
+                    "ARevisionNeverPublished",1,fresh)
+            self.assertEqual(list(fresh.iterdir()),[])
+            source=deepcopy(self.base)
+            source["film_start_tick"]=8*T
+            source["film_end_tick"]=10*T
+            source["nodes"]=[
+                node(8*T,-1.),node(9*T,0.),node(10*T,1.)]
+            candidate=self.rails.preview(
+                self.pid,"CAMFX05WrongShotTime",source)
+            self.rails.publish(self.pid,"CAMFX05WrongShotTime",source,
+                expected_revision=0,preview_sha256=candidate["proposal_sha256"],
+                director_event="TEST_FX05_RAIL")
+            with self.assertRaises(PermissionError):
+                stage_approved_rail_frame(
+                    self.index,self.pid,"Native02MHBinding1",
+                    "CAMFX05WrongShotTime",1,fresh)
+            self.assertEqual(list(fresh.iterdir()),[])
+            (fresh/"foreign.txt").write_text("not native owner",encoding="utf8")
+            with self.assertRaises(PermissionError):
+                stage_approved_rail_frame(
+                    self.index,self.pid,"Native02MHBinding1",
+                    "CAMFX05ReviewedRail",1,fresh)
