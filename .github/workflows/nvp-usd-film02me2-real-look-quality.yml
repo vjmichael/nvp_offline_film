@@ -1,0 +1,140 @@
+name: NVP USD-FILM-02M-E2 Native Material, Lighting, Real Geometry LOD and Cycles/EXR Acceptance
+
+on:
+  push:
+    branches: [nvp/usd-film02m-e2-native-material-light-lod-20261109]
+  pull_request:
+    branches: [nvp/usd-film02m-e-layered-district-instancing-20261109]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film02me2-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  true-native-usd-pbr-and-geometry:
+    name: Actual original USD PreviewSurface, near/mid/far topology + source revision / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04,windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual first-party OpenUSD and original material dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+      - name: Compile original 02M source layers, typed material/lighting profile and native Cycles worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film02m_modular_buildings.py backend/nvp_usd_film02m_d_openings.py backend/nvp_usd_film02m_d_cells.py backend/nvp_usd_film02m_e_district.py backend/nvp_usd_film02m_e2_look.py tools/nvp_usd_film02m_e2_blender_look.py tests/test_nvp_usd_film02m_modular_buildings.py
+      - name: Real original material source, USD shader binding, 11-module near→mid→far actual mesh simplification and immutable source SHA checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film02m_modular_buildings.py" -v
+
+  genuine-protected-cycles-look:
+    name: Real Blender5.2 Cycles USD PBR material parity, near/rear/mid/far + relight PNG, multilayer OpenEXR and measured RAM/CPU
+    runs-on: ubuntu-24.04
+    timeout-minutes: 140
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM02ME2_ARTIFACT_DIR: original-nvp-02me2-real-material-light-lod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install native USD, worker resources and Blender/Cycles system dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx pytest
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Fetch official Blender 5.2.3; independently verify upstream SHA256 before use
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Execute TRUE original USD/Blender five-shot material+LOD+lighting test under existing NVP native worker containment
+        shell: bash
+        timeout-minutes: 100
+        run: |
+          set -euo pipefail
+          export NVP_FILM02ME2_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k "test_02m_e2_actual_blender_cycles_material_lighting_lod_exr"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("original-nvp-02me2-real-material-light-lod")
+          report=json.loads((root/"audit.json").read_text("utf8"))
+          assert report["passed"] is True
+          assert report["actual_imported_original_shader_parity"] is True
+          assert report["true_geometry_lods_verified"] is True
+          assert report["actual_native_linear_exr_with_source_passes"] is True
+          assert report["same_frozen_source_all_rendered_views"] is True
+          assert report["director_picture_quality_approved"] is False
+          assert report["aces_external_ocio_config_verified"] is False
+          assert report["gpu_vram_measured"] is False
+          names=["near_front","near_rear","mid_oblique","far_street","near_front_relight"]
+          assert [x["shot"] for x in report["rendered_views"]]==names
+          assert len({x["actual_png_sha256"] for x in report["rendered_views"]})==5
+          for shot in names:
+              with Image.open(root/f"{shot}.png") as im:
+                  assert im.format=="PNG"
+                  im.verify()
+          exr=root/"near_front_passes.exr"
+          assert exr.is_file() and exr.read_bytes()[:4]==bytes.fromhex("762f3101")
+          print("Genuine NVP original USD 5-view look/LOD/relight and OpenEXR/native CPU receipts passed. Film-grade art direction remains OPEN.")
+          PY
+      - name: Assemble real image-contact sheet from independently recorded Cycles pixels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image,ImageDraw
+          root=Path("original-nvp-02me2-real-material-light-lod")
+          names=["near_front","near_rear","mid_oblique","far_street","near_front_relight"]
+          sheet=Image.new("RGB",(1280,1080),(24,30,36))
+          draw=ImageDraw.Draw(sheet)
+          offsets=[(0,0),(640,0),(0,360),(640,360),(320,720)]
+          for name,pos in zip(names,offsets):
+              with Image.open(root/(name+".png")) as source:
+                  im=source.convert("RGB")
+                  sheet.paste(im,pos)
+              draw.text((pos[0]+7,pos[1]+7),name,fill=(250,240,214))
+          sheet.save(root/"actual_original_lod_lighting_contact_sheet.png")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NVP-USD-FILM02ME2-TRUE-original-PBR-Cycles-five-views-MULTILAYER-EXR-unreviewed
+          path: original-nvp-02me2-real-material-light-lod/
+          if-no-files-found: warn
+          retention-days: 14
