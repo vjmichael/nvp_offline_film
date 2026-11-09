@@ -122,6 +122,11 @@ class OpenUSDAssetRegistry:
         Gf, Sdf, Usd, UsdGeom = _usd()
         layer = Sdf.Layer.CreateAnonymous("nvp_asset.usda")
         stage = Usd.Stage.Open(layer)
+        # New authored original source meshes explicitly carry the same
+        # native metre/Z-up contract as NVP 01 world layers. Historical
+        # immutable asset layers are never rewritten on read/reopen.
+        UsdGeom.SetStageMetersPerUnit(stage,1.0)
+        UsdGeom.SetStageUpAxis(stage,UsdGeom.Tokens.z)
         root = UsdGeom.Xform.Define(stage, "/Asset")
         stage.SetDefaultPrim(root.GetPrim())
         if shape == "cube":
@@ -211,6 +216,7 @@ class OpenUSDAssetRegistry:
             "format": FORMAT, "source": "nvp_authored_procedural_geometry",
             "shape": shape, "size_m": float(size_m),
             "layer_sha256": blob_sha, "root_prim": "/Asset",
+            "coordinate_system": "meters_Z_up","meters_per_unit": 1.0,
             "external_references": False,
         }
         if authored_material is not None:
@@ -259,6 +265,14 @@ class OpenUSDAssetRegistry:
         if layer.subLayerPaths or layer.GetExternalReferences():
             raise RuntimeError("USD asset unexpectedly refers to external layers")
         stage = Usd.Stage.Open(layer, Usd.Stage.LoadNone)
+        # Strict for newly authored source assets; older source revisions
+        # that predate explicit stage metadata keep their immutable bytes.
+        if "coordinate_system" in doc or "meters_per_unit" in doc:
+            if (doc.get("coordinate_system")!="meters_Z_up" or
+                doc.get("meters_per_unit")!=1.0 or
+                abs(UsdGeom.GetStageMetersPerUnit(stage)-1.0)>1e-8 or
+                str(UsdGeom.GetStageUpAxis(stage))!="Z"):
+                raise RuntimeError("Original geometry asset no longer has 1m Z-up source axes")
         root = stage.GetPrimAtPath("/Asset")
         geometry = stage.GetPrimAtPath("/Asset/Geometry")
         if not root or not root.IsA(UsdGeom.Xform):
