@@ -145,6 +145,17 @@ The creator has additionally approved an **AI-assisted 3D human surface/material
 
 **First priority:** audit existing source meshes/UVs/MaterialX/Blender capabilities, then build the repeatable neutral human-head multi-light baseline and the typed ActorID-bound PBR map contract before attempting open-ended image generation. This roadmap makes no implementation/CI/photorealism acceptance claim.
 
+## 2026-11-09 — director-owned virtual camera rails, advanced shot language and effects
+
+**New creator direction, planned rather than implemented:** A filmmaker can author, drag and retime a **virtual rail** for an original `UsdGeom.Camera`, adjust dolly/crane/orbit/tracking paths and pan/tilt/roll independently, change lenses, focus, aperture and shot technique, and see all resulting overrides reflected in a **stronger, replaceable OpenUSD director layer**. All such changes refer to the existing 01D/01E/01M/01Q source time and immutable original performances; no camera edit changes ActorID Take, original PCM or canonical source scene geometry.
+
+Shot grammar must extend beyond basic fixed framings: establishing/wide/full/medium/close/extreme close, insert, over-the-shoulder, POV/reaction, two-shot, push/pull, dolly, truck, pedestal, crane/jib, orbit, reveal, follow, pan, tilt, Dutch, handheld (bounded), zoom, dolly zoom, rack focus, focus follow and compound user-authored moves. AI may propose typed defaults; the director can change **every** rail handle, timing, lens/focus and technique, with explicit final approval and source SHA/Film Time retention.
+
+**CAM-FX-01/02:** bounded deterministic position/orientation rails + native source-layer authoring and replay. **CAM-FX-03/04:** installed director GUI & bounded host-verified AI shot proposals; non-destructive undo/approval. **CAM-FX-05:** native Windows/Linux USD/Cycles/installed acceptance (camera matrix, DOF, geometry occlusion, continuity, actual images). Motion blur and optical distortions are render/backend features, not implied by USD transform metadata. Detailed contract: [NVP camera rails, shot FX and ordered groups](NVP_CAMERA_RAILS_SHOT_FX_AND_P0F01_SEQUENTIAL_PLAN_20261109.md).
+
+**Near-term order:** first actual F/G/H OS acceptance, then P0-F-01 installed world editor/model/NSIS, then approved-district shot image quality, then CAM-FX 01–05 integrated with 01Q/01S/01T selected-shot film. Defer HSURF-00 until the essential USD-FILM family is complete.
+
+
 ## Recommended immediate sequence
 
 1. Finish **FILM03-09E** real phoneme+rig+Blender/auditory integration and inspect exact-head native 09C/09D results. Continue film production while CI reports; don't declare pass on queued work.
