@@ -259,8 +259,11 @@ class BlenderWorkerSupervisor:
     def _validate(self, op: BlenderOperation):
         if not isinstance(op,BlenderOperation) or not JOB_ID.fullmatch(op.job_id):
             raise ValueError("Invalid typed Blender job")
-        if type(op.timeout_seconds) is not int or not 1<=op.timeout_seconds<=600:
-            raise ValueError("Worker timeout must be 1 to 600 seconds")
+        if type(op.timeout_seconds) is not int or not 1<=op.timeout_seconds<=3600:
+            raise ValueError("Worker timeout must be 1 to 3600 seconds")
+        if op.timeout_seconds>600 and op.script!="nvp_usd_film01q_blender_selected_views.py":
+            raise PermissionError(
+                "Extended execution time is reserved for the reviewed original selected-film renderer")
         if type(op.memory_limit_mb) is not int or not 256<=op.memory_limit_mb<=65536:
             raise ValueError("Worker memory limit must be 256 to 65536 MiB")
         if type(op.require_linux_cgroup_v2) is not bool:
@@ -290,6 +293,25 @@ class BlenderWorkerSupervisor:
             file=_safe_relative(jobdir,name,must_exist=True)
             if sha_file(file)!=sha:
                 raise RuntimeError("Worker source SHA mismatch before launch")
+        if op.timeout_seconds>600:
+            # The long-running CPU cinema frame is a reviewed profile,
+            # not a blanket unbounded exception for arbitrary Blender jobs.
+            from backend.nvp_usd_film01r_quality import verify_quality
+            if ("plan.json" not in op.inputs or
+                "chunk.json" not in op.inputs or
+                "source.usda" not in op.inputs or
+                "source.json" not in op.inputs or
+                "nvp_usd_film01r_quality.py" not in op.inputs or
+                "nvp_usd_film01m_camera_ray_mask.py" not in op.inputs):
+                raise PermissionError("Extended Cycles work lacks complete pinned source contract")
+            planned=json.loads((jobdir/"plan.json").read_text("utf8"))
+            profile=verify_quality(planned.get("render_profile"))
+            if (op.timeout_seconds!=profile["timeout_seconds"] or
+                op.memory_limit_mb!=profile["max_worker_ram_mb"] or
+                profile["timeout_seconds"]<=600 or
+                planned.get("render_profile_sha256") is None):
+                raise PermissionError("Requested extended timeout differs from reviewed film profile")
+
         if op.scene is not None and op.scene not in op.inputs:
             raise ValueError("Scene .blend must be explicitly pinned as input")
         for name,kind in op.outputs.items():
