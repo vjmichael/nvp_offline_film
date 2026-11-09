@@ -281,11 +281,14 @@ class OriginalDistrictDrafts:
             if not row["draft_id"]:
                 raise RuntimeError("Completed model attempt lacks durable source draft")
             draft=self.reopen(pid,row["draft_id"])
-            if (draft["state"]!="DRAFT" or
-                draft["district_id"]!=row["district_id"] or
-                draft.get("observed_model_evidence",{}).get("model_id")!=
-                    row["model_id"]):
+            evidence=draft.get("observed_model_evidence")
+            if (draft["district_id"]!=row["district_id"] or
+                type(evidence) is not dict or
+                evidence.get("model_id")!=row["model_id"]):
                 raise RuntimeError("Model attempt draft/source receipt mismatch")
+            # Historical DRAFT_SAVED attempts remain inspectable after the
+            # director edits, discards or independently approves the draft.
+            # This is generation provenance, not a live approval token.
         return {
             "format":"nvp.usd_film02m_g.durable_model_attempt_status.v1",
             "attempt_id":attempt_id,
