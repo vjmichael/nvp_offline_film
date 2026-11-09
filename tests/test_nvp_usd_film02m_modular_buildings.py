@@ -1767,6 +1767,143 @@ class OriginalModularBuildingSource(unittest.TestCase):
         finally:
             restarted._close()
 
+    def test_02m_g_async_native_model_draft_save_and_status_reopen(self):
+        """Native provider is injected; no real GGUF/physical OS claim."""
+        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+        from backend.nvp_wo6_verified_local_model import FORMAT as PROVIDER_FORMAT
+        from hashlib import sha256
+        import json,time
+        settings=self._02m_e_settings()
+        class Window:
+            def get_current_url(self):
+                return "http://127.0.0.1:43141/"
+            def create_confirmation_dialog(self,*_):
+                raise AssertionError("Model completion is never OS approval")
+        class Model:
+            def __init__(self,identity):
+                self.identity=identity
+            def complete(self,system,user):
+                reply=json.dumps({"params":settings})
+                self.completion_receipt={
+                    "format":PROVIDER_FORMAT,
+                    "selected_model_id":self.identity,
+                    "provider_reported_model_id":self.identity,
+                    "generated_text_sha256":sha256(reply.encode()).hexdigest(),
+                    "provider_reported_completion_tokens":7,
+                    "provider_self_report_not_attestation":True,
+                    "native_worker_authorized":False}
+                return reply
+        bridge=TrustedDesktopWO6Bridge(
+            self.index,origin="http://127.0.0.1:43141",
+            production_root=self.root/"02mg_async_source",
+            director_writer_factory=lambda mid:Model(mid))
+        bridge._attach_window(Window())
+        try:
+            request={"project_id":self.pid,"district_id":"AsyncWorldDistrict",
+                     "expected_revision":0,"model_id":"LocalTestModel",
+                     "direction":"Generate a real original 3D building street"}
+            begin=bridge.film02mg_start_candidate(request)
+            self.assertEqual(begin["state"],"GENERATING")
+            self.assertFalse(begin["native_worker_authorized"])
+            attempt=begin["attempt_id"]
+            with self.assertRaises(PermissionError):
+                bridge.film02mg_candidate_status({
+                    "project_id":self.pid,"attempt_id":"invalid"})
+            state=None
+            for _ in range(100):
+                state=bridge.film02mg_candidate_status({
+                    "project_id":self.pid,"attempt_id":attempt})
+                if state["state"]!="GENERATING":
+                    break
+                time.sleep(.05)
+            self.assertEqual(state["state"],"DRAFT_SAVED",state)
+            self.assertEqual(state["model_evidence"]["status"],
+                             "GENERATED_UNAPPROVED")
+            self.assertEqual(state["proposal"]["observed_model_evidence"][
+                "model_text_sha256"],
+                state["model_evidence"]["model_text_sha256"])
+            self.assertEqual(bridge.film02mf_preview({
+                "project_id":self.pid,"draft_id":state["proposal"]["draft_id"]
+                })["native_usd_source_reopened"],True)
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,"AsyncWorldDistrict",1)
+            self.assertEqual(bridge.film02mg_candidate_status({
+                "project_id":self.pid,"attempt_id":attempt
+                })["state"],"DRAFT_SAVED")
+        finally:
+            bridge._close()
+
+    def test_02m_g_async_cancel_and_shutdown_never_publish_late_model(self):
+        """A blocked provider cannot write a draft after host cancellation."""
+        import threading,time
+        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+        from backend.nvp_wo6_verified_local_model import FORMAT as PROVIDER_FORMAT
+        from hashlib import sha256
+        import json
+        settings=self._02m_e_settings()
+        entered=threading.Event()
+        release=threading.Event()
+        class Window:
+            def get_current_url(self):
+                return "http://127.0.0.1:43141/"
+            def create_confirmation_dialog(self,*_):
+                raise AssertionError("Model thread must not request approval")
+        class BlockedModel:
+            def __init__(self,identity):
+                self.identity=identity
+            def complete(self,system,user):
+                entered.set()
+                if not release.wait(10):
+                    raise RuntimeError("Fixture model timed out")
+                reply=json.dumps({"params":settings})
+                self.completion_receipt={
+                    "format":PROVIDER_FORMAT,
+                    "selected_model_id":self.identity,
+                    "provider_reported_model_id":self.identity,
+                    "generated_text_sha256":sha256(reply.encode()).hexdigest(),
+                    "provider_reported_completion_tokens":9,
+                    "provider_self_report_not_attestation":True,
+                    "native_worker_authorized":False}
+                return reply
+        bridge=TrustedDesktopWO6Bridge(
+            self.index,origin="http://127.0.0.1:43141",
+            production_root=self.root/"02mg_async_cancel",
+            director_writer_factory=lambda mid:BlockedModel(mid))
+        bridge._attach_window(Window())
+        try:
+            start=bridge.film02mg_start_candidate({
+                "project_id":self.pid,"district_id":"AsyncCancelledWorld",
+                "expected_revision":0,"model_id":"LocalTestModel",
+                "direction":"Generate a street with original real source buildings"})
+            self.assertTrue(entered.wait(5))
+            attempt=start["attempt_id"]
+            with self.assertRaises(RuntimeError):
+                bridge.film02mg_start_candidate({
+                    "project_id":self.pid,"district_id":"AsyncSecondWorld",
+                    "expected_revision":0,"model_id":"LocalTestModel",
+                    "direction":"Reject duplicate in-flight model work"})
+            cancelled=bridge.film02mg_cancel_candidate({
+                "project_id":self.pid,"attempt_id":attempt})
+            self.assertEqual(cancelled["state"],"CANCELLED")
+            self.assertEqual(cancelled["failure_category"],"director_cancelled")
+            release.set()
+            for _ in range(100):
+                with bridge._film02mg_async_lock:
+                    done=not bridge._film02mg_active
+                if done:break
+                time.sleep(.05)
+            self.assertTrue(done)
+            self.assertEqual(bridge.film02mg_candidate_status({
+                "project_id":self.pid,"attempt_id":attempt})["state"],
+                "CANCELLED")
+            self.assertFalse(any(x["district_id"]=="AsyncCancelledWorld"
+                for x in bridge.film02mf_catalog(self.pid)["drafts"]))
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,"AsyncCancelledWorld",1)
+        finally:
+            release.set()
+            bridge._close()
+
     def test_02m_g_model_failure_and_orphan_attempt_do_not_publish(self):
         """Interrupted worker does not create drafts or replay model authority."""
         from hashlib import sha256
