@@ -1,0 +1,121 @@
+name: NVP USD-FILM-01O/P Real Resumable Cycles Chunk and One Original Sound Timeline
+
+on:
+  push:
+    branches: [nvp/usd-film01o-resumable-camera-rolls-20261108]
+  pull_request:
+    branches: [nvp/usd-film01n-render-director-cameras-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-original-film01o-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  source-and-audio:
+    name: Native original 720-frame actor-camera USD and 30s 48k sound / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native FilmIndex/OpenUSD and PCM test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+      - name: Compile new complete original film-roll renderer/conform code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01o_original_camera_roll_source.py backend/nvp_usd_film01o_recoverable_camera_roll_host.py backend/nvp_usd_film01p_source_multicam_film_conform.py tools/nvp_usd_film01o_blender_camera_chunk.py tests/test_nvp_usd_film01op_contract.py tests/test_nvp_usd_film01i_ninecam_take.py
+      - name: Native real original 30s source, USD full camera animation and PCM essence tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python -m unittest discover -s tests -p "test_nvp_usd_film01op_contract.py" -v
+
+  protected-blender-original-8-frame-chunk:
+    name: Official Blender 5.2/Cycles real 8-frame camera roll and fresh-process journal recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM01O_ARTIFACT_DIR: native-original-film01o-eight-frame-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install native NVP/OS resources and USD source dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download genuine published Blender 5.2.3 and compare official SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Native source-authentic eight frame Cycles render and restart proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM01O_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("native-original-film01o-eight-frame-evidence")
+          audit=json.loads((root/"restart_reverification.json").read_text("utf8"))
+          assert audit["native_cycles_frames"] == 8
+          assert audit["fresh_supervisor_reverified"] is True
+          assert audit["different_chunk_without_authorization_rejected"] is True
+          assert audit["whole_9_camera_30s_film_rendered"] is False
+          frames=sorted(root.glob("frame_*.png"))
+          assert len(frames)==8
+          for frame in frames:
+              with Image.open(frame) as picture:
+                  assert picture.format=="PNG"
+                  assert picture.size==(320,180)
+                  picture.verify()
+          original=json.loads((root/"audit.json").read_text("utf8"))
+          assert original["passed"] is True
+          assert original["actual_native_cycles_frames"]==8
+          assert len(original["original_frame_receipts"])==8
+          assert (root/"source.usda").is_file()
+          assert (root/"source.json").is_file()
+          print("Native 8 frames / original source. Complete 6480-frame film still open.")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: USD-FILM-01O-8-original-native-Cycles-frames-and-restart-evidence-UNAPPROVED
+          path: native-original-film01o-eight-frame-evidence/
+          if-no-files-found: warn
+          retention-days: 14
