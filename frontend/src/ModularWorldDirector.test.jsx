@@ -217,6 +217,13 @@ describe('02M-G/H native-only model and actor/camera shot routing',()=>{
       director_approval_granted:false,native_worker_authorized:false,
       actor_takes_modified:false}));
     native.film02mf_preview=vi.fn(async()=>preview(draft));
+    // Native UI exposes cancellation only when the installed host actually
+    // implements the operation. Exercise that capability, without cancelling
+    // this successful source-draft generation scenario.
+    native.film02mg_cancel_candidate=vi.fn(async()=>({
+      format:'nvp.usd_film02m_g.durable_model_attempt_status.v1',
+      attempt_id:id,project_id:project,state:'CANCELLED',
+      director_approval_granted:false,actor_takes_modified:false}));
     render(<ModularWorldDirector projectId={project} nativeBridge={native}/>);
     await screen.findByLabelText('Original world local model ID');
     fireEvent.change(screen.getByLabelText('Original world model direction'),{
