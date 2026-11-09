@@ -1,6 +1,9 @@
 name: NVP P0-F-01 Grouped Native, Installed NSIS, Real GGUF and Director Acceptance
 # Only one acceptance run after the task group. No automatic per-edit runs.
 on:
+  # Exactly one completed task-group event, not per-file CI.
+  push:
+    branches: [nvp/p0f01-async-model-draft-recovery-20261109]
   workflow_dispatch:
 permissions:
   contents: read
