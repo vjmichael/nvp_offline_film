@@ -977,6 +977,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             def create_confirmation_dialog(self,title,text):
                 self.last=(title,text)
                 return self.permitted
+        self._original_editorial_bank()
         window=ApprovedWindow()
         bridge=TrustedDesktopWO5Bridge(
             self.index,origin="http://127.0.0.1:43112")
@@ -992,26 +993,26 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
         try:
             created=bridge.film01r_create_bank({
                 "project_id":self.pid,
-                "camera_bank_id":"01RNativeTestBank",
+                "camera_bank_id":"R01NativeTestBank",
                 "world_take_id":"OneThirtySecondWorldTake",
                 "cameras":[camera]})
             self.assertEqual(created["revision"],1)
             report=bridge.film01r_preview({
                 "project_id":self.pid,
-                "camera_bank_id":"01RNativeTestBank",
+                "camera_bank_id":"R01NativeTestBank",
                 "revision":1,"camera_id":"Master","frame":3})
             self.assertEqual(report["original_film_tick"],3*T//24)
             window.permitted=False
             with self.assertRaises(PermissionError):
                 bridge.film01r_revise_bank({
                     "project_id":self.pid,
-                    "camera_bank_id":"01RNativeTestBank",
+                    "camera_bank_id":"R01NativeTestBank",
                     "expected_revision":1,
                     "changes":[{"op":"add","camera":{
                         **camera,"camera_id":"Reverse"}}]})
             window.permitted=True
             revised=bridge.film01r_revise_bank({
-                "project_id":self.pid,"camera_bank_id":"01RNativeTestBank",
+                "project_id":self.pid,"camera_bank_id":"R01NativeTestBank",
                 "expected_revision":1,
                 "changes":[{"op":"add","camera":{
                     **camera,"camera_id":"Reverse","position_m":[2,0,12]}}]})
@@ -1026,15 +1027,15 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                  "source_out_frame":720,"edit_in_frame":360,
                  "edit_out_frame":720}]
             saved=bridge.film01r_save_edit({
-                "project_id":self.pid,"edit_id":"01RNativeTestEdit",
+                "project_id":self.pid,"edit_id":"R01NativeTestEdit",
                 "expected_revision":0,
-                "camera_bank_id":"01RNativeTestBank",
+                "camera_bank_id":"R01NativeTestBank",
                 "camera_bank_revision":2,"cuts":source_cut})
             self.assertEqual(saved["revision"],1)
             self.assertFalse(saved["original_performance_modified"])
             self.assertEqual(
                 bridge.film01r_catalog(self.pid)["edits"][-1]["edit_id"],
-                "01RNativeTestEdit")
+                "R01NativeTestEdit")
             self.assertEqual(self.index.read_revision(
                 self.pid,"OneThirtySecondWorldTake",1)["document_sha256"],
                 original)
@@ -1042,9 +1043,9 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             window.get_current_url=lambda:"http://127.0.0.1:43112/other"
             with self.assertRaises(PermissionError):
                 bridge.film01r_save_edit({
-                    "project_id":self.pid,"edit_id":"01RForeign",
+                    "project_id":self.pid,"edit_id":"R01Foreign",
                     "expected_revision":0,
-                    "camera_bank_id":"01RNativeTestBank",
+                    "camera_bank_id":"R01NativeTestBank",
                     "camera_bank_revision":2,"cuts":source_cut})
         finally:
             bridge._close()
