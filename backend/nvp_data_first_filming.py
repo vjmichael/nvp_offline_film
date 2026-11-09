@@ -362,9 +362,18 @@ class NativeSceneSoundCapture:
                 "picture_frames_generated":False,
                 "master_approved":False,
             }
-        except BaseException:
+        except BaseException as capture_error:
             if publication_started:
-                self.publications.finish(project_id,take_id,completed=False)
+                try:
+                    self.publications.finish(project_id,take_id,completed=False)
+                except Exception as journal_error:
+                    # Preserve the original capture failure (including a
+                    # cancellation) even when the recovery journal is itself
+                    # unavailable. PREPARING remains visible on restart if
+                    # the INTERRUPTED transition could not be committed.
+                    capture_error.add_note(
+                        "Filming interruption journal update failed: "
+                        + repr(journal_error))
             raise
         finally:
             for spool in spooled:
