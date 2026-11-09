@@ -126,10 +126,33 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(row["source_revisions_present"],{"ReconcileSource":True})
         self.assertTrue(row["sound_timeline_present"])
         self.assertFalse(row["take_present"])
-        self.assertEqual(row["resolution"],"INTERRUPTED_NO_FROZEN_TAKE")
+        self.assertEqual(row["resolution"],"INTERRUPTED_TIMELINE_WITHOUT_TAKE")
         self.assertEqual(journal.reconcile(self.pid),before)
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"ReconcileTake",1)
+
+    def test_restart_reconciliation_distinguishes_partial_source_publication(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        # A previous successful Take supplies a real immutable source revision.
+        # The simulated next batch has published only its first source before
+        # process termination; inspection must never fabricate the missing one.
+        self.capture.capture(**self.payload())
+        journal=FilmingPublicationJournal(self.index)
+        journal.begin(self.pid,"CrashedTake","CrashedTimeline",
+                      ["NewRecordedSpeech","MissingSecondSource"])
+        before=journal.reconcile(self.pid)
+        row=next(r for r in before if r["take_id"]=="CrashedTake")
+        self.assertEqual(row["state"],"PREPARING")
+        self.assertEqual(row["source_revision_count"],1)
+        self.assertEqual(row["expected_source_revision_count"],2)
+        self.assertEqual(row["source_revisions_present"],
+                         {"NewRecordedSpeech":True,"MissingSecondSource":False})
+        self.assertFalse(row["sound_timeline_present"])
+        self.assertFalse(row["take_present"])
+        self.assertEqual(row["resolution"],"INTERRUPTED_PARTIAL_SOURCE_PUBLICATION")
+        self.assertEqual(journal.reconcile(self.pid),before)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"MissingSecondSource",1)
 
     def test_successful_publication_is_not_unresolved(self):
         self.capture.capture(**self.payload())
