@@ -18,7 +18,8 @@ import threading
 from backend.nvp_film_index import FilmIndex,_require_pid,_id
 from backend.nvp_studio import now
 from backend.nvp_cam_fx01_camera_rails import (
-    OriginalCameraRails,_hash)
+    OriginalCameraRails,normalize_rail,_hash)
+from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
 
 FORMAT="nvp.cam_fx03.durable_original_camera_rail_draft.v1"
 ATTEMPT="nvp.cam_fx04.durable_unapproved_model_camera_proposal.v1"
@@ -79,6 +80,7 @@ class DurableOriginalCameraDrafts:
               published_sha TEXT,
               proposed_by TEXT NOT NULL,
               model_evidence_json TEXT,
+              publishing_session_id TEXT,
               updated_at TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS idx_camfx_draft_project
               ON camera_drafts(project_id,updated_at);
@@ -144,8 +146,9 @@ class DurableOriginalCameraDrafts:
                   host_session_id<>?""",(now(),pid,self.session))
         db.execute("""UPDATE camera_drafts
             SET state='INTERRUPTED_REQUIRES_NEW_APPROVAL',updated_at=?
-            WHERE project_id=? AND state='PUBLISHING'""",
-            (now(),pid))
+            WHERE project_id=? AND state='PUBLISHING'
+              AND publishing_session_id<>?""",
+            (now(),pid,self.session))
 
     def _result(self,row,*,validate_source=True):
         spec=json.loads(row["spec_json"])
@@ -184,10 +187,19 @@ class DurableOriginalCameraDrafts:
             "native_approval_granted":False,
             "source_actor_takes_and_pcm_changed":False}
 
+    def _normalized(self,pid,spec):
+        if type(spec) is not dict:
+            raise ValueError("Only exact camera rail source data may save")
+        bank=DirectorCameraBank(
+            self.index,verify_director_action=lambda *_:False).verify(
+                pid,spec["camera_bank_id"],spec["camera_bank_revision"])
+        return normalize_rail(spec,bank["source_duration_ticks"])
+
     def create(self,pid,rail_id,base_revision,spec,*,proposed_by="director"):
         if proposed_by not in ("director","model"):
             raise ValueError("Only explicitly attributed camera draft origins")
         original=self._source_head(pid,rail_id,base_revision)
+        spec=self._normalized(pid,spec)
         preview=self.rails.preview(
             pid,rail_id,spec,expected_revision=base_revision)
         did=secrets.token_hex(12)
@@ -200,7 +212,8 @@ class DurableOriginalCameraDrafts:
                 did,pid,rail_id,base_revision,original,1,"DRAFT",
                 _json(spec),_json([]),_hash(spec),
                 preview["proposal_sha256"],preview["world_take_sha256"],
-                preview["rail_layer_sha256"],None,None,proposed_by,None,now()))
+                preview["rail_layer_sha256"],None,None,proposed_by,
+                None,None,now()))
             db.commit()
         return self.reopen(pid,did)
 
@@ -246,6 +259,7 @@ class DurableOriginalCameraDrafts:
                     raise ValueError("No durable camera edit available to undo")
                 spec=stack.pop()
             else:
+                spec=self._normalized(pid,spec)
                 stack=(stack+[old_spec])[-MAX_UNDO:]
             if not self._source_head(pid,row["rail_id"],row["base_revision"])==row["base_sha"]:
                 raise RuntimeError("Camera source changed before draft edit")
@@ -295,8 +309,9 @@ class DurableOriginalCameraDrafts:
                 self._source_head(pid,row["rail_id"],row["base_revision"])!=row["base_sha"]):
                 raise PermissionError("Fresh reviewed source draft/revision required")
             db.execute("""UPDATE camera_drafts
-                SET state='PUBLISHING',updated_at=? WHERE draft_id=?""",
-                (now(),did))
+                SET state='PUBLISHING',publishing_session_id=?,
+                    updated_at=? WHERE draft_id=?""",
+                (self.session,now(),did))
             db.commit()
         return self._result(row)
 
@@ -440,6 +455,7 @@ class DurableOriginalCameraDrafts:
             if self._source_head(pid,draft["rail_id"],
                                  draft["base_revision"])!=draft["base_sha"]:
                 raise RuntimeError("Original film camera source changed during AI")
+            proposed_spec=self._normalized(pid,proposed_spec)
             preview=self.rails.preview(
                 pid,draft["rail_id"],proposed_spec,
                 expected_revision=draft["base_revision"])
