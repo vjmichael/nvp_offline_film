@@ -439,6 +439,132 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                 self.pid,"OnePerformanceNineCamBank",1)["data"][
                     "source_performance_sha256"])
 
+    def _native_director_wall_pair(self):
+        from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
+        bank=DirectorCameraBank(self.index,
+            verify_director_action=lambda event,scope:
+                event=="AUTHORIZE_WALL_SHOT" and
+                scope["operation"]=="nvp.film.director_camera_bank_revision.v1")
+        wall="/World/Sets/Stage/Wall"
+        origin={
+            "setup":"Wall comparison","framing":"wide",
+            "position_m":[0,-1,7],
+            "rotation_euler_deg":[0,0,0],
+            "focal_length_mm":35.0,"focus_distance_m":7.0,
+            "clip_range_m":[0.01,10000],
+            "move_keys":[]}
+        two=[
+            {"camera_id":"WallNormal","camera_ray_exclusions":[],**origin},
+            {"camera_id":"WallGhost","camera_ray_exclusions":[wall],**origin}]
+        try:
+            existing=bank.verify(self.pid,"TwoWallComparisonCameras",1)
+        except KeyError:
+            bank.create(self.pid,"TwoWallComparisonCameras",
+                world_take_id="OneThirtySecondWorldTake",
+                cameras=two,director_event="AUTHORIZE_WALL_SHOT")
+        else:
+            if existing["cameras"]!=two:
+                raise RuntimeError("Cached original camera test fixture changed")
+        return bank,wall
+
+    def test_native_director_camera_snapshot_keeps_wall_and_performance(self):
+        from backend.nvp_usd_film01n_director_camera_snapshot import (
+            stage_original_director_camera_frame,STAGE)
+        from pxr import Usd,UsdGeom
+        bank,wall=self._native_director_wall_pair()
+        result=[]
+        for camera in ("WallNormal","WallGhost"):
+            root=self.root/("source_director_"+camera)
+            packet=stage_original_director_camera_frame(
+                self.index,self.pid,"TwoWallComparisonCameras",
+                revision=1,camera_id=camera,tick=15*T,folder=root)
+            scene=Usd.Stage.Open(str(root/STAGE))
+            self.assertTrue(scene.GetPrimAtPath(
+                "/World/NVPDirectorCameraRig/NVPDirector_"+camera).IsA(UsdGeom.Camera))
+            self.assertTrue(scene.GetPrimAtPath(wall).IsDefined())
+            self.assertEqual(packet["source"]["original_film_tick"],15*T)
+            self.assertTrue(packet["source"]["source_world_visibility_not_modified"])
+            self.assertEqual(len(packet["source"]["source_actor_positions"]),4)
+            result.append(packet["source"])
+        self.assertEqual(result[0]["source_performance_sha256"],
+                         result[1]["source_performance_sha256"])
+        self.assertEqual(result[0]["source_world_take_sha256"],
+                         result[1]["source_world_take_sha256"])
+        self.assertEqual(result[0]["source_usd_sha256"],
+                         result[1]["source_usd_sha256"])
+        self.assertEqual(result[1]["source_camera_ray_exclusions"],[wall])
+
+    def test_real_native_cycles_wall_vs_ghost_camera(self):
+        import os
+        import subprocess
+        import shutil
+        from PIL import Image
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+        from backend.nvp_usd_film01n_director_camera_host import (
+            ReviewedDirectorCameraCycles)
+        blender=os.environ.get("NVP_FILM01N_BLENDER_BIN")
+        if not blender:
+            self.skipTest("Official Blender 5.2 binary only in native integration CI")
+        binary=Path(blender).resolve(strict=True)
+        version=subprocess.run([str(binary),"-b","--version"],
+            capture_output=True,text=True,check=True,timeout=30
+        ).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        bank,wall=self._native_director_wall_pair()
+        worker=BlenderWorkerSupervisor(
+            self.root/"native_director_wall_jobs",
+            blender_executable=binary,blender_sha256=sha_file(binary),
+            blender_version=version)
+        host=ReviewedDirectorCameraCycles(
+            self.index,worker,
+            verify_director_action=lambda event,scope:
+                event=="AUTHORIZE_WALL_RENDER" and
+                scope["operation"]==
+                    "nvp.render.usd_film01n_director_camera_views.v1" and
+                scope["camera_ids"]==["WallNormal","WallGhost"] and
+                scope["per_camera_primary_ray_exclusions"]==[[],[wall]])
+        result=host.render_views(
+            self.pid,"TwoWallComparisonCameras",revision=1,tick=15*T,
+            requests=[
+                {"camera_id":"WallNormal","job_id":"realWallNormal"},
+                {"camera_id":"WallGhost","job_id":"realWallGhost"}],
+            director_event="AUTHORIZE_WALL_RENDER")
+        self.assertEqual(result["real_cycles_image_count"],2)
+        self.assertFalse(result["full_camera_rolls_rendered"])
+        self.assertNotEqual(result["camera_views"][0]["png_sha256"],
+                            result["camera_views"][1]["png_sha256"])
+        destination=Path(os.environ.get(
+            "NVP_FILM01N_ARTIFACT_DIR",
+            str(self.root/"actual_blender_camera_wall_artifacts"))).resolve()
+        destination.mkdir(parents=True,exist_ok=True)
+        for row in result["camera_views"]:
+            path=row["job_dir"]/"frame.png"
+            with Image.open(path) as img:
+                self.assertEqual(img.size,(320,180))
+                img.verify()
+            audit=json.loads((row["job_dir"]/"audit.json").read_text("utf8"))
+            self.assertTrue(audit["per_camera_ray_mask_restored"])
+            if row["camera_id"]=="WallGhost":
+                self.assertGreater(audit["actual_ray_masked_meshes"],0)
+            else:
+                self.assertEqual(audit["actual_ray_masked_meshes"],0)
+            for name in ("frame.png","scene.blend","audit.json","source.usda",
+                         "source.json"):
+                shutil.copyfile(row["job_dir"]/name,
+                    destination/(row["camera_id"]+"_"+name))
+        (destination/"wall_comparison.json").write_text(
+            json.dumps({
+                "original_film_tick":15*T,
+                "source_performance_sha256":result["original_performance_sha256"],
+                "source_world_take_sha256":result["original_world_take_sha256"],
+                "camera_ids":["WallNormal","WallGhost"],
+                "native_cycles_views":2,
+                "same_actor_performance":True,
+                "distinct_rendered_png_sha256":True,
+                "director_visual_approval":False,
+                "complete_nine_camera_film":False},
+                sort_keys=True,indent=2),"utf8")
+
     def test_camera_ray_masks_cannot_remove_original_actor(self):
         from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
         bank=DirectorCameraBank(self.index,
