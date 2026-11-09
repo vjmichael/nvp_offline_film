@@ -34,6 +34,36 @@ MAX_SCENE_QUERY = 128
 MAX_PREFETCH_M = 10000.0
 
 
+def native_gpu_device_sampler(device_id):
+    """Use NVP's EXISTING OS GPU measurement, never estimate VRAM from USD.
+
+    Linux AMD DRM/NVML provide device-global usage. Windows DXGI provides
+    an OS per-process video budget and usage, not total physical VRAM.
+    Neither is GPU memory attributable solely to the active USD Stage.
+    """
+    if type(device_id) is not str or not device_id or len(device_id) > 64:
+        raise ValueError("Explicit trusted host GPU device identity required")
+    def sample():
+        from backend.nvp_resource_guard import collect_resources
+        snap = collect_resources()
+        found = [g for g in snap.gpus if g.device_id == device_id]
+        if len(found) != 1:
+            raise RuntimeError("Selected GPU budget unavailable or ambiguous")
+        g = found[0]
+        if (type(g.used_mb) is not int or type(g.budget_mb) is not int
+            or not 0 <= g.used_mb <= g.budget_mb):
+            raise RuntimeError("Verified OS GPU memory values are invalid")
+        return {
+            "device_id":g.device_id,
+            "used_bytes":g.used_mb * 1024 * 1024,
+            "total_bytes":g.budget_mb * 1024 * 1024,
+            "source":g.source,
+            "scope":("device_global" if g.globally_measured
+                     else "os_process_video_budget"),
+        }
+    return sample
+
+
 def _position(vector, label):
     if (type(vector) is not list or len(vector) != 3 or
         any(type(x) not in (int, float) or not math.isfinite(x)
@@ -386,7 +416,10 @@ class FilmShotWorkingSet:
         if self.gpu_probe is not None:
             raw = self.gpu_probe()
             if (type(raw) is not dict or
-                set(raw) != {"device_id","used_bytes","total_bytes"} or
+                set(raw) not in (
+                    {"device_id","used_bytes","total_bytes"},
+                    {"device_id","used_bytes","total_bytes","source","scope"},
+                ) or
                 type(raw["device_id"]) is not str or not raw["device_id"] or
                 type(raw["used_bytes"]) is not int or
                 type(raw["total_bytes"]) is not int or
@@ -395,6 +428,8 @@ class FilmShotWorkingSet:
             result["gpu_device_used_bytes"] = raw["used_bytes"]
             result["gpu_device_total_bytes"] = raw["total_bytes"]
             result["gpu_device_id"] = raw["device_id"]
+            result["gpu_telemetry_source"] = raw.get("source","unlabeled_host_callback")
+            result["gpu_measurement_scope"] = raw.get("scope","host_callback")
             if (self.max_device_gpu_used_bytes is not None and
                 raw["used_bytes"] > self.max_device_gpu_used_bytes):
                 raise MemoryError("Actual GPU device use exceeds requested working-set budget")
