@@ -85,6 +85,47 @@ def _typed_params(candidate, catalog):
     return params
 
 
+def _host_world_json_schema(catalog):
+    """Source-limited grammar: constraints are STILL rechecked by NVP.
+
+    The JSON-schema hint helps small real GGUF models finish exact JSON,
+    but is not a source authorization or evidence of instruction following.
+    """
+    names=sorted({b["building_id"] for b in catalog["source_buildings"]
+                  if type(b) is dict and type(b.get("building_id")) is str
+                  and type(b.get("revision")) is int})
+    names=names[:24]
+    if not names:
+        raise ValueError("No original 3D source building may be proposed")
+    entry={
+        "type":"object","additionalProperties":False,
+        "properties":{
+            "building_id":{"type":"string","enum":names},
+            "revision":{"type":"integer","minimum":1}},
+        "required":["building_id","revision"],
+    }
+    params={
+        "type":"object","additionalProperties":False,
+        "properties":{
+            "seed":{"type":"integer","minimum":0,"maximum":2147483647},
+            "source_buildings":{"type":"array","minItems":1,
+                                "maxItems":8,"items":entry},
+            "grid_cols":{"type":"integer","minimum":1,"maximum":16},
+            "grid_rows":{"type":"integer","minimum":1,"maximum":16},
+            "lot_spacing_m":{"type":"number","minimum":4},
+            "world_origin_m":{"type":"array","minItems":3,
+                "maxItems":3,"items":{"type":"number"}},
+            "source_triangle_budget":{"type":"integer","minimum":100,
+                "maximum":2000000},
+            "source_instance_budget":{"type":"integer","minimum":1,
+                "maximum":256},
+        },
+        "required":sorted(PARAMS),
+    }
+    return {"type":"object","additionalProperties":False,
+            "properties":{"params":params},"required":["params"]}
+
+
 def generate_model_world_candidate(
         catalog, *, project_id, district_id, expected_revision,
         direction, model_id, model):
@@ -128,7 +169,14 @@ def generate_model_world_candidate(
     prompt=_canonical(facts)
     if len(prompt)>MAX_PROMPT:
         raise ValueError("Native catalog prompt exceeds bounded model context")
-    response=model.complete(SYSTEM,prompt.decode("ascii"))
+    constrained=getattr(model,"complete_world_candidate",None)
+    # The host-selected real GGUF writer can ask llama.cpp for strict JSON.
+    # The returned text is STILL untrusted and passes identical _typed_params
+    # and native OpenUSD geometry/source admission to all other providers.
+    response=(constrained(SYSTEM,prompt.decode("ascii"),
+                          _host_world_json_schema(catalog))
+              if callable(constrained)
+              else model.complete(SYSTEM,prompt.decode("ascii")))
     if (type(response) is not str or not 1<=len(response)<=MAX_REPLY):
         raise ValueError("No complete bounded model candidate")
     # Strict JSON only: no untrusted code fences, executable tool calls or
