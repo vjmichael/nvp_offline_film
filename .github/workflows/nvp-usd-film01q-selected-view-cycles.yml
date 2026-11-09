@@ -1,0 +1,122 @@
+name: NVP USD-FILM-01Q Selected Original Viewpoint Edits and Actual Blender Cuts
+
+on:
+  push:
+    branches: [nvp/usd-film01q-selective-view-render-20261108]
+  pull_request:
+    branches: [nvp/usd-film01s-adaptive-resource-batching-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-original-film01q-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  source-authored-selected-edl:
+    name: Native selected original USD/FilmIndex EDL and view cache / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install real source OpenUSD and test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+      - name: Compile reviewed exact source EDL/90 selected native chunk plan and original AV conform
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01q_selected_view_edit.py backend/nvp_usd_film01q_selected_view_host.py tools/nvp_usd_film01q_blender_selected_views.py tests/test_nvp_usd_film01i_ninecam_take.py tests/test_nvp_usd_film01q_selected_contract.py
+      - name: Original source/ActorID native USD, revised viewpoint source SHA, arbitrary camera-cut cache identity and rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python -m unittest discover -s tests -p "test_nvp_usd_film01q_selected_contract.py" -v
+
+  actual-selected-camera-cycles:
+    name: Real official Blender 5.2/Cycles eight frames with a source camera CUT at frame 4, restart recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM01Q_ARTIFACT_DIR: original-data-first-8-selected-camera-cycles
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install native source USD / protected Blender dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download actual official Blender 5.2.3 and verify published SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Execute TRUE source-selected camera cut inside eight-frame render chunk
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM01Q_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("original-data-first-8-selected-camera-cycles")
+          status=json.loads((root/"source_selected_native_status.json").read_text("utf8"))
+          assert status["genuine_rendered_frames"] == 8
+          assert status["actual_two_camera_cut_in_first_chunk"] is True
+          assert status["fresh_worker_host_restart_reverified"] is True
+          assert status["no_other_camera_roll_rendered"] is True
+          assert status["complete_final_30_second_film"] is False
+          audit=json.loads((root/"audit.json").read_text("utf8"))
+          assert audit["passed"] is True
+          assert audit["native_rendered_frames"] == 8
+          rows=audit["selected_view_frames"]
+          assert [x["selected_camera_id"] for x in rows] == (
+              ["Cam_A_wide"]*4 + ["Cam_B_medium"]*4)
+          assert len(list(root.glob("frame_*.png"))) == 8
+          for frame in range(8):
+              with Image.open(root/f"frame_{frame:04d}.png") as img:
+                  assert img.format=="PNG" and img.size==(320,180)
+                  img.verify()
+          for name in ("source.usda","source.json","plan.json","chunk.json"):
+              assert (root/name).is_file()
+          print("ACTUAL 8 selected film frames with a two-camera cut; 720-frame film remains OPEN.")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-USD-FILM01Q-8-real-selected-source-Cycles-frames-two-camera-cut-UNAPPROVED
+          path: original-data-first-8-selected-camera-cycles/
+          if-no-files-found: warn
+          retention-days: 14
