@@ -93,6 +93,25 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual([entry["take_id"] for entry in journal.unresolved(self.pid)],
                          ["ReservedTake"])
 
+    def test_journal_rejects_preexisting_nonjournal_filmindex_identity(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        journal = FilmingPublicationJournal(self.index)
+        # Legacy and independently published immutable objects do not have
+        # filming-journal reservations, but still own their FilmIndex IDs.
+        self.capture.sources.publish(
+            self.pid, "LegacyOriginalPCM", [self.original], expected_revision=0)
+        for take_id, timeline_id, sources in (
+            ("LegacyOriginalPCM", "FreshTimelineA", ["FreshSourceA"]),
+            ("FreshTakeB", "LegacyOriginalPCM", ["FreshSourceB"]),
+            ("FreshTakeC", "FreshTimelineC", ["LegacyOriginalPCM"]),
+        ):
+            with self.subTest(take_id=take_id, timeline_id=timeline_id):
+                with self.assertRaisesRegex(ValueError, "already exists in FilmIndex"):
+                    journal.begin(self.pid, take_id, timeline_id, sources)
+        self.assertEqual(journal.unresolved(self.pid), [])
+        self.assertIsNotNone(self.index.read_revision(
+            self.pid, "LegacyOriginalPCM", 1))
+
     def test_denied_take_is_not_falsely_frozen(self):
         capture=NativeSceneSoundCapture(
             self.index,approve_take=lambda event,scope:False)
