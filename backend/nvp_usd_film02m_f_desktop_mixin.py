@@ -65,7 +65,7 @@ class OriginalDistrictDesktopMixin:
             self.index,workspace,confirm=self._film02mf_confirm)
 
     def film02mg_generate_candidate(self,request):
-        """Real host-selected model suggestion; still NO draft or approval.
+        """Real host-selected model suggestion and durable unapproved draft.
 
         Reuses the existing WO6 trusted provider factory. Browser JSON cannot
         specify a model endpoint, a worker command or an OS authorization.
@@ -100,7 +100,18 @@ class OriginalDistrictDesktopMixin:
                      for d in c["approved_districts"]])
         if identity(catalog)!=identity(newest):
             raise RuntimeError("Original source catalog changed during model generation")
-        return result
+        draft=service.create(
+            pid,request["district_id"],
+            expected_revision=request["expected_revision"],
+            params=result["params"],proposed_by="ai",
+            model_evidence=result)
+        return {
+            "format":"nvp.usd_film02m_g.model_saved_original_draft.v1",
+            "proposal":draft,
+            "model_evidence":result,
+            "director_approval_granted":False,
+            "actor_takes_modified":False,
+        }
 
     def film02mf_catalog(self,project_id):
         return self._film02mf_service(project_id).catalog(project_id)
