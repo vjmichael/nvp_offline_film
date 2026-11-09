@@ -39,6 +39,48 @@ MAX_REQUIRED_SETS = 8
 MAX_ORIGINAL_AUDIO_EVENTS = 256
 MAX_DIALOGUE_ROUTES = 32
 AUDIO_TICKS_PER_SAMPLE = TICKS_PER_SECOND // SAMPLE_RATE
+MAX_AUDIO_CHUNKS_PER_SOURCE = 512
+MAX_AUDIO_SOURCE_BYTES = 256 * 1024 * 1024
+
+
+def _verify_original_pcm_chunks(index,pid,source_record):
+    """Read and rehash EVERY original 48k PCM chunk, not just first sample.
+
+    Original PCM may be large. Process one previously registered <=1MiB
+    FilmIndex blob at a time without synthesizing, stretching or mixing.
+    """
+    document=source_record["data"]
+    parts=document.get("chunks")
+    if (type(parts) is not list or
+        not 1<=len(parts)<=MAX_AUDIO_CHUNKS_PER_SOURCE):
+        raise RuntimeError("Original audio source chunk inventory is not bounded")
+    offset=0
+    total=0
+    for part in parts:
+        if type(part) is not dict or set(part)!={
+            "first_sample","sample_count","blob_sha256","byte_count"
+        }:
+            raise RuntimeError("Original audio chunk metadata changed")
+        _sha(part["blob_sha256"])
+        if (type(part["first_sample"]) is not int or
+            part["first_sample"]!=offset or
+            type(part["sample_count"]) is not int or
+            part["sample_count"]<1 or
+            type(part["byte_count"]) is not int or
+            part["byte_count"]!=part["sample_count"]*2 or
+            part["byte_count"] > 1024*1024):
+            raise RuntimeError("Original audio PCM is noncontiguous or altered")
+        total+=part["byte_count"]
+        if total>MAX_AUDIO_SOURCE_BYTES:
+            raise ValueError("Original audio source exceeds bounded Take audit")
+        block=index.get_blob(pid,part["blob_sha256"])
+        if (len(block)!=part["byte_count"] or
+            sha256(block).hexdigest()!=part["blob_sha256"]):
+            raise RuntimeError("Original PCM chunk checksum is invalid")
+        offset+=part["sample_count"]
+    if offset!=document["sample_count"]:
+        raise RuntimeError("Original PCM sample count changed")
+    return {"samples":offset,"bytes_verified":total,"chunks_verified":len(parts)}
 
 
 def _canonical(x):
@@ -212,8 +254,7 @@ def _actor_and_take_sources(index, pid, shot, scene_takes, *,
                 raise PermissionError("Original recorded source PCM SHA differs from timeline")
             if sound["data"]["sample_count"]<1:
                 raise RuntimeError("Original sound has zero PCM samples")
-            originals.read(
-                pid,event["source_id"],event["source_revision"],0,1)
+            audit=_verify_original_pcm_chunks(index,pid,sound)
             audio_sources.append({
                 "set":set_name, "source_take_id":inp["take_id"],
                 "event_id":event["event_id"],
@@ -225,6 +266,8 @@ def _actor_and_take_sources(index, pid, shot, scene_takes, *,
                 "original_source_document_sha256":sound["document_sha256"],
                 "sample_rate_hz":SAMPLE_RATE,
                 "sample_count":sound["data"]["sample_count"],
+                "original_pcm_chunks_verified":audit["chunks_verified"],
+                "original_pcm_bytes_verified":audit["bytes_verified"],
                 "ticks_per_original_pcm_sample":AUDIO_TICKS_PER_SAMPLE,
                 "original_PCM_not_remixed":True,
             })
@@ -558,8 +601,7 @@ class OpenUSDWorldTakeCapture:
                     pid,voice["source_id"],voice["source_revision"])
                 if sound["document_sha256"]!=voice["original_pcm_document_sha256"]:
                     raise RuntimeError("Selected original recorded dialogue PCM lost")
-                originals.read(
-                    pid,voice["source_id"],voice["source_revision"],0,1)
+                _verify_original_pcm_chunks(self.index,pid,sound)
                 # Recast should NOT destroy playback of an old original
                 # Take, but historical VoiceID decision must remain stored.
                 with self.index.studio._connection() as db:
