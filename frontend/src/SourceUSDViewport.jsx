@@ -37,6 +37,31 @@ function meshGeometry(object){
   return geo;
 }
 
+function softwareProjectedMarkers(snapshot){
+  // True camera/world USD transforms; simple 2D diagnostic if WebGL fails.
+  // NOT a raster of shaded original geometry.
+  const matrix=new THREE.Matrix4().fromArray(
+    snapshot.camera_world_matrix_rows.flat());
+  const inverse=matrix.clone().invert();
+  const vertical=Math.tan(THREE.MathUtils.degToRad(
+    snapshot.camera_vertical_fov_degrees/2));
+  const horizontal=vertical*(16/9);
+  return snapshot.objects.filter(o=>
+    Array.isArray(o.world_bbox_min_m)&&
+    Array.isArray(o.world_bbox_max_m)).map(o=>{
+    const center=o.world_bbox_min_m.map((v,i)=>
+      (v+o.world_bbox_max_m[i])/2);
+    const view=new THREE.Vector3(...center).applyMatrix4(inverse);
+    if(view.z>=-.01)return null;
+    const px=(.5+view.x/(-view.z*horizontal)*.5)*640;
+    const py=(.5-view.y/(-view.z*vertical)*.5)*360;
+    if(!Number.isFinite(px)||!Number.isFinite(py)||
+       px<0||px>640||py<0||py>360)return null;
+    return {id:o.prim_path,x:px,y:py,actor:Boolean(o.actor_id),
+      label:o.prim_path.split('/').at(-1)};
+  }).filter(Boolean);
+}
+
 export default function SourceUSDViewport({snapshot,orbit=false}){
   const mount=useRef(null);
   const [renderError,setRenderError]=useState('');
@@ -157,6 +182,19 @@ export default function SourceUSDViewport({snapshot,orbit=false}){
       {orbit?' Orbit navigation is temporary; the saved source camera remains unchanged.'
         :' The view follows the original authored camera.'}
     </p>
-    {renderError&&<p role="status">{renderError}</p>}
+    {renderError&&<div role="region" aria-label="Software projected source fallback">
+      <p role="status">{renderError}. Falling back to source-derived camera-space markers.</p>
+      <svg viewBox="0 0 640 360" aria-label="Software projected original USD positions"
+        style={{width:'100%',background:'#192633',borderRadius:8}}>
+        {softwareProjectedMarkers(snapshot).map(m=><g key={m.id}>
+          <circle cx={m.x} cy={m.y} r={m.actor?7:5}
+            fill={m.actor?'#8ac7ec':'#ddc3a3'}/>
+          <text x={m.x+8} y={m.y-5} fill="#e4e9ed" fontSize="12">
+            {m.label}</text>
+        </g>)}
+      </svg>
+      <p className="fineprint">CPU-only geometry projection; no occlusion,
+        shading, surface materials or reflective camera effects.</p>
+    </div>}
   </div>;
 }
