@@ -7,6 +7,8 @@ source mutation and no alternate PyWebView/Blender instance is created.
 from __future__ import annotations
 
 import re
+import secrets
+from hashlib import sha256
 from pathlib import Path
 
 from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
@@ -61,8 +63,11 @@ class OriginalDistrictDesktopMixin:
         workspace=self._wo5_state/"original-film02m-director-proposals"
         if workspace.is_symlink():
             raise PermissionError("Installed NVP original proposal store is not symlinkable")
+        if not hasattr(self,"_film02mg_host_session"):
+            self._film02mg_host_session=secrets.token_hex(16)
         return OriginalDistrictDrafts(
-            self.index,workspace,confirm=self._film02mf_confirm)
+            self.index,workspace,confirm=self._film02mf_confirm,
+            model_session_id=self._film02mg_host_session)
 
     def film02mg_generate_candidate(self,request):
         """Real host-selected model suggestion and durable unapproved draft.
@@ -82,32 +87,52 @@ class OriginalDistrictDesktopMixin:
             generate_model_world_candidate)
         service=self._film02mf_service(pid)
         catalog=service.catalog(pid)
-        # The factory has already selected an approved local model through
-        # the existing NVP model service, not a client-selected endpoint.
-        model=factory(request["model_id"])
-        result=generate_model_world_candidate(
-            catalog,project_id=pid,district_id=request["district_id"],
-            expected_revision=request["expected_revision"],
-            direction=request["direction"],model_id=request["model_id"],
-            model=model)
-        # Recheck the host's project-bound current source catalog after
-        # generation; no stale candidate may be called current evidence.
-        newest=service.catalog(pid)
-        def identity(c):
-            return ([(b["building_id"],b["revision"],b["document_sha256"])
-                     for b in c["source_buildings"]],
-                    [(d["district_id"],d["revision"],d["document_sha256"])
-                     for d in c["approved_districts"]])
-        if identity(catalog)!=identity(newest):
-            raise RuntimeError("Original source catalog changed during model generation")
-        draft=service.create(
-            pid,request["district_id"],
-            expected_revision=request["expected_revision"],
-            params=result["params"],proposed_by="ai",
-            model_evidence=result)
+        from backend.nvp_usd_film02m_f_authoring import _json
+        catalog_key=_json([
+            [(b["building_id"],b["revision"],b["document_sha256"])
+             for b in catalog["source_buildings"]],
+            [(d["district_id"],d["revision"],d["document_sha256"])
+             for d in catalog["approved_districts"]]]).encode("ascii")
+        direction=request["direction"]
+        if type(direction) is not str or not 1<=len(direction.strip())<=1200:
+            raise ValueError("Bounded director intent required")
+        attempt=service.start_model_attempt(
+            pid,request["district_id"],request["expected_revision"],
+            request["model_id"],sha256(direction.strip().encode("utf8")).hexdigest(),
+            sha256(catalog_key).hexdigest())
+        try:
+            # Host-selected WO6 provider. Completion does not grant authority.
+            model=factory(request["model_id"])
+            result=generate_model_world_candidate(
+                catalog,project_id=pid,district_id=request["district_id"],
+                expected_revision=request["expected_revision"],
+                direction=direction,model_id=request["model_id"],model=model)
+            # Same bridge process/session must still own the generation.
+            if getattr(self,"_wo6_closed",False):
+                raise PermissionError("Native model session closed during generation")
+            newest=service.catalog(pid)
+            new_key=_json([
+                [(b["building_id"],b["revision"],b["document_sha256"])
+                 for b in newest["source_buildings"]],
+                [(d["district_id"],d["revision"],d["document_sha256"])
+                 for d in newest["approved_districts"]]]).encode("ascii")
+            if sha256(catalog_key).digest()!=sha256(new_key).digest():
+                raise RuntimeError("Original source catalog changed during model generation")
+            draft=service.create(
+                pid,request["district_id"],
+                expected_revision=request["expected_revision"],
+                params=result["params"],proposed_by="ai",
+                model_evidence=result,model_attempt_id=attempt)
+        except Exception as exc:
+            service.fail_model_attempt(
+                pid,attempt,"session_closed" if getattr(self,"_wo6_closed",False)
+                else "source_changed" if isinstance(exc,RuntimeError)
+                else "model_response_denied")
+            raise
         return {
             "format":"nvp.usd_film02m_g.model_saved_original_draft.v1",
             "proposal":draft,
+            "attempt_id":attempt,
             "model_evidence":result,
             "director_approval_granted":False,
             "actor_takes_modified":False,
