@@ -336,6 +336,252 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
       'Exact source-time camera key was independently read from the stronger native USD layer.':
       'Off-grid Film Time camera pose was evaluated by the deterministic host rail, not presented as a native authored USD key.');
   });
+  const checkDraft=record=>{
+    if(record?.format!=='nvp.cam_fx03.durable_original_camera_rail_draft.v1'||
+       record.project_id!==projectId||
+       !/^[0-9a-f]{24}$/.test(record.draft_id)||
+       !Number.isInteger(record.version)||record.version<1||
+       !SHA.test(record.proposal_sha256)||
+       !SHA.test(record.stronger_usd_sha256)||
+       record.source_actor_takes_and_pcm_changed!==false)
+      throw Error('Durable camera draft has no independently verified source receipt');
+    return record;
+  };
+  const applySpec=body=>{
+    setBankSelection(body.camera_bank_id+'@'+body.camera_bank_revision);
+    setCameraId(body.camera_id);
+    setStart(body.film_start_tick);setEnd(body.film_end_tick);
+    setTechnique(body.technique);setOrigin(body.rail_origin_m);
+    setFilmback(body.filmback_mm);setNodes(body.nodes);
+    setSampleTick(body.film_start_tick);setUndoHandles([]);
+    setPreview(null);setReopened(null);setSceneGuidance(null);
+    editEpoch.current+=1;
+  };
+  const refreshDrafts=useCallback(async()=>{
+    if(!advanced)return;
+    const found=await nativeBridge.camfx03_draft_catalog(projectId);
+    if(found?.format!=='nvp.cam_fx03.original_camera_draft_catalog.v1'||
+       found.project_id!==projectId||!Array.isArray(found.drafts)||
+       !Array.isArray(found.model_attempts)||
+       found.native_worker_authorized!==false)
+      throw Error('Actual SQLite original camera drafts could not be browsed');
+    setDrafts(found.drafts);
+    if(typeof nativeBridge.wo6_local_models==='function'){
+      const models=await nativeBridge.wo6_local_models(projectId);
+      if(!Array.isArray(models?.models))
+        throw Error('Only trusted host-selected offline model discovery');
+      setModelList(models.models);
+      setModelId(old=>models.models.some(m=>m.id===old)?
+        old:models.models[0]?.id||'');
+    }
+  },[advanced,nativeBridge,projectId]);
+  useEffect(()=>{
+    if(!advanced)return;
+    let mounted=true;
+    setDurableDraft(null);setDraftDirty(false);setSceneGuidance(null);
+    setModelAttempt('');
+    refreshDrafts().catch(e=>{if(mounted)setError(e.message||String(e));});
+    return()=>{mounted=false;};
+  },[advanced,refreshDrafts]);
+  const requestGuidance=()=>run(async()=>{
+    if(nodes.length<2||!bank||typeof nativeBridge.camfx03_scene_guidance!=='function')
+      throw Error('First select a source-linked camera rail trajectory');
+    const report=await nativeBridge.camfx03_scene_guidance({
+      project_id:projectId,rail_spec:spec,
+      actor_id:selectedActor||null,
+      district_binding_id:districtBinding.trim()||null});
+    if(report?.format!=='nvp.cam_fx03.source_grounded_actor_framing_and_occlusion.v1'||
+       report.project_id!==projectId||
+       report.camera_bank_sha256!==bank.document_sha256||
+       report.world_take_sha256!==bank.world_take_sha256||
+       report.source_actor_takes_and_pcm_unchanged!==true||
+       report.native_scene_reviewed!==true||
+       !SHA.test(report.guidance_sha256)||
+       !Array.isArray(report.source_guided_frames)||
+       report.source_guided_frames.length!==3)
+      throw Error('Native original actor/district framing receipt was not source-bound');
+    setSceneGuidance(report);
+    setNotice('Three exact-time native ActorID camera framings inspected. Center-ray occlusion is advisory, not a proof of a clear full image.');
+  });
+  const startDurable=()=>run(async()=>{
+    if(!advanced||!bank||nodes.length<2||!ID.test(railId))
+      throw Error('Select a source-valid original camera trajectory before journal creation');
+    const saved=checkDraft(await nativeBridge.camfx03_draft_create({
+      project_id:projectId,rail_id:railId,
+      expected_revision:expectedRevision,rail_spec:spec}));
+    setDurableDraft(saved);setDraftDirty(false);
+    setJournalNotice('Camera path durably committed as an UNAPPROVED SQLite draft. All subsequent edits are versioned.');
+    await refreshDrafts();
+  });
+  const reopenDraft=did=>run(async()=>{
+    if(!/^[0-9a-f]{24}$/.test(did))
+      throw Error('Select an exact saved project-local original camera draft');
+    const saved=checkDraft(await nativeBridge.camfx03_draft_reopen({
+      project_id:projectId,draft_id:did}));
+    applySpec(saved.rail_spec);
+    setRailId(saved.rail_id);setExpectedRevision(saved.base_revision);
+    setDurableDraft(saved);setDraftDirty(false);
+    setJournalNotice('SQLite draft reopened after installed-app restart. Historical OS approval has not been reused.');
+  });
+  const saveDraft=()=>run(async()=>{
+    if(!durableDraft||durableDraft.state!=='DRAFT')
+      throw Error('Create or reopen a durable editable rail first');
+    const saved=checkDraft(await nativeBridge.camfx03_draft_save({
+      project_id:projectId,draft_id:durableDraft.draft_id,
+      version:durableDraft.version,rail_spec:spec}));
+    setDurableDraft(saved);setDraftDirty(false);
+    setJournalNotice('Exact 3D handle edits persisted under SQLite full-synchronous journal version '+saved.version+'.');
+  });
+  const undoDurable=()=>run(async()=>{
+    if(!durableDraft||durableDraft.state!=='DRAFT')
+      throw Error('Only a current source-pinned draft may undo a saved edit');
+    const saved=checkDraft(await nativeBridge.camfx03_draft_undo({
+      project_id:projectId,draft_id:durableDraft.draft_id,
+      version:durableDraft.version}));
+    applySpec(saved.rail_spec);
+    setDurableDraft(saved);setDraftDirty(false);
+    setJournalNotice('Previous original-camera director edit restored from durable SQLite history.');
+  });
+  const discardDraft=()=>run(async()=>{
+    if(!durableDraft||durableDraft.state!=='DRAFT')
+      throw Error('Only an unapproved draft may be discarded');
+    const result=checkDraft(await nativeBridge.camfx03_draft_discard({
+      project_id:projectId,draft_id:durableDraft.draft_id,
+      version:durableDraft.version}));
+    setDurableDraft(result);setDraftDirty(false);
+    setJournalNotice('Unapproved camera draft discarded. Original Takes and published rails remain intact.');
+    await refreshDrafts();
+  });
+  const recoverPublish=()=>run(async()=>{
+    if(!durableDraft)throw Error('Select interrupted exact camera draft');
+    const result=checkDraft(await nativeBridge.camfx03_draft_recover_publish({
+      project_id:projectId,draft_id:durableDraft.draft_id}));
+    setDurableDraft(result);
+    setJournalNotice(result.state==='PUBLISHED'?
+      'Existing native FilmIndex rail commit recovered from source SHA; no worker or permission was retried.':
+      'No proven source revision was published. A NEW draft and NEW OS approval are required.');
+  });
+  const publishDurable=()=>run(async()=>{
+    if(!valid||draftDirty||!durableDraft||durableDraft.state!=='DRAFT'||
+       durableDraft.rail_id!==railId||
+       durableDraft.base_revision!==expectedRevision||
+       durableDraft.proposal_sha256!==preview.proposal_sha256)
+      throw Error('Only exact freshly previewed DURABLE camera draft can seek OS approval');
+    const receipt=await nativeBridge.camfx03_draft_publish({
+      project_id:projectId,draft_id:durableDraft.draft_id,
+      version:durableDraft.version,
+      preview_sha256:preview.proposal_sha256});
+    if(receipt?.format!=='nvp.cam_fx03.durable_published_director_rail.v1'||
+       receipt?.draft?.state!=='PUBLISHED'||
+       receipt?.rail_receipt?.revision!==expectedRevision+1||
+       receipt.rail_receipt.source_usd_layer_sha256!==
+          preview.rail_layer_sha256||
+       receipt.actor_pcm_modified!==false)
+      throw Error('Native approval did not publish the exact durably reviewed USD source');
+    const opened=await nativeBridge.camfx02_reopen({
+      project_id:projectId,rail_id:railId,
+      revision:receipt.rail_receipt.revision});
+    if(opened?.format!==REOPEN||
+       opened.layer_sha256!==preview.rail_layer_sha256||
+       opened.native_stronger_layer_verified!==true)
+      throw Error('Published director camera layer did not independently reopen');
+    setDurableDraft(checkDraft(receipt.draft));setDraftDirty(false);
+    setPublished(receipt.rail_receipt);setReopened(opened);
+    setExpectedRevision(receipt.rail_receipt.revision);
+    setPreview(null);await refreshDrafts();
+    setJournalNotice('One fresh OS approval published the reviewed original source. ActorID performances and PCM unchanged.');
+  });
+  useEffect(()=>{
+    if(!advanced||!durableDraft||durableDraft.state!=='DRAFT'||
+       !draftDirty||modelAttempt||autoSaving.current)return;
+    const expectedEpoch=editEpoch.current;
+    const task=setTimeout(async()=>{
+      if(autoSaving.current)return;
+      autoSaving.current=true;
+      try{
+        const receipt=checkDraft(await nativeBridge.camfx03_draft_save({
+          project_id:projectId,draft_id:durableDraft.draft_id,
+          version:durableDraft.version,rail_spec:spec}));
+        setDurableDraft(receipt);
+        const newer=editEpoch.current!==expectedEpoch;
+        setDraftDirty(newer);
+        setJournalNotice(newer?
+          'Earlier edit version persisted; saving latest rail handles next.':
+          'Camera rail handles and optical changes recovered in SQLite journal version '+receipt.version+'.');
+      }catch(e){
+        setError('Native camera autosave rejected; original saved draft remains intact: '+
+          (e?.message||String(e)));
+      }finally{autoSaving.current=false;}
+    },650);
+    return()=>clearTimeout(task);
+  },[advanced,durableDraft?.draft_id,durableDraft?.version,
+     draftDirty,modelAttempt,spec,nativeBridge,projectId]);
+  useEffect(()=>{
+    if(!advanced||!modelAttempt)return;
+    let stopped=false,timeout=null;
+    const poll=async()=>{
+      try{
+        const status=await nativeBridge.camfx04_candidate_status({
+          project_id:projectId,attempt_id:modelAttempt});
+        if(stopped)return;
+        if(status?.format!=='nvp.cam_fx04.durable_unapproved_model_camera_proposal.v1'||
+           status.project_id!==projectId||
+           status.attempt_id!==modelAttempt||
+           status.director_approval_granted!==false||
+           status.native_worker_authorized!==false)
+          throw Error('Local model attempt is not original-source admitted');
+        setModelState(status.state);
+        if(status.state==='GENERATING'){
+          timeout=setTimeout(poll,1300);return;
+        }
+        if(status.state==='DRAFT_UPDATED_UNAPPROVED'){
+          const proposed=checkDraft(status.draft);
+          applySpec(proposed.rail_spec);
+          setDurableDraft(proposed);setDraftDirty(false);
+          setModelNotice('Native source-verified local model suggestion saved as editable UNAPPROVED rail version '+proposed.version+'. Director changes and OS approval remain separate.');
+        }else{
+          setModelNotice('Local model attempt '+status.state+
+            '. No old model output may resume or publish a rail.');
+        }
+        setModelAttempt('');
+      }catch(e){
+        if(!stopped){setModelAttempt('');
+          setError(e?.message||String(e));}
+      }
+    };
+    timeout=setTimeout(poll,300);
+    return()=>{stopped=true;clearTimeout(timeout);};
+  },[advanced,modelAttempt,nativeBridge,projectId]);
+  const startModel=()=>run(async()=>{
+    if(!durableDraft||durableDraft.state!=='DRAFT'||draftDirty||
+       !sceneGuidance||!modelId.trim()||!modelDirection.trim())
+      throw Error('Save a current source-framed draft and select a local model');
+    const status=await nativeBridge.camfx04_start_candidate({
+      project_id:projectId,draft_id:durableDraft.draft_id,
+      version:durableDraft.version,model_id:modelId,
+      direction:modelDirection,actor_id:selectedActor||null,
+      district_binding_id:districtBinding.trim()||null});
+    if(status?.format!=='nvp.cam_fx04.durable_unapproved_model_camera_proposal.v1'||
+       status.project_id!==projectId||
+       status.draft_id!==durableDraft.draft_id||
+       status.state!=='GENERATING'||
+       status.director_approval_granted!==false||
+       !/^[0-9a-f]{24}$/.test(status.attempt_id))
+      throw Error('Native local model did not return a durable camera advice attempt');
+    setModelAttempt(status.attempt_id);setModelState('GENERATING');
+    setModelNotice('Actual selected loopback model is generating untrusted camera data. Director may cancel; no original source can be published.');
+  });
+  const cancelModel=()=>run(async()=>{
+    if(!modelAttempt)return;
+    const result=await nativeBridge.camfx04_cancel_candidate({
+      project_id:projectId,attempt_id:modelAttempt});
+    if(result?.state!=='CANCELLED'&&
+       result?.state!=='INTERRUPTED_REQUIRES_NEW_GENERATION')
+      throw Error('Camera model attempt cancellation was not durable');
+    setModelState(result.state);setModelAttempt('');
+    setModelNotice('Camera model cancelled. Late GGUF responses cannot save or approve a new camera layer.');
+  });
+
   if(!supported)return null;
   return <section aria-label="Director digital camera rails and shot techniques"
     style={{borderTop:'1px solid #55616e',marginTop:20,paddingTop:18}}>
