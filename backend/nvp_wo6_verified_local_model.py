@@ -60,12 +60,27 @@ class ProvenLocalModelWriter:
         self.completion_receipt=None
 
     def complete(self,system,user):
+        return self._complete_bounded(system,user)
+
+    def complete_world_candidate(self,system,user,schema):
+        """Opt-in reviewed JSON-schema constraint for native original worlds.
+
+        This restricts model *output format*, not world approval, source
+        identity, runtime permission or downstream USD geometry validation.
+        """
+        if (type(schema) is not dict or len(json.dumps(
+                schema,sort_keys=True,separators=(",",":"),
+                allow_nan=False))>15000):
+            raise ValueError("Only bounded host-owned original-world schema")
+        return self._complete_bounded(system,user,schema)
+
+    def _complete_bounded(self,system,user,schema=None):
         if (type(system) is not str or type(user) is not str or
                 not 1<=len(system)<=4000 or
                 not 1<=len(user.encode("utf-8"))<=MAX_PROMPT_BYTES):
             raise ValueError("Only bounded system and verified source prompt accepted")
         self.completion_receipt=None
-        request_bytes=json.dumps({
+        body_request={
             "model":self.model_name,
             "messages":[
                 {"role":"system","content":system},
@@ -74,7 +89,18 @@ class ProvenLocalModelWriter:
             "temperature":0.2,
             "max_tokens":MAX_MODEL_TOKENS,
             "stream":False
-        },ensure_ascii=True,allow_nan=False).encode("ascii")
+        }
+        if schema is not None:
+            body_request["response_format"]={
+                "type":"json_schema",
+                "json_schema":{
+                    "name":"nvp_original_world_candidate",
+                    "strict":True,
+                    "schema":schema,
+                },
+            }
+        request_bytes=json.dumps(
+            body_request,ensure_ascii=True,allow_nan=False).encode("ascii")
         request=Request(self.endpoint,request_bytes,{
             "Content-Type":"application/json",
             "Accept":"application/json"},method="POST")
