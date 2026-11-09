@@ -268,6 +268,74 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                     "focal_length_mm":0,
                     "focus_distance_m":9}])
 
+    def test_real_nine_camera_cycles_three_film_times(self):
+        import os
+        import shutil
+        import subprocess
+        from PIL import Image
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+        from backend.nvp_usd_film01l_blender_smoke_host import (
+            ReviewedNineCameraCyclesSmoke)
+        executable=os.environ.get("NVP_FILM01L_BLENDER_BIN")
+        if not executable:
+            self.skipTest("Actual Blender 5.2 required for nine native camera smoke")
+        binary=Path(executable).resolve(strict=True)
+        version=subprocess.run(
+            [str(binary),"-b","--version"],capture_output=True,
+            text=True,check=True,timeout=30).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        workers=self.root/"native_nine_camera_supervised"
+        supervisor=BlenderWorkerSupervisor(workers,
+            blender_executable=binary,blender_sha256=sha_file(binary),
+            blender_version=version)
+        host=ReviewedNineCameraCyclesSmoke(
+            self.index,supervisor,
+            verify_director_action=lambda event,scope:
+                event=="APPROVE_NINE_REAL_CAMERA_SMOKE" and
+                scope["operation"]==
+                    "nvp.render.usd_film01l_ninecam_native_smoke.v1" and
+                len(scope["native_camera_shas"])==9)
+        result=host.render_smoke(
+            self.pid,"OnePerformanceNineCamBank",
+            job_prefix="realNineCam",
+            director_event="APPROVE_NINE_REAL_CAMERA_SMOKE")
+        self.assertEqual(result["rendered_original_cycles_frames"],27)
+        self.assertEqual(result["independently_supervised_job_count"],3)
+        self.assertFalse(result["all_6480_source_camera_frames_produced"])
+        artifact=Path(os.environ.get(
+            "NVP_FILM01L_ARTIFACT_DIR",
+            str(self.root/"native_nine_camera_images"))).resolve()
+        artifact.mkdir(parents=True,exist_ok=True)
+        hashes=set()
+        for item in result["jobs"]:
+            folder=item["job_dir"]
+            audit=json.loads((folder/"audit.json").read_text("utf8"))
+            self.assertEqual(audit["actual_native_cycles_image_count"],9)
+            for row in audit["camera_views"]:
+                file=folder/row["rendered_png_file"]
+                self.assertEqual(row["rendered_png_sha256"],sha_file(file))
+                with Image.open(file) as img:
+                    self.assertEqual(img.size,(320,180))
+                    img.verify()
+                hashes.add(sha_file(file))
+                shutil.copyfile(file,artifact/(
+                    f"{item['source_frame']:04d}_"+
+                    row["rendered_png_file"]))
+            for filename in ("scene.blend","audit.json","source.json",
+                             "source.usda"):
+                shutil.copyfile(folder/filename,artifact/(
+                    f"{item['source_frame']:04d}_"+filename))
+        self.assertGreaterEqual(len(hashes),9)
+        (artifact/"27_native_camera_smoke_summary.json").write_text(
+            json.dumps({"source_rig_sha256":result["original_rig_sha256"],
+                "same_original_world_take_sha256":
+                    result["original_world_take_sha256"],
+                "native_supervised_frames":27,
+                "independent_native_worker_jobs":3,
+                "distinct_rendered_png_shas":len(hashes),
+                "complete_nine_roll_movie_produced":False,
+                "director_approved":False},indent=2,sort_keys=True),"utf8")
+
     def test_camera_swap_and_wrong_scene_are_not_new_source_performances(self):
         forged=deepcopy(self.camera_shots)
         forged[1]["shot_id"]=forged[0]["shot_id"]
