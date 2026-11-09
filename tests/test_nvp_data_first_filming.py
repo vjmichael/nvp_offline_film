@@ -725,6 +725,43 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"FilmedTake",1)
 
+    def test_recovery_interrupt_is_cas_and_preserves_frozen_sources(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        journal = FilmingPublicationJournal(self.index)
+        journal.begin(self.pid, "RecoveryTake", "RecoveryTimeline", ["RecoveryPCM"])
+        observed = journal.unresolved(self.pid)[0]
+        with self.assertRaisesRegex(RuntimeError, "recovery state conflict"):
+            journal.interrupt_preparing(
+                self.pid, "RecoveryTake", expected_updated_at="stale-observation")
+        self.assertEqual(journal.unresolved(self.pid)[0]["state"], "PREPARING")
+        receipt = journal.interrupt_preparing(
+            self.pid, "RecoveryTake", expected_updated_at=observed["updated_at"])
+        self.assertEqual(receipt["state"], "INTERRUPTED")
+        self.assertFalse(receipt["worker_termination_verified_by_journal"])
+        self.assertFalse(receipt["immutable_revisions_modified"])
+        with self.assertRaisesRegex(RuntimeError, "recovery state conflict"):
+            journal.interrupt_preparing(
+                self.pid, "RecoveryTake", expected_updated_at=observed["updated_at"])
+        self.assertEqual(journal.visibility(self.pid, "RecoveryTake")["reason"],
+                         "PUBLICATION_INTERRUPTED")
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid, "RecoveryTake", 1)
+
+    def test_recovery_cannot_demote_completed_publication(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        journal = FilmingPublicationJournal(self.index)
+        with self.index.studio._connection() as db:
+            row = db.execute("""SELECT updated_at FROM nvp_filming_publications
+                WHERE project_id=? AND take_id=?""",
+                (self.pid, "FilmedTake")).fetchone()
+        original = self.index.read_revision(self.pid, "FilmedTake", 1)
+        with self.assertRaisesRegex(RuntimeError, "recovery state conflict"):
+            journal.interrupt_preparing(
+                self.pid, "FilmedTake", expected_updated_at=row["updated_at"])
+        self.assertTrue(journal.visibility(self.pid, "FilmedTake")["visible"])
+        self.assertEqual(self.index.read_revision(self.pid, "FilmedTake", 1), original)
+
     def test_journaled_take_visibility_is_fail_closed(self):
         from backend.nvp_filming_publication_journal import FilmingPublicationJournal
         journal=FilmingPublicationJournal(self.index)
