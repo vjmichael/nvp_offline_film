@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 from backend.nvp_film_index import _id, _require_pid
 from backend.nvp_studio import now
-from backend.nvp_temporal_ledger import TemporalLedger, MAX_QUERY
+from backend.nvp_temporal_ledger import TemporalLedger, MAX_QUERY, TICKS_PER_SECOND
+from backend.nvp_data_av_source import SAMPLE_RATE, FORMAT as ORIGINAL_PCM_FORMAT
 
 
 class FilmingPublicationJournal:
@@ -224,8 +225,6 @@ class FilmingPublicationJournal:
                     payload = event["payload"]
                     # A matching source ID alone does not establish a usable
                     # original recording: check provenance and sample coverage.
-                    from backend.nvp_data_av_source import SAMPLE_RATE
-                    from backend.nvp_temporal_ledger import TICKS_PER_SECOND
                     sample_tick = TICKS_PER_SECOND // SAMPLE_RATE
                     required_samples = (
                         event["end_tick"] - event["start_tick"] + sample_tick - 1
@@ -240,6 +239,9 @@ class FilmingPublicationJournal:
                         not isinstance(payload.get("usd_prim_path"), str) or
                         not payload["usd_prim_path"].startswith("/World/") or
                         revisions[sid]["kind"] != "audio" or
+                        source_data.get("format") != ORIGINAL_PCM_FORMAT or
+                        source_data.get("sample_rate") != SAMPLE_RATE or
+                        source_data.get("immutable_source") is not True or
                         type(source_data.get("sample_count")) is not int or
                         source_data["sample_count"] < required_samples or
                         required_samples <= 0):
