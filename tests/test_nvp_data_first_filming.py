@@ -78,6 +78,32 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             self.pid,"NewRecordedSpeech",1)["data"]["sample_count"],
                          48000)
 
+    def test_completion_holds_writer_lock_during_dependency_verification(self):
+        import sqlite3
+        from unittest.mock import patch
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        journal=FilmingPublicationJournal(self.index)
+        # Model a recovered PREPARING receipt with already published immutable
+        # dependencies, then independently test the completion transition.
+        with self.index.studio._connection() as db:
+            db.execute("""UPDATE nvp_filming_publications SET state='PREPARING'
+                WHERE project_id=? AND take_id=?""",(self.pid,"FilmedTake"))
+        original_read=self.index.read_revision
+        checked=[]
+        def check_writer_reservation(project_id,identity,revision):
+            if identity=="FilmedTake":
+                with self.index.studio._connection() as contender:
+                    contender.execute("PRAGMA busy_timeout=0")
+                    with self.assertRaises(sqlite3.OperationalError):
+                        contender.execute("BEGIN IMMEDIATE")
+                checked.append(True)
+            return original_read(project_id,identity,revision)
+        with patch.object(self.index,"read_revision",side_effect=check_writer_reservation):
+            journal.finish(self.pid,"FilmedTake",completed=True)
+        self.assertEqual(checked,[True])
+        self.assertEqual(journal.unresolved(self.pid),[])
+
     def test_journal_rejects_cross_batch_identity_reuse(self):
         from backend.nvp_filming_publication_journal import FilmingPublicationJournal
         journal = FilmingPublicationJournal(self.index)
