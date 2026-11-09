@@ -131,6 +131,17 @@ class HardwareBatchPlannerTest(unittest.TestCase):
         self.assertEqual(limited["gpu_budget_scope"],
                          "limited_process_budget_only")
 
+    def test_other_nvp_reservations_reduce_camera_worker_admission(self):
+        snapshot=host(32768,28000)
+        p=BatchPreferences(preview_worker_ram_mb=768)
+        normal=safe_parallelism(snapshot,p,quality=PREVIEW,
+            cpu_threads=16)
+        reserved=safe_parallelism(snapshot,p,quality=PREVIEW,
+            cpu_threads=16,reserved_ram_mb=22000)
+        self.assertGreater(normal["safe_workers"],0)
+        self.assertEqual(reserved["safe_workers"],0)
+        self.assertIn("RAM headroom",reserved["reason"])
+
     def test_unknown_ram_or_memory_pressure_does_not_start_worker(self):
         policy=BatchPreferences()
         missing=host(8192,5000)
