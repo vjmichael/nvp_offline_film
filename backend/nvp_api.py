@@ -7,6 +7,11 @@ from backend.nvp_story_bible import StoryBible
 from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
 from backend.nvp_model_service import discover_models, writer_for
 from backend.nvp_resource_ledger import TaskLedger
+from backend.nvp_resource_guard import collect_resources
+from backend.nvp_resource_process_monitor import default_nvp_process_monitor
+from backend.nvp_usd_film01s_adaptive_batch import (
+    BatchPreferences,preview_batch_layout)
+from backend.nvp_usd_film01s_resource_service import usable_cpu_threads
 from backend.nvp_render_preflight import preflight_scene
 from backend.nvp_legacy_quarantine import LegacyMediaQuarantine
 import uuid
@@ -21,8 +26,39 @@ resource_activity = TaskLedger()
 @app.get('/api/system/activity')
 def resource_activity_snapshot():
     # Read-only, host-derived telemetry; no web-exposed arbitrary job launcher.
-    return resource_activity.snapshot()
+    base=resource_activity.snapshot()
+    # Both the system activity ledger and this NVP-owned process monitor
+    # are read-only. GPU process attribution is explicitly unknown.
+    base["nvp_owned_process_usage"]=(
+        default_nvp_process_monitor().read_only_report_for_lu())
+    return base
 
+
+class DirectorShotBatchEstimate(BaseModel):
+    viewpoint_count: int = Field(ge=1,le=96)
+    selected_final_shots: int = Field(ge=0,le=96)
+    shots_per_batch: int | None = Field(default=None,ge=1,le=64)
+    parallel_worker_limit: int | None = Field(default=None,ge=1,le=32)
+    renderer: str = Field(default="cpu",max_length=3)
+    gpu_device_id: str | None = Field(default=None,max_length=64)
+
+
+@app.post('/api/system/shot-batch-estimate')
+def shot_batch_estimate(payload: DirectorShotBatchEstimate):
+    """Public source-independent ESTIMATE only. Never creates a render job."""
+    try:
+        policy=BatchPreferences(
+            shots_per_batch=payload.shots_per_batch,
+            parallel_worker_limit=payload.parallel_worker_limit,
+            renderer=payload.renderer,
+            gpu_device_id=payload.gpu_device_id)
+        return preview_batch_layout(
+            payload.viewpoint_count,payload.selected_final_shots,
+            policy,collect_resources(),
+            verified_cycles_gpu_ids=(),
+            cpu_threads=usable_cpu_threads())
+    except (ValueError,TypeError) as error:
+        raise HTTPException(status_code=422,detail=str(error)) from error
 
 
 class NewProject(BaseModel):
