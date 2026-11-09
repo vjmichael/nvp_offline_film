@@ -1,0 +1,28 @@
+name: NVP USD-FILM-01G Three-Shot Film Edit Contract
+
+on:
+  push:
+    branches: [nvp/usd-film01f-world-render-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  three-shot-film-edit:
+    name: Three angles, three cuts, original-source receipts / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile strict movie edit contract
+        run: python -m compileall -q backend/nvp_usd_film01g_three_shot_conform.py tests/test_nvp_usd_film01g_three_shot_conform.py
+      - name: Validate all 720 distinct per-frame receipts and three unique source cameras
+        run: python -m unittest discover -s tests -p "test_nvp_usd_film01g_three_shot_conform.py" -v
