@@ -61,6 +61,24 @@ class CandidateTests(unittest.TestCase):
         self.assertFalse(result["worker_authorization_granted"])
         self.assertEqual(result["params"],PARAMS)
         self.assertEqual(provider.last_user["approved_source_buildings"][0]["document_sha256"],"a"*64)
+    def test_real_writer_json_schema_is_only_format_guidance_not_authority(self):
+        class ConstrainedProvider(FakeCompletedProvider):
+            def complete_world_candidate(self,system,user,schema):
+                self.schema=schema
+                return super().complete(system,user)
+        reply=json.dumps({"params":PARAMS})
+        model=ConstrainedProvider(reply)
+        result=run(reply,model)
+        self.assertEqual(result["status"],"GENERATED_UNAPPROVED")
+        self.assertEqual(set(model.schema),{
+            "type","additionalProperties","properties","required"})
+        self.assertEqual(model.schema["properties"]["params"]["properties"][
+            "source_buildings"]["items"]["properties"][
+            "building_id"]["enum"],["TestBuilding"])
+        self.assertFalse(result["creative_approval_granted"])
+        with self.assertRaises(ValueError):
+            run('{"params":{}}',ConstrainedProvider('{"params":{}}'))
+
     def test_rejects_fenced_json_and_commands(self):
         for reply in (
             "Here is JSON: "+json.dumps({"params":PARAMS}),
