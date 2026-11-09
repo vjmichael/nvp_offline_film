@@ -434,6 +434,13 @@ def run_visible_window_smoke():
                 timeline_revision=1,sample_ticks=[0],
                 creator_event="smoke_only")
         _native_window_stage("original_source_take_frozen")
+        smoke_world_params=None
+        if os.environ.get("NVP_FILM02M_GROUP_ACCEPTANCE")=="1":
+            # Real installed UI acceptance owns one throwaway original house.
+            # The model/original-world editor will reopen this exact source.
+            smoke_world_params=_seed_original_world_smoke(
+                source_index,project["id"])
+            _native_window_stage("film02m_source_house_native_usd_created")
         server,worker,port,sock=serve(app)
         _native_window_stage("original_source_service_ready")
     except BaseException:
@@ -851,6 +858,100 @@ def run_visible_window_smoke():
                                         raise RuntimeError(
                                             "Actual installed GGUF did not reach visible React director review")
                                     _native_window_stage("wo6_07b_visible_real_gguf_director_review_passed")
+                                if smoke_world_params is not None:
+                                    # The genuine installed 22/23 React view
+                                    # must mount and call source-only native
+                                    # WebView2 IPC. No fake OS approval.
+                                    import json
+                                    _native_window_stage("film02m_installed_editor_navigate")
+                                    clicked=window.evaluate_js(
+                                        "(()=>{const b=[...document.querySelectorAll('nav.tabs button')]"
+                                        ".find(x=>x.textContent.includes('Direct the data'));"
+                                        "if(b){b.click();return true;}return false;})()")
+                                    if not clicked:
+                                        raise RuntimeError("Installed 22 Direct the data tab missing")
+                                    deadline=time.monotonic()+25
+                                    panel=False
+                                    while time.monotonic()<deadline:
+                                        panel=window.evaluate_js(
+                                            "Boolean(document.querySelector("
+                                            "'section[aria-label=\\\"Original OpenUSD modular world director\\\"]'))")
+                                        if panel:
+                                            break
+                                        time.sleep(.25)
+                                    if not panel:
+                                        raise RuntimeError("Installed original USD world editor did not mount")
+                                    script=(
+                                        "window.__nvpFilm02MProbe='PENDING';"
+                                        "window.pywebview.api.film02mf_catalog("+
+                                        json.dumps(project["id"])+").then(async c=>{"
+                                        "if(c.format!=='nvp.usd_film02m_f.native_source_catalog.v1'"
+                                        "||!c.source_buildings.some(x=>x.building_id==='InstalledSourceHouse'))"
+                                        "throw Error('source catalog');"
+                                        "const draft=await window.pywebview.api.film02mf_propose({"
+                                        "project_id:"+json.dumps(project["id"])+","
+                                        "district_id:'InstalledWindowDraft',expected_revision:0,"
+                                        "proposed_by:'director',params:"+json.dumps(smoke_world_params)+"});"
+                                        "if(draft.state!=='DRAFT'||draft.director_approved!==false)"
+                                        "throw Error('proposal source');"
+                                        "const read=await window.pywebview.api.film02mf_preview({"
+                                        "project_id:"+json.dumps(project["id"])+","
+                                        "draft_id:draft.draft_id});"
+                                        "if(!read.native_usd_source_reopened||"
+                                        "read.verified_openusd_point_instancer!==1||"
+                                        "read.source_plan_sha256!==draft.original_plan_sha256)"
+                                        "throw Error('real native PointInstancer');"
+                                        "const edited=await window.pywebview.api.film02mf_edit({"
+                                        "project_id:"+json.dumps(project["id"])+","
+                                        "draft_id:draft.draft_id,version:draft.version,"
+                                        "action:{op:'hide_generated',instance_id:1}});"
+                                        "if(edited.undo_steps!==1)throw Error('durable source edit');"
+                                        "const reopened=await window.pywebview.api.film02mf_reopen({"
+                                        "project_id:"+json.dumps(project["id"])+","
+                                        "draft_id:draft.draft_id});"
+                                        "if(reopened.version!==edited.version||"
+                                        "reopened.state!=='DRAFT')throw Error('draft reopen');"
+                                        "const undone=await window.pywebview.api.film02mf_undo({"
+                                        "project_id:"+json.dumps(project["id"])+","
+                                        "draft_id:draft.draft_id,version:reopened.version});"
+                                        "if(undone.original_plan_sha256!==draft.original_plan_sha256)"
+                                        "throw Error('native undo');"
+                                        "const discarded=await window.pywebview.api.film02mf_discard({"
+                                        "project_id:"+json.dumps(project["id"])+","
+                                        "draft_id:draft.draft_id,version:undone.version});"
+                                        "if(discarded.state!=='DISCARDED'||discarded.director_approved)"
+                                        "throw Error('source tombstone');"
+                                        "window.__nvpFilm02MProbe='PASSED';"
+                                        "}).catch(e=>{window.__nvpFilm02MProbe='FAILED:'+"
+                                        "(e&&e.message||String(e));});")
+                                    window.evaluate_js(script)
+                                    deadline=time.monotonic()+60
+                                    status='PENDING'
+                                    while time.monotonic()<deadline:
+                                        status=window.evaluate_js(
+                                            "window.__nvpFilm02MProbe")
+                                        if status=='PASSED' or (
+                                                isinstance(status,str) and
+                                                status.startswith("FAILED:")):
+                                            break
+                                        time.sleep(.3)
+                                    if status!='PASSED':
+                                        raise RuntimeError(
+                                            "Installed 02M native WebView2 editor/source "
+                                            "draft/undo/reopen/discard failed: "+str(status))
+                                    try:
+                                        bridge.index.read_revision(
+                                            project["id"],"InstalledWindowDraft",1)
+                                    except KeyError:
+                                        pass
+                                    else:
+                                        raise RuntimeError(
+                                            "Installed draft unexpectedly published world source")
+                                    if bridge._wo6_decisions or bridge._wo6_native_grants:
+                                        raise RuntimeError(
+                                            "Installed draft-only WebView2 used an OS worker grant")
+                                    _native_window_stage(
+                                        "film02m_installed_native_editor_draft_recovery_passed")
                                 result["passed"]=True
                                 break
                     time.sleep(.2)
