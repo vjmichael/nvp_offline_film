@@ -752,6 +752,27 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(self.index.read_revision(self.pid,"FilmedTake",1),original)
         self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
 
+    def test_completed_receipt_rejects_unbound_existing_original_source(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        self.capture.capture(**self.payload())
+        # This source really exists, but the frozen sound timeline never
+        # referenced it. Revision existence is not proof of a binding.
+        self.capture.sources.publish(
+            self.pid,"UnboundOriginalPCM",[self.original],expected_revision=0)
+        with self.index.studio._connection() as db:
+            db.execute("""UPDATE nvp_filming_publications
+                SET source_ids_json=? WHERE project_id=? AND take_id=?""",
+                ('["UnboundOriginalPCM"]',self.pid,"FilmedTake"))
+        journal=FilmingPublicationJournal(self.index)
+        decision=journal.visibility(self.pid,"FilmedTake")
+        self.assertFalse(decision["visible"])
+        self.assertEqual(decision["reason"],"PUBLICATION_SOURCE_BINDING_MISMATCH")
+        reader=OpenUSDTakeCapture(self.index,verify_creator_action=lambda *_: False)
+        with self.assertRaisesRegex(PermissionError,"PUBLICATION_SOURCE_BINDING_MISMATCH"):
+            reader.verify_take(self.pid,"FilmedTake")
+        self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
+        self.assertIsNotNone(self.index.read_revision(self.pid,"UnboundOriginalPCM",1))
+
     def test_take_reader_refuses_incomplete_journaled_publication(self):
         from backend.nvp_filming_publication_journal import FilmingPublicationJournal
         self.capture.capture(**self.payload())
