@@ -134,7 +134,7 @@ class OpenUSDSceneBridge:
     def publish(self, project_id, scene_id, *, prims, curves,
                 expected_revision=0, asset_bindings=None,
                 performance_channels=None, native_schemas=False,
-                skeletal_rigs=None):
+                skeletal_rigs=None, native_camera_specs=None):
         """Create immutable world+motion layer blobs and an exact scene revision.
 
         A failed FilmIndex publication may leave *orphan blobs*, not an approved
@@ -203,6 +203,57 @@ class OpenUSDSceneBridge:
                 raise RuntimeError("Cannot author USD layout transform")
             paths[path]=role
         _installed_usd_checkpoint("post_layout_prims")
+        # USD-FILM-01I: first-party source-authored camera optics and
+        # orientation. Never apply a director's camera settings as unsaved
+        # renderer-only transforms. The settings live in the immutable scene
+        # layout layer and are independently checked when that source opens.
+        if native_camera_specs is None:
+            native_camera_specs = []
+        if (type(native_camera_specs) is not list or
+            len(native_camera_specs) > 32 or
+            (native_camera_specs and not native_schemas)):
+            raise ValueError("Bounded native OpenUSD camera specifications required")
+        frozen_camera_settings = []
+        assigned_cameras = set()
+        for spec in native_camera_specs:
+            if (type(spec) is not dict or set(spec) != {
+                "path", "rotation_euler_deg", "focal_length_mm",
+                "focus_distance_m"}):
+                raise ValueError("Native camera specification has unknown fields")
+            p = _path(spec["path"], Sdf)
+            if paths.get(p) != "camera" or p in assigned_cameras:
+                raise ValueError("Camera settings require a unique authored camera prim")
+            rotation = _vector(spec["rotation_euler_deg"])
+            if any(abs(x) > 360 for x in rotation):
+                raise ValueError("Camera orientation exceeds bounded Euler angle")
+            focal = spec["focal_length_mm"]
+            focus = spec["focus_distance_m"]
+            if (type(focal) not in (int, float) or
+                type(focus) not in (int, float) or
+                not math.isfinite(focal) or not math.isfinite(focus) or
+                not 8.0 <= focal <= 300.0 or
+                not 0.05 <= focus <= 10000.0):
+                raise ValueError("Camera focal length/focus are outside film optical limits")
+            from backend.nvp_openusd_native_schemas import (
+                MM_PER_CAMERA_UNIT, METERS_PER_UNIT)
+            camera = UsdGeom.Camera(layout.GetPrimAtPath(p))
+            if (not camera.GetFocalLengthAttr().Set(
+                    float(focal) / MM_PER_CAMERA_UNIT) or
+                not camera.GetFocusDistanceAttr().Set(
+                    float(focus) / METERS_PER_UNIT) or
+                not camera.GetPrim().CreateAttribute(
+                    "xformOp:rotateXYZ", Sdf.ValueTypeNames.Float3).Set(
+                    Gf.Vec3f(*rotation)) or
+                not camera.GetPrim().GetAttribute("xformOpOrder").Set(
+                    ["xformOp:translate", "xformOp:rotateXYZ"])):
+                raise RuntimeError("Cannot author native NVP camera orientation/optics")
+            frozen_camera_settings.append({
+                "path":p,
+                "rotation_euler_deg":rotation,
+                "focal_length_mm":float(focal),
+                "focus_distance_m":float(focus)})
+            assigned_cameras.add(p)
+        frozen_camera_settings.sort(key=lambda x: x["path"])
         motion=Sdf.Layer.CreateAnonymous("nvp_performance.usda")
         _installed_usd_checkpoint("post_motion_layer")
         moving=Usd.Stage.Open(motion)
@@ -320,6 +371,7 @@ class OpenUSDSceneBridge:
                   "usd_timecode_limit":MAX_USD_EXACT_TICK,
                   "prim_roles":paths,
                   "animated_paths":sorted(animated),
+                  "native_camera_settings":frozen_camera_settings,
                   "asset_bindings":[entry["manifest"] for entry in bindings],
                   "contains_external_references":False,
                   "rendered":False,
@@ -474,6 +526,37 @@ class OpenUSDSceneBridge:
                 doc["prim_roles"],0)
             for p,role in doc["prim_roles"].items():
                 evaluate_native_schema(composed,p,role,0,values)
+        # Camera presets are content-addressed original scene opinions,
+        # verified from actual native UsdGeom.Camera properties on reopen.
+        for setting in doc.get("native_camera_settings", []):
+            if (type(setting) is not dict or
+                set(setting) != {"path", "rotation_euler_deg",
+                                 "focal_length_mm", "focus_distance_m"} or
+                doc["prim_roles"].get(setting["path"]) != "camera"):
+                raise RuntimeError("Invalid frozen original native camera spec")
+            prim = composed.GetPrimAtPath(setting["path"])
+            if not prim.IsA(UsdGeom.Camera):
+                raise RuntimeError("Original native film camera prim disappeared")
+            cam = UsdGeom.Camera(prim)
+            from backend.nvp_openusd_native_schemas import (
+                MM_PER_CAMERA_UNIT, METERS_PER_UNIT)
+            observed = [
+                float(cam.GetFocalLengthAttr().Get()) * MM_PER_CAMERA_UNIT,
+                float(cam.GetFocusDistanceAttr().Get()) * METERS_PER_UNIT,
+            ]
+            if any(not math.isclose(a,b,rel_tol=0,abs_tol=1e-4)
+                   for a,b in zip(observed,[
+                       setting["focal_length_mm"],
+                       setting["focus_distance_m"]])):
+                raise RuntimeError("Original native camera focal/focus source changed")
+            rotation = prim.GetAttribute("xformOp:rotateXYZ").Get()
+            if (rotation is None or
+                any(not math.isclose(float(rotation[i]), setting[
+                    "rotation_euler_deg"][i], rel_tol=0, abs_tol=1e-4)
+                    for i in range(3)) or
+                list(prim.GetAttribute("xformOpOrder").Get()) !=
+                    ["xformOp:translate", "xformOp:rotateXYZ"]):
+                raise RuntimeError("Original native camera orientation source changed")
         for p,role in doc["prim_roles"].items():
             _evaluate(composed,p,0,Sdf,Usd,UsdGeom)
             observed=composed.GetPrimAtPath(p).GetAttribute("nvp:semanticRole").Get()

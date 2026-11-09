@@ -1,0 +1,96 @@
+name: NVP USD-FILM-01L Real Nine-Camera Blender/Cycles Smoke
+
+on:
+  push:
+    branches: [nvp/usd-film01i-ninecam-source-20261108]
+  pull_request:
+    branches: [nvp/usd-film01f-world-render-20261108]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-01l-real-ninecam-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  genuine-original-nine-camera-cycles:
+    name: Source-authored nine cameras, 3 actual film ticks, 27 real Cycles frames
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      BLENDER_VERSION: "5.2.3"
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_FILM01L_ARTIFACT_DIR: real-original-nine-camera-cycles-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install real source USD, native Blender display and Python dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" numpy Pillow
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download actual official Blender and independently check published SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Compile reviewed fixed worker/host, nine-camera native USD animation and smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film01i_ninecam_take.py backend/nvp_usd_film01k_blender_animation_build.py backend/nvp_usd_film01l_blender_smoke_host.py tools/nvp_usd_film01l_blender_ninecam_worker.py tests/test_nvp_usd_film01i_ninecam_take.py
+      - name: Render nine authentic authored cameras at frames 0, 360 and 719, then verify original actor motion
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_FILM01L_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          xvfb-run -a python -m unittest discover -s tests -p "test_nvp_usd_film01i_ninecam_take.py" -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("real-original-nine-camera-cycles-evidence")
+          proof=json.loads((root/"27_native_camera_smoke_summary.json").read_text("utf8"))
+          assert proof["native_supervised_frames"] == 27
+          assert proof["independent_native_worker_jobs"] == 3
+          assert proof["distinct_rendered_png_shas"] >= 9
+          assert proof["complete_nine_roll_movie_produced"] is False
+          frames=list(root.glob("*.png"))
+          assert len(frames) == 27
+          for path in frames:
+              with Image.open(path) as picture:
+                  assert picture.format == "PNG"
+                  assert picture.size == (320,180)
+                  picture.verify()
+          for frame in (0,360,719):
+              stem=f"{frame:04d}_"
+              audit=json.loads((root/(stem+"audit.json")).read_text("utf8"))
+              assert audit["passed"] is True
+              assert audit["actual_native_cycles_image_count"] == 9
+              assert audit["actual_original_actor_motion_at_frame_verified"] is True
+              assert len(audit["camera_views"]) == 9
+              assert (root/(stem+"scene.blend")).is_file()
+              assert (root/(stem+"source.usda")).is_file()
+          print("27 original camera Cycles pixels, NOT a complete 6480-frame film")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-USD-FILM01L-real-9-cameras-3-times-27-Cycles-pixels-UNAPPROVED
+          path: real-original-nine-camera-cycles-evidence/
+          if-no-files-found: warn
+          retention-days: 14
