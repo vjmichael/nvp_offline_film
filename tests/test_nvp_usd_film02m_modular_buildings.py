@@ -483,6 +483,16 @@ class OriginalModularBuildingSource(unittest.TestCase):
             width_m=12,height_m=height,stories=3,bays=4,
             treatment="residential",seed=71)
         self.assertEqual(len(tall["openings"]),12)
+        for stories in (1,4):
+            actual_height=3.*stories
+            authored=facade_layout(
+                width_m=12,height_m=actual_height,
+                stories=stories,bays=3,
+                treatment="industrial",seed=73)
+            source=apertured_wall_mesh(
+                12,.4,actual_height,authored["openings"])
+            self.assertTrue(prove_facade_geometry(source)[
+                "all_source_openings_ray_verified"])
         mesh=apertured_wall_mesh(12,.4,height,tall["openings"])
         self.assertTrue(prove_facade_geometry(mesh)[
             "all_source_openings_ray_verified"])
