@@ -221,10 +221,28 @@ class FilmingPublicationJournal:
                     if event["event_kind"] not in ("sound","dialogue"):
                         continue
                     sid = event["source_id"]
+                    payload = event["payload"]
+                    # A matching source ID alone does not establish a usable
+                    # original recording: check provenance and sample coverage.
+                    from backend.nvp_data_av_source import SAMPLE_RATE
+                    from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+                    sample_tick = TICKS_PER_SECOND // SAMPLE_RATE
+                    required_samples = (
+                        event["end_tick"] - event["start_tick"] + sample_tick - 1
+                    ) // sample_tick
+                    source_data = revisions[sid]["data"] if sid in expected else {}
                     if (sid not in expected or sid in found or
                         event["source_revision"] != 1 or
-                        event["payload"].get("original_recording") is not True or
-                        revisions[sid]["kind"] != "audio"):
+                        payload.get("original_recording") is not True or
+                        payload.get("format") != "nvp.data_av.filming_capture.v1" or
+                        payload.get("source_sample_rate") != SAMPLE_RATE or
+                        payload.get("acoustic_mix_frozen") is not False or
+                        not isinstance(payload.get("usd_prim_path"), str) or
+                        not payload["usd_prim_path"].startswith("/World/") or
+                        revisions[sid]["kind"] != "audio" or
+                        type(source_data.get("sample_count")) is not int or
+                        source_data["sample_count"] < required_samples or
+                        required_samples <= 0):
                         return {"take_id":take_id,"journaled":True,
                                 "visible":False,"reason":"PUBLICATION_SOURCE_BINDING_MISMATCH"}
                     found.add(sid)
