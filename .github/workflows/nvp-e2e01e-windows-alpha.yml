@@ -1,7 +1,10 @@
 name: NVP E2E-01E Installed Windows Desktop Alpha
-# DATA-AV-01 migration: legacy imported-video/benchmark workflow is
-# manual-only; it must not gate or relaunch native Digital Take A/V.
+# DATA-AV-01 stays independent. Exactly ONE P0-F-01 grouped installed
+# Windows acceptance run on this branch, after native F/G/H passed 6/6.
+# Restore manual-only after the completed run is inspected; never per-file CI.
 on:
+  push:
+    branches: [nvp/p0-f01-installed-native-windows-group-20261109]
   workflow_dispatch:
 permissions:
   contents: read
@@ -86,6 +89,16 @@ jobs:
           & $nsis '/V3' 'packaging/nvp-alpha.nsi'
           if ($LASTEXITCODE -ne 0) { throw 'NSIS failed' }
           if (-not (Test-Path 'dist/NVP-Alpha-Setup.exe')) { throw 'Missing NSIS installer' }
+          $manifest=[ordered]@{
+            format='nvp.p0f01.installed_windows_group_source_identity.v1'
+            source_commit=$env:GITHUB_SHA
+            installer_sha256=(Get-FileHash 'dist/NVP-Alpha-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+            bundled_exe_sha256=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+            human_os_dialog_approval_attested=$false
+            loaded_model_completion_attested=$false
+            720_frame_pcm_movie_attested=$false
+          }
+          $manifest | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'nvp-alpha-group-manifest.json') -Encoding UTF8
       - name: Silent install and execute installed native alpha
         shell: pwsh
         run: |
@@ -102,10 +115,20 @@ jobs:
           # approved building assets + UNAPPROVED draft in SQLite and a
           # second installed process independently reopens exact USD SHA.
           $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'nvp-alpha-installed-create.log'
           $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru -Wait
-          if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed' }
+          if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed; inspect native log' }
+          if (-not (Test-Path $env:NVP_NATIVE_SMOKE_DIAGNOSTICS) -or
+              -not (Select-String -LiteralPath $env:NVP_NATIVE_SMOKE_DIAGNOSTICS -Pattern 'NVP_SMOKE_PYTHON_EXIT=0' -Quiet)) {
+            throw 'Installed first-process native Python completion receipt missing'
+          }
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'nvp-alpha-installed-reopen.log'
           $second=Start-Process -FilePath $installed -ArgumentList '--smoke-reopen' -PassThru -Wait
-          if ($second.ExitCode -ne 0) { throw 'Second fresh native app launch lost SQLite film project' }
+          if ($second.ExitCode -ne 0) { throw 'Second fresh native app launch lost SQLite film project; inspect native log' }
+          if (-not (Test-Path $env:NVP_NATIVE_SMOKE_DIAGNOSTICS) -or
+              -not (Select-String -LiteralPath $env:NVP_NATIVE_SMOKE_DIAGNOSTICS -Pattern 'NVP_SMOKE_PYTHON_EXIT=0' -Quiet)) {
+            throw 'Installed second-process original USD reopening receipt missing'
+          }
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
           }
@@ -116,10 +139,21 @@ jobs:
           # The real installed WebView2 window navigates React section 22/23
           # and invokes actual native catalog/propose/edit/undo/discard IPC.
           $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'nvp-alpha-installed-webview2.log'
           $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru -Wait
           if ($window.ExitCode -ne 0) {
-            throw 'Real desktop WebView2 window did not load; headless smoke alone cannot accept NVP alpha'
+            throw 'Real desktop WebView2 window did not load; inspect native window trace'
           }
+          $trace=$env:NVP_NATIVE_SMOKE_DIAGNOSTICS
+          if (-not (Test-Path $trace)) { throw 'No installed native WebView2 diagnostics' }
+          foreach ($required in @('film02m_installed_native_editor_draft_recovery_passed',
+                                   'source_webview_full_acceptance_finished',
+                                   'NVP_SMOKE_PYTHON_EXIT=0')) {
+            if (-not (Select-String -LiteralPath $trace -Pattern $required -SimpleMatch -Quiet)) {
+              throw "Installed native WebView2/source contract stage missing: $required"
+            }
+          }
+          Write-Output 'Verified actual installed WebView2 source-only IPC and durable draft/undo/discard; no human approval inferred.'
       - name: Uninstall without deleting creator project data
         shell: pwsh
         run: |
@@ -134,6 +168,17 @@ jobs:
           Start-Sleep -Seconds 2
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-alpha-windows-source-identity-and-installed-recovery
+          path: |
+            ${{ runner.temp }}/nvp-alpha-group-manifest.json
+            ${{ runner.temp }}/nvp-alpha-installed-create.log
+            ${{ runner.temp }}/nvp-alpha-installed-reopen.log
+            ${{ runner.temp }}/nvp-alpha-installed-webview2.log
+          if-no-files-found: warn
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:
