@@ -1,0 +1,60 @@
+name: NVP USD-FILM-02M-E1 Genuine Layered District USD Source and Instancing
+
+on:
+  push:
+    branches: [nvp/usd-film02m-e-layered-district-instancing-20261109]
+  pull_request:
+    branches: [nvp/usd-film02m-d-openings-interiors-cells-20261109]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-02m-e-source-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  real-native-layer-source:
+    name: Real FilmIndex/USD district source 6-instance PointInstancer + stronger director overlay / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04,windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install genuine OpenUSD and reviewed source modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx
+      - name: Compile real original USD FilmIndex district, building source and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film02m_modular_buildings.py backend/nvp_usd_film02m_d_openings.py backend/nvp_usd_film02m_d_cells.py backend/nvp_usd_film02m_e_district.py tests/test_nvp_usd_film02m_modular_buildings.py
+      - name: Check actual original USD layer priority, native PointInstancer, stable source SHA and source budgets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_nvp_usd_film02m_modular_buildings.py" -v
+      - name: Confirm source-only district E does not claim a native movie
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from backend.nvp_usd_film02m_e_district import (
+              FORMAT,MAX_PROTOTYPES,MAX_INSTANCES)
+          assert FORMAT=="nvp.usd_film02m_e.original_layered_district.v1"
+          assert 1<=MAX_PROTOTYPES<=8
+          assert 1<=MAX_INSTANCES<=256
+          print("02M-E1 original USD instancing validated. Native film-quality Cycles and GPU draw-call acceptance remain OPEN.")
+          PY
