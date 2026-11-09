@@ -154,6 +154,20 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"MissingSecondSource",1)
 
+    def test_journal_rejects_colliding_output_identities_without_receipt(self):
+        from backend.nvp_filming_publication_journal import FilmingPublicationJournal
+        journal=FilmingPublicationJournal(self.index)
+        for take_id,timeline_id,source_ids in (
+            ("CollisionTake","CollisionTake",["CollisionSource"]),
+            ("CollisionTake","CollisionTimeline",["CollisionTake"]),
+            ("CollisionTake","CollisionTimeline",["CollisionTimeline"]),
+        ):
+            with self.subTest(take_id=take_id,timeline_id=timeline_id,source_ids=source_ids):
+                with self.assertRaisesRegex(ValueError,"identities must be distinct"):
+                    journal.begin(self.pid,take_id,timeline_id,source_ids)
+        self.assertFalse(any(r["take_id"]=="CollisionTake"
+                             for r in journal.unresolved(self.pid)))
+
     def test_journal_cannot_complete_missing_immutable_dependencies(self):
         from backend.nvp_filming_publication_journal import FilmingPublicationJournal
         journal=FilmingPublicationJournal(self.index)
