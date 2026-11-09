@@ -367,3 +367,121 @@ def publish_room_asset(index,project_id,asset_id,*,width_m,depth_m,
             "actual_room_geometry":True,
             "front_portal_open":True,
             "native_interior_render_reviewed":False}
+
+
+DETAIL_FORMAT="nvp.usd_film02m.reproducible_original_geometry_detail.v1"
+
+
+def verify_detail(index,pid,detail_id,revision,*,asset_id=None,
+                  asset_revision=None,required_kind=None):
+    from backend.nvp_film_index import _id
+    _id(detail_id,"published original aperture/room source detail")
+    row=index.read_revision(pid,detail_id,revision)
+    doc=row["data"]
+    if row["kind"]!="presentation" or doc.get("format")!=DETAIL_FORMAT:
+        raise PermissionError("Only original saved procedural source geometry")
+    if (asset_id is not None and doc.get("asset_id")!=asset_id or
+        asset_revision is not None and doc.get("asset_revision")!=asset_revision or
+        required_kind is not None and doc.get("geometry_kind")!=required_kind):
+        raise PermissionError("Procedural detail belongs to another source")
+    src,index_layer=OpenUSDAssetRegistry(index).open(
+        pid,doc["asset_id"],doc["asset_revision"])
+    if (row["dependencies"]!=[{
+            "object_id":doc["asset_id"],"revision":doc["asset_revision"],
+            "role":"asset"}] or
+        src["document_sha256"]!=doc["asset_sha256"] or
+        src["data"]["layer_sha256"]!=doc["source_layer_sha256"]):
+        raise RuntimeError("Original procedural asset reference changed")
+    if doc["geometry_kind"]=="wall_with_real_apertures":
+        layout=doc["layout"]
+        regenerated=facade_layout(
+            width_m=layout["width_m"],height_m=layout["height_m"],
+            stories=layout["stories"],bays=layout["bays"],
+            treatment=layout["treatment"],seed=layout["seed"])
+        if layout!=regenerated:
+            raise RuntimeError("Source facade procedural layout was revised")
+        mesh=apertured_wall_mesh(
+            layout["width_m"],doc["thickness_m"],
+            layout["height_m"],layout["openings"])
+        prove_facade_geometry(mesh)
+    elif doc["geometry_kind"]=="genuine_room_interior_shell":
+        p=doc["room_parameters_m"]
+        mesh=room_shell_mesh(
+            p["width"],p["depth"],p["height"],p["wall_thickness"])
+    else:
+        raise PermissionError("Unknown original geometry source kind")
+    if (mesh["points"]!=src["data"]["points"] or
+        mesh["triangles"]!=src["data"]["triangles"] or
+        _hash({"points":mesh["points"],
+               "triangles":mesh["triangles"]})!=doc["mesh_sha256"] or
+        doc["source_generated_without_blender"] is not True or
+        doc["native_cycles_pixels_verified"] is not False):
+        raise RuntimeError("Real USD geometry no longer reproduces from original design")
+    return row
+
+
+def _publish_detail(index,pid,detail_id,asset,mesh,*,layout=None,
+                    thickness_m=None,room_parameters_m=None):
+    from backend.nvp_film_index import _id,_require_pid
+    _require_pid(pid)
+    _id(detail_id,"original geometry design detail")
+    row=asset["asset"]
+    doc={
+        "format":DETAIL_FORMAT,
+        "asset_id":row["object_id"],
+        "asset_revision":row["revision"],
+        "asset_sha256":row["document_sha256"],
+        "source_layer_sha256":index.read_revision(
+            pid,row["object_id"],row["revision"])["data"]["layer_sha256"],
+        "geometry_kind":mesh["kind"],
+        "mesh_sha256":_hash({
+            "points":mesh["points"],"triangles":mesh["triangles"]}),
+        "source_generated_without_blender":True,
+        "native_cycles_pixels_verified":False,
+        "original_actor_performance_unchanged":True}
+    if layout is not None:
+        doc.update({"layout":layout,"thickness_m":float(thickness_m),
+                    "through_wall_rays_independently_verified":
+                        asset["source_proof"]["all_source_openings_ray_verified"]})
+    if room_parameters_m is not None:
+        doc["room_parameters_m"]=room_parameters_m
+        doc["front_portal_open"]=True
+        doc["real_interior_rear_wall"]=True
+    published=index.register_revision(
+        pid,detail_id,"presentation",doc,
+        expected_revision=0,
+        dependencies=[{"object_id":row["object_id"],
+                       "revision":row["revision"],"role":"asset"}])
+    verified=verify_detail(
+        index,pid,detail_id,published["revision"],
+        asset_id=row["object_id"],asset_revision=row["revision"],
+        required_kind=mesh["kind"])
+    return {"detail":published,"source_asset":row,
+            "detail_reopened_from_original_geometry":True,
+            "source_design_sha256":verified["document_sha256"]}
+
+
+def publish_facade_with_detail(index,pid,asset_id,detail_id,*,
+                               layout,thickness_m,color_rgb):
+    asset=publish_facade_asset(
+        index,pid,asset_id,layout=layout,
+        thickness_m=thickness_m,color_rgb=color_rgb)
+    return _publish_detail(
+        index,pid,detail_id,asset,asset["source"],
+        layout=layout,thickness_m=thickness_m)
+
+
+def publish_room_with_detail(index,pid,asset_id,detail_id,*,
+                             width_m,depth_m,height_m,
+                             wall_thickness_m,color_rgb):
+    asset=publish_room_asset(
+        index,pid,asset_id,width_m=width_m,depth_m=depth_m,
+        height_m=height_m,wall_thickness_m=wall_thickness_m,
+        color_rgb=color_rgb)
+    parameters={
+        "width":float(width_m),"depth":float(depth_m),
+        "height":float(height_m),
+        "wall_thickness":float(wall_thickness_m)}
+    return _publish_detail(
+        index,pid,detail_id,asset,asset["source"],
+        room_parameters_m=parameters)
