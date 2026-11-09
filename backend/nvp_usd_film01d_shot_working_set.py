@@ -335,13 +335,16 @@ class FilmShotWorkingSet:
         from pxr import Sdf
         self.session._check()
         stage = self.session.stage
-        root = stage.GetRootLayer()  # private temporary world.usda
+        # USD root-layer opinions are stronger than their own sublayers.
+        # The Stage SESSION layer is stronger than the world root; using a
+        # sublayer of it makes a genuine non-destructive shot override.
+        session_layer = stage.GetSessionLayer()
         if self._shot_layer is not None:
             old_id = self._shot_layer.identifier
-            if old_id in root.subLayerPaths:
-                root.subLayerPaths.remove(old_id)
+            if old_id in session_layer.subLayerPaths:
+                session_layer.subLayerPaths.remove(old_id)
         layer = Sdf.Layer.CreateAnonymous("nvp_film01d_director_look.usda")
-        root.subLayerPaths.insert(0,layer.identifier)
+        session_layer.subLayerPaths.insert(0,layer.identifier)
         self._shot_layer = layer
         self._shot_layer_sha256 = sha256(
             layer.ExportToString().encode("utf8")).hexdigest()
