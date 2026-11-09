@@ -262,20 +262,14 @@ class OriginalSelectedFilmBatch:
         receipt_file=self.supervisor.root/job_id/AUDIT
         return file_sha(receipt_file),job_id
 
-    def advance_group(self,pid,edit_id,revision,*,director_event,
-                      max_tickets=None):
-        """One reviewed SAME-STAGE batch; fresh single-use step authority.
-
-        No background process beyond this explicit installed action. Max
-        executions bounded to the selected director group (<=64), with a
-        live resource check per job and strict original group membership.
-        """
+    def preview_next_group(self,pid,edit_id,revision,*,max_tickets=None):
+        """Read-only exact bounded group preview for OS approval."""
         source_dir,source,wrapped,identity=self._current(
             pid,edit_id,revision)
         _,_,manifest=self._assert_saved(pid,edit_id,revision)
         candidate=self.service.suggest_next(identity)
         if candidate["state"]!="READY_FOR_NVP_AUTHORIZATION":
-            return {"state":candidate["state"],
+            return {"format":FORMAT,"state":candidate["state"],
                     "reason":candidate.get("reason"),
                     "source_edit_sha256":wrapped["plan"]["edit_document_sha256"],
                     "queue":self.queue.status(identity)}
@@ -318,6 +312,20 @@ class OriginalSelectedFilmBatch:
             "bounded_ticket_count":len(exact),
             "exact_source_tickets":exact,
             "full_camera_rolls_requested":False}
+        return scope
+
+    def advance_group(self,pid,edit_id,revision,*,director_event,
+                      max_tickets=None):
+        """Run one OS-approved group; no cross-stage or cross-edit grants."""
+        scope=self.preview_next_group(
+            pid,edit_id,revision,max_tickets=max_tickets)
+        if scope.get("format")!=BATCH_FORMAT:
+            return scope
+        source_dir,source,wrapped,identity=self._current(
+            pid,edit_id,revision)
+        quality=scope["quality"]
+        group=scope["batch_index"]
+        exact=scope["exact_source_tickets"]
         if self.approve(director_event,scope) is not True:
             raise PermissionError("Director refused exact source-shot group")
         results=[]
