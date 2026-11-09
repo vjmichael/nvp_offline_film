@@ -928,6 +928,163 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                         "director_visual_approval":False},
                        sort_keys=True,indent=2),"utf8")
 
+    def test_01r_actual_lowfi_usd_geometry_and_one_time_source_camera(self):
+        from backend.nvp_usd_film01r_lowfi_source import SourceViewpointWorkspace
+        self._original_editorial_bank()
+        inspector=SourceViewpointWorkspace(self.index)
+        catalog=inspector.catalog(self.pid)
+        self.assertEqual(catalog["format"],
+                         "nvp.usd_film01r.original_world_viewpoint_catalog.v1")
+        self.assertTrue(any(
+            bank["camera_bank_id"]=="FullCameraRollOriginalBank"
+            for bank in catalog["camera_banks"]))
+        self.assertTrue(any(
+            take["world_take_id"]=="OneThirtySecondWorldTake"
+            for take in catalog["original_world_takes"]))
+        for frame in (0,360,719):
+            report=inspector.snapshot(
+                self.pid,"FullCameraRollOriginalBank",1,
+                camera_id="Cam_A_wide",frame=frame)
+            self.assertEqual(report["format"],
+                "nvp.usd_film01r.source_3d_lofi_viewpoint.v1")
+            self.assertEqual(report["frame"],frame)
+            self.assertEqual(report["original_film_tick"],frame*T//24)
+            self.assertEqual(report["native_blender_workers_started"],0)
+            self.assertGreater(len(report["objects"]),3)
+            self.assertEqual(len(report["camera_world_matrix_rows"]),4)
+            self.assertGreater(report["camera_vertical_fov_degrees"],2)
+            self.assertTrue(report[
+                "preview_is_source_derived_not_final_cycles_image"])
+            self.assertTrue(report[
+                "original_world_and_actor_performance_unchanged"])
+            self.assertGreaterEqual(
+                report["total_native_mesh_vertices_sent"],0)
+            self.assertGreaterEqual(report["proxy_objects"],0)
+            self.assertEqual(len(report["original_actor_ids"]),4)
+        with self.assertRaises(PermissionError):
+            inspector.snapshot(self.pid,"FullCameraRollOriginalBank",1,
+                camera_id="InventedCamera",frame=0)
+        self.assertEqual(self.index.read_revision(
+            self.pid,"OneThirtySecondWorldTake",1)["document_sha256"],
+            self.world_take["document_sha256"])
+
+    def test_01r_true_native_webview_approval_camera_edit_and_denial(self):
+        from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+        class ApprovedWindow:
+            permitted=True
+            def get_current_url(self):
+                return "http://127.0.0.1:43112/"
+            def create_confirmation_dialog(self,title,text):
+                self.last=(title,text)
+                return self.permitted
+        window=ApprovedWindow()
+        bridge=TrustedDesktopWO5Bridge(
+            self.index,origin="http://127.0.0.1:43112")
+        bridge._attach_window(window)
+        original=self.index.read_revision(
+            self.pid,"OneThirtySecondWorldTake",1)["document_sha256"]
+        camera={
+            "camera_id":"Master","setup":"Wide","framing":"wide",
+            "position_m":[0,0,12],"rotation_euler_deg":[0,0,0],
+            "focal_length_mm":35,"focus_distance_m":10,
+            "clip_range_m":[.01,10000],"move_keys":[],
+            "camera_ray_exclusions":[]}
+        try:
+            created=bridge.film01r_create_bank({
+                "project_id":self.pid,
+                "camera_bank_id":"01RNativeTestBank",
+                "world_take_id":"OneThirtySecondWorldTake",
+                "cameras":[camera]})
+            self.assertEqual(created["revision"],1)
+            report=bridge.film01r_preview({
+                "project_id":self.pid,
+                "camera_bank_id":"01RNativeTestBank",
+                "revision":1,"camera_id":"Master","frame":3})
+            self.assertEqual(report["original_film_tick"],3*T//24)
+            window.permitted=False
+            with self.assertRaises(PermissionError):
+                bridge.film01r_revise_bank({
+                    "project_id":self.pid,
+                    "camera_bank_id":"01RNativeTestBank",
+                    "expected_revision":1,
+                    "changes":[{"op":"add","camera":{
+                        **camera,"camera_id":"Reverse"}}]})
+            window.permitted=True
+            revised=bridge.film01r_revise_bank({
+                "project_id":self.pid,"camera_bank_id":"01RNativeTestBank",
+                "expected_revision":1,
+                "changes":[{"op":"add","camera":{
+                    **camera,"camera_id":"Reverse","position_m":[2,0,12]}}]})
+            self.assertEqual(revised["revision"],2)
+            self.assertEqual(len(bridge.film01r_catalog(self.pid)[
+                "camera_banks"]),2)
+            source_cut=[
+                {"camera_id":"Master","source_in_frame":0,
+                 "source_out_frame":360,"edit_in_frame":0,
+                 "edit_out_frame":360},
+                {"camera_id":"Reverse","source_in_frame":360,
+                 "source_out_frame":720,"edit_in_frame":360,
+                 "edit_out_frame":720}]
+            saved=bridge.film01r_save_edit({
+                "project_id":self.pid,"edit_id":"01RNativeTestEdit",
+                "expected_revision":0,
+                "camera_bank_id":"01RNativeTestBank",
+                "camera_bank_revision":2,"cuts":source_cut})
+            self.assertEqual(saved["revision"],1)
+            self.assertFalse(saved["original_performance_modified"])
+            self.assertEqual(
+                bridge.film01r_catalog(self.pid)["edits"][-1]["edit_id"],
+                "01RNativeTestEdit")
+            self.assertEqual(self.index.read_revision(
+                self.pid,"OneThirtySecondWorldTake",1)["document_sha256"],
+                original)
+            # A foreign browser origin cannot commit new native revisions.
+            window.get_current_url=lambda:"http://127.0.0.1:43112/other"
+            with self.assertRaises(PermissionError):
+                bridge.film01r_save_edit({
+                    "project_id":self.pid,"edit_id":"01RForeign",
+                    "expected_revision":0,
+                    "camera_bank_id":"01RNativeTestBank",
+                    "camera_bank_revision":2,"cuts":source_cut})
+        finally:
+            bridge._close()
+
+    def test_01r_render_quality_changes_only_view_cache_and_worker_identity(self):
+        from backend.nvp_usd_film01r_quality import (
+            reviewed_quality,quality_hash)
+        from backend.nvp_usd_film01q_selected_view_edit import selected_render_plan
+        from backend.nvp_usd_film01q_selected_view_host import chunk_job_id
+        from backend.nvp_usd_film01o_original_camera_roll_source import (
+            original_camera_roll_source)
+        self._selected_original_edit()
+        source=self.root/"01r_quality_source"
+        if not source.exists():
+            original_camera_roll_source(
+                self.index,self.pid,"FullCameraRollOriginalBank",
+                revision=1,folder=source)
+        draft=selected_render_plan(
+            self.index,self.pid,"DataFirstOriginalSelectedShort",1,
+            original_source_directory=source,render_quality="technical_smoke")
+        final=selected_render_plan(
+            self.index,self.pid,"DataFirstOriginalSelectedShort",1,
+            original_source_directory=source,render_quality="final_720p")
+        self.assertEqual(final["plan"]["render_profile"]["resolution_x"],1280)
+        self.assertEqual(final["plan"]["render_profile"]["resolution_y"],720)
+        self.assertNotEqual(draft["plan_sha256"],final["plan_sha256"])
+        self.assertEqual(draft["plan"]["original_performance_sha256"],
+                         final["plan"]["original_performance_sha256"])
+        self.assertEqual(draft["plan"]["frames"][3]["original_actor_state_sha256"],
+                         final["plan"]["frames"][3]["original_actor_state_sha256"])
+        self.assertNotEqual(draft["plan"]["frames"][3]["view_cache_sha256"],
+                            final["plan"]["frames"][3]["view_cache_sha256"])
+        self.assertNotEqual(chunk_job_id(
+            draft["plan"]["edit_document_sha256"],0,1,
+            draft["plan"]["render_profile_sha256"]),chunk_job_id(
+            final["plan"]["edit_document_sha256"],0,1,
+            final["plan"]["render_profile_sha256"]))
+        with self.assertRaises(ValueError):
+            reviewed_quality("unreviewed_GPU_4K")
+
     def test_camera_swap_and_wrong_scene_are_not_new_source_performances(self):
         forged=deepcopy(self.camera_shots)
         forged[1]["shot_id"]=forged[0]["shot_id"]
