@@ -314,6 +314,168 @@ class OriginalDistrictDesktopMixin:
         host,_=self._film02mh_host()
         return host.reopen(pid,request["binding_id"])
 
+    def _film02mh_confirm_render(self,scope):
+        """One fresh native Windows dialog; historical binding is not a grant."""
+        if (type(scope) is not dict or scope.get("operation")!=
+                "nvp.render.usd_film02m_h.original_district_actor_shot.v1" or
+            type(scope.get("project_id")) is not str or
+            type(scope.get("binding_id")) is not str or
+            type(scope.get("original_film_tick")) is not int or
+            type(scope.get("actual_district_meshes")) is not int or
+            type(scope.get("original_actor_count")) is not int or
+            not all(type(scope.get(key)) is str and SHA.fullmatch(scope[key])
+                    for key in ("binding_sha256","approved_district_sha256",
+                                "original_world_take_sha256",
+                                "original_camera_shot_sha256",
+                                "source_usd_sha256"))):
+            return False
+        message=(
+            "NVP — Render one original actor and building-world camera frame?\\n\\n"
+            "Project: "+scope["project_id"]+"\\n"
+            "Exact approved film shot binding: "+scope["binding_id"]+"\\n"
+            "Binding SHA: "+scope["binding_sha256"]+"\\n"
+            "Approved district SHA: "+scope["approved_district_sha256"]+"\\n"
+            "Frozen actor World Take SHA: "+scope[
+                "original_world_take_sha256"]+"\\n"
+            "Original camera shot SHA: "+scope[
+                "original_camera_shot_sha256"]+"\\n"
+            "Derived render-only USD SHA: "+scope["source_usd_sha256"]+"\\n"
+            "Exact original film tick: "+str(scope["original_film_tick"])+"\\n"
+            "Original actors: "+str(scope["original_actor_count"])+"\\n"
+            "Native approved building meshes: "+str(scope[
+                "actual_district_meshes"])+"\\n\\n"
+            "This authorizes ONE bounded supervised Blender/Cycles render. "
+            "The original ActorID Takes, camera, district source layers and "
+            "PCM remain immutable. The image is NOT approved film content.\\n"
+            "Approve this exact render operation?")
+        return self._native_window().create_confirmation_dialog(
+            "NVP — Render Original Actor and District Shot",message) is True
+
+    def film02mh_render_begin(self,request):
+        """Nonblocking one-frame real Cycles, with a one-use native OS gate."""
+        if type(request) is not dict or set(request)!={
+                "project_id","binding_id","binding_sha256"}:
+            raise PermissionError("Only source-bound original shot render request")
+        pid=self._wo5_project(request["project_id"])
+        from backend.nvp_usd_film02m_h_actor_camera_binding import (
+            OriginalDistrictShotBinding)
+        from backend.nvp_usd_film02m_h_render_handoff import (
+            ReviewedDistrictShotCyclesHost)
+        from concurrent.futures import ThreadPoolExecutor
+        source=OriginalDistrictShotBinding(
+            self.index,confirm=lambda *_:False).reopen(
+                pid,request["binding_id"])
+        if (source["binding_document_sha256"]!=request["binding_sha256"] or
+            not SHA.fullmatch(request["binding_sha256"])):
+            raise PermissionError("Rendered shot requires the current approved binding SHA")
+        worker=self._get_host().supervisor
+        if not worker.blender_version.startswith("Blender 5.2."):
+            raise RuntimeError("Verified original shot requires Blender 5.2")
+        with self._film01r_lock:
+            if any(not x["future"].done() for x in
+                   list(self._film01r_jobs.values())+
+                   list(self._film02mh_jobs.values())):
+                raise RuntimeError("Another original film render already in progress")
+            if self._film01r_pool is None:
+                self._film01r_pool=ThreadPoolExecutor(
+                    max_workers=1,thread_name_prefix="NVP original source shot")
+            token=secrets.token_hex(12)
+            job_id="shot02mh_"+secrets.token_hex(12)
+            one_use=object()
+            used=[False]
+            def authorize(event,scope):
+                if event is not one_use or used[0]:
+                    return False
+                used[0]=True
+                return self._film02mh_confirm_render(scope)
+            def native_one():
+                host=ReviewedDistrictShotCyclesHost(
+                    self.index,worker,verify_director_action=authorize)
+                return host.render(pid,request["binding_id"],
+                                   job_id=job_id,director_event=one_use)
+            future=self._film01r_pool.submit(native_one)
+            self._film02mh_jobs[token]={
+                "future":future,"project_id":pid,
+                "binding_id":request["binding_id"],
+                "binding_sha256":source["binding_document_sha256"],
+                "job_id":job_id}
+        return {
+            "format":"nvp.usd_film02m_h.native_render_ticket.v1",
+            "state":"PENDING_FRESH_NATIVE_APPROVAL",
+            "ticket_id":token,"binding_id":request["binding_id"],
+            "binding_sha256":source["binding_document_sha256"],
+            "worker_verified":False,"director_picture_approved":False,
+            "original_actor_takes_modified":False}
+
+    def film02mh_render_poll(self,ticket_id):
+        self._native_window()
+        if (type(ticket_id) is not str or len(ticket_id)!=24 or
+            any(x not in "0123456789abcdef" for x in ticket_id)):
+            raise PermissionError("Exact installed original-render ticket required")
+        with self._film01r_lock:
+            item=self._film02mh_jobs.get(ticket_id)
+        if item is None:
+            raise KeyError("Unknown installed original-shot render ticket")
+        base={
+            "format":"nvp.usd_film02m_h.native_render_status.v1",
+            "ticket_id":ticket_id,"binding_id":item["binding_id"],
+            "binding_sha256":item["binding_sha256"],
+            "original_actor_takes_modified":False,
+            "director_picture_approved":False}
+        if not item["future"].done():
+            return {**base,"state":"NATIVE_JOB_OR_APPROVAL_PENDING"}
+        try:
+            result=item["future"].result()
+            from backend.nvp_usd_film02m_h_render_handoff import (
+                ReviewedDistrictShotCyclesHost)
+            verified=ReviewedDistrictShotCyclesHost(
+                self.index,self._get_host().supervisor,
+                verify_director_action=lambda *_:False).reopen_verified_render(
+                    item["project_id"],item["binding_id"],item["job_id"])
+            if (result["state"]!=
+                    "RENDERED_REAL_ORIGINAL_DISTRICT_ACTOR_CAMERA_SHOT" or
+                result["binding_sha256"]!=item["binding_sha256"] or
+                verified["picture_sha256"]!=result["png_sha256"] or
+                verified["native_worker_and_independent_reopen_verified"] is not True):
+                raise RuntimeError("Native reviewed source frame differs from completed job")
+        except PermissionError:
+            return {**base,"state":"NATIVE_DENIED_OR_REQUIRES_NEW_APPROVAL"}
+        except (RuntimeError,ValueError,OSError,KeyError,TypeError):
+            return {**base,"state":"NATIVE_FAILED_NEEDS_INDEPENDENT_INSPECTION"}
+        return {**base,"state":"SOURCE_VERIFIED_CYCLES_PICTURE",
+                "job_id":item["job_id"],
+                "picture_sha256":verified["picture_sha256"],
+                "world_take_sha256":verified["world_take_sha256"],
+                "district_document_sha256":verified["district_document_sha256"],
+                "native_worker_and_independent_reopen_verified":True}
+
+    def film02mh_render_image(self,request):
+        """Only exact journal-verified source picture; supports restart readback."""
+        if type(request) is not dict or set(request)!={
+                "project_id","binding_id","binding_sha256","job_id"}:
+            raise PermissionError("Only pinned completed 02M-H Cycles preview")
+        pid=self._wo5_project(request["project_id"])
+        if (type(request["binding_sha256"]) is not str or
+            not SHA.fullmatch(request["binding_sha256"])):
+            raise PermissionError("Exact immutable render source SHA required")
+        from backend.nvp_usd_film02m_h_render_handoff import (
+            ReviewedDistrictShotCyclesHost)
+        from backend.nvp_blender_worker import sha_file
+        import base64
+        supervisor=self._get_host().supervisor
+        proof=ReviewedDistrictShotCyclesHost(
+            self.index,supervisor,verify_director_action=lambda *_:False
+            ).reopen_verified_render(
+                pid,request["binding_id"],request["job_id"])
+        if (proof["binding_sha256"]!=request["binding_sha256"] or
+            proof["original_actor_takes_and_pcm_unchanged"] is not True):
+            raise PermissionError("Render image no longer matches source binding")
+        image=supervisor.root/request["job_id"]/"frame.png"
+        if image.is_symlink() or sha_file(image)!=proof["picture_sha256"]:
+            raise RuntimeError("Native render PNG changed after journal verification")
+        return {**proof,"image_data_url":"data:image/png;base64,"+
+                base64.b64encode(image.read_bytes()).decode("ascii")}
+
     def film02mf_catalog(self,project_id):
         return self._film02mf_service(project_id).catalog(project_id)
 
