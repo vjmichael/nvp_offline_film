@@ -294,6 +294,13 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
     const report=await native.film01t_advance({
       project_id:projectId,edit_id:savedEdit.edit_id,
       revision:savedEdit.revision,render_quality:quality,max_tickets:null});
+    if(report?.format==='nvp.film01t.group_permission_denied.v1'||
+       (report?.format==='nvp.usd_film01t.original_selected_durable_queue.v1'&&
+        report.source_edit_sha256===savedEdit.document_sha256)){
+      // A low-memory PC may need to defer a group. This is a measured
+      // resource wait, not a render failure or invented completion.
+      setBatchTicket(null);setBatchProgress(report);return;
+    }
     if(report?.format!=='nvp.film01t.native_group_ticket.v1'||
        report.source_edit_sha256!==savedEdit.document_sha256)
       throw Error('No current exact OS-approved source group');
@@ -450,7 +457,9 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
       <h3>Render only what the audience sees</h3>
       <div className="actions">
         <label>Reviewed Cycles quality<select aria-label="Original film render quality"
-          value={quality} onChange={e=>setQuality(e.target.value)}>
+          value={quality} disabled={!!batchTicket}
+          onChange={e=>{setQuality(e.target.value);
+            setSourceQueue(null);setBatchPreview(null);setFilmReceipt(null);}}> 
           <option value="technical_smoke">320×180 / 8 · source smoke</option>
           <option value="draft_360p">640×360 / 16 · draft</option>
           <option value="final_720p">1280×720 / 48 · candidate final</option>
