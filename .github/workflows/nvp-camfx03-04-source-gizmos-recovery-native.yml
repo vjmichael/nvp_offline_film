@@ -1,8 +1,13 @@
 name: NVP CAM-FX-03/04 Source Actor Framing, 3D Gizmos, Durable Camera Drafts and AI Group
 
-# ONE manual group-end gate. No per-commit jobs or automatic branch PR runs.
-# CAM-FX-05 moving-Cycles camera work has a separate later acceptance.
+# ONE intentional exact-head group-end push trigger: the workflow file itself
+# is changed only after CAM-FX-03/04 + 05A + repaired dependencies are ready.
+# Unrelated source commits and all ordinary PR updates DO NOT trigger CI.
+# CAM-FX-05 moving-Cycles pixels have a separate later acceptance.
 on:
+  push:
+    branches: [nvp/cam-fx03-04-gizmos-guidance-drafts-ai-20261109]
+    paths: [.github/workflows/nvp-camfx03-04-source-gizmos-recovery-native.yml]
   workflow_dispatch:
 
 permissions:
@@ -34,13 +39,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q             backend/nvp_cam_fx01_camera_rails.py             backend/nvp_cam_fx02_usd_camera_layer.py             backend/nvp_cam_fx03_source_guidance.py             backend/nvp_cam_fx03_durable_drafts.py             backend/nvp_cam_fx03_04_desktop_mixin.py             backend/nvp_cam_fx04_model_camera_candidate.py             backend/nvp_wo6_verified_local_model.py             backend/nvp_usd_film02m_f_desktop_mixin.py             tests/test_nvp_cam_fx03_04_native_director.py
+          python -m compileall -q             backend/nvp_cam_fx01_camera_rails.py             backend/nvp_cam_fx02_usd_camera_layer.py             backend/nvp_cam_fx03_source_guidance.py             backend/nvp_cam_fx03_durable_drafts.py             backend/nvp_cam_fx03_04_desktop_mixin.py             backend/nvp_cam_fx04_model_camera_candidate.py             backend/nvp_cam_fx05_verified_shot_source.py             backend/nvp_wo6_verified_local_model.py             backend/nvp_wo6_desktop_bridge.py             backend/nvp_usd_film02m_modular_buildings.py             backend/nvp_usd_film02m_f_desktop_mixin.py             tests/test_nvp_cam_fx03_04_native_director.py             tests/test_nvp_cam_fx05_staged_rail_source.py
       - name: Genuine native actor bounds, real approved building ray-triangle geometry and original immutable PCM
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p test_nvp_cam_fx03_04_native_director.py -v
           python -m unittest discover -s tests -p test_nvp_cam_fx01_02_native_rails.py -v
+          python -m unittest discover -s tests -p test_nvp_cam_fx05_staged_rail_source.py -v
+          python -m unittest discover -s tests -p test_nvp_usd_film02m_modular_buildings.py -v
       - name: Loopback schema provider receipts are untrusted; no native approval
         shell: bash
         run: |
@@ -61,7 +68,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Prove 3D projected handles, native source bounded framing and durable AI source-revision UX contracts
         working-directory: frontend
-        run: npm run test:ui -- src/CameraRailGizmo.test.jsx src/CameraRailsDirectorAdvanced.test.jsx src/CameraRailsDirector.test.jsx src/ModularWorldDirector.test.jsx
+        run: npm run test:ui -- src/CameraRailGizmo.test.jsx src/CameraRailsDirectorAdvanced.test.jsx src/CameraRailsDirector.test.jsx src/ModularWorldDirector.test.jsx src/DataFirstViewpointEditor.test.jsx
       - name: Build actual bundled offline WebView2 director and check source controls
         working-directory: frontend
         run: npm run build
@@ -104,7 +111,7 @@ jobs:
           Push-Location frontend
           npm install --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw 'Native installed React dependencies failed' }
-          npm run test:ui -- src/CameraRailGizmo.test.jsx src/CameraRailsDirectorAdvanced.test.jsx
+          npm run test:ui -- src/CameraRailGizmo.test.jsx src/CameraRailsDirectorAdvanced.test.jsx src/DataFirstViewpointEditor.test.jsx
           if ($LASTEXITCODE -ne 0) { throw 'Real installed director source editor DOM gate failed' }
           npm run build
           if ($LASTEXITCODE -ne 0) { throw 'Native installed NVP bundle failed' }
