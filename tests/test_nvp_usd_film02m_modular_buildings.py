@@ -1411,6 +1411,68 @@ class OriginalModularBuildingSource(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,"FilmDistrictFUnapproved",1)
 
+    def test_02m_f_source_layer_place_restore_remove_and_undo(self):
+        host=self._02m_f_service("original_source_manual_edit")
+        settings=self._02m_e_settings()
+        original_building=settings["source_buildings"][0]["building_id"]
+        draft=host.create(
+            self.pid,"FilmDistrictFManual",expected_revision=0,
+            params=settings,proposed_by="director")
+        first=host.preview(self.pid,draft["draft_id"])
+        generated_sha=first["generated_source_layer_sha256"]
+        hidden=host.edit(
+            self.pid,draft["draft_id"],draft["version"],
+            {"op":"hide_generated","instance_id":1})
+        placement=host.edit(
+            self.pid,draft["draft_id"],hidden["version"],
+            {"op":"place_original","name":"ApprovedOriginalHouse",
+             "building_id":original_building,
+             "position_m":[0.,60.,0.],"yaw_deg":90})
+        stage=host.preview(self.pid,draft["draft_id"])
+        self.assertEqual(stage["generated_source_layer_sha256"],
+                         generated_sha)
+        self.assertEqual(len(stage["instances"]),7)
+        self.assertEqual(len(stage["diff"]["added_director_opinions"]),2)
+        self.assertEqual(len([
+            x for x in stage["instances"] if x["director_placed"]]),1)
+        with self.assertRaises(ValueError):
+            host.edit(
+                self.pid,draft["draft_id"],placement["version"],
+                {"op":"place_original","name":"CollidingHouse",
+                 "building_id":original_building,
+                 "position_m":[0.,-15.,0.],"yaw_deg":0})
+        restored=host.edit(
+            self.pid,draft["draft_id"],placement["version"],
+            {"op":"unhide_generated","instance_id":1})
+        after=host.preview(self.pid,draft["draft_id"])
+        self.assertEqual(
+            [x for x in after["instances"] if x["hidden"]],[])
+        self.assertEqual(after["generated_source_layer_sha256"],generated_sha)
+        removed=host.edit(
+            self.pid,draft["draft_id"],restored["version"],
+            {"op":"remove_manual","name":"ApprovedOriginalHouse"})
+        self.assertEqual(len(host.preview(
+            self.pid,draft["draft_id"])["instances"]),6)
+        previous=host.undo(
+            self.pid,draft["draft_id"],removed["version"])
+        self.assertEqual(previous["version"],removed["version"]+1)
+        last=host.preview(self.pid,draft["draft_id"])
+        self.assertEqual(len(last["instances"]),7)
+        self.assertEqual(last["generated_source_layer_sha256"],
+                         generated_sha)
+        with self.assertRaises(PermissionError):
+            host.edit(
+                self.pid,draft["draft_id"],previous["version"],
+                {"op":"execute_python","command":"import os"})
+        with self.assertRaises(PermissionError):
+            host.create(
+                self.pid,"FilmDistrictFUntrustedScript",
+                expected_revision=0,
+                params={**settings,"arbitrary_script":"import os"},
+                proposed_by="ai")
+        self.assertFalse(last["original_world_takes_modified"])
+        self.assertEqual(last["native_blender_workers_started"],0)
+
     def test_02m_f_exact_native_os_confirmation_and_source_version_lock(self):
         from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
         approvals=[]
