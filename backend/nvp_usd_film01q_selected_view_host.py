@@ -31,6 +31,7 @@ from backend.nvp_usd_film01p_source_multicam_film_conform import (
 
 SCRIPT="nvp_usd_film01q_blender_selected_views.py"
 MASK="nvp_usd_film01m_camera_ray_mask.py"
+QUALITY_HELPER="nvp_usd_film01r_quality.py"
 AUDIT="audit.json"
 AUDIT_FORMAT="nvp.usd_film01q.native_selected_view_cycles_chunk_audit.v1"
 FILM_FORMAT="nvp.usd_film01q.selected_original_720frame_film_with_pcm.v1"
@@ -117,7 +118,9 @@ class ReviewedSelectedViewFilm:
             file_sha(job/SCRIPT)!=file_sha(
                 Path(__file__).resolve().parents[1]/"tools"/SCRIPT) or
             file_sha(job/MASK)!=file_sha(
-                Path(__file__).resolve().parents[1]/"tools"/MASK)):
+                Path(__file__).resolve().parents[1]/"tools"/MASK) or
+            file_sha(job/QUALITY_HELPER)!=file_sha(
+                Path(__file__).resolve().parent/QUALITY_HELPER)):
             raise PermissionError("Original source/native worker script was replaced")
         receipt=json.loads((job/AUDIT).read_text("utf8"))
         fields={
@@ -238,6 +241,10 @@ class ReviewedSelectedViewFilm:
                 if not path.is_file() or path.is_symlink():
                     raise RuntimeError("Reviewed Blender source script absent")
                 shutil.copyfile(path,job/name)
+            quality_source=Path(__file__).resolve().parent/QUALITY_HELPER
+            if not quality_source.is_file() or quality_source.is_symlink():
+                raise RuntimeError("Fixed source-reviewed render profile helper absent")
+            shutil.copyfile(quality_source,job/QUALITY_HELPER)
             shutil.copyfile(source_dir/MANIFEST,job/"source.json")
             shutil.copyfile(source_dir/STAGE,job/"source.usda")
             (job/"plan.json").write_bytes(canonical(planned["plan"]))
@@ -253,7 +260,8 @@ class ReviewedSelectedViewFilm:
                     "source.json":file_sha(job/"source.json"),
                     "plan.json":file_sha(job/"plan.json"),
                     "chunk.json":file_sha(job/"chunk.json"),
-                    MASK:file_sha(job/MASK)},
+                    MASK:file_sha(job/MASK),
+                    QUALITY_HELPER:file_sha(job/QUALITY_HELPER)},
                 outputs=outputs,
                 arguments={"--manifest":"chunk.json","--audit":AUDIT},
                 timeout_seconds=planned['plan']['render_profile']['timeout_seconds'],
