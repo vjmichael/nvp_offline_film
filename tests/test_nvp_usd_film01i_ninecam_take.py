@@ -1175,6 +1175,104 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             "director_visual_acceptance":False},
             sort_keys=True,indent=2),"utf8")
 
+    def test_01t_actual_source_queue_first_group_and_restart_reconciliation(self):
+        """Actual pxr source frames, fake ONLY resource hardware and test consent."""
+        import sys
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+        from backend.nvp_usd_film01s_adaptive_batch import (
+            BatchPreferences,PREVIEW,FINAL)
+        from backend.nvp_resource_guard import ResourceSnapshot
+        from backend.nvp_usd_film01t_selected_queue import OriginalSelectedFilmBatch
+        from backend.nvp_usd_film01r_quality import reviewed_quality
+        self._selected_original_edit()
+        source_dir=self.root/"01t_source_eval_queue"
+        worker=BlenderWorkerSupervisor(
+            source_dir/"native_worker",
+            blender_executable=sys.executable,
+            blender_sha256=sha_file(sys.executable),
+            blender_version="Blender 5.2.3")  # Test-only, no actual worker launched.
+        snapshot=ResourceSnapshot(
+            sampled_at=1000,ram_total_mb=32768,
+            ram_available_mb=28000,memory_psi_full10=0,gpus=(),warnings=())
+        approved="CI_TYPED_ORIGINAL_SOURCE_ONLY_CONSENT"
+        decision=lambda event,scope:(
+            event==approved and scope.get("operation") in {
+                "nvp.film01t.enqueue_original_selected_scene.v1",
+                "nvp.film01t.approve_exact_original_selected_group.v1"})
+        kwargs={
+            "queue_workspace":source_dir/"durable_queue",
+            "verify_director_action":decision,
+            "prove_process_custody":lambda *_:False,
+            "render_quality":"technical_smoke",
+            "collect_host_resources":lambda:snapshot}
+        host=OriginalSelectedFilmBatch(self.index,worker,**kwargs)
+        prefs=BatchPreferences(
+            shots_per_batch=3,parallel_worker_limit=1,renderer="cpu",
+            final_worker_ram_mb=reviewed_quality(
+                "technical_smoke")["max_worker_ram_mb"])
+        prepared=host.prepare(
+            self.pid,"DataFirstOriginalSelectedShort",1,prefs)
+        self.assertEqual(prepared["expected_selected_frames"],720)
+        self.assertEqual(len(prepared["wrapped_queue"]["plan"]["source_shots"]),90)
+        self.assertEqual(len(prepared["wrapped_queue"]["plan"][
+            "selected_final_shot_ids"]),90)
+        self.assertEqual(prepared["render_quality"] if "render_quality" in prepared
+                         else prepared["profile_sha256"],
+                         prepared.get("render_quality",prepared["profile_sha256"]))
+        status=host.enqueue(prepared,director_event=approved)
+        self.assertEqual(status["progress_required"],180)
+        self.assertEqual(status["progress_completed"],0)
+        next_group=host.preview_next_group(
+            self.pid,"DataFirstOriginalSelectedShort",1)
+        self.assertEqual(next_group["quality"],PREVIEW)
+        self.assertEqual(next_group["bounded_ticket_count"],3)
+        self.assertEqual([x["start_frame"] for x in
+            next_group["exact_source_tickets"]],[0,8,16])
+        executed=host.advance_group(
+            self.pid,"DataFirstOriginalSelectedShort",1,
+            director_event=approved)
+        self.assertEqual(executed["verified_shots_in_this_action"],3)
+        self.assertTrue(all(x["quality"]==PREVIEW and
+                            x["native_worker_job_id"] is None
+                            for x in executed["results"]))
+        self.assertEqual(executed["queue"]["progress_completed"],3)
+        reopened=OriginalSelectedFilmBatch(
+            self.index,BlenderWorkerSupervisor(
+                source_dir/"native_worker",
+                blender_executable=sys.executable,
+                blender_sha256=sha_file(sys.executable),
+                blender_version="Blender 5.2.3"),**kwargs)
+        persisted=reopened.status(
+            self.pid,"DataFirstOriginalSelectedShort",1)
+        self.assertEqual(persisted["queue"]["progress_completed"],3)
+        key=persisted["queue"]["plan_id"]
+        # Deliberately leave a PREVIEW claim open (no Blender process).
+        # Native source has to be independently re-evaluated to reconcile.
+        claim=reopened.queue.claim(
+            key,quality=PREVIEW,shot_id="Source_0024",
+            attempt=1,authorizer=lambda event,scope:event=="CI_SOURCE_CLAIM",
+            director_event="CI_SOURCE_CLAIM",
+            prove_prior_worker_stopped=lambda *_:False,
+            snapshot=snapshot,cpu_threads=16)
+        self.assertTrue(claim["admitted"])
+        self.assertEqual(reopened.recover_interrupted(
+            self.pid,"DataFirstOriginalSelectedShort",1),1)
+        self.assertEqual(reopened.service.suggest_next(key)["state"],
+                         "BLOCKED_NEEDS_EXPLICIT_RECOVERY")
+        repaired=reopened.reconcile_original_result(
+            self.pid,"DataFirstOriginalSelectedShort",1,
+            quality=PREVIEW,shot_id="Source_0024")
+        self.assertEqual(repaired["state"],
+                         "RECONCILED_INDEPENDENTLY_VERIFIED")
+        self.assertEqual(reopened.status(self.pid,
+            "DataFirstOriginalSelectedShort",1)["queue"][
+            "progress_completed"],4)
+        # Final Cycles work cannot start until same-shot source eval passes.
+        final_ticket=next(x for x in reopened.status(
+            self.pid,"DataFirstOriginalSelectedShort",1)["queue"][
+            "shot_tickets"] if x["quality"]==FINAL)
+        self.assertEqual(final_ticket["state"],"QUEUED")
+
     def test_01t_complete_real_720_selected_original_frames_and_pcm(self):
         """Heavy actual native acceptance; never manufacture a 30s movie."""
         import os
