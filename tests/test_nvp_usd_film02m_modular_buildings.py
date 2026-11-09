@@ -1184,6 +1184,166 @@ class OriginalModularBuildingSource(unittest.TestCase):
                 "gpu_performance_measured":False},
                 sort_keys=True,indent=2),"utf8")
 
+    def _02m_e2_original_district(self,identifier):
+        district=self._02m_e_host()
+        settings=self._02m_e_settings()
+        original_building=settings["source_buildings"][0]["building_id"]
+        overrides=[
+            {"op":"hide_generated","instance_id":1},
+            {"op":"place_original","name":"DirectorExtraBuilding",
+             "building_id":original_building,
+             "position_m":[0.,60.,0.],"yaw_deg":90}]
+        published=district.publish(
+            self.pid,identifier,**settings,
+            director_overrides=overrides,
+            director_event=self.approval)
+        return district,published
+
+    def test_02m_e2_original_point_instancer_compiles_only_disposable_native_render_view(self):
+        from backend.nvp_usd_film02m_e2_district_render_view import (
+            source_district_render_view,FORMAT)
+        from pxr import Usd,UsdGeom,UsdShade
+        district,published=self._02m_e2_original_district(
+            "DistrictE2SourceRender")
+        with district.open(self.pid,"DistrictE2SourceRender",1) as before:
+            original_generated=before["receipt"]["generated_layer_sha256"]
+            original_director=before["receipt"][
+                "director_override_layer_sha256"]
+            original_root=before["receipt"]["district_root_sha256"]
+        with source_district_render_view(
+                self.index,self.pid,"DistrictE2SourceRender",1) as output:
+            manifest=output["manifest"]
+            self.assertEqual(manifest["format"],FORMAT)
+            self.assertEqual(manifest["original_generated_layer_sha256"],
+                             original_generated)
+            self.assertEqual(manifest["original_director_layer_sha256"],
+                             original_director)
+            self.assertEqual(manifest["original_point_instancer_root_sha256"],
+                             original_root)
+            self.assertEqual(manifest["source_original_point_instances"],6)
+            self.assertEqual(manifest["source_original_invisible_ids"],[1])
+            self.assertEqual(manifest["source_visible_and_hand_placed_instances"],6)
+            self.assertEqual(manifest["expected_actual_original_meshes"],60)
+            self.assertEqual(manifest["original_native_usd_pbr_bound_meshes"],60)
+            self.assertEqual(manifest["source_approved_world_origin_m"],
+                             [1_000_000.,-2_000_000.,0.])
+            self.assertEqual(manifest["render_view_local_origin_m"],
+                             [0.,0.,0.])
+            self.assertTrue(output[
+                "original_point_instancer_retained_as_authority"])
+            self.assertFalse(manifest["gpu_instancing_performance_verified"])
+            self.assertFalse(manifest["native_blender_cycles_parity_verified"])
+            self.assertFalse(manifest["cinematic_picture_approved"])
+            render=Usd.Stage.Open(str(output["root"]/
+                                      "district_render_view.usda"))
+            self.assertEqual(UsdGeom.GetStageUpAxis(render),"Z")
+            self.assertEqual(UsdGeom.GetStageMetersPerUnit(render),1.)
+            actual=[p for p in render.Traverse() if p.IsA(UsdGeom.Mesh)]
+            self.assertEqual(len(actual),60)
+            self.assertTrue(all(UsdShade.MaterialBindingAPI(
+                x).ComputeBoundMaterial()[0] for x in actual))
+        with district.open(self.pid,"DistrictE2SourceRender",1) as after:
+            self.assertEqual(after["receipt"]["generated_layer_sha256"],
+                             original_generated)
+            self.assertEqual(after["receipt"]["director_override_layer_sha256"],
+                             original_director)
+            self.assertEqual(after["receipt"]["district_root_sha256"],
+                             original_root)
+            self.assertEqual(after["record"]["document_sha256"],
+                             published["document_sha256"])
+
+    def test_02m_e2_genuine_native_blender_district_materials_and_reverse_camera(self):
+        import os
+        import json
+        import shutil
+        import subprocess
+        from PIL import Image,ImageStat
+        from backend.nvp_usd_film02m_e2_district_render_view import (
+            source_district_render_view)
+        from backend.nvp_blender_worker import (
+            BlenderOperation,BlenderWorkerSupervisor,sha_file)
+        executable=os.environ.get("NVP_FILM02ME2_BLENDER_BIN")
+        if not executable:
+            self.skipTest(
+                "Requires actual Blender5.2 and native 6-building district Cycles")
+        blender=Path(executable).resolve(strict=True)
+        version=subprocess.run(
+            [str(blender),"-b","--version"],
+            check=True,capture_output=True,text=True,timeout=30
+        ).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        _,published=self._02m_e2_original_district(
+            "DistrictE2TrueCycles")
+        worker_root=self.root/"nvp02me2_native_district_jobs"
+        supervisor=BlenderWorkerSupervisor(
+            worker_root,blender_executable=blender,
+            blender_sha256=sha_file(blender),blender_version=version)
+        job=worker_root/"Film02ME2ActualDistrict"
+        job.mkdir(parents=True,mode=0o700)
+        script=Path(__file__).resolve().parents[1]/"tools"/(
+            "nvp_usd_film02m_e2_blender_district.py")
+        shutil.copyfile(script,job/script.name)
+        with source_district_render_view(
+                self.index,self.pid,"DistrictE2TrueCycles",1) as generated:
+            base=generated["root"]
+            for filename in ("manifest.json","district_render_view.usda"):
+                shutil.copyfile(base/filename,job/filename)
+            shutil.copytree(base/"sources",job/"sources")
+        inputs={
+            script.name:sha_file(job/script.name),
+            "manifest.json":sha_file(job/"manifest.json"),
+            "district_render_view.usda":sha_file(job/"district_render_view.usda")}
+        for path in (job/"sources").rglob("*.usda"):
+            inputs[str(path.relative_to(job)).replace("\\","/")]=sha_file(path)
+        self.assertLessEqual(len(inputs),32)
+        outputs={
+            "street_front.png":"png",
+            "street_reverse.png":"png",
+            "audit.json":"json_audit"}
+        op=BlenderOperation(
+            job_id="Film02ME2ActualDistrict",
+            script=script.name,script_sha256=sha_file(job/script.name),
+            inputs=inputs,outputs=outputs,
+            arguments={"--manifest":"manifest.json","--audit":"audit.json"},
+            timeout_seconds=600,memory_limit_mb=8192,
+            gpu_memory_mb=0)
+        produced=supervisor.run(op)
+        self.assertEqual(produced["state"],"SUCCEEDED")
+        self.assertEqual(supervisor.verify_completed(
+            "Film02ME2ActualDistrict")["state"],"SUCCEEDED")
+        audit=json.loads((job/"audit.json").read_text("utf8"))
+        self.assertTrue(audit["passed"])
+        self.assertEqual(audit["original_district_document_sha256"],
+                         published["document_sha256"])
+        self.assertEqual(audit["original_instance_source_count"],6)
+        self.assertEqual(audit["actual_visible_original_buildings"],6)
+        self.assertEqual(audit["actual_imported_first_party_meshes"],60)
+        self.assertGreaterEqual(audit["actual_principled_pbr_materials"],3)
+        self.assertFalse(audit["director_cinematic_look_approved"])
+        self.assertFalse(audit["materialx_parity_verified"])
+        self.assertFalse(audit["gpu_draw_call_savings_claimed"])
+        self.assertTrue(audit["original_point_instancer_not_rewritten"])
+        self.assertTrue(audit["renderer_specific_expanded_usd_is_derived"])
+        self.assertGreater(audit["native_peak_rss_mb"],0)
+        hashes=set()
+        for name in ("street_front","street_reverse"):
+            path=job/(name+".png")
+            with Image.open(path) as image:
+                self.assertEqual(image.size,(480,270))
+                image.verify()
+            with Image.open(path) as image:
+                self.assertGreater(
+                    max(ImageStat.Stat(image.convert("RGB")).var),1.)
+            hashes.add(sha_file(path))
+        self.assertEqual(len(hashes),2)
+        artifacts=Path(os.environ.get(
+            "NVP_FILM02ME2_ARTIFACT_DIR",
+            str(self.root/"nvp02me2_look_and_district"))).resolve()
+        artifacts.mkdir(parents=True,exist_ok=True)
+        for name in ["street_front.png","street_reverse.png",
+                     "audit.json","manifest.json",
+                     "district_render_view.usda"]:
+            shutil.copyfile(job/name,artifacts/("district_"+name))
     def test_02m_original_geometry_collision_rejected(self):
         original=building_recipe(0,self.facades)
         overlapping=deepcopy(original)
