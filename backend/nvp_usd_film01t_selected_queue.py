@@ -435,6 +435,62 @@ class OriginalSelectedFilmBatch:
             "queue":status,
             "full_720_frame_film_completed":False}
 
+    def reconcile_original_result(self,pid,edit_id,revision,*,quality,shot_id):
+        """After restart, adopt a real terminal native receipt, never rerun it."""
+        source_dir,source,wrapped,identity=self._current(pid,edit_id,revision)
+        _,_,_=self._assert_saved(pid,edit_id,revision)
+        state=self.queue.status(identity)
+        row=next((x for x in state["shot_tickets"]
+                  if x["quality"]==quality and x["shot_id"]==shot_id),None)
+        if row is None or row["state"] not in ("RUNNING","INTERRUPTED","FAILED"):
+            raise PermissionError("No exact source ticket awaiting reconciliation")
+        attempt=row["attempt"]
+        start=int(shot_id.split("_")[1])
+        if start not in range(0,FRAMES,CHUNK):
+            raise ValueError("Corrupt original frame window")
+        if quality==PREVIEW:
+            # No native process is launched for original OpenUSD source
+            # frame evaluation. It can be independently redone, not replayed.
+            receipt=self._verify_original_evaluation(
+                source_dir,source,wrapped,start)
+        elif quality==FINAL:
+            receipt,_=self._verify_final_native_receipt(
+                source_dir,source,wrapped,start,attempt)
+        else:
+            raise ValueError("Unknown source quality ticket")
+        def stopped(context):
+            if (context["plan_id"]!=identity or
+                context["shot_id"]!=shot_id or
+                context["attempt"]!=attempt):
+                return False
+            if quality==PREVIEW:
+                return True
+            return self.custody(identity,quality,shot_id,attempt) is True
+        def independently_verified(context):
+            if (context["native_receipt_sha256"]!=receipt or
+                context["source_performance_sha256"]!=wrapped["plan"][
+                    "original_performance_sha256"] or
+                context["ticket_sha256"]!=row["ticket_sha256"]):
+                return False
+            try:
+                if quality==PREVIEW:
+                    return self._verify_original_evaluation(
+                        source_dir,source,wrapped,start)==receipt
+                actual,_=self._verify_final_native_receipt(
+                    source_dir,source,wrapped,start,attempt)
+                return actual==receipt
+            except (RuntimeError,ValueError,KeyError,OSError,PermissionError):
+                return False
+        self.queue.reconcile_verified_completed(
+            identity,quality=quality,shot_id=shot_id,attempt=attempt,
+            verified_receipt_sha256=receipt,
+            prove_native_worker_stopped=stopped,
+            verify_original_source_outcome=independently_verified)
+        return {"format":FORMAT,"state":"RECONCILED_INDEPENDENTLY_VERIFIED",
+                "plan_id":identity,"quality":quality,"shot_id":shot_id,
+                "attempt":attempt,"receipt_sha256":receipt,
+                "old_permission_replayed":False}
+
     def finished_source_frames(self,pid,edit_id,revision):
         wrapped,identity,_=self._assert_saved(pid,edit_id,revision)
         state=self.queue.status(identity)
