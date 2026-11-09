@@ -222,7 +222,9 @@ class BuildingCellSession:
                                         required_cell_ids,
                                         next_shot_required_cell_ids=None,
                                         load_distance_m,unload_distance_m,
-                                        max_loaded_cells):
+                                        max_loaded_cells,
+                                        max_process_rss_bytes=None,
+                                        rss_probe=None):
         """Use actual original 01M UsdGeom.Camera pose, never a guessed camera.
 
         This is source-verified camera-distance prefetch only. A building
@@ -266,7 +268,9 @@ class BuildingCellSession:
             next_shot_required_cell_ids=next_shot_required_cell_ids,
             load_distance_m=load_distance_m,
             unload_distance_m=unload_distance_m,
-            max_loaded_cells=max_loaded_cells)
+            max_loaded_cells=max_loaded_cells,
+            max_process_rss_bytes=max_process_rss_bytes,
+            rss_probe=rss_probe)
         return {**result,
                 "camera_positions_m_are_hint_not_01d_identity":False,
                 "camera_positions_from_native_original_01m_usd":True,
@@ -280,7 +284,8 @@ class BuildingCellSession:
 
     def transition(self,*,camera_positions_m,required_cell_ids,
                    next_shot_required_cell_ids=None,
-                   load_distance_m,unload_distance_m,max_loaded_cells):
+                   load_distance_m,unload_distance_m,max_loaded_cells,
+                   max_process_rss_bytes=None,rss_probe=None):
         if self.closed:
             raise RuntimeError("Original camera cell working set already closed")
         names=set(self.original)
@@ -303,6 +308,20 @@ class BuildingCellSession:
             type(max_loaded_cells) is not int or
             not 1<=max_loaded_cells<=len(names)):
             raise ValueError("Hysteresis source distances and set budget invalid")
+        if max_process_rss_bytes is not None:
+            if (type(max_process_rss_bytes) is not int or
+                not 32*1024*1024<=max_process_rss_bytes<=2**43):
+                raise ValueError("Explicit bounded process-wide NVP RAM limit required")
+            if rss_probe is None:
+                from backend.nvp_usd_film01_world import _rss_bytes
+                rss_probe=_rss_bytes
+            if not callable(rss_probe):
+                raise TypeError("Only a trusted OS-wide RSS monitor")
+            before=rss_probe()
+            if type(before) is not int or before>max_process_rss_bytes:
+                raise MemoryError("Actual NVP process RAM unavailable or over director source budget")
+        else:
+            before=None
         always=set(required_cell_ids)|set(next_shot_required_cell_ids or [])
         if len(always)>max_loaded_cells:
             raise MemoryError("Available architecture cells cannot omit a director-required shot")
@@ -329,12 +348,25 @@ class BuildingCellSession:
             selected=always|set(optional[:max_loaded_cells-len(always)])
         to_unload=sorted(self.loaded-selected)
         to_load=sorted(selected-self.loaded)
-        for id in to_unload:
-            self.stage.Unload("/World/Cells/"+id)
-        for id in to_load:
-            self.stage.Load("/World/Cells/"+id)
-        checked=[]
-        for id in sorted(names):
+        original_loaded=set(self.loaded)
+        # Native USD loading is transactional from the director's point
+        # of view: a failed mesh, missing source layer, host RAM trip or
+        # original source inconsistency rolls back to the previous set.
+        try:
+            for id in to_unload:
+                self.stage.Unload("/World/Cells/"+id)
+            for id in to_load:
+                self.stage.Load("/World/Cells/"+id)
+            if max_process_rss_bytes is not None:
+                measured=rss_probe()
+                if (type(measured) is not int or
+                    measured>max_process_rss_bytes):
+                    raise MemoryError(
+                        "Actual NVP working-set process RSS exceeded source budget")
+            else:
+                measured=None
+            checked=[]
+            for id in sorted(names):
             prim=self.stage.GetPrimAtPath(
                 "/World/Cells/"+id)
             if not prim or prim.IsLoaded()!=(id in selected):
@@ -354,11 +386,30 @@ class BuildingCellSession:
                     "cell_id":id,"native_meshes_reopened":real_meshes,
                     "geometry_source_sha256":self.original[id][
                         "building_sha256"]})
-        self.loaded=selected
+            self.loaded=selected
+        except Exception:
+            try:
+                for id in sorted(names-original_loaded):
+                    self.stage.Unload("/World/Cells/"+id)
+                for id in sorted(original_loaded):
+                    self.stage.Load("/World/Cells/"+id)
+                if any(self.stage.GetPrimAtPath(
+                        "/World/Cells/"+id).IsLoaded()!=
+                       (id in original_loaded) for id in names):
+                    raise RuntimeError("Native original cell rollback verification failed")
+                self.loaded=original_loaded
+            except Exception:
+                self.close()
+                raise RuntimeError(
+                    "Failed original USD cell rollback; session closed to prevent stale image")
+            raise
         return {
             "format":FORMAT,"source_cell_manifest_sha256":self.record[
                 "document_sha256"],
             "loaded_cell_ids":sorted(self.loaded),
+            "actual_process_rss_before_bytes":before,
+            "actual_process_rss_after_bytes":measured,
+            "rss_is_process_wide_not_usd_attributable":True,
             "unloaded_cell_ids":sorted(names-self.loaded),
             "newly_loaded":to_load,"newly_unloaded":to_unload,
             "director_required_cells":sorted(always),
