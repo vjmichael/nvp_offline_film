@@ -312,6 +312,15 @@ class OriginalDistrictDrafts:
                 row=self._reconcile_pending(db,pid,row)
             if row["state"]=="DRAFT":
                 self._reopen(pid,row,rebuild_stage=True)
+            elif row["state"]=="COMMITTED":
+                saved=self.index.read_revision(
+                    pid,row["district_id"],row["published_revision"])
+                if saved["document_sha256"]!=row["published_sha"]:
+                    raise RuntimeError("Approved immutable original FilmIndex receipt changed")
+                with self.district.open(
+                        pid,row["district_id"],row["published_revision"]) as result:
+                    if result["record"]["document_sha256"]!=row["published_sha"]:
+                        raise RuntimeError("Approved original USD source can no longer reopen")
             return self._overview(row)
 
     def _change(self,pid,draft_id,version,change):
