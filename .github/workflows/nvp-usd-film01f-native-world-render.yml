@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_usd_film01f_blender_host.py tools/nvp_usd_film01f_blender_worker.py tools/nvp_usd_film01f_blender_reopen.py tests/test_nvp_usd_film01f_world_render.py
+          python -m compileall -q backend/nvp_usd_film01f_original_audio.py backend/nvp_usd_film01f_blender_host.py tools/nvp_usd_film01f_blender_worker.py tools/nvp_usd_film01f_blender_reopen.py tests/test_nvp_usd_film01f_world_render.py
       - name: Reopen original source scenes, four StoryBible ActorIDs, original PCM and two distinct world-shots
         shell: bash
         run: |
@@ -101,9 +101,21 @@ jobs:
           assert data["independent_real_blender_scene_reopens"]==2
           assert len(set(data["rendered_png_sha256"]))==2, "Different original shots must not yield identical media bytes"
           assert data["test_only_original_pcm_not_mixed"] is True
+          assert data["original_pcm_wav_source_stems_independently_verified"] is True
+          assert (folder/"cut0_source_event_00.wav").is_file()
+          assert (folder/"cut1_source_event_00.wav").is_file()
+          assert (folder/"cut1_source_event_01.wav").is_file()
           assert data["film_master_ready"] is False
           assert data["photorealism_approved"] is False
           for i in range(2):
+              import wave
+              audio=json.loads((folder/f"cut{i}_original_audio.json").read_text("utf8"))
+              assert audio["actual_original_pcm_readback_verified"] is True
+              assert audio["final_picture_sound_mux_verified"] is False
+              for stem in audio["original_source_stems"]:
+                  with wave.open(str(folder/f"cut{i}_{stem['wave_file']}"),"rb") as wav:
+                      assert wav.getnchannels()==1 and wav.getframerate()==48000
+                      assert wav.getnframes()==stem["sample_count"]
               with Image.open(folder/f"cut{i}_frame.png") as img:
                   assert img.size == (320,180)
                   img.verify()
