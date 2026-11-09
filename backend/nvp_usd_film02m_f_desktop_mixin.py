@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import threading
 from hashlib import sha256
 from pathlib import Path
 
@@ -69,47 +70,56 @@ class OriginalDistrictDesktopMixin:
             self.index,workspace,confirm=self._film02mf_confirm,
             model_session_id=self._film02mg_host_session)
 
-    def film02mg_generate_candidate(self,request):
-        """Real host-selected model suggestion and durable unapproved draft.
-
-        Reuses the existing WO6 trusted provider factory. Browser JSON cannot
-        specify a model endpoint, a worker command or an OS authorization.
-        """
+    def _film02mg_begin(self,request):
+        """Admit exact source/model intent before starting generation."""
         if (type(request) is not dict or set(request)!={
                 "project_id","district_id","expected_revision",
                 "direction","model_id"}):
             raise PermissionError("Only bounded local-model world advice request")
         pid=self._wo5_project(request["project_id"])
+        if getattr(self,"_wo6_closed",False):
+            raise PermissionError("Original world model session is closed")
         factory=getattr(self,"_wo6_director_writer_factory",None)
         if not callable(factory):
-            raise PermissionError("Installed WO6 model provider is not available")
-        from backend.nvp_usd_film02m_g_model_world_candidate import (
-            generate_model_world_candidate)
+            raise PermissionError("Installed WO6 local provider is unavailable")
+        from backend.nvp_usd_film02m_f_authoring import _json
+        direction=request["direction"]
+        if (type(direction) is not str or not 1<=len(direction.strip())<=1200):
+            raise ValueError("Bounded director intent required")
         service=self._film02mf_service(pid)
         catalog=service.catalog(pid)
-        from backend.nvp_usd_film02m_f_authoring import _json
         catalog_key=_json([
             [(b["building_id"],b["revision"],b["document_sha256"])
              for b in catalog["source_buildings"]],
             [(d["district_id"],d["revision"],d["document_sha256"])
              for d in catalog["approved_districts"]]]).encode("ascii")
-        direction=request["direction"]
-        if type(direction) is not str or not 1<=len(direction.strip())<=1200:
-            raise ValueError("Bounded director intent required")
         attempt=service.start_model_attempt(
             pid,request["district_id"],request["expected_revision"],
             request["model_id"],sha256(direction.strip().encode("utf8")).hexdigest(),
             sha256(catalog_key).hexdigest())
+        return pid,service,catalog,catalog_key,direction,attempt
+
+    def _film02mg_complete(self,request,begun,cancel_event=None):
+        """The single source-locked implementation for sync and background work."""
+        pid,service,catalog,catalog_key,direction,attempt=begun
+        from backend.nvp_usd_film02m_g_model_world_candidate import (
+            generate_model_world_candidate)
+        from backend.nvp_usd_film02m_f_authoring import _json
+        def require_live():
+            if (getattr(self,"_wo6_closed",False) or
+                (cancel_event is not None and cancel_event.is_set())):
+                raise PermissionError("Original world generation was stopped")
         try:
-            # Host-selected WO6 provider. Completion does not grant authority.
-            model=factory(request["model_id"])
+            require_live()
+            # Provider is selected by the existing trusted host, never by
+            # browser-supplied endpoint, script, URL, or executable path.
+            model=self._wo6_director_writer_factory(request["model_id"])
+            require_live()
             result=generate_model_world_candidate(
                 catalog,project_id=pid,district_id=request["district_id"],
                 expected_revision=request["expected_revision"],
                 direction=direction,model_id=request["model_id"],model=model)
-            # Same bridge process/session must still own the generation.
-            if getattr(self,"_wo6_closed",False):
-                raise PermissionError("Native model session closed during generation")
+            require_live()
             newest=service.catalog(pid)
             new_key=_json([
                 [(b["building_id"],b["revision"],b["document_sha256"])
@@ -117,7 +127,11 @@ class OriginalDistrictDesktopMixin:
                 [(d["district_id"],d["revision"],d["document_sha256"])
                  for d in newest["approved_districts"]]]).encode("ascii")
             if sha256(catalog_key).digest()!=sha256(new_key).digest():
-                raise RuntimeError("Original source catalog changed during model generation")
+                raise RuntimeError("Original source catalog changed during generation")
+            require_live()
+            # Atomic SQLite state transition GENERATING -> DRAFT_SAVED. If
+            # cancellation won while native USD source was being validated,
+            # create() rolls its draft/evidence INSERTs back in one transaction.
             draft=service.create(
                 pid,request["district_id"],
                 expected_revision=request["expected_revision"],
@@ -137,6 +151,85 @@ class OriginalDistrictDesktopMixin:
             "director_approval_granted":False,
             "actor_takes_modified":False,
         }
+
+    def film02mg_generate_candidate(self,request):
+        """Synchronous compatibility path; host-owned, never a browser grant."""
+        return self._film02mg_complete(request,self._film02mg_begin(request))
+
+    def _film02mg_run_background(self,request,begun,stop):
+        attempt=begun[-1]
+        try:
+            self._film02mg_complete(request,begun,stop)
+        except Exception:
+            # Durable failure classification is retained by the host-owned
+            # attempt table. Never echo model text or local source paths to UI.
+            pass
+        finally:
+            with self._film02mg_async_lock:
+                self._film02mg_active.pop(attempt,None)
+
+    def film02mg_start_candidate(self,request):
+        """Nonblocking installed-WebView generation, without OS authorization."""
+        if not hasattr(self,"_film02mg_async_lock"):
+            raise PermissionError("Trusted native desktop model host unavailable")
+        with self._film02mg_async_lock:
+            if getattr(self,"_wo6_closed",False):
+                raise PermissionError("Local model host already closed")
+            if self._film02mg_active:
+                raise RuntimeError("Previous installed world model job still running")
+            begun=self._film02mg_begin(request)
+            pid,service,_,_,_,attempt=begun
+            stop=threading.Event()
+            self._film02mg_active[attempt]={
+                "project_id":pid,"stop":stop,"service":service}
+            try:
+                threading.Thread(
+                    target=self._film02mg_run_background,
+                    args=(dict(request),begun,stop),
+                    name="NVP-FILM02M-read-only-model-to-draft",
+                    daemon=True).start()
+            except Exception:
+                self._film02mg_active.pop(attempt,None)
+                service.fail_model_attempt(pid,attempt,"provider_failed")
+                raise
+        return {
+            "format":"nvp.usd_film02m_g.durable_model_attempt_status.v1",
+            "attempt_id":attempt,"project_id":pid,
+            "state":"GENERATING",
+            "director_approval_granted":False,
+            "native_worker_authorized":False,
+            "actor_takes_modified":False,
+        }
+
+    def film02mg_candidate_status(self,request):
+        if type(request) is not dict or set(request)!={
+                "project_id","attempt_id"}:
+            raise PermissionError("Only exact original model attempt status")
+        pid=self._wo5_project(request["project_id"])
+        return self._film02mf_service(pid).model_attempt_status(
+            pid,request["attempt_id"])
+
+    def film02mg_cancel_candidate(self,request):
+        if type(request) is not dict or set(request)!={
+                "project_id","attempt_id"}:
+            raise PermissionError("Only exact original model attempt cancellation")
+        pid=self._wo5_project(request["project_id"])
+        attempt=request["attempt_id"]
+        if type(attempt) is not str or not (
+            len(attempt)==24 and all(x in "0123456789abcdef" for x in attempt)):
+            raise PermissionError("Only host-minted model attempt may be cancelled")
+        with self._film02mg_async_lock:
+            active=self._film02mg_active.get(attempt)
+            if active is not None and active["project_id"]==pid:
+                active["stop"].set()
+            return self._film02mf_service(pid).cancel_model_attempt(pid,attempt)
+
+    def _film02mg_shutdown(self):
+        """Revokes in-flight draft admission before the native host closes."""
+        with self._film02mg_async_lock:
+            for attempt,job in list(self._film02mg_active.items()):
+                job["stop"].set()
+                job["service"].cancel_model_attempt(job["project_id"],attempt)
 
     def _film02mh_confirm(self,scope):
         if (type(scope) is not dict or
