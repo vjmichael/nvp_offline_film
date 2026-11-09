@@ -47,6 +47,23 @@ class FilmingPublicationJournal:
         _require_pid(project_id)
         _id(take_id, "filming take")
         state = "COMPLETED" if completed else "INTERRUPTED"
+        # A success receipt must not be issued for an incomplete publication.
+        # Inspect immutable revisions before changing the journal state; failure
+        # leaves PREPARING visible to restart reconciliation.
+        if completed:
+            with self.index.studio._connection() as db:
+                row = db.execute("""SELECT sound_timeline_id,source_ids_json
+                    FROM nvp_filming_publications WHERE project_id=? AND take_id=?
+                    AND state='PREPARING'""", (project_id,take_id)).fetchone()
+            if row is None:
+                raise RuntimeError("Filming publication journal state conflict")
+            identities = [take_id,row["sound_timeline_id"],
+                          *json.loads(row["source_ids_json"])]
+            for identity in identities:
+                try:
+                    self.index.read_revision(project_id,identity,1)
+                except KeyError as exc:
+                    raise RuntimeError("Cannot complete filming publication with missing immutable dependencies") from exc
         with self.index.studio._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             cur = db.execute("""UPDATE nvp_filming_publications
@@ -99,7 +116,10 @@ class FilmingPublicationJournal:
             total = len(record["source_ids"])
             record["source_revision_count"] = present
             record["expected_source_revision_count"] = total
-            # A Take revision alone cannot establish a usable, approved film.\n            # Missing journaled source/timeline revisions require investigation\n            # before any playback, promotion, or recovery decision.\n            if record["take_present"] and (present != total or not record["sound_timeline_present"]):
+            # A Take revision alone cannot establish a usable, approved film.
+            # Missing journaled source/timeline revisions require investigation
+            # before any playback, promotion, or recovery decision.
+            if record["take_present"] and (present != total or not record["sound_timeline_present"]):
                 record["resolution"] = "INCOMPLETE_FROZEN_TAKE_DEPENDENCIES"
             elif record["take_present"]:
                 record["resolution"] = "VERIFY_FROZEN_TAKE_AND_APPROVAL"
