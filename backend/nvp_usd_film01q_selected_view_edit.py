@@ -19,6 +19,7 @@ from backend.nvp_film_index import FilmIndex,_id,_require_pid
 from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
 from backend.nvp_usd_film01p_source_multicam_film_conform import (
     _validate_edl,FRAMES,FPS)
+from backend.nvp_usd_film01r_quality import (reviewed_quality,quality_hash)
 from backend.nvp_usd_film01o_original_camera_roll_source import (
     MANIFEST,STAGE,canonical,digest,file_sha)
 
@@ -148,12 +149,15 @@ class OriginalSelectedViewEdit:
 
 
 def selected_render_plan(index,pid,edit_id,revision,
-                         *,original_source_directory):
+                         *,original_source_directory,
+                         render_quality='technical_smoke'):
     """Derive 720 source-authenticated selected view choices from 01O USD.
 
     No unselected camera is rendered. Unused camera metadata remains
     available in the original world for preview/new edit revisions.
     """
+    profile=reviewed_quality(render_quality)
+    profile_sha=quality_hash(profile)
     edit=OriginalSelectedViewEdit(
         index,verify_director_action=lambda *_:False).verify(
             pid,edit_id,revision)
@@ -220,7 +224,8 @@ def selected_render_plan(index,pid,edit_id,revision,
             "camera_position":position["position_m"],
             "focal_length_mm":selected["focal_length_mm"],
             "primary_ray_exclusions":selected["camera_ray_exclusions"],
-            "renderer":"blender_cycles_cpu_v1","quality":"hifi_320x180_8samples"})
+            "renderer":"blender_cycles_cpu_v1",
+            "quality_profile_sha256":profile_sha})
         frames.append(selected)
     chunks=[]
     for start in range(0,FRAMES,CHUNK):
@@ -240,6 +245,7 @@ def selected_render_plan(index,pid,edit_id,revision,
         "original_usd_sha256":source["source_usd_sha256"],
         "source_manifest_sha256":file_sha(manifest_file),
         "source_film_fps":FPS,"selected_final_frame_count":FRAMES,
+        "render_profile":profile,"render_profile_sha256":profile_sha,
         "all_original_camera_rolls_required":False,
         "all_720_selected_frames_original_source_verified":True,
         "frames":frames,"chunks":chunks,
