@@ -416,6 +416,102 @@ class ReviewedDistrictShotCyclesHost:
             "human_shot_quality_approved":False,
             "complete_film_accepted":False}
 
+    def reopen_verified_render(self,pid,binding_id,job_id):
+        """Restart-safe READ-ONLY review; never starts or approves a worker.
+
+        The original binding is reverified from FilmIndex; both completed
+        Blender jobs are independently journal-checked and their exact
+        input/source SHA-256 re-opened before image bytes may be disclosed.
+        """
+        _id(binding_id,"immutable approved original film shot")
+        _id(job_id,"bounded original Cycles job")
+        binding=OriginalDistrictShotBinding(
+            self.index,confirm=lambda *_:False).reopen(pid,binding_id)
+        shot=binding["source_preview"]
+        status=self.supervisor.verify_completed(job_id)
+        job=self.supervisor.root/job_id
+        if job.is_symlink():
+            raise PermissionError("Untrusted native picture directory")
+        source=json.loads((job/MANIFEST).read_text("utf8"))
+        district=json.loads((job/DISTRICT_EVIDENCE).read_text("utf8"))
+        if (type(source) is not dict or set(source)!={
+                "format","source","source_sha256"} or
+            source["format"]!=PACKET_FORMAT or
+            source["source_sha256"]!=_hash(source["source"]) or
+            district.get("format")!=FORMAT or
+            district.get("project_id")!=pid or
+            district.get("binding_id")!=binding_id or
+            district.get("binding_sha256")!=binding[
+                "binding_document_sha256"] or
+            district.get("world_take_sha256")!=shot["world_take_sha256"] or
+            district.get("source_camera_shot_sha256")!=shot[
+                "shot_document_sha256"] or
+            district.get("district_document_sha256")!=shot[
+                "district_document_sha256"] or
+            district.get("source_film_tick")!=shot["film_tick"] or
+            district.get("derived_usd_sha256")!=sha_file(job/USD) or
+            source["source"].get("source_usd_sha256")!=district[
+                "derived_usd_sha256"]):
+            raise RuntimeError("Native picture source or actor/district binding changed")
+        audit=json.loads((job/AUDIT).read_text("utf8"))
+        if (audit.get("format")!=AUDIT_FORMAT or
+            audit.get("passed") is not True or
+            audit.get("original_world_take_sha256")!=district[
+                "world_take_sha256"] or
+            audit.get("original_camera_shot_sha256")!=district[
+                "source_camera_shot_sha256"] or
+            audit.get("source_usd_sha256")!=district[
+                "derived_usd_sha256"] or
+            audit.get("rendered_png_sha256")!=sha_file(job/FRAME) or
+            audit.get("saved_blend_sha256")!=sha_file(job/BLEND) or
+            audit.get("actual_native_cycles_image") is not True):
+            raise RuntimeError("No source-verified original actor/district Cycles frame")
+        reopen_id=job_id+"_reopen"
+        self.supervisor.verify_completed(reopen_id)
+        reopen_root=self.supervisor.root/reopen_id
+        if reopen_root.is_symlink():
+            raise PermissionError("Untrusted independent Blender reopener")
+        independent=json.loads((reopen_root/AUDIT).read_text("utf8"))
+        if (independent.get("format")!=REOPEN_FORMAT or
+            independent.get("passed") is not True or
+            independent.get("source_blend_sha256")!=sha_file(job/BLEND) or
+            independent.get("world_take_sha256")!=district[
+                "world_take_sha256"] or
+            independent.get("source_usd_sha256")!=district[
+                "derived_usd_sha256"] or
+            independent.get("district_document_sha256")!=district[
+                "district_document_sha256"] or
+            independent.get("source_district_meshes_expected")!=district[
+                "district_render_meshes"] or
+            independent.get("actor_count")!=district[
+                "original_actor_count"] or
+            independent.get("actual_saved_source_district_meshes_verified")
+                is not True or
+            independent.get("source_actor_camera_unchanged") is not True):
+            raise RuntimeError("Saved native Cycles scene cannot be independently reopened")
+        picture=job/FRAME
+        if (picture.is_symlink() or not picture.is_file() or
+            not 128<=picture.stat().st_size<=12*1024*1024):
+            raise RuntimeError("Verified Cycles review PNG missing or oversized")
+        return {
+            "format":"nvp.usd_film02m_h.verified_native_cycles_picture.v1",
+            "project_id":pid,"binding_id":binding_id,
+            "binding_sha256":binding["binding_document_sha256"],
+            "job_id":job_id,
+            "picture_sha256":sha_file(picture),
+            "saved_blend_sha256":sha_file(job/BLEND),
+            "district_document_sha256":district["district_document_sha256"],
+            "world_take_sha256":district["world_take_sha256"],
+            "source_camera_shot_sha256":district[
+                "source_camera_shot_sha256"],
+            "film_tick":district["source_film_tick"],
+            "original_actor_count":district["original_actor_count"],
+            "original_district_meshes":district["district_render_meshes"],
+            "native_worker_and_independent_reopen_verified":True,
+            "original_actor_takes_and_pcm_unchanged":True,
+            "director_picture_approved":False,
+            "final_film_accepted":False}
+
     def _reopen_blend(self,pid,job_id,source,district,root):
         reopen_id=job_id+"_reopen"
         _id(reopen_id,"independent original district Blender reopen")
