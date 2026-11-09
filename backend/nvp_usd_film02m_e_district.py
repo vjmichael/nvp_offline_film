@@ -290,11 +290,18 @@ class OriginalFilmDistrict:
             UsdGeom.SetStageUpAxis(generated,UsdGeom.Tokens.z)
             world=UsdGeom.Xform.Define(generated,"/World")
             generated.SetDefaultPrim(world.GetPrim())
-            UsdGeom.Scope.Define(generated,"/World/Prototypes")
+            # Place prototypes BELOW the actual PointInstancer prim;
+            # an over-specifier parent prevents normal source traversals
+            # from drawing uninstanced copies at the cell origin.
+            instances=UsdGeom.PointInstancer.Define(
+                generated,"/World/GeneratedBuildings")
+            prototypes=UsdGeom.Scope.Define(
+                generated,"/World/GeneratedBuildings/Prototypes")
+            prototypes.GetPrim().SetSpecifier(Sdf.SpecifierOver)
             source_ids={}
             prototype_paths=[]
             for i,proto in enumerate(doc["original_prototypes"]):
-                path="/World/Prototypes/Building_"+str(i)
+                path="/World/GeneratedBuildings/Prototypes/Building_"+str(i)
                 prototype_paths.append(path)
                 primitive=UsdGeom.Xform.Define(generated,path)
                 if not primitive.GetPrim().GetReferences().AddReference(
@@ -302,8 +309,6 @@ class OriginalFilmDistrict:
                         Sdf.Path("/World/Buildings")):
                     raise RuntimeError("USD source building prototype reference failed")
                 source_ids[proto["building_id"]]=i
-            instances=UsdGeom.PointInstancer.Define(
-                generated,"/World/GeneratedBuildings")
             instances.GetPrototypesRel().SetTargets(
                 [Sdf.Path(s) for s in prototype_paths])
             instances.GetProtoIndicesAttr().Set([
@@ -365,9 +370,9 @@ class OriginalFilmDistrict:
                 raise RuntimeError("True USD instancing/override composition altered")
             for i,proto in enumerate(doc["original_prototypes"]):
                 prim=loaded.GetPrimAtPath(
-                    "/World/Prototypes/Building_"+str(i))
+                    "/World/GeneratedBuildings/Prototypes/Building_"+str(i))
                 if not prim.IsDefined() or not loaded.GetPrimAtPath(
-                        "/World/Prototypes/Building_"+str(i)+
+                        "/World/GeneratedBuildings/Prototypes/Building_"+str(i)+
                         "/"+self._first_module_prim(pid,proto)
                         ).IsDefined():
                     raise RuntimeError("Original prototype mesh reference did not reopen")
