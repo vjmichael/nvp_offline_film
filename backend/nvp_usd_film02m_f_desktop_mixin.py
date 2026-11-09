@@ -13,11 +13,12 @@ from hashlib import sha256
 from pathlib import Path
 
 from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
+from backend.nvp_cam_fx03_04_desktop_mixin import CameraRailDirectorMixin
 
 SHA=re.compile(r"[0-9a-f]{64}\Z")
 
 
-class OriginalDistrictDesktopMixin:
+class OriginalDistrictDesktopMixin(CameraRailDirectorMixin):
     def _film02mf_confirm(self,scope):
         window=self._native_window()
         if (type(scope) is not dict or
@@ -230,6 +231,7 @@ class OriginalDistrictDesktopMixin:
             for attempt,job in list(self._film02mg_active.items()):
                 job["stop"].set()
                 job["service"].cancel_model_attempt(job["project_id"],attempt)
+        self._camfx04_shutdown()
 
     def _film02mh_confirm(self,scope):
         if (type(scope) is not dict or
