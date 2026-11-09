@@ -412,6 +412,26 @@ def _native_window_stage(message):
         os.fsync(stream.fileno())
 
 
+def _native_window_failure(exc):
+    """Opt-in disposable Windows smoke diagnostics; never normal project logs."""
+    if os.environ.get("NVP_FILM02M_GROUP_ACCEPTANCE")!="1":
+        return
+    destination=os.environ.get("NVP_NATIVE_SMOKE_DIAGNOSTICS")
+    if not destination:
+        return
+    path=Path(destination)
+    if not path.is_absolute() or path.is_symlink() or not path.parent.is_dir():
+        return
+    import traceback
+    with path.open("a",encoding="utf8") as stream:
+        stream.write("NVP_INSTALLED_WINDOW_FAILURE="+
+                     type(exc).__name__+":"+str(exc)[:600]+"\\n")
+        traceback.print_exception(type(exc),exc,exc.__traceback__,
+                                  limit=12,file=stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
 def run_visible_window_smoke():
     """Installed real WebView2 + native OpenUSD source panel smoke.
 
@@ -1235,6 +1255,7 @@ def run_visible_window_smoke():
             except Exception as exc:
                 result["failure"]=str(exc)
                 _native_window_stage("source_webview_inspection_failed")
+                _native_window_failure(exc)
             finally:
                 _native_window_stage("source_webview_destroy_request")
                 window.destroy()
