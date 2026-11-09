@@ -148,6 +148,58 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
         self.assertEqual(self.fixture.original_actor_take_shas,
                          self.original_actor_pcm_sha)
 
+    def test_native_technique_variants_have_exact_camera_matrix_not_just_style_tags(self):
+        from backend.nvp_cam_fx02_usd_camera_layer import (
+            generate_camera_director_layer,camera_matrix_rows)
+        from backend.nvp_cam_fx01_camera_rails import (
+            normalize_rail,evaluate_rail)
+        from pxr import Sdf
+        cases=("static","dolly","arc","crane","pan_tilt",
+               "over_shoulder","rack_focus","dolly_zoom")
+        for technique in cases:
+            with self.subTest(technique=technique):
+                draft=deepcopy(self.base)
+                draft["technique"]=technique
+                if technique=="static":
+                    for item in draft["nodes"]:
+                        item["position_m"]=[0.,-8.,5.]
+                elif technique in ("arc","over_shoulder"):
+                    draft["nodes"][1]["position_m"]=[2.,-6.,5.]
+                elif technique=="crane":
+                    draft["nodes"][1]["position_m"]=[0.,-8.,7.]
+                elif technique=="pan_tilt":
+                    draft["nodes"][1]["target_m"]=[1.,0.,2.]
+                elif technique=="rack_focus":
+                    draft["nodes"][1]["focus_distance_m"]=3.
+                elif technique=="dolly_zoom":
+                    draft["nodes"][1]["focal_length_mm"]=80.
+                normalized=normalize_rail(
+                    draft,self.rails.verify(self.pid,
+                         "CAMFX05ReviewedRail",1)["source_duration_ticks"])
+                layer=generate_camera_director_layer(
+                    "CAMFX05Technique"+technique.replace("_","").capitalize(),
+                    normalized)
+                source=Sdf.Layer.CreateAnonymous("cam-fx05-"+technique+".usda")
+                self.assertTrue(source.ImportFromString(layer.decode("utf8")))
+                stage=Usd.Stage.Open(source)
+                camera=UsdGeom.Camera.Get(stage,
+                    camera_rail_path("CAMFX05Technique"+
+                        technique.replace("_","").capitalize()))
+                self.assertTrue(camera.GetPrim().IsDefined())
+                for tick in (4*T,4*T+T//2,5*T,5*T+T//2,6*T):
+                    sample=evaluate_rail(normalized,tick)
+                    native=UsdGeom.Xformable(camera).GetLocalTransformation(
+                        Usd.TimeCode(float(tick)))
+                    expected=camera_matrix_rows(sample)
+                    for i in range(4):
+                        for j in range(4):
+                            self.assertAlmostEqual(
+                                float(native[i][j]),expected[i][j],places=4)
+                    self.assertAlmostEqual(
+                        camera.GetFocalLengthAttr().Get(
+                            Usd.TimeCode(float(tick)))*10,
+                        sample["focal_length_mm"],places=3)
+
     def test_stale_unpublished_foreign_time_and_dirty_job_fail_closed(self):
         with TemporaryDirectory(prefix="nvp-fx05-reject-") as temp:
             root=Path(temp).resolve()
