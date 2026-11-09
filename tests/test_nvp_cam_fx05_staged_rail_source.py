@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import os
+import shutil
+import subprocess
+from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+from backend.nvp_cam_fx05_protected_cycles_host import ReviewedCameraRailCyclesHost
 from tempfile import TemporaryDirectory
 import json
 import unittest
@@ -200,6 +205,96 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
                         camera.GetFocalLengthAttr().Get(
                             Usd.TimeCode(float(tick)))*MM_PER_CAMERA_UNIT,
                         sample["focal_length_mm"],places=3)
+
+    def test_05b_render_authority_is_separate_from_saved_rail_approval(self):
+        with self.assertRaises(TypeError):
+            ReviewedCameraRailCyclesHost(
+                self.index,object(),verify_director_action=lambda *_:True)
+        # Just publishing or previewing a camera rail has never rendered
+        # a Cycles frame or produced a Blender worker permission token.
+        source=self.rails.verify(self.pid,"CAMFX05ReviewedRail",2)
+        self.assertEqual(source["native_cycles_frames_rendered"],0)
+        self.assertFalse(source["human_picture_quality_approved"])
+
+    def test_genuine_protected_blender_52_render_and_independent_saved_rail_camera_reopen(self):
+        executable=os.environ.get("NVP_CAM_FX05_BLENDER_BIN")
+        if not executable:
+            self.skipTest("Actual first-party Blender 5.2 native render gate not configured")
+        binary=Path(executable).resolve(strict=True)
+        version=subprocess.run(
+            [str(binary),"-b","--version"],capture_output=True,
+            text=True,check=True,timeout=30).stdout.splitlines()[0].strip()
+        self.assertTrue(version.startswith("Blender 5.2."),version)
+        before=self.index.list_objects(self.pid,kind="take")
+        with TemporaryDirectory(prefix="nvp-camfx05-real-native-cycles-") as tmp:
+            sup=BlenderWorkerSupervisor(
+                Path(tmp)/"protected-jobs",
+                blender_executable=binary,
+                blender_sha256=sha_file(binary),
+                blender_version=version)
+            decisions=[]
+            def approve(event,scope):
+                decisions.append(dict(scope))
+                return (event=="TEST_EXACT_CAM_FX05_RENDER" and
+                        scope["operation"]==
+                        "nvp.cam_fx05.render_reviewed_director_rail_frame.v1")
+            host=ReviewedCameraRailCyclesHost(
+                self.index,sup,verify_director_action=approve)
+            with self.assertRaises(PermissionError):
+                host.render(
+                    self.pid,"Native02MHBinding1","CAMFX05ReviewedRail",1,
+                    job_id="fx05_denied",director_event="OLD_RAIL_GRANT")
+            self.assertFalse((sup.root/"fx05_denied").exists())
+            with self.assertRaises(KeyError):
+                sup.inspect("fx05_denied")
+            compared=host.compare_revisions(
+                self.pid,"Native02MHBinding1","CAMFX05ReviewedRail",1,2,
+                job_a="fx05_move_a",job_b="fx05_move_b",
+                director_event="TEST_EXACT_CAM_FX05_RENDER")
+            self.assertEqual(compared["format"],
+                "nvp.cam_fx05.real_two_revisions_original_source_rail_cycles.v1")
+            self.assertEqual(compared["world_take_sha256"],self.take_sha)
+            self.assertGreaterEqual(compared["pixels_changed_over_rgb12"],250)
+            self.assertTrue(compared["independent_blender_reopen_each"])
+            self.assertTrue(compared["original_actor_pcm_unchanged"])
+            self.assertEqual(len(decisions),3)
+            self.assertNotEqual(decisions[1]["rail_revision_sha256"],
+                                decisions[2]["rail_revision_sha256"])
+            self.assertEqual(decisions[1]["original_world_take_sha256"],
+                             decisions[2]["original_world_take_sha256"])
+            for rev,job in ((1,"fx05_move_a"),(2,"fx05_move_b")):
+                readback=host.reopen_verified_render(
+                    self.pid,"Native02MHBinding1",
+                    "CAMFX05ReviewedRail",rev,job)
+                self.assertTrue(readback["independent_blender_reopen_verified"])
+                self.assertFalse(readback["director_picture_quality_approved"])
+                self.assertEqual(readback["picture_sha256"],
+                                 sha_file(sup.root/job/"frame.png"))
+                self.assertEqual(readback["original_world_take_sha256"],
+                                 self.take_sha)
+            with self.assertRaises((RuntimeError,PermissionError)):
+                host.reopen_verified_render(
+                    self.pid,"Native02MHBinding1",
+                    "CAMFX05ReviewedRail",2,"fx05_move_a")
+            export=os.environ.get("NVP_CAM_FX05_ARTIFACT_DIR")
+            if export:
+                target=Path(export).resolve()
+                target.mkdir(parents=True,exist_ok=True)
+                (target/"comparison.json").write_text(
+                    json.dumps(compared,sort_keys=True,indent=2),"utf8")
+                for rev,job in ((1,"fx05_move_a"),(2,"fx05_move_b")):
+                    for name in ("frame.png","scene.blend","source.usda",
+                                 "source.json","district.json",
+                                 "cam_fx05_rail_source.json","audit.json"):
+                        shutil.copyfile(sup.root/job/name,
+                                        target/(str(rev)+"_"+name))
+                    shutil.copyfile(
+                        sup.root/(job+"_reopen")/"audit.json",
+                        target/(str(rev)+"_independent_reopen.json"))
+            self.assertFalse(compared["human_artistic_approval"])
+        self.assertEqual(self.index.list_objects(self.pid,kind="take"),before)
+        self.assertEqual(self.fixture.original_actor_take_shas,
+                         self.original_actor_pcm_sha)
 
     def test_stale_unpublished_foreign_time_and_dirty_job_fail_closed(self):
         with TemporaryDirectory(prefix="nvp-fx05-reject-") as temp:
