@@ -22,7 +22,6 @@ from backend.nvp_usd_film02m_h_actor_camera_binding import OriginalDistrictShotB
 from backend.nvp_usd_film02m_h_render_handoff import (
     stage_approved_original_shot,ReviewedDistrictShotCyclesHost)
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
-from test_nvp_usd_film01f_world_render import OriginalTwoShotWorldTakeSource
 
 
 def sock(name,point,normal,span,kind):
@@ -43,6 +42,10 @@ def cube(size):
 class OriginalActorDistrictNativeRenderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # Import inside the fixture so unittest discovery does NOT execute
+        # the imported TestCase a second time in this 02M-H group.
+        from test_nvp_usd_film01f_world_render import (
+            OriginalTwoShotWorldTakeSource)
         cls.source=OriginalTwoShotWorldTakeSource
         cls.source.setUpClass()
         cls.index=cls.source.index
