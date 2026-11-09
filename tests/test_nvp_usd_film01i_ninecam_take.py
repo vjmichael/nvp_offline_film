@@ -46,6 +46,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             ("Box","cube",0.8,[0.15,0.76,0.30],None),
             ("Sphere","sphere",0.6,[0.25,0.42,0.95],None),
             ("Craft","cube",1.0,[0.83,0.62,0.22],None),
+            ("Wall","cube",1.0,[0.55,0.55,0.55],None),
         )
         bindings=[]
         for name,shape,size,color,geometry in source_assets:
@@ -64,6 +65,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             {"path":"/World/Box","role":"actor","position":[-2,-1,-2.2]},
             {"path":"/World/Sphere","role":"actor","position":[0,-1,-4]},
             {"path":"/World/Craft","role":"actor","position":[-6,0,0]},
+            {"path":"/World/Wall","role":"prop","position":[0,-1,0]},
             {"path":"/World/Light","role":"light","position":[2,3,5]},
         ]
         curves=[
@@ -335,6 +337,101 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                 "distinct_rendered_png_shas":len(hashes),
                 "complete_nine_roll_movie_produced":False,
                 "director_approved":False},indent=2,sort_keys=True),"utf8")
+
+    def test_director_add_remove_reverse_ots_drone_and_inside_wall_camera(self):
+        from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
+        from pxr import Usd, UsdGeom
+        from dataclasses import dataclass
+        bank=DirectorCameraBank(
+            self.index,verify_director_action=lambda event,scope:
+                event=="AUTHORIZE_DIRECTOR_CAMERA_EDIT" and
+                scope["operation"]=="nvp.film.director_camera_bank_revision.v1")
+        def new_camera(camera_id,framing,xyz,rotation,lens,*,excludes=None,move=None):
+            return {
+                "camera_id":camera_id,"setup":"Director virtual scene",
+                "framing":framing,"position_m":xyz,
+                "rotation_euler_deg":rotation,"focal_length_mm":lens,
+                "focus_distance_m":10.0,
+                "clip_range_m":[0.001,10000],
+                "move_keys":move or [],
+                "camera_ray_exclusions":excludes or []}
+        original_wide=new_camera(
+            "WideFront","wide",[0,-1,12],[0,0,0],24)
+        bank.create(self.pid,"DirectorFlexibleBank",
+            world_take_id="OneThirtySecondWorldTake",
+            cameras=[original_wide],
+            director_event="AUTHORIZE_DIRECTOR_CAMERA_EDIT")
+        wall="/World/Sets/Stage/Wall"
+        extra=[
+            new_camera("Reverse","reverse",[-3,-1,-9],[0,180,0],42),
+            new_camera("OverShoulder","over shoulder",[2,-2,4],[0,18,0],70),
+            new_camera("LowAngle","bottom up",[0,-1,-1],[18,0,0],32,
+                excludes=[wall]),
+            new_camera("Aerial","drone",[-4,5,17],[-30,-10,0],28,
+                move=[{"tick":0,"position_m":[-4,5,17],
+                       "rotation_euler_deg":[-30,-10,0]},
+                      {"tick":30*T,"position_m":[4,8,17],
+                       "rotation_euler_deg":[-45,10,0]}])]
+        stage=bank.revise(self.pid,"DirectorFlexibleBank",
+            expected_revision=1,changes=[{"op":"add","camera":x} for x in extra],
+            director_event="AUTHORIZE_DIRECTOR_CAMERA_EDIT")
+        self.assertEqual(stage["revision"],2)
+        original_source=self.index.read_revision(
+            self.pid,"OneThirtySecondWorldTake",1)["document_sha256"]
+        before=bank.verify(self.pid,"DirectorFlexibleBank",1)
+        after=bank.verify(self.pid,"DirectorFlexibleBank",2)
+        self.assertEqual(before["camera_count"],1)
+        self.assertEqual(after["camera_count"],5)
+        self.assertEqual(before["world_take_sha256"],after["world_take_sha256"])
+        self.assertFalse(after["director_camera_geometry_rendered"])
+        self.assertFalse(after["director_camera_physical_collision"])
+        with bank.open_source_views(self.pid,"DirectorFlexibleBank",2) as state:
+            self.assertEqual(len(state["camera_paths"]),5)
+            self.assertFalse(state["camera_has_physical_collision"])
+            self.assertFalse(state["camera_occlusion_masks_applied_globally"])
+            stage=state["stage"]
+            for path in state["camera_paths"].values():
+                self.assertTrue(stage.GetPrimAtPath(path).IsA(UsdGeom.Camera))
+            cam=stage.GetPrimAtPath(state["camera_paths"]["LowAngle"])
+            self.assertEqual(
+                [float(x) for x in UsdGeom.Xformable(cam).
+                 ComputeLocalToWorldTransform(Usd.TimeCode(0)).
+                 ExtractTranslation()], [0.0,-1.0,-1.0])
+            wall_prim=stage.GetPrimAtPath(wall)
+            self.assertTrue(wall_prim.IsDefined())
+            self.assertNotEqual(wall_prim.GetAttribute("visibility").Get(),
+                                "invisible")
+        result=bank.revise(self.pid,"DirectorFlexibleBank",
+            expected_revision=2,
+            changes=[{"op":"remove","camera_id":"OverShoulder"}],
+            director_event="AUTHORIZE_DIRECTOR_CAMERA_EDIT")
+        self.assertEqual(result["revision"],3)
+        self.assertEqual(bank.verify(self.pid,"DirectorFlexibleBank",3)[
+                         "camera_count"],4)
+        self.assertEqual(bank.verify(self.pid,"DirectorFlexibleBank",2)[
+                         "camera_count"],5)
+        self.assertEqual(self.index.read_revision(self.pid,
+            "OneThirtySecondWorldTake",1)["document_sha256"],original_source)
+        fresh=DirectorCameraBank(FilmIndex(Studio(self.db)),
+            verify_director_action=lambda *_:False)
+        self.assertEqual(fresh.verify(self.pid,"DirectorFlexibleBank",3)[
+                         "camera_count"],4)
+
+    def test_camera_ray_masks_cannot_remove_original_actor(self):
+        from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
+        bank=DirectorCameraBank(self.index,
+            verify_director_action=lambda *_:True)
+        proposal={
+            "camera_id":"UnreviewedXRay","setup":"behind subject",
+            "framing":"detail","position_m":[0,-1,0],
+            "rotation_euler_deg":[0,0,0],
+            "focal_length_mm":50.0,"focus_distance_m":10.0,
+            "clip_range_m":[0.01,1000],"move_keys":[],
+            "camera_ray_exclusions":["/World/Sets/Stage/Donut"]}
+        with self.assertRaises(PermissionError):
+            bank.create(self.pid,"InvalidActorHidingBank",
+                world_take_id="OneThirtySecondWorldTake",
+                cameras=[proposal],director_event="untrusted")
 
     def test_camera_swap_and_wrong_scene_are_not_new_source_performances(self):
         forged=deepcopy(self.camera_shots)
