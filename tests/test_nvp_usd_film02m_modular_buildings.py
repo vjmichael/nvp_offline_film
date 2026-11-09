@@ -617,6 +617,26 @@ class OriginalModularBuildingSource(unittest.TestCase):
                     max_loaded_cells=2)
             self.assertEqual(sorted(session.loaded),
                              ["CellEast","CellWest"])
+            # A real OS resource sample trip must atomically return to
+            # previous native loaded USD payloads, not leave half a city.
+            measurements=iter([32*1024*1024,128*1024*1024])
+            with self.assertRaises(MemoryError):
+                session.transition(
+                    camera_positions_m=[[30,-12,2]],
+                    required_cell_ids=["CellMiddle"],
+                    next_shot_required_cell_ids=[],
+                    load_distance_m=10,unload_distance_m=25,
+                    max_loaded_cells=2,
+                    max_process_rss_bytes=64*1024*1024,
+                    rss_probe=lambda:next(measurements))
+            self.assertEqual(sorted(session.loaded),
+                             ["CellEast","CellWest"])
+            self.assertTrue(stage.GetPrimAtPath(
+                "/World/Cells/CellWest").IsLoaded())
+            self.assertTrue(stage.GetPrimAtPath(
+                "/World/Cells/CellEast").IsLoaded())
+            self.assertFalse(stage.GetPrimAtPath(
+                "/World/Cells/CellMiddle").IsLoaded())
             # The on-disk original source manifest is unchanged by
             # all temporary streaming/prefetch choices.
             self.assertEqual(self.index.read_revision(
