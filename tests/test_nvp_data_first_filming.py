@@ -742,7 +742,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         with self.index.studio._connection() as db:
             db.execute("""UPDATE nvp_filming_publications
                 SET sound_timeline_id=? WHERE project_id=? AND take_id=?""",
-                ("CameraTimeline",self.pid,"FilmedTake"))
+                ("FilmingCameraTimeline",self.pid,"FilmedTake"))
         decision=journal.visibility(self.pid,"FilmedTake")
         self.assertFalse(decision["visible"])
         self.assertEqual(decision["reason"],"PUBLICATION_BINDING_MISMATCH")
