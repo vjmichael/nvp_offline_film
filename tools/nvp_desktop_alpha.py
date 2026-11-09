@@ -248,10 +248,14 @@ def run_persistent_installed_smoke(mode):
             if os.environ.get("NVP_FILM02M_GROUP_ACCEPTANCE")=="1":
                 from backend.nvp_film_index import FilmIndex
                 from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
+                from backend.nvp_api import studio
                 source=FilmIndex(studio)
                 params=_seed_original_world_smoke(source,record["id"])
+                # The exact durable store used by TrustedDesktopWO5Bridge in
+                # a normal installed process, not a parallel test-only DB.
                 drafts=OriginalDistrictDrafts(
-                    source,root/"original-installed-director-drafts",
+                    source,root/".native-production-runtime"/
+                    "original-film02m-director-proposals",
                     confirm=lambda *_:False)
                 unapproved=drafts.create(
                     record["id"],"InstalledRecoveryWorld",
@@ -288,7 +292,8 @@ def run_persistent_installed_smoke(mode):
                 from backend.nvp_api import studio
                 source=FilmIndex(studio)
                 drafts=OriginalDistrictDrafts(
-                    source,root/"original-installed-director-drafts",
+                    source,root/".native-production-runtime"/
+                    "original-film02m-director-proposals",
                     confirm=lambda *_:False)
                 prior=expected["film02mg_restart_draft"]
                 reopened_draft=drafts.reopen(
