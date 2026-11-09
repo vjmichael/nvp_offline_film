@@ -71,6 +71,9 @@ $log=Get-Content $env:NVP_NATIVE_SMOKE_DIAGNOSTICS -Raw
 if (-not $log.Contains('p0f01_installed_native_os_deny_approve_source_reopen_passed')) {
     throw 'No actual same-process Windows native deny/approve source-reopen proof'
 }
+if (-not $log.Contains('NVP_SOURCE_RECEIPT_P0F01_NATIVE_OS_WORLD=')) {
+    throw 'No SHA-locked native Windows OS dialog and original Take integrity receipt'
+}
 if (-not $log.Contains('p0f01_durable_model_attempt_ready_for_force_kill')) {
     throw 'Installed forced termination receipt is missing'
 }
@@ -90,6 +93,9 @@ if (-not ($proof.status -eq 'LOCAL_GGUF_COMPLETION_OBSERVED' -and
 $log=Get-Content $env:NVP_NATIVE_SMOKE_DIAGNOSTICS -Raw
 if (-not $log.Contains('p0f01_real_gguf_model_source_draft_no_approval_passed')) {
     throw 'No authentic installed local-model generated USD source draft'
+}
+if (-not $log.Contains('NVP_SOURCE_RECEIPT_P0F01_REAL_GGUF_DRAFT=')) {
+    throw 'No model-request/source-draft SHA evidence from genuine installed WebView2'
 }
 # Test GGUF and server remain outside installer. Do NOT uninstall NVP user
 # data or model runtime belonging to someone else.
