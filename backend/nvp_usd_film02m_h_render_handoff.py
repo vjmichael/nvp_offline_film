@@ -308,6 +308,22 @@ class ReviewedDistrictShotCyclesHost:
         # original ActorID/camera source and REAL building mesh/materials.
         proof=self._reopen_blend(
             pid,job_id,source,district,root)
+        # The immutable originals are read *again* after both native Blender
+        # workers. Neither first render nor independent reopen may mutate
+        # the original 01E actor Take, scene Takes, authored 01D camera,
+        # approved district layer or underlying world. This also guards
+        # original PCM evidence, which is part of frozen Take source.
+        immutable=OriginalDistrictShotBinding(
+            self.index,confirm=lambda *_:False).reopen(pid,binding_id)
+        if (immutable["binding_document_sha256"]!=district["binding_sha256"] or
+            immutable["source_preview"]["world_take_sha256"]!=
+                district["world_take_sha256"] or
+            immutable["source_preview"]["shot_document_sha256"]!=
+                district["source_camera_shot_sha256"] or
+            immutable["source_preview"]["district_document_sha256"]!=
+                district["district_document_sha256"] or
+            sha_file(root/USD)!=district["derived_usd_sha256"]):
+            raise RuntimeError("Original approved source changed while Cycles rendered")
         return {
             "state":"RENDERED_REAL_ORIGINAL_DISTRICT_ACTOR_CAMERA_SHOT",
             "job_id":job_id,"png_sha256":sha_file(root/FRAME),
@@ -326,6 +342,69 @@ class ReviewedDistrictShotCyclesHost:
             "actual_film_frame_rendered":True,
             "actor_appearance_photorealism_approved":False,
             "final_film_accepted":False}
+
+    def compare_approved_revisions(self,pid,first_binding,second_binding,*,
+                                   first_job_id,second_job_id,director_event):
+        """Prove changed 3D environment over identical frozen actor/camera."""
+        left=OriginalDistrictShotBinding(
+            self.index,confirm=lambda *_:False).reopen(pid,first_binding)[
+                "source_preview"]
+        right=OriginalDistrictShotBinding(
+            self.index,confirm=lambda *_:False).reopen(pid,second_binding)[
+                "source_preview"]
+        if (left["district_id"]!=right["district_id"] or
+            left["district_document_sha256"]==
+                right["district_document_sha256"] or
+            left["world_take_id"]!=right["world_take_id"] or
+            left["world_take_sha256"]!=right["world_take_sha256"] or
+            left["shot_document_sha256"]!=
+                right["shot_document_sha256"] or
+            left["film_tick"]!=right["film_tick"] or
+            left["original_actor_poses"]!=right["original_actor_poses"] or
+            left["original_camera_position_m"]!=
+                right["original_camera_position_m"]):
+            raise PermissionError(
+                "Only changed district over identical original performance/shot")
+        if first_binding==second_binding or first_job_id==second_job_id:
+            raise ValueError("Require two distinct approved district revisions")
+        first=self.render(
+            pid,first_binding,job_id=first_job_id,
+            director_event=director_event)
+        second=self.render(
+            pid,second_binding,job_id=second_job_id,
+            director_event=director_event)
+        if (first["png_sha256"]==second["png_sha256"] or
+            first["original_world_take_sha256"]!=
+                second["original_world_take_sha256"] or
+            first["original_camera_shot_sha256"]!=
+                second["original_camera_shot_sha256"]):
+            raise RuntimeError(
+                "Reviewed district change did not produce a distinct original frame")
+        from PIL import Image,ImageChops
+        with Image.open(self.supervisor.root/first_job_id/FRAME) as a, \\
+             Image.open(self.supervisor.root/second_job_id/FRAME) as b:
+            if a.size!=b.size or a.size!=(320,180):
+                raise RuntimeError("Original comparison uses incompatible frames")
+            delta=ImageChops.difference(a.convert("RGB"),b.convert("RGB"))
+            changed=sum(1 for pixel in delta.getdata() if max(pixel)>12)
+        if changed<250:
+            raise RuntimeError(
+                "Different district sources did not visibly change original shot pixels")
+        return {
+            "format":"nvp.usd_film02m_h.real_native_two_district_revision_comparison.v1",
+            "original_world_take_sha256":left["world_take_sha256"],
+            "original_camera_shot_sha256":left["shot_document_sha256"],
+            "original_film_tick":left["film_tick"],
+            "district_revision_shas":[left["district_document_sha256"],
+                                      right["district_document_sha256"]],
+            "native_cycles_png_shas":[first["png_sha256"],
+                                     second["png_sha256"]],
+            "real_pixels_changed_significantly":True,
+            "changed_pixels_over_12_rgb":changed,
+            "original_actor_take_pcm_unchanged":True,
+            "independent_blender_reopened_both":True,
+            "human_shot_quality_approved":False,
+            "complete_film_accepted":False}
 
     def _reopen_blend(self,pid,job_id,source,district,root):
         reopen_id=job_id+"_reopen"
