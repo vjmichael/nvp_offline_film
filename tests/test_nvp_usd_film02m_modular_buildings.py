@@ -817,6 +817,155 @@ class OriginalModularBuildingSource(unittest.TestCase):
         self.assertEqual(self.index.list_objects(
             self.pid,kind="take"),before)
 
+    def _02m_e_source_prototypes(self):
+        first="EDistrictPrototypeA"
+        second="EDistrictPrototypeB"
+        for bid,seed in ((first,21),(second,22)):
+            try:
+                self.index.read_revision(self.pid,bid,1)
+            except (KeyError,ValueError):
+                self.kit.publish_building(
+                    self.pid,bid,seed=seed,
+                    blueprint=building_recipe(0,self.facades),
+                    director_event=self.approval)
+        return [
+            {"building_id":first,"revision":1},
+            {"building_id":second,"revision":1}]
+
+    def _02m_e_host(self):
+        from backend.nvp_usd_film02m_e_district import OriginalFilmDistrict
+        return OriginalFilmDistrict(
+            self.index,verify_director_action=lambda event,scope:
+                event==self.approval and
+                scope.get("operation")==
+                "nvp.film02m_e.publish_original_layered_district.v1" and
+                len(scope.get("native_original_layer_source_sha256",""))==64)
+
+    def _02m_e_settings(self):
+        return {
+            "seed":11,"source_buildings":self._02m_e_source_prototypes(),
+            "grid_cols":3,"grid_rows":2,"lot_spacing_m":30.,
+            "world_origin_m":[1_000_000.,-2_000_000.,0.],
+            "source_triangle_budget":100000,
+            "source_instance_budget":8}
+
+    def test_02m_e_native_original_usd_prototype_instancing_and_manual_layers(self):
+        host=self._02m_e_host()
+        settings=self._02m_e_settings()
+        overrides=[
+            {"op":"hide_generated","instance_id":1},
+            {"op":"place_original","name":"HandPlacedBuilding",
+             "building_id":settings["source_buildings"][0]["building_id"],
+             "position_m":[0.,60.,0.],"yaw_deg":90}]
+        planned=host.plan(
+            self.pid,**settings,director_overrides=overrides)
+        self.assertEqual(len(planned["generated_instances"]),6)
+        self.assertEqual(planned["director_invisible_instance_ids"],[1])
+        self.assertEqual(len(planned["director_manual_overrides"]),1)
+        self.assertGreater(planned["actual_source_triangles_estimated"],100)
+        self.assertTrue(planned["generated_repetition_uses_point_instancer"])
+        self.assertFalse(planned["actual_gpu_draw_calls_measured"])
+        self.assertFalse(planned["real_lod_mesh_variants_verified"])
+        self.assertFalse(planned["cinematic_cycles_picture_reviewed"])
+        self.assertEqual(planned["world_origin_m"],
+                         [1000000.,-2000000.,0.])
+        self.assertTrue(all(abs(x)<10000 for row in planned[
+            "generated_instances"] for x in row["position_local_m"]))
+        saved=host.publish(
+            self.pid,"DirectorFilmDistrictE",**settings,
+            director_overrides=overrides,
+            director_event=self.approval)
+        self.assertEqual(saved["revision"],1)
+        with host.open(self.pid,"DirectorFilmDistrictE",1) as original:
+            from pxr import UsdGeom
+            stage=original["stage"]
+            point=UsdGeom.PointInstancer.Get(
+                stage,"/World/GeneratedBuildings")
+            self.assertEqual(point.GetInstanceCount(),6)
+            self.assertEqual(list(point.GetInvisibleIdsAttr().Get()),[1])
+            self.assertEqual(list(point.GetIdsAttr().Get()),
+                             [1,2,3,4,5,6])
+            self.assertEqual(len(point.GetPrototypesRel().GetTargets()),2)
+            self.assertEqual(
+                original["receipt"]["actual_native_usd_prototype_count"],2)
+            self.assertEqual(original["receipt"][
+                "actual_native_usd_manual_overrides"],1)
+            self.assertEqual(
+                stage.GetRootLayer().subLayerPaths,
+                ["./director.usda","./generated.usda"])
+            self.assertTrue(stage.GetPrimAtPath(
+                "/World/DirectorOverrides/HandPlacedBuilding").IsDefined())
+            self.assertTrue(stage.GetPrimAtPath(
+                "/World/GeneratedBuildings/Prototypes/Building_0/Floor/Geometry"
+            ).IsA(UsdGeom.Mesh))
+            first_generated_sha=original["receipt"][
+                "generated_layer_sha256"]
+            first_override_sha=original["receipt"][
+                "director_override_layer_sha256"]
+            self.assertTrue(original["plan"][
+                "original_actor_performance_untouched"])
+        changed=[
+            {"op":"hide_generated","instance_id":2},
+            {"op":"place_original","name":"HandPlacedBuilding",
+             "building_id":settings["source_buildings"][0]["building_id"],
+             "position_m":[0.,60.,0.],"yaw_deg":90}]
+        next_revision=host.publish(
+            self.pid,"DirectorFilmDistrictE",**settings,
+            director_overrides=changed,
+            expected_revision=1,director_event=self.approval)
+        self.assertEqual(next_revision["revision"],2)
+        with host.open(self.pid,"DirectorFilmDistrictE",2) as updated:
+            self.assertEqual(updated["receipt"][
+                "generated_layer_sha256"],first_generated_sha)
+            self.assertNotEqual(updated["receipt"][
+                "director_override_layer_sha256"],first_override_sha)
+            self.assertEqual(list(UsdGeom.PointInstancer.Get(
+                updated["stage"],"/World/GeneratedBuildings"
+            ).GetInvisibleIdsAttr().Get()),[2])
+        with host.open(self.pid,"DirectorFilmDistrictE",1) as old:
+            self.assertEqual(old["receipt"][
+                "director_override_layer_sha256"],first_override_sha)
+            self.assertEqual(list(UsdGeom.PointInstancer.Get(
+                old["stage"],"/World/GeneratedBuildings"
+            ).GetInvisibleIdsAttr().Get()),[1])
+
+    def test_02m_e_reject_resource_exhaustion_and_unapproved_buildings(self):
+        host=self._02m_e_host()
+        settings=self._02m_e_settings()
+        with self.assertRaises(MemoryError):
+            host.plan(self.pid,**{
+                **settings,"source_triangle_budget":100})
+        with self.assertRaises(MemoryError):
+            host.plan(self.pid,**{
+                **settings,"source_instance_budget":5})
+        with self.assertRaises(ValueError):
+            host.plan(self.pid,**{
+                **settings,"world_origin_m":[1e12,0,0]})
+        with self.assertRaises(ValueError):
+            host.plan(self.pid,**settings,director_overrides=[{
+                "op":"place_original","name":"Colliding",
+                "building_id":settings["source_buildings"][0]["building_id"],
+                "position_m":[0.,-15.,0.],"yaw_deg":0}])
+        with self.assertRaises(ValueError):
+            host.plan(self.pid,**settings,director_overrides=[{
+                "op":"hide_generated","instance_id":900}])
+        with self.assertRaises(PermissionError):
+            from backend.nvp_usd_film02m_e_district import OriginalFilmDistrict
+            denied=OriginalFilmDistrict(
+                self.index,verify_director_action=lambda *_:False)
+            denied.publish(self.pid,"NoConsentEDistrict",**settings,
+                           director_event="forged")
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"NoConsentEDistrict",1)
+        self.kit.publish_building(
+            self.pid,"GlobalOffsetPrototypeE",seed=17,
+            blueprint=building_recipe(500,self.facades),
+            director_event=self.approval)
+        with self.assertRaises(ValueError):
+            host.plan(self.pid,**{
+                **settings,"source_buildings":[{
+                    "building_id":"GlobalOffsetPrototypeE","revision":1}]})
+
     def test_02m_original_geometry_collision_rejected(self):
         original=building_recipe(0,self.facades)
         overlapping=deepcopy(original)
