@@ -170,12 +170,33 @@ class OriginalBuildingKit:
             raise PermissionError("Not a real original reusable building module")
         asset=self.index.read_revision(
             pid,doc["asset_id"],doc["asset_revision"])
+        dependencies=[{"object_id":doc["asset_id"],
+                       "revision":doc["asset_revision"],"role":"asset"}]
+        detail=doc.get("geometry_detail")
+        if detail is not None:
+            if type(detail) is not dict or set(detail)!={
+                    "detail_id","revision","document_sha256"}:
+                raise PermissionError("Original source geometry detail cannot be loose")
+            from backend.nvp_usd_film02m_d_openings import verify_detail
+            detail_row=verify_detail(
+                self.index,pid,detail["detail_id"],detail["revision"],
+                asset_id=doc["asset_id"],asset_revision=doc["asset_revision"])
+            if detail_row["document_sha256"]!=detail["document_sha256"]:
+                raise RuntimeError("Original doorway/interior procedural source changed")
+            if ((doc["role"] in ("facade","storefront") and
+                 detail_row["data"]["geometry_kind"]!="wall_with_real_apertures") or
+                (doc["role"]=="interior" and
+                 detail_row["data"]["geometry_kind"]!="genuine_room_interior_shell")):
+                raise PermissionError("Source geometry detail has wrong building role")
+            dependencies.append({
+                "object_id":detail["detail_id"],
+                "revision":detail["revision"],"role":"presentation"})
+        dependencies.sort(key=lambda x:(x["object_id"],x["revision"],x["role"]))
         if (asset["kind"]!="asset" or
             asset["document_sha256"]!=doc["asset_document_sha256"] or
             doc["source_layer_sha256"]!=asset["data"].get("layer_sha256") or
-            record["dependencies"]!=[{"object_id":doc["asset_id"],
-                "revision":doc["asset_revision"],"role":"asset"}]):
-            raise RuntimeError("Building module lost its immutable asset dependency")
+            record["dependencies"]!=dependencies):
+            raise RuntimeError("Building module lost its immutable asset dependencies")
         source_record,layer=OpenUSDAssetRegistry(self.index).open(
             pid,doc["asset_id"],doc["asset_revision"])
         points=source_record["data"].get("points")
@@ -195,7 +216,8 @@ class OriginalBuildingKit:
 
     def publish_module(self,pid,module_id,*,asset_id,asset_revision,
                        role,style_family,size_m,sockets,
-                       expected_revision=0,director_event):
+                       expected_revision=0,director_event,
+                       geometry_detail_id=None,geometry_detail_revision=None):
         _require_pid(pid)
         _id(module_id,"original module ID")
         _id(asset_id,"original NVP geometry asset")
@@ -217,6 +239,31 @@ class OriginalBuildingKit:
         if any(abs(bounds[i][1]-bounds[i][0]-dims[i])>.002 or
                abs((bounds[i][0]+bounds[i][1])/2)>.002 for i in range(3)):
             raise PermissionError("Director declared sizes must match actual USD vertices")
+        detail=None
+        dependencies=[{"object_id":asset_id,
+                       "revision":asset_revision,"role":"asset"}]
+        if geometry_detail_id is not None:
+            if type(geometry_detail_revision) is not int or geometry_detail_revision<1:
+                raise ValueError("Exact first-party source geometry detail revision needed")
+            from backend.nvp_usd_film02m_d_openings import verify_detail
+            row=verify_detail(
+                self.index,pid,geometry_detail_id,geometry_detail_revision,
+                asset_id=asset_id,asset_revision=asset_revision)
+            detail={"detail_id":geometry_detail_id,
+                    "revision":geometry_detail_revision,
+                    "document_sha256":row["document_sha256"]}
+            if ((role in ("facade","storefront") and
+                 row["data"]["geometry_kind"]!="wall_with_real_apertures") or
+                (role=="interior" and
+                 row["data"]["geometry_kind"]!="genuine_room_interior_shell") or
+                role not in ("facade","storefront","interior")):
+                raise PermissionError("Source geometry detail incompatible with module role")
+            dependencies.append({"object_id":geometry_detail_id,
+                                 "revision":geometry_detail_revision,
+                                 "role":"presentation"})
+        elif geometry_detail_revision is not None:
+            raise ValueError("Dangling original geometry detail revision")
+        dependencies.sort(key=lambda x:(x["object_id"],x["revision"],x["role"]))
         proposal={
             "format":MODULE_FORMAT,"role":role,"style_family":style,
             "size_m":dims,"coordinate_system":"meters_Z_up",
@@ -227,6 +274,8 @@ class OriginalBuildingKit:
             "source_mesh_real":True,"uniform_scale_required":True,
             "openusd_external_paths_authoritative":False,
             "cycles_pixels_reviewed":False}
+        if detail is not None:
+            proposal["geometry_detail"]=detail
         scope={
             "operation":"nvp.film02m.publish_original_building_module.v1",
             "project_id":pid,"module_id":module_id,
@@ -239,8 +288,7 @@ class OriginalBuildingKit:
         return self.index.register_revision(
             pid,module_id,"style",proposal,
             expected_revision=expected_revision,
-            dependencies=[{"object_id":asset_id,
-                           "revision":asset_revision,"role":"asset"}])
+            dependencies=dependencies)
 
     def _resolve(self,pid,seed,blueprint):
         if type(seed) is not int or not 0<=seed<2**63:
