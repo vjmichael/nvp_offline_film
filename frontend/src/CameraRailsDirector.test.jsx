@@ -175,6 +175,42 @@ describe('CAM-FX installed original camera-rail director',()=>{
     expect(native.camfx02_publish).not.toHaveBeenCalled();
   });
 
+  it('labels off-grid Film Time Hermite values as host-evaluated, never USD-authored samples',async()=>{
+    const native=bridge();
+    native.camfx02_sample=vi.fn(async request=>({
+      format:'nvp.cam_fx02.native_rail_film_tick_pose.v1',
+      rail_id:request.rail_id,revision:request.revision,
+      rail_layer_sha256:LAYER,film_tick:request.film_tick,
+      native_worker_started:false,source_actor_pcm_changed:false,
+      native_layer_sample_authored_and_read_back:false,
+      host_exact_film_time_interpolated:true,
+      sample:{film_tick:request.film_tick,position_m:[1,0,3],
+        target_m:[1,8,3],focal_length_mm:35,
+        focus_distance_m:8,f_stop:5.6}
+    }));
+    render(<CameraRailsDirector projectId={PID} nativeBridge={native}/>);
+    await screen.findByRole('option',{name:'ShotCameraBank · revision 1'});
+    fireEvent.click(screen.getByRole('button',{
+      name:'Create editable camera rail handles from technique'}));
+    await screen.findByLabelText('Rail key 2 tick');
+    fireEvent.click(screen.getByRole('button',{
+      name:'Preview exact-time stronger camera USD layer'}));
+    await screen.findByText(/Director rail preview SHA/);
+    fireEvent.click(screen.getByRole('button',{
+      name:'OS approve exact director-editable camera rail revision'}));
+    await screen.findByText(/Native camera source revision 1 committed/);
+    const offGridTick=1;
+    fireEvent.change(screen.getByLabelText('Camera rail sample tick'),{
+      target:{value:String(offGridTick)}});
+    fireEvent.click(screen.getByRole('button',{
+      name:'Read exact original-time native camera pose'}));
+    await waitFor(()=>expect(native.camfx02_sample).toHaveBeenCalledWith({
+      project_id:PID,rail_id:'OriginalCameraRail',revision:1,
+      film_tick:offGridTick}));
+    await screen.findByText(/Off-grid Film Time camera pose was evaluated by the deterministic host rail/);
+    expect(screen.queryByText(/Exact source-time camera key was independently read/)).toBeNull();
+  });
+
   it('never enables a browser-only rail writer or unapproved worker',()=>{
     const {container}=render(<CameraRailsDirector projectId={PID}
       nativeBridge={null}/>);
