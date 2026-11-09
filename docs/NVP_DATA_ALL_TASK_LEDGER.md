@@ -16,6 +16,27 @@ non-destructive assembly manifests. Hardware renders ephemeral samples
 and visuals as requested. Only an explicit final 2D presentation freezes
 output raster/video/audio; samples/frames never define a Digital Take.
 
+## 2026-11-09 — NVP-23 continuation: actual failing CI inspected, fixed source defects; CAM-FX-05A authored
+
+**Evidence on exact earlier CI heads:** F/G/H group run [42650335958](https://github.com/vjmichael/nvp_offline_film/actions/runs/42650335958) completed with **six failures**; 02M-F/G/H Linux/Windows native suites reject the valid `Floor` USD node because the original regex used an over-escaped `\\Z` anchor, and one installed-host bridge test expects a read-only catalog to create source fixtures. React also failed its debounced preview assertion and `edit_id is not defined` during a real source edit. These are **genuine failures**, not cancelled/queued gates.
+
+**P0-F-01** grouped run [42664870777](https://github.com/vjmichael/nvp_offline_film/actions/runs/42664870777) completed with **four failed jobs**. Native Win/Linux compile fails `IndentationError` at `backend/nvp_wo6_desktop_bridge.py:1118` in the shutdown queue drain. React model-cancellation DOM fixture fails because its mock does not expose the cancel method required to show the tested button; the same three source editor failures appear. Windows installed GGUF setup 404s: repository head `32db44d...` actually retains Q2_K and Q3_K_M only, while downloader requests deleted Q4_K_M. **No real installed Windows GGUF generation, human director approval, or model-source acceptance was demonstrated**.
+
+**Repair batch committed on camera branch** (not yet re-executed on native OS):
+- `83649aa9`: repair literal USD prim-name regex terminal anchor.
+- `398de510`: bind source save's exact `edit_id:editId` to native call.
+- `fb3acd40`: wait for deliberately debounced source preview.
+- `f9e51134`: publish source building prototypes in read-only catalog fixture before asserting results.
+- `57a20878`: restore valid WO6 host close indentation, drain worker dispatch queue under lock, then terminate in-flight model generation.
+- `ccc03ea1`: add actual cancel-capable host method to responsive-model UI test fixture; separate cancellation scenario remains.
+- `1380adb8`: download existing Q3_K_M quant at a resolved immutable Hugging Face model commit; rehash exact GGUF and fail closed on missing source.
+
+**CAM-FX-05A new native source-stage group:** `backend/nvp_cam_fx05_verified_shot_source.py` stages an already approved 02M-H district/01E performer/source-tick shot, composes only the immutable reviewed stronger CAM-FX-02 rail layer in a *temporary session*, evaluates the exact Film Time sample, bakes the virtual rail camera to disposable render-frame time 1, exports new USD, and independently reparses saved bytes. It asserts original 01D camera matrix, ActorID mesh points/world transforms, original world Take/PCM and rail source revisions unchanged. The existing source packet's `original_camera_path` and original 01D position **retain their original meaning**, not spoofed with virtual-camera coordinates. Sidecar `cam_fx05_rail_source.json` explicitly binds original and derived source hashes, Film Time, rail revision, source SHA and separate virtual camera path. No worker, model or OS authorization is started by this API.
+
+**CAM-FX-05A tests authored, not yet executed:** `tests/test_nvp_cam_fx05_staged_rail_source.py` uses actual 01E actor/PCM and 02M-H approved USD fixture; compares two distinct real rail revisions at identical source tick, independently reopens on-disk source; tests foreign/unpublished rail, nonmatching time and occupied staging dir; evaluates 8 technique contracts (static, dolly, arc, crane, pan/tilt, over-shoulder, rack focus, dolly zoom) at native USD film-time samples and midpoints. **A technique tag does not prove rendered cinematography.**
+
+**Gates OPEN:** On latest group-end head, run one consolidated native Windows/Linux OpenUSD+React/P0F01 gate and inspect exact artifacts. Current 02M-H [42671262108](https://github.com/vjmichael/nvp_offline_film/actions/runs/42671262108) remains queued at this inspection, not passed. CAM-FX-05B must connect the *separate* derived rail camera to a genuinely reviewed protected Blender/Cycles worker (not secretly replace the source 01D camera), require a new operation-specific OS grant, verify worker journal plus second independent saved-scene reopener, and compare real moving-camera pixel results with unchanged original actor/PCM source. Then integrate selected-view 01Q/01S/01T and installed WebView2 controls; physical owner-operated approval and shot aesthetics remain distinct. Do not dispatch small per-commit CI jobs or mark source-only tests as native acceptance.
+
 ## 2026-11-09 — USD-FILM-02M-HR installed source-verified Cycles review integration
 
 **SOURCE IMPLEMENTED, NATIVE / INSTALLED ACCEPTANCE NOT PASSED.** The original `ModularWorldDirector` now embeds `OriginalActorDistrictCyclesReview` (real React controls, not a new app), with its exact approved 02M-H immutable district/01E actor/01D camera binding as the only input. The trusted `OriginalDistrictDesktopMixin` reuses the existing `TrustedDesktopWO5Bridge` threadpool and protected `BlenderWorkerSupervisor`, admitting one bounded source frame only after a fresh **operation-specific native OS confirmation**. Old binding approval and model generation cannot grant the rendering operation.
