@@ -1819,7 +1819,7 @@ class OriginalModularBuildingSource(unittest.TestCase):
                                  for x in recovered["drafts"]))
             with self.assertRaises(KeyError):
                 self.index.read_revision(self.pid,"InterruptedModelDistrict",1)
-            with self.assertRaises(PermissionError):
+            with self.assertRaises(KeyError):
                 restarted.film02mf_commit({
                     "project_id":self.pid,"draft_id":pending,
                     "version":1,"source_plan_sha256":key,
