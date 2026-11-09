@@ -77,7 +77,9 @@ methods; it never declares a film because files merely exist.
 
 After **all 90 selected chunks / 720 actual pictures** pass, the host
 revalidates every source-selected camera/ActorID/time and native worker
-receipt, independently runs FFmpeg/FFprobe to encode a 720-frame
+receipt. A **separate director authorization** binds the exact edited
+source SHA, picture receipts and film destination before final mux;
+only then does it independently run FFmpeg/FFprobe to encode a 720-frame
 FFV1 picture and muxes the **ONE original source 48k PCM sound**.
 The decoded film must contain 720 original pictures and exactly
 1,440,000 PCM samples with the same original mix essence SHA.
