@@ -367,25 +367,25 @@ class BuildingCellSession:
                 measured=None
             checked=[]
             for id in sorted(names):
-            prim=self.stage.GetPrimAtPath(
-                "/World/Cells/"+id)
-            if not prim or prim.IsLoaded()!=(id in selected):
-                raise RuntimeError("Native cell payload load state disagrees with source requirement")
-            if id in selected:
-                geometry=list(self.stage.Traverse())
-                child="/World/Cells/"+id+"/Buildings"
-                if not self.stage.GetPrimAtPath(child).IsDefined():
-                    raise RuntimeError("Original building meshes vanished from required cell")
-                real_meshes=sum(
-                    1 for p in geometry if p.GetPath().pathString.startswith(
-                        child+"/") and p.IsA(__import__(
-                            "pxr",fromlist=["UsdGeom"]).UsdGeom.Mesh))
-                if real_meshes!=self.original[id]["original_mesh_count"]:
-                    raise RuntimeError("Native required building lost referenced original meshes")
-                checked.append({
-                    "cell_id":id,"native_meshes_reopened":real_meshes,
-                    "geometry_source_sha256":self.original[id][
-                        "building_sha256"]})
+                prim=self.stage.GetPrimAtPath(
+                    "/World/Cells/"+id)
+                if not prim or prim.IsLoaded()!=(id in selected):
+                    raise RuntimeError("Native cell payload load state disagrees with source requirement")
+                if id in selected:
+                    geometry=list(self.stage.Traverse())
+                    child="/World/Cells/"+id+"/Buildings"
+                    if not self.stage.GetPrimAtPath(child).IsDefined():
+                        raise RuntimeError("Original building meshes vanished from required cell")
+                    real_meshes=sum(
+                        1 for p in geometry if p.GetPath().pathString.startswith(
+                            child+"/") and p.IsA(__import__(
+                                "pxr",fromlist=["UsdGeom"]).UsdGeom.Mesh))
+                    if real_meshes!=self.original[id]["original_mesh_count"]:
+                        raise RuntimeError("Native required building lost referenced original meshes")
+                    checked.append({
+                        "cell_id":id,"native_meshes_reopened":real_meshes,
+                        "geometry_source_sha256":self.original[id][
+                            "building_sha256"]})
             self.loaded=selected
         except Exception:
             try:
