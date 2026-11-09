@@ -659,6 +659,60 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     <p className="fineprint">Source length: {bank?.duration_ticks||0} ticks.
       The selected preset is only a suggested path—drag/numeric rail edits
       and human approval must occur before native use.</p>
+    {advanced&&<>
+      <section aria-label="Source-grounded native actor framing and district occlusion">
+        <h5>Actual ActorID framing, approved geometry and ray warnings</h5>
+        <label>Optional approved 02M-H district shot binding ID
+          <input aria-label="Native rail approved district shot binding"
+            value={districtBinding} maxLength={80} disabled={busy}
+            onChange={e=>{setDistrictBinding(e.target.value);setSceneGuidance(null);}}/>
+        </label>
+        <label>Verified original ActorID framing target
+          <select aria-label="Original native ActorID framing target"
+            value={selectedActor} disabled={busy}
+            onChange={e=>{setSelectedActor(e.target.value);setSceneGuidance(null);}}>
+            <option value="">All original actors; select one to test center ray</option>
+            {(sceneGuidance?.source_guided_frames?.[0]?.original_actor_views||[])
+              .map(a=><option key={a.actor_id} value={a.actor_id}>
+                ActorID {a.actor_id}</option>)}
+          </select>
+        </label>
+        <button disabled={busy||nodes.length<2} onClick={requestGuidance}>
+          Read actual original USD ActorID framing and bounded occlusion</button>
+        {sceneGuidance&&<div role="region"
+          aria-label="Verified original ActorID scene and ray guidance">
+          <p>Source Take SHA: {sceneGuidance.world_take_sha256}.
+            Native original actors: {sceneGuidance.native_actor_count}.
+            Original source SHA: {sceneGuidance.guidance_sha256}.
+            Approved district SHA: {sceneGuidance.approved_district_sha256||'none'}.
+            No ActorID source or PCM was rewritten.</p>
+          {sceneGuidance.source_guided_frames.map(frame=>
+            <div key={frame.film_tick}>
+              <p>Film Time tick {frame.film_tick} ·
+                Center-ray: {frame.selected_actor_center_ray.state}.
+                Real original district mesh triangles checked:
+                {' '+frame.selected_actor_center_ray.reviewed_original_district_triangles}.
+                Non-mesh primitives excluded:
+                {' '+frame.selected_actor_center_ray.excluded_nonmesh_shapes}.
+                {frame.selected_actor_center_ray.hit_source_prim&&
+                 ' Source obstruction: '+frame.selected_actor_center_ray.hit_source_prim}.
+                Full frame visibility never certified by one ray.</p>
+              <ul>{frame.original_actor_views.slice(0,12).map(a=>
+                <li key={a.actor_id}>
+                  ActorID {a.actor_id}: {a.frame.state}.
+                  Projected 2D frame coverage: {
+                    Number((a.frame.coverage*100).toFixed(1))}%.
+                  Center: {a.center_world_m.map(n=>Number(n.toFixed(2))).join(', ')} m.
+                </li>)}</ul>
+            </div>)}
+        </div>}
+      </section>
+    </>}
+    {nodes.length>=2&&<CameraRailGizmo nodes={nodes} origin={origin}
+      guidance={sceneGuidance} disabled={busy||Boolean(modelAttempt)}
+      onNodesChange={updated=>{
+        remember();setNodes(updated);invalidate();
+      }}/>}
     <div className="actions">
       {['X','Y','Z'].map((axis,i)=><label key={axis}>
         Origin rebasing {axis} (m)
@@ -736,14 +790,97 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     <div className="actions">
       <button disabled={busy||!nodes.length||!ID.test(railId)}
         onClick={verifyPreview}>Preview exact-time stronger camera USD layer</button>
-      <button disabled={busy||!valid}
-        onClick={publish}>OS approve exact director-editable camera rail revision</button>
+      {advanced?
+        <button disabled={busy||!valid||!durableDraft||
+          durableDraft.state!=='DRAFT'||draftDirty||
+          durableDraft.proposal_sha256!==preview?.proposal_sha256||
+          Boolean(modelAttempt)}
+          onClick={publishDurable}>
+          OS approve exact saved and source-verified camera rail draft</button>:
+        <button disabled={busy||!valid}
+          onClick={publish}>OS approve exact director-editable camera rail revision</button>}
     </div>
     {preview&&<p role="status">
       Director rail preview SHA: {preview.proposal_sha256}.
       Stronger source USD layer SHA: {preview.rail_layer_sha256}.
       {preview.film_time_samples.length} source preview samples.
       No original actor Takes or PCM changed. No render authorization.</p>}
+    {advanced&&<section aria-label="Durable camera rail editing and model proposals">
+      <h5>Durable camera source drafts · crash-safe revision history</h5>
+      <p className="fineprint">Create a SQLite source draft to enable
+        automatic save after edits. Unsaved changes are marked until a native
+        journal acknowledgement. Interrupted OS confirmations are never
+        replayed; a new approval is required.</p>
+      <button disabled={busy||!bank||nodes.length<2||
+          durableDraft?.state==='DRAFT'}
+        onClick={startDurable}>
+        Create source-bound durable camera-rail draft</button>
+      <label>Reopen saved native camera draft after restart
+        <select aria-label="Reopen a saved camera rail draft"
+          defaultValue="" disabled={busy}
+          onChange={e=>{if(e.target.value)reopenDraft(e.target.value);}}>
+          <option value="">Select project-local unapproved draft</option>
+          {drafts.map(d=><option key={d.draft_id} value={d.draft_id}>
+            {d.rail_id} · {d.state} · v{d.version}</option>)}
+        </select>
+      </label>
+      <button disabled={busy} onClick={()=>run(refreshDrafts)}>
+        Refresh durable original rail history</button>
+      {durableDraft&&<div role="region"
+        aria-label="Exact saved camera rail source status">
+        <p>Draft {durableDraft.draft_id}, journal version {
+          durableDraft.version}, state {durableDraft.state}.
+          Saved proposal SHA {durableDraft.proposal_sha256}.
+          Durable undo depth: {durableDraft.undo_depth}.
+          {draftDirty?' Local handle changes still pending journal acknowledgement.':
+            ' Current changes confirmed in SQLite.'}</p>
+        <div className="actions">
+          <button disabled={busy||durableDraft.state!=='DRAFT'||
+            !draftDirty} onClick={saveDraft}>Save camera edits now to SQLite</button>
+          <button disabled={busy||durableDraft.state!=='DRAFT'||
+            draftDirty||durableDraft.undo_depth<1}
+            onClick={undoDurable}>Undo saved original camera draft revision</button>
+          <button disabled={busy||durableDraft.state!=='DRAFT'}
+            onClick={discardDraft}>Discard unapproved camera draft</button>
+          <button disabled={busy||durableDraft.state!==
+            'INTERRUPTED_REQUIRES_NEW_APPROVAL'}
+            onClick={recoverPublish}>
+            Reconcile interrupted native camera publication without retry</button>
+        </div>
+      </div>}
+      {journalNotice&&<p role="status">{journalNotice}</p>}
+      <h5>Local AI shot technique advice · unapproved editable proposal</h5>
+      <p className="fineprint">Only the previously configured host-selected
+        loopback model can suggest handles. It receives bounded original
+        ActorID/district framing evidence, never a worker or native OS grant.
+        Model output is strict JSON and passes a separate native USD source check.</p>
+      <label>Verified configured offline local model
+        <select aria-label="Camera rail local GGUF model" disabled={busy}
+          value={modelId} onChange={e=>setModelId(e.target.value)}>
+          <option value="">Choose configured host-selected local model</option>
+          {modelList.map(model=><option key={model.id} value={model.id}>
+            {model.id}</option>)}
+        </select>
+      </label>
+      <label>Director shot direction
+        <textarea aria-label="Native original camera model direction"
+          maxLength={1200} value={modelDirection} disabled={busy}
+          onChange={e=>setModelDirection(e.target.value)}/>
+      </label>
+      <div className="actions">
+        <button disabled={busy||!durableDraft||
+          durableDraft.state!=='DRAFT'||draftDirty||
+          !sceneGuidance||!modelId||!modelDirection.trim()||
+          Boolean(modelAttempt)}
+          onClick={startModel}>
+          Suggest and save unapproved source-grounded AI camera rail</button>
+        <button disabled={busy||!modelAttempt}
+          onClick={cancelModel}>Cancel native camera model proposal</button>
+      </div>
+      {modelState&&<p role="status">Local model proposal: {modelState}.
+        No creative authority was granted.</p>}
+      {modelNotice&&<p role="status">{modelNotice}</p>}
+    </section>}
     {published&&<p role="status">
       Native camera source revision {published.revision} committed and
       independently reopened. Original performance still immutable.</p>}
