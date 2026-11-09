@@ -659,6 +659,25 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertIsNotNone(self.index.read_revision(self.pid,"FilmedTake",1))
         self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
 
+    def test_failed_interruption_journal_does_not_mask_capture_error(self):
+        from unittest.mock import patch
+        # A failure after the durable PREPARING reservation must retain the
+        # original diagnostic even if the INTERRUPTED update also fails.
+        with patch.object(OpenUSDTakeCapture, "freeze",
+                          side_effect=RuntimeError("original capture failure")):
+            with patch.object(self.capture.publications, "finish",
+                              side_effect=OSError("journal storage unavailable")):
+                with self.assertRaisesRegex(RuntimeError, "original capture failure") as caught:
+                    self.capture.capture(**self.payload())
+        self.assertTrue(any("journal storage unavailable" in note
+                            for note in getattr(caught.exception, "__notes__", [])))
+        # PREPARING remains recoverable; no false completed Take was created.
+        unresolved=self.capture.publications.unresolved(self.pid)
+        self.assertEqual(len(unresolved),1)
+        self.assertEqual(unresolved[0]["state"],"PREPARING")
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"FilmedTake",1)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
