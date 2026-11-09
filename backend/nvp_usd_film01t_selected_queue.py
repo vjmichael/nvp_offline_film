@@ -41,7 +41,11 @@ def _identity(pid,edit_id,revision,plan):
         "original_performance_sha256":plan["original_performance_sha256"],
         "original_usd_sha256":plan["original_usd_sha256"],
         "edit_document_sha256":plan["edit_document_sha256"],
-        "render_profile_sha256":plan["render_profile_sha256"]}
+        "render_profile_sha256":plan["render_profile_sha256"],
+        # Include the entire exact 720-frame selected-camera render plan,
+        # not only its source IDs: changes in native source evaluation,
+        # view-cache algorithm or framing create a NEW durable queue.
+        "selected_frame_plan_sha256":edit_sha(plan)}
     return "FilmT_"+edit_sha(body)[:48]
 
 
