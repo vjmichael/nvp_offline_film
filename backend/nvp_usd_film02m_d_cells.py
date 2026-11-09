@@ -18,7 +18,7 @@ import shutil
 from backend.nvp_film_index import FilmIndex,_id,_require_pid
 from backend.nvp_openusd_scene import _usd
 from backend.nvp_usd_film02m_modular_buildings import (
-    OriginalBuildingKit,BUILD_FORMAT,_sha,_vector)
+    OriginalBuildingKit,BUILD_FORMAT,PRIM_TOKEN,_sha,_vector)
 
 FORMAT="nvp.usd_film02m.original_building_camera_cells.v1"
 MAX_CELLS=16
@@ -62,6 +62,8 @@ class OriginalBuildingCells:
                     "cell_id","building_id","building_revision"}:
                 raise ValueError("Each cell references one exact published original building")
             cid=_id(cell["cell_id"],"original film building cell")
+            if not PRIM_TOKEN.fullmatch(cid):
+                raise ValueError("Building cell identity must be a native USD prim token")
             if cid in names:
                 raise ValueError("Duplicate cell cannot alias original building")
             names.add(cid)
