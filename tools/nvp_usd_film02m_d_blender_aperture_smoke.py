@@ -111,6 +111,9 @@ def run():
     through_hit=cast[1]
     if not through_hit.y>front_y+2:
         raise RuntimeError("Actual doorway is blocked by a solid facade")
+    if abs(float(through_hit.y)-rear_y)>.25:
+        raise RuntimeError(
+            "Real door ray must hit original ROOM REAR wall, not only external rear shell")
     pier=Vector((float(spec["front_wall_pier_x_m"]),
                  front_y-3,door.z))
     solid=scene.ray_cast(depsgraph,pier,Vector((0,1,0)),distance=100)
