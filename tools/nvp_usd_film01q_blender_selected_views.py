@@ -15,7 +15,7 @@ from pathlib import Path
 import sys
 
 import bpy
-from backend.nvp_usd_film01r_quality import verify_quality,quality_hash
+from nvp_usd_film01r_quality import verify_quality,quality_hash
 from nvp_usd_film01m_camera_ray_mask import per_camera_primary_ray_exclusions
 
 SOURCE_FORMAT="nvp.usd_film01o.original_720frame_director_rig_source.v1"
