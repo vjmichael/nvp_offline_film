@@ -241,6 +241,9 @@ class FilmingPublicationJournal:
                         revisions[sid]["kind"] != "audio" or
                         source_data.get("format") != ORIGINAL_PCM_FORMAT or
                         source_data.get("sample_rate") != SAMPLE_RATE or
+                        source_data.get("channels") != 1 or
+                        source_data.get("sample_encoding") != "signed_16_le" or
+                        source_data.get("flattened_soundtrack") is not False or
                         source_data.get("immutable_source") is not True or
                         type(source_data.get("sample_count")) is not int or
                         source_data["sample_count"] < required_samples or
