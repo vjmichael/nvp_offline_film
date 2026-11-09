@@ -1689,6 +1689,144 @@ class OriginalModularBuildingSource(unittest.TestCase):
         finally:
             bridge._close()
 
+    def test_02m_g_installed_wo6_model_to_draft_and_restart_receipt(self):
+        """Real native OpenUSD and bridge test; provider is injected, NOT GGUF."""
+        from hashlib import sha256
+        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+        from backend.nvp_wo6_verified_local_model import FORMAT as PROVIDER_FORMAT
+        import json
+        settings=self._02m_e_settings()
+        before=self.index.list_objects(self.pid,kind="take")
+        class Window:
+            def get_current_url(self):
+                return "http://127.0.0.1:43141/"
+            def create_confirmation_dialog(self,title,message):
+                raise AssertionError("Model generation must not ask for OS approval")
+        class Model:
+            def __init__(self,identity):
+                self.identity=identity
+            def complete(self,system,user):
+                assert "no" in system.lower() or "not" in system.lower()
+                facts=json.loads(user)
+                assert facts["project_id"]==self_pid
+                reply=json.dumps({"params":settings})
+                self.completion_receipt={
+                    "format":PROVIDER_FORMAT,
+                    "selected_model_id":self.identity,
+                    "provider_reported_model_id":self.identity,
+                    "generated_text_sha256":sha256(reply.encode()).hexdigest(),
+                    "provider_reported_completion_tokens":18,
+                    "provider_self_report_not_attestation":True,
+                    "native_worker_authorized":False}
+                return reply
+        self_pid=self.pid
+        root=self.root/"02mg_model_installed_recovery"
+        def opened():
+            bridge=TrustedDesktopWO6Bridge(
+                self.index,origin="http://127.0.0.1:43141",
+                production_root=root,
+                director_writer_factory=lambda selected:Model(selected))
+            bridge._attach_window(Window())
+            return bridge
+        bridge=opened()
+        try:
+            result=bridge.film02mg_generate_candidate({
+                "project_id":self.pid,"district_id":"RealModelBuildingDistrict",
+                "expected_revision":0,
+                "direction":"Create an original two-row street with approved houses",
+                "model_id":"LocalTestModel"})
+            self.assertEqual(result["format"],
+                             "nvp.usd_film02m_g.model_saved_original_draft.v1")
+            draft=result["proposal"]
+            self.assertEqual(draft["state"],"DRAFT")
+            self.assertEqual(draft["observed_model_evidence"]["model_text_sha256"],
+                             result["model_evidence"]["model_text_sha256"])
+            self.assertFalse(result["director_approval_granted"])
+            self.assertFalse(result["actor_takes_modified"])
+            self.assertEqual(bridge.film02mf_catalog(self.pid)["model_attempts"][0][
+                "state"],"DRAFT_SAVED")
+            preview=bridge.film02mf_preview({
+                "project_id":self.pid,"draft_id":draft["draft_id"]})
+            self.assertTrue(preview["native_usd_source_reopened"])
+            self.assertEqual(preview["verified_openusd_point_instancer"],6)
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,"RealModelBuildingDistrict",1)
+            self.assertEqual(self.index.list_objects(self.pid,kind="take"),before)
+        finally:
+            bridge._close()
+        restarted=opened()
+        try:
+            persisted=restarted.film02mf_reopen({
+                "project_id":self.pid,"draft_id":draft["draft_id"]})
+            self.assertEqual(persisted["observed_model_evidence"],
+                             draft["observed_model_evidence"])
+            self.assertEqual(persisted["state"],"DRAFT")
+            self.assertEqual(restarted.film02mf_catalog(self.pid)[
+                "model_attempts"][0]["state"],"DRAFT_SAVED")
+            self.assertEqual(self.index.list_objects(self.pid,kind="take"),before)
+        finally:
+            restarted._close()
+
+    def test_02m_g_model_failure_and_orphan_attempt_do_not_publish(self):
+        """Interrupted worker does not create drafts or replay model authority."""
+        from hashlib import sha256
+        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+        settings=self._02m_e_settings()
+        root=self.root/"02mg_model_interrupted"
+        class Window:
+            def get_current_url(self):
+                return "http://127.0.0.1:43141/"
+            def create_confirmation_dialog(self,*_):
+                raise AssertionError("No OS approval on model failure")
+        class FailedModel:
+            def complete(self,system,user):
+                return "{not a valid completed JSON proposal"
+        def opened():
+            bridge=TrustedDesktopWO6Bridge(
+                self.index,origin="http://127.0.0.1:43141",
+                production_root=root,
+                director_writer_factory=lambda selected:FailedModel())
+            bridge._attach_window(Window())
+            return bridge
+        first=opened()
+        try:
+            with self.assertRaises((ValueError,PermissionError)):
+                first.film02mg_generate_candidate({
+                    "project_id":self.pid,"district_id":"InterruptedModelDistrict",
+                    "expected_revision":0,"model_id":"BrokenModel",
+                    "direction":"Try an original street"})
+            catalog=first.film02mf_catalog(self.pid)
+            self.assertEqual(catalog["model_attempts"][0]["state"],"FAILED")
+            self.assertFalse(any(x["district_id"]=="InterruptedModelDistrict"
+                                 for x in catalog["drafts"]))
+            service=first._film02mf_service(self.pid)
+            key="f"*64
+            pending=service.start_model_attempt(
+                self.pid,"InterruptedModelDistrict",0,
+                "LocalTestModel",key,key)
+            self.assertEqual(service.catalog(self.pid)["model_attempts"][0][
+                "state"],"GENERATING")
+        finally:
+            first._close()
+        restarted=opened()
+        try:
+            recovered=restarted.film02mf_catalog(self.pid)
+            states={x["attempt_id"]:x["state"] for x in
+                    recovered["model_attempts"]}
+            self.assertEqual(states[pending],
+                             "INTERRUPTED_REQUIRES_NEW_GENERATION")
+            self.assertFalse(any(x["district_id"]=="InterruptedModelDistrict"
+                                 for x in recovered["drafts"]))
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,"InterruptedModelDistrict",1)
+            with self.assertRaises(PermissionError):
+                restarted.film02mf_commit({
+                    "project_id":self.pid,"draft_id":pending,
+                    "version":1,"source_plan_sha256":key,
+                    "usd_layer_root_sha256":key})
+        finally:
+            restarted._close()
+
     def test_02m_original_geometry_collision_rejected(self):
         original=building_recipe(0,self.facades)
         overlapping=deepcopy(original)
