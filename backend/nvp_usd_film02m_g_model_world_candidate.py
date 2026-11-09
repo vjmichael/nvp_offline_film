@@ -49,18 +49,18 @@ def _typed_params(candidate, catalog):
     if any(type(params[k]) is not int for k in integer_keys):
         raise ValueError("Original world integer inputs must be integers, not bool or strings")
     if (not 0 <= params["seed"] <= 2147483647 or
-        not 1 <= params["grid_cols"] <= 32 or
-        not 1 <= params["grid_rows"] <= 32 or
-        not 1 <= params["source_instance_budget"] <= 1024 or
-        not 1 <= params["source_triangle_budget"] <= 100000000):
+        not 1 <= params["grid_cols"] <= 16 or
+        not 1 <= params["grid_rows"] <= 16 or
+        not 1 <= params["source_instance_budget"] <= 256 or
+        not 100 <= params["source_triangle_budget"] <= 2000000):
         raise ValueError("Model exceeded bounded original source world limits")
     spacing=params["lot_spacing_m"]
-    if type(spacing) not in (int, float) or not math.isfinite(spacing) or not 1 <= spacing <= 10000:
+    if type(spacing) not in (int, float) or not math.isfinite(spacing) or not 4 <= spacing <= 10000:
         raise ValueError("Invalid finite lot spacing")
     origin=params["world_origin_m"]
     if (type(origin) is not list or len(origin)!=3 or
         any(type(n) not in (int,float) or not math.isfinite(n) or
-            abs(n)>1e12 for n in origin)):
+            abs(n)>100000000 for n in origin)):
         raise ValueError("Invalid finite bounded world origin")
     buildings=params["source_buildings"]
     if type(buildings) is not list or not 1 <= len(buildings) <= 8:
