@@ -196,7 +196,7 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
       throw Error('Original film edit has gaps or invalid source cameras');
     const old=catalog.edits.find(x=>x.edit_id===editId);
     const result=await native.film01r_save_edit({
-      project_id:projectId,edit_id,expected_revision:old?.revision||0,
+      project_id:projectId,edit_id:editId,expected_revision:old?.revision||0,
       camera_bank_id:bankId,camera_bank_revision:bank.revision,cuts});
     if(result?.format!=='nvp.film01r.authenticated_source_edit_saved.v1'||
        result.edit_id!==editId||result.original_performance_modified!==false)
