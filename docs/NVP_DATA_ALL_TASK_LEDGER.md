@@ -16,6 +16,13 @@ non-destructive assembly manifests. Hardware renders ephemeral samples
 and visuals as requested. Only an explicit final 2D presentation freezes
 output raster/video/audio; samples/frames never define a Digital Take.
 
+## 2026-11-09 — P0-F-01B real NSIS/Windows/GGUF installed-workflow integration [SOURCE COMMITTED; ACCEPTANCE OPEN]
+
+- Implemented nonblocking original-world generation end-to-end through bundled WebView2 React → existing WO6 host-selected loopback model → host-owned optional JSON-schema constrained real GGUF request → strict source validation → persisted unapproved native USD district draft; no model-to-OS grant.
+- Actual bundled Windows smoke now uses the **same source proposal storage path as production** and fixes missing FilmIndex studio scope. Added installed process kill/restart, native WebView2 edit/undo/discard, genuine same-process Windows confirmation popup denial/approval (automated test click, **not human consent**), source SHA preservation, and SHA-checked NSIS install/uninstall. The test-only model/server are outside installer.
+- Grouped acceptance workflow `.github/workflows/nvp-p0f01-grouped-installed-windows.yml` stages Linux/Windows real `usd-core==26.11`, React DOM/Vite, actual Windows PyInstaller/NSIS executable, real hashed 135M GGUF/llama.cpp, genuine native OS dialogs and forced-process recovery. **Native run/results not yet accepted; no mocked model may substitute.**
+- Remaining: collect native executed logs, repair demonstrated failures and run one consolidated group gate; ensure real GGUF produced valid original world JSON and shipped React visibly reopened it, no source rewrite and no stale OS grant; separate physical Windows user evaluation and film-quality review. See [P0-F-01B evidence details](NVP_P0F01_ASYNC_MODEL_DRAFT_RECOVERY_20261109.md).
+
 ## 2026-11-09 — P0-F-01A responsive installed model-to-draft increment (SOURCE IMPLEMENTED; NATIVE/NSIS OPEN)
 
 - **Feature branch:** `nvp/p0f01-async-model-draft-recovery-20261109`, stacked on independent planning branch `nvp/p0f01-camera-rails-shot-fx-ledger-20261109`; F/G/H exact-head CI branch is unchanged while six native jobs remain queued.
