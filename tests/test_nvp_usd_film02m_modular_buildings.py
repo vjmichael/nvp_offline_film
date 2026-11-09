@@ -1344,6 +1344,351 @@ class OriginalModularBuildingSource(unittest.TestCase):
                      "audit.json","manifest.json",
                      "district_render_view.usda"]:
             shutil.copyfile(job/name,artifacts/("district_"+name))
+    def _02m_f_service(self,tag,confirm=None):
+        from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
+        return OriginalDistrictDrafts(
+            self.index,self.root/("02mf_durable_"+tag),
+            confirm=confirm or (lambda scope:False))
+
+    def test_02m_f_ai_director_draft_preview_diff_undo_discard_reopen(self):
+        from backend.nvp_usd_film02m_f_authoring import (
+            FORMAT,PREVIEW_FORMAT,DIFF_FORMAT)
+        host=self._02m_f_service("original_source_undo")
+        settings=self._02m_e_settings()
+        result=host.create(
+            self.pid,"FilmDistrictFUnapproved",expected_revision=0,
+            params=settings,proposed_by="ai")
+        self.assertEqual(result["format"],FORMAT)
+        self.assertEqual(result["state"],"DRAFT")
+        self.assertFalse(result["director_approved"])
+        self.assertFalse(result["original_actor_takes_modified"])
+        self.assertEqual(result["native_blender_workers_started"],0)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"FilmDistrictFUnapproved",1)
+        snapshot=host.preview(self.pid,result["draft_id"])
+        self.assertEqual(snapshot["format"],PREVIEW_FORMAT)
+        self.assertEqual(snapshot["diff"]["format"],DIFF_FORMAT)
+        self.assertEqual(snapshot["diff"]["generated_slots"],6)
+        self.assertEqual(snapshot["verified_openusd_point_instancer"],6)
+        self.assertTrue(snapshot["native_usd_source_reopened"])
+        self.assertEqual(snapshot["native_blender_workers_started"],0)
+        self.assertEqual(snapshot["source_plan_sha256"],
+                         result["original_plan_sha256"])
+        hidden=host.edit(
+            self.pid,result["draft_id"],result["version"],
+            {"op":"hide_generated","instance_id":1})
+        self.assertEqual(hidden["version"],2)
+        self.assertEqual(hidden["undo_steps"],1)
+        self.assertNotEqual(hidden["original_plan_sha256"],
+                            result["original_plan_sha256"])
+        revised=host.preview(self.pid,result["draft_id"])
+        self.assertEqual(revised["diff"]["added_director_opinions"],
+                         [{"op":"hide_generated","instance_id":1}])
+        self.assertEqual(
+            [x["instance_id"] for x in revised["instances"] if x["hidden"]],
+            [1])
+        with self.assertRaises(RuntimeError):
+            host.edit(self.pid,result["draft_id"],result["version"],
+                {"op":"hide_generated","instance_id":2})
+        # Close and construct a new real native service to prove WAL/FULL
+        # durable draft and exact original source revision reopen.
+        reloaded=self._02m_f_service("original_source_undo")
+        self.assertEqual(
+            reloaded.reopen(self.pid,result["draft_id"])["version"],2)
+        undone=reloaded.undo(self.pid,result["draft_id"],2)
+        self.assertEqual(undone["version"],3)
+        self.assertEqual(undone["undo_steps"],0)
+        self.assertEqual(undone["original_plan_sha256"],
+                         result["original_plan_sha256"])
+        self.assertEqual(reloaded.preview(
+            self.pid,result["draft_id"])["diff"][
+            "added_director_opinions"],[])
+        discarded=reloaded.discard(self.pid,result["draft_id"],3)
+        self.assertEqual(discarded["state"],"DISCARDED")
+        self.assertFalse(discarded["director_approved"])
+        with self.assertRaises(RuntimeError):
+            reloaded.undo(self.pid,result["draft_id"],3)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"FilmDistrictFUnapproved",1)
+
+    def test_02m_f_source_layer_place_restore_remove_and_undo(self):
+        host=self._02m_f_service("original_source_manual_edit")
+        settings=self._02m_e_settings()
+        original_building=settings["source_buildings"][0]["building_id"]
+        draft=host.create(
+            self.pid,"FilmDistrictFManual",expected_revision=0,
+            params=settings,proposed_by="director")
+        first=host.preview(self.pid,draft["draft_id"])
+        generated_sha=first["generated_source_layer_sha256"]
+        hidden=host.edit(
+            self.pid,draft["draft_id"],draft["version"],
+            {"op":"hide_generated","instance_id":1})
+        placement=host.edit(
+            self.pid,draft["draft_id"],hidden["version"],
+            {"op":"place_original","name":"ApprovedOriginalHouse",
+             "building_id":original_building,
+             "position_m":[0.,60.,0.],"yaw_deg":90})
+        stage=host.preview(self.pid,draft["draft_id"])
+        self.assertEqual(stage["generated_source_layer_sha256"],
+                         generated_sha)
+        self.assertEqual(len(stage["instances"]),7)
+        self.assertEqual(len(stage["diff"]["added_director_opinions"]),2)
+        self.assertEqual(len([
+            x for x in stage["instances"] if x["director_placed"]]),1)
+        with self.assertRaises(ValueError):
+            host.edit(
+                self.pid,draft["draft_id"],placement["version"],
+                {"op":"place_original","name":"CollidingHouse",
+                 "building_id":original_building,
+                 "position_m":[0.,-15.,0.],"yaw_deg":0})
+        restored=host.edit(
+            self.pid,draft["draft_id"],placement["version"],
+            {"op":"unhide_generated","instance_id":1})
+        after=host.preview(self.pid,draft["draft_id"])
+        self.assertEqual(
+            [x for x in after["instances"] if x["hidden"]],[])
+        self.assertEqual(after["generated_source_layer_sha256"],generated_sha)
+        removed=host.edit(
+            self.pid,draft["draft_id"],restored["version"],
+            {"op":"remove_manual","name":"ApprovedOriginalHouse"})
+        self.assertEqual(len(host.preview(
+            self.pid,draft["draft_id"])["instances"]),6)
+        previous=host.undo(
+            self.pid,draft["draft_id"],removed["version"])
+        self.assertEqual(previous["version"],removed["version"]+1)
+        last=host.preview(self.pid,draft["draft_id"])
+        self.assertEqual(len(last["instances"]),7)
+        self.assertEqual(last["generated_source_layer_sha256"],
+                         generated_sha)
+        with self.assertRaises(PermissionError):
+            host.edit(
+                self.pid,draft["draft_id"],previous["version"],
+                {"op":"execute_python","command":"import os"})
+        with self.assertRaises(PermissionError):
+            host.create(
+                self.pid,"FilmDistrictFUntrustedScript",
+                expected_revision=0,
+                params={**settings,"arbitrary_script":"import os"},
+                proposed_by="ai")
+        self.assertFalse(last["original_world_takes_modified"])
+        self.assertEqual(last["native_blender_workers_started"],0)
+
+    def test_02m_f_exact_native_os_confirmation_and_source_version_lock(self):
+        from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
+        approvals=[]
+        allowed=[False]
+        def native_os_confirm(scope):
+            approvals.append(dict(scope))
+            self.assertEqual(scope["operation"],
+                "nvp.film02m_f.commit_exact_original_district.v1")
+            self.assertEqual(len(scope["original_source_plan_sha256"]),64)
+            self.assertEqual(len(scope["native_original_layer_source_sha256"]),64)
+            return allowed[0]
+        host=OriginalDistrictDrafts(
+            self.index,self.root/"02mf_native_approval_test",
+            confirm=native_os_confirm)
+        settings=self._02m_e_settings()
+        params=dict(settings)
+        draft=host.create(
+            self.pid,"FilmDistrictFApproved",expected_revision=0,
+            params=params,proposed_by="director")
+        snapshot=host.preview(self.pid,draft["draft_id"])
+        with self.assertRaises(PermissionError):
+            host.approve_and_commit(
+                self.pid,draft["draft_id"],draft["version"],
+                "a"*64,snapshot["usd_layer_root_sha256"])
+        self.assertEqual(approvals,[])
+        with self.assertRaises(PermissionError):
+            host.approve_and_commit(
+                self.pid,draft["draft_id"],draft["version"],
+                snapshot["source_plan_sha256"],
+                snapshot["usd_layer_root_sha256"])
+        self.assertEqual(len(approvals),1)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"FilmDistrictFApproved",1)
+        self.assertEqual(host.reopen(self.pid,draft["draft_id"])[
+            "state"],"DRAFT")
+        allowed[0]=True
+        receipt=host.approve_and_commit(
+            self.pid,draft["draft_id"],draft["version"],
+            snapshot["source_plan_sha256"],
+            snapshot["usd_layer_root_sha256"])
+        self.assertEqual(receipt["state"],"COMMITTED")
+        self.assertEqual(receipt["published_revision"],1)
+        self.assertEqual(receipt["original_film_take_modified"],False)
+        self.assertFalse(receipt["native_cycles_render_started"])
+        published=self.index.read_revision(
+            self.pid,"FilmDistrictFApproved",1)
+        self.assertEqual(published["document_sha256"],
+                         receipt["published_sha256"])
+        with host.district.open(self.pid,"FilmDistrictFApproved",1) as reopened:
+            self.assertEqual(reopened["receipt"][
+                "district_root_sha256"],snapshot["usd_layer_root_sha256"])
+        with self.assertRaises(PermissionError):
+            host.approve_and_commit(
+                self.pid,draft["draft_id"],draft["version"],
+                snapshot["source_plan_sha256"],
+                snapshot["usd_layer_root_sha256"])
+        self.assertEqual(len(approvals),2)
+        # Explicit approved source revision, no original document rewritten.
+        next_draft=host.create(
+            self.pid,"FilmDistrictFApproved",expected_revision=1,
+            params=params,proposed_by="ai")
+        edited=host.edit(
+            self.pid,next_draft["draft_id"],next_draft["version"],
+            {"op":"hide_generated","instance_id":2})
+        new_snapshot=host.preview(self.pid,next_draft["draft_id"])
+        second=host.approve_and_commit(
+            self.pid,next_draft["draft_id"],edited["version"],
+            new_snapshot["source_plan_sha256"],
+            new_snapshot["usd_layer_root_sha256"])
+        self.assertEqual(second["published_revision"],2)
+        self.assertNotEqual(second["published_sha256"],
+                            receipt["published_sha256"])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"FilmDistrictFApproved",1)["document_sha256"],
+            receipt["published_sha256"])
+        self.assertEqual(len(approvals),3)
+        inherited=host.create(
+            self.pid,"FilmDistrictFApproved",expected_revision=2,
+            params=params,proposed_by="director")
+        inherited_preview=host.preview(self.pid,inherited["draft_id"])
+        self.assertEqual(
+            [x["instance_id"] for x in inherited_preview["instances"]
+             if x["hidden"]],[2])
+        self.assertEqual(inherited_preview["diff"][
+            "added_director_opinions"],[])
+        self.assertEqual(inherited_preview["diff"][
+            "removed_director_opinions"],[])
+
+    def test_02m_f_crash_reconcile_after_os_grant_never_replays_permission(self):
+        from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
+        from backend.nvp_usd_film02m_e_district import OriginalFilmDistrict
+        requested=[]
+        host=OriginalDistrictDrafts(
+            self.index,self.root/"02mf_crash_source",
+            confirm=lambda scope:(requested.append(scope),True)[1])
+        settings=self._02m_e_settings()
+        draft=host.create(
+            self.pid,"FilmDistrictFPending",expected_revision=0,
+            params=settings,proposed_by="director")
+        snapshot=host.preview(self.pid,draft["draft_id"])
+        # Emulate a process killed just AFTER the native approval
+        # confirmation was persisted but BEFORE FilmIndex completion.
+        with host._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("""UPDATE authoring_drafts SET state=?
+                WHERE draft_id=?""",(
+                    "APPROVED_PENDING_PUBLISH",draft["draft_id"]))
+            db.commit()
+        no_publish=host.reopen(self.pid,draft["draft_id"])
+        self.assertEqual(no_publish["state"],
+                         "INTERRUPTED_NEEDS_NEW_APPROVAL")
+        self.assertEqual(requested,[])
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"FilmDistrictFPending",1)
+        # A second pending draft demonstrates the *other* crash window:
+        # genuine source FilmIndex publish finished, but draft ledger
+        # transition to COMMITTED did not.
+        again=host.create(
+            self.pid,"FilmDistrictFReconciled",expected_revision=0,
+            params=settings,proposed_by="director")
+        preview=host.preview(self.pid,again["draft_id"])
+        with host._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("""UPDATE authoring_drafts SET state=?
+                WHERE draft_id=?""",(
+                    "APPROVED_PENDING_PUBLISH",again["draft_id"]))
+            db.commit()
+        # Direct host-authorized source publication acts as the
+        # independent durable FilmIndex commit in this fault injection.
+        native=OriginalFilmDistrict(
+            self.index,verify_director_action=lambda *_:True)
+        published=native.publish(
+            self.pid,"FilmDistrictFReconciled",**settings,
+            expected_revision=0,director_event=object())
+        self.assertEqual(published["revision"],1)
+        self.assertEqual(published["revision"],1)
+        restarted=OriginalDistrictDrafts(
+            self.index,self.root/"02mf_crash_source",
+            confirm=lambda scope:(requested.append(scope),True)[1])
+        result=restarted.reopen(self.pid,again["draft_id"])
+        self.assertEqual(result["state"],"COMMITTED")
+        self.assertEqual(result["published_revision"],1)
+        self.assertEqual(result["published_sha256"],
+                         published["document_sha256"])
+        self.assertEqual(result["original_usd_root_sha256"],
+                         preview["usd_layer_root_sha256"])
+        self.assertEqual(requested,[])
+
+    def test_02m_f_installed_original_webview_no_http_os_denial_and_origin(self):
+        from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+        class RealInstalledWindow:
+            url="http://127.0.0.1:43141/"
+            permitted=False
+            confirmations=0
+            def get_current_url(self):return self.url
+            def create_confirmation_dialog(self,title,message):
+                self.confirmations+=1
+                self.last_title=title
+                self.last_message=message
+                return self.permitted
+        window=RealInstalledWindow()
+        bridge=TrustedDesktopWO5Bridge(
+            self.index,origin="http://127.0.0.1:43141",
+            production_root=self.root/"02mf_webview_runtime")
+        bridge._attach_window(window)
+        try:
+            catalog=bridge.film02mf_catalog(self.pid)
+            self.assertEqual(catalog["format"],
+                "nvp.usd_film02m_f.native_source_catalog.v1")
+            self.assertGreaterEqual(len(catalog["source_buildings"]),2)
+            self.assertEqual(catalog["native_blender_workers_started"],0)
+            self.assertEqual(window.confirmations,0)
+            proposal=bridge.film02mf_propose({
+                "project_id":self.pid,"district_id":"FilmDistrictFNativeBridge",
+                "expected_revision":0,"params":self._02m_e_settings(),
+                "proposed_by":"ai"})
+            snapshot=bridge.film02mf_preview({
+                "project_id":self.pid,"draft_id":proposal["draft_id"]})
+            self.assertTrue(snapshot["native_usd_source_reopened"])
+            self.assertEqual(window.confirmations,0)
+            with self.assertRaises(PermissionError):
+                bridge.film02mf_commit({
+                    "project_id":self.pid,"draft_id":proposal["draft_id"],
+                    "version":proposal["version"],
+                    "source_plan_sha256":snapshot["source_plan_sha256"],
+                    "usd_layer_root_sha256":snapshot["usd_layer_root_sha256"]})
+            self.assertEqual(window.confirmations,1)
+            with self.assertRaises(PermissionError):
+                bridge.film02mf_commit({
+                    "project_id":self.pid,"draft_id":proposal["draft_id"],
+                    "version":proposal["version"],
+                    "source_plan_sha256":snapshot["source_plan_sha256"],
+                    "usd_layer_root_sha256":snapshot["usd_layer_root_sha256"],
+                    "creator_approved":True})
+            self.assertEqual(window.confirmations,1)
+            self.assertIn("Exact proposed plan SHA:",window.last_message)
+            self.assertIn("An AI draft is NOT an approval",window.last_message)
+            window.url="https://foreign.example/"
+            with self.assertRaises(PermissionError):
+                bridge.film02mf_reopen({
+                    "project_id":self.pid,"draft_id":proposal["draft_id"]})
+            window.url="http://127.0.0.1:43141/"
+            window.permitted=True
+            verified=bridge.film02mf_commit({
+                "project_id":self.pid,"draft_id":proposal["draft_id"],
+                "version":proposal["version"],
+                "source_plan_sha256":snapshot["source_plan_sha256"],
+                "usd_layer_root_sha256":snapshot["usd_layer_root_sha256"]})
+            self.assertEqual(verified["published_revision"],1)
+            self.assertEqual(window.confirmations,2)
+            self.assertEqual(bridge.film02mf_reopen({
+                "project_id":self.pid,"draft_id":proposal["draft_id"]})[
+                "state"],"COMMITTED")
+        finally:
+            bridge._close()
+
     def test_02m_original_geometry_collision_rejected(self):
         original=building_recipe(0,self.facades)
         overlapping=deepcopy(original)

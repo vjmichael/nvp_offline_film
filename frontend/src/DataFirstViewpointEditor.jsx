@@ -1,5 +1,6 @@
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import SourceUSDViewport from './SourceUSDViewport.jsx';
+import ModularWorldDirector from './ModularWorldDirector.jsx';
 
 const FRAMES=720;
 const CATALOG='nvp.usd_film01r.original_world_viewpoint_catalog.v1';
@@ -556,6 +557,7 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
         only after 720 actual native pictures, original PCM and source
         receipts pass independent checks and the director reviews the result.</p>
     </div>}
+    <ModularWorldDirector projectId={projectId} nativeBridge={native}/>
     {!nativeReady&&<p role="status">Browser source inspection only:
       approved camera/edit writes and protected rendering require the installed
       NVP WebView and real OS director confirmation.</p>}

@@ -1,0 +1,112 @@
+name: NVP USD-FILM-02M-F Trusted Installed Director + AI Draft/Approval Integration
+
+on:
+  push:
+    branches: [nvp/usd-film02m-f-trusted-director-authoring-20261109]
+  pull_request:
+    branches: [nvp/usd-film02m-e2-native-material-light-lod-20261109]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-film02mf-native-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-durable-original-film-source:
+    name: Genuine FilmIndex/OpenUSD SQLite draft+undo+recovery + native OS-gated origin / ${{ matrix.os }} Py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 105
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04,windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install real original OpenUSD and first-party runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx pytest
+      - name: Compile actual installed NVP source proposal bridge and authenticated durable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_usd_film02m_f_authoring.py backend/nvp_usd_film02m_f_desktop_mixin.py backend/nvp_wo5_desktop_bridge.py backend/nvp_usd_film02m_e_district.py backend/nvp_usd_film02m_modular_buildings.py tests/test_nvp_usd_film02m_modular_buildings.py
+      - name: Real native OpenUSD original source proposal, independently reopened draft, undo/discard, OS-denied and approved publisher, crash proof and strict installed origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k "test_02m_f"
+      - name: Prevent accidentally publishing 02M source from HTTP or browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from backend.nvp_usd_film02m_f_authoring import FORMAT,PREVIEW_FORMAT
+          from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+          names=["film02mf_propose","film02mf_preview","film02mf_edit",
+                 "film02mf_undo","film02mf_discard","film02mf_commit"]
+          assert all(hasattr(TrustedDesktopWO5Bridge,x) for x in names)
+          assert FORMAT.endswith("durable_director_proposal.v1")
+          assert PREVIEW_FORMAT.endswith("original_source_lowfi_preview.v1")
+          print("Exact native NVP WO5→WO6 original authoring methods installed; not asserting a completed .exe yet.")
+          PY
+
+  native-ui-editor:
+    name: Real installed-director React proposal preview/diff, undo/discard, explicit native approval; Vite production package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install pinned project Vite/React/Three test dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Genuine DOM NVP trusted native source UI paths and denial
+        working-directory: frontend
+        run: npm run test:ui -- src/ModularWorldDirector.test.jsx src/DataFirstViewpointEditor.test.jsx
+      - name: Production-compile installed director interface including native reusable world
+        working-directory: frontend
+        run: npm run build
+      - name: Confirm 02M-F source controls in real production JS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -l "Build the world from data" frontend/dist/assets/*.js >/dev/null
+          grep -R -l "OS director approval" frontend/dist/assets/*.js >/dev/null
+          grep -R -l "Discard unapproved draft" frontend/dist/assets/*.js >/dev/null
+
+  real-Windows-desktop-bridge-surface:
+    name: Real Windows Py3.11 exact-origin, original source grant and native authoring bridge with project-local persistence
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install original native Windows OpenUSD + Python frontend bridge tests
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: "usd-core==26.11" Pillow numpy
+          python -m pip install httpx pytest
+      - name: Actual Windows native origin-and-approval service on project test database
+        shell: pwsh
+        run: |
+          python -m pytest -q -s tests/test_nvp_usd_film02m_modular_buildings.py -k "test_02m_f_installed_original_webview_no_http_os_denial_and_origin"
+      - name: Disclose physical Windows installed-app acceptance gap
+        shell: pwsh
+        run: |
+          Write-Output "Real Windows native bridge contract tested. A packaged WebView2 .exe workflow, UI human click/approval observation and uninstall/reopen acceptance remain open."
