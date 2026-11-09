@@ -106,6 +106,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
   const [origin,setOrigin]=useState([0,0,0]);
   const [filmback,setFilmback]=useState([36,20.25]);
   const [nodes,setNodes]=useState([]);
+  const [undoHandles,setUndoHandles]=useState([]);
   const [preview,setPreview]=useState(null);
   const [published,setPublished]=useState(null);
   const [reopened,setReopened]=useState(null);
@@ -175,12 +176,46 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     setStart(begin);setEnd(stop);
     setOrigin([0,0,0]);
     setNodes(techniqueNodes(technique,camera,begin,stop));
+    setUndoHandles([]);
     invalidate();
   };
+  const remember=()=>setUndoHandles(history=>[...history,nodes].slice(-24));
   const editNode=(i,key,value,axis)=>{
+    remember();
     setNodes(old=>old.map((n,j)=>j===i?{
       ...n,[key]:axis==null?value:n[key].map(
         (x,k)=>k===axis?fix(value):x)}:n));
+    invalidate();
+  };
+  const insertNode=i=>{
+    if(nodes.length>=48||i>=nodes.length-1)
+      throw Error('Source rail must have 2–48 handles');
+    const a=nodes[i],b=nodes[i+1],middle=Math.floor(
+      (a.tick+b.tick)/2);
+    if(middle<=a.tick||middle>=b.tick)
+      throw Error('No exact Film Time tick between these camera handles');
+    remember();
+    const midpoint=(key)=>a[key].map(
+      (x,k)=>Number(((x+b[key][k])/2).toFixed(5)));
+    const created=node(middle,midpoint('position_m'),midpoint('target_m'),{
+      focal:(a.focal_length_mm+b.focal_length_mm)/2,
+      focus:(a.focus_distance_m+b.focus_distance_m)/2,
+      fstop:(a.f_stop+b.f_stop)/2,
+      roll:(a.roll_deg+b.roll_deg)/2});
+    setNodes(old=>[...old.slice(0,i+1),created,...old.slice(i+1)]);
+    invalidate();
+  };
+  const deleteNode=i=>{
+    if(nodes.length<=2||i<=0||i>=nodes.length-1)
+      throw Error('First/last source handles are mandatory');
+    remember();
+    setNodes(old=>old.filter((_,j)=>j!==i));
+    invalidate();
+  };
+  const undoNodes=()=>{
+    if(!undoHandles.length)return;
+    setNodes(undoHandles[undoHandles.length-1]);
+    setUndoHandles(old=>old.slice(0,-1));
     invalidate();
   };
   const editSpec=(setter,value)=>{setter(value);invalidate();};
@@ -242,6 +277,7 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
     setStart(data.film_start_tick);setEnd(data.film_end_tick);
     setOrigin(data.rail_origin_m);setFilmback(data.filmback_mm);
     setTechnique(data.technique);setNodes(data.nodes);
+    setUndoHandles([]);
     setSampleTick(data.film_start_tick);
     setPreview(null);setSample(null);
     setNotice('Existing immutable camera layer reopened. Changes require a new revision and fresh OS approval.');
@@ -356,9 +392,20 @@ export default function CameraRailsDirector({projectId,nativeBridge}){
             invalidate();}}/></label>)}
     </div>
     <h5>Director rail handles · exact-time source keys</h5>
+    <button disabled={busy||undoHandles.length===0} onClick={undoNodes}>
+      Undo last unapproved camera-rail handle edit</button>
+    <p className="fineprint">Insert, move, retime, remove or undo handles before
+      approving a revised stronger OpenUSD layer. Only source-confirmed
+      values survive publication.</p>
     {nodes.map((n,i)=><fieldset key={i}
       style={{padding:8,border:'1px solid #50606f',marginBottom:8}}>
       <legend>Handle {i+1} · {nodeSummary(n)}</legend>
+      <div className="actions">
+        <button disabled={busy||nodes.length>=48||i===nodes.length-1}
+          onClick={()=>run(()=>insertNode(i))}>Insert handle after {i+1}</button>
+        <button disabled={busy||nodes.length<=2||i===0||i===nodes.length-1}
+          onClick={()=>run(()=>deleteNode(i))}>Remove handle {i+1}</button>
+      </div>
       <label>Original Film Time tick
         <input type="number" step={1}
           aria-label={'Rail key '+i+' tick'} value={n.tick}
