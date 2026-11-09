@@ -365,7 +365,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
         extra=[
             new_camera("Reverse","reverse",[-3,-1,-9],[0,180,0],42),
             new_camera("OverShoulder","over shoulder",[2,-2,4],[0,18,0],70),
-            new_camera("LowAngle","bottom up",[0,-1,-1],[18,0,0],32,
+            new_camera("LowAngle","bottom up",[0,-1,0],[18,0,0],32,
                 excludes=[wall]),
             new_camera("Aerial","drone",[-4,5,17],[-30,-10,0],28,
                 move=[{"tick":0,"position_m":[-4,5,17],
@@ -396,7 +396,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             self.assertEqual(
                 [float(x) for x in UsdGeom.Xformable(cam).
                  ComputeLocalToWorldTransform(Usd.TimeCode(0)).
-                 ExtractTranslation()], [0.0,-1.0,-1.0])
+                 ExtractTranslation()], [0.0,-1.0,0.0])
             wall_prim=stage.GetPrimAtPath(wall)
             self.assertTrue(wall_prim.IsDefined())
             self.assertNotEqual(wall_prim.GetAttribute("visibility").Get(),
@@ -416,6 +416,28 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             verify_director_action=lambda *_:False)
         self.assertEqual(fresh.verify(self.pid,"DirectorFlexibleBank",3)[
                          "camera_count"],4)
+
+    def test_optional_nine_camera_preset_can_be_dynamically_extended(self):
+        from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
+        bank=DirectorCameraBank(self.index,
+            verify_director_action=lambda event,scope:
+                event=="AUTHORIZE_NINECAM_PRESET" and
+                scope["operation"]=="nvp.film.director_camera_bank_revision.v1")
+        bank.create_standard_nine_preset(
+            self.pid,"DirectorNinePresetEditable",
+            original_nine_rig_id="OnePerformanceNineCamBank",
+            director_event="AUTHORIZE_NINECAM_PRESET")
+        data=bank.verify(self.pid,"DirectorNinePresetEditable",1)
+        self.assertEqual(data["camera_count"],9)
+        self.assertEqual(
+            {c["framing"] for c in data["cameras"]},
+            {"wide","medium","close"})
+        self.assertEqual(len({c["camera_id"] for c in data["cameras"]}),9)
+        self.assertEqual(
+            data["source_performance_sha256"],
+            self.index.read_revision(
+                self.pid,"OnePerformanceNineCamBank",1)["data"][
+                    "source_performance_sha256"])
 
     def test_camera_ray_masks_cannot_remove_original_actor(self):
         from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
