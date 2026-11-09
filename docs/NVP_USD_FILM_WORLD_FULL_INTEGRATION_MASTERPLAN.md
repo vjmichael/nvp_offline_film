@@ -145,6 +145,12 @@ The creator has additionally approved an **AI-assisted 3D human surface/material
 
 **First priority:** audit existing source meshes/UVs/MaterialX/Blender capabilities, then build the repeatable neutral human-head multi-light baseline and the typed ActorID-bound PBR map contract before attempting open-ended image generation. This roadmap makes no implementation/CI/photorealism acceptance claim.
 
+## OpenUSD-controlled hybrid appearance and photoreal render selection — HYBRID-00 (2026-11-09) [DESIGN; OPEN]
+
+The new [data-first hybrid appearance design note](NVP_USD_FILM_HYBRID_AI_APPEARANCE_ARCHITECTURE_20261109.md) integrates the creator-supplied Claude film response without changing NVP's native source authority. **One approved 3D Digital Film World / frozen Take / approved shot data** can drive genuine Blender/Cycles source renders and *optionally* reviewed AI appearance candidates from native depth, IDs/segmentation, normal, pose, motion and lighting control passes. Candidate model output remains a labelled **derived image**, never authoritative geometry, source skin texture/PBR map, actor identity, timed performance or audio. Record exact source/camera/time/worker/model/seed/control/source-output hashes; verify frame alignment, physical occlusion, actor identity, temporal flicker and PCM conform before a separately approved output revision. Source changes and rendering are non-destructive: accepted render caches and masters remain durable derivations.
+
+**Ownership / order:** Audit the actual capability and offline licensing/hardware support in 00/05/08; add genuine source-bound selected shot control-pass export in 01/06/08; only then a host-reviewed model worker via existing 07; require independent temporal/picture QC in 09 and original edited film review in 10. Maintain 01Q/R/S/T selected-shot scheduling and original 48 kHz soundtrack, no forced nine-camera roll, no FFmpeg or mandatory cloud/CUDA/ROCm assumption. Actor-surface physically responsive material generation remains separately scoped to [HSURF roadmap](NVP_HUMAN_SURFACE_AI_MATERIAL_AUTHORING_ROADMAP.md), **implementation deferred until USD-FILM completion**. The new HYBRID-00–04 stages are architectural research gates, not code or native acceptance; keep 02M-E2 as current next work.
+
 ## Recommended immediate sequence
 
 1. Finish **FILM03-09E** real phoneme+rig+Blender/auditory integration and inspect exact-head native 09C/09D results. Continue film production while CI reports; don't declare pass on queued work.
