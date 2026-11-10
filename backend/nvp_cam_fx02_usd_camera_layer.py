@@ -225,7 +225,12 @@ def open_approved_camera_layer(index:FilmIndex,pid,rail_id,revision):
         if abs(stage.GetTimeCodesPerSecond()-float(T))>.5:
             raise RuntimeError("Original 01E world and director camera rail use different clocks")
         path=camera_rail_path(rail_id)
-        if stage.GetPrimAtPath(CAMERA_ROOT).IsDefined():
+        # OpenUSD GetPrimAtPath returns an invalid *null prim* when a
+        # namespace is absent. Calling IsDefined on that null prim throws;
+        # absence is precisely the safe precondition for stronger rail USD.
+        # Still refuse any existing authored rig from the original world.
+        existing_rail_root=stage.GetPrimAtPath(CAMERA_ROOT)
+        if existing_rail_root and existing_rail_root.IsDefined():
             raise PermissionError("Original source world already owns the rail rig namespace")
         root_before=stage.GetRootLayer().ExportToString()
         at=[spec["film_start_tick"],
