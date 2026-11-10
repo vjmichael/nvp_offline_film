@@ -168,15 +168,24 @@ jobs:
         run: |
           $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstaller)) { throw 'Uninstaller missing' }
-          $owned=$env:NVP_HOME
-          if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) {
+          # GitHub Actions runs every step in a fresh PowerShell process.
+          # Recover the SAME runner-temp project path used by create/reopen,
+          # rather than assuming a step-local NVP_HOME environment survives.
+          $owned=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
+          $env:NVP_HOME=$owned
+          $projectDb=Join-Path $owned 'nvp_studio.sqlite3'
+          if (-not (Test-Path -LiteralPath $projectDb -PathType Leaf)) {
             throw 'Missing creator SQLite film database before uninstall'
           }
+          $beforeHash=(Get-FileHash -LiteralPath $projectDb -Algorithm SHA256).Hash
           python tools/nvp_p0f01_windows_process_gate.py --stage nsis-uninstall --timeout-seconds 240 --stage-log "$env:RUNNER_TEMP/nvp-alpha-process-stages.jsonl" -- $uninstaller /S
           if ($LASTEXITCODE -ne 0) { throw 'Uninstall failed/timed out; inspect process stages' }
           Start-Sleep -Seconds 2
-          if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
+          if (-not (Test-Path -LiteralPath $projectDb -PathType Leaf)) { throw 'Uninstall deleted saved film' }
+          $afterHash=(Get-FileHash -LiteralPath $projectDb -Algorithm SHA256).Hash
+          if ($afterHash -ne $beforeHash) { throw 'Uninstall modified saved creator SQLite project' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
+          Write-Output "P0F01_NSIS_UNINSTALL_REMOVED_APP_PRESERVED_CREATOR_SQLITE=PASS"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
