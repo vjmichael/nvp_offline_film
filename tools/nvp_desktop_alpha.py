@@ -558,6 +558,8 @@ def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
+    parser.add_argument("--smoke-consoleless",action="store_true",
+                        help="Actually start packaged Uvicorn/React/SQLite without stdout or stderr")
     parser.add_argument("--smoke-create",action="store_true",
                         help="Create persistent project for cross-process installed acceptance")
     parser.add_argument("--smoke-reopen",action="store_true",
@@ -583,7 +585,7 @@ def main(argv=None):
     parser.add_argument("--plan02e-verify-physical-playtest",action="store_true",
                         help="Independently verify original 30s USD and PCM after installed GUI playback")
     args=parser.parse_args(argv)
-    if sum((args.smoke,args.smoke_create,args.smoke_reopen,
+    if sum((args.smoke,args.smoke_consoleless,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_data_av,args.smoke_plan02d,
             args.smoke_plan02d_restart_create,args.smoke_plan02d_restart_reopen,
             args.smoke_plan02e,args.smoke_plan02e_restart_create,
@@ -593,6 +595,20 @@ def main(argv=None):
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
+    if args.smoke_consoleless:
+        # Simulate the actual PyInstaller --windowed startup contract,
+        # regardless of whether a GitHub-hosted runner provides inherited
+        # console handles. Restore streams for healthy source/test harnesses.
+        saved_stdout,saved_stderr=sys.stdout,sys.stderr
+        try:
+            sys.stdout=None
+            sys.stderr=None
+            _smoke_checkpoint("consoleless_streams_null")
+            outcome=run_smoke()
+            _smoke_checkpoint("consoleless_loopback_react_sqlite_pass")
+            return outcome
+        finally:
+            sys.stdout,sys.stderr=saved_stdout,saved_stderr
     if args.smoke_window:
         return run_visible_window_smoke()
     if args.smoke_data_av:
