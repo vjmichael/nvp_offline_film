@@ -1,9 +1,10 @@
-name: NVP PLAN-02-D consolidated exact-head Win/Linux source, custody, renderer and installed acceptance
+name: NVP PLAN-02-D/E integrated exact-head native Windows/Linux and installed acceptance
 
 on:
   push:
     branches:
       - nvp/plan02d-exact-source-window-20261109
+      - nvp/plan02e-canonical-integration-20261110
   workflow_dispatch:
 
 permissions:
@@ -62,6 +63,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_final_2d_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_decisions.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02e_continuous.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_webview2_profile.py' -v
       - name: PLAN-02-B original microphone, durable recovery and independent native ADC clock
         shell: bash
         run: |
@@ -76,6 +78,9 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_plan02d_render_queue.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02d_worker_custody.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02d_derived_raster.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_filming_worker_custody.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_filming_cgroup_custody.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_filming_cgroup_launch.py' -v
       - name: Existing frozen source/camera/provenance regressions
         shell: bash
         run: |
