@@ -91,8 +91,12 @@ class LinuxFilmingCgroup:
         # cgroup.kill is kernel-wide for the entire subtree; unlike killpg it
         # includes descendants that create new process sessions.
         if not getattr(self, "_kill_requested", False):
-            self._request_kill()
+            # A write may reach the kernel before userspace observes an I/O
+            # failure. Consume the request *before* issuing it: after an
+            # ambiguous failure, retry may only observe cgroup.events, never
+            # send a second destructive request to a potentially changed tree.
             self._kill_requested = True
+            self._request_kill()
         while True:
             self._verify_group_identity()
             fields = {}
