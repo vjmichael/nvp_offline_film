@@ -122,15 +122,63 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
         raise RuntimeError("Approved rail layer bytes differ from pinned source")
     stronger=_read_strong_layer(stored)
     rail_path=camera_rail_path(rail_id)
+    # The 02M-H source is already a 24fps frame-1 stage. Its clock is NOT
+    # the source camera rail's 7,056,000,000 original Film Time ticks/sec.
+    # Verify an exact source-owned USD sample in its native time domain,
+    # then pin only that verified camera pose + optics to frame 1 in a
+    # disposable strong layer. Never rewrite the original rail or 01E Take.
+    approved_stage=Usd.Stage.Open(stronger,load=Usd.Stage.LoadAll)
+    if (not approved_stage or
+        abs(approved_stage.GetTimeCodesPerSecond()-float(T))>.5):
+        raise RuntimeError("Approved original rail Film Time clock is invalid")
+    approved_camera=UsdGeom.Camera.Get(approved_stage,rail_path)
+    if not approved_camera or not approved_camera.GetPrim().IsDefined():
+        raise RuntimeError("Pinned original rail camera missing")
+    original_time=Usd.TimeCode(float(tick))
+    native_matrix=UsdGeom.Xformable(
+        approved_camera).GetLocalTransformation(original_time)
+    native_pose=evaluate_rail(spec,tick)
+    native_rows=camera_matrix_rows(native_pose)
+    if any(abs(float(native_matrix[i][j])-native_rows[i][j])>1e-5
+           for i in range(4) for j in range(4)):
+        raise RuntimeError("Native approved rail USD does not match exact original Film Time")
+    if (src.GetStartTimeCode()!=1.0 or src.GetEndTimeCode()!=1.0 or
+        abs(src.GetTimeCodesPerSecond()-24.)>.001):
+        raise RuntimeError("02M-H Blender USD must be independently verified frame-1 24fps source")
+    frame=Usd.Stage.CreateInMemory()
+    frame.SetTimeCodesPerSecond(24.)
+    frame.SetFramesPerSecond(24.)
+    frame.SetStartTimeCode(1.)
+    frame.SetEndTimeCode(1.)
+    frame.OverridePrim("/World")
+    UsdGeom.Scope.Define(frame,"/World/NVPDirectorRails")
+    frame_camera=UsdGeom.Camera.Define(frame,rail_path)
+    frame_op=frame_camera.AddTransformOp(
+        precision=UsdGeom.XformOp.PrecisionDouble,opSuffix="NVPFilmTime")
+    if not frame_op.Set(native_matrix,at):
+        raise RuntimeError("Verified source rail cannot be pinned to frame 1")
+    for source_attr,target_attr in (
+        (approved_camera.GetFocalLengthAttr(),frame_camera.GetFocalLengthAttr()),
+        (approved_camera.GetFocusDistanceAttr(),frame_camera.GetFocusDistanceAttr()),
+        (approved_camera.GetFStopAttr(),frame_camera.GetFStopAttr()),
+        (approved_camera.GetHorizontalApertureAttr(),frame_camera.GetHorizontalApertureAttr()),
+        (approved_camera.GetVerticalApertureAttr(),frame_camera.GetVerticalApertureAttr()),
+        (approved_camera.GetClippingRangeAttr(),frame_camera.GetClippingRangeAttr()),
+    ):
+        value=source_attr.Get(original_time)
+        if value is None or not target_attr.Set(value,at):
+            raise RuntimeError("Approved rail source optics cannot be pinned to frame 1")
+    frame_layer=frame.GetRootLayer()
     session=src.GetSessionLayer()
-    session.subLayerPaths.insert(0,stronger.identifier)
+    session.subLayerPaths.insert(0,frame_layer.identifier)
     try:
         camera=UsdGeom.Camera.Get(src,rail_path)
         if not camera or not camera.GetPrim().IsDefined():
             raise RuntimeError("Native approved USD camera rail did not compose")
         position=evaluate_rail(spec,tick)
         rail_rows=camera_matrix_rows(position)
-        camera_at=Usd.TimeCode(float(tick))
+        # The validated native Film Time sample is already retimed to frame 1.
+        camera_at=at
         observed=UsdGeom.Xformable(camera).GetLocalTransformation(camera_at)
         if any(abs(float(observed[i][j])-rail_rows[i][j])>1e-5
                for i in range(4) for j in range(4)):
@@ -189,8 +237,8 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
             raise RuntimeError("Independent physical OpenUSD readback differs from rail")
         os.replace(pending,job/USD)
     finally:
-        if stronger.identifier in session.subLayerPaths:
-            session.subLayerPaths.remove(stronger.identifier)
+        if frame_layer.identifier in session.subLayerPaths:
+            session.subLayerPaths.remove(frame_layer.identifier)
     if src.GetRootLayer().ExportToString()!=source_layer_before:
         raise RuntimeError("Source stage root mutated during derived camera opinion")
     packet=staged["packet"]
