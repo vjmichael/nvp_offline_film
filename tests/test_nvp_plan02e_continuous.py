@@ -129,6 +129,50 @@ class ThirtySecondNativeFilmTests(unittest.TestCase):
             controller.close()
         _verify_original(self.index, self.receipt)
 
+    def test_camera_gap_is_refused_instead_of_fabricating_missing_picture(self):
+        from backend.nvp_temporal_ledger import TemporalLedger
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        from tools.nvp_plan02e_installed_acceptance import (
+            SCENE_ID, SOUND_ID, TIMELINE_ID,
+        )
+        events = [
+            {"event_id": "GapShotA", "event_kind": "camera",
+             "subject_id": "Director", "start_tick": 0,
+             "end_tick": 9 * T, "source_id": SCENE_ID,
+             "source_revision": 1,
+             "payload": {"usd_prim_path": CAMERAS[0]}},
+            {"event_id": "GapShotB", "event_kind": "camera",
+             "subject_id": "Director", "start_tick": 10 * T,
+             "end_tick": DURATION_TICK, "source_id": SCENE_ID,
+             "source_revision": 1,
+             "payload": {"usd_prim_path": CAMERAS[1]}},
+            {"event_id": "OriginalPCM", "event_kind": "sound",
+             "subject_id": "Speaker", "start_tick": 0,
+             "end_tick": DURATION_TICK, "source_id": SOUND_ID,
+             "source_revision": 1,
+             "payload": {"usd_prim_path": "/World/Emitter", "gain": 1.0}},
+        ]
+        timeline = TemporalLedger(self.index).publish(
+            self.pid, "GapTestTimeline", events,
+            duration_tick=DURATION_TICK,
+        )
+        take = OpenUSDTakeCapture(
+            self.index,
+            verify_creator_action=lambda event, scope:
+                event == "gap_fixture_only",
+        ).freeze(
+            self.pid, "GapTestTake", scene_id=SCENE_ID, scene_revision=1,
+            timeline_id="GapTestTimeline", timeline_revision=1,
+            sample_ticks=[0, 9 * T, 10 * T],
+            creator_event="gap_fixture_only",
+        )
+        with self.assertRaisesRegex(RuntimeError, "gap|overlap"):
+            Continuous30SecondFilm(
+                self.index, self.pid, "GapTestTake",
+                take["document_sha256"], listener_path=CAMERAS[1],
+            )
+        _verify_original(self.index, self.receipt)
+
     def test_wrong_sha_denied_without_source_or_project_mutation(self):
         with self.assertRaises(RuntimeError):
             Continuous30SecondFilm(
