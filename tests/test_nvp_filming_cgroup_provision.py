@@ -1,5 +1,6 @@
 """DA-03 host-created private leaf contract tests (not real delegated-cgroup acceptance)."""
 import tempfile
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from backend import nvp_filming_cgroup_launch as launch
 
 
+@unittest.skipUnless(sys.platform == "linux", "Linux-only cgroup contract")
 class ProvisionTests(unittest.TestCase):
     def test_rejects_nonabsolute_root(self):
         with self.assertRaises(ValueError):
