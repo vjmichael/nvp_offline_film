@@ -34,8 +34,12 @@ def _sha(raw):
 def render(manifest_path: Path):
     manifest_path=Path(manifest_path)
     root=manifest_path.parent.resolve(strict=True)
-    if (manifest_path.is_symlink() or not manifest_path.is_file() or
-            manifest_path.parent!=root):
+    real_manifest=manifest_path.resolve(strict=True)
+    # Windows TEMP may be surfaced through a short/long path alias. Compare
+    # both canonical parent identities, while still rejecting a link in
+    # either the supplied manifest or its immediate directory.
+    if (manifest_path.is_symlink() or manifest_path.parent.is_symlink() or
+            not manifest_path.is_file() or real_manifest.parent!=root):
         raise PermissionError("Refusing unpinned or symlinked render manifest")
     manifest=json.loads(manifest_path.read_text("utf8"))
     if (type(manifest) is not dict or set(manifest)!={
