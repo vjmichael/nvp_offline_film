@@ -30,7 +30,7 @@ from backend.nvp_usd_film01f_blender_host import USD,MANIFEST
 
 def node(tick,x,*,focus=8.0,focal=35.0):
     return {
-        "tick":tick,"position_m":[x,-8.,5.],
+        "tick":tick,"position_m":[x,-3.,4.],
         "target_m":[0.,0.,1.],
         "tangent_in_mps":[0.,0.,0.],
         "tangent_out_mps":[0.,0.,0.],
@@ -88,7 +88,10 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
             preview_sha256=first["proposal_sha256"],
             director_event="TEST_FX05_RAIL")
         changed=deepcopy(cls.base)
-        changed["nodes"][1]["position_m"]=[2.,-8.,5.]
+        # A genuinely distinct, source-bound interior/actor-facing view.
+        # The previously used y=-8 view was outside the closed original
+        # district facade y=-5.2: two cameras saw nearly the same dark wall.
+        changed["nodes"][1]["position_m"]=[2.,-3.,4.]
         changed["nodes"][1]["focal_length_mm"]=55.
         second=cls.rails.preview(
             cls.pid,"CAMFX05ReviewedRail",changed,expected_revision=1)
@@ -270,6 +273,14 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
                 for stem in ("fx05_move_a","fx05_move_a_reopen",
                              "fx05_move_b","fx05_move_b_reopen"):
                     job=sup.root/stem
+                    # Preserve actual first-party PNG and two approved
+                    # source-bound camera receipts when the *pixel-difference*
+                    # gate fails; do not weaken the >250 changed-pixel check.
+                    if evidence is not None:
+                        for material in ("frame.png","scene.blend"):
+                            found=job/material
+                            if found.is_file() and not found.is_symlink():
+                                shutil.copyfile(found,evidence/(stem+"_"+material))
                     for log_name in ("worker_stdout.log","worker_stderr.log"):
                         log=job/log_name
                         if not log.is_file() or log.is_symlink():
