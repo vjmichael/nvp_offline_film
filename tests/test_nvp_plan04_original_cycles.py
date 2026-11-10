@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import os
+import threading
 from pathlib import Path
 import sys
 import tempfile
@@ -86,6 +87,26 @@ class OriginalCyclesAdmissionTests(unittest.TestCase):
                 obj.render_once(self.pid,"Plan04RefusalJob",self.review["revision"],
                                 self.review["selection_sha256"],T//3)
             native.assert_not_called()
+        with self.assertRaises(PermissionError):
+            obj.render_once(self.pid,"Plan04RefusalJob",self.review["revision"],
+                            self.review["selection_sha256"],T//3)
+
+    def test_creator_cancel_during_os_review_consumes_one_use_grant(self):
+        cancelled=threading.Event()
+        reviews=[]
+        def creator(scope):
+            reviews.append(scope)
+            cancelled.set()
+            return True
+        obj=OriginalCyclesProduction(
+            self.index,self.queue,self.supervisor,
+            ask_native=creator,cancel_event=cancelled)
+        with patch.object(self.supervisor,"run") as worker:
+            with self.assertRaisesRegex(InterruptedError,"cancelled"):
+                obj.render_once(self.pid,"Plan04RefusalJob",self.review["revision"],
+                                self.review["selection_sha256"],T//3)
+            worker.assert_not_called()
+        self.assertEqual(len(reviews),1)
         with self.assertRaises(PermissionError):
             obj.render_once(self.pid,"Plan04RefusalJob",self.review["revision"],
                             self.review["selection_sha256"],T//3)
