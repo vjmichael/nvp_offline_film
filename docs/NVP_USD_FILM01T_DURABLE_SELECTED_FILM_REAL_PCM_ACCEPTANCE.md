@@ -159,3 +159,7 @@ acceptance. The optional 6480-frame nine-full-camera-roll test is not
 a normal-film blocker.
 
 Source implementation is not an executed original film.
+
+## Consolidated 720 real frames + PCM acceptance handoff (2026-11-09)
+
+The genuine 720-selected-frame first-party Cycles pipeline exists: one continuous original 30-second actor performance, nine source viewpoints, one original source-selected view per frame, 90 bounded 8-frame protected native jobs, independent durable SHA re-verification, exact original 48kHz PCM conform and FFV1 lossless edited output. It does not render 9x720 unused viewpoint rolls. The previous old-head [run 42570891151](https://github.com/vjmichael/nvp_offline_film/actions/runs/42570891151) **FAILED** across all six jobs: original 01E world Take parsing rejected a 32-hex StoryBible ActorID with an incorrect FilmIndex object-ID rule; that validation is now corrected in the passing 02M-H foundation at the new branch head. Old React 01T source queue tests also had four interaction failures, not yet re-run at this integrated head. Real 720 Cycles frames and 48kHz audio master remain OPEN. This new isolated branch retains a complete original 360-minute Blender acceptance workflow but restores **manual-only** dispatch until genuine CAM-FX-05 source camera rendering acceptance succeeds. The file is prepared, not executed. Avoid false `human_approved` claims; physical Windows creative/dialog and local 7B+ GGUF remain separate gates.

@@ -1,10 +1,9 @@
 name: NVP USD-FILM-01T 720 Authentic Selected-View Frames + Original PCM Full-Film Acceptance
 
+# Full 720-frame acceptance remains MANUAL until CAM-FX-05's
+# separate real reviewed-camera Blender gate is independently green.
+# Do not create a 360-minute render job per source commit or PR update.
 on:
-  push:
-    branches: [nvp/usd-film01t-durable-selected-conform-20261109]
-  pull_request:
-    branches: [nvp/usd-film01r-interactive-editor-20261108]
   workflow_dispatch:
 
 permissions:
