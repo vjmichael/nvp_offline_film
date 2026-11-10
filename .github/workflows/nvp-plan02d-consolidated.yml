@@ -370,6 +370,18 @@ jobs:
           if ($resultUi.ExitCode -ne 0) { throw 'NSIS cleanup after successful GUI test failed' }
           Confirm-NvpUninstalled $installed 90
           Write-Output 'NVP_D5_REAL_INSTALLED_GUI_AND_SECOND_UNINSTALL_PASS'
+      # The installed native stream report is independent of hosted GUI
+      # availability. Preserve the exact immutable Take/source and 30s PCM
+      # compute receipt even if WebView2 fails its separate OS window gate.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-plan02e-30s-native-source-and-stream-receipts
+          path: |
+            ${{ runner.temp }}/nvp-plan02d-cross-process/plan02e-native-restart/original-receipt.json
+            ${{ runner.temp }}/nvp-plan02d-cross-process/plan02e-native-restart/playback-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
         with:
