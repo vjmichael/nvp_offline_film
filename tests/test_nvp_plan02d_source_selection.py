@@ -14,9 +14,9 @@ from backend.nvp_plan02d_source_selection import ExactSourceWindowSelector
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
 
 
-class ExactSourceSelectionTests(CanonicalDirectorRailTests):
+class ExactSourceSelectionTests(unittest.TestCase):
     def setUp(self):
-        super().setUp()
+        CanonicalDirectorRailTests.setUp(self)
         self.selector = ExactSourceWindowSelector(self.index)
         self.request = {
             "take_id": self.spec["take_id"],
