@@ -126,10 +126,13 @@ jobs:
             # Genuine systemd delegated scope: not a synthetic cgroup and
             # never a process-group or sudo /sys/fs/cgroup fallback.
             command -v systemd-run
-            sudo -n systemd-run --quiet --scope --collect \
+            # A service with User= is required for systemd to chown the
+            # delegated tree; a root-created scope does not suffice.
+            sudo -n systemd-run --quiet --wait --pipe --collect --service-type=exec \
               --property=Delegate=yes --property=DelegateSubgroup=nvp-host \
               --uid="$(id -un)" --working-directory="$GITHUB_WORKSPACE" \
               --setenv="PYTHONPATH=$GITHUB_WORKSPACE" \
+              --setenv="LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}" \
               "$(command -v python)" -m tools.nvp_plan02d_custody_native_witness \
                 --report "$RUNNER_TEMP/plan02d-real-kernel-custody.json"
           else
