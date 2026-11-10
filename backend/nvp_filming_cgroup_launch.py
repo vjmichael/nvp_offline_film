@@ -66,6 +66,11 @@ def launch_attached_worker(group: Path, executable: str, argv: list[str]):
         raise ValueError("Absolute trusted worker executable required")
     if not argv or argv[0] != executable:
         raise ValueError("Worker argv[0] must match executable")
+    # Reject missing/non-executable worker paths before spawning the bootstrap.
+    # The child still enforces attach-before-exec; this is not an exec receipt.
+    worker = Path(executable)
+    if not worker.is_file() or not os.access(worker, os.X_OK):
+        raise ValueError("Trusted worker executable is unavailable or not executable")
     if not Path(group).is_absolute():
         raise ValueError("Host-owned cgroup path must be absolute")
     # The Python child invokes the same fail-closed attach_then_exec gate.
