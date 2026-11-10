@@ -434,9 +434,14 @@ def main(argv=None):
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     parser.add_argument("--smoke-plan02d",action="store_true",
                         help="Verify installed exact source camera PNG, OS review stand-in and SQLite restart")
+    parser.add_argument("--smoke-plan02d-restart-create",action="store_true",
+                        help="First installed process builds durable source and image")
+    parser.add_argument("--smoke-plan02d-restart-reopen",action="store_true",
+                        help="Second installed process verifies original, image and no replay")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
-            args.smoke_window,args.smoke_data_av,args.smoke_plan02d))>1:
+            args.smoke_window,args.smoke_data_av,args.smoke_plan02d,
+            args.smoke_plan02d_restart_create,args.smoke_plan02d_restart_reopen))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
@@ -455,6 +460,13 @@ def main(argv=None):
         _smoke_checkpoint("before_plan02d_installed_run")
         result=run_installed_plan02d_smoke()
         _smoke_checkpoint("after_plan02d_installed_run")
+        return result
+    if args.smoke_plan02d_restart_create or args.smoke_plan02d_restart_reopen:
+        _smoke_checkpoint("before_plan02d_cross_process_restart")
+        from tools.nvp_plan02d_installed_acceptance import run_installed_plan02d_smoke
+        result=run_installed_plan02d_smoke(
+            "create" if args.smoke_plan02d_restart_create else "reopen")
+        _smoke_checkpoint("after_plan02d_cross_process_restart")
         return result
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
