@@ -143,6 +143,10 @@ function native(){
 }
 
 async function createSourceDraft(bridge){
+  // The catalog option can mount before its camera selection effect runs.
+  // Never click a disabled preset and then wait for handles that cannot exist.
+  await waitFor(()=>expect(screen.getByRole('button',{
+    name:'Create editable camera rail handles from technique'}).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button',{
     name:'Create editable camera rail handles from technique'}));
   await screen.findByLabelText('Rail key 2 tick');
