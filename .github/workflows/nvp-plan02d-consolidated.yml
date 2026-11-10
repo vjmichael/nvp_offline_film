@@ -67,6 +67,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_webview2_profile.py' -v
           python -m unittest discover -s tests -p 'test_nvp_webview2_ipc_facade.py' -v
           python -m unittest discover -s tests -p 'test_nvp_scene_library.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_filming_native_supervisor.py' -v
       - name: PLAN-02-B original microphone, durable recovery and independent native ADC clock
         shell: bash
         run: |
