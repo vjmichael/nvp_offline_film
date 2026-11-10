@@ -24,6 +24,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
   const [raster,setRaster]=useState(null);
   const [protectedRaster,setProtectedRaster]=useState(null);
   const [cyclesPreview,setCyclesPreview]=useState(null);
+  const [cyclesRunning,setCyclesRunning]=useState(false);
   const [rasterName,setRasterName]=useState('DirectorStill001');
   const [error,setError]=useState('');
   const [note,setNote]=useState('');
@@ -245,6 +246,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
 
   async function renderBlenderCycles(){
     if(!raster||busy||typeof native?.plan04_render_cycles_once!=='function')return;
+    setCyclesRunning(true);
     setBusy(true);setError('');setNote('');setCyclesPreview(null);
     try{
       const result=await native.plan04_render_cycles_once({
@@ -255,6 +257,10 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
       });
       if(result?.status==='NATIVE_SOURCE_REVIEW_REFUSED'){
         setNote('Original source review refused. No Blender process started.');
+        return;
+      }
+      if(result?.status==='NATIVE_CYCLES_CANCELLED_NO_PUBLICATION'){
+        setNote('Native Cycles cancellation requested/settled; no rendered picture was accepted. Review native worker journal for custody.');
         return;
       }
       if(result?.format!=='nvp.plan04.trusted_os_blender_cycles_result.v1'||
@@ -268,7 +274,19 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
       setCyclesPreview(result);
       setNote('Blender/Cycles source render verified in a second native worker. This image is a derivative; no movie master was published.');
     }catch(e){setError(e.message)}
-    finally{setBusy(false)}
+    finally{setCyclesRunning(false);setBusy(false)}
+  }
+
+  async function cancelBlenderCycles(){
+    if(!cyclesRunning||!raster||typeof native?.plan04_cancel_cycles!=='function')return;
+    try{
+      const result=await native.plan04_cancel_cycles({
+        project_id:projectId,selection_sha256:raster.source_selection_sha256,
+      });
+      if(result?.status!=='CANCELLATION_REQUESTED_AWAIT_SUPERVISOR')
+        throw Error('No matching native Cycles operation was available to cancel');
+      setNote('Cancellation requested; NVP is waiting for native worker custody and terminal journal evidence.');
+    }catch(e){setError(e.message)}
   }
 
   function pick(index){
@@ -407,6 +425,8 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
             onClick={renderBlenderCycles}>
             Render approved scene with Blender/Cycles (two OS approvals)
           </button>
+          <button disabled={!cyclesRunning||typeof native?.plan04_cancel_cycles!=='function'}
+            onClick={cancelBlenderCycles}>Cancel active Blender/Cycles render</button>
           <p className="fineprint">Requires a separately checksum-pinned local
             Blender installation. The real native host must ask twice:
             source review, then execution/reopen permission. No flattened
