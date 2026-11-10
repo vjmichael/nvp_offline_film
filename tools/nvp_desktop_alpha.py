@@ -259,6 +259,14 @@ def run_visible_window_smoke():
         from backend.nvp_openusd_scene import OpenUSDSceneBridge
         project=studio.create_project("SLATE-08B Window Acceptance",
             "One native source camera scene")
+        # Genuine saved scenes, not a synthetic DOM fixture: the installed
+        # Scene Library must fetch source-derived headings/cues/empty props.
+        project=studio.save_screenplay(project["id"],
+            "INT. KITCHEN - DAY\\n\\nA dog eats from a bowl.\\n\\n"
+            "ALEX\\nThe dog is eating.\\n\\n"
+            "EXT. GARDEN - NIGHT\\n\\nThe dog goes outside.",
+            project["revision"])
+        _smoke_checkpoint("window_plan03_two_source_scenes_persisted")
         OpenUSDSceneBridge(FilmIndex(studio)).publish(
             project["id"],"smoke_scene",
             prims=[
@@ -406,6 +414,49 @@ def run_visible_window_smoke():
                                     "(() => {const b=[...document.querySelectorAll('aside button')]"
                                     ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance'));"
                                     "if(b){b.click();return true;}return false;})()")
+                                # Prove the *installed* simplified path,
+                                # not just unit-tested React. Read two real
+                                # screenplay scenes via SQLite/FastAPI and
+                                # change selection in the live WebView.
+                                to_library=window.evaluate_js(
+                                    "(() => {const b=[...document.querySelectorAll("
+                                    "'nav.filmmaker-navigation button')]"
+                                    ".find(x=>x.textContent.includes('Scene Library'));"
+                                    "if(b){b.click();return true;}return false;})()")
+                                if to_library is not True:
+                                    raise RuntimeError("Installed filmmaker Scene Library navigation absent")
+                                library_ready=False
+                                end=time.monotonic()+25
+                                while time.monotonic()<end:
+                                    library_ready=window.evaluate_js(
+                                        "Boolean(document.querySelector("
+                                        "'section[aria-label=\\\"Scene Library\\\"]')"
+                                        "&&document.body.textContent.includes('INT. KITCHEN - DAY')"
+                                        "&&document.body.textContent.includes('EXT. GARDEN - NIGHT')"
+                                        "&&document.body.textContent.includes('Not yet assigned'))")
+                                    if library_ready:break
+                                    time.sleep(.2)
+                                if not library_ready:
+                                    raise RuntimeError("Installed Scene Library failed to read saved screenplay")
+                                scene_chosen=window.evaluate_js(
+                                    "(() => {const b=[...document.querySelectorAll("
+                                    "'nav.scene-library-list button')]"
+                                    ".find(x=>x.textContent.includes('EXT. GARDEN - NIGHT'));"
+                                    "if(!b)return false;b.click();"
+                                    "return b.getAttribute('aria-current')==='true';})()")
+                                if scene_chosen is not True:
+                                    end=time.monotonic()+5
+                                    while time.monotonic()<end:
+                                        scene_chosen=window.evaluate_js(
+                                            "Boolean([...document.querySelectorAll("
+                                            "'nav.scene-library-list button')]"
+                                            ".some(x=>x.textContent.includes('EXT. GARDEN - NIGHT')"
+                                            "&&x.getAttribute('aria-current')==='true'))")
+                                        if scene_chosen:break
+                                        time.sleep(.1)
+                                if scene_chosen is not True:
+                                    raise RuntimeError("Installed Scene Library cannot select second scene")
+                                _smoke_checkpoint("window_plan03_real_scene_library_and_selection_pass")
                                 # PLAN-03 moves specialist tools behind an
                                 # explicit Advanced Studio disclosure. The
                                 # installed test must navigate as a filmmaker
