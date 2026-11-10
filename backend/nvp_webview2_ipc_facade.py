@@ -5,7 +5,7 @@ webview.util.get_functions(). Passing a TrustedDesktopCameraBridge directly
 exposes its .index (FilmIndex), .window (native WebView), and .origin internals
 to uncontrolled recursive introspection. The resulting JS binding generator
 can hang before window.events.loaded fires. Do not bypass native approval.
-This limited interface delegates ONLY the native windows' validated methods.
+This limited interface delegates ONLY audited native-window methods.
 No FilmIndex, OS window, authority, lock, thread or worker is reachable from
 the JS bridge object by any public attribute.
 
@@ -115,3 +115,6 @@ class NativeWebView2API:
 
     def plan02d_raster_publish(self, request):
         return self.__backend.plan02d_raster_publish(request)
+
+    def plan03_render_original_once(self, request):
+        return self.__backend.plan03_render_original_once(request)
