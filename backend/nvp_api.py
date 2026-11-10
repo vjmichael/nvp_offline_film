@@ -101,10 +101,12 @@ def propose_scene_breakdown(project_id: str, scene_id: str,
     # Proposals return read-only and are never accepted by the model. Only
     # already-authorized Story Bible/editor tools may write source assets.
     from backend.nvp_scene_library import SceneLibrary
+    from backend.nvp_wo6_verified_local_model import ProvenLocalModelWriter
     try:
         return run(lambda: SceneLibrary(studio).propose_ai_breakdown(
             project_id, scene_id, payload.expected_revision,
-            writer=writer_for(payload.model_id, payload.model_port)))
+            writer=ProvenLocalModelWriter(
+                writer_for(payload.model_id, payload.model_port))))
     except LocalModelUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
