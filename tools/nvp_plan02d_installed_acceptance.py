@@ -8,6 +8,7 @@ This is not physical creator approval or cinematic screening.
 from __future__ import annotations
 
 from hashlib import sha256
+from contextlib import nullcontext
 from pathlib import Path
 import json
 import os
@@ -40,8 +41,54 @@ class _InstalledReviewStandIn:
         return self.allow
 
 
-def run_installed_plan02d_smoke():
-    with tempfile.TemporaryDirectory(prefix="nvp-plan02d-installed-") as t:
+def run_installed_plan02d_smoke(phase="ephemeral"):
+    if phase not in ("ephemeral","create","reopen"):
+        raise ValueError("Unsupported installed restart witness phase")
+    persistent=None
+    if phase in ("create","reopen"):
+        home=os.environ.get("NVP_HOME")
+        if not home or not Path(home).is_absolute():
+            raise PermissionError("Exact native test NVP_HOME is required")
+        persistent=Path(home)/"plan02d-native-restart"
+        if persistent.is_symlink():
+            raise PermissionError("Restart evidence must not be a symlink")
+    if phase=="reopen":
+        database=persistent/"studio.sqlite3"
+        marker=persistent/"restart-receipt.json"
+        info=json.loads(marker.read_text("utf8"))
+        index=FilmIndex(Studio(database))
+        pid=info["project_id"]
+        if (index.read_revision(
+                pid,"InstalledTake",1)["document_sha256"]!=info["source_sha"] or
+                index.read_revision(
+                pid,"InstalledNativePNG",1)["data"]["png_sha256"]!=
+                info["png_sha"] or
+                sha256(index.get_blob(pid,info["png_sha"])).hexdigest()!=
+                info["png_sha"]):
+            raise RuntimeError("Independent installed process reopened different source/picture")
+        queue=DurableRenderIntentionQueue(index,ask_native=lambda _:False)
+        try:
+            queue.require_live_worker_review(
+                pid,"InstalledWorkerIntent",2,info["selection_sha"])
+        except PermissionError:
+            pass
+        else:
+            raise RuntimeError("Dead installed process leaked one-use OS consent")
+        recovery=queue.reconcile_restart(pid,"InstalledWorkerIntent")
+        if (recovery["status"]!=RECOVERY or
+                recovery["renderer_worker_authorized"] is not False):
+            raise RuntimeError("Second installed process replayed a stale OS review")
+        if __import__("sys").stdout is not None:
+            print("NVP_PLAN02D_CROSS_PROCESS_INSTALLED_RESTART_PASS="+
+                  info["source_sha"],flush=True)
+        return 0
+    if phase=="create":
+        if persistent.exists():
+            raise FileExistsError("Use a new installed restart witness directory")
+        persistent.mkdir(parents=True,exist_ok=False)
+    context=(tempfile.TemporaryDirectory(prefix="nvp-plan02d-installed-")
+             if phase=="ephemeral" else nullcontext(str(persistent)))
+    with context as t:
         database=Path(t)/"studio.sqlite3"
         studio=Studio(database)
         pid=studio.create_project("Installed PLAN-02-D native source",
@@ -116,6 +163,21 @@ def run_installed_plan02d_smoke():
                 raise RuntimeError("Installed native source review not separated")
         finally:
             bridge._close()
+        if phase=="create":
+            receipt={
+                "project_id":pid,"source_sha":sha,
+                "png_sha":sampled["png_sha256"],
+                "selection_sha":scope["selection_sha256"],
+                "queue_revision":reviewed["revision"],
+                "reusable_worker_approval":False,
+            }
+            with (persistent/"restart-receipt.json").open(
+                    "x",encoding="utf8") as fd:
+                json.dump(receipt,fd,sort_keys=True)
+                fd.flush();os.fsync(fd.fileno())
+            if __import__("sys").stdout is not None:
+                print("NVP_PLAN02D_INSTALLED_FIRST_PROCESS_EXIT="+sha,flush=True)
+            return 0
         # Truly reopen SQLite through a different host object.
         reopened=FilmIndex(Studio(database))
         if (reopened.read_revision(
