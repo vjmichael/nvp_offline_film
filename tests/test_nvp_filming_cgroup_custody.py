@@ -55,6 +55,21 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
             with self.assertRaises(CgroupCustodyError):
                 worker.stop_and_verify(timeout=1)
 
+    def test_ambiguous_kernel_events_never_issue_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cgroup.kill").write_text("")
+            worker = self._owned(root)
+            for events in ("populated 1\\npopulated 0\\n",
+                           "populated 0 extra\\n",
+                           "populated\\n",
+                           "populated 0\\nmalformed\\n"):
+                (root / "cgroup.events").write_text(events)
+                with self.assertRaises(CgroupCustodyError):
+                    worker.stop_and_verify(timeout=1)
+                self.assertFalse(worker._consumed)
+            self.assertEqual((root / "cgroup.kill").read_text(), "1")
+
     def test_still_populated_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
