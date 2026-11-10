@@ -1,10 +1,9 @@
 name: NVP E2E-01E Installed Windows Desktop Alpha
-# DATA-AV-01 stays independent. Exactly ONE P0-F-01 grouped installed
-# Windows acceptance run on this branch, after native F/G/H passed 6/6.
-# Restore manual-only after the completed run is inspected; never per-file CI.
+# DATA-AV-01 stays independent. One verified P0-F-01 grouped Windows
+# installed acceptance at b9738692 passed all scoped native, NSIS, WebView2,
+# SQLite restart, and uninstall data-preservation gates.
+# Manual only: never restore per-commit CI fanout.
 on:
-  push:
-    branches: [nvp/p0-f01-installed-native-windows-group-20261109]
   workflow_dispatch:
 permissions:
   contents: read
