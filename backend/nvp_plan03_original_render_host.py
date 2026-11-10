@@ -123,7 +123,15 @@ class NativeOriginalSceneRender:
                 try:
                     rc=proc.wait(timeout=timeout)
                     if rc!=0:
-                        raise RuntimeError("Contained source renderer exited nonzero")
+                        # The worker's own verified fail-closed exception was
+                        # previously hidden when a TemporaryDirectory cleaned
+                        # up on failure. Bound the trace to a private host
+                        # diagnostic, never a browser-exposed process runner.
+                        tail=(jobdir/"worker_stderr.log").read_bytes()[-2048:].decode(
+                            "utf8","replace").replace("\\r"," ").replace("\\n"," ")
+                        raise RuntimeError(
+                            "Contained source renderer exited nonzero; native diagnostic: "+
+                            tail[:1600])
                 finally:
                     # Even a successful direct child may leave a detached
                     # descendant. Only OS custody cleanup closes the gate.
