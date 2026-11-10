@@ -1427,6 +1427,18 @@ def run_visible_window_smoke():
                                     _native_window_stage(
                                         "camfx_installed_camera_rail_editor_source_controls_verified")
                                 if os.environ.get("NVP_CAMFX034_GROUP_ACCEPTANCE")=="1":
+                                    # Source-only draft IPC can reselect another
+                                    # React tab. Inspect the real installed
+                                    # camera controls only AFTER returning to
+                                    # the actual authoring tab; do not invent
+                                    # rail controls or bypass host authority.
+                                    clicked=window.evaluate_js(
+                                        "(()=>{const b=[...document.querySelectorAll('nav.tabs button')]"
+                                        ".find(x=>x.textContent.includes('Direct the data'));"
+                                        "if(!b)return false;b.click();return true;})()")
+                                    if not clicked:
+                                        raise RuntimeError(
+                                            "Real installed camera-rail editor tab missing")
                                     _native_window_stage(
                                         "camfx034_installed_native_gizmo_and_draft_controls_check")
                                     advanced_ready=False
