@@ -6,7 +6,7 @@ name: NVP CAM-FX-03/04 Source Actor Framing, 3D Gizmos, Durable Camera Drafts an
 # CAM-FX-05 moving-Cycles pixels have a separate later acceptance.
 on:
   push:
-    branches: [nvp/cam-fx03-04-gizmos-guidance-drafts-ai-20261109]
+    branches: [nvp/area2-camfx01-04-native-acceptance-20261109]
     paths: [.github/workflows/nvp-camfx03-04-source-gizmos-recovery-native.yml]
   workflow_dispatch:
 
@@ -103,6 +103,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Real Windows USD unavailable' }
           python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19' pytest httpx
           if ($LASTEXITCODE -ne 0) { throw 'Real Windows WebView2 test dependencies unavailable' }
+          python -m unittest discover -s tests -p test_nvp_p0f01_webview_api_facade.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Safe native WebView2 method facade regressed' }
+          python -m unittest discover -s tests -p test_nvp_p0f01_windows_process_gate.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded Windows process receipt gate regressed' }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { throw 'Real NSIS unavailable' }
       - name: Build and test native original director with 3D camera rails
@@ -111,7 +115,7 @@ jobs:
           Push-Location frontend
           npm install --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw 'Native installed React dependencies failed' }
-          npm run test:ui -- src/CameraRailGizmo.test.jsx src/CameraRailsDirectorAdvanced.test.jsx src/DataFirstViewpointEditor.test.jsx
+          npm run test:ui -- src/CameraRailGizmo.test.jsx src/CameraRailsDirector.test.jsx src/CameraRailsDirectorAdvanced.test.jsx src/ModularWorldDirector.test.jsx src/DataFirstViewpointEditor.test.jsx
           if ($LASTEXITCODE -ne 0) { throw 'Real installed director source editor DOM gate failed' }
           npm run build
           if ($LASTEXITCODE -ne 0) { throw 'Native installed NVP bundle failed' }
@@ -126,36 +130,64 @@ jobs:
       - name: Install and exercise actual WebView2 native IPC, 3D gizmo and SQLite/model draft controls
         shell: pwsh
         run: |
-          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
-          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          # Windows 2025 Chocolatey installs NSIS to Program Files (x86).
+          $locations=@("${env:ProgramFiles(x86)}\NSIS\makensis.exe","$env:ProgramFiles\NSIS\makensis.exe")
+          $nsis=$locations | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $nsis) { throw 'Real installed NSIS compiler missing' }
           & $nsis '/V3' 'packaging/nvp-alpha.nsi'
-          if ($LASTEXITCODE -ne 0) { throw 'Actual NSIS source camera installer failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'Actual NSIS camera installer failed' }
           $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
-          $process=Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw 'Installed NVP director did not install' }
+          $stages=Join-Path $env:RUNNER_TEMP 'camfx034-process-stages.jsonl'
+          python tools/nvp_p0f01_windows_process_gate.py --stage camfx-nsis-install --timeout-seconds 300 --stage-log $stages -- $setup /S
+          if ($LASTEXITCODE -ne 0) { throw 'Real bounded NSIS install failed' }
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
-          if (-not (Test-Path $installed)) { throw 'Native NVP.exe not installed' }
-          if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) { throw 'Installed app does not match verified NVP bundle' }
+          if (-not (Test-Path -LiteralPath $installed -PathType Leaf)) { throw 'Native NVP.exe not installed' }
+          if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) { throw 'Installed EXE SHA differs from compiled verified bundle' }
+          # Two fresh process launches create and reopen the same user-owned
+          # project. The visible WebView2 acceptance uses its own disposable
+          # source-home and NEVER serves as evidence for this persistent DB.
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'camfx034-original-film-data'
+          $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'camfx034-installed-create.log'
+          python tools/nvp_p0f01_windows_process_gate.py --stage camfx-installed-create --timeout-seconds 240 --stage-log $stages --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-create
+          if ($LASTEXITCODE -ne 0) { throw 'Installed original camera project/draft failed to create' }
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'camfx034-installed-reopen.log'
+          python tools/nvp_p0f01_windows_process_gate.py --stage camfx-installed-reopen --timeout-seconds 240 --stage-log $stages --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-reopen
+          if ($LASTEXITCODE -ne 0) { throw 'Fresh installed app lost original SQLite camera/film source' }
+          $sourceDb=Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'
+          if (-not (Test-Path -LiteralPath $sourceDb -PathType Leaf)) { throw 'Persistent first-party original SQLite film source missing' }
+          $originalSha=(Get-FileHash -LiteralPath $sourceDb -Algorithm SHA256).Hash
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP 'camfx034-installed-webview2.log'
           $env:NVP_CAMFX034_GROUP_ACCEPTANCE='1'
-          & $installed --smoke-window
-          if ($LASTEXITCODE -ne 0) { throw 'Real installed source director 3D editor and native IPC failed' }
+          python tools/nvp_p0f01_windows_process_gate.py --stage camfx-installed-webview2 --timeout-seconds 300 --stage-log $stages --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-window
+          if ($LASTEXITCODE -ne 0) { throw 'Real installed native source 3D editor/AI bridge failed' }
           $log=Get-Content "$env:RUNNER_TEMP/camfx034-installed-webview2.log" -Raw
-          if (-not $log.Contains('camfx034_installed_gizmo_durable_ai_controls_verified_no_worker_started')) { throw 'No actual 3D gizmo / durable model and one-use OS native source controls' }
-          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'Installed source film project was never persisted' }
+          if (-not $log.Contains('camfx034_installed_gizmo_durable_ai_controls_verified_no_worker_started')) { throw 'Original 3D gizmo / durable model / OS approval native controls absent' }
           $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
-          $un=Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
-          if ($un.ExitCode -ne 0) { throw 'NSIS uninstall failed' }
+          python tools/nvp_p0f01_windows_process_gate.py --stage camfx-nsis-uninstall --timeout-seconds 240 --stage-log $stages -- $uninstaller /S
+          if ($LASTEXITCODE -ne 0) { throw 'Real NSIS uninstall failed' }
           Start-Sleep -Seconds 2
-          if (Test-Path $installed) { throw 'Installed native app survived uninstall' }
-          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted the original filmmakers film data' }
+          if (Test-Path $installed) { throw 'Uninstall retained installed NVP.exe' }
+          if (-not (Test-Path -LiteralPath $sourceDb -PathType Leaf)) { throw 'Uninstall removed filmmaker SQLite project' }
+          if ((Get-FileHash -LiteralPath $sourceDb -Algorithm SHA256).Hash -ne $originalSha) { throw 'Uninstall mutated original filmmaker SQLite bytes' }
+          Write-Output 'CAMFX034_NATIVE_REAL_INSTALL_WEBVIEW2_RESTART_UNINSTALL_SQLITE_SHA_PASSED'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: camfx034-windows-installed-source-editor-and-3d-camera-rail-smoke
           path: |
+            ${{ runner.temp }}/camfx034-process-stages.jsonl
+            ${{ runner.temp }}/camfx034-installed-create.log
+            ${{ runner.temp }}/camfx034-installed-reopen.log
             ${{ runner.temp }}/camfx034-native-bundle.json
             ${{ runner.temp }}/camfx034-installed-webview2.log
           if-no-files-found: warn
           retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: camfx034-nsis-technical-candidate-not-human-approved
+          path: dist/NVP-Alpha-Setup.exe
+          if-no-files-found: warn
+          retention-days: 7
