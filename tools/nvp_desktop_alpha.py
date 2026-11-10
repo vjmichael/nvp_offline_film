@@ -623,6 +623,10 @@ def run_visible_window_smoke():
 
 def main(argv=None):
     parser=argparse.ArgumentParser()
+    parser.add_argument("--plan03-original-render-worker",action="store_true",
+                        help="Trusted contained child: independently evaluate one frozen original source moment")
+    parser.add_argument("--manifest",default=None,
+                        help="Exact local source render manifest; only for trusted PLAN-03 child")
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
     parser.add_argument("--smoke-consoleless",action="store_true",
@@ -652,6 +656,13 @@ def main(argv=None):
     parser.add_argument("--plan02e-verify-physical-playtest",action="store_true",
                         help="Independently verify original 30s USD and PCM after installed GUI playback")
     args=parser.parse_args(argv)
+    if args.plan03_original_render_worker:
+        if not args.manifest:
+            parser.error("A trusted source render manifest is required")
+        from tools.nvp_plan03_original_render_worker import main as render_main
+        return render_main(["--manifest",args.manifest])
+    if args.manifest:
+        parser.error("Manifest is allowed only for the trusted native child")
     if sum((args.smoke,args.smoke_consoleless,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_data_av,args.smoke_plan02d,
             args.smoke_plan02d_restart_create,args.smoke_plan02d_restart_reopen,
