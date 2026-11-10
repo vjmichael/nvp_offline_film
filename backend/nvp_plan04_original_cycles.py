@@ -17,6 +17,7 @@ import math
 import os
 from pathlib import Path
 import secrets
+import threading
 
 from backend.nvp_blender_worker import (
     BlenderOperation,BlenderWorkerSupervisor,sha_file)
@@ -60,12 +61,13 @@ class OriginalCyclesProduction:
     """One reviewed source selection may start at most one Blender render."""
 
     def __init__(self,index:FilmIndex,queue:DurableRenderIntentionQueue,
-                 blender:BlenderWorkerSupervisor,*,ask_native):
+                 blender:BlenderWorkerSupervisor,*,ask_native,cancel_event=None):
         if (not isinstance(index,FilmIndex) or
                 not isinstance(queue,DurableRenderIntentionQueue) or
                 queue.index is not index or
                 not isinstance(blender,BlenderWorkerSupervisor) or
-                not callable(ask_native)):
+                not callable(ask_native) or
+                (cancel_event is not None and not isinstance(cancel_event,threading.Event))):
             raise TypeError("Trusted frozen FilmIndex, live review queue and Blender host required")
         if blender.activity is None:
             raise RuntimeError("Cycles must use supervised NVP resource admission")
@@ -76,6 +78,7 @@ class OriginalCyclesProduction:
         self.queue=queue
         self.blender=blender
         self.ask_native=ask_native
+        self.cancel_event=cancel_event
 
     def _source_at(self,project_id,request,selection_sha256,tick):
         scope=self.queue.selector.preview(project_id,request)
@@ -137,6 +140,46 @@ class OriginalCyclesProduction:
             "resolution":[400,240],
         },scope
 
+
+    def _require_not_cancelled(self):
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise InterruptedError("Creator cancelled one-use Cycles render")
+
+    def _run_cancellable(self,operation):
+        """Watch actual supervisor cancellation until its RUNNING token appears.
+
+        A request arriving during PREPARED/probe must not miss the worker token.
+        Never report termination from the request flag: the supervisor must
+        return a settled terminal receipt, otherwise execution fails closed.
+        """
+        self._require_not_cancelled()
+        if self.cancel_event is None:
+            return self.blender.run(operation)
+        stopped=threading.Event()
+        def cancel_watch():
+            while not stopped.is_set():
+                if self.cancel_event.is_set():
+                    # Cancellation can race worker admission; keep retrying
+                    # until it is registered or the synchronous call exits.
+                    if self.blender.cancel(operation.job_id):
+                        return
+                stopped.wait(0.04)
+        watcher=threading.Thread(target=cancel_watch,
+                                 name="NVP Cycles cancellation",daemon=True)
+        watcher.start()
+        try:
+            self._require_not_cancelled()
+            result=self.blender.run(operation)
+            if self.cancel_event.is_set():
+                if result.get("state")=="CANCELLED":
+                    raise InterruptedError("Native Blender cancellation settled")
+                # A late cancel cannot authorize a successful publication.
+                raise RuntimeError("Cancellation requested without verified worker stop")
+            return result
+        finally:
+            stopped.set()
+            watcher.join(timeout=0.5)
+
     def render_once(self,project_id,job_id,revision,selection_sha256,tick):
         row=self.queue.inspect(project_id,job_id)
         if (row["status"]!=APPROVED or row["revision"]!=revision or
@@ -178,6 +221,7 @@ class OriginalCyclesProduction:
             # if cancelled, blocked by RAM, or the OS callback raises.
             self.queue.consume_live_worker_review(
                 project_id,job_id,revision,selection_sha256)
+        self._require_not_cancelled()
         build_id="CyclesSource_"+secrets.token_hex(12)
         jobdir=self.blender.root/build_id
         jobdir.mkdir(mode=0o700,exist_ok=False)
@@ -197,7 +241,7 @@ class OriginalCyclesProduction:
                 "--render":"derived_cycles.png","--audit":"build_audit.json",
             },timeout_seconds=240,memory_limit_mb=4096,
             require_linux_cgroup_v2=True)
-        built=self.blender.run(op)
+        built=self._run_cancellable(op)
         if built["state"]!="SUCCEEDED":
             diagnostic=(jobdir/"worker_stderr.log")
             tail=(diagnostic.read_bytes()[-2048:].decode("utf8","replace")
@@ -215,6 +259,7 @@ class OriginalCyclesProduction:
                 report.get("source_tick")!=tick or
                 report.get("geometry_count")!=len(manifest["geometry"])):
             raise RuntimeError("Real Blender Cycles source audit disagrees with immutable Take")
+        self._require_not_cancelled()
         reopened_id="CyclesReopen_"+secrets.token_hex(12)
         secondary=self.blender.root/reopened_id
         secondary.mkdir(mode=0o700,exist_ok=False)
@@ -243,7 +288,7 @@ class OriginalCyclesProduction:
                 "--preview":"reopen_cycles.png",
             },timeout_seconds=240,memory_limit_mb=4096,
             require_linux_cgroup_v2=True)
-        audited=self.blender.run(audit_op)
+        audited=self._run_cancellable(audit_op)
         if audited["state"]!="SUCCEEDED":
             raise RuntimeError("Independent Blender reopen failed: "+str(audited.get("state")))
         reopened=json.loads((secondary/"reopen_audit.json").read_text("utf8"))
@@ -253,6 +298,7 @@ class OriginalCyclesProduction:
                 reopened.get("source_tick")!=tick or
                 reopened.get("geometry_count")!=len(manifest["geometry"])):
             raise RuntimeError("Independent Cycles reopen geometry/source proof failed")
+        self._require_not_cancelled()
         if self.queue.selector.preview(project_id,selection)!=scope:
             raise RuntimeError("Original frozen source mutated during Cycles rendering")
         fresh_index=FilmIndex(Studio(self.index.studio.db_path))
@@ -262,6 +308,7 @@ class OriginalCyclesProduction:
         if (verify["take_document_sha256"]!=manifest["take_sha256"] or
                 verify["scene_document_sha256"]!=manifest["scene_sha256"]):
             raise RuntimeError("Independent original take/source reopen differs")
+        self._require_not_cancelled()
         return {
             "format":"nvp.plan04.source_blender_cycles_verified.v1",
             "status":"REAL_BLENDER_CYCLES_AND_INDEPENDENT_REOPEN_VERIFIED",
