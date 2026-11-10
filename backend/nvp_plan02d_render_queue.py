@@ -151,6 +151,14 @@ class DurableRenderIntentionQueue:
                                         after["selection_sha256"]))
         return self._public(updated, state, after["selection_sha256"])
 
+    def require_live_worker_review(self, project_id, job_id, revision,
+                                   selection_sha256):
+        # A persisted APPROVED revision cannot attest a living OS modal.
+        key = (project_id, job_id, revision, selection_sha256)
+        with self._live_lock:
+            if key not in self._live_reviews:
+                raise PermissionError("OS source review is not live in this NVP host")
+
     def consume_live_worker_review(self, project_id, job_id, revision,
                                    selection_sha256):
         # Not exposed through pywebview. A new process has no live tokens.
