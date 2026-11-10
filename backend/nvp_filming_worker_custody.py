@@ -34,6 +34,7 @@ class OwnedFilmingWorker:
         self._process = process
         self._consumed = False
         self._termination_requested = False
+        self._kill_requested = False
 
     def stop_and_verify(self, *, timeout: float = 5.0) -> WorkerExitReceipt:
         if self._consumed:
@@ -57,10 +58,12 @@ class OwnedFilmingWorker:
             except subprocess.TimeoutExpired:
                 # Escalate to kill, but never silently turn an unbounded wait
                 # into a verified exit. A second timeout is an explicit failure.
-                try:
-                    process.kill()
-                except ProcessLookupError:
-                    pass
+                if not self._kill_requested:
+                    self._kill_requested = True
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
                 process.wait(timeout=max(0, deadline - time.monotonic()))
         code = process.poll()
         if code is None:
