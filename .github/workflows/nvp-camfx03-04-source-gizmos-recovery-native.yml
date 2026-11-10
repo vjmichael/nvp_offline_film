@@ -1,5 +1,8 @@
 name: NVP CAM-FX-03/04 Source Actor Framing, 3D Gizmos, Durable Camera Drafts and AI Group
 
+# FIFTH exact-head group: native OpenUSD null prim existence check before
+# rail-rig namespace collision query; source ActorID and original PCM fixed.
+# Previous Windows installed and full React tests already passed.
 # FOURTH final-source gate: assert ORIGINAL scene Take hashes against
 # ORIGINAL scene IDs (not distinct composed 01E world Take IDs).
 # Full Windows/Linux/React/installed source acceptance; no per-file CI.
