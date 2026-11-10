@@ -1,5 +1,8 @@
 # NVP-DATA-ALL — Per-task migration closeout ledger
 
+2026-11-10 DA-03 pinned attach/observe identity (SOURCE ONLY): commits `7774547`, `b2a01c5` keep the same O_NOFOLLOW cgroup directory descriptor open across child attachment, membership observation and exec, preventing a pathname replacement from substituting another cgroup between those operations. Regression replaces the group path and checks the pinned original still rejects missing membership. This is a contract regression, not a real delegated cgroup or installed NVP.exe result. DA-03 PARTIAL / OPEN: host-created containment, actual filming launcher integration, Linux descendant termination, Windows Job Objects, restart attestation and atomic publication remain unverified. No FFmpeg fallback; retired proxy PRs untouched.
+
+
 2026-11-10 DA-03 attach-before-exec membership attestation (SOURCE ONLY): commits `4121b09`, `d8bd06b`, `347f747` now require a fresh `cgroup.procs` observation containing the current child PID after attachment and before exec; missing membership refuses worker execution. Contract test covers failure and mocks the positive observation. This does NOT prove genuine delegated cgroup operation, host-created containment, Windows Job Object, durable restart, exact-head native tests, installed NVP.exe, continuous 3D A/V or FFmpeg-free export. DA-03 PARTIAL / OPEN; no FFmpeg fallback; retired proxy PRs untouched.
 
 
