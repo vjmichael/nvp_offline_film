@@ -239,6 +239,28 @@ jobs:
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-plan02d-cross-process'
           Invoke-NvpSmoke $installed '--smoke-plan02d-restart-create' 150
           Invoke-NvpSmoke $installed '--smoke-plan02d-restart-reopen' 150
+          # Preserve independent source evidence and original creator project data.
+          # Hash after both separate installed NVP.exe processes have fully exited.
+          $preservedRoot=Join-Path $env:NVP_HOME 'plan02d-native-restart'
+          $preservedFiles=@(
+            (Join-Path $preservedRoot 'studio.sqlite3'),
+            (Join-Path $preservedRoot 'restart-receipt.json')
+          )
+          $preservedHashes=@{}
+          foreach ($file in $preservedFiles) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "D5 missing original source/restart evidence before uninstall: $file"
+            }
+            $preservedHashes[$file]=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+          }
+          # NSIS must also preserve the REAL default creator Projects directory,
+          # independently of this CI-only overridden NVP_HOME.
+          $creatorProjects=Join-Path $env:LOCALAPPDATA 'NVP/Projects'
+          $sentinel=Join-Path $creatorProjects ('nvp-d5-preservation-'+[guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $sentinel -Force | Out-Null
+          $sentinelFile=Join-Path $sentinel 'original-source-preservation.txt'
+          Set-Content -LiteralPath $sentinelFile -Value 'NVP-D5-CREATOR-DATA-MUST-SURVIVE-UNINSTALL' -NoNewline
+          $sentinelSha=(Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash
           Invoke-NvpSmoke $installed '--smoke-window' 150
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
@@ -252,6 +274,18 @@ jobs:
           $result.Refresh()
           if ($result.ExitCode -ne 0) { throw 'Uninstall failed' }
           if (Test-Path $installed) { throw 'Native desktop remains after uninstall' }
+          foreach ($file in $preservedFiles) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $preservedHashes[$file]) {
+              throw "D5 NSIS uninstall modified original source/restart evidence: $file"
+            }
+          }
+          if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf) -or
+              (Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash -ne $sentinelSha) {
+            throw 'D5 NSIS uninstall erased or changed creator-owned Projects data'
+          }
+          Remove-Item -LiteralPath $sentinel -Recurse -Force
+          Write-Output 'NVP_D5_NATIVE_UNINSTALL_PRESERVES_SOURCE_AND_PROJECTS_PASS'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
