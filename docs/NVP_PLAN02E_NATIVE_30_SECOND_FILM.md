@@ -21,6 +21,7 @@
 4. Stream and SHA-check **all 1,440,000** samples of derived spatial PCM without generating a WAV or flattened soundtrack. Validate last sample is at the exact source end.
 5. Run the same **installed `NVP.exe`** for creation, then close it. A new installed `NVP.exe` reopens the frozen SQLite Take and source receipts, rejects stale authorization and confirms first and last original source samples.
 6. Uninstall the native app and prove both this original project and the prior PLAN-02-D original SQLite / creator Projects sentinel remained byte-identical.
+7. Record the full 30-second PCM evaluator wall-clock duration independently from the actual OS audio-device clock. **Evaluator throughput is not a speaker playback certification.**
 
 Native `unittest` also exercises the trusted desktop controller's `scene_at` at the source cut boundaries, rejects camera gaps and stale SHA, and checks never to report physical approval when only fixture consent was used.
 
@@ -34,7 +35,7 @@ Use the **checksum-paired NOT RELEASED installer** from the same successful nati
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\nvp_plan02d_physical_windows_acceptance.ps1 -Installer "C:\YourFolder\NVP-Alpha-Setup.exe" -ShaFile "C:\YourFolder\NVP-PLAN02D-CANDIDATE-SHA256.txt" -ManualThirtySecondFilm
 ```
 
-The optional physical procedure creates a deliberately **TEMP-only** test project and records original SHA evidence, then launches the **installed** NVP app normally. An actual operator must choose `OriginalThirtySecondFilm`, refuse the first genuine native OS consent request, approve a separate fresh consent request, and personally observe 30 seconds of audible output and the original 3D camera cuts. The operator's response is explicitly labeled as a *human observation*, not an independently authenticated instrument/clock trace. Failed results retain source and diagnostics; the script refuses existing NVP installations.
+The optional physical procedure creates a deliberately **TEMP-only** test project and records original SHA evidence, then launches the **installed** NVP app normally. Once the operator closes NVP, a **new installed process** independently reopens the exact TEMP source project and rechecks all original OpenUSD and PCM hashes; a missing or modified source fails the physical acceptance gate. An actual operator must choose `OriginalThirtySecondFilm`, refuse the first genuine native OS consent request, approve a separate fresh consent request, and personally observe 30 seconds of audible output and the original 3D camera cuts. The operator's response is explicitly labeled as a *human observation*, not an independently authenticated instrument/clock trace. Failed results retain source and diagnostics; the script refuses existing NVP installations.
 
 ## Still unaccepted
 
