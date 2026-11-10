@@ -6,7 +6,8 @@
 param(
   [Parameter(Mandatory=$true)][string]$Installer,
   [Parameter(Mandatory=$true)][string]$ShaFile,
-  [string]$EvidenceDir = (Join-Path (Get-Location).Path 'NVP-PLAN02D-physical-evidence')
+  [string]$EvidenceDir = (Join-Path (Get-Location).Path 'NVP-PLAN02D-physical-evidence'),
+  [switch]$ManualThirtySecondFilm
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -41,6 +42,8 @@ $report = [ordered]@{
   webview2_react_and_ipc_passed = $false
   second_uninstall_passed = $false
   human_approval_refusal_witnessed = $false
+  actual_30_second_audio_device_playback_observed_by_operator = $false
+  original_30_second_film_test_signal = $false
   error = $null
 }
 $oldHome = [Environment]::GetEnvironmentVariable('NVP_HOME', 'Process')
@@ -124,6 +127,35 @@ try {
   }
   Invoke-Checked $installedExe '--smoke-window' 160 'actual-interactive-webview2-react-and-js-ipc'
   $report.webview2_react_and_ipc_passed = $true
+  if ($ManualThirtySecondFilm) {
+    # Film test is opt-in, isolated in a temporary workspace. Never seed
+    # synthetic test audio into the creator's actual Projects directory.
+    $filmHome = Join-Path $env:TEMP ('nvp-plan02e-physical-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $filmHome -Force | Out-Null
+    $env:NVP_HOME = $filmHome
+    Invoke-Checked $installedExe '--plan02e-seed-physical-playtest' 180 'test-only-30-second-original-source-seed'
+    $marker = Join-Path $filmHome 'plan02e-physical-seed-receipt.json'
+    if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
+      throw 'No original 30-second Digital Take created in temporary workspace'
+    }
+    $report.original_30_second_film_test_signal = $true
+    Write-Output 'NVP_PLAN02E_PHYSICAL_REVIEW_REQUIRED'
+    Write-Output 'Open the PLAN02E Native 30-Second Film — TEST SOURCE project.'
+    Write-Output 'Select Native 3D sound, then OriginalThirtySecondFilm and a Camera listener.'
+    Write-Output 'First refuse one native OS approval; confirm no audio starts.'
+    Write-Output 'Then start again, APPROVE the real OS dialog, and listen for the entire thirty seconds.'
+    Write-Output 'Observe all 3 authored camera cuts, moving USD geometry, stable sound and the final audio tail.'
+    $windowProcess = Start-Process -FilePath $installedExe -PassThru
+    $answer = Read-Host 'Enter PASS only if you personally observed the refusal AND full thirty-second audible playback (otherwise FAIL)'
+    if ($answer -cne 'PASS') { throw 'Operator did not witness required native film playback' }
+    $report.human_approval_refusal_witnessed = $true
+    $report.actual_30_second_audio_device_playback_observed_by_operator = $true
+    Read-Host 'Close the NVP window normally, then press Enter to check clean exit' | Out-Null
+    $windowProcess.Refresh()
+    if (-not $windowProcess.HasExited) {
+      throw 'NVP interactive playback window did not close normally'
+    }
+  }
   Uninstall-Nvp
   $report.second_uninstall_passed = $true
   $report.status = 'NATIVE_INTERACTIVE_WINDOWS_INSTALL_AND_GUI_PASS'
