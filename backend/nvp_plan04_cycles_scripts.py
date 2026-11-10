@@ -35,6 +35,18 @@ scene=bpy.context.scene
 scene.render.engine="CYCLES"
 scene.cycles.device="CPU"
 scene.cycles.samples=8
+# Optional denoisers differ across Cycles builds. Never require OIDN/OptiX
+# for the CPU witness; retain mandatory native render and independent reopen.
+def disable_optional_denoising(view_layer):
+    settings=getattr(view_layer, "cycles", None)
+    if settings is None or not hasattr(settings, "use_denoising"):
+        return "CAPABILITY_UNAVAILABLE"
+    settings.use_denoising=False
+    if settings.use_denoising is not False:
+        raise RuntimeError("Cycles denoising could not be disabled")
+    return "DISABLED"
+
+denoising_capability=disable_optional_denoising(bpy.context.view_layer)
 scene.render.resolution_x=400
 scene.render.resolution_y=240
 scene.render.resolution_percentage=100
@@ -108,6 +120,7 @@ audit={
     "passed":True,
     "format":"nvp.plan04.cycles_source_build.v1",
     "engine":scene.render.engine,
+    "cycles_cpu_denoising_capability":denoising_capability,
     "take_sha256":source["take_sha256"],
     "scene_sha256":source["scene_sha256"],
     "selection_sha256":source["selection_sha256"],
@@ -149,6 +162,12 @@ if len(objects)!=expected["geometry_count"]:
 scene.render.filepath=args.preview
 scene.cycles.device="CPU"
 scene.cycles.samples=8
+# Repeat the capability check in the independent native Blender process.
+reopen_settings=getattr(bpy.context.view_layer,"cycles",None)
+if reopen_settings is not None and hasattr(reopen_settings,"use_denoising"):
+    reopen_settings.use_denoising=False
+    if reopen_settings.use_denoising is not False:
+        raise RuntimeError("Independent Blender cannot disable denoising")
 bpy.ops.render.render(write_still=True)
 if not Path(args.preview).is_file():
     raise RuntimeError("Independent Blender reopening produced no Cycles preview")
