@@ -83,6 +83,47 @@ def launch_attached_worker(group: Path, executable: str, argv: list[str]):
         close_fds=True,
     )
 
+
+def create_private_group_and_launch(
+    delegated_root: Path, executable: str, argv: list[str]
+):
+    """Create a private cgroup-v2 leaf before launching an attached child.
+
+    Caller owns the returned group and must retain it for independent custody,
+    restart reconciliation and eventual removal. A process handle is not a
+    publication receipt. The delegated root must be provisioned by the OS/host.
+    """
+    import secrets
+
+    if sys.platform != "linux":
+        raise RuntimeError("Linux cgroup v2 required")
+    root = Path(delegated_root)
+    if not root.is_absolute() or root.is_symlink():
+        raise ValueError("Delegated root must be an absolute non-symlink path")
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        # A real cgroup-v2 delegation exposes these kernel controls. Refuse
+        # ordinary directories and cgroup-v1 roots rather than silently falling back.
+        for control in ("cgroup.controllers", "cgroup.procs"):
+            fd = os.open(control, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(fd)
+        name = "nvp-film-" + secrets.token_hex(16)
+        os.mkdir(name, mode=0o700, dir_fd=directory)
+        group = root / name
+        try:
+            child = launch_attached_worker(group, executable, argv)
+        except BaseException:
+            # Never remove a group that might contain a running process.
+            # Failed bootstrap/exec after Popen must be reconciled by custody.
+            try:
+                os.rmdir(name, dir_fd=directory)
+            except OSError:
+                pass
+            raise
+        return group, child
+    finally:
+        os.close(directory)
+
 def main() -> int:
     # Intentionally no general CLI: the host must call attach_then_exec with
     # vetted paths, after creating the private group and before publication.
