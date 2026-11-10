@@ -36,6 +36,25 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
             with self.assertRaises(CgroupCustodyError):
                 worker.stop_and_verify(timeout=1)
 
+    def test_timeout_retry_does_not_reissue_cgroup_kill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cgroup.kill").write_text("")
+            (root / "cgroup.events").write_text("populated 1\n")
+            worker = self._owned(root)
+            with patch("backend.nvp_filming_cgroup_custody.time.sleep", return_value=None):
+                with self.assertRaises(CgroupCustodyError):
+                    worker.stop_and_verify(timeout=0.001)
+            self.assertEqual((root / "cgroup.kill").read_text(), "1")
+            # A retry after timeout must only recheck kernel custody state.
+            (root / "cgroup.kill").write_text("sentinel")
+            (root / "cgroup.events").write_text("populated 0\n")
+            receipt = worker.stop_and_verify(timeout=1)
+            self.assertTrue(receipt["empty_group_verified"])
+            self.assertEqual((root / "cgroup.kill").read_text(), "sentinel")
+            with self.assertRaises(CgroupCustodyError):
+                worker.stop_and_verify(timeout=1)
+
     def test_still_populated_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
