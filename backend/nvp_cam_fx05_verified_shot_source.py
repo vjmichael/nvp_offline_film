@@ -112,7 +112,10 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
         src.GetPrimAtPath(source_camera)).ComputeLocalToWorldTransform(at)
     actor_before=_actor_geometry_signature(src,actor_paths,at)
     source_layer_before=src.GetRootLayer().ExportToString()
-    if src.GetPrimAtPath("/World/NVPDirectorRails").IsDefined():
+    # Absent original rig namespace is an invalid USD null prim; check
+    # existence before IsDefined while refusing any actual source collision.
+    original_rail_root=src.GetPrimAtPath("/World/NVPDirectorRails")
+    if original_rail_root and original_rail_root.IsDefined():
         raise PermissionError("Authoritative source already owns the director rail namespace")
     stored=index.get_blob(pid,rail["rail_layer_sha256"])
     if sha256(stored).hexdigest()!=rail["rail_layer_sha256"]:
