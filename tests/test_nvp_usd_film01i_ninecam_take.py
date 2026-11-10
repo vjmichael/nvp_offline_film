@@ -225,8 +225,12 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             self.pid,"OnePerformanceNineCamBank",1)["data"]
         self.assertEqual(len(data["cameras"]),9)
         self.assertEqual(data["full_camera_coverage_frames"],6480)
-        self.assertEqual([x["focal_length_mm"] for x in data["cameras"][:3]],
-                         [24.0,50.0,85.0])
+        # OpenUSD millimetre-to-stage-unit roundtrips are float32; preserve
+        # measured optics within the sensor tolerance, not bitwise equality.
+        for measured,expected in zip(
+                [x["focal_length_mm"] for x in data["cameras"][:3]],
+                [24.0,50.0,85.0]):
+            self.assertAlmostEqual(measured,expected,places=3)
         self.assertEqual(
             len({tuple(x["rotation_euler_deg"]) for x in data["cameras"]}),3)
         self.assertEqual(
@@ -1197,7 +1201,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
         worker=BlenderWorkerSupervisor(
             root/"fake_version_no_launch",
             blender_executable=sys.executable,
-            blender_sha256=sha_file(sys.executable),
+            blender_sha256=sha_file(Path(sys.executable)),
             blender_version="Blender 5.2.3")
         desktop=TrustedDesktopWO5Bridge(
             self.index,origin="http://127.0.0.1:43141",
@@ -1254,7 +1258,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
         worker=BlenderWorkerSupervisor(
             source_dir/"native_worker",
             blender_executable=sys.executable,
-            blender_sha256=sha_file(sys.executable),
+            blender_sha256=sha_file(Path(sys.executable)),
             blender_version="Blender 5.2.3")  # Test-only, no actual worker launched.
         snapshot=ResourceSnapshot(
             sampled_at=1000,ram_total_mb=32768,
@@ -1304,7 +1308,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             self.index,BlenderWorkerSupervisor(
                 source_dir/"native_worker",
                 blender_executable=sys.executable,
-                blender_sha256=sha_file(sys.executable),
+                blender_sha256=sha_file(Path(sys.executable)),
                 blender_version="Blender 5.2.3"),**kwargs)
         persisted=reopened.status(
             self.pid,"DataFirstOriginalSelectedShort",1)

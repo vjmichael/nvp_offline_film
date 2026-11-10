@@ -345,7 +345,8 @@ class DirectorCameraBank:
                 pid, take["world_id"], take["world_revision"]) as world:
             world.load([take["original_scene_takes"][0]["set"]])
             root = "/World/NVPDirectorCameraRig"
-            if world.stage.GetPrimAtPath(root).IsDefined():
+            existing=world.stage.GetPrimAtPath(root)
+            if existing and existing.IsDefined():
                 raise PermissionError("Original world already defines director rig namespace")
             with Usd.EditContext(world.stage, world.stage.GetSessionLayer()):
                 UsdGeom.Scope.Define(world.stage, root)
