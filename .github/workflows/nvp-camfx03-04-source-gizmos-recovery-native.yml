@@ -1,5 +1,8 @@
 name: NVP CAM-FX-03/04 Source Actor Framing, 3D Gizmos, Durable Camera Drafts and AI Group
 
+# SIXTH exact-head native group: protect CAM-FX05 staged source USD
+# against absent null original rail prim, as diagnosed on Windows/Linux.
+# This is a complete grouped gate, not per-source CI fanout.
 # FIFTH exact-head group: native OpenUSD null prim existence check before
 # rail-rig namespace collision query; source ActorID and original PCM fixed.
 # Previous Windows installed and full React tests already passed.
