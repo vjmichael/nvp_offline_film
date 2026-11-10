@@ -62,6 +62,25 @@ class ProvenLocalModelWriter:
     def complete(self,system,user):
         return self._complete_bounded(system,user)
 
+    def complete_scene_breakdown(self,system,user):
+        """Exact three-category source scene proposal in bounded local JSON.
+
+        Constrains output format only. No Story Bible write, asset approval,
+        Digital Take publication or OS renderer permission is authorized.
+        """
+        schema={
+            "type":"object",
+            "properties":{
+                key:{"type":"array","maxItems":12,
+                     "items":{"type":"string","minLength":1,"maxLength":120}}
+                for key in ("actors","locations","props")
+            },
+            "required":["actors","locations","props"],
+            "additionalProperties":False,
+        }
+        return self._complete_bounded(
+            system,user,schema,schema_name="nvp_unapproved_scene_breakdown")
+
     def complete_world_candidate(self,system,user,schema):
         """Opt-in reviewed JSON-schema constraint for native original worlds.
 
