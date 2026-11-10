@@ -48,9 +48,10 @@ class LinuxFilmingCgroup:
         while True:
             fields = {}
             for line in (self._group / "cgroup.events").read_text(encoding="ascii").splitlines():
-                key, sep, value = line.partition(" ")
-                if sep:
-                    fields[key] = value
+                parts = line.split()
+                if len(parts) != 2 or parts[0] in fields:
+                    raise CgroupCustodyError("Malformed or duplicate cgroup.events field")
+                fields[parts[0]] = parts[1]
             if fields.get("populated") == "0":
                 self._consumed = True
                 return {"process_tree_custody_verified": True,
