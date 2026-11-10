@@ -406,10 +406,26 @@ def run_visible_window_smoke():
                                     "(() => {const b=[...document.querySelectorAll('aside button')]"
                                     ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance'));"
                                     "if(b){b.click();return true;}return false;})()")
+                                # PLAN-03 moves specialist tools behind an
+                                # explicit Advanced Studio disclosure. The
+                                # installed test must navigate as a filmmaker
+                                # does, not assume a permanently visible
+                                # 18-tab developer console. Assert disclosure.
+                                expanded=window.evaluate_js(
+                                    "(() => {const b=[...document.querySelectorAll("
+                                    "'nav.filmmaker-navigation button')]"
+                                    ".find(x=>x.textContent.includes('Advanced Studio'));"
+                                    "if(!b)return false;"
+                                    "if(b.getAttribute('aria-expanded')==='false')b.click();"
+                                    "return b.getAttribute('aria-expanded')==='true';})()")
+                                if expanded is not True:
+                                    raise RuntimeError(
+                                        "Installed Advanced Studio disclosure did not open")
+                                _smoke_checkpoint("window_plan03_advanced_disclosure_pass")
                                 end=time.monotonic()+20
                                 while time.monotonic()<end:
                                     clicked=window.evaluate_js(
-                                        "(() => {const b=[...document.querySelectorAll('nav.tabs button')]"
+                                        "(() => {const b=[...document.querySelectorAll('nav.advanced-navigation button')]"
                                         ".find(x=>x.textContent.includes('Virtual camera'));"
                                         "if(b){b.click();return true;}return false;})()")
                                     if clicked is True:
