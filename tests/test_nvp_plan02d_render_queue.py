@@ -130,5 +130,29 @@ class DurableRenderQueueTests(unittest.TestCase):
                             for dep in record["dependencies"]))
 
 
+    def test_desktop_origin_and_separate_native_refusal_boundary(self):
+        source = self.bridge.plan02d_preview({
+            "project_id": self.pid, "selection": self.request})
+        self.assertFalse(source["native_os_approval_granted"])
+        job = self.bridge.plan02d_enqueue({
+            "project_id": self.pid, "job_id": "PLAN02DWebView",
+            "selection": self.request})
+        self.assertEqual(job["status"], QUEUED)
+        self.native_allow = False
+        refused = self.bridge.plan02d_review({
+            "project_id": self.pid, "job_id": "PLAN02DWebView",
+            "expected_revision": 1})
+        self.assertEqual(refused["status"], REFUSED)
+        self.assertFalse(refused["renderer_worker_authorized"])
+        self.bridge.window.url = "https://untrusted.example/"
+        with self.assertRaises(PermissionError):
+            self.bridge.plan02d_preview({
+                "project_id": self.pid, "selection": self.request})
+        with self.assertRaises(PermissionError):
+            self.bridge.plan02d_review({
+                "project_id": self.pid, "job_id": "PLAN02DWebView",
+                "expected_revision": 2})
+
+
 if __name__ == "__main__":
     unittest.main()
