@@ -458,10 +458,18 @@ def main(argv=None):
                         help="First installed process builds durable source and image")
     parser.add_argument("--smoke-plan02d-restart-reopen",action="store_true",
                         help="Second installed process verifies original, image and no replay")
+    parser.add_argument("--smoke-plan02e",action="store_true",
+                        help="Read complete 30s moving native USD + source PCM without proxy")
+    parser.add_argument("--smoke-plan02e-restart-create",action="store_true",
+                        help="Installed process creates original 30s film and streamed PCM receipt")
+    parser.add_argument("--smoke-plan02e-restart-reopen",action="store_true",
+                        help="Independent installed process verifies unchanged 30s source and film")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_data_av,args.smoke_plan02d,
-            args.smoke_plan02d_restart_create,args.smoke_plan02d_restart_reopen))>1:
+            args.smoke_plan02d_restart_create,args.smoke_plan02d_restart_reopen,
+            args.smoke_plan02e,args.smoke_plan02e_restart_create,
+            args.smoke_plan02e_restart_reopen))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
@@ -491,6 +499,16 @@ def main(argv=None):
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
             "create" if args.smoke_create else "reopen")
+    if (args.smoke_plan02e or args.smoke_plan02e_restart_create or
+            args.smoke_plan02e_restart_reopen):
+        _smoke_checkpoint("before_plan02e_installed_import")
+        from tools.nvp_plan02e_installed_acceptance import run_installed_plan02e_smoke
+        phase=("create" if args.smoke_plan02e_restart_create else
+               "reopen" if args.smoke_plan02e_restart_reopen else "ephemeral")
+        _smoke_checkpoint("before_plan02e_"+phase)
+        result=run_installed_plan02e_smoke(phase)
+        _smoke_checkpoint("after_plan02e_"+phase)
+        return result
     configure_home()
     app=create_app()
     server,worker,port,sock=serve(app)
