@@ -9,6 +9,15 @@ from backend.nvp_filming_cgroup_launch import attach_then_exec
 
 
 class CgroupLaunchContractTests(unittest.TestCase):
+    def test_host_refuses_unavailable_worker_before_spawning(self):
+        from backend.nvp_filming_cgroup_launch import launch_attached_worker
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = str(Path(tmp) / "missing-worker")
+            with patch("subprocess.Popen") as spawn:
+                with self.assertRaisesRegex(ValueError, "unavailable"):
+                    launch_attached_worker(Path(tmp), missing, [missing])
+                spawn.assert_not_called()
+
     def test_refuses_non_absolute_executable(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):
