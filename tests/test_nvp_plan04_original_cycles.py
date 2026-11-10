@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import os
+import threading
 from pathlib import Path
 import sys
 import tempfile
@@ -89,6 +90,41 @@ class OriginalCyclesAdmissionTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             obj.render_once(self.pid,"Plan04RefusalJob",self.review["revision"],
                             self.review["selection_sha256"],T//3)
+
+    def test_creator_cancel_during_os_review_consumes_one_use_grant(self):
+        cancelled=threading.Event()
+        reviews=[]
+        def creator(scope):
+            reviews.append(scope)
+            cancelled.set()
+            return True
+        obj=OriginalCyclesProduction(
+            self.index,self.queue,self.supervisor,
+            ask_native=creator,cancel_event=cancelled)
+        with patch.object(self.supervisor,"run") as worker:
+            with self.assertRaisesRegex(InterruptedError,"cancelled"):
+                obj.render_once(self.pid,"Plan04RefusalJob",self.review["revision"],
+                                self.review["selection_sha256"],T//3)
+            worker.assert_not_called()
+        self.assertEqual(len(reviews),1)
+        with self.assertRaises(PermissionError):
+            obj.render_once(self.pid,"Plan04RefusalJob",self.review["revision"],
+                            self.review["selection_sha256"],T//3)
+
+    def test_reconstructed_host_marks_prior_running_worker_interrupted_without_replay(self):
+        # Simulate a journal left by an earlier killed NVP host. This is
+        # restart reconciliation, NOT proof that OS descendants were reaped.
+        with self.supervisor._connect() as db:
+            db.execute(
+                "INSERT INTO worker_jobs (job_id,spec_sha256,spec_json,state,"
+                "created_utc,updated_utc) VALUES (?,?,?,?,?,?)",
+                ("InterruptedNativeSource","0"*64,"{}","RUNNING",0,0))
+        with patch.object(self.supervisor,"run") as launch:
+            self.host(False)
+            launch.assert_not_called()
+        state=self.supervisor.inspect("InterruptedNativeSource")
+        self.assertEqual(state["state"],"INTERRUPTED")
+        self.assertIn("cleanup not proven",state["error"])
 
     def test_restarted_queue_cannot_replay_approved_original_render(self):
         fresh=DurableRenderIntentionQueue(

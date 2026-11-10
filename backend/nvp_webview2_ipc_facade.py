@@ -121,3 +121,6 @@ class NativeWebView2API:
 
     def plan04_render_cycles_once(self, request):
         return self.__backend.plan04_render_cycles_once(request)
+
+    def plan04_cancel_cycles(self, request):
+        return self.__backend.plan04_cancel_cycles(request)

@@ -73,6 +73,12 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: 'usd-core==26.11'
           python -m pip install -r requirements-foundation.txt
+          # PLAN-02-D3 invokes the *actual* Windows Job Object implementation.
+          # Do not skip the positive native custody test when pywin32 is absent.
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            python -m pip install --only-binary=:all: 'pywin32>=306'
+            python -c "import win32job, win32api; assert callable(win32job.CreateJobObject)"
+          fi
       - name: No external video decoder or derived movie dependency
         shell: bash
         run: |
