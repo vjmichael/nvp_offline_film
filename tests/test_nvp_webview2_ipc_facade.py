@@ -33,6 +33,7 @@ EXPECTED_JS_API = frozenset({
     "plan02c_models", "plan02c_model_candidate", "plan02d_preview",
     "plan02d_sample_at", "plan02d_enqueue", "plan02d_inspect",
     "plan02d_review", "plan02d_raster_preview", "plan02d_raster_publish",
+    "plan03_render_original_once",
 })
 
 
