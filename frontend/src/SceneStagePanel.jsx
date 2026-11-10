@@ -23,8 +23,9 @@ function saveDownload(filename, text, mime) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-export default function SceneStagePanel({ project, api, action, busy }) {
-  const [sceneId, setSceneId] = useState(project.scenes[0]?.id || '');
+export default function SceneStagePanel({ project, api, action, busy, selectedSceneId='' }) {
+  const [sceneId, setSceneId] = useState(
+    project.scenes.some(x=>x.id===selectedSceneId)?selectedSceneId:(project.scenes[0]?.id||''));
   const [assets, setAssets] = useState([]);
   const [plan, setPlan] = useState(null);
   const [message, setMessage] = useState('');
@@ -45,9 +46,10 @@ export default function SceneStagePanel({ project, api, action, busy }) {
   const base = `/projects/${project.id}/production`;
 
   useEffect(() => {
-    setSceneId(project.scenes[0]?.id || '');
+    setSceneId(project.scenes.some(x=>x.id===selectedSceneId)?
+      selectedSceneId:(project.scenes[0]?.id||''));
     setPlan(null);
-  }, [project.id]);
+  }, [project.id, selectedSceneId]);
 
   useEffect(() => {
     let active = true;
