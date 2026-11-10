@@ -122,7 +122,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m tools.nvp_plan02d_custody_native_witness --report "$RUNNER_TEMP/plan02d-real-kernel-custody.json"
+          if [[ "$RUNNER_OS" == 'Linux' ]]; then
+            # Genuine systemd delegated scope: not a synthetic cgroup and
+            # never a process-group or sudo /sys/fs/cgroup fallback.
+            command -v systemd-run
+            sudo -n systemd-run --quiet --scope --collect \
+              --property=Delegate=yes --property=DelegateSubgroup=nvp-host \
+              --uid="$(id -un)" --working-directory="$GITHUB_WORKSPACE" \
+              --setenv="PYTHONPATH=$GITHUB_WORKSPACE" \
+              "$(command -v python)" -m tools.nvp_plan02d_custody_native_witness \
+                --report "$RUNNER_TEMP/plan02d-real-kernel-custody.json"
+          else
+            python -m tools.nvp_plan02d_custody_native_witness --report "$RUNNER_TEMP/plan02d-real-kernel-custody.json"
+          fi
           python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'plan02d-real-kernel-custody.json').read_text()); assert d['status']=='ACTUAL_NATIVE_DESCENDANT_CANCEL_AND_HOST_CRASH_PASS'; assert d['detached_descendant_observed'] and not d['output_publication_authorized']"
       - uses: actions/upload-artifact@v4
         if: always()
