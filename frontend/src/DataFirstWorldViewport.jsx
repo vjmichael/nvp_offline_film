@@ -40,11 +40,13 @@ function usdMatrix(m){
 }
 
 export default function DataFirstWorldViewport({
-  objects=[],listenerPath='',tick='0',sceneSha='',railSamples=[]
+  objects=[],listenerPath='',tick='0',sceneSha='',railSamples=[],
+  activeCameraPath='',activeCameraFocalMm=null
 }){
   const holder=useRef(null);
   const env=useRef(null);
   const [disabled,setDisabled]=useState(false);
+  const [followSourceCamera,setFollowSourceCamera]=useState(true);
   const bounded=Array.isArray(objects)?objects.slice(0,64):[];
 
   useEffect(()=>{
@@ -103,7 +105,7 @@ export default function DataFirstWorldViewport({
         resize=new ResizeObserver(resizeNow);
         resize.observe(root);
       }
-      env.current={world,meshes,requestRender,railGroup};
+      env.current={world,meshes,requestRender,railGroup,camera,controls};
       setDisabled(false);
     }catch(_error){
       // A headless browser or disabled GPU must still expose textual,
@@ -176,8 +178,42 @@ export default function DataFirstWorldViewport({
         state.meshes.delete(path);
       }
     }
+    // PLAN-02-E: reflect the original USD camera cut at the position
+    // chosen by the actual PCM output-device presentation clock. This is
+    // NOT a new authored camera or a source-frame raster cache.
+    const sourceCamera=bounded.find(item=>
+      item.path===activeCameraPath &&
+      item.semantic_role==='camera' && validMatrix(item.world_matrix));
+    if(followSourceCamera&&sourceCamera){
+      const camera=state.camera;
+      state.controls.enabled=false;
+      camera.matrixAutoUpdate=false;
+      camera.matrix.copy(usdMatrix(sourceCamera.world_matrix));
+      camera.matrixWorldNeedsUpdate=true;
+      if(typeof activeCameraFocalMm==='number'&&
+         Number.isFinite(activeCameraFocalMm)&&
+         activeCameraFocalMm>=8&&activeCameraFocalMm<=300){
+        camera.fov=THREE.MathUtils.radToDeg(
+          2*Math.atan(36/(2*activeCameraFocalMm)));
+      }else{
+        camera.fov=50;
+      }
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld(true);
+    }else if(!state.camera.matrixAutoUpdate){
+      const camera=state.camera;
+      camera.matrixAutoUpdate=true;
+      camera.position.set(12,-15,12);
+      camera.up.set(0,0,1);
+      camera.lookAt(0,0,0);
+      camera.fov=50;
+      camera.updateProjectionMatrix();
+      state.controls.enabled=true;
+      state.controls.target.set(0,0,0);
+      state.controls.update();
+    }
     state.requestRender();
-  },[objects,listenerPath]);
+  },[objects,listenerPath,activeCameraPath,activeCameraFocalMm,followSourceCamera]);
 
   // A verified prospective rail is a disposable camera GUIDE over the
   // native 3D source world, not authored actor geometry or a film frame.
@@ -215,9 +251,17 @@ export default function DataFirstWorldViewport({
   return <section aria-label="Live native OpenUSD three-dimensional scene">
     <p className="fineprint">3D source world at Film Time tick {tick}.
       {sceneSha&&<> Immutable scene SHA: <code>{sceneSha.slice(0,16)}…</code></>}
-      Drag to orbit, scroll to inspect. Live data, not a movie.
+      {followSourceCamera&&activeCameraPath?
+        <> Following authored camera {activeCameraPath} at the audio device clock. </>:
+        <> Drag to orbit, scroll to inspect. </>}
+      Live data, not a flattened movie.
       {Array.isArray(railSamples)&&railSamples.length>1&&
         <> Cyan line and violet control markers are a temporary unapproved camera guide; no original USD or PCM was changed.</>}</p>
+    {activeCameraPath&&<button type="button"
+      aria-label="Toggle original film camera"
+      onClick={()=>setFollowSourceCamera(value=>!value)}>
+      {followSourceCamera?'Inspect orbit instead of authored camera':
+        'Follow authored film camera'}</button>}
     <div ref={holder} style={{width:'100%',minHeight:'360px',borderRadius:8,
       overflow:'hidden',background:'#121a2a'}}/>
     {disabled&&<p role="status">3D hardware context unavailable.

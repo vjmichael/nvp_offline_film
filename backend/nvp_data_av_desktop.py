@@ -173,12 +173,37 @@ class TrustedDataAVController:
                 self.index,state["pid"],
                 source.data["scene_id"],source.data["scene_revision"],
                 source.data["timeline_id"],source.data["timeline_revision"],tick)
+            # PLAN-02-E: the only film camera is the actual authored
+            # source-timeline camera active at the AUDIO presentation tick.
+            # No inferred camera, source-frame grid, or silently carried
+            # camera across a gap is permitted.
+            cameras=source.timeline.events_at(
+                state["pid"],source.data["timeline_id"],
+                source.data["timeline_revision"],tick=tick,
+                event_kind="camera",limit=2)
+            if len(cameras)>1:
+                raise RuntimeError("Overlapping original cameras at Film Time")
+            camera=None
+            if cameras:
+                event=cameras[0]
+                path=event["payload"].get("usd_prim_path")
+                if (event["source_id"]!=source.data["scene_id"] or
+                    event["source_document_sha256"]!=source.data[
+                        "scene_document_sha256"] or
+                    source.roles.get(path)!="camera"):
+                    raise RuntimeError("Authored original film camera not SHA-bound")
+                camera={"camera_path":path,
+                        "source_tick":str(tick),
+                        "shot_id":event["event_id"],
+                        "start_tick":str(event["start_tick"]),
+                        "end_tick":str(event["end_tick"]),
+                        "take_document_sha256":source.take["document_sha256"]}
             return {
                 "format":FORMAT,"status":"SCENE_READY",
                 "session_id":ticket,
                 "take_document_sha256":source.take["document_sha256"],
                 "scene":snapshot,"spatial_audio":overlay,
-                "visual":visual,
+                "visual":visual,"active_source_camera":camera,
                 "original_modified":False,"master_approved":False,
             }
 
