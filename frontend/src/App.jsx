@@ -773,10 +773,35 @@ export default function App() {
         {tab === 'retarget' && <RetargetPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'grade' && <NativeColorGradePanel project={project} api={api} action={action} busy={busy}/>}
         {tab === 'color-guide' && <ColorGradingGuide />}
-        {tab === 'make' && <section className="card make"><div className="kicker">FUTURE MILESTONE</div>
-          <h2>Bring your movie to life</h2><p>NVP will eventually build 3D sets, animate characters, film camera shots, edit scenes, mix audio and export the movie. This is not implemented in this foundation build.</p>
-          <div className="future"><span>Build a location — planned</span><span>Animate characters — planned</span><span>Film a scene — planned</span><span>Edit and export — planned</span></div>
-          <p className="fineprint">AMD, NVIDIA and CPU backends will be supported by capability, without requiring CUDA just to launch NVP.</p>
+        {tab === 'make' && <section className="card make">
+          <div className="kicker">REVIEW YOUR MOVIE</div>
+          <h2>See your movie take shape</h2>
+          <p>Review your scenes in screenplay order, work on an individual shot,
+            or audition an existing frozen OpenUSD Digital Take with its original PCM.
+            No conventional video file is silently created as the source.</p>
+          {project.scenes.length===0&&<p className="muted">
+            Write and save your screenplay first to build a scene list.</p>}
+          <div className="scene-review-list">
+            {project.scenes.map(scene=><button key={scene.id} className="scene-item"
+              onClick={()=>{setSelectedScene(scene.id);setTab('library')}}>
+              <small>Scene {scene.number} · source lines {scene.start_line}–{scene.end_line}</small>
+              <strong>{scene.heading}</strong>
+              <span>{scene.shots.length} planned shot(s)</span>
+            </button>)}
+          </div>
+          <div className="actions">
+            <button className="primary" onClick={()=>{
+              setTab('data-av');setAdvancedOpen(true);
+            }}>Preview original picture and 3D sound</button>
+            <button className="secondary" disabled={!project.scenes.length}
+              onClick={()=>{setTab('direct');setAdvancedOpen(true)}}>
+              Plan source-bound shots and rendering
+            </button>
+          </div>
+          <p className="fineprint">Native 3D source audition is already available
+            for approved frozen Takes. Full photoreal rendering, finished film
+            export and SMPTE DCP still require separately verified presentation
+            and creator authorization; a successful test preview is not a final master.</p>
         </section>}
       </div>}
     </main>
