@@ -22,7 +22,7 @@ from pxr import Usd,UsdGeom
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
 from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
 from backend.nvp_cam_fx01_camera_rails import OriginalCameraRails
-from backend.nvp_cam_fx02_usd_camera_layer import camera_rail_path
+from backend.nvp_cam_fx02_usd_camera_layer import camera_rail_path,MM_PER_CAMERA_UNIT
 from backend.nvp_cam_fx05_verified_shot_source import (
     stage_approved_rail_frame,FORMAT,RECEIPT)
 from backend.nvp_usd_film01f_blender_host import USD,MANIFEST
@@ -129,8 +129,13 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
                 self.assertTrue(camera.GetPrim().IsDefined())
                 self.assertTrue(src.GetPrimAtPath(
                     evidence["original_camera_path"]).IsA(UsdGeom.Camera))
-                self.assertEqual(camera.GetFocalLengthAttr().Get(
-                    Usd.TimeCode(1.0)),45. if rev==1 else 55.)
+                # USD authored camera focal units differ from mm. Read the
+                # physical 24fps snapshot and convert with the *same*
+                # first-party unit factor used for all other rail readbacks.
+                self.assertAlmostEqual(
+                    camera.GetFocalLengthAttr().Get(
+                        Usd.TimeCode(1.0))*MM_PER_CAMERA_UNIT,
+                    45. if rev==1 else 55.,places=4)
                 self.assertEqual(
                     camera.GetFocalLengthAttr().GetTimeSamples(),[1.0])
                 self.assertEqual(src.GetStartTimeCode(),1.)
