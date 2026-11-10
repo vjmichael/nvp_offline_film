@@ -131,7 +131,7 @@ class FilmingWorkerCustodyTests(unittest.TestCase):
                     raise subprocess.TimeoutExpired(process.args, kwargs.get("timeout"))
                 return original_wait(*args, **kwargs)
 
-            with mock.patch.object(process, "wait", side_effect=delayed_reap), \\
+            with mock.patch.object(process, "wait", side_effect=delayed_reap), \
                  mock.patch.object(process, "kill", wraps=process.kill) as kill:
                 with self.assertRaises(subprocess.TimeoutExpired):
                     worker.stop_and_verify(timeout=0.1)
