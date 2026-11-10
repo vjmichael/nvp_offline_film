@@ -489,13 +489,16 @@ def main(argv=None):
                         help="Independent installed process verifies unchanged 30s source and film")
     parser.add_argument("--plan02e-seed-physical-playtest",action="store_true",
                         help="Create TEST-ONLY 30s film in a new TEMP workspace for real GUI sound playback")
+    parser.add_argument("--plan02e-verify-physical-playtest",action="store_true",
+                        help="Independently verify original 30s USD and PCM after installed GUI playback")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_data_av,args.smoke_plan02d,
             args.smoke_plan02d_restart_create,args.smoke_plan02d_restart_reopen,
             args.smoke_plan02e,args.smoke_plan02e_restart_create,
             args.smoke_plan02e_restart_reopen,
-            args.plan02e_seed_physical_playtest))>1:
+            args.plan02e_seed_physical_playtest,
+            args.plan02e_verify_physical_playtest))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
@@ -535,7 +538,7 @@ def main(argv=None):
         result=run_installed_plan02e_smoke(phase)
         _smoke_checkpoint("after_plan02e_"+phase)
         return result
-    if args.plan02e_seed_physical_playtest:
+    if args.plan02e_seed_physical_playtest or args.plan02e_verify_physical_playtest:
         import json
         explicit=os.environ.get("NVP_HOME")
         if not explicit or not Path(explicit).is_absolute():
@@ -546,12 +549,27 @@ def main(argv=None):
                 not home.name.startswith("nvp-plan02e-physical-") or
                 home.is_symlink()):
             raise PermissionError("Refusing to seed into creator-owned Projects")
-        if (home/"nvp_studio.sqlite3").exists():
+        if args.plan02e_seed_physical_playtest and (home/"nvp_studio.sqlite3").exists():
             raise FileExistsError("Physical demo seed must target a new test workspace")
         from backend.nvp_studio import Studio
         from backend.nvp_film_index import FilmIndex
-        from tools.nvp_plan02e_installed_acceptance import create as create_film
+        from tools.nvp_plan02e_installed_acceptance import (
+            create as create_film, _verify_original, _accept,
+        )
         studio=Studio()
+        if args.plan02e_verify_physical_playtest:
+            marker=home/"plan02e-physical-seed-receipt.json"
+            if not marker.is_file():
+                raise RuntimeError("Original source receipt missing after GUI playback")
+            receipt=json.loads(marker.read_text("utf8"))
+            index=FilmIndex(studio)
+            _verify_original(index,receipt)
+            evidence=_accept(index,receipt,exhaustive=False)
+            _verify_original(index,receipt)
+            if evidence["original_source_modified"] is not False:
+                raise RuntimeError("GUI playback modified original source")
+            _smoke_checkpoint("plan02e_physical_original_unchanged_after_gui")
+            return 0
         pid=studio.create_project(
             "PLAN02E Native 30-Second Film — TEST SOURCE",
             "Three original USD cameras, moving sphere and test-only 48k PCM",
