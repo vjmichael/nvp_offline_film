@@ -89,6 +89,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_native_independent_sync.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02b_native_capture.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02b_original_clock_binding.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_plan02c_native_camera_ai.py' -v
       - name: Existing frozen source/camera/provenance regressions
         shell: bash
         run: |
@@ -112,7 +113,7 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/NativeOriginalCapturePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx
+      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/NativeCameraRailPanel.test.jsx src/NativeOriginalCapturePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx
 
   installed-windows-native:
     name: Real packaged / installed Windows NVP.exe with OpenUSD and PCM (no FFmpeg)
@@ -148,7 +149,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
@@ -204,3 +205,77 @@ jobs:
           name: nvp-data-av01-native-windows-installer
           path: dist/NVP-Alpha-Setup.exe
           retention-days: 7
+
+
+  actual-plan02c-gguf:
+    # One real Qwen/llama.cpp acceptance within the group, not one CI job
+    # per small edit. Run only on the deliberately marked group-end push.
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[PLAN-02-C gate]') }}
+    needs: [zero-ffmpeg-policy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    name: Genuine hashed Qwen GGUF -> unapproved canonical USD camera advice
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: master
+          path: deps/llama.cpp
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Real native USD and first-party optional model dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+      - name: Build real CPU-only llama.cpp server and record actual source HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C deps/llama.cpp rev-parse HEAD | tee "$RUNNER_TEMP/plan02c-llama-source-head.txt"
+          cmake -S deps/llama.cpp -B deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_CURL=OFF
+          cmake --build deps/llama.cpp/build --config Release --target llama-server --parallel 2
+          server="$(find deps/llama.cpp/build -type f -name llama-server -perm -111 | head -n 1)"
+          test -n "$server" && test -x "$server"
+          echo "NVP_REAL_LLAMA_SERVER=$(realpath "$server")" >> "$GITHUB_ENV"
+      - name: Fetch exact licensed official Qwen2.5-0.5B-Instruct Q4_K_M GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="$RUNNER_TEMP/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+          curl --fail --location --retry 3 --retry-delay 5 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf' -o "$file"
+          echo "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db  $file" | sha256sum --check --status
+          test "$(head -c 4 "$file")" = GGUF
+          echo "NVP_REAL_QWEN_GGUF=$file" >> "$GITHUB_ENV"
+      - name: Actual original frozen Take to real unapproved GGUF camera proposal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.nvp_plan02c_real_gguf \
+            --model "$NVP_REAL_QWEN_GGUF" \
+            --llama-server "$NVP_REAL_LLAMA_SERVER" \
+            --report "$RUNNER_TEMP/plan02c-real-gguf.json" \
+            --consent I_APPROVE_DISPOSABLE_LOCAL_GGUF_TEST
+          python - <<'PY'
+          import json,os,pathlib
+          report=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'plan02c-real-gguf.json').read_text())
+          assert report['status']=='REAL_HASHED_GGUF_GENERATED_UNAPPROVED_SOURCE_CAMERA_ADVICE'
+          assert report['provider_reported_completion_tokens']>0
+          assert report['source_original_pcm_unchanged'] is True
+          assert report['human_publication_approval'] is False
+          assert report['native_renderer_worker_authorized'] is False
+          print('PLAN02C_REAL_GGUF_SOURCE_CAMERA_ADVICE_VERIFIED_NO_APPROVAL')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: plan02c-genuine-hashed-gguf-source-camera-unapproved
+          path: |
+            ${{ runner.temp }}/plan02c-llama-source-head.txt
+            ${{ runner.temp }}/plan02c-real-gguf.json
+          if-no-files-found: warn
+          retention-days: 14

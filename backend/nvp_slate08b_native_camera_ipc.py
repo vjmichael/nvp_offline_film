@@ -25,6 +25,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 
+from backend.nvp_plan02c_desktop import NativePlan02CCameraActions
 from backend.nvp_camera_workbench import verified_optics, workbench_preview_key
 from backend.nvp_film_index import FilmIndex, _id, _require_pid, _sha
 from backend.nvp_slate_proxy_recipe import canonical
@@ -112,7 +113,7 @@ def build_desktop_camera_host(index, callback):
     return host
 
 
-class TrustedDesktopCameraBridge:
+class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
     """Per-WebView native authority. No browser can self-sign an approval."""
 
     def __init__(self, index: FilmIndex, *, origin, host_factory=None):

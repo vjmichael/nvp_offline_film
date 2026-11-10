@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import DataFirstWorldViewport from './DataFirstWorldViewport.jsx';
 import NativeOriginalCapturePanel from './NativeOriginalCapturePanel.jsx';
+import NativeCameraRailPanel from './NativeCameraRailPanel.jsx';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -353,6 +354,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <p className="fineprint">{scene.spatial_audio?.bindings?.length||0}
         spatial audio source(s) active at this moment.</p>
     </section>}
+    <NativeCameraRailPanel projectId={projectId} native={native}
+      sourceRevision={captureRevision}/>
     <NativeOriginalCapturePanel projectId={projectId} native={native}
       onCompleted={()=>setCaptureRevision(n=>n+1)}/>
     <section className="card" aria-label="Add creator-supplied original music">
