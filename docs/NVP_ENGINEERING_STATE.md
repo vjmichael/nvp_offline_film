@@ -1,5 +1,16 @@
 # NVP — Engineering state and resumption ledger
 
+### 2026-11-09 MST / 2026-11-10 UTC — PLAN-02-A canonical camera repair closed (source-scoped)
+
+**[PR #74 repair commit 16d8778e](https://github.com/vjmichael/nvp_offline_film/commit/16d8778ea80daa6e9326f68391cde5e6127ba4f8)** repaired the active DA-06 camera interface without reviving the retired Blender still renderer: strict project/scene/revision/SHA/time/camera pose validation, explicit request/poll/cancel denials (even for forged historical tickets), `supports_cancel=false`, and migrated React regression coverage. A positive read-only OpenUSD optics diagram remains available; no native still picture is promised.
+
+**Exact source acceptance:** [SLATE-08B run 42755225015](https://github.com/vjmichael/nvp_offline_film/actions/runs/42755225015), **SUCCESS 5/5 jobs** on the repair commit: Windows 2025 and Ubuntu 24.04 Python 3.11/3.13 native tests passed, React build and **17/17 tests passed**. The separate [DATA-AV run 42755216988](https://github.com/vjmichael/nvp_offline_film/actions/runs/42755216988) already passed its zero-FFmpeg audit, 20/20 React tests and Ubuntu native matrix when checked; its Windows native and installed jobs were still pending, not accepted. **Do not transfer the SLATE-08B pass to full installed Windows, CAM-FX rails, positive Blender rendering, original film delivery or physical creator approval.** The source-repair gate closes PLAN-02-A's retired-camera regression only.
+
+**CI hygiene:** one source push triggered numerous historical pull_request workflows despite the requested grouped acceptance discipline. Those unrelated runs are not the PLAN-02-A gate; auto-PR-fanout remains an independent cleanup task. No further source/workflow changes are required for this camera fix.
+
+**Next:** PLAN-02-B canonical original source/capture/spatial sound/time synchronization. Independently reconcile DA-05B/DA-05/06/DA-02E donor code rather than merging divergent branches wholesale.
+
+
 **CURRENT INTEGRATION ROUTE (PLAN-02, 2026-11-09 MST):** Draft PR #74, `nvp/data-av01-native-scene-playback-20261106`, is the sole production integration baseline. Future CAM-FX/WO6/USD-FILM branches supply independently reviewed *selective* source-time, renderer and AI components only; never merge whole legacy FFmpeg or frame-authoritative stacks. The exact branch/evidence/port disposition and ordered gates are in [PLAN-02 authoritative integration map](NVP_PLAN02_AUTHORITATIVE_INTEGRATION_PATH.md) and its [machine-readable manifest](NVP_PLAN02_INTEGRATION_MANIFEST.json). **This route is documented, NOT proof that donor ports, the original 30s film, physical human consent or integrated acceptance passed.**
 
 
