@@ -23,6 +23,7 @@ from backend.nvp_cam_fx02_usd_camera_layer import (
 from backend.nvp_usd_film02m_h_actor_camera_binding import OriginalDistrictShotBinding
 from backend.nvp_usd_film02m_h_render_handoff import stage_approved_original_shot
 from backend.nvp_usd_film01f_blender_host import USD, MANIFEST
+from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
 
 FORMAT = "nvp.cam_fx05.source_verified_original_performance_rail_frame.v1"
 RECEIPT = "cam_fx05_rail_source.json"
