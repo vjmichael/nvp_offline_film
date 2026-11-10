@@ -485,13 +485,28 @@ def run_visible_window_smoke():
                                 # installed test must navigate as a filmmaker
                                 # does, not assume a permanently visible
                                 # 18-tab developer console. Assert disclosure.
-                                expanded=window.evaluate_js(
+                                clicked_disclosure=window.evaluate_js(
                                     "(() => {const b=[...document.querySelectorAll("
                                     "'nav.filmmaker-navigation button')]"
                                     ".find(x=>x.textContent.includes('Advanced Studio'));"
                                     "if(!b)return false;"
                                     "if(b.getAttribute('aria-expanded')==='false')b.click();"
-                                    "return b.getAttribute('aria-expanded')==='true';})()")
+                                    "return true;})()")
+                                if clicked_disclosure is not True:
+                                    raise RuntimeError(
+                                        "Installed Advanced Studio disclosure control absent")
+                                expanded=False
+                                end=time.monotonic()+10
+                                while time.monotonic()<end:
+                                    expanded=window.evaluate_js(
+                                        "(() => {const b=[...document.querySelectorAll("
+                                        "'nav.filmmaker-navigation button')]"
+                                        ".find(x=>x.textContent.includes('Advanced Studio'));"
+                                        "return Boolean(b&&b.getAttribute('aria-expanded')"
+                                        "==='true'&&document.querySelector("
+                                        "'nav.advanced-navigation'));})()")
+                                    if expanded is True:break
+                                    time.sleep(.1)
                                 if expanded is not True:
                                     raise RuntimeError(
                                         "Installed Advanced Studio disclosure did not open")
