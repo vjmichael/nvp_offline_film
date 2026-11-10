@@ -7,6 +7,8 @@ must separately prove OS supervisor custody and one-use launch consent.
 """
 from __future__ import annotations
 
+import threading
+
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_plan02d_source_selection import ExactSourceWindowSelector
 
@@ -26,6 +28,9 @@ class DurableRenderIntentionQueue:
         self.index = index
         self.ask_native = ask_native
         self.selector = ExactSourceWindowSelector(index)
+        # Process-lifetime only; journal review is never restart authority.
+        self._live_lock = threading.RLock()
+        self._live_reviews = set()
 
     def _read(self, project_id, job_id):
         _require_pid(project_id)
@@ -140,11 +145,27 @@ class DurableRenderIntentionQueue:
                            previous=row["document_sha256"]),
             expected_revision=expected_revision,
             dependencies=row["dependencies"])
+        if state == APPROVED:
+            with self._live_lock:
+                self._live_reviews.add((project_id, job_id, updated["revision"],
+                                        after["selection_sha256"]))
         return self._public(updated, state, after["selection_sha256"])
+
+    def consume_live_worker_review(self, project_id, job_id, revision,
+                                   selection_sha256):
+        # Not exposed through pywebview. A new process has no live tokens.
+        key = (project_id, job_id, revision, selection_sha256)
+        with self._live_lock:
+            if key not in self._live_reviews:
+                raise PermissionError("OS source review is not live in this NVP host")
+            self._live_reviews.remove(key)
 
     def reconcile_restart(self, project_id, job_id):
         """Never carry OS modal consent through restart as a usable ticket."""
         row, data = self._read(project_id, job_id)
+        with self._live_lock:
+            self._live_reviews = {key for key in self._live_reviews
+                                  if key[0] != project_id or key[1] != job_id}
         if data["status"] != APPROVED:
             return self.inspect(project_id, job_id)
         scope = self.selector.preview(project_id, data["selection"])
