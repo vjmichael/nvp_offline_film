@@ -31,14 +31,30 @@ class LinuxFilmingCgroup:
         if not (group / "cgroup.kill").is_file() or not (group / "cgroup.events").is_file():
             raise CgroupCustodyError("Missing kernel cgroup-v2 custody controls")
         self._group = group
+        # Pin the cgroup directory identity. A removed/recreated private group
+        # must never inherit an old host custody handle or its kill receipt.
+        identity = group.stat()
+        self._group_identity = (identity.st_dev, identity.st_ino)
         self._consumed = False
         self._kill_requested = False
+
+    def _verify_group_identity(self) -> None:
+        expected = getattr(self, "_group_identity", None)
+        if expected is None:
+            raise CgroupCustodyError("Unpinned cgroup ownership identity")
+        try:
+            actual = self._group.stat()
+        except OSError as exc:
+            raise CgroupCustodyError("Owned cgroup is no longer accessible") from exc
+        if (actual.st_dev, actual.st_ino) != expected:
+            raise CgroupCustodyError("Owned cgroup was replaced; custody revoked")
 
     def stop_and_verify(self, *, timeout: float = 5.0) -> dict:
         if self._consumed:
             raise CgroupCustodyError("Cgroup custody receipt already consumed")
         if type(timeout) not in (float, int) or not math.isfinite(timeout) or not 0 < timeout <= 60:
             raise ValueError("Bounded positive deadline required")
+        self._verify_group_identity()
         deadline = time.monotonic() + timeout
         # cgroup.kill is kernel-wide for the entire subtree; unlike killpg it
         # includes descendants that create new process sessions.
@@ -46,6 +62,7 @@ class LinuxFilmingCgroup:
             (self._group / "cgroup.kill").write_text("1", encoding="ascii")
             self._kill_requested = True
         while True:
+            self._verify_group_identity()
             fields = {}
             for line in (self._group / "cgroup.events").read_text(encoding="ascii").splitlines():
                 parts = line.split()
@@ -53,6 +70,7 @@ class LinuxFilmingCgroup:
                     raise CgroupCustodyError("Malformed or duplicate cgroup.events field")
                 fields[parts[0]] = parts[1]
             if fields.get("populated") == "0":
+                self._verify_group_identity()
                 self._consumed = True
                 return {"process_tree_custody_verified": True,
                         "scope": "linux-cgroup-v2", "empty_group_verified": True}
