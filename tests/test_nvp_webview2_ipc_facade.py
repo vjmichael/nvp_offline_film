@@ -34,7 +34,7 @@ EXPECTED_JS_API = frozenset({
     "plan02d_sample_at", "plan02d_enqueue", "plan02d_inspect",
     "plan02d_review", "plan02d_raster_preview", "plan02d_raster_publish",
     "plan03_render_original_once",
-    "plan04_render_cycles_once",
+    "plan04_render_cycles_once","plan04_cancel_cycles",
 })
 
 
@@ -127,6 +127,24 @@ class FlatWebView2APIContractTests(unittest.TestCase):
         self.assertEqual(self.window.prompts,0)
         with self.assertRaises(PermissionError):
             self.api.plan04_render_cycles_once({})
+        self.assertEqual(self.window.prompts,0)
+
+    def test_cancel_only_matches_current_native_source_and_never_claims_exit(self):
+        selection="a"*64
+        stop=self.bridge._begin_plan04(self.project_id,selection)
+        try:
+            denied=self.api.plan04_cancel_cycles({
+                "project_id":self.project_id,"selection_sha256":"b"*64})
+            self.assertEqual(denied["status"],"NO_MATCHING_ACTIVE_CYCLES_RENDER")
+            self.assertFalse(stop.is_set())
+            requested=self.api.plan04_cancel_cycles({
+                "project_id":self.project_id,"selection_sha256":selection})
+            self.assertEqual(requested["status"],
+                             "CANCELLATION_REQUESTED_AWAIT_SUPERVISOR")
+            self.assertFalse(requested["worker_exit_verified"])
+            self.assertTrue(stop.is_set())
+        finally:
+            self.bridge._end_plan04(stop)
         self.assertEqual(self.window.prompts,0)
 
     def test_bridge_closure_revokes_browser_ipc(self):
