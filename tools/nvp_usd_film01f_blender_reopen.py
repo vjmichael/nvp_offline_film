@@ -44,7 +44,7 @@ def run():
         "nvp_original_world_sha256":source["original_world_sha256"],
         "nvp_original_camera_shot_sha256":source["original_camera_shot_sha256"],
         "nvp_source_usd_sha256":source["source_usd_sha256"],
-        "nvp_original_film_tick":source["original_film_tick"],
+        "nvp_original_film_tick":str(source["original_film_tick"]),
         "nvp_original_camera_path":source["original_camera_path"],
         "nvp_no_film_master_approval":True,
     }

@@ -170,7 +170,8 @@ def run():
     scene["nvp_original_world_sha256"]=source["original_world_sha256"]
     scene["nvp_original_camera_shot_sha256"]=source["original_camera_shot_sha256"]
     scene["nvp_source_usd_sha256"]=source["source_usd_sha256"]
-    scene["nvp_original_film_tick"]=source["original_film_tick"]
+    # Blender custom-property C integer overflows for exact Film Time ticks.
+    scene["nvp_original_film_tick"]=str(source["original_film_tick"])
     scene["nvp_source_actors_json"]=json.dumps(source["actor_sources"],sort_keys=True)
     scene["nvp_original_camera_path"]=source["original_camera_path"]
     scene["nvp_no_film_master_approval"]=True

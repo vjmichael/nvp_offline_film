@@ -1333,6 +1333,18 @@ def run_visible_window_smoke():
                                         _native_window_stage(
                                             "p0f01_real_gguf_model_source_draft_no_approval_passed")
                                 if os.environ.get("NVP_FILM02MH_GROUP_ACCEPTANCE")=="1":
+                                    # The preceding source-only draft/undo/discard
+                                    # can reselect a different project tab.
+                                    # Explicitly return to the real installed
+                                    # original-world director before checking
+                                    # that the protected Cycles controls exist.
+                                    reopened_tab=window.evaluate_js(
+                                        "(()=>{const tab=[...document.querySelectorAll('nav.tabs button')]"
+                                        ".find(b=>b.textContent.includes('Direct the data'));"
+                                        "if(!tab)return false;tab.click();return true;})()")
+                                    if not reopened_tab:
+                                        raise RuntimeError(
+                                            "Installed original source director tab unavailable for Cycles review")
                                     _native_window_stage(
                                         "film02mh_installed_render_review_controls_check")
                                     render_controls=False
