@@ -1,5 +1,6 @@
 """DA-03 direct-child custody tests; no native process-tree claim."""
 import subprocess
+import math
 import sys
 import unittest
 
@@ -41,6 +42,36 @@ class FilmingWorkerCustodyTests(unittest.TestCase):
             if process.poll() is None:
                 process.kill()
                 process.wait()
+
+    def test_nonfinite_and_boolean_deadlines_fail_without_journal_mutation(self):
+        process = self.spawn()
+        try:
+            journal = FakeJournal()
+            worker = OwnedFilmingWorker(process)
+            for invalid in (float("nan"), float("inf"), -float("inf"), True, False):
+                with self.subTest(timeout=repr(invalid)):
+                    with self.assertRaises(ValueError):
+                        worker.interrupt_journal(
+                            journal, "project", "take",
+                            expected_updated_at="observed", timeout=invalid)
+            self.assertEqual(journal.calls, [])
+            self.assertIsNone(process.poll())
+        finally:
+            process.kill()
+            process.wait()
+
+    def test_already_exited_child_is_reaped_once(self):
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import sys; sys.exit(7)"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        process.wait(timeout=5)
+        worker = OwnedFilmingWorker(process)
+        receipt = worker.stop_and_verify(timeout=1)
+        self.assertTrue(receipt.exited)
+        self.assertEqual(receipt.returncode, 7)
+        with self.assertRaises(RuntimeError):
+            worker.stop_and_verify(timeout=1)
 
     def test_pid_alone_cannot_be_admitted(self):
         with self.assertRaises(TypeError):
