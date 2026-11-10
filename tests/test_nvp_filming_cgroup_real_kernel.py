@@ -27,8 +27,13 @@ class RealDelegatedCgroupAcceptance(unittest.TestCase):
             "subprocess.Popen([sys.executable,'-c','import time;time.sleep(120)']);"
             "time.sleep(120)"
         )
+        # sys.executable is frequently a symlink (venv, alternatives). The
+        # production launcher deliberately refuses symlinked executables.
+        # Resolve to the actual interpreter for this real-kernel acceptance.
+        interpreter = str(pathlib.Path(sys.executable).resolve(strict=True))
+        self.assertTrue(os.access(interpreter, os.X_OK))
         group, worker = create_private_group_and_launch(
-            root, sys.executable, [sys.executable, "-c", code]
+            root, interpreter, [interpreter, "-c", code]
         )
         try:
             deadline = time.monotonic() + 10
