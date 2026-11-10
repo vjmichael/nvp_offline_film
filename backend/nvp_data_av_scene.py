@@ -22,6 +22,8 @@ from backend.nvp_data_av_source import (
 from backend.nvp_film_index import FilmIndex,_id,_require_pid,_sha
 from backend.nvp_openusd_take import OpenUSDTakeCapture,FORMAT as TAKE_FORMAT
 from backend.nvp_openusd_time_state import OpenUSDTimeState
+from backend.nvp_original_clock_binding import verified_original_clock
+from backend.nvp_independent_device_sync import interpolated_window
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND,_int
 
 FORMAT="nvp.data_av.native_scene_window.v1"
@@ -168,18 +170,37 @@ class FrozenSceneAV:
                 (event["start_tick"]+TICKS_PER_SAMPLE-1)//TICKS_PER_SAMPLE)
             last_active=min(first_sample+count,
                 (event["end_tick"]+TICKS_PER_SAMPLE-1)//TICKS_PER_SAMPLE)
-            # Source duration may be shorter than the authored event.
-            first_local=(first_active*TICKS_PER_SAMPLE-event["start_tick"])
-            first_src=max(0,first_local//TICKS_PER_SAMPLE)
-            last_active=min(last_active,first_active+
-                            max(0,source_count-first_src))
-            n=last_active-first_active
-            if n<=0:
-                continue
-            raw=self.sound.read(
-                self.project_id,event["source_id"],
-                event["source_revision"],first_src,n)
-            samples=struct.unpack("<"+str(n)+"h",raw)
+            clock=verified_original_clock(
+                self.index,self.project_id,event["source_id"],
+                event["start_tick"],event["end_tick"],
+                event["payload"].get("source_sync"),
+                event["payload"].get("clock_evidence"),
+                source_sample_count=source_count)
+            if clock is None:
+                # Legacy single-device original PCM preserves exact 48-kHz
+                # source indices; never infer independent clock metadata.
+                first_local=(first_active*TICKS_PER_SAMPLE-event["start_tick"])
+                first_src=max(0,first_local//TICKS_PER_SAMPLE)
+                last_active=min(last_active,first_active+
+                                max(0,source_count-first_src))
+                n=last_active-first_active
+                if n<=0:continue
+                raw=self.sound.read(
+                    self.project_id,event["source_id"],
+                    event["source_revision"],first_src,n)
+                samples=struct.unpack("<"+str(n)+"h",raw)
+            else:
+                # Independently clocked audio is resampled ONLY into the
+                # temporary bounded device window from SHA-verified original
+                # samples; the frozen PCM source remains byte-identical.
+                n=last_active-first_active
+                if n<=0:continue
+                samples=interpolated_window(
+                    lambda first,count:self.sound.read(
+                        self.project_id,event["source_id"],
+                        event["source_revision"],first,count),
+                    source_count,clock,first_active*TICKS_PER_SAMPLE,n,
+                    ticks_per_output_sample=TICKS_PER_SAMPLE)
             for i,val in enumerate(samples):
                 cursor=first_active+i-first_sample
                 # Interpolate native USD emitter/listener positions across

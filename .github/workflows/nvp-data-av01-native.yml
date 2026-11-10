@@ -84,10 +84,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_capture_recovery.py backend/nvp_native_live_take.py backend/nvp_independent_device_sync.py backend/nvp_native_independent_take.py backend/nvp_native_capture_desktop.py
+          python -m compileall -q backend/nvp_capture_recovery.py backend/nvp_native_live_take.py backend/nvp_independent_device_sync.py backend/nvp_native_independent_take.py backend/nvp_native_capture_desktop.py backend/nvp_original_clock_binding.py backend/nvp_data_first_filming.py backend/nvp_data_av_scene.py
           python -m unittest discover -s tests -p 'test_nvp_native_live_take.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_independent_sync.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02b_native_capture.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_plan02b_original_clock_binding.py' -v
       - name: Existing frozen source/camera/provenance regressions
         shell: bash
         run: |

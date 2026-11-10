@@ -24,12 +24,16 @@ from backend.nvp_film_index import FilmIndex,_id,_require_pid
 from backend.nvp_filming_publication_journal import FilmingPublicationJournal
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
 from backend.nvp_openusd_take import OpenUSDTakeCapture,MAX_CHECKPOINTS
+from backend.nvp_original_clock_binding import verified_original_clock
 from backend.nvp_temporal_ledger import (
     TemporalLedger,TICKS_PER_SECOND,_int)
 
 FORMAT="nvp.data_av.filming_capture.v1"
 SAMPLE_TICK=TICKS_PER_SECOND//SAMPLE_RATE
 MAX_AUDIO_EVENTS=32
+BASE_RECORDING_FIELDS=frozenset(("event_id","event_kind","subject_id",
+    "source_id","usd_prim_path","start_tick","end_tick","gain","pcm_chunks"))
+CLOCKED_RECORDING_FIELDS=BASE_RECORDING_FIELDS|{"source_sync","clock_evidence"}
 
 
 class NativeSceneSoundCapture:
@@ -108,10 +112,7 @@ class NativeSceneSoundCapture:
         # An earlier recorder callback can mutate a later caller-owned entry;
         # copying only the current entry inside the loop is too late.
         for entry in recordings:
-            if type(entry) is not dict or set(entry)!={
-                "event_id","event_kind","subject_id","source_id",
-                "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
-            }:
+            if type(entry) is not dict or set(entry) not in (BASE_RECORDING_FIELDS,CLOCKED_RECORDING_FIELDS):
                 raise ValueError("Recorded sound requires typed source/evidence/Film Time")
         # Validate the entire batch before consuming even the first one-shot
         # recording iterator. A later duplicate, occupied source identity,
@@ -147,16 +148,17 @@ class NativeSceneSoundCapture:
                     boundaries.add(tick)
             if len(boundaries)>MAX_CHECKPOINTS:
                 raise ValueError("Filming event boundaries exceed frozen Take checkpoint capacity")
+            if "source_sync" in entry:
+                verified_original_clock(
+                    self.index,project_id,sid,start,end,
+                    entry["source_sync"],entry["clock_evidence"])
             preflight_events.add(eid)
             preflight_sources.add(sid)
         frozen_recordings=[dict(entry) for entry in recordings]
         publication_started=False
         try:
             for entry in frozen_recordings:
-                if type(entry) is not dict or set(entry)!={
-                    "event_id","event_kind","subject_id","source_id",
-                    "usd_prim_path","start_tick","end_tick","gain","pcm_chunks"
-                }:
+                if type(entry) is not dict or set(entry) not in (BASE_RECORDING_FIELDS,CLOCKED_RECORDING_FIELDS):
                     raise ValueError("Recorded sound requires typed source/evidence/Film Time")
                 # Snapshot caller-owned event metadata before advancing a streaming
                 # PCM iterator, which may execute callbacks that mutate its dict.
@@ -202,6 +204,7 @@ class NativeSceneSoundCapture:
                 samples=0
                 count=0
                 digests=[]
+                original_digest=hashlib.sha256()
                 for chunk in chunks:
                     if (type(chunk) is not bytes or
                         not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2 or
@@ -214,9 +217,17 @@ class NativeSceneSoundCapture:
                     if spool.write(header)!=len(header) or spool.write(chunk)!=len(chunk):
                         raise OSError("Incomplete captured PCM spool write")
                     digests.append(hashlib.sha256(chunk).digest())
+                    original_digest.update(chunk)
                     samples+=len(chunk)//2
                     count+=1
-                required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
+                clock=(verified_original_clock(
+                    self.index,project_id,sid,start,end,
+                    entry.get("source_sync"),entry.get("clock_evidence"),
+                    source_sample_count=samples,
+                    original_pcm_sha256=original_digest.hexdigest())
+                    if "source_sync" in entry else None)
+                required=(clock["source_sample_count"] if clock is not None
+                          else (end-start+SAMPLE_TICK-1)//SAMPLE_TICK)
                 if not count or samples<required:
                     raise ValueError("Captured PCM is shorter than its Film Time event")
                 # Flush buffered data before declaring the recording validated.
@@ -310,9 +321,23 @@ class NativeSceneSoundCapture:
                 source_record=self.index.read_revision(
                     project_id,audio_id,receipt["revision"])
                 available=source_record["data"]["sample_count"]
-                required=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
+                clock=(verified_original_clock(
+                    self.index,project_id,audio_id,start,end,
+                    entry.get("source_sync"),entry.get("clock_evidence"),
+                    source_sample_count=available)
+                    if "source_sync" in entry else None)
+                required=(clock["source_sample_count"] if clock is not None
+                          else (end-start+SAMPLE_TICK-1)//SAMPLE_TICK)
                 if available<required:
                     raise RuntimeError("Actual recorded source contains fewer samples than its event")
+                payload={"format":FORMAT,"usd_prim_path":path,
+                         "gain":float(gain),
+                         "source_sample_rate":SAMPLE_RATE,
+                         "original_recording":True,
+                         "acoustic_mix_frozen":False}
+                if clock is not None:
+                    payload["source_sync"]=clock
+                    payload["clock_evidence"]=entry["clock_evidence"]
                 events.append({
                     "event_id":eid,
                     "event_kind":entry["event_kind"],
@@ -320,12 +345,7 @@ class NativeSceneSoundCapture:
                     "start_tick":start,"end_tick":end,
                     "source_id":audio_id,
                     "source_revision":receipt["revision"],
-                    "payload":{"format":FORMAT,
-                               "usd_prim_path":path,
-                               "gain":float(gain),
-                               "source_sample_rate":SAMPLE_RATE,
-                               "original_recording":True,
-                               "acoustic_mix_frozen":False}})
+                    "payload":payload})
             combined=self.timeline.publish(
                 project_id,sound_timeline_id,events,
                 duration_tick=duration,expected_revision=0)
