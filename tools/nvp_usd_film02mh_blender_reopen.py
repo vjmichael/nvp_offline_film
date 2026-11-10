@@ -65,7 +65,7 @@ def main():
         scene.get("nvp_original_camera_shot_sha256")!=district[
             "source_camera_shot_sha256"] or
         scene.get("nvp_source_usd_sha256")!=district["derived_usd_sha256"] or
-        scene.get("nvp_original_film_tick")!=district["source_film_tick"] or
+        scene.get("nvp_original_film_tick")!=str(district["source_film_tick"]) or
         scene.camera is None or scene.camera.type!="CAMERA"):
         raise RuntimeError("Original source Take/camera missing in saved Cycles scene")
     imported=list(scene.objects)

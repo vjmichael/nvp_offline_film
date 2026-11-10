@@ -234,7 +234,8 @@ def run():
     scene["nvp_original_world_sha256"]=source["original_world_sha256"]
     scene["nvp_original_camera_shot_sha256"]=source["original_camera_shot_sha256"]
     scene["nvp_source_usd_sha256"]=source["source_usd_sha256"]
-    scene["nvp_original_film_tick"]=source["original_film_tick"]
+    # Keep the exact Film Time as decimal text in derived .blend metadata.
+    scene["nvp_original_film_tick"]=str(source["original_film_tick"])
     scene["nvp_source_actors_json"]=json.dumps(source["actor_sources"],sort_keys=True)
     scene["nvp_original_camera_path"]=source["original_camera_path"]
     scene["nvp_cam_fx05_director_camera_path"]=rail["director_camera_path"]
