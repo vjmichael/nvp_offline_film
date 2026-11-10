@@ -81,6 +81,34 @@ def save_screenplay(project_id: str, payload: ScreenplayUpdate):
     return run(lambda: studio.save_screenplay(project_id, payload.screenplay, payload.expected_revision))
 
 
+@app.get("/api/projects/{project_id}/scene-library")
+def scene_library(project_id: str):
+    # A source-grounded read-only inventory; unlinked screenplay cues are
+    # not silently promoted to cast, locations or prop assets.
+    from backend.nvp_scene_library import SceneLibrary
+    return run(lambda: SceneLibrary(studio).snapshot(project_id))
+
+
+class GenerateSceneBreakdown(BaseModel):
+    model_id: str = Field(min_length=1, max_length=256)
+    model_port: int | None = Field(default=None, ge=1024, le=65535)
+    expected_revision: int = Field(ge=0)
+
+
+@app.post("/api/projects/{project_id}/scenes/{scene_id}/ai-breakdown")
+def propose_scene_breakdown(project_id: str, scene_id: str,
+                            payload: GenerateSceneBreakdown):
+    # Proposals return read-only and are never accepted by the model. Only
+    # already-authorized Story Bible/editor tools may write source assets.
+    from backend.nvp_scene_library import SceneLibrary
+    try:
+        return run(lambda: SceneLibrary(studio).propose_ai_breakdown(
+            project_id, scene_id, payload.expected_revision,
+            writer=writer_for(payload.model_id, payload.model_port)))
+    except LocalModelUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
 @app.post("/api/projects/{project_id}/scenes/{scene_id}/shot-plan")
 def plan_scene(project_id: str, scene_id: str):
     return run(lambda: studio.plan_scene(project_id, scene_id))
