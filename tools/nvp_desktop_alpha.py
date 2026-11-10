@@ -629,6 +629,8 @@ def main(argv=None):
                         help="Exact local source render manifest; only for trusted PLAN-03 child")
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
+    parser.add_argument("--smoke-plan03-render",action="store_true",
+                        help="Real installed Windows Job Object original OpenUSD render worker and source audit")
     parser.add_argument("--smoke-consoleless",action="store_true",
                         help="Actually start packaged Uvicorn/React/SQLite without stdout or stderr")
     parser.add_argument("--smoke-create",action="store_true",
@@ -663,7 +665,7 @@ def main(argv=None):
         return render_main(["--manifest",args.manifest])
     if args.manifest:
         parser.error("Manifest is allowed only for the trusted native child")
-    if sum((args.smoke,args.smoke_consoleless,args.smoke_create,args.smoke_reopen,
+    if sum((args.smoke,args.smoke_plan03_render,args.smoke_consoleless,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_data_av,args.smoke_plan02d,
             args.smoke_plan02d_restart_create,args.smoke_plan02d_restart_reopen,
             args.smoke_plan02e,args.smoke_plan02e_restart_create,
@@ -673,6 +675,13 @@ def main(argv=None):
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
+    if args.smoke_plan03_render:
+        from tools.nvp_plan03_original_render_witness import run as render_witness
+        report=(Path(os.environ.get("RUNNER_TEMP",tempfile.gettempdir()))/
+                "nvp-plan03-installed-real-source-render.json")
+        render_witness(report)
+        _smoke_checkpoint("plan03_installed_actual_original_render_and_kernel_custody_pass")
+        return 0
     if args.smoke_consoleless:
         # Simulate the actual PyInstaller --windowed startup contract,
         # regardless of whether a GitHub-hosted runner provides inherited
