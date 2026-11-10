@@ -1,5 +1,8 @@
 name: NVP CAM-FX-03/04 Source Actor Framing, 3D Gizmos, Durable Camera Drafts and AI Group
 
+# FOURTH final-source gate: assert ORIGINAL scene Take hashes against
+# ORIGINAL scene IDs (not distinct composed 01E world Take IDs).
+# Full Windows/Linux/React/installed source acceptance; no per-file CI.
 # THIRD intentional grouped gate: inline exact real ActorID grammar and
 # match current fail-closed AI suggestion receipt wording in React tests.
 # Earlier groups are complete, without stacking native jobs.
