@@ -456,3 +456,26 @@ At prior exact PR head `2f93aba81003fa79dc55fdcfeef1d8d0d058b1ee`, DATA-AV run [
 ### 2026-11-09 DA-03 timeout retry custody correction (not native accepted)
 
 Production commit `eb9961c` records that a termination request was already issued before a bounded wait times out, so retrying the same host-owned `Popen` handle does not send a second graceful termination signal after forced-kill escalation. Regression commit `9037169` simulates two timed-out waits on a real subprocess and verifies retry/exit attestation with one graceful signal. This preserves fail-closed behavior: no journal interruption follows an unverified exit. **Source/test committed; exact-head Windows/Linux and installed NVP.exe results UNVERIFIED. DA-03 PARTIAL; DA-00–DA-07 acceptance OPEN.** This remains direct-child-only custody, not OS-owned process-tree containment, restart attestation or filming-launcher integration. No FFmpeg fallback or legacy proxy CI change.
+
+
+## Explicit downstream DCI and AI Skin register — 2026-11-09
+
+**Do not lose these two already approved workstreams.**
+[DCI/SMPTE theatrical delivery and HSURF register](NVP_DOWNSTREAM_DCI_HSURF_REGISTER.md) is the
+authoritative cross-workstream placement note: WO3 native DCP/Bv2.1
+package/codec/PCM, WO4 color/sound mastering, WO5 independent cinema
+ingest/screening. The current DCI DCSS v1.5.1 and CTP v1.6.0 references
+are tracked for package requirements (not a claim of NVP equipment
+certification). Native data-first output is required; no FFmpeg.
+
+**AI Skin / HSURF-00..10** is **deferred until the entire USD-FILM family is
+finished**, per creator direction. HYBRID-RENDER-00..05 supplies optional
+approved AI appearance, never original ActorID/rig/material/audio authority.
+Do not move HSURF in front of PLAN-02-D3/D4/D5 or infer photoreal actor
+acceptance from the current procedural CPU raster.
+
+**PLAN-02-D source in progress:** see
+[exact-source worker and raster task ledger](NVP_PLAN02D_SOURCE_WINDOW_QUEUE.md).
+D3 actual OS custody, D4 real derived PNG/rail presentation, D5 grouped
+installed Windows/Linux acceptance remain independent gates until genuine
+native evidence on the integrated exact source head.
