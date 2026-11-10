@@ -155,6 +155,9 @@ try {
     if (-not $windowProcess.HasExited) {
       throw 'NVP interactive playback window did not close normally'
     }
+    # Reopen the *same* test project in a new installed process. Verify the
+    # original recorded PCM and frozen USD hashes survived real GUI playback.
+    Invoke-Checked $installedExe '--plan02e-verify-physical-playtest' 180 'independent-30s-original-source-post-playback-check'
   }
   Uninstall-Nvp
   $report.second_uninstall_passed = $true
