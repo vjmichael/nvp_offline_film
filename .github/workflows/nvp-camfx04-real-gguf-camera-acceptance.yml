@@ -1,5 +1,7 @@
 name: NVP CAM-FX-04 Real Local GGUF Source-Grounded Camera Proposals
 
+# Bounded genuine GGUF source-clock retries: rejected model text is never an
+# accepted camera rail and cannot authorize any native operation.
 # Separate authentic GGUF model inference: the CAM-FX-05 genuine Blender/Cycles
 # scene/camera gate passed at 7b4c36839daa3cb801399ec3f63ce3c101dc16f6
 # (run 42747063991). Trigger only this ONE model group-end source gate;
