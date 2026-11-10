@@ -190,6 +190,15 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'dist/NVP-Alpha-Setup.exe')) {
             throw 'Native NSIS packaging failed'
           }
+      - name: Record SHA-256 of unaccepted Windows candidate for physical GUI gate
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath 'dist/NVP-Alpha-Setup.exe' -PathType Leaf)) {
+            throw 'Cannot record candidate checksum without genuine NSIS output'
+          }
+          $digest=(Get-FileHash -LiteralPath 'dist/NVP-Alpha-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath 'dist/NVP-PLAN02D-CANDIDATE-SHA256.txt' -Value "$digest  NVP-Alpha-Setup.exe"
+          Write-Output "NVP_PLAN02D_UNACCEPTED_CANDIDATE_SHA256=$digest"
       - name: Actual installed NVP.exe exact source + WebView2, bounded stage receipts
         shell: pwsh
         run: |
@@ -336,6 +345,17 @@ jobs:
           path: ${{ runner.temp }}/nvp-plan02d-installed-diagnostic.txt
           if-no-files-found: warn
           retention-days: 14
+      # Physical desktop testing needs the exact installer even while
+      # Windows WebView2 CI is red. Never label this an accepted release.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-plan02d-NOT-RELEASED-physical-test-candidate
+          path: |
+            dist/NVP-Alpha-Setup.exe
+            dist/NVP-PLAN02D-CANDIDATE-SHA256.txt
+          if-no-files-found: warn
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: success()
         with:
