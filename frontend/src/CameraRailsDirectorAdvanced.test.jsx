@@ -224,7 +224,7 @@ describe('CAM-FX-03/04 installed director native source/AI recovery',()=>{
       model_id:'LocalGGUFForCamera'});
     await waitFor(()=>expect(host.camfx04_candidate_status).toHaveBeenCalled(),{
       timeout:2500});
-    await screen.findByText(/Local model suggestion saved as editable UNAPPROVED rail version/);
+    await screen.findByText(/source-verified local model suggestion saved as editable UNAPPROVED rail version/);
     expect(host.camfx03_draft_publish).not.toHaveBeenCalled();
     expect(host.camfx02_publish).not.toHaveBeenCalled();
   });

@@ -18,7 +18,7 @@ from backend.nvp_cam_fx01_camera_rails import (
     normalize_rail,evaluate_rail,_hash)
 from backend.nvp_cam_fx02_usd_camera_layer import camera_matrix_rows
 from backend.nvp_usd_film01_world import OpenUSDWorldComposer
-from backend.nvp_usd_film01e_world_take import (OpenUSDWorldTakeCapture, _story_actor_id)
+from backend.nvp_usd_film01e_world_take import OpenUSDWorldTakeCapture
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND as T
 
 FORMAT="nvp.cam_fx03.source_grounded_actor_framing_and_occlusion.v1"
@@ -166,10 +166,9 @@ def guided_camera_scene(index:FilmIndex,pid,rail_spec,*,
         # StoryBible ActorIDs are exact lowercase 32-hex UUID identities.
         # The FilmIndex _id() grammar is for distinct authored object IDs
         # and wrongly rejects canonical actors beginning with a digit.
-        try:
-            _story_actor_id(actor_id)
-        except ValueError as exc:
-            raise PermissionError("Invalid original source StoryBible ActorID") from exc
+        if (type(actor_id) is not str or len(actor_id)!=32 or
+            any(char not in "0123456789abcdef" for char in actor_id)):
+            raise PermissionError("Invalid exact source StoryBible ActorID")
     if district_binding_id is not None:
         _id(district_binding_id,"approved original district shot")
     if type(rail_spec) is not dict:
