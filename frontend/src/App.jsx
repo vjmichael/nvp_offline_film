@@ -762,8 +762,10 @@ export default function App() {
             </div>}
           </> : <p>Choose a scene on the left.</p>}</section>
         </div>}
-        {tab === 'stage' && <SceneStagePanel project={project} api={api} action={action} busy={busy} />}
-        {tab === 'direct' && <ProductionAuthoringPanel project={project} api={api} action={action} busy={busy} />}
+        {tab === 'stage' && <SceneStagePanel project={project} api={api} action={action} busy={busy}
+          selectedSceneId={selectedScene||''} />}
+        {tab === 'direct' && <ProductionAuthoringPanel project={project} api={api} action={action} busy={busy}
+          selectedSceneId={selectedScene||''} />}
         {tab === 'take' && <ExactFilmTimeShotPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'rig' && <MotionRigPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'skin' && <SkinningPanel project={project} api={api} action={action} busy={busy} />}
