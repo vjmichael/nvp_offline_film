@@ -18,6 +18,27 @@ class CgroupLaunchContractTests(unittest.TestCase):
                     launch_attached_worker(Path(tmp), missing, [missing])
                 spawn.assert_not_called()
 
+    @unittest.skipUnless(os.name == "posix", "POSIX symlink semantics required")
+    def test_host_refuses_symlinked_worker_and_group_before_spawning(self):
+        from backend.nvp_filming_cgroup_launch import launch_attached_worker
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worker = root / "worker"
+            worker.write_text("#!/bin/sh\\nexit 0\\n")
+            worker.chmod(0o700)
+            linked_worker = root / "worker-link"
+            linked_worker.symlink_to(worker)
+            group = root / "group"
+            group.mkdir()
+            linked_group = root / "group-link"
+            linked_group.symlink_to(group, target_is_directory=True)
+            with patch("subprocess.Popen") as spawn:
+                with self.assertRaisesRegex(ValueError, "unavailable"):
+                    launch_attached_worker(group, str(linked_worker), [str(linked_worker)])
+                with self.assertRaisesRegex(ValueError, "symlink"):
+                    launch_attached_worker(linked_group, str(worker), [str(worker)])
+                spawn.assert_not_called()
+
     def test_refuses_non_absolute_executable(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):
