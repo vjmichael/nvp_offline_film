@@ -34,6 +34,7 @@ EXPECTED_JS_API = frozenset({
     "plan02d_sample_at", "plan02d_enqueue", "plan02d_inspect",
     "plan02d_review", "plan02d_raster_preview", "plan02d_raster_publish",
     "plan03_render_original_once",
+    "plan04_render_cycles_once",
 })
 
 
@@ -123,6 +124,9 @@ class FlatWebView2APIContractTests(unittest.TestCase):
                 "tick":0,
                 "worker_command":"cmd.exe"
             })
+        self.assertEqual(self.window.prompts,0)
+        with self.assertRaises(PermissionError):
+            self.api.plan04_render_cycles_once({})
         self.assertEqual(self.window.prompts,0)
 
     def test_bridge_closure_revokes_browser_ipc(self):
