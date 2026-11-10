@@ -89,6 +89,21 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
             self.assertEqual((group / "cgroup.kill").read_text(), "")
             self.assertFalse(worker._consumed)
 
+    def test_control_symlink_cannot_redirect_kernel_kill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            group = root / "owned"
+            group.mkdir()
+            outside = root / "outside"
+            outside.write_text("untouched")
+            (group / "cgroup.kill").symlink_to(outside)
+            (group / "cgroup.events").write_text("populated 0\\n")
+            worker = self._owned(group)
+            with self.assertRaises(OSError):
+                worker.stop_and_verify(timeout=1)
+            self.assertEqual(outside.read_text(), "untouched")
+            self.assertFalse(worker._consumed)
+
     def test_still_populated_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
