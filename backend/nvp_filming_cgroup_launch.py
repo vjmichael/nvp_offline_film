@@ -118,6 +118,16 @@ def create_private_group_and_launch(
         os.mkdir(name, mode=0o700, dir_fd=directory)
         group = root / name
         try:
+            # A successful mkdir is not evidence of a usable custody leaf.
+            # Validate all kernel controls required for attach and subsequent
+            # independent kill/empty-group observation before spawning.
+            leaf = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            try:
+                for control in ("cgroup.procs", "cgroup.kill", "cgroup.events"):
+                    control_fd = os.open(control, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=leaf)
+                    os.close(control_fd)
+            finally:
+                os.close(leaf)
             child = launch_attached_worker(group, executable, argv)
         except BaseException:
             # Never remove a group that might contain a running process.
