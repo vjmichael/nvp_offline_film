@@ -32,6 +32,8 @@ def attach_then_exec(group: Path, executable: str, argv: list[str]) -> None:
     if not argv or argv[0] != executable:
         raise ValueError("argv[0] must match the executable")
     # No shell, no PID sourced from a journal, no FFmpeg fallback.
+    if Path(executable).is_symlink():
+        raise ValueError("Trusted worker executable must not be a symlink")
     directory = os.open(group, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         fd = os.open("cgroup.procs", os.O_WRONLY | os.O_NOFOLLOW, dir_fd=directory)
@@ -69,10 +71,10 @@ def launch_attached_worker(group: Path, executable: str, argv: list[str]):
     # Reject missing/non-executable worker paths before spawning the bootstrap.
     # The child still enforces attach-before-exec; this is not an exec receipt.
     worker = Path(executable)
-    if not worker.is_file() or not os.access(worker, os.X_OK):
+    if worker.is_symlink() or not worker.is_file() or not os.access(worker, os.X_OK):
         raise ValueError("Trusted worker executable is unavailable or not executable")
-    if not Path(group).is_absolute():
-        raise ValueError("Host-owned cgroup path must be absolute")
+    if not Path(group).is_absolute() or Path(group).is_symlink():
+        raise ValueError("Host-owned cgroup path must be absolute and not a symlink")
     # The Python child invokes the same fail-closed attach_then_exec gate.
     # No preexec_fn (unsafe in a threaded desktop host), shell or fallback.
     bootstrap = (
