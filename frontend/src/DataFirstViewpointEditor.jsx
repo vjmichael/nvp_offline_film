@@ -32,6 +32,11 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
   const [groupSize,setGroupSize]=useState('auto'),[parallel,setParallel]=useState('auto');
   const [estimate,setEstimate]=useState(null),[ticket,setTicket]=useState(null);
   const [renderStatus,setRenderStatus]=useState(null);
+  const [sourceQueue,setSourceQueue]=useState(null);
+  const [batchPreview,setBatchPreview]=useState(null);
+  const [batchTicket,setBatchTicket]=useState(null);
+  const [batchProgress,setBatchProgress]=useState(null);
+  const [filmReceipt,setFilmReceipt]=useState(null);
   const [renderImage,setRenderImage]=useState(null);
   const [error,setError]=useState(''),[notice,setNotice]=useState('');
   const undo=useRef([]),generation=useRef(0);
@@ -43,6 +48,10 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
   const nativeReady=Boolean(native)&&[
     'film01r_create_bank','film01r_revise_bank','film01r_save_edit',
     'film01r_render_next','film01r_render_poll'].every(k=>typeof native[k]==='function');
+  const nativeBatchReady=nativeReady&&[
+    'film01t_preview_queue','film01t_enqueue','film01t_status',
+    'film01t_advance','film01t_poll','film01t_conform'].every(
+      key=>typeof native[key]==='function');
 
   const reload=useCallback(async()=>{
     const record=await api('/projects/'+encodeURIComponent(projectId)+'/film/data-first-viewpoints');
@@ -72,6 +81,8 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
     const first=cameras[0]?.camera_id||'';
     setCameraId(first);setFrame(0);setSnapshot(null);setPlaying(false);
     undo.current=[];setTicket(null);setRenderStatus(null);setRenderImage(null);setEstimate(null);
+    setSourceQueue(null);setBatchPreview(null);setBatchTicket(null);
+    setBatchProgress(null);setFilmReceipt(null);
     const prior=catalog?.edits?.find(x=>x.camera_bank_id===bankId&&
       x.camera_bank_revision===bank?.revision);
     setSavedEdit(prior||null);
@@ -146,6 +157,7 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
       throw Error('Cuts must cover all 720 original frames with valid cameras');
     undo.current=[...undo.current.slice(-24),cuts.map(x=>({...x}))];
     setCuts(next);setSavedEdit(null);setEstimate(null);setRenderImage(null);
+    setSourceQueue(null);setBatchPreview(null);setBatchProgress(null);setFilmReceipt(null);
   };
   const split=()=>{
     try{
@@ -183,7 +195,7 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
       throw Error('Original film edit has gaps or invalid source cameras');
     const old=catalog.edits.find(x=>x.edit_id===editId);
     const result=await native.film01r_save_edit({
-      project_id:projectId,edit_id,expected_revision:old?.revision||0,
+      project_id:projectId,edit_id:editId,expected_revision:old?.revision||0,
       camera_bank_id:bankId,camera_bank_revision:bank.revision,cuts});
     if(result?.format!=='nvp.film01r.authenticated_source_edit_saved.v1'||
        result.edit_id!==editId||result.original_performance_modified!==false)
@@ -239,6 +251,104 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
       throw Error('NVP source-independent batch estimate failed');
     setEstimate(report);
   });
+  const queueRequest=()=>({
+    project_id:projectId,
+    edit_id:savedEdit.edit_id,revision:savedEdit.revision,
+    render_quality:quality,
+    shots_per_batch:groupSize==='auto'?null:Number(groupSize),
+    parallel_worker_limit:parallel==='auto'?null:Number(parallel),
+  });
+  const getQueue=()=>doNative(async()=>{
+    const report=await native.film01t_status({
+      project_id:projectId,edit_id:savedEdit.edit_id,
+      revision:savedEdit.revision,render_quality:quality});
+    if(report?.format!=='nvp.usd_film01t.original_selected_durable_queue.v1'||
+       report.source_edit_sha256!==savedEdit.document_sha256)
+      throw Error('Persistent render queue does not match saved source edit');
+    setSourceQueue(report);
+  });
+  const previewRealQueue=()=>doNative(async()=>{
+    const report=await native.film01t_preview_queue(queueRequest());
+    if(report?.format!=='nvp.film01t.original_source_batch_preview.v1'||
+       report.source_edit_sha256!==savedEdit.document_sha256||
+       report.selected_final_source_frames!==720||
+       report.total_real_blender_frames_started!==0)
+      throw Error('Native original queue preview returned invalid source identity');
+    setBatchPreview(report);
+  });
+  const createRealQueue=()=>doNative(async()=>{
+    const report=await native.film01t_enqueue(queueRequest());
+    if(report?.format!=='nvp.film01t.native_queue_enqueued.v1'||
+       report.source_edit_sha256!==savedEdit.document_sha256||
+       report.native_workers_started!==0)
+      throw Error('Native original shot queue was not independently admitted');
+    const reopened=await native.film01t_status({
+      project_id:projectId,edit_id:savedEdit.edit_id,
+      revision:savedEdit.revision,render_quality:quality});
+    if(reopened?.format!=='nvp.usd_film01t.original_selected_durable_queue.v1')
+      throw Error('Native original source queue not durable');
+    setSourceQueue(reopened);
+    setNotice('Source-locked 90-chunk queue durably saved; no frame was rendered by enqueue.');
+  });
+  const runActualGroup=()=>doNative(async()=>{
+    const report=await native.film01t_advance({
+      project_id:projectId,edit_id:savedEdit.edit_id,
+      revision:savedEdit.revision,render_quality:quality,max_tickets:null});
+    if(report?.format==='nvp.film01t.group_permission_denied.v1'||
+       (report?.format==='nvp.usd_film01t.original_selected_durable_queue.v1'&&
+        report.source_edit_sha256===savedEdit.document_sha256)){
+      // A low-memory PC may need to defer a group. This is a measured
+      // resource wait, not a render failure or invented completion.
+      setBatchTicket(null);setBatchProgress(report);return;
+    }
+    if(report?.format!=='nvp.film01t.native_group_ticket.v1'||
+       report.source_edit_sha256!==savedEdit.document_sha256)
+      throw Error('No current exact OS-approved source group');
+    setBatchTicket(report.ticket_id);
+    setBatchProgress(report);
+  });
+  const conformActualFilm=()=>doNative(async()=>{
+    const report=await native.film01t_conform({
+      project_id:projectId,edit_id:savedEdit.edit_id,
+      revision:savedEdit.revision,render_quality:quality});
+    if(report?.format!=='nvp.film01t.native_verified_original_film.v1'||
+       report.source_edit_sha256!==savedEdit.document_sha256||
+       report.verified_selected_frames!==720||
+       report.verified_chunk_count!==90||
+       report.original_pcm_verified!==true)
+      throw Error('Native original picture/audio final conform was not verified');
+    setFilmReceipt(report);
+    setNotice('720 original selected Cycles frames and one 48 kHz PCM soundtrack independently verified. Creative review remains open.');
+  });
+  useEffect(()=>{
+    if(!batchTicket||!native)return;
+    let alive=true,pending=false;
+    const poll=async()=>{
+      if(!alive||pending)return;
+      pending=true;
+      try{
+        const update=await native.film01t_poll(batchTicket);
+        if(!alive)return;
+        if(update?.format!=='nvp.film01t.native_group_progress.v1'||
+           update.ticket_id!==batchTicket)
+          throw Error('Original source queue worker ticket no longer verified');
+        setBatchProgress(update);
+        if(update.state!=='NATIVE_BATCH_IN_PROGRESS'){
+          setBatchTicket(null);
+          if(update.queue&&savedEdit){
+            const fresh=await native.film01t_status({
+              project_id:projectId,edit_id:savedEdit.edit_id,
+              revision:savedEdit.revision,render_quality:quality});
+            if(alive&&fresh?.source_edit_sha256===savedEdit.document_sha256)
+              setSourceQueue(fresh);
+          }
+        }
+      }catch(e){if(alive){setError(e.message);setBatchTicket(null);}}
+      finally{pending=false;}
+    };
+    poll();const timer=setInterval(poll,1300);
+    return ()=>{alive=false;clearInterval(timer);};
+  },[batchTicket,native,savedEdit?.edit_id,savedEdit?.revision,quality]);
   const renderNext=()=>doNative(async()=>{
     const receipt=await native.film01r_render_next({
       project_id:projectId,edit_id:savedEdit.edit_id,
@@ -347,7 +457,9 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
       <h3>Render only what the audience sees</h3>
       <div className="actions">
         <label>Reviewed Cycles quality<select aria-label="Original film render quality"
-          value={quality} onChange={e=>setQuality(e.target.value)}>
+          value={quality} disabled={!!batchTicket}
+          onChange={e=>{setQuality(e.target.value);
+            setSourceQueue(null);setBatchPreview(null);setFilmReceipt(null);}}> 
           <option value="technical_smoke">320×180 / 8 · source smoke</option>
           <option value="draft_360p">640×360 / 16 · draft</option>
           <option value="final_720p">1280×720 / 48 · candidate final</option>
@@ -389,10 +501,60 @@ export default function DataFirstViewpointEditor({projectId,api,nativeBridge=nul
           renderStatus.native_result.start_frame+'–'+
           (renderStatus.native_result.start_frame+7)+'.'}
         {renderStatus.reason||''}</p>}
-      <p className="fineprint">The installed NVP host authorizes each exact
-        original-source Blender job. Runtime currently executes one chunk per
-        approval. Estimated batches are not executable permissions. Full
-        720-frame picture/audio conform and director review remain open.</p>
+      <div aria-label="Durable source-selected film production queue">
+        <h4>Durable 30-second original film</h4>
+        <p className="fineprint">
+          Actual 01S queue: 90 original USD source-evaluation tickets,
+          then 90 verified eight-frame Cycles jobs. Approved shot groups
+          run serially on low-power hardware, each with fresh host-held
+          scoped operation grants and independent results.
+        </p>
+        <div className="actions">
+          <button disabled={!nativeBatchReady||!savedEdit||busy||!!batchTicket}
+            onClick={previewRealQueue}>Preview exact native queue</button>
+          <button disabled={!nativeBatchReady||!savedEdit||busy||!!batchTicket}
+            onClick={createRealQueue}>OS approve and enqueue 30s film</button>
+          <button disabled={!nativeBatchReady||!savedEdit||busy||!!batchTicket}
+            onClick={getQueue}>Reopen persistent queue</button>
+        </div>
+        {batchPreview&&<p role="status">Real source queue preview:
+          {batchPreview.preview_ticket_count} native USD time checks,
+          {batchPreview.final_native_chunk_count} selected Cycles chunks,
+          {batchPreview.effective_shots_per_batch} shots per approved group.
+          Source edit SHA: {batchPreview.source_edit_sha256}.</p>}
+        {sourceQueue&&<div>
+          <p role="status">Persistent 01S queue:
+            {sourceQueue.queue?.progress_completed??0} /
+            {sourceQueue.queue?.progress_required??180}
+            individually verified original source tickets.
+            {sourceQueue.queue?.states?.INTERRUPTED?
+              ' Interrupted jobs require independent OS custody and recovery.':''}
+          </p>
+          <div className="actions">
+            <button disabled={!nativeBatchReady||busy||!!batchTicket||
+              sourceQueue.queue?.all_shots_finished===true}
+              onClick={runActualGroup}>OS approve next source shot group</button>
+            <button disabled={!nativeBatchReady||busy||!!batchTicket||
+              sourceQueue.queue?.all_shots_finished!==true}
+              onClick={conformActualFilm}>Conform 30-second picture + original PCM</button>
+          </div>
+        </div>}
+        {batchProgress&&<p role="status">Native group: {batchProgress.state}.
+          {batchProgress.verified_shots_in_group!==undefined&&
+            ' Independently verified in this group: '+
+             batchProgress.verified_shots_in_group+'.'}</p>}
+        {filmReceipt&&<p role="status">
+          Original film encoded: 720 verified selected frames,
+          90 protected Blender chunks, exact decoded 48 kHz PCM.
+          Master SHA: {filmReceipt.finished_film_file_sha256}.
+          The director has not yet approved the creative result.
+        </p>}
+      </div>
+      <p className="fineprint">The installed NVP host retains authority over
+        every original-source Blender chunk and exact source shot group.
+        Batch size is not implicit AI permission. A full film is accepted
+        only after 720 actual native pictures, original PCM and source
+        receipts pass independent checks and the director reviews the result.</p>
     </div>}
     {!nativeReady&&<p role="status">Browser source inspection only:
       approved camera/edit writes and protected rendering require the installed

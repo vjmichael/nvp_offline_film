@@ -199,7 +199,13 @@ def _actor_and_take_sources(index, pid, shot, scene_takes, *,
                     "/World/Sets/"+set_name+prim[len("/World"):]):
                     raise PermissionError("Original historical ActorID source has changed")
                 aid = identity["actor_id"]
-                _id(aid,"original StoryBible actor identifier")
+                # StoryBible emits UUID4.hex (32 lowercase hex). FilmIndex
+                # object IDs require an alphabetic first character and
+                # incorrectly reject valid historical ActorIDs starting 0-9.
+                # Keep the actual UUID identity exact, source-bound and strict.
+                if (type(aid) is not str or len(aid)!=32 or
+                    any(ch not in "0123456789abcdef" for ch in aid)):
+                    raise ValueError("Invalid original StoryBible actor identifier")
                 # Cast links may subsequently be retired/recast. Read exact
                 # historical source link evidence, NOT just current cast.
                 with index.studio._connection() as db:

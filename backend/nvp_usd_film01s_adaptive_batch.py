@@ -540,3 +540,53 @@ class DurableShotBatchQueue:
                 raise RuntimeError("No running original shot to report as failed")
             db.commit()
         return True
+
+    def reconcile_verified_completed(self,plan_id,*,quality,shot_id,attempt,
+                                     verified_receipt_sha256,
+                                     prove_native_worker_stopped,
+                                     verify_original_source_outcome):
+        """Adopt a genuinely completed outcome after host/process crash.
+
+        Never restart or replay a worker. Compare the exact original
+        attempt and immutable source ticket and independently revalidate
+        the native receipt while holding the FULL-sync SQLite transaction.
+        A mere output path/SQLite state cannot establish completion.
+        """
+        if (quality not in STAGES or not _valid_id(shot_id) or
+            type(attempt) is not int or not 1<=attempt<=99 or
+            type(verified_receipt_sha256) is not str or
+            SHA.fullmatch(verified_receipt_sha256) is None or
+            not callable(prove_native_worker_stopped) or
+            not callable(verify_original_source_outcome)):
+            raise ValueError("Independent native custody and exact source receipt needed")
+        plan=self._load(plan_id)
+        with self._lock,self._open() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row=db.execute("""SELECT state,attempt,ticket_sha256 FROM tickets
+                WHERE plan_id=? AND quality=? AND shot_id=?""",
+                (plan_id,quality,shot_id)).fetchone()
+            if row is None or row[0] not in ("RUNNING","INTERRUPTED","FAILED"):
+                raise RuntimeError("No crashed original claim to reconcile")
+            if row[1]!=attempt:
+                raise PermissionError("Cannot reconcile another renderer attempt")
+            context={
+                "plan_id":plan_id,
+                "plan_sha256":_sha(plan),
+                "source_performance_sha256":plan["original_performance_sha256"],
+                "quality":quality,"shot_id":shot_id,
+                "ticket_sha256":row[2],"attempt":attempt,
+                "native_receipt_sha256":verified_receipt_sha256}
+            if prove_native_worker_stopped(context) is not True:
+                raise PermissionError("Original worker descendant custody not proven")
+            if verify_original_source_outcome(context) is not True:
+                raise PermissionError("Original native outcome did not reverify")
+            changed=db.execute("""UPDATE tickets SET state='SUCCEEDED',
+                updated_unix=?,receipt_sha256=?
+                WHERE plan_id=? AND quality=? AND shot_id=?
+                AND state=? AND attempt=?""",
+                (time.time(),verified_receipt_sha256,plan_id,quality,
+                 shot_id,row[0],attempt)).rowcount
+            if changed!=1:
+                raise RuntimeError("Recovered worker result changed concurrently")
+            db.commit()
+        return True

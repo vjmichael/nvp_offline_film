@@ -61,7 +61,10 @@ describe('01S director camera batch controls',()=>{
     await waitFor(()=>expect(api).toHaveBeenCalledTimes(1));
     expect(api.mock.calls[0][2].renderer).toBe('gpu');
     expect(api.mock.calls[0][2].gpu_device_id).toBe('unverified-gpu');
-    expect(screen.getAllByText(/Safe measured resources/).length).toBe(2);
+    // CPU preview has measured headroom, but the hi-fi worker is blocked.
+    // Never present unverified GPU capacity as separately measured.
+    expect(screen.getAllByText(/Safe measured resources/).length).toBe(1);
+    expect(screen.getAllByText(/Waiting for memory headroom/).length).toBe(1);
     expect(screen.getAllByText(/0 native workers/).length).toBe(2);
   });
 

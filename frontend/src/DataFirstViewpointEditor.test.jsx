@@ -75,8 +75,12 @@ describe('01R editable source-first virtual film',()=>{
     expect(screen.getByRole('button',{name:'Shot 2 using OTS'})).toBeTruthy();
     expect(screen.getByText(/2 cuts cover exactly 720 frames/)).toBeTruthy();
     expect(screen.getByText(/original performance, or soundtrack/)).toBeTruthy();
-    const last=api.mock.calls.filter(call=>call[0].includes('/preview?')).at(-1);
-    expect(last[0]).toContain('frame=360');
+    // The real source preview is intentionally debounced; verify the last
+    // actual frame request rather than the immediate synchronous UI tick.
+    await waitFor(()=>{
+      const last=api.mock.calls.filter(call=>call[0].includes('/preview?')).at(-1);
+      expect(last?.[0]).toContain('frame=360');
+    });
     expect(api.mock.calls.every(call=>call[1]!=='POST')).toBe(true);
   });
 
@@ -93,6 +97,103 @@ describe('01R editable source-first virtual film',()=>{
     await waitFor(()=>expect(api).toHaveBeenCalledWith(
       '/system/shot-batch-estimate','POST',expect.anything()));
     expect(screen.getByText(/Adaptive batch estimate/)).toBeTruthy();
+  });
+
+  it('enqueues approved original shot groups and never declares movie before 720 actual frames and PCM',async()=>{
+    const sourceSha='f'.repeat(64);
+    let saved=null,completed=false,verified=0;
+    const api=buildApi(()=>catalog(saved?[saved]:[]));
+    const queue=()=>({
+      format:'nvp.usd_film01t.original_selected_durable_queue.v1',
+      source_edit_sha256:'e'.repeat(64),
+      queue:{progress_completed:completed?180:verified,
+        progress_required:180,all_shots_finished:completed,
+        states:{QUEUED:completed?0:180-verified,
+          SUCCEEDED:completed?180:verified,
+          INTERRUPTED:0}}});
+    const native={
+      film01r_create_bank:vi.fn(),film01r_revise_bank:vi.fn(),
+      film01r_save_edit:vi.fn(async x=>{
+        saved={edit_id:x.edit_id,revision:1,
+          camera_bank_id:'OriginalBank',camera_bank_revision:1,
+          document_sha256:'e'.repeat(64),
+          original_performance_sha256:original,cuts:x.cuts};
+        return {format:'nvp.film01r.authenticated_source_edit_saved.v1',
+          edit_id:x.edit_id,revision:1,document_sha256:'e'.repeat(64),
+          original_performance_modified:false,native_render_jobs_started:0};
+      }),
+      film01r_render_next:vi.fn(),film01r_render_poll:vi.fn(),
+      film01t_preview_queue:vi.fn(async()=>({
+        format:'nvp.film01t.original_source_batch_preview.v1',
+        source_edit_sha256:'e'.repeat(64),selected_final_source_frames:720,
+        total_real_blender_frames_started:0,
+        preview_ticket_count:90,final_native_chunk_count:90,
+        effective_shots_per_batch:12})),
+      film01t_enqueue:vi.fn(async()=>({
+        format:'nvp.film01t.native_queue_enqueued.v1',
+        source_edit_sha256:'e'.repeat(64),
+        native_workers_started:0,queue:queue().queue})),
+      film01t_status:vi.fn(async()=>queue()),
+      film01t_advance:vi.fn(async()=>({
+        format:'nvp.film01t.native_group_ticket.v1',
+        state:'QUEUED_APPROVED_NATIVE_GROUP',ticket_id:'first-group',
+        source_edit_sha256:'e'.repeat(64)})),
+      film01t_poll:vi.fn(async()=>{
+        verified=12;
+        return {format:'nvp.film01t.native_group_progress.v1',
+          ticket_id:'first-group',
+          source_edit_sha256:'e'.repeat(64),
+          state:'APPROVED_GROUP_ADVANCED',
+          verified_shots_in_group:12,queue:queue().queue};
+      }),
+      film01t_conform:vi.fn(async()=>({
+        format:'nvp.film01t.native_verified_original_film.v1',
+        source_edit_sha256:'e'.repeat(64),
+        verified_selected_frames:720,verified_chunk_count:90,
+        original_pcm_verified:true,
+        finished_film_file_sha256:sourceSha})),
+    };
+    render(<DataFirstViewpointEditor
+      projectId="project1" api={api} nativeBridge={native}/>);
+    await screen.findByRole('button',{name:'Shot 1 using Wide'});
+    fireEvent.click(screen.getByRole('button',
+      {name:'Native approve & save edit'}));
+    await screen.findByText(/Source edit saved/);
+    // Conform does not even exist before a persisted queue is reopened.
+    // This is stronger fail-closed behavior than a merely disabled button.
+    expect(screen.queryByRole('button',{
+      name:'Conform 30-second picture + original PCM'})).toBe(null);
+    fireEvent.click(screen.getByRole('button',{
+      name:'Preview exact native queue'}));
+    await waitFor(()=>expect(native.film01t_preview_queue).toHaveBeenCalledTimes(1));
+    await screen.findByText(/Real source queue preview/);
+    fireEvent.click(screen.getByRole('button',{
+      name:'OS approve and enqueue 30s film'}));
+    await waitFor(()=>expect(native.film01t_enqueue).toHaveBeenCalledTimes(1));
+    expect(native.film01t_enqueue.mock.calls[0][0]).toMatchObject({
+      project_id:'project1',revision:1,render_quality:'technical_smoke'});
+    await screen.findByText(/Persistent 01S queue/);
+    expect(screen.getByRole('button',{
+      name:'Conform 30-second picture + original PCM'}).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button',{
+      name:'OS approve next source shot group'}));
+    await waitFor(()=>expect(native.film01t_advance).toHaveBeenCalledTimes(1));
+    await waitFor(()=>expect(native.film01t_poll).toHaveBeenCalledTimes(1));
+    await waitFor(()=>expect(screen.getByText(/Persistent 01S queue/)).toBeTruthy());
+    expect(screen.getByRole('button',{
+      name:'Conform 30-second picture + original PCM'}).disabled).toBe(true);
+    // Only a later independently reported 180/180 verified queue can unlock
+    // native final conform. One group of 12 must NOT suffice.
+    completed=true;
+    fireEvent.click(screen.getByRole('button',{name:'Reopen persistent queue'}));
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Conform 30-second picture + original PCM'}).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button',{
+      name:'Conform 30-second picture + original PCM'}));
+    await waitFor(()=>expect(native.film01t_conform).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/Original film encoded: 720 verified/)).toBeTruthy();
+    expect(screen.getByText(/director has not yet approved the creative result/)).toBeTruthy();
+    expect(api.mock.calls.some(call=>call[0].includes('film01t'))).toBe(false);
   });
 
   it('saves exact source EDL only through native OS-confirmed bridge',async()=>{
