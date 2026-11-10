@@ -253,10 +253,33 @@ class FilmingPublicationJournal:
                     # A matching source ID alone does not establish a usable
                     # original recording: check provenance and sample coverage.
                     sample_tick = TICKS_PER_SECOND // SAMPLE_RATE
-                    required_samples = (
-                        event["end_tick"] - event["start_tick"] + sample_tick - 1
-                    ) // sample_tick
                     source_data = revisions[sid]["data"] if sid in expected else {}
+                    # Source-clock-mapped original recordings may cover a
+                    # slightly longer/shorter Film Time interval due to real
+                    # measured ADC drift. Never infer source sample count
+                    # from nominal 48-kHz duration for those recordings.
+                    # A forged/mismatched clock must remain UNREADABLE.
+                    if sid in expected and (
+                            "source_sync" in payload or "clock_evidence" in payload):
+                        try:
+                            from backend.nvp_original_clock_binding import verified_original_clock
+                            source_sync=verified_original_clock(
+                                self.index,project_id,sid,
+                                event["start_tick"],event["end_tick"],
+                                payload.get("source_sync"),
+                                payload.get("clock_evidence"),
+                                source_sample_count=source_data.get("sample_count"))
+                            if source_sync is None:
+                                raise RuntimeError("Independent clock map absent")
+                            required_samples=source_sync["source_sample_count"]
+                        except (KeyError,TypeError,ValueError,RuntimeError):
+                            return {"take_id":take_id,"journaled":True,
+                                    "visible":False,
+                                    "reason":"PUBLICATION_SOURCE_BINDING_MISMATCH"}
+                    else:
+                        required_samples = (
+                            event["end_tick"]-event["start_tick"]+sample_tick-1
+                        )//sample_tick
                     if (sid not in expected or sid in found or
                         event["source_revision"] != 1 or
                         event.get("source_document_sha256") != revisions[sid]["document_sha256"] or
