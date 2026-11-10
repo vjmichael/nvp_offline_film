@@ -130,6 +130,7 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         self._lock = threading.RLock()
         self._grants = {}
         self._tickets = {}
+        self._plan04_active = None
         self._futures = {}
         self._host = None
         self._data_av_controller = None
@@ -432,6 +433,40 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             # a webview. The trusted local host retains private diagnostics.
             raise RuntimeError("Original scene native worker not accepted; inspect NVP host diagnostics") from exc
 
+    def _begin_plan04(self,project_id,selection_sha256):
+        with self._lock:
+            if self._plan04_active is not None:
+                raise PermissionError("A native Cycles production is already active")
+            stop=threading.Event()
+            self._plan04_active={
+                "project_id":project_id,
+                "selection_sha256":selection_sha256,
+                "stop":stop,
+            }
+            return stop
+
+    def _end_plan04(self,stop):
+        with self._lock:
+            if self._plan04_active is not None and self._plan04_active["stop"] is stop:
+                self._plan04_active=None
+
+    def plan04_cancel_cycles(self,request):
+        """Cancellation is exact to this window's active original selection."""
+        self._native_window()
+        if type(request) is not dict or set(request)!={"project_id","selection_sha256"}:
+            raise PermissionError("Cancellation requires an exact active source selection")
+        pid=_require_pid(request["project_id"])
+        selection=_sha(request["selection_sha256"])
+        with self._lock:
+            active=self._plan04_active
+            if (active is None or active["project_id"]!=pid or
+                    active["selection_sha256"]!=selection):
+                return {"status":"NO_MATCHING_ACTIVE_CYCLES_RENDER",
+                        "worker_exit_verified":False}
+            active["stop"].set()
+        return {"status":"CANCELLATION_REQUESTED_AWAIT_SUPERVISOR",
+                "worker_exit_verified":False}
+
     def plan04_render_cycles_once(self,request):
         """Installed NVP source-bound Blender/Cycles, with TWO real OS reviews.
 
@@ -481,62 +516,75 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         if candidate["selection_sha256"]!=sha:
             raise PermissionError("Original source changed before OS approval")
 
-        queue=self._plan02d()
-        job_id="Plan04Cycles_"+secrets.token_hex(16)
-        queued=queue.enqueue(pid,job_id,request["selection"])
-        reviewed=queue.review(pid,job_id,queued["revision"])
-        if reviewed["status"]!=APPROVED:
-            return {"status":"NATIVE_SOURCE_REVIEW_REFUSED",
-                    "original_source_modified":False,"render_worker_started":False}
-        # Keep independent source books outside OS worker-journal subtree.
-        workspace=Path(os.environ.get("LOCALAPPDATA") or
-            str(Path.home()/ "AppData"/"Local"))/"NVPProductionWorkers"
-        ledger=TaskLedger(workspace/"resources")
-        supervisor=BlenderWorkerSupervisor(
-            workspace/"cycles",blender_executable=executable,
-            blender_sha256=expected_sha,blender_version=expected_version,
-            activity_ledger=ledger)
-        def second_os_confirmation(scope):
-            if (self._closing or scope.get("operation")!=
-                    "nvp.plan04.openusd_cycles_build_and_independent_reopen.v1"):
-                return False
-            return self._ask(
-                "Launch ONE native Blender/Cycles source render and independent reopen?\\n"+
-                "Original Take SHA: "+scope["take_sha256"]+
-                "\\nOriginal scene SHA: "+scope["scene_sha256"]+
-                "\\nBlender binary SHA: "+scope["blender_binary_sha256"]+
-                "\\nOriginal Film Time tick: "+str(scope["source_tick"])+
-                "\\nThe original OpenUSD/PCM stays immutable. No film export.")
+        cancel_event=self._begin_plan04(pid,sha)
         try:
-            result=OriginalCyclesProduction(
-                self.index,queue,supervisor,
-                ask_native=second_os_confirmation).render_once(
-                pid,job_id,reviewed["revision"],sha,tick)
-            if (result["status"]!="REAL_BLENDER_CYCLES_AND_INDEPENDENT_REOPEN_VERIFIED"
-                    or not result["original_scene_take_immutable_after_restart_reopen"]):
-                raise RuntimeError("Real Blender/Cycles independent source check failed")
-            png=supervisor.root/result["build_job_id"]/"derived_cycles.png"
-            if (png.is_symlink() or not png.is_file() or png.stat().st_size>12_000_000 or
-                    sha_file(png)!=result["derived_png_sha256"]):
-                raise RuntimeError("Bounded Cycles PNG changed after independent audit")
-            return {
-                "format":"nvp.plan04.trusted_os_blender_cycles_result.v1",
-                "status":result["status"],
-                "png_base64":base64.b64encode(png.read_bytes()).decode("ascii"),
-                "png_sha256":result["derived_png_sha256"],
-                "take_sha256":result["take_sha256"],
-                "scene_sha256":result["scene_sha256"],
-                "source_tick":tick,
-                "engine":"CYCLES_CPU",
-                "independently_reopened":True,
-                "original_source_modified":False,
-                "final_film_published":False,
-            }
-        except (PermissionError,RuntimeError):
-            # Include only a bounded error category in WebView. Native worker
-            # journal and private stderr remain in the host-owned workspace.
-            raise RuntimeError(
-                "Native Blender/Cycles execution was refused or not accepted; check NVP worker journal")
+            queue=self._plan02d()
+            job_id="Plan04Cycles_"+secrets.token_hex(16)
+            queued=queue.enqueue(pid,job_id,request["selection"])
+            reviewed=queue.review(pid,job_id,queued["revision"])
+            if cancel_event.is_set():
+                raise InterruptedError("Creator cancelled pending native Cycles approval")
+            if reviewed["status"]!=APPROVED:
+                return {"status":"NATIVE_SOURCE_REVIEW_REFUSED",
+                        "original_source_modified":False,"render_worker_started":False}
+            # Keep independent source books outside OS worker-journal subtree.
+            workspace=Path(os.environ.get("LOCALAPPDATA") or
+                str(Path.home()/ "AppData"/"Local"))/"NVPProductionWorkers"
+            ledger=TaskLedger(workspace/"resources")
+            supervisor=BlenderWorkerSupervisor(
+                workspace/"cycles",blender_executable=executable,
+                blender_sha256=expected_sha,blender_version=expected_version,
+                activity_ledger=ledger)
+            def second_os_confirmation(scope):
+                if (self._closing or scope.get("operation")!=
+                        "nvp.plan04.openusd_cycles_build_and_independent_reopen.v1"):
+                    return False
+                return self._ask(
+                    "Launch ONE native Blender/Cycles source render and independent reopen?\\n"+
+                    "Original Take SHA: "+scope["take_sha256"]+
+                    "\\nOriginal scene SHA: "+scope["scene_sha256"]+
+                    "\\nBlender binary SHA: "+scope["blender_binary_sha256"]+
+                    "\\nOriginal Film Time tick: "+str(scope["source_tick"])+
+                    "\\nThe original OpenUSD/PCM stays immutable. No film export.")
+            try:
+                result=OriginalCyclesProduction(
+                    self.index,queue,supervisor,
+                    ask_native=second_os_confirmation,
+                    cancel_event=cancel_event).render_once(
+                    pid,job_id,reviewed["revision"],sha,tick)
+                if (result["status"]!="REAL_BLENDER_CYCLES_AND_INDEPENDENT_REOPEN_VERIFIED"
+                        or not result["original_scene_take_immutable_after_restart_reopen"]):
+                    raise RuntimeError("Real Blender/Cycles independent source check failed")
+                png=supervisor.root/result["build_job_id"]/"derived_cycles.png"
+                if (png.is_symlink() or not png.is_file() or png.stat().st_size>12_000_000 or
+                        sha_file(png)!=result["derived_png_sha256"]):
+                    raise RuntimeError("Bounded Cycles PNG changed after independent audit")
+                return {
+                    "format":"nvp.plan04.trusted_os_blender_cycles_result.v1",
+                    "status":result["status"],
+                    "png_base64":base64.b64encode(png.read_bytes()).decode("ascii"),
+                    "png_sha256":result["derived_png_sha256"],
+                    "take_sha256":result["take_sha256"],
+                    "scene_sha256":result["scene_sha256"],
+                    "source_tick":tick,
+                    "engine":"CYCLES_CPU",
+                    "independently_reopened":True,
+                    "original_source_modified":False,
+                    "final_film_published":False,
+                }
+            except (PermissionError,RuntimeError):
+                # Include only a bounded error category in WebView. Native worker
+                # journal and private stderr remain in the host-owned workspace.
+                raise RuntimeError(
+                    "Native Blender/Cycles execution was refused or not accepted; check NVP worker journal")
+
+        except InterruptedError:
+            return {"status":"NATIVE_CYCLES_CANCELLED_NO_PUBLICATION",
+                    "original_source_modified":False,
+                    "film_master_published":False,
+                    "worker_exit_verified":False}
+        finally:
+            self._end_plan04(cancel_event)
 
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
@@ -549,6 +597,8 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             if self._closing:
                 return
             self._closing=True
+            if self._plan04_active is not None:
+                self._plan04_active["stop"].set()
             if self._data_av_controller is not None:
                 self._data_av_controller.close()
             if self._original_capture_controller is not None:
