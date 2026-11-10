@@ -282,11 +282,29 @@ def run_visible_window_smoke():
             js_api=bridge)
         bridge._attach_window(window)
         _smoke_checkpoint("window_after_webview_create")
-        window.events.loaded += lambda:loaded.set()
+        def when_loaded():
+            _smoke_checkpoint("window_native_loaded_event")
+            loaded.set()
+        window.events.loaded += when_loaded
+        # Diagnostics must not replace the real loaded/React/IPC assertion.
+        # In hosted Windows pywebview startup can hang before page-loaded;
+        # distinguish OS window presentation from webview navigation.
+        def window_event(stage):
+            def witness():
+                _smoke_checkpoint(stage)
+            return witness
+        for name in ("before_show","shown"):
+            event=getattr(window.events,name,None)
+            if event is not None:
+                event += window_event("window_native_"+name+"_event")
         def inspect_and_close():
             _smoke_checkpoint("window_probe_enter")
             try:
-                if not loaded.wait(timeout=25):
+                _smoke_checkpoint("window_wait_loaded_begin")
+                native_loaded=loaded.wait(timeout=25)
+                _smoke_checkpoint(
+                    "window_wait_loaded_done_"+("yes" if native_loaded else "no"))
+                if not native_loaded:
                     raise RuntimeError("Native WebView2 did not fire page-loaded event")
                 _smoke_checkpoint("window_probe_loaded")
                 # HTML loaded is insufficient: require actual React DOM mount.
