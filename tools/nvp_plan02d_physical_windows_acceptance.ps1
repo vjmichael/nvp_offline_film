@@ -16,7 +16,7 @@ $expectedLine = (Get-Content -LiteralPath $shaFile -Raw).Trim()
 if ($expectedLine -notmatch '^([0-9a-fA-F]{64})\s+NVP-Alpha-Setup\.exe$') {
   throw 'Candidate SHA file is invalid or names a different binary'
 }
-$expectedSha = $Matches[1].ToUpperInvariant()
+$expectedSha = $expectedLine.Substring(0, 64).ToUpperInvariant()
 $actualSha = (Get-FileHash -LiteralPath $installerFile -Algorithm SHA256).Hash.ToUpperInvariant()
 if ($actualSha -ne $expectedSha) { throw 'Installed candidate SHA256 does not match artifact receipt' }
 if (-not [Environment]::UserInteractive) { throw 'Refusing non-interactive Windows session' }
