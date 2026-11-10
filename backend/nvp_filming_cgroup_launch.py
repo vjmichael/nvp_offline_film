@@ -48,7 +48,10 @@ def attach_then_exec(group: Path, executable: str, argv: list[str]) -> None:
             os.close(fd)
     finally:
         os.close(directory)
-    # A successful write alone is insufficient: require kernel-observed membership\n    # before any worker instruction executes. Never infer membership from a PID journal.\n    _verify_current_process_membership(group)\n    os.execv(executable, argv)
+    # A successful write alone is insufficient: require kernel-observed membership
+    # before any worker instruction executes. Never infer membership from a PID journal.
+    _verify_current_process_membership(group)
+    os.execv(executable, argv)
 
 
 def main() -> int:
