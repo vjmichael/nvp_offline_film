@@ -352,6 +352,86 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         self._native_window()
         return self._original_capture().interrupted(project_id)
 
+    def plan03_render_original_once(self,request):
+        """Real installed creator-triggered frozen USD -> contained PNG.
+
+        The browser cannot supply a worker executable, filesystem location,
+        Python code, approval answer or resource budget. Each click must
+        obtain a NEW genuine OS source review and a SEPARATE OS launch review.
+        This is not a FilmIndex publication, 2D source or cinema master.
+        """
+        self._native_window()
+        if self._closing or type(request) is not dict or set(request)!={
+                "project_id","selection","selection_sha256","tick"}:
+            raise PermissionError("Exact source-only trusted render request required")
+        from backend.nvp_film_index import _require_pid
+        from backend.nvp_plan03_original_render_host import NativeOriginalSceneRender
+        from backend.nvp_plan02d_render_queue import APPROVED
+        import base64
+        import secrets
+        import tempfile
+        from pathlib import Path
+        pid=_require_pid(request["project_id"])
+        selection=request["selection"]
+        tick=request["tick"]
+        sha=request["selection_sha256"]
+        if type(tick) is not int or type(sha) is not str:
+            raise PermissionError("Exact original source time and selection SHA required")
+        queue=self._plan02d()
+        job_id="Plan03SourceRender_"+secrets.token_hex(16)
+        queued=queue.enqueue(pid,job_id,selection)
+        if queued["selection_sha256"]!=sha:
+            raise PermissionError("Source changed before native OS review")
+        reviewed=queue.review(pid,job_id,queued["revision"])
+        if reviewed["status"]!=APPROVED:
+            return {"status":"NATIVE_SOURCE_REVIEW_REFUSED",
+                    "original_source_modified":False,
+                    "render_worker_started":False}
+        # Only one fixed trusted native raster worker is ever launched.
+        # Nothing in this path takes an executable, script or output path
+        # from JavaScript/model output.
+        workspace=(Path(tempfile.gettempdir()).resolve()/
+                   "nvp-original-render-derivatives")
+        def native_review(scope):
+            if self._closing or scope.get("operation")!=(
+                    "nvp.plan03.render_original_source_once.v1"):
+                return False
+            return self._ask(
+                "Launch ONE OS-contained original OpenUSD picture render?\\n"+
+                "Take SHA: "+scope["take_document_sha256"]+
+                "\\nSelection SHA: "+scope["selection_sha256"]+
+                "\\nOriginal Film Time tick: "+str(scope["source_tick"])+
+                "\\nRAM limit: "+str(scope["memory_mb"])+" MiB"+
+                "\\nNo original source modification, FFmpeg or cinema master.")
+        try:
+            worker=NativeOriginalSceneRender(
+                self.index,queue,workspace=workspace,
+                ask_native=native_review,memory_mb=1024)
+            result=worker.render_once(
+                pid,job_id,reviewed["revision"],sha,tick,timeout=90)
+            if (result.get("status")!="DERIVED_OPENUSD_IMAGE_ONLY" or
+                    result.get("worker_process_tree_custody_verified") is not True or
+                    result.get("original_source_immutable") is not True):
+                raise RuntimeError("Independent kernel worker report was not accepted")
+            png=Path(result["derived_image_path"]).read_bytes()
+            if len(png)!=result["png_bytes"] or len(png)>12_000_000:
+                raise RuntimeError("Verified derivative changed before UI delivery")
+            return {
+                "format":"nvp.plan03.trusted_original_scene_render_result.v1",
+                "status":"VERIFIED_DERIVED_OS_CONTAINED_PNG",
+                "png_sha256":result["png_sha256"],
+                "png_base64":base64.b64encode(png).decode("ascii"),
+                "source_tick":tick,
+                "source_take_sha256":result["take_document_sha256"],
+                "native_worker_custody":result["custody_mode"],
+                "original_source_modified":False,
+                "film_master_approved":False,
+            }
+        except Exception as exc:
+            # Do not leak OS process path, source home, or worker trace into
+            # a webview. The trusted local host retains private diagnostics.
+            raise RuntimeError("Original scene native worker not accepted; inspect NVP host diagnostics") from exc
+
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
 
