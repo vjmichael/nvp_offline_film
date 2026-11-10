@@ -111,6 +111,21 @@ class OriginalCyclesAdmissionTests(unittest.TestCase):
             obj.render_once(self.pid,"Plan04RefusalJob",self.review["revision"],
                             self.review["selection_sha256"],T//3)
 
+    def test_reconstructed_host_marks_prior_running_worker_interrupted_without_replay(self):
+        # Simulate a journal left by an earlier killed NVP host. This is
+        # restart reconciliation, NOT proof that OS descendants were reaped.
+        with self.supervisor._connect() as db:
+            db.execute(
+                "INSERT INTO worker_jobs (job_id,spec_sha256,spec_json,state,"
+                "created_utc,updated_utc) VALUES (?,?,?,?,?,?)",
+                ("InterruptedNativeSource","0"*64,"{}","RUNNING",0,0))
+        with patch.object(self.supervisor,"run") as launch:
+            self.host(False)
+            launch.assert_not_called()
+        state=self.supervisor.inspect("InterruptedNativeSource")
+        self.assertEqual(state["state"],"INTERRUPTED")
+        self.assertIn("cleanup not proven",state["error"])
+
     def test_restarted_queue_cannot_replay_approved_original_render(self):
         fresh=DurableRenderIntentionQueue(
             self.index,ask_native=lambda _:True)
