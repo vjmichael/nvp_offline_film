@@ -76,3 +76,57 @@ button.primary,button.secondary{border:1px solid transparent;padding:12px 18px;b
 .line-numbered-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .line-numbered-go-label{display:flex;align-items:center;gap:5px;width:auto;margin:0;font-size:11px}
 .line-numbered-go-label input{width:78px;min-width:65px;margin:0;padding:5px;font-size:12px}
+
+
+/* PLAN-03: creator-first Scene Library. Advanced engineering remains available
+   behind an explicit disclosure; the default editor is a scene workflow. */
+.filmmaker-navigation{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.filmmaker-navigation button{min-width:128px}
+.advanced-navigation{display:flex;flex-wrap:wrap;gap:6px;padding:14px;
+  border:1px solid #3b3d48;border-radius:12px;margin-bottom:18px;
+  background:#1a1c26}
+.advanced-navigation button{font-size:13px}
+.scene-library{max-width:1300px;margin:0 auto}
+.scene-library-heading{display:flex;gap:16px;align-items:flex-start;
+  justify-content:space-between;margin:12px 0 24px}
+.scene-library-heading h2{margin:0 0 6px}
+.scene-library-heading p{margin:0}
+.scene-library-layout{display:grid;grid-template-columns:minmax(220px,275px)
+  minmax(0,1fr);gap:20px;align-items:start}
+.scene-library-list{display:flex;flex-direction:column;gap:8px}
+.scene-library-item{display:flex;flex-direction:column;align-items:flex-start;
+  gap:4px;padding:14px 16px;text-align:left;
+  background:#20222e;border:1px solid #373a48;border-radius:12px;
+  color:#eeeaf0;overflow-wrap:anywhere}
+.scene-library-item.chosen{border-color:#e5ae77;background:#35303a}
+.scene-number{font-size:12px;color:#e6b47d;font-weight:700}
+.scene-library-item .fineprint{font-size:12px}
+.scene-library-detail{border:1px solid #393c49;border-radius:14px;
+  padding:24px;background:#1e202b;min-width:0}
+.scene-library-detail-header{display:flex;gap:10px;align-items:flex-start;
+  flex-wrap:wrap;justify-content:space-between}
+.scene-library-detail-header h3{margin-top:8px}
+.scene-library-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;margin:16px 0}
+.scene-library-facts .card{padding:16px;overflow-wrap:anywhere}
+.scene-library-facts h4{margin-top:0}
+.scene-library details,.scene-story-assistant{margin-top:18px;
+  padding:14px;border:1px solid #3b3d49;border-radius:10px}
+.scene-library summary,.scene-story-assistant summary{cursor:pointer;
+  font-weight:600;color:#efc49b}
+.scene-library-script{white-space:pre-wrap;overflow-wrap:anywhere;
+  max-height:420px;overflow:auto;border:1px solid #3c3d4a;
+  border-radius:8px;background:#12141d;color:#e1e1e9;padding:16px;
+  font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace}
+.scene-ai-proposal{margin-top:12px;padding:14px;border-left:3px solid #d1a574;
+  background:#272832}
+.scene-ai-proposal h4{margin-top:0}
+@media(max-width:960px){
+  .scene-library-layout{grid-template-columns:1fr}
+  .scene-library-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .scene-library-facts{grid-template-columns:1fr}
+}
+@media(max-width:650px){
+  .scene-library-list{grid-template-columns:1fr}
+  .scene-library-heading{flex-direction:column}
+}
