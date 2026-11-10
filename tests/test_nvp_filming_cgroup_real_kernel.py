@@ -40,13 +40,13 @@ class RealDelegatedCgroupAcceptance(unittest.TestCase):
             observed_descendant = False
             while time.monotonic() < deadline:
                 members = (group / "cgroup.procs").read_text().split()
-                if len(members) >= 2:
+                if str(worker.pid) in members and any(pid != str(worker.pid) for pid in members):
                     observed_descendant = True
                     break
                 if worker.poll() is not None:
                     self.fail("worker exited before descendant observation")
                 time.sleep(0.05)
-            self.assertTrue(observed_descendant, "no live descendant in delegated cgroup")
+            self.assertTrue(observed_descendant, "worker PID and separate live descendant not jointly observed in delegated cgroup")
             (group / "cgroup.kill").write_text("1")
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
