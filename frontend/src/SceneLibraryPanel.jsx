@@ -138,6 +138,15 @@ export default function SceneLibraryPanel({
           {proposal?.scene_id===scene.scene_id&&<div className="scene-ai-proposal"
             aria-label="Unapproved AI scene suggestions">
             <h4>Unapproved suggestions — nothing has been changed</h4>
+            {proposal.provider_completion_receipt&&
+              <p className="fineprint" role="status">
+                Local provider completed a response for
+                {' '+proposal.provider_completion_receipt.selected_model_id}
+                {' ('+proposal.provider_completion_receipt.provider_reported_completion_tokens+
+                  ' reported output tokens). '}
+                Provider identity is self-reported; actual GGUF weights have
+                not been independently attested. Nothing is approved.
+              </p>}
             {['actors','locations','props'].map(category=>
               <div key={category}><strong>{category[0].toUpperCase()+category.slice(1)}</strong>
                 <p>{proposal.suggestions[category].join(', ')||'No suggestions'}</p>
