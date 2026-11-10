@@ -1,5 +1,10 @@
 # NVP — Engineering state and resumption ledger
 
+## 2026-11-10 — DA-03 Linux cgroup-v2 process-tree custody primitive (source only)
+
+PR #74 commits `02866a7` and `fe84c52` introduce `backend/nvp_filming_cgroup_custody.py` and contract tests. The host-only primitive requires an existing private direct-child cgroup under a delegated cgroup-v2 root, writes the kernel `cgroup.kill` control, and waits for `cgroup.events populated 0` under one bounded monotonic deadline. Invalid deadlines, absent controls, unexpected populated values, timeouts and reused receipts fail closed. These source tests use temporary mock control files and **do not establish real cgroup kernel operation**. Real filming launcher creation/delegation, attach-before-exec containment, independent descendant escape tests, crash/restart custody, Windows Job Objects, atomic publication and installed physical capture remain **UNIMPLEMENTED/UNVERIFIED**. DA-03 remains PARTIAL / acceptance OPEN. No FFmpeg invocation was added; retired proxy PR workflows remain untouched. Group-end consolidated native CI is required; no small CI job was dispatched for this primitive.
+
+
 ## 2026-11-10 — DA-03 bounded forced-kill retry correction (source only)
 
 PR #74 commits `93e70dd`, `2eb8620`, `3771f4f`: host-owned direct-child custody now records whether forced kill was already requested, so a timeout followed by retry does not issue a second forced-kill signal. Added real-subprocess/mocked-wait regression asserting a single kill and eventual exit receipt. This protects against repeated signalling after escalation; it does **not** establish descendant process-tree containment or durable restart ownership. Exact-head Windows/Linux and installed NVP.exe verification of these commits remains **UNVERIFIED**. Previous DATA-AV run 42762871989 at `a16e996` was **CANCELLED**, not passed. DA-03 is PARTIAL; Windows Job Object/Linux cgroup custody, launcher integration, transactional publication and physical capture remain OPEN. Zero FFmpeg remains mandatory. Retired proxy workflows were not restarted.
