@@ -12,6 +12,11 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import sys
+
+# Only NVP's trusted, pinned module path is added for a separately spawned
+# source-run Python process. Never accept a browser- or model-supplied path.
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
@@ -55,7 +60,7 @@ def render(manifest_path: Path):
         manifest["project_id"],manifest["request"],scope["selection_sha256"],tick)
     png=actual["png_bytes"]
     if (_sha(png)!=actual["png_sha256"] or len(png)>12_000_000 or
-            not png.startswith(b"\\x89PNG\\r\\n\\x1a\\n")):
+            not png.startswith(bytes.fromhex("89504e470d0a1a0a"))):
         raise RuntimeError("Unverified native source PNG")
     output=root/"derived_source.png"
     if output.is_symlink() or output.exists():
