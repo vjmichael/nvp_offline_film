@@ -1,10 +1,12 @@
 name: NVP USD-FILM-01T 720 Authentic Selected-View Frames + Original PCM Full-Film Acceptance
 
+# Full source-selected film acceptance is ONE heavy task-group gate.
+# No full 720-frame rerender or four-platform matrix on small follow-up pushes.
+# A scoped workflow-file update starts one consolidated exact-head group.
 on:
   push:
     branches: [nvp/usd-film01t-durable-selected-conform-20261109]
-  pull_request:
-    branches: [nvp/usd-film01r-interactive-editor-20261108]
+    paths: [.github/workflows/nvp-usd-film01t-native-full-30s-film.yml]
   workflow_dispatch:
 
 permissions:
