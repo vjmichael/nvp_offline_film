@@ -31,13 +31,30 @@ class FilmingWorkerCustodyTests(unittest.TestCase):
             worker = OwnedFilmingWorker(process)
             result = worker.interrupt_journal(
                 journal, "project", "take", expected_updated_at="observed",
-                timeout=2)
+                timeout=2, allow_direct_child_only=True)
             self.assertIsNotNone(process.poll())
             self.assertEqual(journal.calls, [("project", "take", "observed")])
             self.assertTrue(result["direct_child_exit_verified"])
             self.assertFalse(result["process_tree_custody_verified"])
             with self.assertRaises(RuntimeError):
                 worker.stop_and_verify()
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+
+    def test_default_rejects_unverified_descendants_without_stopping_worker(self):
+        process = self.spawn()
+        try:
+            journal = FakeJournal()
+            worker = OwnedFilmingWorker(process)
+            with self.assertRaisesRegex(RuntimeError, "Process-tree custody unverified"):
+                worker.interrupt_journal(journal, "project", "take",
+                                         expected_updated_at="observed")
+            self.assertIsNone(process.poll())
+            self.assertEqual(journal.calls, [])
+            receipt = worker.stop_and_verify(timeout=2)
+            self.assertTrue(receipt.direct_child_only)
         finally:
             if process.poll() is None:
                 process.kill()
@@ -53,7 +70,8 @@ class FilmingWorkerCustodyTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         worker.interrupt_journal(
                             journal, "project", "take",
-                            expected_updated_at="observed", timeout=invalid)
+                            expected_updated_at="observed", timeout=invalid,
+                            allow_direct_child_only=True)
             self.assertEqual(journal.calls, [])
             self.assertIsNone(process.poll())
         finally:
@@ -85,7 +103,8 @@ class FilmingWorkerCustodyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 worker.interrupt_journal(
                     journal, "project", "take",
-                    expected_updated_at="observed", timeout=0)
+                    expected_updated_at="observed", timeout=0,
+                    allow_direct_child_only=True)
             self.assertEqual(journal.calls, [])
         finally:
             process.kill()
