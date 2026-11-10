@@ -11,6 +11,8 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
     def _owned(self, path):
         worker = LinuxFilmingCgroup.__new__(LinuxFilmingCgroup)
         worker._group = path
+        identity = path.stat()
+        worker._group_identity = (identity.st_dev, identity.st_ino)
         worker._consumed = False
         return worker
 
@@ -69,6 +71,23 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
                     worker.stop_and_verify(timeout=1)
                 self.assertFalse(worker._consumed)
             self.assertEqual((root / "cgroup.kill").read_text(), "1")
+
+    def test_replaced_group_never_receives_kill_or_exit_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            parent = Path(tmp)
+            group = parent / "owned"
+            group.mkdir()
+            (group / "cgroup.kill").write_text("")
+            (group / "cgroup.events").write_text("populated 0\n")
+            worker = self._owned(group)
+            group.rename(parent / "old")
+            group.mkdir()
+            (group / "cgroup.kill").write_text("")
+            (group / "cgroup.events").write_text("populated 0\\n")
+            with self.assertRaises(CgroupCustodyError):
+                worker.stop_and_verify(timeout=1)
+            self.assertEqual((group / "cgroup.kill").read_text(), "")
+            self.assertFalse(worker._consumed)
 
     def test_still_populated_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
