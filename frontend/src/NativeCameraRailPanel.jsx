@@ -23,6 +23,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
   const [receipt,setReceipt]=useState(null);
   const [raster,setRaster]=useState(null);
   const [protectedRaster,setProtectedRaster]=useState(null);
+  const [cyclesPreview,setCyclesPreview]=useState(null);
   const [rasterName,setRasterName]=useState('DirectorStill001');
   const [error,setError]=useState('');
   const [note,setNote]=useState('');
@@ -66,7 +67,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
 
   function changeSpec(next){
     setSpec(next);setPreview(null);setCandidate(null);setReceipt(null);
-    setRaster(null);setProtectedRaster(null);
+    setRaster(null);setProtectedRaster(null);setCyclesPreview(null);
     onPreviewChange?.(null);
     setNote('');
   }
@@ -242,12 +243,40 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
     finally{setBusy(false)}
   }
 
+  async function renderBlenderCycles(){
+    if(!raster||busy||typeof native?.plan04_render_cycles_once!=='function')return;
+    setBusy(true);setError('');setNote('');setCyclesPreview(null);
+    try{
+      const result=await native.plan04_render_cycles_once({
+        project_id:projectId,
+        selection:raster.selection,
+        selection_sha256:raster.source_selection_sha256,
+        tick:raster.film_tick,
+      });
+      if(result?.status==='NATIVE_SOURCE_REVIEW_REFUSED'){
+        setNote('Original source review refused. No Blender process started.');
+        return;
+      }
+      if(result?.format!=='nvp.plan04.trusted_os_blender_cycles_result.v1'||
+         result.status!=='REAL_BLENDER_CYCLES_AND_INDEPENDENT_REOPEN_VERIFIED'||
+         result.engine!=='CYCLES_CPU'||result.original_source_modified!==false||
+         result.final_film_published!==false||!result.independently_reopened||
+         result.source_tick!==raster.film_tick||
+         result.take_sha256!==spec.take_document_sha256||
+         !sha(result.png_sha256)||!/^[A-Za-z0-9+/]+={0,2}$/.test(result.png_base64||''))
+        throw Error('Blender renderer failed independent original source verification');
+      setCyclesPreview(result);
+      setNote('Blender/Cycles source render verified in a second native worker. This image is a derivative; no movie master was published.');
+    }catch(e){setError(e.message)}
+    finally{setBusy(false)}
+  }
+
   function pick(index){
     const entry=sources[index];if(!entry)return;
     setChoice(index);setExpectedRevision(0);setRailId('DirectorRail001');
     setSpec(entry.suggested_unapproved_rail_spec);
     setReceipt(null);setPreview(null);setCandidate(null);
-    setRaster(null);setProtectedRaster(null);
+    setRaster(null);setProtectedRaster(null);setCyclesPreview(null);
     onPreviewChange?.(null);
   }
 
@@ -374,6 +403,21 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
           <p className="fineprint">Launches NVP's source-bound renderer
             under Windows Job Object or Linux delegated cgroup-v2 with
             separate source and execution approvals; no movie export.</p>
+          <button disabled={busy||typeof native?.plan04_render_cycles_once!=='function'}
+            onClick={renderBlenderCycles}>
+            Render approved scene with Blender/Cycles (two OS approvals)
+          </button>
+          <p className="fineprint">Requires a separately checksum-pinned local
+            Blender installation. The real native host must ask twice:
+            source review, then execution/reopen permission. No flattened
+            movie is created as authoritative source.</p>
+          {cyclesPreview&&<>
+            <img src={'data:image/png;base64,'+cyclesPreview.png_base64}
+              alt="Independently reopened and verified Blender Cycles scene image"
+              style={{maxWidth:'100%',height:'auto'}}/>
+            <p role="status">Real Blender/Cycles verified.
+              Derived SHA: {cyclesPreview.png_sha256.slice(0,20)}…</p>
+          </>}
           {protectedRaster&&<>
             <img src={'data:image/png;base64,'+protectedRaster.png_base64}
               alt="Independently verified native OpenUSD source rendering"
