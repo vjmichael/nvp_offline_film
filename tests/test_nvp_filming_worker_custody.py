@@ -118,6 +118,31 @@ class FilmingWorkerCustodyTests(unittest.TestCase):
                 process.kill()
                 process.wait()
 
+    def test_timeout_retry_never_reissues_forced_kill(self):
+        process = self.spawn()
+        try:
+            worker = OwnedFilmingWorker(process)
+            original_wait = process.wait
+            attempts = [0]
+
+            def delayed_reap(*args, **kwargs):
+                attempts[0] += 1
+                if attempts[0] <= 2:
+                    raise subprocess.TimeoutExpired(process.args, kwargs.get("timeout"))
+                return original_wait(*args, **kwargs)
+
+            with mock.patch.object(process, "wait", side_effect=delayed_reap), \\
+                 mock.patch.object(process, "kill", wraps=process.kill) as kill:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    worker.stop_and_verify(timeout=0.1)
+                receipt = worker.stop_and_verify(timeout=2)
+                self.assertTrue(receipt.exited)
+                self.assertEqual(kill.call_count, 1)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+
     def test_pid_alone_cannot_be_admitted(self):
         with self.assertRaises(TypeError):
             OwnedFilmingWorker(12345)
