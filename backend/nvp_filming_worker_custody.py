@@ -7,6 +7,7 @@ Windows Job Objects / Linux cgroup custody remain a separate acceptance gate.
 from __future__ import annotations
 
 import subprocess
+import math
 from dataclasses import dataclass
 from typing import Callable
 
@@ -35,11 +36,17 @@ class OwnedFilmingWorker:
     def stop_and_verify(self, *, timeout: float = 5.0) -> WorkerExitReceipt:
         if self._consumed:
             raise RuntimeError("Worker exit receipt already consumed")
-        if not isinstance(timeout, (int, float)) or not 0 < timeout <= 60:
+        if (type(timeout) not in (int, float) or not math.isfinite(timeout)
+                or not 0 < timeout <= 60):
             raise ValueError("Bounded positive termination timeout required")
         process = self._process
         if process.poll() is None:
-            process.terminate()
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                # The child may exit between poll and terminate; wait for
+                # the owned handle rather than treating a PID as evidence.
+                pass
             try:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
