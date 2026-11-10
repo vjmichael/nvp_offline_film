@@ -376,7 +376,7 @@ class CanonicalSourceRails:
                 {"object_id":raw["take_id"],"revision":1,"role":"source_take"},
                 {"object_id":raw["camera_timeline_id"],
                  "revision":raw["camera_timeline_revision"],
-                 "role":"source_camera_timeline"}])
+                 "role":"timeline"}])
         return {"format":"nvp.plan02c.director_approved_rail_receipt.v1",
                 "rail_id":rail_id,"revision":receipt["revision"],
                 "rail_document_sha256":receipt["document_sha256"],

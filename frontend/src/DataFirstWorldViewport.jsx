@@ -40,7 +40,7 @@ function usdMatrix(m){
 }
 
 export default function DataFirstWorldViewport({
-  objects=[],listenerPath='',tick='0',sceneSha=''
+  objects=[],listenerPath='',tick='0',sceneSha='',railSamples=[]
 }){
   const holder=useRef(null);
   const env=useRef(null);
@@ -66,6 +66,8 @@ export default function DataFirstWorldViewport({
       scene.background=new THREE.Color('#121a2a');
       const world=new THREE.Group();
       scene.add(world);
+      const railGroup=new THREE.Group();
+      scene.add(railGroup);
       const grid=new THREE.GridHelper(40,20,'#526077','#374151');
       grid.rotation.x=Math.PI/2;
       scene.add(grid);
@@ -101,7 +103,7 @@ export default function DataFirstWorldViewport({
         resize=new ResizeObserver(resizeNow);
         resize.observe(root);
       }
-      env.current={world,meshes,requestRender};
+      env.current={world,meshes,requestRender,railGroup};
       setDisabled(false);
     }catch(_error){
       // A headless browser or disabled GPU must still expose textual,
@@ -116,6 +118,12 @@ export default function DataFirstWorldViewport({
       for(const mesh of meshes.values()){
         if(mesh.geometry)mesh.geometry.dispose();
         if(mesh.material)mesh.material.dispose();
+      }
+      if(env.current?.railGroup){
+        for(const drawn of env.current.railGroup.children){
+          drawn.geometry?.dispose();
+          drawn.material?.dispose();
+        }
       }
       if(renderer){
         renderer.dispose();
@@ -171,10 +179,45 @@ export default function DataFirstWorldViewport({
     state.requestRender();
   },[objects,listenerPath]);
 
+  // A verified prospective rail is a disposable camera GUIDE over the
+  // native 3D source world, not authored actor geometry or a film frame.
+  useEffect(()=>{
+    const state=env.current;
+    if(!state?.railGroup)return;
+    const group=state.railGroup;
+    while(group.children.length){
+      const child=group.children[0];
+      group.remove(child);
+      child.geometry?.dispose();
+      child.material?.dispose();
+    }
+    if(!Array.isArray(railSamples)||railSamples.length>64)return;
+    const valid=railSamples.every(sample=>
+      sample&&Number.isSafeInteger(sample.film_tick)&&
+      Array.isArray(sample.position_m)&&sample.position_m.length===3&&
+      sample.position_m.every(x=>typeof x==='number'&&Number.isFinite(x)&&
+        Math.abs(x)<=100000));
+    if(!valid||railSamples.length<2)return;
+    const pts=railSamples.map(x=>new THREE.Vector3(...x.position_m));
+    const line=new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color:0x22d3ee}));
+    group.add(line);
+    for(const point of pts){
+      const marker=new THREE.Mesh(
+        new THREE.SphereGeometry(.14,8,8),
+        new THREE.MeshBasicMaterial({color:0xe879f9}));
+      marker.position.copy(point);group.add(marker);
+    }
+    state.requestRender();
+  },[railSamples]);
+
   return <section aria-label="Live native OpenUSD three-dimensional scene">
     <p className="fineprint">3D source world at Film Time tick {tick}.
       {sceneSha&&<> Immutable scene SHA: <code>{sceneSha.slice(0,16)}…</code></>}
-      Drag to orbit, scroll to inspect. Live data, not a movie.</p>
+      Drag to orbit, scroll to inspect. Live data, not a movie.
+      {Array.isArray(railSamples)&&railSamples.length>1&&
+        <> Cyan line and violet control markers are a temporary unapproved camera guide; no original USD or PCM was changed.</>}</p>
     <div ref={holder} style={{width:'100%',minHeight:'360px',borderRadius:8,
       overflow:'hidden',background:'#121a2a'}}/>
     {disabled&&<p role="status">3D hardware context unavailable.

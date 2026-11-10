@@ -9,7 +9,7 @@ const TECHNIQUES=['static','dolly','truck','crane','orbit','track','pan_tilt',
 const safeTick=n=>Number.isSafeInteger(n)&&n>=0;
 const sha=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
 
-export default function NativeCameraRailPanel({projectId,native=null,sourceRevision=0}){
+export default function NativeCameraRailPanel({projectId,native=null,sourceRevision=0,onPreviewChange=null}){
   const [sources,setSources]=useState([]);
   const [choice,setChoice]=useState(0);
   const [railId,setRailId]=useState('DirectorRail001');
@@ -29,6 +29,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
   useEffect(()=>{
     let alive=true;
     setSpec(null);setSources([]);setPreview(null);setCandidate(null);
+    onPreviewChange?.(null);
     setSourceReady(false);setError('');
     if(!native||!projectId||typeof native.plan02c_catalog!=='function')
       return ()=>{alive=false;};
@@ -62,6 +63,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
 
   function changeSpec(next){
     setSpec(next);setPreview(null);setCandidate(null);setReceipt(null);
+    onPreviewChange?.(null);
     setNote('');
   }
   function updateNode(i,key,value){
@@ -108,6 +110,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
            result.native_worker_authorized!==false)
           throw Error('Source camera proposal was not independently verified');
         setPreview(result);
+        onPreviewChange?.(result);
         setNote('Exact Film Time rail preview verified. No authorizations granted.');
       }else if(task==='model'){
         if(!modelId||direction.length>1200||!direction.trim())
@@ -125,6 +128,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
         setCandidate(result);
         setSpec(result.proposed_rail_spec);
         setPreview(null);
+        onPreviewChange?.(null);
         setNote('Real model response received (provider-reported tokens). Review changed nodes; then preview and separately approve a rail. GGUF weight attestation is an independent gate.');
       }else if(task==='publish'){
         if(!preview||!sha(preview.proposal_sha256))
@@ -138,6 +142,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
           throw Error('Native rail publication receipt is missing');
         setReceipt(result);
         setPreview(null);
+        onPreviewChange?.(null);
         setNote('Director-approved camera layer published; original Take, sound, actor motion and rendering permission remain unchanged.');
       }
     }catch(e){setError(e.message)}
@@ -148,6 +153,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
     setChoice(index);setExpectedRevision(0);setRailId('DirectorRail001');
     setSpec(entry.suggested_unapproved_rail_spec);
     setReceipt(null);setPreview(null);setCandidate(null);
+    onPreviewChange?.(null);
   }
 
   return <section className="card" aria-label="Exact Film Time director camera rails">
@@ -156,7 +162,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
       original Digital Take. The source performance and audio never become
       frame-based edits. Model advice is unapproved until you preview it and
       confirm a separate native OS publication dialog.</p>
-    {!native&&<p role="status">Open in installed NVP to use the native camera authority.</p>}
+    {!native&&<p role="status">The NVP desktop is required for original camera authorization.</p>}
     {error&&<p role="alert">{error}</p>}
     {note&&<p role="status">{note}</p>}
     <label>Frozen Take and authored source camera
@@ -171,7 +177,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
     {spec&&<>
       <label>New virtual camera rail identity
         <input aria-label="New director rail ID" value={railId}
-          disabled={busy} onChange={e=>{setRailId(e.target.value);setPreview(null);}}/>
+          disabled={busy} onChange={e=>{setRailId(e.target.value);setPreview(null);onPreviewChange?.(null);}}/>
       </label>
       <label>Technique
         <select aria-label="Director shot technique" value={spec.technique}

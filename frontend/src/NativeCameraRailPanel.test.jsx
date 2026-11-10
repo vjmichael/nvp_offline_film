@@ -100,4 +100,18 @@ describe('PLAN-02-C original Film Time rails and distinct human model permission
       .toMatch(/source catalog was not verified/);
     expect(native.plan02c_publish).not.toHaveBeenCalled();
   });
+  it('clears a verified 3D rail guide after changing the approved-source proposal',async()=>{
+    const native=build(),onPreviewChange=vi.fn();
+    render(<NativeCameraRailPanel projectId={project} native={native}
+      onPreviewChange={onPreviewChange}/>);
+    await screen.findByText(/OriginalTake · \/World\/CameraA/);
+    fireEvent.click(screen.getByText('Verify original Film Time rail'));
+    await waitFor(()=>expect(onPreviewChange).toHaveBeenCalledWith(view));
+    fireEvent.change(screen.getByRole('textbox',{name:'New director rail ID'}),{
+      target:{value:'DirectorRail002'}});
+    expect(onPreviewChange).toHaveBeenLastCalledWith(null);
+    expect(screen.getByText('Approve this exact rail in OS dialog').disabled)
+      .toBe(true);
+  });
+
 });

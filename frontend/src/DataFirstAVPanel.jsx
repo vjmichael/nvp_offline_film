@@ -31,6 +31,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [native,setNative]=useState(nativeBridge);
   const [takes,setTakes]=useState([]);
   const [captureRevision,setCaptureRevision]=useState(0);
+  const [railPreview,setRailPreview]=useState(null);
   const [takeId,setTakeId]=useState('');
   const [listener,setListener]=useState('');
   const [sourceSample,setSourceSample]=useState('0');
@@ -339,7 +340,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         objects={scene.visual.objects||[]}
         listenerPath={listener}
         sceneSha={scene.visual.scene_document_sha256}
-        tick={String(scene.visual.time_tick||'0')}/>}
+        tick={String(scene.visual.time_tick||'0')}
+        railSamples={railPreview?.take_document_sha256===scene.take_document_sha256?
+          railPreview.source_film_time_samples:[]}/>}
     {scene&&!scene.visual&&<p role="status">Native source geometry
       is not verified; spatial sound may still be inspected.</p>}
     {scene&&<section aria-label="Current frozen USD scene state">
@@ -355,7 +358,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         spatial audio source(s) active at this moment.</p>
     </section>}
     <NativeCameraRailPanel projectId={projectId} native={native}
-      sourceRevision={captureRevision}/>
+      sourceRevision={captureRevision} onPreviewChange={setRailPreview}/>
     <NativeOriginalCapturePanel projectId={projectId} native={native}
       onCompleted={()=>setCaptureRevision(n=>n+1)}/>
     <section className="card" aria-label="Add creator-supplied original music">
