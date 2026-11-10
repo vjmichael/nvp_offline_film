@@ -13,3 +13,7 @@ Automated protected render tests use a fixture-only callback demonstrating an ex
 3. Inspect Blender's real stderr, CPU usage, actual PNG pixels and immutable original-source receipts. Repair any demonstrated errors and repeat a single group at new final SHA only as needed.
 4. Verify each native saved .blend reopen with the proper original 01D and stronger director camera, and compare actual pixel hashes.
 5. Preserve real OS approval, GGUF-generated proposals, and a full 720-frame/48k PCM movie as independent not-accepted gates until physical-PC evidence exists.
+
+## CAM-FX-01–04 finished source gate and separate CAM-FX-05 render execution
+
+Six-job native group [42741920253](https://github.com/vjmichael/nvp_offline_film/actions/runs/42741920253), exact source SHA `9f6a8309295ec40003266f0be13bb959656f0804`, **COMPLETED SUCCESS 6/6** (Windows/Linux 3.11/3.13 real original actor/PCM/OpenUSD, hosted NSIS/WebView2 and React). Its only difference from this render preparation's native base `5cd26fec827df288f2d0b9fb908f151c7ff9b8ed` is the CI workflow grouped-trigger comment; CAM-FX source is identical. This is the first intentionally triggered CAM-FX-05 **real official Blender 5.2.3** render group; preserve independent saved-scene and actual pixel source evidence before declaring acceptance. The tested two immutable camera revision images prove different reviewed camera positions, not yet continuous multi-frame rail traversal or an entire film. Full render authority uses test fixture approval callback and does not attest a physical human.

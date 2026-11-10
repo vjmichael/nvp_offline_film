@@ -5,6 +5,9 @@ name: NVP CAM-FX-05 Real Moving Virtual-Camera Blender Cycles Source Acceptance
 # Model proposals, physical-PC human approval, film export and finished
 # 720-frame moving performance remain independent evidence gates.
 on:
+  push:
+    branches: [nvp/cam-fx05-real-moving-cycles-20261109]
+    paths: [.github/workflows/nvp-camfx05-real-cycles-source-acceptance.yml]
   workflow_dispatch:
 
 permissions:
