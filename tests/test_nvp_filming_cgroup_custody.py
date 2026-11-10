@@ -60,10 +60,10 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
             root = Path(tmp)
             (root / "cgroup.kill").write_text("")
             worker = self._owned(root)
-            for events in ("populated 1\\npopulated 0\\n",
-                           "populated 0 extra\\n",
-                           "populated\\n",
-                           "populated 0\\nmalformed\\n"):
+            for events in ("populated 1\npopulated 0\n",
+                           "populated 0 extra\n",
+                           "populated\n",
+                           "populated 0\nmalformed\n"):
                 (root / "cgroup.events").write_text(events)
                 with self.assertRaises(CgroupCustodyError):
                     worker.stop_and_verify(timeout=1)
