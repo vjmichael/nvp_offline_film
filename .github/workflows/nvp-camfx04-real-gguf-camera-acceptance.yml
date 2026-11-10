@@ -1,0 +1,80 @@
+name: NVP CAM-FX-04 Real Local GGUF Source-Grounded Camera Proposals
+
+# Separate genuine CPU GGUF acceptance; human OS decision and production
+# quality remain OPEN. Enable the single group-end push only after CAM-FX-05
+# real rendered image gate succeeds. No automatic per-commit CI fanout.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actual-camera-gguf:
+    name: Actual SHA-verified Qwen GGUF 0.5B + llama.cpp unapproved original ActorID USD camera advice
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: master
+          path: deps/llama.cpp
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD, model transport, and native project dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11' Pillow numpy
+          python -m pip install httpx
+      - name: Compile actual CPU-only llama.cpp server from independently recorded source HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C deps/llama.cpp rev-parse HEAD | tee "$RUNNER_TEMP/camera-llama-source-sha.txt"
+          cmake -S deps/llama.cpp -B deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_CURL=OFF
+          cmake --build deps/llama.cpp/build --config Release --target llama-server --parallel 2
+          python -m tools.nvp_wo6_07b_locate_server deps/llama.cpp/build
+      - name: Download exact official Apache-2.0 Qwen2.5 Q4_K_M GGUF and verify content SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="$RUNNER_TEMP/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+          curl --fail --location --retry 4 --retry-delay 5 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf' -o "$file"
+          echo "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db  $file" | sha256sum --check --status
+          test "$(head -c 4 "$file")" = GGUF
+          echo "NVP_CAMFX_MODEL_GGUF=$file" >> "$GITHUB_ENV"
+      - name: Real GGUF camera proposal with immutable original ActorID, district and PCM; no native approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.nvp_cam_fx04_real_gguf_camera_acceptance \
+            --model "$NVP_CAMFX_MODEL_GGUF" \
+            --llama-server "$NVP_TEST_LLAMA_SERVER" \
+            --report "$RUNNER_TEMP/cam-fx04-real-gguf-camera-report.json" \
+            --consent I_APPROVE_DISPOSABLE_LOCAL_GGUF_TEST
+          python - <<'PY'
+          import json,os,pathlib
+          d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'cam-fx04-real-gguf-camera-report.json').read_text('utf8'))
+          assert d['status']=='REAL_GGUF_CAMERA_PROPOSAL_GENERATED_UNAPPROVED'
+          assert d['actual_model_tokens']>0
+          assert d['original_actor_pcm_and_takes_unchanged'] and d['director_camera_rail_unapproved']
+          assert not d['human_director_approval'] and not d['native_worker_authorized']
+          assert not d['representative_7b_plus_model_tested']
+          print('REAL_GGUF_SOURCE_GROUNDED_CAMERA_DRAFT_OBSERVED_NO_APPROVAL')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cam-fx04-real-sha-verified-gguf-camera-source-unapproved
+          path: |
+            ${{ runner.temp }}/camera-llama-source-sha.txt
+            ${{ runner.temp }}/camera_gguf_server_diagnostic.log
+            ${{ runner.temp }}/cam-fx04-real-gguf-camera-report.json
+          if-no-files-found: warn
+          retention-days: 14
