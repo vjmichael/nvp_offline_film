@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import subprocess
 import math
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -40,6 +41,7 @@ class OwnedFilmingWorker:
                 or not 0 < timeout <= 60):
             raise ValueError("Bounded positive termination timeout required")
         process = self._process
+        deadline = time.monotonic() + timeout
         if process.poll() is None:
             try:
                 process.terminate()
@@ -48,10 +50,15 @@ class OwnedFilmingWorker:
                 # the owned handle rather than treating a PID as evidence.
                 pass
             try:
-                process.wait(timeout=timeout)
+                process.wait(timeout=max(0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=timeout)
+                # Escalate to kill, but never silently turn an unbounded wait
+                # into a verified exit. A second timeout is an explicit failure.
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=max(0, deadline - time.monotonic()))
         code = process.poll()
         if code is None:
             raise RuntimeError("Worker exit not verified")
