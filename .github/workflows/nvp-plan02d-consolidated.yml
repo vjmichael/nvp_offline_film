@@ -190,35 +190,70 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'dist/NVP-Alpha-Setup.exe')) {
             throw 'Native NSIS packaging failed'
           }
-      - name: Actual installation, frozen source sound, real WebView2 and safe uninstall
+      - name: Actual installed NVP.exe exact source + WebView2, bounded stage receipts
         shell: pwsh
         run: |
+          function Invoke-NvpSmoke($exe,$mode,$seconds=150) {
+            Write-Output "NVP_INSTALLED_STAGE_START $mode"
+            $process=Start-Process -FilePath $exe -ArgumentList $mode -PassThru
+            try {
+              Wait-Process -Id $process.Id -Timeout $seconds -ErrorAction Stop
+            } catch {
+              Write-Output "NVP_INSTALLED_STAGE_TIMEOUT $mode PID=$($process.Id)"
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
+                Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH
+              }
+              throw "Installed NVP smoke $mode hung or did not exit within bounded native gate"
+            }
+            $process.Refresh()
+            if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
+              Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH
+            }
+            if ($process.ExitCode -ne 0) {
+              throw "Installed NVP smoke $mode failed (exit $($process.ExitCode))"
+            }
+            Write-Output "NVP_INSTALLED_STAGE_PASS $mode"
+          }
           $installer=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
-          $setup=Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+          $setup=Start-Process -FilePath $installer -ArgumentList '/S' -PassThru
+          try {
+            Wait-Process -Id $setup.Id -Timeout 120 -ErrorAction Stop
+          } catch {
+            Stop-Process -Id $setup.Id -Force -ErrorAction SilentlyContinue
+            throw 'Native NVP NSIS install hung'
+          }
+          $setup.Refresh()
           if ($setup.ExitCode -ne 0 -or -not (Test-Path $installed)) { throw 'NVP install failed' }
           if ((Get-FileHash dist/NVP/NVP.exe -Algorithm SHA256).Hash -ne
               (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash) {
             throw 'Installed NVP executable differs from built native source'
           }
-          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-installed-data-av-failure.txt'
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-plan02d-installed-diagnostic.txt'
           Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
-          $smoke=Start-Process -FilePath $installed -ArgumentList '--smoke-data-av' -Wait -PassThru
-          if ($smoke.ExitCode -ne 0) { throw "Installed native Digital Take and sound playback failed (exit $($smoke.ExitCode))" }
-          $smokeD=Start-Process -FilePath $installed -ArgumentList '--smoke-plan02d' -Wait -PassThru
-          if ($smokeD.ExitCode -ne 0) { throw "Installed PLAN-02-D source/raster/restart failed (exit $($smokeD.ExitCode))" }
-          $smokeExit=$smoke.ExitCode
-          if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
-            Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output
-          }
-          if ($smokeExit -ne 0) { throw "Installed native Digital Take and sound playback failed (exit $smokeExit)" }
-          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -Wait -PassThru
-          if ($window.ExitCode -ne 0) { throw "Installed WebView2 data-first sound UI failed (exit $($window.ExitCode))" }
+          Invoke-NvpSmoke $installed '--smoke-data-av' 150
+          Invoke-NvpSmoke $installed '--smoke-plan02d' 150
+          Invoke-NvpSmoke $installed '--smoke-window' 150
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
-          $result=Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait -PassThru
+          $result=Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru
+          try {
+            Wait-Process -Id $result.Id -Timeout 120 -ErrorAction Stop
+          } catch {
+            Stop-Process -Id $result.Id -Force -ErrorAction SilentlyContinue
+            throw 'NVP uninstaller hung'
+          }
+          $result.Refresh()
           if ($result.ExitCode -ne 0) { throw 'Uninstall failed' }
           if (Test-Path $installed) { throw 'Native desktop remains after uninstall' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-plan02d-installed-diagnostic
+          path: ${{ runner.temp }}/nvp-plan02d-installed-diagnostic.txt
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: success()
         with:
