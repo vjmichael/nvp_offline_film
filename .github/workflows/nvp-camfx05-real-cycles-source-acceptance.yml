@@ -1,5 +1,8 @@
 name: NVP CAM-FX-05 Real Moving Virtual-Camera Blender Cycles Source Acceptance
 
+# Second group-end render gate: real source-bound Cycles scenes from two
+# separately reviewed actor-facing virtual cameras, unchanged pixel threshold.
+# Collect actual rendered PNG on any failure before temporary source cleanup.
 # One deliberately scoped render group after 01-04 exact-head native
 # acceptance. Enable the single branch push ONLY for the end-of-group run.
 # Model proposals, physical-PC human approval, film export and finished
