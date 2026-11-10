@@ -5,7 +5,7 @@ on:
   # One exact-head task-group dispatch. Ordinary source fixes do NOT run CI;
   # only deliberately updating this group workflow schedules another batch.
   push:
-    branches: [nvp/usd-film02mh-real-shot-cycles-20261109]
+    branches: [nvp/area2-02mh-camfx-consolidated-20261109]
     paths: [.github/workflows/nvp-usd-film02mh-real-actor-district-render.yml]
   workflow_dispatch:
 
@@ -59,6 +59,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Actual Windows OpenUSD unavailable' }
           python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
           if ($LASTEXITCODE -ne 0) { throw 'Windows native desktop runtime unavailable' }
+          python -m unittest discover -s tests -p test_nvp_p0f01_webview_api_facade.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native WebView2 method surface facade regressed' }
+          python -m unittest discover -s tests -p test_nvp_p0f01_windows_process_gate.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded Windows process receipt contract regressed' }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { throw 'NSIS unavailable' }
       - name: Compile bundled original-world director and real review controls
@@ -82,13 +86,15 @@ jobs:
       - name: NSIS install and real WebView2 protected shot review, then preserve film on uninstall
         shell: pwsh
         run: |
-          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
-          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          # Real Chocolatey NSIS is under Program Files (x86) on Windows 2025.
+          $candidates=@("${env:ProgramFiles(x86)}\NSIS\makensis.exe","$env:ProgramFiles\NSIS\makensis.exe")
+          $nsis=$candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $nsis) { throw 'Native NSIS compiler missing from verified install roots' }
           & $nsis '/V3' 'packaging/nvp-alpha.nsi'
           if ($LASTEXITCODE -ne 0) { throw 'Actual NSIS build failed' }
           $installer=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
-          $r=Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
-          if ($r.ExitCode -ne 0) { throw 'Real NSIS install failed' }
+          python tools/nvp_p0f01_windows_process_gate.py --stage 02mh-nsis-install --timeout-seconds 300 --stage-log "$env:RUNNER_TEMP/02mh-windows-process-stages.jsonl" -- $installer /S
+          if ($LASTEXITCODE -ne 0) { throw 'Real bounded NSIS install failed' }
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           if (-not (Test-Path $installed)) { throw 'Installed Windows executable missing' }
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) { throw 'Installed EXE differs from verified compiled build' }
@@ -96,14 +102,17 @@ jobs:
           $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
           $env:NVP_FILM02MH_GROUP_ACCEPTANCE='1'
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP '02mh-windows-webview2.log'
-          & $installed --smoke-window
-          if ($LASTEXITCODE -ne 0) { throw 'Real installed WebView2/Cycles review controls did not execute' }
+          python tools/nvp_p0f01_windows_process_gate.py --stage 02mh-installed-webview2 --timeout-seconds 300 --stage-log "$env:RUNNER_TEMP/02mh-windows-process-stages.jsonl" --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-window
+          if ($LASTEXITCODE -ne 0) { throw 'Installed WebView2/source review failed; inspect native trace' }
           $log=Get-Content "$env:RUNNER_TEMP/02mh-windows-webview2.log" -Raw
           if (-not $log.Contains('film02mh_installed_source_review_controls_verified_no_worker_started')) { throw 'Installed actor/district Cycles native review IPC/UI missing' }
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'FilmIndex source was not persisted by installed app' }
           $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
-          $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
-          if ($result.ExitCode -ne 0) { throw 'NSIS uninstall failed' }
+          $sourceDb=Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'
+          $before=(Get-FileHash -LiteralPath $sourceDb -Algorithm SHA256).Hash
+          python tools/nvp_p0f01_windows_process_gate.py --stage 02mh-nsis-uninstall --timeout-seconds 240 --stage-log "$env:RUNNER_TEMP/02mh-windows-process-stages.jsonl" -- $uninstaller /S
+          if ($LASTEXITCODE -ne 0) { throw 'Real bounded NSIS uninstall failed' }
+          if ((Get-FileHash -LiteralPath $sourceDb -Algorithm SHA256).Hash -ne $before) { throw 'NSIS modified creator source database' }
           Start-Sleep -Seconds 2
           if (Test-Path $installed) { throw 'Uninstall left protected native EXE' }
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'Uninstall erased filmmaker original source' }
@@ -112,6 +121,7 @@ jobs:
         with:
           name: nvp-02mh-installed-windows-source-review-and-bundled-render-worker-evidence
           path: |
+            ${{ runner.temp }}/02mh-windows-process-stages.jsonl
             ${{ runner.temp }}/02mh-windows-nsis-payload.json
             ${{ runner.temp }}/02mh-windows-webview2.log
           if-no-files-found: warn
