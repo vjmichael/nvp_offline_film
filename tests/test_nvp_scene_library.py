@@ -128,6 +128,38 @@ class SceneLibraryTests(unittest.TestCase):
                         self.project["id"], sid, snap["project_revision"],
                         writer=Writer(bad))
 
+    def test_whole_movie_breakdown_has_exact_source_scenes_unapproved(self):
+        pid=self.project["id"]
+        first=self.service.snapshot(pid)
+        writer=Writer()
+        proposal=self.service.propose_movie_breakdown(
+            pid,first["project_revision"],writer=writer)
+        self.assertEqual(proposal["format"],"nvp.plan04.source_bound_movie_breakdown.v1")
+        self.assertEqual(proposal["scene_count"],2)
+        self.assertEqual(writer.calls,2)
+        self.assertEqual([s["scene_id"] for s in proposal["scenes"]],
+                         [s["scene_id"] for s in first["scenes"]])
+        self.assertEqual([s["screenplay_heading"] for s in proposal["scenes"]],
+                         [s["heading"] for s in first["scenes"]])
+        self.assertEqual(proposal["status"],"UNAPPROVED_PROPOSAL")
+        self.assertFalse(proposal["creator_approval_granted"])
+        self.assertFalse(proposal["native_render_authorized"])
+        self.assertFalse(proposal["original_source_modified"])
+        self.assertEqual(self.service.snapshot(pid),first)
+        self.assertFalse(StoryBible(self.studio).list_entities(pid))
+
+    def test_whole_movie_change_during_model_completion_discards_all(self):
+        pid=self.project["id"]
+        first=self.service.snapshot(pid)
+        def change():
+            self.studio.save_screenplay(
+                pid,SCREENPLAY.replace("This is breakfast.", "My breakfast."),
+                first["project_revision"])
+        with self.assertRaisesRegex(RuntimeError,"changed during"):
+            self.service.propose_movie_breakdown(
+                pid,first["project_revision"],writer=Writer(callback=change))
+        self.assertFalse(StoryBible(self.studio).list_entities(pid))
+
     def test_concurrent_screenplay_change_discards_model_output(self):
         pid = self.project["id"]
         snap = self.service.snapshot(pid)
