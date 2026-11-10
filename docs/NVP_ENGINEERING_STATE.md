@@ -1,5 +1,8 @@
 # NVP — Engineering state and resumption ledger
 
+2026-11-10 DA-03 kernel-observation hardening (source only): commits `8ff88e2`, `7e67c60`, `991f811` reject duplicate or malformed cgroup.events fields before issuing a process-tree custody receipt; regression fixtures cover ambiguous populated values and malformed records. This is contract-level safety only: genuine delegated Linux cgroup, Windows Job Object, filming-launcher attachment, durable restart and installed NVP.exe are NOT independently accepted. DA-03 PARTIAL / OPEN. No FFmpeg introduced; retired proxy workflows untouched.
+
+
 ## 2026-11-10 — DA-03 Linux cgroup-v2 process-tree custody primitive (source only)
 
 PR #74 commits `02866a7` and `fe84c52` introduce `backend/nvp_filming_cgroup_custody.py` and contract tests. The host-only primitive requires an existing private direct-child cgroup under a delegated cgroup-v2 root, writes the kernel `cgroup.kill` control, and waits for `cgroup.events populated 0` under one bounded monotonic deadline. Invalid deadlines, absent controls, unexpected populated values, timeouts and reused receipts fail closed. These source tests use temporary mock control files and **do not establish real cgroup kernel operation**. Real filming launcher creation/delegation, attach-before-exec containment, independent descendant escape tests, crash/restart custody, Windows Job Objects, atomic publication and installed physical capture remain **UNIMPLEMENTED/UNVERIFIED**. DA-03 remains PARTIAL / acceptance OPEN. No FFmpeg invocation was added; retired proxy PR workflows remain untouched. Group-end consolidated native CI is required; no small CI job was dispatched for this primitive.
