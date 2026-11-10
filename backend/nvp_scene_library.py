@@ -88,6 +88,62 @@ class SceneLibrary:
             "limitations": "Character cues and headings are screenplay evidence, not approved casting or physical sets. Props require explicit, current Story Bible scene links.",
         }
 
+    def propose_movie_breakdown(self, project_id: str,
+                                expected_revision: int, *, writer) -> dict:
+        """Whole-screenplay source-backed scene list + separately proposed roles.
+
+        The real screenplay determines all scene IDs/headings. Qwen may only
+        propose unapproved entities within those exact scenes. Fail closed
+        when the draft changes during any network completion: partial answers
+        never become a creator-approved plan.
+        """
+        initial=self.snapshot(project_id)
+        if type(expected_revision) is not int or initial[
+                "project_revision"]!=expected_revision:
+            raise RuntimeError("Screenplay revision changed before AI breakdown")
+        if not 1 <= initial["scene_count"] <= 8:
+            raise ValueError("Bounded whole-screenplay proposal needs 1-8 saved scenes")
+        proposed=[]
+        for scene in initial["scenes"]:
+            result=self.propose_ai_breakdown(
+                project_id,scene["scene_id"],expected_revision,writer=writer)
+            if (result["status"]!="UNAPPROVED_PROPOSAL" or
+                    result["creator_approval_granted"] or
+                    result["source_scene_sha256"]!=scene["source_scene_sha256"]):
+                raise RuntimeError("Model proposed approval or altered scene identity")
+            proposed.append({
+                "scene_id":scene["scene_id"],
+                "scene_number":scene["number"],
+                "screenplay_heading":scene["heading"],
+                "screenplay_character_cues":scene["screenplay_character_cues"],
+                "screenplay_location_heading":scene["location_from_heading"],
+                "source_scene_sha256":scene["source_scene_sha256"],
+                "suggestions":result["suggestions"],
+                "provider_completion_receipt":result["provider_completion_receipt"],
+            })
+        after=self.snapshot(project_id)
+        if (after["project_revision"]!=initial["project_revision"] or
+                after["screenplay_sha256"]!=initial["screenplay_sha256"] or
+                [(v["scene_id"],v["source_scene_sha256"]) for v in
+                 after["scenes"]] !=
+                [(v["scene_id"],v["source_scene_sha256"]) for v in
+                 initial["scenes"]]):
+            raise RuntimeError("Screenplay changed during full AI breakdown")
+        return {
+            "format":"nvp.plan04.source_bound_movie_breakdown.v1",
+            "status":"UNAPPROVED_PROPOSAL",
+            "project_id":project_id,
+            "project_revision":expected_revision,
+            "screenplay_sha256":initial["screenplay_sha256"],
+            "scene_count":len(proposed),
+            "scenes":proposed,
+            "creator_approval_granted":False,
+            "original_source_modified":False,
+            "model_selected_scene_identities":False,
+            "native_render_authorized":False,
+            "final_film_published":False,
+        }
+
     def propose_ai_breakdown(self, project_id: str, scene_id: str,
                               expected_revision: int, *, writer) -> dict:
         if type(expected_revision) is not int or expected_revision < 0:
