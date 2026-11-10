@@ -68,6 +68,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_webview2_ipc_facade.py' -v
           python -m unittest discover -s tests -p 'test_nvp_scene_library.py' -v
           python -m unittest discover -s tests -p 'test_nvp_filming_native_supervisor.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_plan03_original_render_host.py' -v
       - name: PLAN-02-B original microphone, durable recovery and independent native ADC clock
         shell: bash
         run: |
@@ -129,9 +130,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Native Windows Job Object dependencies
+      - name: Native original OpenUSD raster plus OS process-tree dependencies
         shell: bash
         run: |
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
           if [[ "$RUNNER_OS" == "Windows" ]]; then python -m pip install 'pywin32>=306'; fi
       - name: Real detached descendant cancelled and abrupt host crash
         shell: bash
@@ -170,6 +173,22 @@ jobs:
               --report "$RUNNER_TEMP/plan03-real-filming-kernel-custody.json"
           fi
           python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'plan03-real-filming-kernel-custody.json').read_text()); assert d['status']=='ACTUAL_NATIVE_FILMING_JOURNAL_TREE_STOP_AND_RESTART_PASS'; assert not d['publication_authorized'] and not d['human_approval_physically_witnessed'] and not d['automatic_replay']"
+      - name: Real kernel-supervised frozen original OpenUSD to derived PNG
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == 'Linux' ]]; then
+            sudo -n systemd-run --quiet --wait --pipe --collect --service-type=exec \
+              --property=Delegate=yes --property=DelegateSubgroup=nvp-host \
+              --uid="$(id -un)" --working-directory="$GITHUB_WORKSPACE" \
+              --setenv="PYTHONPATH=$GITHUB_WORKSPACE" \
+              "$(command -v python)" -m tools.nvp_plan03_original_render_witness \
+                --report "$RUNNER_TEMP/plan03-real-source-render.json"
+          else
+            python -m tools.nvp_plan03_original_render_witness \
+              --report "$RUNNER_TEMP/plan03-real-source-render.json"
+          fi
+          python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'plan03-real-source-render.json').read_text()); assert d['status']=='ACTUAL_NATIVE_SOURCE_RENDER_OS_CUSTODY_PASS' and d['original_scene_and_take_unchanged_after_reopen']; assert not d['cinema_master_published'] and not d['human_native_consent_physically_witnessed']"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -177,6 +196,7 @@ jobs:
           path: |
             ${{ runner.temp }}/plan02d-real-kernel-custody.json
             ${{ runner.temp }}/plan03-real-filming-kernel-custody.json
+            ${{ runner.temp }}/plan03-real-source-render.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -214,7 +234,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_plan02d_source_selection --hidden-import backend.nvp_plan02d_render_queue --hidden-import backend.nvp_plan02d_worker_custody --hidden-import backend.nvp_plan02d_derived_raster --hidden-import tools.nvp_plan02d_installed_acceptance --hidden-import backend.nvp_plan02e_continuous --hidden-import backend.nvp_scene_library --hidden-import backend.nvp_filming_native_supervisor --hidden-import backend.nvp_webview2_ipc_facade --hidden-import tools.nvp_plan02e_installed_acceptance --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_plan02d_source_selection --hidden-import backend.nvp_plan02d_render_queue --hidden-import backend.nvp_plan02d_worker_custody --hidden-import backend.nvp_plan02d_derived_raster --hidden-import tools.nvp_plan02d_installed_acceptance --hidden-import backend.nvp_plan02e_continuous --hidden-import backend.nvp_scene_library --hidden-import backend.nvp_plan03_original_render_host --hidden-import tools.nvp_plan03_original_render_worker --hidden-import tools.nvp_plan03_original_render_witness --hidden-import backend.nvp_filming_native_supervisor --hidden-import backend.nvp_webview2_ipc_facade --hidden-import tools.nvp_plan02e_installed_acceptance --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
@@ -309,6 +329,9 @@ jobs:
           # This MUST run before a passing --smoke-window can mask the
           # physical desktop traceback (uvicorn DefaultFormatter.isatty).
           Invoke-NvpSmoke $installed '--smoke-consoleless' 150
+          # Installed native NVP.exe launches a real separately contained
+          # renderer with its own original USD source reopen and audit.
+          Invoke-NvpSmoke $installed '--smoke-plan03-render' 180
           Invoke-NvpSmoke $installed '--smoke-data-av' 150
           Invoke-NvpSmoke $installed '--smoke-plan02d' 150
           # Two genuinely separate installed NVP.exe processes and a real
@@ -418,6 +441,13 @@ jobs:
           path: |
             ${{ runner.temp }}/nvp-plan02d-cross-process/plan02e-native-restart/original-receipt.json
             ${{ runner.temp }}/nvp-plan02d-cross-process/plan02e-native-restart/playback-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-plan03-installed-source-render
+          path: ${{ runner.temp }}/nvp-plan03-installed-real-source-render.json
           if-no-files-found: warn
           retention-days: 14
       - uses: actions/upload-artifact@v4
