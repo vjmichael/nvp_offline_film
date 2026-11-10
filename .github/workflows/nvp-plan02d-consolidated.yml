@@ -282,6 +282,12 @@ jobs:
           }
           $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-plan02d-installed-diagnostic.txt'
           Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
+          # Real regression for an installed --windowed executable: no
+          # console-backed stdout/stderr. Exercises the actual Uvicorn
+          # server, offline React page and SQLite in an installed NVP.exe.
+          # This MUST run before a passing --smoke-window can mask the
+          # physical desktop traceback (uvicorn DefaultFormatter.isatty).
+          Invoke-NvpSmoke $installed '--smoke-consoleless' 150
           Invoke-NvpSmoke $installed '--smoke-data-av' 150
           Invoke-NvpSmoke $installed '--smoke-plan02d' 150
           # Two genuinely separate installed NVP.exe processes and a real
