@@ -199,7 +199,14 @@ class OriginalCyclesProduction:
             require_linux_cgroup_v2=True)
         built=self.blender.run(op)
         if built["state"]!="SUCCEEDED":
-            raise RuntimeError("Cycles source build not independently accepted: "+str(built.get("state")))
+            diagnostic=(jobdir/"worker_stderr.log")
+            tail=(diagnostic.read_bytes()[-2048:].decode("utf8","replace")
+                  if diagnostic.is_file() else "no worker stderr")
+            raise RuntimeError(
+                "Cycles source build not independently accepted: "+
+                str(built.get("state"))+
+                "; OS supervisor: "+str(built.get("error",""))[:600]+
+                "; bounded native stderr: "+tail[:1500])
         report=json.loads((jobdir/"build_audit.json").read_text("utf8"))
         if (report.get("passed") is not True or
                 report.get("engine")!="CYCLES" or
