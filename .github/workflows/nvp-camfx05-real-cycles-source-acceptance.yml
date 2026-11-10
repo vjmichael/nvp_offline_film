@@ -1,7 +1,10 @@
 name: NVP CAM-FX-05 Real Moving Virtual-Camera Blender Cycles Source Acceptance
 
-# Second group-end render gate: real source-bound Cycles scenes from two
-# separately reviewed actor-facing virtual cameras, unchanged pixel threshold.
+# Consolidated CAM-FX-05 repair gate: same pinned source with genuinely
+# different director framing of the original ActorID and independently reopened
+# native Cycles frames. Non-destructive view exposure is persisted in .blend;
+# no original USD light, camera, ActorID Take or PCM is modified. Keep the
+# unchanged >=250 real changed-pixel threshold.
 # Collect actual rendered PNG on any failure before temporary source cleanup.
 # One deliberately scoped render group after 01-04 exact-head native
 # acceptance. Enable the single branch push ONLY for the end-of-group run.
@@ -90,6 +93,10 @@ jobs:
               assert verify["native_selected_director_camera_verified"] is True
               assert verify["actual_saved_source_district_meshes_verified"] is True
               assert verify["source_actor_camera_unchanged"] is True
+              assert verify["preview_exposure_stops"] == 2.0
+              source=(root/f"{number}_source.usda").read_text("utf8")
+              import re
+              assert not re.search(r"(?m)^\s*(?:payload|references)\s*=",source), "Native USD render stage retains an external payload/reference"
           assert len(original)==2, "Real changing camera must render different pixels"
           with Image.open(root/"1_frame.png") as a, Image.open(root/"2_frame.png") as b:
               d=ImageChops.difference(a.convert("RGB"),b.convert("RGB"))

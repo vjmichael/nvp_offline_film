@@ -221,6 +221,12 @@ def run():
     if absent:
         raise RuntimeError("Original imported USD actor roots absent: "+",".join(absent))
     scene.render.engine="CYCLES"
+    # Preview-only, non-destructive exposure: the source practical USD light
+    # leaves the actor/district at near-black 8-bit levels. Lift *display*
+    # exposure rather than authoring synthetic actors, changing source light,
+    # lowering the independent >=250 changed-pixel criterion or mutating Takes.
+    # Persist the exact view transform with the independently reopened .blend.
+    scene.view_settings.exposure=2.0
     scene.cycles.device="CPU"
     scene.cycles.samples=12
     scene.render.resolution_x=320
@@ -268,6 +274,8 @@ def run():
         "rail_layer_sha256":rail["rail_layer_sha256"],
         "derived_source_original_02mh_usd_sha256":rail["original_02mh_usd_sha256"],
         "blender_version":bpy.app.version_string,
+        "preview_exposure_stops":float(scene.view_settings.exposure),
+        "source_lighting_not_rewritten":True,
         "rendered_png_sha256":digest(files["--preview"]),
         "saved_blend_sha256":digest(files["--output"]),
         "actual_native_cycles_image":True,

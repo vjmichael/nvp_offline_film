@@ -77,6 +77,8 @@ def main():
         scene.get("nvp_original_film_tick")!=str(district["source_film_tick"]) or
         scene.camera is None or scene.camera.type!="CAMERA"):
         raise RuntimeError("Original source Take/camera missing in saved Cycles scene")
+    if abs(float(scene.view_settings.exposure)-2.0)>1e-6:
+        raise RuntimeError("Saved source-bound director preview exposure was modified")
     imported=list(scene.objects)
     object_names={o.name.split(".")[0] for o in imported}
     actor_roots={a["source_prim"].split("/")[-1]
@@ -127,6 +129,7 @@ def main():
         "director_camera_position_m":observed,
         "district_document_sha256":district["district_document_sha256"],
         "native_saved_scene_blender_version":bpy.app.version_string,
+        "preview_exposure_stops":float(scene.view_settings.exposure),
         "actor_count":len(actor_roots),
         "imported_native_meshes":len(real_meshes),
         "actual_imported_principled_meshes":actual_pbr,

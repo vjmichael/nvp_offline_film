@@ -92,6 +92,10 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
         # The previously used y=-8 view was outside the closed original
         # district facade y=-5.2: two cameras saw nearly the same dark wall.
         changed["nodes"][1]["position_m"]=[2.,-3.,4.]
+        # The real source Engineer ActorID is at (-2.5,-1,0.15).
+        # Reframe that performer instead of aiming both cameras at the same
+        # center prop: this tests actual changed composition and occlusion.
+        changed["nodes"][1]["target_m"]=[-2.5,-1.,0.15]
         changed["nodes"][1]["focal_length_mm"]=55.
         second=cls.rails.preview(
             cls.pid,"CAMFX05ReviewedRail",changed,expected_revision=1)

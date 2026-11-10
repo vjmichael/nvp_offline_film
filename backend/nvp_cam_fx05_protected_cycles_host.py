@@ -144,6 +144,8 @@ class ReviewedCameraRailCyclesHost:
         if (audit.get("format")!=AUDIT_FORMAT or
             audit.get("passed") is not True or
             audit.get("actual_native_cycles_image") is not True or
+            audit.get("preview_exposure_stops")!=2.0 or
+            audit.get("source_lighting_not_rewritten") is not True or
             audit.get("source_usd_sha256")!=receipt["derived_with_rail_usd_sha256"] or
             audit.get("original_world_take_sha256")!=receipt["original_world_take_sha256"] or
             audit.get("original_camera_shot_sha256")!=receipt["original_camera_shot_sha256"] or
@@ -214,6 +216,7 @@ class ReviewedCameraRailCyclesHost:
             result.get("native_selected_director_camera_verified") is not True or
             result.get("actual_saved_source_district_meshes_verified") is not True or
             result.get("source_actor_camera_unchanged") is not True or
+            result.get("preview_exposure_stops")!=2.0 or
             result.get("source_blend_sha256")!=proof["source_blend_sha256"] or
             result.get("source_usd_sha256")!=receipt["derived_with_rail_usd_sha256"] or
             result.get("original_02mh_usd_sha256")!=receipt["original_02mh_usd_sha256"] or
@@ -253,6 +256,8 @@ class ReviewedCameraRailCyclesHost:
             receipt.get("derived_with_rail_usd_sha256")!=sha_file(root/USD) or
             audit.get("format")!=AUDIT_FORMAT or
             audit.get("actual_native_cycles_image") is not True or
+            audit.get("preview_exposure_stops")!=2.0 or
+            audit.get("source_lighting_not_rewritten") is not True or
             audit.get("rendered_png_sha256")!=sha_file(root/FRAME) or
             audit.get("saved_blend_sha256")!=sha_file(root/BLEND) or
             audit.get("rail_revision_sha256")!=receipt["rail_revision_sha256"] or
