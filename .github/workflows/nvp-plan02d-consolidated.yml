@@ -200,6 +200,9 @@ jobs:
               Wait-Process -Id $process.Id -Timeout $seconds -ErrorAction Stop
             } catch {
               Write-Output "NVP_INSTALLED_STAGE_TIMEOUT $mode PID=$($process.Id)"
+              # Best-effort GUI descendant reap for a failed smoke; this is
+              # NOT the separate D3 kernel process-tree custody acceptance.
+              & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-String | Write-Output
               Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
               if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
                 Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH
@@ -261,7 +264,16 @@ jobs:
           $sentinelFile=Join-Path $sentinel 'original-source-preservation.txt'
           Set-Content -LiteralPath $sentinelFile -Value 'NVP-D5-CREATOR-DATA-MUST-SURVIVE-UNINSTALL' -NoNewline
           $sentinelSha=(Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash
-          Invoke-NvpSmoke $installed '--smoke-window' 150
+          # Even a failed real WebView2 gate must not prevent validating the
+          # real uninstaller and creator-owned data preservation. Re-raise
+          # afterward so the complete installed gate remains RED.
+          $windowFailure=$null
+          try {
+            Invoke-NvpSmoke $installed '--smoke-window' 150
+          } catch {
+            $windowFailure=$_.Exception.Message
+            Write-Output "NVP_D5_WEBVIEW2_UNACCEPTED $windowFailure"
+          }
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
           $result=Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru
@@ -286,6 +298,9 @@ jobs:
           }
           Remove-Item -LiteralPath $sentinel -Recurse -Force
           Write-Output 'NVP_D5_NATIVE_UNINSTALL_PRESERVES_SOURCE_AND_PROJECTS_PASS'
+          if ($windowFailure) {
+            throw "Real installed WebView2 UI gate remains unaccepted: $windowFailure"
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
