@@ -201,15 +201,15 @@ class NativePlan02CCameraActions:
                 self._closing):
             return False
         return self._ask(
-            "Review one source-selected derivative render INTENTION?\\n" +
+            "Review one source-selected derivative render INTENTION?\n" +
             "Project: " + scope["project_id"] +
-            "\\nJob: " + scope["job_id"] +
-            "\\nSource Take SHA: " + scope["source_take_sha256"] +
-            "\\nCamera Timeline SHA: " + scope["camera_timeline_sha256"] +
-            "\\nFirst original Film Time tick: " + str(scope["first_tick"]) +
-            "\\nLast tick EXCLUSIVE: " + str(scope["last_tick_exclusive"]) +
-            "\\nSelection SHA: " + scope["selection_sha256"] +
-            "\\nApproval DOES NOT authorize a renderer worker, export, " +
+            "\nJob: " + scope["job_id"] +
+            "\nSource Take SHA: " + scope["source_take_sha256"] +
+            "\nCamera Timeline SHA: " + scope["camera_timeline_sha256"] +
+            "\nFirst original Film Time tick: " + str(scope["first_tick"]) +
+            "\nLast tick EXCLUSIVE: " + str(scope["last_tick_exclusive"]) +
+            "\nSelection SHA: " + scope["selection_sha256"] +
+            "\nApproval DOES NOT authorize a renderer worker, export, " +
             "file modification, restart replay, or FFmpeg.")
 
     def plan02d_preview(self, request):
