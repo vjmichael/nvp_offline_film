@@ -206,12 +206,14 @@ def run_visible_window_smoke():
     Use a throwaway film workspace: tests must never publish a demo source
     or mutate the creator's durable Projects directory.
     """
+    _smoke_checkpoint("window_enter")
     import webview
     from threading import Event
     test_home=Path(tempfile.mkdtemp(prefix="nvp-slate08b-installed-"))
     old_home=os.environ.get("NVP_HOME")
     os.environ["NVP_HOME"]=str(test_home)
     try:
+        _smoke_checkpoint("window_before_app")
         app=create_app()
         from backend.nvp_api import studio
         from backend.nvp_film_index import FilmIndex
@@ -253,7 +255,9 @@ def run_visible_window_smoke():
                 scene_revision=1,timeline_id="smoke_events",
                 timeline_revision=1,sample_ticks=[0],
                 creator_event="smoke_only")
+        _smoke_checkpoint("window_before_serve")
         server,worker,port,sock=serve(app)
+        _smoke_checkpoint("window_after_serve")
     except BaseException:
         if old_home is None: os.environ.pop("NVP_HOME",None)
         else: os.environ["NVP_HOME"]=old_home
@@ -263,16 +267,21 @@ def run_visible_window_smoke():
     result={"passed":False}
     bridge=None
     try:
+        _smoke_checkpoint("window_before_native_bridge")
         bridge=create_trusted_camera_bridge(port)
+        _smoke_checkpoint("window_before_webview_create")
         window=webview.create_window("NVP Alpha Window Acceptance",
             "http://127.0.0.1:"+str(port),width=1000,height=700,
             js_api=bridge)
         bridge._attach_window(window)
+        _smoke_checkpoint("window_after_webview_create")
         window.events.loaded += lambda:loaded.set()
         def inspect_and_close():
+            _smoke_checkpoint("window_probe_enter")
             try:
                 if not loaded.wait(timeout=25):
                     raise RuntimeError("Native WebView2 did not fire page-loaded event")
+                _smoke_checkpoint("window_probe_loaded")
                 # HTML loaded is insufficient: require actual React DOM mount.
                 deadline=time.monotonic()+20
                 while time.monotonic()<deadline:
@@ -280,12 +289,14 @@ def run_visible_window_smoke():
                         "Boolean(document.querySelector('#root') && "
                         "document.querySelector('#root').children.length > 0)")
                     if mounted is True:
+                        _smoke_checkpoint("window_react_mounted")
                         ipc=window.evaluate_js(
                             "Boolean(window.pywebview && window.pywebview.api && "
                             "typeof window.pywebview.api.request_camera_still === 'function' && "
                             "typeof window.pywebview.api.poll_camera_still === 'function' && "
                             "typeof window.pywebview.api.cancel_camera_still === 'function')")
                         if ipc is True:
+                            _smoke_checkpoint("window_ipc_exposed")
                             # Type signatures alone don't prove that the
                             # installed WebView2 can invoke native host code.
                             # Execute a REAL non-mutating JS -> Python IPC,
@@ -309,6 +320,7 @@ def run_visible_window_smoke():
                                         "Desktop native camera JS IPC failed origin/capability validation")
                                 time.sleep(.1)
                             if result["passed"]:
+                                _smoke_checkpoint("window_native_capability_pass")
                                 # The browser must ALSO open a real project,
                                 # visit its camera tab, resolve the authored
                                 # source from SQLite and load native USD.
@@ -344,6 +356,7 @@ def run_visible_window_smoke():
                                 if not result["passed"]:
                                     raise RuntimeError(
                                         "Installed OpenUSD camera source did not reach real React workbench")
+                                _smoke_checkpoint("window_camera_panel_pass")
                                 # The same installed WebView2 must expose
                                 # actual data-first 3D audio from a frozen
                                 # Digital Take, without any FFmpeg discovery.
@@ -375,6 +388,7 @@ def run_visible_window_smoke():
                                     time.sleep(.2)
                                 if state!="PASSED":
                                     raise RuntimeError("Native sound IPC timed out")
+                                _smoke_checkpoint("window_data_av_catalog_pass")
                                 window.evaluate_js(
                                     "(()=>{const b=[...document.querySelectorAll('nav.tabs button')]"
                                     ".find(x=>x.textContent.includes('Native 3D sound'));"
@@ -392,15 +406,21 @@ def run_visible_window_smoke():
                                 if not result["passed"]:
                                     raise RuntimeError(
                                         "Data-first source audition UI not mounted in installed WebView2")
+                                _smoke_checkpoint("window_data_av_panel_pass")
                                 break
                     time.sleep(.2)
                 if not result["passed"]:
                     raise RuntimeError("Bundled NVP React interface did not render")
             except Exception as exc:
                 result["failure"]=str(exc)
+                _smoke_checkpoint("window_probe_failure_"+type(exc).__name__)
             finally:
+                _smoke_checkpoint("window_before_destroy")
                 window.destroy()
+                _smoke_checkpoint("window_after_destroy")
+        _smoke_checkpoint("window_before_webview_start")
         webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
+        _smoke_checkpoint("window_after_webview_start")
         if not result["passed"]:
             raise RuntimeError(
                 "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
