@@ -45,7 +45,10 @@ scene.render.threads=2
 scene["nvp_original_take_sha256"]=source["take_sha256"]
 scene["nvp_original_scene_sha256"]=source["scene_sha256"]
 scene["nvp_source_selection_sha256"]=source["selection_sha256"]
-scene["nvp_exact_film_tick"]=int(source["source_tick"])
+# Blender ID properties can narrow Python integers to signed 32-bit.
+# Store authoritative 64-bit Film Time as exact decimal text; do not
+# round or truncate original USD ticks in renderer metadata.
+scene["nvp_exact_film_tick"]=str(source["source_tick"])
 scene["nvp_original_camera_path"]=source["camera_path"]
 focus=Vector((0.0,0.0,0.0))
 for number,object_spec in enumerate(source["geometry"]):
@@ -138,7 +141,7 @@ if (set(expected)!={"take_sha256","scene_sha256","selection_sha256",
         scene["nvp_original_take_sha256"]!=expected["take_sha256"] or
         scene["nvp_original_scene_sha256"]!=expected["scene_sha256"] or
         scene["nvp_source_selection_sha256"]!=expected["selection_sha256"] or
-        scene["nvp_exact_film_tick"]!=expected["source_tick"]):
+        scene["nvp_exact_film_tick"]!=str(expected["source_tick"])):
     raise RuntimeError("Independently reopened Blender differs from immutable source")
 objects=[o for o in scene.objects if o.name.startswith("nvp_source_")]
 if len(objects)!=expected["geometry_count"]:
