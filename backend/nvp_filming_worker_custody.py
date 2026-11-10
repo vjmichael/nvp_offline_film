@@ -33,6 +33,7 @@ class OwnedFilmingWorker:
             raise TypeError("An actual host-owned Popen handle is required")
         self._process = process
         self._consumed = False
+        self._termination_requested = False
 
     def stop_and_verify(self, *, timeout: float = 5.0) -> WorkerExitReceipt:
         if self._consumed:
@@ -43,12 +44,14 @@ class OwnedFilmingWorker:
         process = self._process
         deadline = time.monotonic() + timeout
         if process.poll() is None:
-            try:
-                process.terminate()
-            except ProcessLookupError:
-                # The child may exit between poll and terminate; wait for
-                # the owned handle rather than treating a PID as evidence.
-                pass
+            if not self._termination_requested:
+                self._termination_requested = True
+                try:
+                    process.terminate()
+                except ProcessLookupError:
+                    # Child exited after poll; the owned handle still provides
+                    # the only admissible exit evidence.
+                    pass
             try:
                 process.wait(timeout=max(0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
