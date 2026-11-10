@@ -262,9 +262,9 @@ def run_visible_window_smoke():
         # Genuine saved scenes, not a synthetic DOM fixture: the installed
         # Scene Library must fetch source-derived headings/cues/empty props.
         project=studio.save_screenplay(project["id"],
-            "INT. KITCHEN - DAY\\n\\nA dog eats from a bowl.\\n\\n"
-            "ALEX\\nThe dog is eating.\\n\\n"
-            "EXT. GARDEN - NIGHT\\n\\nThe dog goes outside.",
+            "INT. KITCHEN - DAY\n\nA dog eats from a bowl.\n\n"
+            "ALEX\nThe dog is eating.\n\n"
+            "EXT. GARDEN - NIGHT\n\nThe dog goes outside.",
             project["revision"])
         _smoke_checkpoint("window_plan03_two_source_scenes_persisted")
         OpenUSDSceneBridge(FilmIndex(studio)).publish(
