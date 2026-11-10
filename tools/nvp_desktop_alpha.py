@@ -255,6 +255,13 @@ def run_visible_window_smoke():
                 scene_revision=1,timeline_id="smoke_events",
                 timeline_revision=1,sample_ticks=[0],
                 creator_event="smoke_only")
+        # The 30-second source film must also appear as a genuine saved
+        # Digital Take in the installed GUI, not as a browser-generated demo
+        # slideshow or a pre-rendered movie file. This is only a deterministic
+        # test signal; not physical microphone or human approval evidence.
+        from tools.nvp_plan02e_installed_acceptance import create as create_film
+        create_film(source_index,project["id"])
+        _smoke_checkpoint("window_plan02e_original_take_created")
         _smoke_checkpoint("window_before_serve")
         server,worker,port,sock=serve(app)
         _smoke_checkpoint("window_after_serve")
@@ -407,6 +414,22 @@ def run_visible_window_smoke():
                                     raise RuntimeError(
                                         "Data-first source audition UI not mounted in installed WebView2")
                                 _smoke_checkpoint("window_data_av_panel_pass")
+                                # A REAL installed WebView2 must see the
+                                # 30-second frozen Take via the same browser
+                                # -> trusted Python catalog and React menu.
+                                until=time.monotonic()+20
+                                film_in_ui=False
+                                while time.monotonic()<until:
+                                    film_in_ui=window.evaluate_js(
+                                        "Boolean([...document.querySelectorAll('select')].some("
+                                        "x=>x.getAttribute('aria-label')==='Native frozen Digital Take'"
+                                        "&&[...x.options].some(o=>o.value==='OriginalThirtySecondFilm')))")
+                                    if film_in_ui is True:break
+                                    time.sleep(.2)
+                                if film_in_ui is not True:
+                                    raise RuntimeError(
+                                        "30-second native source film is absent from installed UI")
+                                _smoke_checkpoint("window_plan02e_30s_film_catalog_pass")
                                 break
                     time.sleep(.2)
                 if not result["passed"]:
