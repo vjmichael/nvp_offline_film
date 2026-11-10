@@ -88,3 +88,40 @@ should run for each small code edit; only the final grouped task gate.
 
 **Downstream tasks preserved:** [DCI/SMPTE WO3–WO5 and
 AI Skin HSURF-00..10 register](NVP_DOWNSTREAM_DCI_HSURF_REGISTER.md).
+
+
+## Exact-head acceptance investigation — 2026-11-10 UTC
+
+The first syntactically valid grouped run was
+[PLAN-02-D run 42767744382](https://github.com/vjmichael/nvp_offline_film/actions/runs/42767744382)
+at `389eee4e2bb8b610616f78f3a207577854aef5b9`.
+Its DA-00 zero-FFmpeg audit, React build/source UI tests and genuine native
+OpenUSD Python 3.11/3.13 matrices on **both Ubuntu and Windows** completed
+successfully. This establishes D1/D2/D3 contract-regression/D4 procedural
+image source tests on this exact source SHA; it is **not** whole task group
+acceptance or a representative cinema renderer.
+
+Two real OS positive tree-witness problems were identified independently:
+- Linux GitHub-hosted Ubuntu 24.04 did NOT have a systemd `Delegate=yes`
+  cgroup v2 scope. The positive detached descendant witness **FAILED
+  CLOSED**. Do not use process groups, simulated cgroups or direct child
+  exit as evidence of actual strict descendant custody. A genuine
+  delegated self-hosted Linux scope and successful native witness remain
+  a blocked acceptance gate.
+- Windows positive witness progressed through an actual cancel path
+  but the abrupt-host-crash subprocess script, located under a temporary
+  directory, could not import the `backend` package. A bounded
+  subprocess-only Python import path repair is staged on a separate
+  repair branch; Windows actual host crash is **not accepted** until
+  the repaired witness runs and confirms detached descendant exit.
+
+The Windows installed NSIS/WebView2 job reached the actual
+install/smoke/uninstall step; it had not produced an outcome when
+the repair was staged. The repair groups bounded per-smoke process
+waits, PID cleanup on timeouts and an always-uploaded stage diagnostic,
+without faking a native application success.
+
+**No extra per-edit CI jobs.** Finish the unblocked repairs, promote
+the repair branch once as the next exact-head grouped run, and inspect
+all real native results. Keep PLAN-02-D3 Linux custody and D5 physical
+creator acceptance OPEN until witnessed independently.
