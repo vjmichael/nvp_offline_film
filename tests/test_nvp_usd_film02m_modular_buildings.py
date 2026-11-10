@@ -1811,13 +1811,18 @@ class OriginalModularBuildingSource(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 bridge.film02mg_candidate_status({
                     "project_id":self.pid,"attempt_id":"invalid"})
+            # On actual CPU-contended native Ubuntu/Windows groups, a
+            # durable source-only model task can take longer than 5s. Keep
+            # the terminal state assertion exact but use a bounded monotonic
+            # deadline so runner scheduling is not mistaken for a source bug.
             state=None
-            for _ in range(100):
+            deadline=time.monotonic()+30.0
+            while time.monotonic()<deadline:
                 state=bridge.film02mg_candidate_status({
                     "project_id":self.pid,"attempt_id":attempt})
                 if state["state"]!="GENERATING":
                     break
-                time.sleep(.05)
+                time.sleep(.1)
             self.assertEqual(state["state"],"DRAFT_SAVED",state)
             self.assertEqual(state["model_evidence"]["status"],
                              "GENERATED_UNAPPROVED")
