@@ -97,6 +97,10 @@ try {
     throw 'Native installed executable missing'
   }
   $report.installed_sha256 = (Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash
+  # The actual physical crash was Uvicorn logging initialization in a
+  # PyInstaller --windowed process without sys.stderr. Check this BEFORE
+  # operator audio consent or the 30-second source test. Never fake a pass.
+  Invoke-Checked $installedExe '--smoke-consoleless' 150 'windowed-uvicorn-react-sqlite-no-console'
   Invoke-Checked $installedExe '--smoke-data-av' 150 'native-openusd-original-pcm'
   Invoke-Checked $installedExe '--smoke-plan02d' 150 'original-camera-raster-source-receipt'
   Invoke-Checked $installedExe '--smoke-plan02d-restart-create' 150 'sqlite-restart-create'
