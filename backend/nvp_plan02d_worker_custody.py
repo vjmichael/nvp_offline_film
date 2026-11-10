@@ -144,6 +144,10 @@ class SupervisedSourceRenderWorker:
                         old["document_sha256"] or
                         sha_file(binary) != executable_sha256):
                     raise PermissionError("Stale source, queue or executable after OS consent")
+                # Consume a one-use process-lifetime D2 native review.
+                # Persisted APPROVED is never sufficient after restart.
+                self.queue.consume_live_worker_review(
+                    pid, job_id, old["revision"], scope["selection_sha256"])
                 # Persist BEFORE execution. A crashed host cannot silently
                 # replay this accepted/started intention on restart.
                 started = self._update(pid, job_id, old, STARTED)
