@@ -79,8 +79,13 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_plan02d_worker_custody.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02d_derived_raster.py' -v
           python -m unittest discover -s tests -p 'test_nvp_filming_worker_custody.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_filming_cgroup_custody.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_filming_cgroup_launch.py' -v
+          # Linux cgroup v2 contract test uses native O_DIRECTORY/dir_fd.
+          # Windows uses the separate actual Job Object witness above;
+          # do not pretend Linux cgroup syscalls exist on Windows.
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            python -m unittest discover -s tests -p 'test_nvp_filming_cgroup_custody.py' -v
+            python -m unittest discover -s tests -p 'test_nvp_filming_cgroup_launch.py' -v
+          fi
       - name: Existing frozen source/camera/provenance regressions
         shell: bash
         run: |
