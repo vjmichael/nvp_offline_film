@@ -54,6 +54,8 @@ jobs:
       - name: Grouped native 02M-F/G/H model draft recovery and real 01D/01E original film source acceptance
         shell: pwsh
         run: |
+          python -m unittest discover -s tests -p test_nvp_p0f01_webview_api_facade.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native WebView2 API facade recursion and authority regression' }
           python -m compileall -q backend/nvp_usd_film02m_f_authoring.py backend/nvp_usd_film02m_f_desktop_mixin.py backend/nvp_usd_film02m_g_model_world_candidate.py backend/nvp_usd_film02m_h_actor_camera_binding.py
           if ($LASTEXITCODE -ne 0) { throw 'NVP original world model/shot integration did not compile' }
           python -m unittest discover -s tests -p test_nvp_usd_film02mg_model_world_candidate.py -v
