@@ -1,5 +1,8 @@
 # NVP-DATA-ALL — Per-task migration closeout ledger
 
+2026-11-10 DA-03 attach-before-exec membership attestation (SOURCE ONLY): commits `4121b09`, `d8bd06b`, `347f747` now require a fresh `cgroup.procs` observation containing the current child PID after attachment and before exec; missing membership refuses worker execution. Contract test covers failure and mocks the positive observation. This does NOT prove genuine delegated cgroup operation, host-created containment, Windows Job Object, durable restart, exact-head native tests, installed NVP.exe, continuous 3D A/V or FFmpeg-free export. DA-03 PARTIAL / OPEN; no FFmpeg fallback; retired proxy PRs untouched.
+
+
 2026-11-10 DA-03 Linux attach-before-exec primitive (SOURCE ONLY): commits `71706c4`, `3f80ac9` add `backend/nvp_filming_cgroup_launch.py` and contract tests. Trusted host can attach the current child to an existing private cgroup via `cgroup.procs` before `execv`; missing attachment or invalid executable fails closed, with no shell or FFmpeg fallback. This is NOT wired to the actual filming launcher, and does not create/delegate cgroups, establish host custody or restart attestation, or independently verify descendant termination. Mock-file ordering tests are NOT genuine Linux delegated-cgroup acceptance. Windows Job Object, installed NVP.exe, atomic publication, continuous A/V and final delivery remain UNVERIFIED. DA-03 PARTIAL / OPEN; retired proxy PRs untouched.
 
 
