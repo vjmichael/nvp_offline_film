@@ -1,5 +1,8 @@
 # NVP MASTER DESIGN — World-Aware Personal Film Studio
 
+> **CURRENT INTEGRATION ROUTE (PLAN-02, 2026-11-09 MST):** Draft PR #74, `nvp/data-av01-native-scene-playback-20261106`, is the sole production integration baseline. Future CAM-FX/WO6/USD-FILM branches supply independently reviewed *selective* source-time, renderer and AI components only; never merge whole legacy FFmpeg or frame-authoritative stacks. The exact branch/evidence/port disposition and ordered gates are in [PLAN-02 authoritative integration map](NVP_PLAN02_AUTHORITATIVE_INTEGRATION_PATH.md) and its [machine-readable manifest](NVP_PLAN02_INTEGRATION_MANIFEST.json). **This route is documented, NOT proof that donor ports, the original 30s film, physical human consent or integrated acceptance passed.**
+
+
 **Document ID:** NVP-MASTER-001  
 **Revision:** 1.1 — 2026-11-03  
 **State:** Established architecture and product-requirements baseline; individual open decisions remain explicitly open  

@@ -1,5 +1,8 @@
 # NVP — Engineering state and resumption ledger
 
+**CURRENT INTEGRATION ROUTE (PLAN-02, 2026-11-09 MST):** Draft PR #74, `nvp/data-av01-native-scene-playback-20261106`, is the sole production integration baseline. Future CAM-FX/WO6/USD-FILM branches supply independently reviewed *selective* source-time, renderer and AI components only; never merge whole legacy FFmpeg or frame-authoritative stacks. The exact branch/evidence/port disposition and ordered gates are in [PLAN-02 authoritative integration map](NVP_PLAN02_AUTHORITATIVE_INTEGRATION_PATH.md) and its [machine-readable manifest](NVP_PLAN02_INTEGRATION_MANIFEST.json). **This route is documented, NOT proof that donor ports, the original 30s film, physical human consent or integrated acceptance passed.**
+
+
 **Purpose:** One concise, machine-readable-by-convention entrypoint for a newly started AI development conversation.
 
 **LATEST CREATOR PRIORITY (2026-11-05): WINDOWS NSIS INSTALLER WORK IS PAUSED.** Do not attempt setup scripts, packaging or on-PC dependencies unless the creator explicitly resumes that task. Active objective: a real continuous 30–60-second NVP-produced short film, with AI-generation and production continuity verified; technical reel assembly is a stepping stone. Git commits, exact build/test logs, creator approvals and artifact hashes remain the sources of truth. This document is a **navigation index**, not proof that an effect ran.
