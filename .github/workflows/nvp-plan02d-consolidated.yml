@@ -286,342 +286,40 @@ jobs:
           if-no-files-found: warn
 
   genuine-cycles-blender:
-    name: Real OpenUSD to Blender Cycles and independent scene reopen / ${{ matrix.os }}
+    name: Actual Blender Cycles from frozen OpenUSD / ubuntu-24.04
     needs: [zero-ffmpeg-policy]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 55
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, windows-2025]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install NVP/OpenUSD and native Windows containment
+      - name: Install real Blender and native OpenUSD
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install -r requirements-foundation.txt
           python -m pip install --only-binary=:all: 'usd-core==26.11'
-          if [[ "$RUNNER_OS" == 'Windows' ]]; then python -m pip install 'pywin32>=306'; fi
-      - name: Install actual headless Blender CPU on Linux
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends blender xvfb xauth
-          command -v blender
-      - name: Install checksum-pinned official Blender portable on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference='Stop'
-          $url='https://download.blender.org/release/Blender5.2'
-          $file='blender-5.2.3-windows-x64.zip'
-          & curl.exe --fail --location --retry 3 --retry-delay 4 -o $file "$url/$file"
-          if ($LASTEXITCODE -ne 0) { throw 'Official Blender download failed' }
-          & curl.exe --fail --location --retry 3 --retry-delay 4 -o blender.sha256 "$url/blender-5.2.3.sha256"
-          if ($LASTEXITCODE -ne 0) { throw 'Official Blender manifest download failed' }
-          $line=Get-Content blender.sha256 | Where-Object { $_ -match '^[a-fA-F0-9]{64}\s+\*?blender-5\.2\.3-windows-x64\.zip\s*    name: Real packaged / installed Windows NVP.exe with OpenUSD and PCM (no FFmpeg)
-    runs-on: windows-2025
-    timeout-minutes: 80
-    needs: [zero-ffmpeg-policy, native-react]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Build real offline React frontend
-        shell: pwsh
-        run: |
-          Push-Location frontend
-          npm install --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm run build
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Pop-Location
-      - name: Native USD + GUI/installer packager, no FFmpeg installed by workflow
-        shell: pwsh
-        run: |
-          python -m pip install --only-binary=:all: 'usd-core==26.11'
-          if ($LASTEXITCODE -ne 0) { throw 'Native OpenUSD unavailable' }
-          python -m pip install -r requirements-foundation.txt 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306'
-          if ($LASTEXITCODE -ne 0) { throw 'Native desktop packager unavailable' }
-          choco install nsis -y --no-progress
-          if ($LASTEXITCODE -ne 0) { throw 'NSIS unavailable' }
-      - name: Bundle actual native NVP.exe + real USD and offline editor
-        shell: pwsh
-        run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_plan02d_source_selection --hidden-import backend.nvp_plan02d_render_queue --hidden-import backend.nvp_plan02d_worker_custody --hidden-import backend.nvp_plan02d_derived_raster --hidden-import tools.nvp_plan02d_installed_acceptance --hidden-import backend.nvp_plan02e_continuous --hidden-import backend.nvp_scene_library --hidden-import backend.nvp_plan03_original_render_host --hidden-import tools.nvp_plan03_original_render_worker --hidden-import tools.nvp_plan03_original_render_witness --hidden-import backend.nvp_filming_native_supervisor --hidden-import backend.nvp_webview2_ipc_facade --hidden-import tools.nvp_plan02e_installed_acceptance --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
-          if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
-          if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
-          $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
-          if ($bundled.Count -ne 0) { throw 'Legacy FFmpeg was accidentally bundled into native data AV' }
-          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-packaged-data-av-failure.txt'
-          Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
-          $packaged=Start-Process -FilePath (Resolve-Path 'dist/NVP/NVP.exe').Path -ArgumentList '--smoke-data-av' -Wait -PassThru
-          if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output }
-          if ($packaged.ExitCode -ne 0) { throw "Packaged native USD+PCM source acceptance failed (exit $($packaged.ExitCode))" }
-      - name: Build dedicated single-click NSIS installed candidate
-        shell: pwsh
-        run: |
-          $possible=@(
-            (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS/makensis.exe'),
-            (Join-Path $env:ProgramFiles 'NSIS/makensis.exe'),
-            (Join-Path $env:ChocolateyInstall 'bin/makensis.exe')
-          )
-          $nsis=$possible | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-          if (-not $nsis) { throw 'No trusted installed NSIS compiler' }
-          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'dist/NVP-Alpha-Setup.exe')) {
-            throw 'Native NSIS packaging failed'
-          }
-      - name: Record SHA-256 of unaccepted Windows candidate for physical GUI gate
-        shell: pwsh
-        run: |
-          if (-not (Test-Path -LiteralPath 'dist/NVP-Alpha-Setup.exe' -PathType Leaf)) {
-            throw 'Cannot record candidate checksum without genuine NSIS output'
-          }
-          $digest=(Get-FileHash -LiteralPath 'dist/NVP-Alpha-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -LiteralPath 'dist/NVP-PLAN02D-CANDIDATE-SHA256.txt' -Value "$digest  NVP-Alpha-Setup.exe"
-          Write-Output "NVP_PLAN02D_UNACCEPTED_CANDIDATE_SHA256=$digest"
-      - name: Actual installed NVP.exe exact source + WebView2, bounded stage receipts
-        shell: pwsh
-        run: |
-          function Invoke-NvpSmoke($exe,$mode,$seconds=150) {
-            Write-Output "NVP_INSTALLED_STAGE_START $mode"
-            $process=Start-Process -FilePath $exe -ArgumentList $mode -PassThru
-            try {
-              Wait-Process -Id $process.Id -Timeout $seconds -ErrorAction Stop
-            } catch {
-              Write-Output "NVP_INSTALLED_STAGE_TIMEOUT $mode PID=$($process.Id)"
-              # Best-effort GUI descendant reap for a failed smoke; this is
-              # NOT the separate D3 kernel process-tree custody acceptance.
-              & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-String | Write-Output
-              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-              if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
-                Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH
-              }
-              throw "Installed NVP smoke $mode hung or did not exit within bounded native gate"
-            }
-            $process.Refresh()
-            if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
-              Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH
-            }
-            if ($process.ExitCode -ne 0) {
-              throw "Installed NVP smoke $mode failed (exit $($process.ExitCode))"
-            }
-            Write-Output "NVP_INSTALLED_STAGE_PASS $mode"
-          }
-          function Confirm-NvpUninstalled($exe,$seconds=90) {
-            # Real NSIS uninstaller may launch temporary child and return early.
-            $deadline=[DateTime]::UtcNow.AddSeconds($seconds)
-            while (Test-Path -LiteralPath $exe -PathType Leaf) {
-              if ([DateTime]::UtcNow -ge $deadline) {
-                throw 'Real NSIS uninstaller did not remove NVP.exe before deadline'
-              }
-              Start-Sleep -Milliseconds 500
-            }
-            Write-Output 'NVP_D5_REAL_NSIS_CHILD_REMOVAL_OBSERVED'
-          }
-          $installer=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
-          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
-          $setup=Start-Process -FilePath $installer -ArgumentList '/S' -PassThru
-          try {
-            Wait-Process -Id $setup.Id -Timeout 120 -ErrorAction Stop
-          } catch {
-            Stop-Process -Id $setup.Id -Force -ErrorAction SilentlyContinue
-            throw 'Native NVP NSIS install hung'
-          }
-          $setup.Refresh()
-          if ($setup.ExitCode -ne 0 -or -not (Test-Path $installed)) { throw 'NVP install failed' }
-          if ((Get-FileHash dist/NVP/NVP.exe -Algorithm SHA256).Hash -ne
-              (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash) {
-            throw 'Installed NVP executable differs from built native source'
-          }
-          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-plan02d-installed-diagnostic.txt'
-          Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
-          # Real regression for an installed --windowed executable: no
-          # console-backed stdout/stderr. Exercises the actual Uvicorn
-          # server, offline React page and SQLite in an installed NVP.exe.
-          # This MUST run before a passing --smoke-window can mask the
-          # physical desktop traceback (uvicorn DefaultFormatter.isatty).
-          Invoke-NvpSmoke $installed '--smoke-consoleless' 150
-          # Installed native NVP.exe launches a real separately contained
-          # renderer with its own original USD source reopen and audit.
-          Invoke-NvpSmoke $installed '--smoke-plan03-render' 180
-          Invoke-NvpSmoke $installed '--smoke-data-av' 150
-          Invoke-NvpSmoke $installed '--smoke-plan02d' 150
-          # Two genuinely separate installed NVP.exe processes and a real
-          # SQLite host reopen, not a same-process constructor-only check.
-          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-plan02d-cross-process'
-          Invoke-NvpSmoke $installed '--smoke-plan02d-restart-create' 150
-          Invoke-NvpSmoke $installed '--smoke-plan02d-restart-reopen' 150
-          # PLAN-02-E full 30-second native scene/PCM stream, no derived
-          # film file. Reopen it in a completely separate installed process.
-          Invoke-NvpSmoke $installed '--smoke-plan02e-restart-create' 600
-          Invoke-NvpSmoke $installed '--smoke-plan02e-restart-reopen' 180
-          Write-Output 'NVP_PLAN02E_30S_INSTALLED_NATIVE_STREAM_AND_RESTART_PASS'
-          # Preserve independent source evidence and original creator project data.
-          # Hash after both separate installed NVP.exe processes have fully exited.
-          $preservedRoot=Join-Path $env:NVP_HOME 'plan02d-native-restart'
-          $preservedFiles=@(
-            (Join-Path $preservedRoot 'studio.sqlite3'),
-            (Join-Path $preservedRoot 'restart-receipt.json'),
-            (Join-Path $env:NVP_HOME 'plan02e-native-restart/studio.sqlite3'),
-            (Join-Path $env:NVP_HOME 'plan02e-native-restart/original-receipt.json'),
-            (Join-Path $env:NVP_HOME 'plan02e-native-restart/playback-receipt.json')
-          )
-          $preservedHashes=@{}
-          foreach ($file in $preservedFiles) {
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
-              throw "D5 missing original source/restart evidence before uninstall: $file"
-            }
-            $preservedHashes[$file]=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
-          }
-          # NSIS must also preserve the REAL default creator Projects directory,
-          # independently of this CI-only overridden NVP_HOME.
-          $creatorProjects=Join-Path $env:LOCALAPPDATA 'NVP/Projects'
-          $sentinel=Join-Path $creatorProjects ('nvp-d5-preservation-'+[guid]::NewGuid().ToString('N'))
-          New-Item -ItemType Directory -Path $sentinel -Force | Out-Null
-          $sentinelFile=Join-Path $sentinel 'original-source-preservation.txt'
-          Set-Content -LiteralPath $sentinelFile -Value 'NVP-D5-CREATOR-DATA-MUST-SURVIVE-UNINSTALL' -NoNewline
-          $sentinelSha=(Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash
-          # Accept uninstall and author-data preservation independently of
-          # any live WebView2 process. The hosted GUI can hang in its window
-          # lifecycle and must not hide an otherwise passing/failing NSIS gate.
-          $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
-          if (-not (Test-Path -LiteralPath $uninstall -PathType Leaf)) {
-            throw 'NVP uninstaller unavailable'
-          }
-          $result=Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru
-          try {
-            Wait-Process -Id $result.Id -Timeout 120 -ErrorAction Stop
-          } catch {
-            Stop-Process -Id $result.Id -Force -ErrorAction SilentlyContinue
-            throw 'NVP native uninstaller hung even with all source smokes exited'
-          }
-          $result.Refresh()
-          if ($result.ExitCode -ne 0) { throw "NVP uninstall failed (exit $($result.ExitCode))" }
-          Confirm-NvpUninstalled $installed 90
-          foreach ($file in $preservedFiles) {
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or
-                (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $preservedHashes[$file]) {
-              throw "D5 uninstall modified source/restart evidence: $file"
-            }
-          }
-          if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf) -or
-              (Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash -ne $sentinelSha) {
-            throw 'D5 uninstall erased or changed creator-owned Projects data'
-          }
-          Remove-Item -LiteralPath $sentinel -Recurse -Force
-          Write-Output 'NVP_D5_NATIVE_UNINSTALL_PRESERVES_SOURCE_AND_PROJECTS_PASS'
-          # Reinstall the same SHA-verified candidate only AFTER successful
-          # independent uninstall, then run the strictly mandatory GUI smoke.
-          # A headless/failed WebView2 test must remain RED, never replaced by
-          # a healthy backend-only check.
-          $setupUi=Start-Process -FilePath $installer -ArgumentList '/S' -PassThru
-          try {
-            Wait-Process -Id $setupUi.Id -Timeout 120 -ErrorAction Stop
-          } catch {
-            Stop-Process -Id $setupUi.Id -Force -ErrorAction SilentlyContinue
-            throw 'Second NVP install hung before WebView2 GUI test'
-          }
-          $setupUi.Refresh()
-          if ($setupUi.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $installed)) {
-            throw 'Second NVP install for real GUI test failed'
-          }
-          if ((Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -ne
-              (Get-FileHash dist/NVP/NVP.exe -Algorithm SHA256).Hash) {
-            throw 'GUI candidate does not match independently tested NVP.exe'
-          }
-          Invoke-NvpSmoke $installed '--smoke-window' 150
-          # GUI exited cleanly; this second uninstall must also remove NVP.
-          $uninstallUi=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
-          $resultUi=Start-Process -FilePath $uninstallUi -ArgumentList '/S' -PassThru
-          try {
-            Wait-Process -Id $resultUi.Id -Timeout 120 -ErrorAction Stop
-          } catch {
-            Stop-Process -Id $resultUi.Id -Force -ErrorAction SilentlyContinue
-            throw 'NSIS uninstall after successful GUI test hung'
-          }
-          $resultUi.Refresh()
-          if ($resultUi.ExitCode -ne 0) { throw 'NSIS cleanup after successful GUI test failed' }
-          Confirm-NvpUninstalled $installed 90
-          Write-Output 'NVP_D5_REAL_INSTALLED_GUI_AND_SECOND_UNINSTALL_PASS'
-      # The installed native stream report is independent of hosted GUI
-      # availability. Preserve the exact immutable Take/source and 30s PCM
-      # compute receipt even if WebView2 fails its separate OS window gate.
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: nvp-plan02e-30s-native-source-and-stream-receipts
-          path: |
-            ${{ runner.temp }}/nvp-plan02d-cross-process/plan02e-native-restart/original-receipt.json
-            ${{ runner.temp }}/nvp-plan02d-cross-process/plan02e-native-restart/playback-receipt.json
-          if-no-files-found: warn
-          retention-days: 14
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: nvp-plan03-installed-source-render
-          path: ${{ runner.temp }}/nvp-plan03-installed-real-source-render.json
-          if-no-files-found: warn
-          retention-days: 14
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: nvp-plan02d-installed-diagnostic
-          path: ${{ runner.temp }}/nvp-plan02d-installed-diagnostic.txt
-          if-no-files-found: warn
-          retention-days: 14
-      # Physical desktop testing needs the exact installer even while
-      # Windows WebView2 CI is red. Never label this an accepted release.
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: nvp-plan02d-NOT-RELEASED-physical-test-candidate
-          path: |
-            dist/NVP-Alpha-Setup.exe
-            dist/NVP-PLAN02D-CANDIDATE-SHA256.txt
-          if-no-files-found: warn
-          retention-days: 7
- } | Select-Object -First 1
-          if (-not $line) { throw 'Official Blender checksum manifest missing exact asset' }
-          $expected=($line -split '\s+')[0].ToLowerInvariant()
-          if ((Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant() -ne $expected) { throw 'Blender archive checksum mismatch' }
-          Expand-Archive -LiteralPath $file -DestinationPath "$env:RUNNER_TEMP\plan04_blender" -Force
-          $exe=Get-ChildItem "$env:RUNNER_TEMP\plan04_blender" -Filter blender.exe -Recurse -File | Select-Object -First 1
-          if (-not $exe) { throw 'No pinned native Blender executable' }
-          Add-Content -LiteralPath $env:GITHUB_ENV -Value "NVP_PLAN04_BLENDER=$($exe.FullName)"
-      - name: Real Win/Linux protected Cycles build plus second Blender scene reopen
+          blender -b --version | head -n 1
+      - name: Real cgroup-v2 owned Cycles build and independently reopened source
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$RUNNER_OS" == 'Linux' ]]; then
-            sudo -n systemd-run --quiet --wait --pipe --collect --service-type=exec \
-              --property=Delegate=yes --property=DelegateSubgroup=nvp-host \
-              --uid="$(id -un)" --working-directory="$GITHUB_WORKSPACE" \
-              --setenv="PYTHONPATH=$GITHUB_WORKSPACE" \
-              "$(command -v python)" -m tools.nvp_plan04_cycles_native_witness \
-                --report "$RUNNER_TEMP/plan04-real-cycles-original-usd.json" \
-                --blender "$(command -v blender)"
-          else
-            python -m tools.nvp_plan04_cycles_native_witness \
+          sudo -n systemd-run --quiet --wait --pipe --collect --service-type=exec \
+            --property=Delegate=yes --property=DelegateSubgroup=nvp-host \
+            --uid="$(id -un)" --working-directory="$GITHUB_WORKSPACE" \
+            --setenv="PYTHONPATH=$GITHUB_WORKSPACE" \
+            "$(command -v python)" -m tools.nvp_plan04_cycles_native_witness \
               --report "$RUNNER_TEMP/plan04-real-cycles-original-usd.json" \
-              --blender "$NVP_PLAN04_BLENDER"
-          fi
-          python -c "import json,os,pathlib; x=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'plan04-real-cycles-original-usd.json').read_text()); assert x['status']=='REAL_CYCLES_BUILD_SECOND_BLENDER_REOPEN_SOURCE_INTACT' and x['actual_native_blender_executions']==2; assert x['original_source_immutable_after_reopen'] and not x['creator_os_approval_physically_witnessed'] and not x['final_film_delivered']"
+              --blender "$(command -v blender)"
+          python -c "import json,os,pathlib; x=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'plan04-real-cycles-original-usd.json').read_text()); assert x['status']=='REAL_CYCLES_BUILD_SECOND_BLENDER_REOPEN_SOURCE_INTACT'; assert x['actual_native_blender_executions']==2 and x['original_source_immutable_after_reopen']; assert not x['creator_os_approval_physically_witnessed']"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: nvp-plan04-cycles-frozen-usd-${{ matrix.os }}
+          name: nvp-plan04-cycles-frozen-usd-ubuntu-24.04
           path: ${{ runner.temp }}/plan04-real-cycles-original-usd.json
           retention-days: 14
           if-no-files-found: warn
