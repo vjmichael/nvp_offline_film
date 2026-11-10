@@ -156,8 +156,12 @@ describe('CAM-FX-03/04 installed director native source/AI recovery',()=>{
     const host=native();
     render(<CameraRailsDirector projectId={PID} nativeBridge={host}/>);
     await screen.findByRole('option',{name:'NativeOriginalBank · revision 1'});
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Create editable camera rail handles from technique'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Create editable camera rail handles from technique'}));
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Read actual original USD ActorID framing and bounded occlusion'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Read actual original USD ActorID framing and bounded occlusion'}));
     await screen.findByRole('region',{
@@ -169,6 +173,8 @@ describe('CAM-FX-03/04 installed director native source/AI recovery',()=>{
     expect(host.camfx03_scene_guidance.mock.calls[0][0].actor_id).toBe(null);
     fireEvent.change(screen.getByLabelText('Original native ActorID framing target'),{
       target:{value:'SourceActorOne'}});
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Read actual original USD ActorID framing and bounded occlusion'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Read actual original USD ActorID framing and bounded occlusion'}));
     await waitFor(()=>expect(host.camfx03_scene_guidance).toHaveBeenCalledTimes(2));
@@ -197,6 +203,8 @@ describe('CAM-FX-03/04 installed director native source/AI recovery',()=>{
     render(<CameraRailsDirector projectId={PID} nativeBridge={host}/>);
     await screen.findByRole('option',{name:'NativeOriginalBank · revision 1'});
     await createSourceDraft(host);
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Read actual original USD ActorID framing and bounded occlusion'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Read actual original USD ActorID framing and bounded occlusion'}));
     await screen.findByRole('region',{

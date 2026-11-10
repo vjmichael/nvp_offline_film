@@ -76,6 +76,8 @@ describe('CAM-FX installed original camera-rail director',()=>{
     await screen.findByRole('option',{name:'ShotCameraBank · revision 1'});
     await waitFor(()=>expect(screen.getByLabelText(
       'Rail source camera').value).toBe('RailCam'));
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Create editable camera rail handles from technique'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Create editable camera rail handles from technique'}));
     await screen.findByLabelText('Rail key 2 focal_length_mm');
@@ -115,6 +117,8 @@ describe('CAM-FX installed original camera-rail director',()=>{
     const native=bridge();
     render(<CameraRailsDirector projectId={PID} nativeBridge={native}/>);
     await screen.findByRole('option',{name:'ShotCameraBank · revision 1'});
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Create editable camera rail handles from technique'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Create editable camera rail handles from technique'}));
     await screen.findByLabelText('Rail key 2 tick');
@@ -140,6 +144,8 @@ describe('CAM-FX installed original camera-rail director',()=>{
     const native=bridge();
     render(<CameraRailsDirector projectId={PID} nativeBridge={native}/>);
     await screen.findByRole('option',{name:'ShotCameraBank · revision 1'});
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Create editable camera rail handles from technique'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Create editable camera rail handles from technique'}));
     await screen.findByLabelText('Rail key 1 focus_distance_m');
@@ -166,6 +172,8 @@ describe('CAM-FX installed original camera-rail director',()=>{
       original_actor_takes_and_pcm_unchanged:true}));
     render(<CameraRailsDirector projectId={PID} nativeBridge={native}/>);
     await screen.findByRole('option',{name:'ShotCameraBank · revision 1'});
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Create editable camera rail handles from technique'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Create editable camera rail handles from technique'}));
     await screen.findByLabelText('Rail key 0 tick');
@@ -190,6 +198,8 @@ describe('CAM-FX installed original camera-rail director',()=>{
     }));
     render(<CameraRailsDirector projectId={PID} nativeBridge={native}/>);
     await screen.findByRole('option',{name:'ShotCameraBank · revision 1'});
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Create editable camera rail handles from technique'}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button',{
       name:'Create editable camera rail handles from technique'}));
     await screen.findByLabelText('Rail key 2 tick');

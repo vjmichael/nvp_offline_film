@@ -42,10 +42,16 @@ describe('CAM-FX-03 native-metres projected 3D rail editing',()=>{
     const button=screen.getByRole('button',{
       name:'3D drag camera handle 2'});
     button.setPointerCapture=vi.fn();
-    fireEvent.pointerDown(button,{
-      pointerId:1,clientX:290,clientY:200,button:0});
-    fireEvent.pointerMove(svg,{
-      pointerId:1,clientX:318,clientY:200});
+    // jsdom's MouseEvent pointer fallback can silently drop pointerId.
+    // Use real pointer event names with stable ID and client coordinates.
+    const pointer=(node,type,x)=>{
+      const event=new MouseEvent(type,{
+        bubbles:true,cancelable:true,clientX:x,clientY:200,button:0});
+      Object.defineProperty(event,'pointerId',{value:1});
+      fireEvent(node,event);
+    };
+    pointer(button,'pointerdown',290);
+    pointer(svg,'pointermove',318);
     expect(changed).toHaveBeenCalled();
     const next=changed.mock.calls.at(-1)[0];
     expect(next[1].position_m[0]).not.toBe(nodes[1].position_m[0]);

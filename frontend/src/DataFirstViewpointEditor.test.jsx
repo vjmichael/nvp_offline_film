@@ -156,8 +156,10 @@ describe('01R editable source-first virtual film',()=>{
     fireEvent.click(screen.getByRole('button',
       {name:'Native approve & save edit'}));
     await screen.findByText(/Source edit saved/);
-    expect(screen.getByRole('button',{
-      name:'Conform 30-second picture + original PCM'}).disabled).toBe(true);
+    // The conform action is not mounted before a source-approved queue
+    // exists. Source-only edits alone cannot authorize a movie.
+    expect(screen.queryByRole('button',{
+      name:'Conform 30-second picture + original PCM'})).toBeNull();
     fireEvent.click(screen.getByRole('button',{
       name:'Preview exact native queue'}));
     await waitFor(()=>expect(native.film01t_preview_queue).toHaveBeenCalledTimes(1));
