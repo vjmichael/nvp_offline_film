@@ -87,9 +87,9 @@ class OriginalCyclesProduction:
         if (snap["scene_document_sha256"]!=scope["original_scene_sha256"] or
                 snap["time_tick"]!=tick):
             raise RuntimeError("Frozen OpenUSD state was not sampled exactly")
+        take=self.index.read_revision(project_id,request["take_id"],1)
         scene=self.index.read_revision(
-            project_id,self.index.read_revision(
-                project_id,request["take_id"],1)["data"]["scene_id"])
+            project_id,take["data"]["scene_id"],take["data"]["scene_revision"])
         if scene["document_sha256"]!=scope["original_scene_sha256"]:
             raise RuntimeError("OpenUSD scene revision mismatch")
         geo=[]
@@ -164,11 +164,9 @@ class OriginalCyclesProduction:
             "original_source_modified":False,
             "output_publication_authorized":False,
         }
-        if self.ask_native(dict(native_scope)) is not True:
-            self.queue.consume_live_worker_review(
-                project_id,job_id,revision,selection_sha256)
-            raise PermissionError("Native Blender/Cycles creator consent refused")
         try:
+            if self.ask_native(dict(native_scope)) is not True:
+                raise PermissionError("Native Blender/Cycles creator consent refused")
             fresh,row_scope=self._source_at(
                 project_id,selection,selection_sha256,tick)
             if (fresh!=manifest or row_scope!=scope or
