@@ -1,5 +1,10 @@
 # NVP-DATA-ALL — Per-task migration closeout ledger
 
+## 2026-11-10 — DA-03 bounded forced-kill retry correction (source only)
+
+PR #74 commits `93e70dd`, `2eb8620`, `3771f4f`: host-owned direct-child custody now records whether forced kill was already requested, so a timeout followed by retry does not issue a second forced-kill signal. Added real-subprocess/mocked-wait regression asserting a single kill and eventual exit receipt. This protects against repeated signalling after escalation; it does **not** establish descendant process-tree containment or durable restart ownership. Exact-head Windows/Linux and installed NVP.exe verification of these commits remains **UNVERIFIED**. Previous DATA-AV run 42762871989 at `a16e996` was **CANCELLED**, not passed. DA-03 is PARTIAL; Windows Job Object/Linux cgroup custody, launcher integration, transactional publication and physical capture remain OPEN. Zero FFmpeg remains mandatory. Retired proxy workflows were not restarted.
+
+
 ## PLAN-02-C — canonical CAM-FX rail / genuine local GGUF integration (source implementation)
 
 **Authoritative path:** PR #74, canonical `nvp/data-av01-native-scene-playback-20261106`. Adapt bounded CAM-FX-01 rail interpolation and CAM-FX-02 separate director-owned USD camera layer, but **do not merge** diverged Film01 world-bank stack. `CanonicalSourceRails` binds an approved/frozen Digital Take SHA, independently checked OpenUSD stage, exact `ExactTimeShotSequence` camera timeline SHA/revision, valid authored original camera path, and a single gap-free camera shot window. Two to 48 strictly increasing integer original Film Time controls drive bounded speed/acceleration/easing, focal length, aperture/focus and USD source timecode samples. Stronger virtual camera USDA stored as its own verified presentation revision; original scene, ActorIDs, PCM and source camera are untouched. Source digest, predecessor, generated layer and current FilmIndex take/time are checked on **preview**, **before OS consent**, **after OS consent**, and **independent reopen**. No original 2D frame grid or renderer worker is created.
