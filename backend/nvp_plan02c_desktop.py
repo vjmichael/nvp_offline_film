@@ -206,6 +206,8 @@ class NativePlan02CCameraActions:
             "\nJob: " + scope["job_id"] +
             "\nSource Take SHA: " + scope["source_take_sha256"] +
             "\nCamera Timeline SHA: " + scope["camera_timeline_sha256"] +
+            "\nApproved rail: " + (scope["approved_rail"]["rail_document_sha256"]
+                if scope["approved_rail"] is not None else "ORIGINAL CAMERA") +
             "\nFirst original Film Time tick: " + str(scope["first_tick"]) +
             "\nLast tick EXCLUSIVE: " + str(scope["last_tick_exclusive"]) +
             "\nSelection SHA: " + scope["selection_sha256"] +
