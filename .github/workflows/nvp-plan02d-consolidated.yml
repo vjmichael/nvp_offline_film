@@ -61,6 +61,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_imported_audio.py' -v
           python -m unittest discover -s tests -p 'test_nvp_final_2d_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_decisions.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_plan02e_continuous.py' -v
       - name: PLAN-02-B original microphone, durable recovery and independent native ADC clock
         shell: bash
         run: |
@@ -181,7 +182,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_plan02d_source_selection --hidden-import backend.nvp_plan02d_render_queue --hidden-import backend.nvp_plan02d_worker_custody --hidden-import backend.nvp_plan02d_derived_raster --hidden-import tools.nvp_plan02d_installed_acceptance --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_plan02d_source_selection --hidden-import backend.nvp_plan02d_render_queue --hidden-import backend.nvp_plan02d_worker_custody --hidden-import backend.nvp_plan02d_derived_raster --hidden-import tools.nvp_plan02d_installed_acceptance --hidden-import backend.nvp_plan02e_continuous --hidden-import tools.nvp_plan02e_installed_acceptance --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
@@ -277,12 +278,20 @@ jobs:
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-plan02d-cross-process'
           Invoke-NvpSmoke $installed '--smoke-plan02d-restart-create' 150
           Invoke-NvpSmoke $installed '--smoke-plan02d-restart-reopen' 150
+          # PLAN-02-E full 30-second native scene/PCM stream, no derived
+          # film file. Reopen it in a completely separate installed process.
+          Invoke-NvpSmoke $installed '--smoke-plan02e-restart-create' 600
+          Invoke-NvpSmoke $installed '--smoke-plan02e-restart-reopen' 180
+          Write-Output 'NVP_PLAN02E_30S_INSTALLED_NATIVE_STREAM_AND_RESTART_PASS'
           # Preserve independent source evidence and original creator project data.
           # Hash after both separate installed NVP.exe processes have fully exited.
           $preservedRoot=Join-Path $env:NVP_HOME 'plan02d-native-restart'
           $preservedFiles=@(
             (Join-Path $preservedRoot 'studio.sqlite3'),
-            (Join-Path $preservedRoot 'restart-receipt.json')
+            (Join-Path $preservedRoot 'restart-receipt.json'),
+            (Join-Path $env:NVP_HOME 'plan02e-native-restart/studio.sqlite3'),
+            (Join-Path $env:NVP_HOME 'plan02e-native-restart/original-receipt.json'),
+            (Join-Path $env:NVP_HOME 'plan02e-native-restart/playback-receipt.json')
           )
           $preservedHashes=@{}
           foreach ($file in $preservedFiles) {
