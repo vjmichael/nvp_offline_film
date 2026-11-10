@@ -32,6 +32,7 @@ class LinuxFilmingCgroup:
             raise CgroupCustodyError("Missing kernel cgroup-v2 custody controls")
         self._group = group
         self._consumed = False
+        self._kill_requested = False
 
     def stop_and_verify(self, *, timeout: float = 5.0) -> dict:
         if self._consumed:
@@ -41,7 +42,9 @@ class LinuxFilmingCgroup:
         deadline = time.monotonic() + timeout
         # cgroup.kill is kernel-wide for the entire subtree; unlike killpg it
         # includes descendants that create new process sessions.
-        (self._group / "cgroup.kill").write_text("1", encoding="ascii")
+        if not getattr(self, "_kill_requested", False):
+            (self._group / "cgroup.kill").write_text("1", encoding="ascii")
+            self._kill_requested = True
         while True:
             fields = {}
             for line in (self._group / "cgroup.events").read_text(encoding="ascii").splitlines():
