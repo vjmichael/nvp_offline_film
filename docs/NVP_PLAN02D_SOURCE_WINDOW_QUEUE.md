@@ -125,3 +125,26 @@ without faking a native application success.
 the repair branch once as the next exact-head grouped run, and inspect
 all real native results. Keep PLAN-02-D3 Linux custody and D5 physical
 creator acceptance OPEN until witnessed independently.
+
+
+## PLAN-02-D second exact-head evidence / genuine installed restart strengthening
+
+The repaired task-group run is [42768650682](https://github.com/vjmichael/nvp_offline_film/actions/runs/42768650682)
+at `094ea70070c670944478e21e8fbdd79a12f21b7f`. Its
+**Windows actual detached-descendant cancel and abrupt-host-crash
+witness passed**, with uploaded evidence
+`nvp-plan02d-real-process-tree-windows-2025`. The known Windows
+temporary-script `backend` import defect is therefore repaired. The
+Ubuntu hosted runner continues to fail the separate positive strict
+cgroup witness because it has no systemd-delegated scope: **not accepted**.
+
+D5 strength-of-evidence repair staged separately: the installed
+`--smoke-plan02d` smoke only reopened a new SQLite handle within one
+process. Added two distinct installed binary invocation modes,
+`--smoke-plan02d-restart-create` and
+`--smoke-plan02d-restart-reopen`, with durable identical
+NVP_HOME/FilmIndex source, real native USD PNG, and an independently
+observed cold-process refusal to reuse an old in-memory OS review grant.
+The grouped acceptance workflow must execute both and retain
+bounded stage receipts. They are **not yet passed** until one final
+integrated exact-head Windows NSIS test witnesses both processes.
