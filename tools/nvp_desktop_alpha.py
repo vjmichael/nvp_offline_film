@@ -213,6 +213,7 @@ def run_persistent_installed_smoke(mode):
     root.mkdir(parents=True,exist_ok=True)
     marker=root/"installed-smoke-project.json"
     app=create_app()
+    from backend.nvp_api import studio
     server,worker,port,sock=serve(app)
     base="http://127.0.0.1:"+str(port)
     try:
@@ -248,7 +249,6 @@ def run_persistent_installed_smoke(mode):
             if os.environ.get("NVP_FILM02M_GROUP_ACCEPTANCE")=="1":
                 from backend.nvp_film_index import FilmIndex
                 from backend.nvp_usd_film02m_f_authoring import OriginalDistrictDrafts
-                from backend.nvp_api import studio
                 source=FilmIndex(studio)
                 params=_seed_original_world_smoke(source,record["id"])
                 # The exact durable store used by TrustedDesktopWO5Bridge in
@@ -382,6 +382,39 @@ def run_forcibly_interrupted_installed_model_smoke():
     import time
     time.sleep(120)
     raise RuntimeError("Installed model interruption test was never killed")
+
+
+class ReviewedWebViewAPI:
+    """Expose native first-party callable methods, never nested host objects.
+
+    pywebview recursively scans all public instance attributes of js_api.
+    TrustedDesktopWO6Bridge owns public FilmIndex/source state with cyclic
+    graph links, which made get_functions recurse indefinitely in Win32.
+    This facade retains exactly the host's public class-defined methods
+    and no public object fields; underlying host auth/receipts remain intact.
+    """
+    __slots__ = ("_bridge", "_names")
+
+    def __init__(self, bridge):
+        import inspect
+        names = frozenset(
+            name for name, member in inspect.getmembers_static(type(bridge))
+            if not name.startswith("_") and inspect.isfunction(member)
+        )
+        if not names:
+            raise TypeError("Native installed bridge exposes no reviewed methods")
+        self._bridge = bridge
+        self._names = names
+
+    def __dir__(self):
+        # Only the deliberately named callable methods are visible to the
+        # pywebview JS API walker, never index/window/Origin/native state.
+        return sorted(self._names)
+
+    def __getattr__(self, name):
+        if name in self._names:
+            return getattr(self._bridge, name)
+        raise AttributeError("Unreviewed native WebView API attribute: " + name)
 
 
 def create_trusted_camera_bridge(port):
@@ -579,7 +612,7 @@ def run_visible_window_smoke():
             FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
         window=webview.create_window("NVP Alpha Window Acceptance",
             "http://127.0.0.1:"+str(port),width=1000,height=700,
-            js_api=bridge)
+            js_api=ReviewedWebViewAPI(bridge))
         bridge._attach_window(window)
         _native_window_stage("native_source_webview_window_created")
         window.events.loaded += lambda:loaded.set()
@@ -1545,7 +1578,7 @@ def main(argv=None):
         bridge=create_trusted_camera_bridge(port)
         window=webview.create_window("NVP — Make Your Movie",
             "http://127.0.0.1:"+str(port),
-            width=1280,height=800,min_size=(960,600),js_api=bridge)
+            width=1280,height=800,min_size=(960,600),js_api=ReviewedWebViewAPI(bridge))
         bridge._attach_window(window)
         webview.start(gui="edgechromium",debug=False)
         return 0
@@ -1592,6 +1625,10 @@ if __name__=="__main__":
         result=main()
     except BaseException:
         record_smoke_result("NVP_SMOKE_PYTHON_EXCEPTION",failure=True)
+        # A frozen windowed smoke crash must exit after flushing the traceback,
+        # not hold the Windows runner in a modal GUI exception dialog.
+        if smoke:
+            raise SystemExit(1)
         raise
     else:
         record_smoke_result("NVP_SMOKE_PYTHON_EXIT="+str(result))
