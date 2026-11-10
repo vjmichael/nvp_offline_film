@@ -1,5 +1,8 @@
 name: NVP USD-FILM-01T 720 Authentic Selected-View Frames + Original PCM Full-Film Acceptance
 
+# Exact-head rerun after native failure evidence: StoryBible ActorID 32-hex,
+# PyOpenUSD invalid-null prim, float optics, Path hashing and native editor EDL.
+# Supersede the prior failed head under one workflow concurrency group.
 # Full source-selected film acceptance is ONE heavy task-group gate.
 # No full 720-frame rerender or four-platform matrix on small follow-up pushes.
 # A scoped workflow-file update starts one consolidated exact-head group.
