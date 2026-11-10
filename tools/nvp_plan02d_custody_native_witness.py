@@ -110,9 +110,17 @@ def cancellation(root):
 def crash(root):
     root.mkdir()
     _write_scripts(root)
+    repository_root=str(Path(__file__).resolve().parents[1])
+    environment=dict(os.environ)
+    # The test host script lives in a fresh temporary directory. Its
+    # Python search path cannot find NVP modules just from cwd on Windows.
+    # This setting applies to this test-only child and is never exposed to
+    # an NVP user, browser, renderer recipe or approved tool command.
+    environment["PYTHONPATH"]=repository_root+os.pathsep+environment.get(
+        "PYTHONPATH","")
     host=subprocess.Popen(
         [sys.executable,str(root/"crash_host.py"),str(root)],
-        cwd=str(Path(__file__).resolve().parents[1]),
+        cwd=repository_root,env=environment,
         stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
         shell=False,close_fds=True)
     out,err=host.communicate(timeout=25)
