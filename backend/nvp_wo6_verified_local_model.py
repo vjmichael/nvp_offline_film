@@ -118,6 +118,13 @@ class ProvenLocalModelWriter:
             "max_tokens":MAX_MODEL_TOKENS,
             "stream":False
         }
+        if schema_name=="nvp_unapproved_scene_breakdown":
+            # Qwen3 defaults to extended thinking. A bounded JSON-only
+            # extraction must not consume the entire 600-token output budget
+            # in an unpublished reasoning trace. This disables reasoning
+            # for this specific real local provider request, never changes
+            # general writing/model policy, and never fabricates completion.
+            body_request["chat_template_kwargs"]={"enable_thinking":False}
         if schema is not None:
             body_request["response_format"]={
                 "type":"json_schema",
