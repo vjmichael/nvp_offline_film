@@ -16,6 +16,7 @@ from bisect import bisect_right
 from hashlib import sha256
 import base64
 import struct
+import time
 
 from backend.nvp_data_av_scene import FrozenSceneAV, MAX_SAMPLES
 from backend.nvp_data_av_source import RecordedSoundSources
@@ -210,6 +211,7 @@ class Continuous30SecondFilm:
         digest = sha256()
         total = 0
         non_silent_windows = 0
+        pcm_started = time.perf_counter() if read_all_audio else None
         if read_all_audio:
             while total < AUDIO_SAMPLES:
                 size = min(MAX_SAMPLES, AUDIO_SAMPLES - total)
@@ -221,6 +223,8 @@ class Continuous30SecondFilm:
                 total += size
             if total != AUDIO_SAMPLES or non_silent_windows == 0:
                 raise RuntimeError("Continuous PCM output is missing or silent")
+        pcm_compute_seconds=(round(time.perf_counter()-pcm_started,3)
+                             if pcm_started is not None else None)
         return {
             "format": FORMAT, "status": "NATIVE_SOURCE_CONTINUITY_VERIFIED",
             "take_document_sha256": self.take_sha,
@@ -234,6 +238,8 @@ class Continuous30SecondFilm:
             "audio_sample_rate": RATE,
             "audio_samples_evaluated": total,
             "audio_pcm_sha256": digest.hexdigest() if read_all_audio else None,
+            "audio_compute_wall_seconds": pcm_compute_seconds,
+            "live_audio_device_clock_measured": False,
             "non_silent_audio_windows": non_silent_windows,
             "ffmpeg_used": False, "original_source_modified": False,
             "picture_sequence_persisted": False,
