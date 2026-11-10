@@ -323,9 +323,10 @@ def run_visible_window_smoke():
         _smoke_checkpoint("window_before_native_bridge")
         bridge=create_trusted_camera_bridge(port)
         _smoke_checkpoint("window_before_webview_create")
+        from backend.nvp_webview2_ipc_facade import NativeWebView2API
         window=webview.create_window("NVP Alpha Window Acceptance",
             "http://127.0.0.1:"+str(port),width=1000,height=700,
-            js_api=bridge)
+            js_api=NativeWebView2API(bridge))
         bridge._attach_window(window)
         _smoke_checkpoint("window_after_webview_create")
         def when_loaded():
@@ -671,9 +672,11 @@ def main(argv=None):
     try:
         import webview
         bridge=create_trusted_camera_bridge(port)
+        from backend.nvp_webview2_ipc_facade import NativeWebView2API
         window=webview.create_window("NVP — Make Your Movie",
             "http://127.0.0.1:"+str(port),
-            width=1280,height=800,min_size=(960,600),js_api=bridge)
+            width=1280,height=800,min_size=(960,600),
+            js_api=NativeWebView2API(bridge))
         bridge._attach_window(window)
         # Isolate browser UDF from the install directory and film source.
         # This keeps the native WebView2 profile writable after NSIS install.
