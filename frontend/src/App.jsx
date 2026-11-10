@@ -310,9 +310,10 @@ export default function App() {
 
   function open(id) {
     action(async () => {
-      accept(await api('/projects/' + id));
+      const opened = await api('/projects/' + id);
+      accept(opened);
       await refreshCreative(id);
-      setTab(result.scenes.length ? 'library' : 'story');
+      setTab(opened.scenes.length ? 'library' : 'story');
       setAdvancedOpen(false);
     });
   }
