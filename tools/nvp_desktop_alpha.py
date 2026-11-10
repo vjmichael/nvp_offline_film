@@ -45,6 +45,40 @@ def configure_home():
     return root
 
 
+def _webview_profile_dir(root):
+    """An explicit writable WinForms/WebView2 user-data folder.
+
+    Never try to initialize WebView2 beside the NSIS executable or in the
+    creator's SQLite books. Python pywebview maps storage_path to the real
+    WebView2 CreationProperties.UserDataFolder on EdgeChromium.
+    """
+    path=Path(root)/"WebView2Profile"
+    if path.is_symlink():
+        raise PermissionError("Refusing symlinked WebView2 profile directory")
+    path.mkdir(parents=True,exist_ok=True)
+    if not path.is_dir():
+        raise RuntimeError("WebView2 profile path is not a directory")
+    probe=path/(".nvp-write-probe-"+str(os.getpid()))
+    with probe.open("xb") as stream:
+        stream.write(b"NVP-webview2-write-probe")
+        stream.flush()
+        os.fsync(stream.fileno())
+    probe.unlink()
+    return str(path)
+
+
+def _windows_session_id():
+    """Report the real native process session, not a claimed interactive GUI."""
+    if os.name!="nt":
+        return None
+    import ctypes
+    session=ctypes.c_ulong()
+    fn=ctypes.windll.kernel32.ProcessIdToSessionId
+    if not fn(os.getpid(),ctypes.byref(session)):
+        raise OSError(ctypes.get_last_error(),"Cannot inspect Windows logon session")
+    return session.value
+
+
 def create_app():
     from backend.nvp_api import app
     from fastapi.staticfiles import StaticFiles
@@ -265,6 +299,18 @@ def run_visible_window_smoke():
         _smoke_checkpoint("window_before_serve")
         server,worker,port,sock=serve(app)
         _smoke_checkpoint("window_after_serve")
+        # Browser-page failures must not be misreported as backend failures.
+        with urllib.request.urlopen(
+                "http://127.0.0.1:"+str(port)+"/",timeout=5) as resp:
+            html=resp.read()
+            if resp.status!=200 or b"assets/" not in html:
+                raise RuntimeError("Installed React entry not served over loopback")
+        _smoke_checkpoint("window_http_source_ready")
+        session_id=_windows_session_id()
+        if session_id is not None:
+            _smoke_checkpoint("window_native_session_"+str(session_id))
+        browser_profile=_webview_profile_dir(test_home)
+        _smoke_checkpoint("window_explicit_webview2_profile_writable")
     except BaseException:
         if old_home is None: os.environ.pop("NVP_HOME",None)
         else: os.environ["NVP_HOME"]=old_home
@@ -460,7 +506,28 @@ def run_visible_window_smoke():
                 window.destroy()
                 _smoke_checkpoint("window_after_destroy")
         _smoke_checkpoint("window_before_webview_start")
-        webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
+        # A watchdog traceback is evidence, NOT a substitute for actual
+        # Windows WebView2 loaded/React/IPC success. It can expose a blocked
+        # WinForms/UI thread even if Python's callback never returns.
+        diag=os.environ.get("NVP_SMOKE_DIAGNOSTIC_PATH")
+        if diag:
+            import faulthandler
+            trace=Path(diag)
+            if trace.is_symlink():
+                raise RuntimeError("Refusing symlinked GUI diagnostic path")
+            with trace.open("a",encoding="utf-8") as stream:
+                faulthandler.dump_traceback_later(
+                    40,repeat=True,file=stream,exit=False)
+                try:
+                    webview.start(
+                        func=inspect_and_close,gui="edgechromium",debug=False,
+                        storage_path=browser_profile,private_mode=True)
+                finally:
+                    faulthandler.cancel_dump_traceback_later()
+        else:
+            webview.start(
+                func=inspect_and_close,gui="edgechromium",debug=False,
+                storage_path=browser_profile,private_mode=True)
         _smoke_checkpoint("window_after_webview_start")
         if not result["passed"]:
             raise RuntimeError(
@@ -608,7 +675,12 @@ def main(argv=None):
             "http://127.0.0.1:"+str(port),
             width=1280,height=800,min_size=(960,600),js_api=bridge)
         bridge._attach_window(window)
-        webview.start(gui="edgechromium",debug=False)
+        # Isolate browser UDF from the install directory and film source.
+        # This keeps the native WebView2 profile writable after NSIS install.
+        cache_root=(Path(os.environ.get("LOCALAPPDATA",str(Path.home())))/
+                    "NVP")
+        webview.start(gui="edgechromium",debug=False,private_mode=True,
+                      storage_path=_webview_profile_dir(cache_root))
         return 0
     finally:
         try:
