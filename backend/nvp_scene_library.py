@@ -115,7 +115,9 @@ class SceneLibrary:
                 "Source scene ID: " + scene_id + "\n"
                 "Source SHA-256: " + scene["source_scene_sha256"] + "\n"
                 "Scene text: \n" + scene["screenplay_text"][:14000])
-        text = writer.complete(system, user)
+        scene_completion=getattr(writer,"complete_scene_breakdown",None)
+        text = (scene_completion(system,user) if callable(scene_completion)
+                else writer.complete(system,user))
         if type(text) is not str or len(text) > 12000:
             raise ValueError("AI breakdown exceeds the bounded response contract")
         try:
@@ -149,5 +151,12 @@ class SceneLibrary:
             "scene_id": scene_id,
             "source_scene_sha256": scene["source_scene_sha256"],
             "suggestions": suggestions,
+            # Provider completion is evidence of an HTTP response from a
+            # bounded loopback model, NOT proof of a specific GGUF file.
+            "provider_completion_receipt": getattr(
+                writer,"completion_receipt",None),
+            "provider_response_observed": bool(getattr(
+                writer,"completion_receipt",None)),
+            "gguf_weights_independently_verified": False,
             "disposition": "Read-only proposal. Review and link entities in Story Bible explicitly before they become a production inventory.",
         }
