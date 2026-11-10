@@ -38,3 +38,53 @@ A refused intention is terminal. An already-reviewed intention cannot reuse its 
 - PLAN-02-C actual GGUF Qwen 0.5B + llama-server smoke: push group `42762865361`, real camera advice PASS. This is **not** a representative 7B+ quality run, manual director approval, or D renderer acceptance.
 - A separate pull-request workflow on that SHA skipped its marked GGUF job, as intended; do not confuse the skipped duplicate with the passed push run.
 - The D branch has not run any native CI on its exact head. Its committed Python tests are only **authored**, not accepted.
+
+
+## 2026-11-09 PLAN-02-D3/D4 implementation continuation (native acceptance still open)
+
+**D3 source implemented:** `backend/nvp_plan02d_worker_custody.py`
+builds on existing `nvp_worker_containment.launch_contained`, not a
+new unproven subprocess wrapper: suspended creation and Job Object
+kill-on-close on Windows; strict cgroup-v2+out-of-leaf guardian on
+Linux, with no process-group fallback. Separate OS worker consent,
+pinned executable SHA/resource bound, process-local one-use D2
+review, durable STARTED before launch, cancellation, tree-close before
+success, and fail-closed interrupted/no-replay inventory are implemented.
+`tests/test_nvp_plan02d_worker_custody.py` covers negative contracts
+and a genuine bounded child when supported.
+`tools/nvp_plan02d_custody_native_witness.py` exercises a real
+detached-descendant heartbeat under cancellation and abrupt host
+termination, with platform backend attestation. **Linux without
+delegated cgroup cannot pass this acceptance**; the runner must report
+a real blocked gate, not a process-group simulation.
+
+**D4 source implemented:** `backend/nvp_native_cpu_raster.py`
+now accepts an independently verified director-rail camera pose as a
+virtual look-at view over unchanged actual USD geometry; it does
+not overwrite original source cameras. `backend/nvp_plan02d_derived_raster.py`
+produces a real 640x360 PNG at selected integer Film Time, reopens it
+through Pillow, checks source again after rendering, and permits
+only OS-approved SHA-bound new presentation revision publication.
+New first-party `plan02d_raster_preview/publish` WebView endpoints
+and `NativeCameraRailPanel` controls provide actual native-pixel
+preview rather than merely describing an intended shot.
+`tests/test_nvp_plan02d_derived_raster.py` uses genuine OpenUSD
+sphere/camera/asset and independently approved virtual rail.
+
+**D5 integrated source:** a new `--smoke-plan02d` packaged NVP.exe
+mode creates real OpenUSD source, tests live pywebview-native API scope,
+verified PNG revision and independent SQLite restart. The grouped
+D workflow runs matrix Windows/Linux native tests, real kernel custody
+witness, React, and installed NSIS/WebView2/NVP.exe smoke at its exact
+head. The smoke dialog is a test stand-in: it does NOT establish physical
+human approval. A real 7B+ model, actual Cycles/Hydra film,
+general 30-second picture+sound delivery, calibrated DCI
+theatrical QC, and AI Skin HSURF remain outside this task group.
+
+**Current status:** source authored and committed; native/installer test
+execution **NOT YET OBSERVED** on this branch. Do not promote to canonical
+PR #74 before any failing exact-head result is repaired. No CI job
+should run for each small code edit; only the final grouped task gate.
+
+**Downstream tasks preserved:** [DCI/SMPTE WO3–WO5 and
+AI Skin HSURF-00..10 register](NVP_DOWNSTREAM_DCI_HSURF_REGISTER.md).
