@@ -556,13 +556,21 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                         or not result["original_scene_take_immutable_after_restart_reopen"]):
                     raise RuntimeError("Real Blender/Cycles independent source check failed")
                 png=supervisor.root/result["build_job_id"]/"derived_cycles.png"
-                if (png.is_symlink() or not png.is_file() or png.stat().st_size>12_000_000 or
-                        sha_file(png)!=result["derived_png_sha256"]):
-                    raise RuntimeError("Bounded Cycles PNG changed after independent audit")
+                if png.is_symlink() or not png.is_file() or png.stat().st_size>12_000_000:
+                    raise RuntimeError("Bounded Cycles PNG missing or replaced")
+                # Check the exact bytes delivered across the WebView boundary,
+                # not an earlier file hash separated from a fresh read by TOCTOU.
+                picture=png.read_bytes()
+                import hashlib
+                if (not picture or len(picture)>12_000_000 or
+                        hashlib.sha256(picture).hexdigest()!=result["derived_png_sha256"]):
+                    raise RuntimeError("Delivered Cycles PNG differs from verified worker receipt")
+                if cancel_event.is_set():
+                    raise InterruptedError("Creator cancelled before derived picture delivery")
                 return {
                     "format":"nvp.plan04.trusted_os_blender_cycles_result.v1",
                     "status":result["status"],
-                    "png_base64":base64.b64encode(png.read_bytes()).decode("ascii"),
+                    "png_base64":base64.b64encode(picture).decode("ascii"),
                     "png_sha256":result["derived_png_sha256"],
                     "take_sha256":result["take_sha256"],
                     "scene_sha256":result["scene_sha256"],
