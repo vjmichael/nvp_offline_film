@@ -1,5 +1,6 @@
 # NVP-DATA-ALL — Per-task migration closeout ledger
 
+2026-11-10 DA-03 cgroup identity revocation (source only): commits `f52a712`, `ad6bdc0` pin the host-owned private cgroup device/inode and reject a replaced or inaccessible group before kill, during observation, and before issuing a receipt. Added a replacement-directory regression; this is not real delegated cgroup or installed NVP.exe acceptance. Linux descendant containment, Windows Job Object, restart attestation and atomic publication remain OPEN. FFmpeg prohibition unchanged; retired proxy PRs untouched.\n\n
 2026-11-10 DA-03 kernel-observation hardening (source only): commits `8ff88e2`, `7e67c60`, `991f811` reject duplicate or malformed cgroup.events fields before issuing a process-tree custody receipt; regression fixtures cover ambiguous populated values and malformed records. This is contract-level safety only: genuine delegated Linux cgroup, Windows Job Object, filming-launcher attachment, durable restart and installed NVP.exe are NOT independently accepted. DA-03 PARTIAL / OPEN. No FFmpeg introduced; retired proxy workflows untouched.
 
 
