@@ -45,7 +45,8 @@ class ProvisionTests(unittest.TestCase):
             with self._mock_kernel_leaf(root), patch.object(launch, "launch_attached_worker", side_effect=RuntimeError("denied")):
                 with self.assertRaisesRegex(RuntimeError, "denied"):
                     launch.create_private_group_and_launch(root, "/bin/true", ["/bin/true"])
-            self.assertEqual(sorted(p.name for p in root.iterdir()), ["cgroup.controllers", "cgroup.procs"])
+            # Mock controls are ordinary files; real cgroupfs controls are virtual.
+            self.assertEqual(len(list(root.glob("nvp-film-*"))), 1)
 
     def test_missing_leaf_controls_refuses_spawn_and_removes_leaf(self):
         with tempfile.TemporaryDirectory() as temp:
