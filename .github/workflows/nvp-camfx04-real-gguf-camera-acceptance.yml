@@ -1,9 +1,13 @@
 name: NVP CAM-FX-04 Real Local GGUF Source-Grounded Camera Proposals
 
-# Separate genuine CPU GGUF acceptance; human OS decision and production
-# quality remain OPEN. Enable the single group-end push only after CAM-FX-05
-# real rendered image gate succeeds. No automatic per-commit CI fanout.
+# Separate authentic GGUF model inference: the CAM-FX-05 genuine Blender/Cycles
+# scene/camera gate passed at 7b4c36839daa3cb801399ec3f63ce3c101dc16f6
+# (run 42747063991). Trigger only this ONE model group-end source gate;
+# physical-PC human approval and final 720-frame film remain separate.
 on:
+  push:
+    branches: [nvp/cam-fx04-genuine-gguf-camera-proposals-20261109]
+    paths: [.github/workflows/nvp-camfx04-real-gguf-camera-acceptance.yml]
   workflow_dispatch:
 
 permissions:
