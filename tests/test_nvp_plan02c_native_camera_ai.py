@@ -187,6 +187,20 @@ class CanonicalDirectorRailTests(unittest.TestCase):
                 self.service,self.pid,self.spec,direction="Check forged source",
                 model_id=w.model_id,writer=w)
 
+    def test_disposable_real_model_retry_never_waives_source_or_receipt_failures(self):
+        # No neural text is mocked as genuine GGUF in this contract test.
+        from tools.nvp_plan02c_real_gguf import retryable_model_rejection
+        self.assertTrue(retryable_model_rejection(
+            ValueError("Camera look-at may not coincide with its position")))
+        self.assertTrue(retryable_model_rejection(
+            ValueError("AI cannot retime frozen source Film Time boundaries")))
+        self.assertFalse(retryable_model_rejection(
+            ValueError("Original Take SHA changed during model generation")))
+        self.assertFalse(retryable_model_rejection(
+            PermissionError("Creator refused native model execution")))
+        self.assertFalse(retryable_model_rejection(
+            RuntimeError("Model token/receipt identity changed")))
+
     def test_model_request_needs_distinct_native_human_approval(self):
         import unittest.mock as mock
         w=FakeCompletionContract(0,self.spec["film_end_tick"])

@@ -29,6 +29,22 @@ from backend.nvp_plan02c_model_advice import generate_source_camera_advice
 REPORT="nvp.plan02c.real_gguf_original_source_camera_advice_evidence.v1"
 APPROVAL="I_APPROVE_DISPOSABLE_LOCAL_GGUF_TEST"
 
+# Validation stays fully fail-closed. These are MODEL-ORIGIN candidate
+# rejections that can justify a NEW inference attempt; no output is
+# normalized, repaired, approved or quietly published.
+RETRYABLE_MODEL_ERRORS=frozenset({
+    "AI cannot retime frozen source Film Time boundaries",
+    "Camera look-at may not coincide with its position",
+    "Camera rail would exceed bounded travel velocity",
+    "Camera rail would exceed bounded vector acceleration",
+    "Cubic overshoot escapes camera world bounds",
+    "Rail Film Time must strictly increase",
+})
+
+def retryable_model_rejection(error):
+    return type(error) is ValueError and str(error) in RETRYABLE_MODEL_ERRORS
+
+
 
 def digest(path):
     hashed=sha256()
@@ -118,21 +134,34 @@ def run(model_path,server_path,report_path,consent):
                             "Keep each node at the exact original Film Time. "
                             f"First tick integer {start}, final tick integer {end}. "
                             "Copy these integer numbers digit for digit, no rounding. "
-                            "Keep two source-bounded finite positions and targets, "
-                            "exactly the allowed typed node fields. "
+                            "Keep two source-bounded finite positions and targets. "
+                            "NEVER place a camera at its own target: each position "
+                            "must be at least three metres from its target. "
+                            "Use both node targets [0, 3, 0] and both camera "
+                            "positions [0, 0, 0] or [0.5, 0, 0] as a safe "
+                            "source-verified example. Move gradually, not fast. "
+                            "Use exactly the allowed typed node fields. "
                             f"Genuine unapproved source advice attempt {attempt}."),
                         model_id=alias,writer=writer)
                     break
                 except ValueError as exc:
-                    # A retimed take cannot be silently repaired. Permit at
-                    # most two fresh genuine generations before failing closed.
-                    if str(exc)!="AI cannot retime frozen source Film Time boundaries":
+                    # A retimed/unsafe original camera candidate must never
+                    # be silently repaired. Only known model-origin
+                    # validation failures may request a FRESH inference
+                    # with a separate provider receipt. No approval is
+                    # derived from any failed attempt.
+                    if not retryable_model_rejection(exc):
+                        raise
+                    receipt=writer.completion_receipt
+                    if (type(receipt) is not dict or
+                            type(receipt.get("provider_reported_completion_tokens")) is not int or
+                            receipt["provider_reported_completion_tokens"]<1):
                         raise
                     rejected.append({
-                        "attempt":attempt,"reason":"REJECTED_MODEL_RETIMED_SOURCE",
-                        "provider_completion":writer.completion_receipt})
+                        "attempt":attempt,"reason":str(exc),
+                        "provider_completion":receipt})
             if result is None:
-                raise RuntimeError("Actual GGUF retimed source in all attempts")
+                raise RuntimeError("All genuine GGUF attempts failed strict source-safe camera validation")
             receipt=result["provider_completion_receipt"]
             if (result["status"]!="UNAPPROVED_SOURCE_CAMERA_ADVICE" or
                 result["human_authorization_granted"] is not False or
