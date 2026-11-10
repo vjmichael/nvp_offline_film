@@ -148,3 +148,33 @@ observed cold-process refusal to reuse an old in-memory OS review grant.
 The grouped acceptance workflow must execute both and retain
 bounded stage receipts. They are **not yet passed** until one final
 integrated exact-head Windows NSIS test witnesses both processes.
+
+
+## Repaired native run result and WebView2 blocker
+
+[Run 42768650682](https://github.com/vjmichael/nvp_offline_film/actions/runs/42768650682)
+at `094ea70070c670944478e21e8fbdd79a12f21b7f`:
+- **PASS:** DA-00, React, all four actual Win/Linux Python 3.11/3.13
+  source/rail/durable-queue/actual OpenUSD raster matrices.
+- **PASS:** real Windows Job Object descendant cancellation + abrupt
+  host-exit evidence; separate artifact
+  `nvp-plan02d-real-process-tree-windows-2025`.
+- **FAIL infrastructure:** genuine strict Linux cgroup-v2 descendant
+  gate has no systemd `Delegate=yes` on standard hosted runner.
+  Requires independently evidenced delegated native Linux execution.
+- **PASS (installed subprocess stages only):** NSIS installed
+  `NVP.exe --smoke-data-av` and `NVP.exe --smoke-plan02d`.
+- **FAIL:** actual `--smoke-window` WebView2 source/React UI timed
+  out after 150 seconds. The bounded gate terminated the hung
+  process rather than leaving an indefinite CI job; diagnostic artifact
+  `nvp-plan02d-installed-diagnostic`. Exact WebView2 stage currently
+  unresolved; new durable stage checkpoints are staged for evidence.
+  **Do not count whole installed acceptance or D5 as PASS.**
+- Staged but not accepted on the run above: cross-process installed
+  restart/create-reopen pair and positive nonblack original-source
+  sphere raster in exact source camera window. These strengthen
+  the next consolidated integrated head and must pass on Windows.
+
+No proprietary DCI cinema, certified projection, AI Skin,
+full 30-second film or physical creator OS interaction is claimed
+by any of these task-group gates.
