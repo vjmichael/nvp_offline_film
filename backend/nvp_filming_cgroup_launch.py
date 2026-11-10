@@ -11,18 +11,14 @@ import sys
 from pathlib import Path
 
 
-def _verify_current_process_membership(group: Path) -> None:
+def _verify_current_process_membership(directory: int) -> None:
     """Require a fresh cgroup.procs observation of this exact child PID."""
-    directory = os.open(group, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    fd = os.open("cgroup.procs", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
     try:
-        fd = os.open("cgroup.procs", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
-        try:
-            with os.fdopen(fd, "r", encoding="ascii") as stream:
-                members = stream.read(1024 * 1024)
-        except UnicodeError as exc:
-            raise RuntimeError("Invalid cgroup membership observation") from exc
-    finally:
-        os.close(directory)
+        with os.fdopen(fd, "r", encoding="ascii") as stream:
+            members = stream.read(1024 * 1024)
+    except UnicodeError as exc:
+        raise RuntimeError("Invalid cgroup membership observation") from exc
     if str(os.getpid()) not in members.split():
         raise RuntimeError("Child cgroup membership not independently observed")
 
@@ -46,12 +42,12 @@ def attach_then_exec(group: Path, executable: str, argv: list[str]) -> None:
                 raise OSError("Incomplete cgroup.procs attachment")
         finally:
             os.close(fd)
+        # Keep the same pinned cgroup directory descriptor for attachment and
+        # membership observation; pathname replacement cannot switch groups.
+        _verify_current_process_membership(directory)
+        os.execv(executable, argv)
     finally:
         os.close(directory)
-    # A successful write alone is insufficient: require kernel-observed membership
-    # before any worker instruction executes. Never infer membership from a PID journal.
-    _verify_current_process_membership(group)
-    os.execv(executable, argv)
 
 
 def main() -> int:
