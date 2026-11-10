@@ -43,12 +43,24 @@ class RetiredCameraContract(unittest.TestCase):
         self.assertTrue(capabilities["native_data_first_scene"])
         self.assertFalse(capabilities["supports_approved_still"])
         self.assertFalse(capabilities["blender_discovered"])
+        self.assertFalse(capabilities["supports_cancel"])
 
     def test_every_still_request_is_denied_before_host_or_consent(self):
         for payload in ({}, None, {"source_tick": 0}, {"source_tick": True}):
             with self.subTest(payload=payload):
                 with self.assertRaisesRegex(PermissionError, "retired"):
                     self.bridge.request_camera_still(payload)
+        self.assertEqual(self.created_hosts, [])
+        self.assertEqual(self.window.questions, 0)
+
+    def test_retired_poll_and_cancel_cannot_recover_forged_old_ticket(self):
+        self.bridge._tickets["historical_ticket"] = {
+            "project_id": "f" * 32, "job_id": "legacy_job"}
+        for operation in (self.bridge.poll_camera_still,
+                          self.bridge.cancel_camera_still):
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaisesRegex(PermissionError, "retired"):
+                    operation("historical_ticket")
         self.assertEqual(self.created_hosts, [])
         self.assertEqual(self.window.questions, 0)
 

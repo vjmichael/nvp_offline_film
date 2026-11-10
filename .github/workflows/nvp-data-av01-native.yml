@@ -103,7 +103,7 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx
+      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx
 
   installed-windows-native:
     name: Real packaged / installed Windows NVP.exe with OpenUSD and PCM (no FFmpeg)

@@ -78,3 +78,7 @@ This explicitly **supersedes older 01T and other branch assumptions** that requi
 - Stop and report after the requested group: what changed, what passed, what failed, and the next group.
 
 **Next implementation task:** PLAN-02-A — repair the canonical SLATE-08B native camera-bridge React failures, then prepare the source-time adapter for camera rail/EDL ports. All later phases stay unaccepted until independently executed.
+
+## PLAN-02-A — repair of canonical SLATE-08B camera interface
+
+Implemented in canonical source, pending grouped native acceptance: the read-only React source lens panel now enforces exact `project_id` as well as existing scene/revision/SHA/tick/camera identity. Retired native Blender still request, poll and cancel entrypoints deny all requests after the native-window origin check; capability discovery advertises `supports_cancel: false`. The old positive worker tests were replaced with seven active source-bound/nonprivileged React regressions, while native tests now reject forged historical poll/cancel tickets. The existing DATA-AV-01 grouped React gate includes the full migrated test file. This **does not** re-enable the old renderer, accept CAM-FX rails, or imply physical Windows approval. Record exact-head CI outcomes separately.

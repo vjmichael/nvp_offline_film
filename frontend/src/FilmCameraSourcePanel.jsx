@@ -63,6 +63,7 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
       .then(data=>{
         if(!active)return;
         if(data?.format!=='nvp.camera.lens_workbench.v1'
+          ||data.project_id!==projectId
           ||data.scene_document_sha256!==scene.document_sha256
           ||data.scene_id!==scene.scene_id
           ||data.scene_revision!==scene.revision

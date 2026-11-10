@@ -19,6 +19,10 @@ non-destructive assembly manifests. Hardware renders ephemeral samples
 and visuals as requested. Only an explicit final 2D presentation freezes
 output raster/video/audio; samples/frames never define a Digital Take.
 
+## PLAN-02-A — canonical retired-camera interface repair
+
+The data-first camera editor retains an exact-source read-only optics diagram. Legacy SLATE-08B external Blender-still request/poll/cancel are now fail-closed, even with a forged historical ticket. A cross-project snapshot is rejected and the new React/native negative tests are included in the consolidated DATA-AV-01 CI group. **Source change only until exact-head native gate passes; CAM-FX camera rails are not integrated by this patch.**
+
 ## Ordered implementation and acceptance tasks
 
 | ID | Task | Evidence required | Implementation | Native acceptance |
