@@ -101,7 +101,7 @@ jobs:
       - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/NativeCameraRailPanel.test.jsx src/NativeOriginalCapturePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx
 
   native-process-tree-positive:
-    name: Actual OS detached descendants: cancellation and crash / ${{ matrix.os }}
+    name: "Actual OS detached descendants: cancellation and crash / ${{ matrix.os }}"
     needs: [zero-ffmpeg-policy]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
