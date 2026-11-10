@@ -3,6 +3,7 @@ import subprocess
 import math
 import sys
 import unittest
+from unittest import mock
 
 from backend.nvp_filming_worker_custody import OwnedFilmingWorker
 
@@ -90,6 +91,32 @@ class FilmingWorkerCustodyTests(unittest.TestCase):
         self.assertEqual(receipt.returncode, 7)
         with self.assertRaises(RuntimeError):
             worker.stop_and_verify(timeout=1)
+
+    def test_timeout_retry_does_not_repeat_graceful_signal(self):
+        process = self.spawn()
+        try:
+            worker = OwnedFilmingWorker(process)
+            original_wait = process.wait
+            attempts = [0]
+
+            def first_wait_times_out(*args, **kwargs):
+                attempts[0] += 1
+                if attempts[0] <= 2:
+                    raise subprocess.TimeoutExpired(process.args, kwargs.get("timeout"))
+                return original_wait(*args, **kwargs)
+
+            with mock.patch.object(process, "wait", side_effect=first_wait_times_out), \
+                 mock.patch.object(process, "terminate", wraps=process.terminate) as terminate:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    worker.stop_and_verify(timeout=0.1)
+                # A failed exit attestation must not consume the handle.
+                receipt = worker.stop_and_verify(timeout=2)
+                self.assertTrue(receipt.exited)
+                self.assertEqual(terminate.call_count, 1)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
 
     def test_pid_alone_cannot_be_admitted(self):
         with self.assertRaises(TypeError):
