@@ -104,6 +104,28 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
             self.assertEqual(outside.read_text(), "untouched")
             self.assertFalse(worker._consumed)
 
+    def test_ambiguous_kill_write_never_reissues_on_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cgroup.kill").write_text("")
+            (root / "cgroup.events").write_text("populated 1\\n")
+            worker = self._owned(root)
+            attempts = []
+
+            def uncertain_write():
+                attempts.append("issued")
+                (root / "cgroup.kill").write_text("1")
+                raise OSError("write completion uncertain")
+
+            with patch.object(worker, "_request_kill", side_effect=uncertain_write):
+                with self.assertRaises(OSError):
+                    worker.stop_and_verify(timeout=1)
+                (root / "cgroup.events").write_text("populated 0\\n")
+                receipt = worker.stop_and_verify(timeout=1)
+            self.assertEqual(attempts, ["issued"])
+            self.assertTrue(receipt["empty_group_verified"])
+            self.assertEqual((root / "cgroup.kill").read_text(), "1")
+
     def test_still_populated_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
