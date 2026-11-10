@@ -147,14 +147,16 @@ class OriginalCAMFX03SourceAndDurableAI(unittest.TestCase):
         self.assertEqual(self.index.read_revision(
             self.pid,self.world_take,1)["document_sha256"],
             self.original_take_sha)
-        # The accepted 02M-H fixture owns a nested real 01F source class,
-        # not a .shots collection. Validate each independently frozen Take.
-        source_ids=self.source.source.ids
-        self.assertEqual(len(source_ids),len(self.original_pcm_take_shas))
-        for take_id,original_sha in zip(source_ids,
-                                         self.original_pcm_take_shas):
+        # 01F's .ids are newly COMPOSED world Take IDs, whereas these
+        # captured SHA values belong to each original immutable scene Take.
+        # Resolve the underlying original source shots, never compare a
+        # different (legitimate) source object or weaken hash assertions.
+        original_shots=self.source.source.shots
+        self.assertEqual(len(original_shots),len(self.original_pcm_take_shas))
+        for shot,original_sha in zip(original_shots,
+                                     self.original_pcm_take_shas):
             self.assertEqual(self.index.read_revision(
-                self.pid,take_id,1)["document_sha256"],original_sha)
+                self.pid,shot["take_id"],1)["document_sha256"],original_sha)
 
     def test_real_original_usd_triangle_math_has_detected_and_clear_center_rays(self):
         triangle=([0.,0.,0.],[2.,0.,0.],[0.,2.,0.])
