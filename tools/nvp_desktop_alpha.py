@@ -1358,8 +1358,31 @@ def run_visible_window_smoke():
                                         if render_controls:break
                                         time.sleep(.2)
                                     if not render_controls:
+                                        # Instrument the exact first-party GUI
+                                        # readback without replacing or bypassing
+                                        # the required native source controls.
+                                        # A Boolean result masks whether the
+                                        # API, React mount or DOM button differs.
+                                        detail=window.evaluate_js(
+                                            "(()=>{const api=window.pywebview?.api;"
+                                            "const pane=document.querySelector("
+                                            "'section[aria-label=\\\"Original OpenUSD modular world director\\\"]');"
+                                            "const integration=pane?.querySelector("
+                                            "'[aria-label=\\\"Original film actor camera world integration\\\"]');"
+                                            "const review=pane?.querySelector("
+                                            "'[aria-label=\\\"Protected original actor district Cycles review\\\"]');"
+                                            "const names=['film02mh_preview_shot',"
+                                            "'film02mh_reopen_shot_binding',"
+                                            "'film02mh_render_begin','film02mh_render_poll',"
+                                            "'film02mh_render_image'];"
+                                            "return JSON.stringify({pane:!!pane,integration:!!integration,"
+                                            "review:!!review,missingMethods:names.filter("
+                                            "n=>typeof api?.[n]!=='function'),"
+                                            "reviewButtons:[...(review?.querySelectorAll('button')||[])]"
+                                            ".map(b=>b.textContent.trim().slice(0,84))});})()")
                                         raise RuntimeError(
-                                            "Real installed Windows WebView2 lacks protected Cycles controls or native source permissions")
+                                            "Real installed Windows WebView2 lacks protected Cycles controls "
+                                            "or native source permissions; inspect exact DOM/API state: "+str(detail)[:650])
                                     _native_window_stage(
                                         "film02mh_installed_source_review_controls_verified_no_worker_started")
                                 if os.environ.get("NVP_CAMFX_GROUP_ACCEPTANCE")=="1":
