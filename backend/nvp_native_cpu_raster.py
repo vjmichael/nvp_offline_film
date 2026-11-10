@@ -79,6 +79,60 @@ def _cube_vertices(size):
         (-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1))]
 
 
+def _director_rail_view(pose):
+    """Transform real source geometry through an approved virtual-camera pose.
+
+    Film Time and source USD/ActorID geometry are never edited. Z is NVP's
+    scene up direction. Native USD cameras view toward local -Z.
+    """
+    if (type(pose) is not dict or
+            pose.get("source_performance_edited") is not False or
+            pose.get("camera_has_physical_collider") is not False):
+        raise PermissionError("Only a source-verified virtual camera pose")
+    pos=pose.get("position_m")
+    target=pose.get("target_m")
+    roll=pose.get("roll_deg")
+    focal=pose.get("focal_length_mm")
+    def vector(v):
+        if (type(v) is not list or len(v)!=3 or
+                any(type(x) not in (int,float) or
+                    not math.isfinite(x) or abs(x)>100000 for x in v)):
+            raise ValueError("Finite original camera coordinates required")
+        return [float(x) for x in v]
+    origin=vector(pos)
+    look=vector(target)
+    if (type(roll) not in (int,float) or not math.isfinite(roll) or
+            abs(roll)>180 or type(focal) not in (int,float) or
+            not math.isfinite(focal) or not 8<=focal<=300):
+        raise ValueError("Invalid verified director camera optics")
+    def dot(a,b):return sum(x*y for x,y in zip(a,b))
+    def cross(a,b):
+        return [a[1]*b[2]-a[2]*b[1],
+                a[2]*b[0]-a[0]*b[2],
+                a[0]*b[1]-a[1]*b[0]]
+    def normalize(a):
+        norm=math.sqrt(dot(a,a))
+        if norm<0.02:
+            raise ValueError("Degenerate verified look-at camera")
+        return [v/norm for v in a]
+    fwd=normalize([a-b for a,b in zip(look,origin)])
+    up=[0.,0.,1.]
+    if abs(dot(fwd,up))>.98:
+        up=[0.,1.,0.]
+    right=normalize(cross(fwd,up))
+    up=normalize(cross(right,fwd))
+    angle=math.radians(roll)
+    co,si=math.cos(angle),math.sin(angle)
+    rolled_right=[co*right[i]+si*up[i] for i in range(3)]
+    rolled_up=[co*up[i]-si*right[i] for i in range(3)]
+    backwards=[-v for v in fwd]
+    axes=(rolled_right,rolled_up,backwards)
+    inverse=[[axes[j][i] for j in range(3)]+[0.]
+             for i in range(3)]
+    inverse.append([-dot(origin,axis) for axis in axes]+[1.])
+    return inverse,float(focal)
+
+
 class NativeSourceRaster:
     def __init__(self,index:FilmIndex,project_id,*,width=OUTPUT_WIDTH,
                  height=OUTPUT_HEIGHT):
@@ -89,7 +143,8 @@ class NativeSourceRaster:
         self.index=index
         self.project_id=project_id
 
-    def render_png(self,*,scope,tick,camera_path,source_snapshot):
+    def render_png(self,*,scope,tick,camera_path,source_snapshot,
+                   approved_camera_pose=None):
         _int(tick,"native picture source moment")
         if (type(source_snapshot) is not dict or
             source_snapshot.get("time_tick")!=tick or
@@ -98,6 +153,8 @@ class NativeSourceRaster:
             raise RuntimeError("Native image source moment is not SHA-bound")
         img=Image.new("RGB",(OUTPUT_WIDTH,OUTPUT_HEIGHT),(0,0,0))
         if camera_path is None:
+            if approved_camera_pose is not None:
+                raise PermissionError("No virtual camera permitted in a source shot gap")
             # Explicit Film Time has no active camera. Render true black,
             # without inventing a camera/picture or skipping that interval.
             out=BytesIO();img.save(out,format="PNG")
@@ -109,13 +166,16 @@ class NativeSourceRaster:
         if camera is None:
             raise RuntimeError("Only an original USD camera can observe source")
         inverse=_inverse(camera["world_matrix"])
+        if approved_camera_pose is not None:
+            inverse,rail_focal=_director_rail_view(approved_camera_pose)
         schema=next((x for x in
                      source_snapshot.get("native_scene_schemas",[])
                      if x.get("prim_path")==camera_path and
                      x.get("schema")=="UsdGeom.Camera"),None)
         if schema is None:
             raise RuntimeError("Real native UsdGeom.Camera optics are required")
-        focal=schema["focal_length_mm"]
+        focal=(rail_focal if approved_camera_pose is not None
+               else schema["focal_length_mm"])
         if type(focal) not in (int,float) or not math.isfinite(focal) or not 1<=focal<=400:
             raise RuntimeError("Unsupported original camera focal length")
         primitives=[]

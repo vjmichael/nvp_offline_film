@@ -184,3 +184,119 @@ class NativePlan02CCameraActions:
         # and a FRESH separate OS approval for plan02c_publish.
         return {**outcome,"model_request_human_approved":True,
                 "rail_publication_human_approved":False}
+
+    # PLAN-02-D: non-executing original-source selection and durable review.
+    # These trusted pywebview methods NEVER mint a Blender/process ticket.
+    def _plan02d(self):
+        self._native_window()
+        if not hasattr(self, "_plan02d_intentions"):
+            from backend.nvp_plan02d_render_queue import DurableRenderIntentionQueue
+            self._plan02d_intentions = DurableRenderIntentionQueue(
+                self.index, ask_native=self._plan02d_ask_review)
+        return self._plan02d_intentions
+
+    def _plan02d_ask_review(self, scope):
+        if (scope.get("operation") !=
+                "nvp.plan02d.review_nonexecuting_source_scope.v1" or
+                self._closing):
+            return False
+        return self._ask(
+            "Review one source-selected derivative render INTENTION?\n" +
+            "Project: " + scope["project_id"] +
+            "\nJob: " + scope["job_id"] +
+            "\nSource Take SHA: " + scope["source_take_sha256"] +
+            "\nCamera Timeline SHA: " + scope["camera_timeline_sha256"] +
+            "\nApproved rail: " + (scope["approved_rail"]["rail_document_sha256"]
+                if scope["approved_rail"] is not None else "ORIGINAL CAMERA") +
+            "\nFirst original Film Time tick: " + str(scope["first_tick"]) +
+            "\nLast tick EXCLUSIVE: " + str(scope["last_tick_exclusive"]) +
+            "\nSelection SHA: " + scope["selection_sha256"] +
+            "\nApproval DOES NOT authorize a renderer worker, export, " +
+            "file modification, restart replay, or FFmpeg.")
+
+    def plan02d_preview(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "selection"}:
+            raise PermissionError("Only exact original-source renderer preview")
+        from backend.nvp_plan02d_source_selection import ExactSourceWindowSelector
+        return ExactSourceWindowSelector(self.index).preview(
+            _require_pid(request["project_id"]), request["selection"])
+
+    def plan02d_sample_at(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "selection", "selection_sha256", "tick"}:
+            raise PermissionError("Only bounded source observation, no renderer")
+        from backend.nvp_plan02d_source_selection import ExactSourceWindowSelector
+        return ExactSourceWindowSelector(self.index).sample_at(
+            _require_pid(request["project_id"]),
+            request["selection"], request["selection_sha256"], request["tick"])
+
+    def plan02d_enqueue(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "job_id", "selection"}:
+            raise PermissionError("Browser cannot enqueue a process or render command")
+        return self._plan02d().enqueue(
+            _require_pid(request["project_id"]),
+            request["job_id"], request["selection"])
+
+    def plan02d_inspect(self, project_id, job_id):
+        self._native_window()
+        return self._plan02d().inspect(_require_pid(project_id), job_id)
+
+    def plan02d_review(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "job_id", "expected_revision"}:
+            raise PermissionError("Browser cannot assert human approval")
+        return self._plan02d().review(
+            _require_pid(request["project_id"]),
+            request["job_id"], request["expected_revision"])
+
+    def _plan02d_raster(self):
+        self._native_window()
+        if not hasattr(self, "_plan02d_native_raster"):
+            from backend.nvp_plan02d_derived_raster import SourceSelectedNativeRaster
+            self._plan02d_native_raster = SourceSelectedNativeRaster(
+                self.index, ask_native=self._plan02d_approve_png)
+        return self._plan02d_native_raster
+
+    def _plan02d_approve_png(self, scope):
+        if (scope.get("operation") !=
+                "nvp.plan02d.publish_verified_derivative_png.v1" or
+                self._closing):
+            return False
+        return self._ask(
+            "Publish ONE independently checked native OpenUSD picture?\n" +
+            "Take SHA: " + scope["take_sha256"] +
+            "\nSource selection SHA: " + scope["source_selection_sha256"] +
+            "\nCamera timeline SHA: " + scope["camera_timeline_sha256"] +
+            "\nRail SHA: " + str(scope["approved_rail_sha256"]) +
+            "\nFilm Time tick: " + str(scope["film_tick"]) +
+            "\nPNG SHA: " + scope["png_sha256"] +
+            "\nNo original ActorID, PCM, render worker, FFmpeg or cinema master.")
+
+    def plan02d_raster_preview(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "selection", "selection_sha256", "tick"}:
+            raise PermissionError("Exact source-selected raster preview only")
+        import base64
+        result = self._plan02d_raster().preview(
+            _require_pid(request["project_id"]), request["selection"],
+            request["selection_sha256"], request["tick"])
+        raw = result.pop("png_bytes")
+        return {**result, "png_base64": base64.b64encode(raw).decode("ascii")}
+
+    def plan02d_raster_publish(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "presentation_id", "selection",
+                "selection_sha256", "tick", "expected_png_sha256"}:
+            raise PermissionError("Browser cannot self-authorize derivative picture")
+        return self._plan02d_raster().publish(
+            _require_pid(request["project_id"]), request["presentation_id"],
+            request["selection"], request["selection_sha256"],
+            request["tick"], request["expected_png_sha256"])

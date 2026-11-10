@@ -8,7 +8,7 @@ import NativeCameraRailPanel from './NativeCameraRailPanel.jsx';
 // from a frozen, exact-SHA OpenUSD Digital Take. Web Audio sends temporary
 // samples to the OS device. No complete soundtrack is ever materialized.
 const FORMAT='nvp.data_av.native_session.v1';
-const WINDOW=2048;
+const WINDOW=4096;
 const RATE=48000;
 const TICKS_PER_SAMPLE=147000;
 
@@ -45,7 +45,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const controller=useRef({ticket:null,context:null,scheduled:[],
     presentationMarks:[],generation:0,cursor:0,last:0,first:0,
     nextAudioAt:0,working:false,active:false,stopping:false,
-    sceneBusy:false,lastSceneAt:-1});
+    sceneBusy:false,lastSceneAt:-1,sourceExhausted:false});
   const item=takes.find(x=>x.take_id===takeId);
 
   useEffect(()=>{
@@ -83,7 +83,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   async function stop(){
     const st=controller.current;
     st.generation++;
-    st.active=false;st.working=false;
+    st.active=false;st.working=false;st.sourceExhausted=false;
     for(const node of st.scheduled){
       try{node.stop();}catch{}
       try{node.disconnect();}catch{}
@@ -136,8 +136,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
 
   async function queueAudio(gen){
     const st=controller.current;
-    if(!st.active||!st.context||!st.ticket||st.generation!==gen||
-       st.working)return;
+    if(!st.active||st.sourceExhausted||!st.context||!st.ticket||
+       st.generation!==gen||st.working)return;
     st.working=true;
     try{
       // Maximum ~0.45s of ahead-of-time audio; no feature-long memory
@@ -149,9 +149,10 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         const first=reverse?Math.max(st.first,st.cursor-WINDOW):st.cursor;
         const count=reverse?st.cursor-first:Math.min(WINDOW,st.last-first);
         if(count<=0){
-          st.active=false;
-          setPlaying(false);
-          setNote('Reached the end of this creator-approved Film Time interval.');
+          // The source read cursor has reached end, NOT the device playback
+          // cursor. Retain the active session and scene polling until the
+          // last previously scheduled PCM buffer has actually played.
+          st.sourceExhausted=true;
           break;
         }
         const response=await native.data_av_audio_window(st.ticket,first,count);
@@ -182,8 +183,15 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
           startAt,endAt:startAt+count/RATE,first,count,reverse,
         });
         if(st.presentationMarks.length>32)st.presentationMarks.shift();
-        node.onended=()=>{const k=st.scheduled.indexOf(node);
-          if(k>=0)st.scheduled.splice(k,1);};
+        node.onended=()=>{
+          const k=st.scheduled.indexOf(node);
+          if(k>=0)st.scheduled.splice(k,1);
+          if(st.generation===gen&&st.sourceExhausted&&
+             st.scheduled.length===0){
+            setNote('Completed the full approved source Film Time playback.');
+            void stop();
+          }
+        };
         st.nextAudioAt=startAt+count/RATE;
         st.cursor=reverse?first:first+count;
       }
@@ -254,6 +262,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       st.nextAudioAt=st.context.currentTime+0.08;
       st.presentationMarks=[];
       st.lastSceneAt=-1;
+      st.sourceExhausted=false;
       st.active=true;setPlaying(true);
       queueAudio(st.generation);
     }catch(e){setError(e.message);await stop();}
@@ -341,10 +350,23 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         listenerPath={listener}
         sceneSha={scene.visual.scene_document_sha256}
         tick={String(scene.visual.time_tick||'0')}
+        activeCameraPath={
+          scene.active_source_camera?.take_document_sha256===
+          scene.take_document_sha256?
+            scene.active_source_camera.camera_path:''}
+        activeCameraFocalMm={
+          (scene.scene?.native_scene_schemas||[]).find(x=>
+            x.prim_path===scene.active_source_camera?.camera_path &&
+            x.schema==='UsdGeom.Camera')?.focal_length_mm??null}
         railSamples={railPreview?.take_document_sha256===scene.take_document_sha256?
           railPreview.source_film_time_samples:[]}/>}
     {scene&&!scene.visual&&<p role="status">Native source geometry
       is not verified; spatial sound may still be inspected.</p>}
+    {scene?.active_source_camera&&<p role="status">
+      Playing authored camera {scene.active_source_camera.camera_path}
+      {' '}at original Film Time {scene.active_source_camera.source_tick}.
+      Picture follows the PCM output device's presentation clock.
+    </p>}
     {scene&&<section aria-label="Current frozen USD scene state">
       <h3>World state at requested Film Time</h3>
       <p className="fineprint">Native OpenUSD spatial descriptors, not

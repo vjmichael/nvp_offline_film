@@ -83,7 +83,7 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
             group.rename(parent / "old")
             group.mkdir()
             (group / "cgroup.kill").write_text("")
-            (group / "cgroup.events").write_text("populated 0\\n")
+            (group / "cgroup.events").write_text("populated 0\n")
             with self.assertRaises(CgroupCustodyError):
                 worker.stop_and_verify(timeout=1)
             self.assertEqual((group / "cgroup.kill").read_text(), "")
@@ -97,7 +97,7 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
             outside = root / "outside"
             outside.write_text("untouched")
             (group / "cgroup.kill").symlink_to(outside)
-            (group / "cgroup.events").write_text("populated 0\\n")
+            (group / "cgroup.events").write_text("populated 0\n")
             worker = self._owned(group)
             with self.assertRaises(OSError):
                 worker.stop_and_verify(timeout=1)
@@ -108,7 +108,7 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "cgroup.kill").write_text("")
-            (root / "cgroup.events").write_text("populated 1\\n")
+            (root / "cgroup.events").write_text("populated 1\n")
             worker = self._owned(root)
             attempts = []
 
@@ -120,7 +120,7 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
             with patch.object(worker, "_request_kill", side_effect=uncertain_write):
                 with self.assertRaises(OSError):
                     worker.stop_and_verify(timeout=1)
-                (root / "cgroup.events").write_text("populated 0\\n")
+                (root / "cgroup.events").write_text("populated 0\n")
                 receipt = worker.stop_and_verify(timeout=1)
             self.assertEqual(attempts, ["issued"])
             self.assertTrue(receipt["empty_group_verified"])
