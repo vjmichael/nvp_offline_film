@@ -132,6 +132,7 @@ class TrustedDesktopCameraBridge:
         self._futures = {}
         self._host = None
         self._data_av_controller = None
+        self._original_capture_controller = None
         self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
@@ -283,6 +284,73 @@ class TrustedDesktopCameraBridge:
     def data_av_stop(self,session_id):
         return self._data_av().stop(session_id)
 
+    # PLAN-02-B: original microphone capture (not retired camera still IPC).
+    def _original_capture(self):
+        if self._original_capture_controller is None:
+            from backend.nvp_native_capture_desktop import TrustedNativeOriginalCapture
+            self._original_capture_controller=TrustedNativeOriginalCapture(
+                self.index,native_window=self._native_window,
+                ask_native=lambda message: (
+                    self._native_window().create_confirmation_dialog(
+                        "NVP — Authorize Original Sound",message) is True))
+        return self._original_capture_controller
+
+    def data_av_capture_catalog(self,project_id):
+        self._native_window()
+        from backend.nvp_exact_time_shots import ExactTimeShotSequence
+        pid=_require_pid(project_id)
+        exact=ExactTimeShotSequence(self.index)
+        timelines=[]
+        for row in self.index.list_objects(pid,kind="temporal")[:128]:
+            try:plan=exact.read(pid,row["object_id"],row["head_revision"])
+            except (KeyError,ValueError,RuntimeError):continue
+            scene=self.index.read_revision(
+                pid,plan["scene_id"],plan["scene_revision"])
+            if scene["document_sha256"]!=plan["scene_document_sha256"]:
+                raise RuntimeError("Original source camera catalog changed")
+            roles=scene["data"].get("prim_roles",{})
+            emitters=sorted(roles,key=lambda p:(
+                roles[p]!="actor",roles[p]=="camera",p))
+            if not emitters:continue
+            timelines.append({
+                "timeline_id":plan["timeline_id"],
+                "revision":plan["revision"],
+                "document_sha256":plan["document_sha256"],
+                "scene_id":plan["scene_id"],
+                "scene_revision":plan["scene_revision"],
+                "scene_document_sha256":plan["scene_document_sha256"],
+                "duration_tick":plan["duration_tick"],
+                "emitter_paths":emitters[:64]})
+            if len(timelines)>=32:break
+        return {"format":"nvp.data_av.original_capture_catalog.v1",
+                "project_id":pid,"timelines":timelines,
+                "source_modified":False,
+                "creator_approval_not_granted":True}
+
+    def data_av_capture_devices(self):
+        self._native_window()
+        return self._original_capture().devices()
+
+    def data_av_capture_begin(self,request):
+        self._native_window()
+        return self._original_capture().begin(request)
+
+    def data_av_capture_status(self):
+        self._native_window()
+        return self._original_capture().status()
+
+    def data_av_capture_finish(self):
+        self._native_window()
+        return self._original_capture().finish()
+
+    def data_av_capture_cancel(self):
+        self._native_window()
+        return self._original_capture().cancel()
+
+    def data_av_capture_interrupted(self,project_id):
+        self._native_window()
+        return self._original_capture().interrupted(project_id)
+
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
 
@@ -296,6 +364,8 @@ class TrustedDesktopCameraBridge:
             self._closing=True
             if self._data_av_controller is not None:
                 self._data_av_controller.close()
+            if self._original_capture_controller is not None:
+                self._original_capture_controller.close()
             host=self._host
             tickets=list(self._tickets.values())
         if host is not None:

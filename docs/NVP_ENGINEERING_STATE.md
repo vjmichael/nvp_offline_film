@@ -1,5 +1,14 @@
 # NVP — Engineering state and resumption ledger
 
+## PLAN-02-B — canonical original capture and independent native timing integration
+
+Selective donor source: PR #83 `8632bbcf` (no wholesale merge). Imported only host-owned original PCM spool/recovery, miniaudio mono capture, independently calibrated two-device ADC clock mapping and dual PortAudio capture, with their genuine native failure/denial/cancellation tests. **Kept** PR #74's newer `NativeSceneSoundCapture`, immutable FilmIndex publications, source verification, OpenUSD, and exact Film Time implementation unchanged.
+
+The trusted installed WebView2 bridge now provides an exact source camera/timeline catalog, OS-scoped microphone/device selection, separate native permission dialogs for recording and Take-freeze, interruption inventory, and native cancellation. The native 3D A/V React panel offers source-bound original microphone capture; no JS field can assert human consent or prescribe an input file or process. PyInstaller includes these explicit adapters, including sounddevice PortAudio, with **zero FFmpeg**. Existing device-clock-led scene audition remains the playback source; film-picture rendering and advanced HRTF quality are not established by this donor port.
+
+**Acceptance pending:** consolidated DATA-AV-01 Windows/Linux Python 3.11/3.13, React and NSIS installed candidate must execute on the integrated exact head and genuine failures must be repaired. Synthetic native device tests cannot establish installed OS microphone permission, independent hardware loopback/drift, real audiovisual latency, or professional sync. PLAN-02-C (camera and human-reviewed GGUF) follows only after the native task group's defects are resolved. Legacy source branch CI results are historical evidence, **not acceptance** of this integrated head.
+
+
 ### 2026-11-09 MST / 2026-11-10 UTC — PLAN-02-A canonical camera repair closed (source-scoped)
 
 **[PR #74 repair commit 16d8778e](https://github.com/vjmichael/nvp_offline_film/commit/16d8778ea80daa6e9326f68391cde5e6127ba4f8)** repaired the active DA-06 camera interface without reviving the retired Blender still renderer: strict project/scene/revision/SHA/time/camera pose validation, explicit request/poll/cancel denials (even for forged historical tickets), `supports_cancel=false`, and migrated React regression coverage. A positive read-only OpenUSD optics diagram remains available; no native still picture is promised.

@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import DataFirstWorldViewport from './DataFirstWorldViewport.jsx';
+import NativeOriginalCapturePanel from './NativeOriginalCapturePanel.jsx';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -28,6 +29,7 @@ function decodedStereo(base64,count){
 export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [native,setNative]=useState(nativeBridge);
   const [takes,setTakes]=useState([]);
+  const [captureRevision,setCaptureRevision]=useState(0);
   const [takeId,setTakeId]=useState('');
   const [listener,setListener]=useState('');
   const [sourceSample,setSourceSample]=useState('0');
@@ -70,7 +72,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       setTakeId(result.takes[0]?.take_id||'');
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
-  },[native,projectId]);
+  },[native,projectId,captureRevision]);
 
   useEffect(()=>{
     setListener(item?.listeners?.[0]||'');
@@ -351,6 +353,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       <p className="fineprint">{scene.spatial_audio?.bindings?.length||0}
         spatial audio source(s) active at this moment.</p>
     </section>}
+    <NativeOriginalCapturePanel projectId={projectId} native={native}
+      onCompleted={()=>setCaptureRevision(n=>n+1)}/>
     <section className="card" aria-label="Add creator-supplied original music">
       <h3>Bring in background music or sound effects</h3>
       <p className="fineprint">The OS file picker accepts the original MP3,

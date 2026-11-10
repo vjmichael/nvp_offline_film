@@ -80,6 +80,14 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_imported_audio.py' -v
           python -m unittest discover -s tests -p 'test_nvp_final_2d_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_decisions.py' -v
+      - name: PLAN-02-B original microphone, durable recovery and independent native ADC clock
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_capture_recovery.py backend/nvp_native_live_take.py backend/nvp_independent_device_sync.py backend/nvp_native_independent_take.py backend/nvp_native_capture_desktop.py
+          python -m unittest discover -s tests -p 'test_nvp_native_live_take.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_native_independent_sync.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_plan02b_native_capture.py' -v
       - name: Existing frozen source/camera/provenance regressions
         shell: bash
         run: |
@@ -103,7 +111,7 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx
+      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/NativeOriginalCapturePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx
 
   installed-windows-native:
     name: Real packaged / installed Windows NVP.exe with OpenUSD and PCM (no FFmpeg)
@@ -139,7 +147,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
