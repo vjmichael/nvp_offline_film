@@ -74,6 +74,12 @@ class OriginalCyclesProduction:
         db=Path(index.studio.db_path).resolve(strict=True)
         if blender.root.is_relative_to(db.parent):
             raise PermissionError("Blender job workspace cannot live in original source books")
+        # A previous installed NVP host may have terminated mid-render.
+        # Reconcile the durable supervisor journal before admitting a new
+        # independent production. Interrupted jobs are NOT resumed or reused.
+        # The worker-host OS lease refuses reconciliation if another host owns
+        # living workers, and the terminal state remains fail-closed.
+        blender.recover_interrupted()
         self.index=index
         self.queue=queue
         self.blender=blender
