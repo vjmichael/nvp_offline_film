@@ -264,43 +264,71 @@ jobs:
           $sentinelFile=Join-Path $sentinel 'original-source-preservation.txt'
           Set-Content -LiteralPath $sentinelFile -Value 'NVP-D5-CREATOR-DATA-MUST-SURVIVE-UNINSTALL' -NoNewline
           $sentinelSha=(Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash
-          # Even a failed real WebView2 gate must not prevent validating the
-          # real uninstaller and creator-owned data preservation. Re-raise
-          # afterward so the complete installed gate remains RED.
-          $windowFailure=$null
-          try {
-            Invoke-NvpSmoke $installed '--smoke-window' 150
-          } catch {
-            $windowFailure=$_.Exception.Message
-            Write-Output "NVP_D5_WEBVIEW2_UNACCEPTED $windowFailure"
-          }
+          # Accept uninstall and author-data preservation independently of
+          # any live WebView2 process. The hosted GUI can hang in its window
+          # lifecycle and must not hide an otherwise passing/failing NSIS gate.
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
-          if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
+          if (-not (Test-Path -LiteralPath $uninstall -PathType Leaf)) {
+            throw 'NVP uninstaller unavailable'
+          }
           $result=Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru
           try {
             Wait-Process -Id $result.Id -Timeout 120 -ErrorAction Stop
           } catch {
             Stop-Process -Id $result.Id -Force -ErrorAction SilentlyContinue
-            throw 'NVP uninstaller hung'
+            throw 'NVP native uninstaller hung even with all source smokes exited'
           }
           $result.Refresh()
-          if ($result.ExitCode -ne 0) { throw 'Uninstall failed' }
-          if (Test-Path $installed) { throw 'Native desktop remains after uninstall' }
+          if ($result.ExitCode -ne 0) { throw "NVP uninstall failed (exit $($result.ExitCode))" }
+          if (Test-Path -LiteralPath $installed) {
+            throw 'NSIS uninstall left installed NVP.exe even without a GUI session'
+          }
           foreach ($file in $preservedFiles) {
             if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or
                 (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $preservedHashes[$file]) {
-              throw "D5 NSIS uninstall modified original source/restart evidence: $file"
+              throw "D5 uninstall modified source/restart evidence: $file"
             }
           }
           if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf) -or
               (Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash -ne $sentinelSha) {
-            throw 'D5 NSIS uninstall erased or changed creator-owned Projects data'
+            throw 'D5 uninstall erased or changed creator-owned Projects data'
           }
           Remove-Item -LiteralPath $sentinel -Recurse -Force
           Write-Output 'NVP_D5_NATIVE_UNINSTALL_PRESERVES_SOURCE_AND_PROJECTS_PASS'
-          if ($windowFailure) {
-            throw "Real installed WebView2 UI gate remains unaccepted: $windowFailure"
+          # Reinstall the same SHA-verified candidate only AFTER successful
+          # independent uninstall, then run the strictly mandatory GUI smoke.
+          # A headless/failed WebView2 test must remain RED, never replaced by
+          # a healthy backend-only check.
+          $setupUi=Start-Process -FilePath $installer -ArgumentList '/S' -PassThru
+          try {
+            Wait-Process -Id $setupUi.Id -Timeout 120 -ErrorAction Stop
+          } catch {
+            Stop-Process -Id $setupUi.Id -Force -ErrorAction SilentlyContinue
+            throw 'Second NVP install hung before WebView2 GUI test'
           }
+          $setupUi.Refresh()
+          if ($setupUi.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $installed)) {
+            throw 'Second NVP install for real GUI test failed'
+          }
+          if ((Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -ne
+              (Get-FileHash dist/NVP/NVP.exe -Algorithm SHA256).Hash) {
+            throw 'GUI candidate does not match independently tested NVP.exe'
+          }
+          Invoke-NvpSmoke $installed '--smoke-window' 150
+          # GUI exited cleanly; this second uninstall must also remove NVP.
+          $uninstallUi=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
+          $resultUi=Start-Process -FilePath $uninstallUi -ArgumentList '/S' -PassThru
+          try {
+            Wait-Process -Id $resultUi.Id -Timeout 120 -ErrorAction Stop
+          } catch {
+            Stop-Process -Id $resultUi.Id -Force -ErrorAction SilentlyContinue
+            throw 'NSIS uninstall after successful GUI test hung'
+          }
+          $resultUi.Refresh()
+          if ($resultUi.ExitCode -ne 0 -or (Test-Path -LiteralPath $installed)) {
+            throw 'NSIS cleanup after successful GUI test failed'
+          }
+          Write-Output 'NVP_D5_REAL_INSTALLED_GUI_AND_SECOND_UNINSTALL_PASS'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
