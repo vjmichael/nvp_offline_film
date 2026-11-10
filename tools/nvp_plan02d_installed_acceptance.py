@@ -99,7 +99,7 @@ def run_installed_plan02d_smoke(phase="ephemeral"):
         scene=OpenUSDSceneBridge(index).publish(
             pid,"InstalledRasterWorld",prims=[
                 {"path":"/World/Camera","role":"camera","position":[0,0,0]},
-                {"path":"/World/Geometry","role":"prop","position":[0,3,0]},
+                {"path":"/World/Geometry","role":"prop","position":[0,0,-3]},
             ],curves=[],native_schemas=True,asset_bindings=[
                 {"path":"/World/Geometry","asset_id":"InstalledRasterSphere",
                  "asset_revision":asset["revision"]}])
@@ -140,6 +140,15 @@ def run_installed_plan02d_smoke(phase="ephemeral"):
                 "project_id":pid,"selection":request,
                 "selection_sha256":scope["selection_sha256"],
                 "tick":T//3})
+            # One independently decoded original camera observation must
+            # contain actual USD geometry, not an empty black screen.
+            from io import BytesIO
+            from PIL import Image
+            import base64
+            with Image.open(BytesIO(base64.b64decode(sampled["png_base64"]))) as image:
+                image.load()
+                if image.getbbox() is None:
+                    raise RuntimeError("Installed original USD camera saw no real geometry")
             if (sampled["status"]!="DERIVED_MEMORY_PREVIEW_NOT_PUBLISHED" or
                     sampled["source_modified"] is not False or
                     sampled["ffmpeg_used"] is not False):
