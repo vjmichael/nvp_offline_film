@@ -7,11 +7,8 @@ name: NVP USD-FILM-02M-HR Native Actor District Cycles Shot Acceptance
 # exit 70 and full installed WebView2 Cycles API/React mount diagnostics.
 # Keep strict original-source and independent Cycles output assertions.
 on:
-  # One exact-head task-group dispatch. Ordinary source fixes do NOT run CI;
-  # only deliberately updating this group workflow schedules another batch.
-  push:
-    branches: [nvp/area2-02mh-camfx-consolidated-20261109]
-    paths: [.github/workflows/nvp-usd-film02mh-real-actor-district-render.yml]
+  # Exact-head native/render/installed gate passed at f69eae1e.
+  # Manual-only after group closure; no per-edit Windows/Linux fanout.
   workflow_dispatch:
 
 permissions:
