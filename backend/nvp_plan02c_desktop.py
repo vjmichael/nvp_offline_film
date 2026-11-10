@@ -184,3 +184,71 @@ class NativePlan02CCameraActions:
         # and a FRESH separate OS approval for plan02c_publish.
         return {**outcome,"model_request_human_approved":True,
                 "rail_publication_human_approved":False}
+
+    # PLAN-02-D: non-executing original-source selection and durable review.
+    # These trusted pywebview methods NEVER mint a Blender/process ticket.
+    def _plan02d(self):
+        self._native_window()
+        if not hasattr(self, "_plan02d_intentions"):
+            from backend.nvp_plan02d_render_queue import DurableRenderIntentionQueue
+            self._plan02d_intentions = DurableRenderIntentionQueue(
+                self.index, ask_native=self._plan02d_ask_review)
+        return self._plan02d_intentions
+
+    def _plan02d_ask_review(self, scope):
+        if (scope.get("operation") !=
+                "nvp.plan02d.review_nonexecuting_source_scope.v1" or
+                self._closing):
+            return False
+        return self._ask(
+            "Review one source-selected derivative render INTENTION?\\n" +
+            "Project: " + scope["project_id"] +
+            "\\nJob: " + scope["job_id"] +
+            "\\nSource Take SHA: " + scope["source_take_sha256"] +
+            "\\nCamera Timeline SHA: " + scope["camera_timeline_sha256"] +
+            "\\nFirst original Film Time tick: " + str(scope["first_tick"]) +
+            "\\nLast tick EXCLUSIVE: " + str(scope["last_tick_exclusive"]) +
+            "\\nSelection SHA: " + scope["selection_sha256"] +
+            "\\nApproval DOES NOT authorize a renderer worker, export, " +
+            "file modification, restart replay, or FFmpeg.")
+
+    def plan02d_preview(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "selection"}:
+            raise PermissionError("Only exact original-source renderer preview")
+        from backend.nvp_plan02d_source_selection import ExactSourceWindowSelector
+        return ExactSourceWindowSelector(self.index).preview(
+            _require_pid(request["project_id"]), request["selection"])
+
+    def plan02d_sample_at(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "selection", "selection_sha256", "tick"}:
+            raise PermissionError("Only bounded source observation, no renderer")
+        from backend.nvp_plan02d_source_selection import ExactSourceWindowSelector
+        return ExactSourceWindowSelector(self.index).sample_at(
+            _require_pid(request["project_id"]),
+            request["selection"], request["selection_sha256"], request["tick"])
+
+    def plan02d_enqueue(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "job_id", "selection"}:
+            raise PermissionError("Browser cannot enqueue a process or render command")
+        return self._plan02d().enqueue(
+            _require_pid(request["project_id"]),
+            request["job_id"], request["selection"])
+
+    def plan02d_inspect(self, project_id, job_id):
+        self._native_window()
+        return self._plan02d().inspect(_require_pid(project_id), job_id)
+
+    def plan02d_review(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "job_id", "expected_revision"}:
+            raise PermissionError("Browser cannot assert human approval")
+        return self._plan02d().review(
+            _require_pid(request["project_id"]),
+            request["job_id"], request["expected_revision"])
