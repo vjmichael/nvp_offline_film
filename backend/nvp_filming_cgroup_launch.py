@@ -72,12 +72,13 @@ def launch_attached_worker(group: Path, executable: str, argv: list[str]):
     # No preexec_fn (unsafe in a threaded desktop host), shell or fallback.
     bootstrap = (
         "import sys; "
+        "sys.path.insert(0, sys.argv[1]); "
         "from backend.nvp_filming_cgroup_launch import attach_then_exec; "
         "from pathlib import Path; "
-        "attach_then_exec(Path(sys.argv[1]), sys.argv[2], sys.argv[2:])"
+        "attach_then_exec(Path(sys.argv[2]), sys.argv[3], sys.argv[3:])"
     )
     return subprocess.Popen(
-        [sys.executable, "-c", bootstrap, str(group), *argv],
+        [sys.executable, "-c", bootstrap, str(Path(__file__).resolve().parent.parent), str(group), *argv],
         shell=False,
         close_fds=True,
     )
