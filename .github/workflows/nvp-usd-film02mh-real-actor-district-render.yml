@@ -1,7 +1,9 @@
 name: NVP USD-FILM-02M-HR Native Actor District Cycles Shot Acceptance
 
 # One deliberate task-group gate, never a CI run after each source edit.
-# Exact-head second group captures real first-party Blender worker stderr on
+# Third exact-head group verifies the real 5.2.3 large-tick Blender fix,
+# independent .blend readback, and repaired installed director tab mount.
+# Exact-head second group captured first-party Blender worker stderr on
 # exit 70 and full installed WebView2 Cycles API/React mount diagnostics.
 # Keep strict original-source and independent Cycles output assertions.
 on:
