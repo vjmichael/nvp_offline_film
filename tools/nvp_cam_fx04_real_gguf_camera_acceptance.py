@@ -77,14 +77,51 @@ def run(model_path,server_path,report_path,consent):
                 writer=ProvenLocalModelWriter(LocalScriptModel(
                     endpoint=f"http://127.0.0.1:{port}/v1/chat/completions",
                     model_name=alias))
+                # A real small GGUF can violate source clock bounds even when
+                # its schema is valid. The original validator must fail closed:
+                # never normalize, fabricate, retime or silently repair model
+                # output. Permit at most three NEW source-bound generations.
                 started=time.monotonic()
-                result=generate_camera_candidate(
-                    fixture.spec,source,
-                    direction=("Prepare a cinematic dolly along the actual original "
-                               "ActorID while preserving the first/last source Film "
-                               "Time ticks exactly and keeping camera near the "
-                               "source framing. Never approve or apply."),
-                    model_id=alias,writer=writer)
+                first=fixture.spec["film_start_tick"]
+                last=fixture.spec["film_end_tick"]
+                rejected=[]
+                result=None
+                for attempt in range(1,4):
+                    try:
+                        result=generate_camera_candidate(
+                            fixture.spec,source,
+                            direction=(
+                                "Propose a TWO-node dolly on the REAL ActorID. "
+                                "This is unapproved camera advice, not permission. "
+                                f"Exactly two nodes. Node one tick INTEGER {first}. "
+                                f"Node two tick INTEGER {last}. "
+                                "Copy those integers digit-for-digit without "
+                                "rounding or changing the original Film Time. "
+                                "Use finite metre positions and target positions "
+                                "near the existing source camera and actual actor. "
+                                "Use the permitted JSON keys only. "
+                                f"Source-locked request attempt {attempt}."
+                            ),
+                            model_id=alias,writer=writer)
+                        break
+                    except ValueError as exc:
+                        # Only a demonstrably retimed boundary receives a
+                        # fresh attempt. Any other malformed source/model
+                        # contract still fails rather than being accepted.
+                        if str(exc)!="AI cannot retime the source performance boundary":
+                            raise
+                        evidence=writer.completion_receipt or {}
+                        rejected.append({
+                            "attempt":attempt,
+                            "reason":"MODEL_RETIMED_SOURCE_BOUNDARY_REJECTED",
+                            "provider_response_sha256":evidence.get("response_sha256"),
+                            "model_output_sha256":evidence.get("generated_text_sha256"),
+                            "provider_reported_completion_tokens":
+                                evidence.get("provider_reported_completion_tokens")})
+                if result is None:
+                    raise RuntimeError(
+                        "Three genuine GGUF attempts retimed the source; "
+                        "no camera proposal accepted and no source modified")
                 elapsed=round((time.monotonic()-started)*1000)
                 receipt=result["provider_completion_receipt"]
                 if (result["format"]!=CAMERA_FORMAT or
@@ -106,6 +143,8 @@ def run(model_path,server_path,report_path,consent):
                     "gguf_file_size_bytes":model.stat().st_size,
                     "llama_server_executable_sha256":binary_sha,
                     "actual_model_tokens":receipt["provider_reported_completion_tokens"],
+                    "source_bound_model_attempts":len(rejected)+1,
+                    "rejected_retimitings":rejected,
                     "source_guidance_sha256":source["guidance_sha256"],
                     "source_world_take_sha256":result["source_original_take_sha256"],
                     "model_generated_text_sha256":result["model_text_sha256"],
