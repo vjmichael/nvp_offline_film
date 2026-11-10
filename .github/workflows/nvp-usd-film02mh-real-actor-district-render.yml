@@ -106,14 +106,26 @@ jobs:
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP '02mh-installed-original-films'
           $env:NVP_FILM02M_GROUP_ACCEPTANCE='1'
           $env:NVP_FILM02MH_GROUP_ACCEPTANCE='1'
+          # --smoke-window deliberately uses a disposable scene home. Prove
+          # persistence first in TWO independent installed native processes,
+          # then verify that exact SQLite project survives real NSIS uninstall.
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP '02mh-installed-create.log'
+          python tools/nvp_p0f01_windows_process_gate.py --stage 02mh-installed-create --timeout-seconds 240 --stage-log "$env:RUNNER_TEMP/02mh-windows-process-stages.jsonl" --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-create
+          if ($LASTEXITCODE -ne 0) { throw 'Installed persistent original filmmaker source creation failed' }
+          if (-not (Select-String -LiteralPath $env:NVP_NATIVE_SMOKE_DIAGNOSTICS -Pattern 'NVP_SMOKE_PYTHON_EXIT=0' -SimpleMatch -Quiet)) { throw 'Installed create Python source receipt missing' }
+          $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP '02mh-installed-reopen.log'
+          python tools/nvp_p0f01_windows_process_gate.py --stage 02mh-installed-reopen --timeout-seconds 240 --stage-log "$env:RUNNER_TEMP/02mh-windows-process-stages.jsonl" --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-reopen
+          if ($LASTEXITCODE -ne 0) { throw 'Second independent installed OpenUSD/SQLite source reopen failed' }
+          if (-not (Select-String -LiteralPath $env:NVP_NATIVE_SMOKE_DIAGNOSTICS -Pattern 'NVP_SMOKE_PYTHON_EXIT=0' -SimpleMatch -Quiet)) { throw 'Installed reopen Python source receipt missing' }
+          $sourceDb=Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'
+          if (-not (Test-Path -LiteralPath $sourceDb -PathType Leaf)) { throw 'No persistent filmmaker SQLite project before WebView2 review' }
           $env:NVP_NATIVE_SMOKE_DIAGNOSTICS=Join-Path $env:RUNNER_TEMP '02mh-windows-webview2.log'
           python tools/nvp_p0f01_windows_process_gate.py --stage 02mh-installed-webview2 --timeout-seconds 300 --stage-log "$env:RUNNER_TEMP/02mh-windows-process-stages.jsonl" --diagnostics "$env:NVP_NATIVE_SMOKE_DIAGNOSTICS" -- $installed --smoke-window
           if ($LASTEXITCODE -ne 0) { throw 'Installed WebView2/source review failed; inspect native trace' }
           $log=Get-Content "$env:RUNNER_TEMP/02mh-windows-webview2.log" -Raw
           if (-not $log.Contains('film02mh_installed_source_review_controls_verified_no_worker_started')) { throw 'Installed actor/district Cycles native review IPC/UI missing' }
-          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) { throw 'FilmIndex source was not persisted by installed app' }
+          if (-not (Test-Path -LiteralPath $sourceDb -PathType Leaf)) { throw 'Temporary WebView2 source review modified original persistent filmmaker project' }
           $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
-          $sourceDb=Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'
           $before=(Get-FileHash -LiteralPath $sourceDb -Algorithm SHA256).Hash
           python tools/nvp_p0f01_windows_process_gate.py --stage 02mh-nsis-uninstall --timeout-seconds 240 --stage-log "$env:RUNNER_TEMP/02mh-windows-process-stages.jsonl" -- $uninstaller /S
           if ($LASTEXITCODE -ne 0) { throw 'Real bounded NSIS uninstall failed' }
@@ -129,6 +141,8 @@ jobs:
             ${{ runner.temp }}/02mh-windows-process-stages.jsonl
             ${{ runner.temp }}/02mh-windows-nsis-payload.json
             ${{ runner.temp }}/02mh-windows-webview2.log
+            ${{ runner.temp }}/02mh-installed-create.log
+            ${{ runner.temp }}/02mh-installed-reopen.log
           if-no-files-found: warn
           retention-days: 14
       - uses: actions/upload-artifact@v4
