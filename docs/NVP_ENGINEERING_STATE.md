@@ -1,5 +1,8 @@
 # NVP — Engineering state and resumption ledger
 
+2026-11-10 DA-03 ambiguous kernel kill-write safety (source only): commits `b873311`, `2e74145` consume the one-use cgroup.kill request before kernel I/O so an exception after an uncertain write cannot cause a second destructive kill on retry. Contract regression simulates a write that takes effect before raising and checks a subsequent fresh populated=0 observation produces a receipt without reissuing the kill. Real delegated cgroup, descendant launch containment, Windows Job Object, durable restart, installed NVP.exe and exact-head native CI remain UNVERIFIED. DA-03 PARTIAL / OPEN. No FFmpeg fallback; retired proxy PRs untouched.
+
+
 2026-11-10 DA-03 pinned-directory kernel control I/O (source only): commits `410de4e`, `2b549bf` open cgroup.kill and cgroup.events relative to an O_NOFOLLOW directory descriptor, verify fstat identity against the host-pinned device/inode, and refuse symlinked control redirection; added symlink regression. This closes a pathname replacement/redirection window in the previous stat-then-open sequence. Exact-head native Windows/Linux and installed NVP.exe acceptance for these changes remains UNVERIFIED. Genuine delegated Linux descendant custody, Windows Job Object launch-before-exec, restart attestation and atomic publication remain OPEN; DA-03 PARTIAL. Zero FFmpeg remains mandatory; old proxy PRs untouched.
 
 
