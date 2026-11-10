@@ -23,6 +23,10 @@ T=7056000000
 
 
 class OriginalCyclesAdmissionTests(unittest.TestCase):
+    def _ask(self,scope):
+        self.dialogs.append(scope)
+        return self.granted
+
     def setUp(self):
         ActualSourceRasterTests.setUp(self)
         tmp=tempfile.TemporaryDirectory(prefix="nvp-plan04-cycles-deny-")
