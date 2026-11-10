@@ -82,9 +82,13 @@ def run(report_path):
         host=NativeFilmingTreeWorker(
             journal=journal,workspace=write,ask_native=approval,
             memory_mb=1024)
+        # The GitHub-hosted Python executable may itself be a symlink.
+        # Pin its canonical actual binary rather than weakening the
+        # production native no-symlink executable policy.
+        actual_executable=Path(sys.executable).resolve(strict=True)
         admission=host.launch(
-            p,"filming_take",executable=Path(sys.executable),
-            executable_sha256=sha_file(Path(sys.executable)),
+            p,"filming_take",executable=actual_executable,
+            executable_sha256=sha_file(actual_executable),
             args=(str(parent),str(write/"heartbeat"),str(grandchild)))
         heartbeat=write/"heartbeat"
         wait_for_file(heartbeat)
