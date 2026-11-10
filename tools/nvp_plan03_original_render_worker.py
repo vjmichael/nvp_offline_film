@@ -38,10 +38,10 @@ def render(manifest_path: Path):
             manifest_path.parent!=root):
         raise PermissionError("Refusing unpinned or symlinked render manifest")
     manifest=json.loads(manifest_path.read_text("utf8"))
-    if type(manifest) is not dict or set(manifest)!={
+    if (type(manifest) is not dict or set(manifest)!={
             "format","project_id","request","selection_sha256",
             "source_tick","db_path","take_document_sha256"} or
-            manifest["format"]!=FORMAT:
+            manifest["format"]!=FORMAT):
         raise ValueError("Only an exact original source render manifest")
     tick=manifest["source_tick"]
     if type(tick) is not int or tick<0:
