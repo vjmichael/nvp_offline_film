@@ -1,5 +1,8 @@
 # NVP — Engineering state and resumption ledger
 
+2026-11-10 DA-03 Linux attach-before-exec primitive (SOURCE ONLY): commits `71706c4`, `3f80ac9` add `backend/nvp_filming_cgroup_launch.py` and contract tests. Trusted host can attach the current child to an existing private cgroup via `cgroup.procs` before `execv`; missing attachment or invalid executable fails closed, with no shell or FFmpeg fallback. This is NOT wired to the actual filming launcher, and does not create/delegate cgroups, establish host custody or restart attestation, or independently verify descendant termination. Mock-file ordering tests are NOT genuine Linux delegated-cgroup acceptance. Windows Job Object, installed NVP.exe, atomic publication, continuous A/V and final delivery remain UNVERIFIED. DA-03 PARTIAL / OPEN; retired proxy PRs untouched.
+
+
 2026-11-10 DA-03 ambiguous kernel kill-write safety (source only): commits `b873311`, `2e74145` consume the one-use cgroup.kill request before kernel I/O so an exception after an uncertain write cannot cause a second destructive kill on retry. Contract regression simulates a write that takes effect before raising and checks a subsequent fresh populated=0 observation produces a receipt without reissuing the kill. Real delegated cgroup, descendant launch containment, Windows Job Object, durable restart, installed NVP.exe and exact-head native CI remain UNVERIFIED. DA-03 PARTIAL / OPEN. No FFmpeg fallback; retired proxy PRs untouched.
 
 
