@@ -35,7 +35,7 @@ class ActualSourceRasterTests(unittest.TestCase):
         scene=self.scene.publish(
             self.pid,"RasterWorld",prims=[
                 {"path":"/World/RasterCam","role":"camera","position":[0,0,0]},
-                {"path":"/World/RasterSphere","role":"prop","position":[0,3,0]},
+                {"path":"/World/RasterSphere","role":"prop","position":[0,0,-3]},
             ],curves=[],native_schemas=True,asset_bindings=[
                 {"path":"/World/RasterSphere","asset_id":"RasterSphere",
                  "asset_revision":asset["revision"]}])
@@ -71,6 +71,7 @@ class ActualSourceRasterTests(unittest.TestCase):
         with Image.open(BytesIO(one["png_bytes"])) as image:
             self.assertEqual(image.size,(640,360))
             self.assertEqual(image.format,"PNG")
+            self.assertIsNotNone(image.getbbox(), "Real original camera must see authored sphere")
         self.assertFalse(one["ffmpeg_used"])
         self.assertEqual(self.dialogs,[])
         denied=self.granted
@@ -107,8 +108,8 @@ class ActualSourceRasterTests(unittest.TestCase):
         rail_spec=deepcopy(chosen["suggested_unapproved_rail_spec"])
         rail_spec["camera_id"]="RasterDirectorCam"
         rail_spec["technique"]="dolly"
-        rail_spec["nodes"][0]["target_m"]=[0.,3.,0.]
-        rail_spec["nodes"][1]["target_m"]=[0.,3.,0.]
+        rail_spec["nodes"][0]["target_m"]=[0.,0.,-3.]
+        rail_spec["nodes"][1]["target_m"]=[0.,0.,-3.]
         rail_spec["nodes"][1]["position_m"]=[0.5,0.,0.]
         rails=CanonicalSourceRails(self.index,approve=lambda scope:True)
         trial=rails.preview(self.pid,"RasterDirector",rail_spec,expected_revision=0)
