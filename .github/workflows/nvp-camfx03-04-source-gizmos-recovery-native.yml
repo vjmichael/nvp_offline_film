@@ -1,5 +1,8 @@
 name: NVP CAM-FX-03/04 Source Actor Framing, 3D Gizmos, Durable Camera Drafts and AI Group
 
+# NINTH group-end exact head: independently verify bounded 02M-G
+# async draft completion under real Windows/Linux scheduler contention.
+# Prior source, React and installed Windows recovery gates did pass.
 # EIGHTH grouped source acceptance: pin exact source time to 24fps USD
 # and compare native camera-unit focal lengths after mm conversion.
 # Real Windows/Ubuntu matrix + installed WebView2 + React are required.
