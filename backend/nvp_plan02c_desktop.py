@@ -254,3 +254,49 @@ class NativePlan02CCameraActions:
         return self._plan02d().review(
             _require_pid(request["project_id"]),
             request["job_id"], request["expected_revision"])
+
+    def _plan02d_raster(self):
+        self._native_window()
+        if not hasattr(self, "_plan02d_native_raster"):
+            from backend.nvp_plan02d_derived_raster import SourceSelectedNativeRaster
+            self._plan02d_native_raster = SourceSelectedNativeRaster(
+                self.index, ask_native=self._plan02d_approve_png)
+        return self._plan02d_native_raster
+
+    def _plan02d_approve_png(self, scope):
+        if (scope.get("operation") !=
+                "nvp.plan02d.publish_verified_derivative_png.v1" or
+                self._closing):
+            return False
+        return self._ask(
+            "Publish ONE independently checked native OpenUSD picture?\n" +
+            "Take SHA: " + scope["take_sha256"] +
+            "\nSource selection SHA: " + scope["source_selection_sha256"] +
+            "\nCamera timeline SHA: " + scope["camera_timeline_sha256"] +
+            "\nRail SHA: " + str(scope["approved_rail_sha256"]) +
+            "\nFilm Time tick: " + str(scope["film_tick"]) +
+            "\nPNG SHA: " + scope["png_sha256"] +
+            "\nNo original ActorID, PCM, render worker, FFmpeg or cinema master.")
+
+    def plan02d_raster_preview(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "selection", "selection_sha256", "tick"}:
+            raise PermissionError("Exact source-selected raster preview only")
+        import base64
+        result = self._plan02d_raster().preview(
+            _require_pid(request["project_id"]), request["selection"],
+            request["selection_sha256"], request["tick"])
+        raw = result.pop("png_bytes")
+        return {**result, "png_base64": base64.b64encode(raw).decode("ascii")}
+
+    def plan02d_raster_publish(self, request):
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+                "project_id", "presentation_id", "selection",
+                "selection_sha256", "tick", "expected_png_sha256"}:
+            raise PermissionError("Browser cannot self-authorize derivative picture")
+        return self._plan02d_raster().publish(
+            _require_pid(request["project_id"]), request["presentation_id"],
+            request["selection"], request["selection_sha256"],
+            request["tick"], request["expected_png_sha256"])
