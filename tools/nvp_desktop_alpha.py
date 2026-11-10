@@ -410,10 +410,33 @@ def run_visible_window_smoke():
                                 # visit its camera tab, resolve the authored
                                 # source from SQLite and load native USD.
                                 result["passed"]=False
-                                window.evaluate_js(
+                                opened=window.evaluate_js(
                                     "(() => {const b=[...document.querySelectorAll('aside button')]"
                                     ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance'));"
                                     "if(b){b.click();return true;}return false;})()")
+                                if opened is not True:
+                                    raise RuntimeError("Installed test movie not present in sidebar")
+                                # Opening a saved movie is asynchronous. Wait
+                                # for the *real* fetched project workspace,
+                                # and fail if React shows an error instead of
+                                # proceeding to scene assertions.
+                                workspace_ready=False
+                                end=time.monotonic()+25
+                                while time.monotonic()<end:
+                                    workspace_ready=window.evaluate_js(
+                                        "Boolean(document.querySelector("
+                                        "'nav.filmmaker-navigation button')"
+                                        "&&document.body.textContent.includes("
+                                        "'SLATE-08B Window Acceptance'))")
+                                    if workspace_ready:break
+                                    time.sleep(.2)
+                                if not workspace_ready:
+                                    error=window.evaluate_js(
+                                        "document.querySelector('[role=alert]')?.textContent || ''")
+                                    raise RuntimeError(
+                                        "Installed saved movie workspace did not load: "+
+                                        str(error)[:180])
+                                _smoke_checkpoint("window_plan03_saved_movie_workspace_ready")
                                 # Prove the *installed* simplified path,
                                 # not just unit-tested React. Read two real
                                 # screenplay scenes via SQLite/FastAPI and
