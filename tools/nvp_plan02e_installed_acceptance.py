@@ -245,6 +245,9 @@ def run_installed_plan02e_smoke(phase="ephemeral"):
                     encoding="utf-8",
                 )
         if sys.stdout is not None:
+            if report["audio_compute_wall_seconds"] is not None:
+                print("NVP_PLAN02E_NATIVE_PCM_COMPUTE_SECONDS="+
+                      str(report["audio_compute_wall_seconds"]),flush=True)
             print(
                 "NVP_PLAN02E_30S_INSTALLED_NATIVE_SOURCE_PASS "
                 + phase + " " + receipt["take_sha256"],
