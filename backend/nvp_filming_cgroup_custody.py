@@ -49,6 +49,38 @@ class LinuxFilmingCgroup:
         if (actual.st_dev, actual.st_ino) != expected:
             raise CgroupCustodyError("Owned cgroup was replaced; custody revoked")
 
+    def _open_owned_control(self, control: str, flags: int) -> int:
+        """Open a kernel control relative to a pinned directory descriptor.
+
+        The directory is checked again after opening; path replacement cannot
+        redirect a write to an unrelated cgroup between stat() and open().
+        """
+        self._verify_group_identity()
+        directory = os.open(self._group, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            identity = os.fstat(directory)
+            if (identity.st_dev, identity.st_ino) != self._group_identity:
+                raise CgroupCustodyError("Owned cgroup changed during control open")
+            control_fd = os.open(control, flags | os.O_NOFOLLOW, dir_fd=directory)
+            return control_fd
+        finally:
+            os.close(directory)
+
+    def _read_events(self) -> str:
+        fd = self._open_owned_control("cgroup.events", os.O_RDONLY)
+        try:
+            with os.fdopen(fd, "r", encoding="ascii") as stream:
+                return stream.read(4096)
+        except BaseException:
+            # fdopen owns the descriptor once successfully constructed.
+            raise
+
+    def _request_kill(self) -> None:
+        fd = self._open_owned_control("cgroup.kill", os.O_WRONLY)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(b"1")
+            stream.flush()
+
     def stop_and_verify(self, *, timeout: float = 5.0) -> dict:
         if self._consumed:
             raise CgroupCustodyError("Cgroup custody receipt already consumed")
@@ -59,12 +91,12 @@ class LinuxFilmingCgroup:
         # cgroup.kill is kernel-wide for the entire subtree; unlike killpg it
         # includes descendants that create new process sessions.
         if not getattr(self, "_kill_requested", False):
-            (self._group / "cgroup.kill").write_text("1", encoding="ascii")
+            self._request_kill()
             self._kill_requested = True
         while True:
             self._verify_group_identity()
             fields = {}
-            for line in (self._group / "cgroup.events").read_text(encoding="ascii").splitlines():
+            for line in self._read_events().splitlines():
                 parts = line.split()
                 if len(parts) != 2 or parts[0] in fields:
                     raise CgroupCustodyError("Malformed or duplicate cgroup.events field")
