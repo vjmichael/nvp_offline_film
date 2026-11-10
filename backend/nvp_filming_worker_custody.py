@@ -67,13 +67,21 @@ class OwnedFilmingWorker:
 
     def interrupt_journal(self, journal, project_id: str, take_id: str,
                           *, expected_updated_at: str,
-                          timeout: float = 5.0) -> dict:
+                          timeout: float = 5.0,
+                          allow_direct_child_only: bool = False) -> dict:
         """Only transition after the owned direct child is observed exited.
 
         A direct-child receipt is not proof of descendant containment. Callers
         must separately ensure this filming worker cannot leave descendants
         writing to the publication namespace.
         """
+        # The direct child can exit while descendants continue writing.
+        # Require an explicit opt-in for legacy, non-tree-contained workers;
+        # callers cannot mistake the default for full custody.
+        if allow_direct_child_only is not True:
+            raise RuntimeError(
+                "Process-tree custody unverified; direct-child journal "
+                "interruption requires explicit unsafe-scope opt-in")
         receipt = self.stop_and_verify(timeout=timeout)
         result = journal.interrupt_preparing(
             project_id, take_id, expected_updated_at=expected_updated_at)
