@@ -234,6 +234,11 @@ jobs:
           Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
           Invoke-NvpSmoke $installed '--smoke-data-av' 150
           Invoke-NvpSmoke $installed '--smoke-plan02d' 150
+          # Two genuinely separate installed NVP.exe processes and a real
+          # SQLite host reopen, not a same-process constructor-only check.
+          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-plan02d-cross-process'
+          Invoke-NvpSmoke $installed '--smoke-plan02d-restart-create' 150
+          Invoke-NvpSmoke $installed '--smoke-plan02d-restart-reopen' 150
           Invoke-NvpSmoke $installed '--smoke-window' 150
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
