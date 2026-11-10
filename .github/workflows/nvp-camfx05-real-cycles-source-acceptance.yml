@@ -1,0 +1,101 @@
+name: NVP CAM-FX-05 Real Moving Virtual-Camera Blender Cycles Source Acceptance
+
+# One deliberately scoped render group after 01-04 exact-head native
+# acceptance. Enable the single branch push ONLY for the end-of-group run.
+# Model proposals, physical-PC human approval, film export and finished
+# 720-frame moving performance remain independent evidence gates.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-rail-cycles:
+    name: Verified original ActorID virtual-camera Cycles pixels, saved-scene reopen, revisions and source integrity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 105
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: https://download.blender.org/release/Blender5.2
+      NVP_CAM_FX05_ARTIFACT_DIR: camfx05-real-reviewed-rail-cycles
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD, first-party production dependencies and headless Blender display
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11' Pillow numpy
+          python -m pip install httpx
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+          python -m compileall -q backend/nvp_cam_fx01_camera_rails.py backend/nvp_cam_fx02_usd_camera_layer.py backend/nvp_cam_fx05_verified_shot_source.py backend/nvp_cam_fx05_protected_cycles_host.py tools/nvp_cam_fx05_blender_rail_worker.py tools/nvp_cam_fx05_blender_rail_reopen.py tests/test_nvp_cam_fx05_staged_rail_source.py
+      - name: Download upstream Blender 5.2.3 and independently check official SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/blender" --strip-components=1
+          "$RUNNER_TEMP/blender/blender" -b --version | head -n 2
+      - name: Actual protected source-bound Cycles render, OS-refusal contract, two rail revisions and independent reopened Blender source
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_CAM_FX05_BLENDER_BIN="$RUNNER_TEMP/blender/blender"
+          test -x "$NVP_CAM_FX05_BLENDER_BIN"
+          xvfb-run -a python -m unittest discover -s tests -p test_nvp_cam_fx05_staged_rail_source.py -v
+      - name: Independently check real Cycles pixels and immutable original performance/PCM receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from hashlib import sha256
+          from PIL import Image,ImageChops
+          import json
+          root=Path("camfx05-real-reviewed-rail-cycles")
+          receipt=json.loads((root/"comparison.json").read_text("utf8"))
+          assert receipt["format"]=="nvp.cam_fx05.real_two_revisions_original_source_rail_cycles.v1"
+          assert receipt["pixels_changed_over_rgb12"]>=250
+          assert receipt["independent_blender_reopen_each"] is True
+          assert receipt["original_actor_pcm_unchanged"] is True
+          assert receipt["human_artistic_approval"] is False
+          original=set()
+          for number,idx in ((1,0),(2,1)):
+              png=root/f"{number}_frame.png"
+              with Image.open(png) as img:
+                  assert img.format=="PNG" and img.size==(320,180)
+                  img.verify()
+              digest=sha256(png.read_bytes()).hexdigest()
+              assert receipt["native_cycles_png_sha256"][idx]==digest
+              original.add(digest)
+              blend=root/f"{number}_scene.blend"
+              assert blend.is_file() and blend.stat().st_size>5000
+              verify=json.loads((root/f"{number}_independent_reopen.json").read_text("utf8"))
+              assert verify["passed"] is True
+              assert verify["native_selected_director_camera_verified"] is True
+              assert verify["actual_saved_source_district_meshes_verified"] is True
+              assert verify["source_actor_camera_unchanged"] is True
+          assert len(original)==2, "Real changing camera must render different pixels"
+          with Image.open(root/"1_frame.png") as a, Image.open(root/"2_frame.png") as b:
+              d=ImageChops.difference(a.convert("RGB"),b.convert("RGB"))
+              count=sum(1 for p in d.getdata() if max(p)>12)
+              assert count==receipt["pixels_changed_over_rgb12"] and count>=250
+          print("CAMFX05_TWO_GENUINE_CYCLES_CAMERAS_AND_SAVED_SCENE_REOPENS_PASSED; HUMAN_ART_APPROVAL_OPEN")
+          PY
+      - name: Always preserve actual render images, immutable-source SHA receipts, native stderr and independent scene evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: camfx05-two-real-cycles-camera-revisions-independent-scene-proof
+          path: camfx05-real-reviewed-rail-cycles/
+          if-no-files-found: warn
+          retention-days: 14

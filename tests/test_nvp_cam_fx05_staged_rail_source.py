@@ -252,10 +252,42 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
             self.assertFalse((sup.root/"fx05_denied").exists())
             with self.assertRaises(KeyError):
                 sup.inspect("fx05_denied")
-            compared=host.compare_revisions(
-                self.pid,"Native02MHBinding1","CAMFX05ReviewedRail",1,2,
-                job_a="fx05_move_a",job_b="fx05_move_b",
-                director_event="TEST_EXACT_CAM_FX05_RENDER")
+            try:
+                compared=host.compare_revisions(
+                    self.pid,"Native02MHBinding1","CAMFX05ReviewedRail",1,2,
+                    job_a="fx05_move_a",job_b="fx05_move_b",
+                    director_event="TEST_EXACT_CAM_FX05_RENDER")
+            except Exception:
+                # Blender --python-exit-code 70 means native script failure.
+                # Preserve and show only bounded first-party worker logs
+                # BEFORE TemporaryDirectory deletes the protected jobs.
+                # Logs are diagnostic, never a substitute for Cycles pixels.
+                import sys
+                evidence_dir=os.environ.get("NVP_CAM_FX05_ARTIFACT_DIR")
+                evidence=Path(evidence_dir).resolve() if evidence_dir else None
+                if evidence is not None:
+                    evidence.mkdir(parents=True,exist_ok=True)
+                for stem in ("fx05_move_a","fx05_move_a_reopen",
+                             "fx05_move_b","fx05_move_b_reopen"):
+                    job=sup.root/stem
+                    for log_name in ("worker_stdout.log","worker_stderr.log"):
+                        log=job/log_name
+                        if not log.is_file() or log.is_symlink():
+                            continue
+                        print("NVP_CAMFX05_REAL_WORKER_TRACE="+stem+"/"+log_name,
+                              file=sys.stderr,flush=True)
+                        print(log.read_text("utf8",errors="replace")[-18000:],
+                              file=sys.stderr,flush=True)
+                        if evidence is not None:
+                            shutil.copyfile(log,evidence/(stem+"_"+log_name))
+                    if evidence is not None:
+                        for name in ("source.json","district.json",
+                                     "cam_fx05_rail_source.json","audit.json",
+                                     "source.usda"):
+                            source=job/name
+                            if source.is_file() and not source.is_symlink():
+                                shutil.copyfile(source,evidence/(stem+"_"+name))
+                raise
             self.assertEqual(compared["format"],
                 "nvp.cam_fx05.real_two_revisions_original_source_rail_cycles.v1")
             self.assertEqual(compared["world_take_sha256"],self.take_sha)
