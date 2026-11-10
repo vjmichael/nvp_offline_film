@@ -121,6 +121,8 @@ class SupervisedSourceRenderWorker:
                     raise PermissionError("Source review refused, stale or already consumed")
                 self.queue.inspect(pid, job_id)
                 scope = self.queue.selector.preview(pid, data["selection"])
+                self.queue.require_live_worker_review(
+                    pid, job_id, old["revision"], scope["selection_sha256"])
                 consent = self.ask_native({
                     "operation": "nvp.plan02d.launch_pinned_worker_once.v1",
                     "project_id": pid, "job_id": job_id,
