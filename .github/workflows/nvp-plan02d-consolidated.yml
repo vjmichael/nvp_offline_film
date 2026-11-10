@@ -379,9 +379,3 @@ jobs:
             dist/NVP-PLAN02D-CANDIDATE-SHA256.txt
           if-no-files-found: warn
           retention-days: 7
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: nvp-data-av01-native-windows-installer
-          path: dist/NVP-Alpha-Setup.exe
-          retention-days: 7
