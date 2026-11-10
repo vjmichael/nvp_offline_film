@@ -6,6 +6,7 @@ evidence of a rendered image.
 """
 from __future__ import annotations
 
+import ast
 import os
 from pathlib import Path
 import sys
@@ -16,6 +17,7 @@ from unittest.mock import patch
 from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
 from backend.nvp_plan02d_render_queue import DurableRenderIntentionQueue
 from backend.nvp_plan04_original_cycles import OriginalCyclesProduction
+from backend.nvp_plan04_cycles_scripts import TRUSTED_CYCLES_SCRIPT, TRUSTED_REOPEN_SCRIPT
 from backend.nvp_resource_ledger import TaskLedger
 from test_nvp_plan02d_derived_raster import ActualSourceRasterTests
 
@@ -98,6 +100,39 @@ class OriginalCyclesAdmissionTests(unittest.TestCase):
                 obj.render_once(self.pid,"Plan04RefusalJob",self.review["revision"],
                                 self.review["selection_sha256"],T//3)
             native.assert_not_called()
+
+
+class BlenderDenoiserCompatibilityTests(unittest.TestCase):
+    """Source-level compatibility only; real image evidence requires native witness."""
+
+    def test_both_trusted_blender_scripts_parse(self):
+        ast.parse(TRUSTED_CYCLES_SCRIPT)
+        ast.parse(TRUSTED_REOPEN_SCRIPT)
+
+    def test_optional_cpu_denoiser_capability_absent_or_disabled(self):
+        script=ast.parse(TRUSTED_CYCLES_SCRIPT)
+        fn=next(n for n in script.body
+                if isinstance(n,ast.FunctionDef)
+                and n.name=="disable_optional_denoising")
+        scope={}
+        exec(compile(ast.Module(body=[fn],type_ignores=[]),
+                     "<first-party-denoiser-compatibility>","exec"),scope)
+        disable=scope["disable_optional_denoising"]
+        class View: pass
+        class Cycles: pass
+        view=View()
+        self.assertEqual(disable(view),"CAPABILITY_UNAVAILABLE")
+        view.cycles=Cycles()
+        self.assertEqual(disable(view),"CAPABILITY_UNAVAILABLE")
+        view.cycles.use_denoising=True
+        self.assertEqual(disable(view),"DISABLED")
+        self.assertIs(view.cycles.use_denoising,False)
+
+    def test_real_render_and_reopen_are_not_bypassed(self):
+        self.assertIn("bpy.ops.render.render(write_still=True)",TRUSTED_CYCLES_SCRIPT)
+        self.assertIn("bpy.ops.render.render(write_still=True)",TRUSTED_REOPEN_SCRIPT)
+        self.assertIn('scene.render.engine="CYCLES"',TRUSTED_CYCLES_SCRIPT)
+        self.assertIn('scene.render.engine!="CYCLES"',TRUSTED_REOPEN_SCRIPT)
 
 
 if __name__=="__main__":
