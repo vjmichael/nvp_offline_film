@@ -239,11 +239,43 @@ class OriginalActorDistrictNativeRenderTests(unittest.TestCase):
                 sup.inspect("shot02mh_denied")
             self.assertFalse((sup.root/"shot02mh_denied").exists(),
                 "Rejected predispatch native USD source was not removed")
-            compared=host.compare_approved_revisions(
-                self.pid,"Native02MHBinding1","Native02MHBinding2",
-                first_job_id="shot02mh_revision1",
-                second_job_id="shot02mh_revision2",
-                director_event="REVIEW_RENDER_SOURCE")
+            try:
+                compared=host.compare_approved_revisions(
+                    self.pid,"Native02MHBinding1","Native02MHBinding2",
+                    first_job_id="shot02mh_revision1",
+                    second_job_id="shot02mh_revision2",
+                    director_event="REVIEW_RENDER_SOURCE")
+            except Exception:
+                # Real Blender --python-exit-code 70 means the FIRST-PARTY
+                # worker raised; the supervisor's bounded stdout/stderr are
+                # the only trustworthy root-cause diagnostics. Preserve them
+                # before TemporaryDirectory cleanup. NEVER treat logs as a
+                # successful rendered picture or approve an interrupted job.
+                import sys
+                import shutil
+                failure_dir=os.environ.get("NVP_FILM02MH_ARTIFACT_DIR")
+                artifact=Path(failure_dir) if failure_dir else None
+                if artifact is not None:
+                    artifact.mkdir(parents=True,exist_ok=True)
+                for name in ("shot02mh_revision1","shot02mh_revision1_reopen",
+                             "shot02mh_revision2","shot02mh_revision2_reopen"):
+                    job=sup.root/name
+                    for output in ("worker_stdout.log","worker_stderr.log"):
+                        trace=job/output
+                        if not trace.is_file() or trace.is_symlink():
+                            continue
+                        data=trace.read_text("utf8",errors="replace")[-12000:]
+                        print("NVP_02MH_FAILED_WORKER_TRACE="+name+"/"+output,
+                              file=sys.stderr,flush=True)
+                        print(data,file=sys.stderr,flush=True)
+                        if artifact is not None:
+                            shutil.copyfile(trace,artifact/(name+"_"+output))
+                    for output in ("source.json","district.json"):
+                        identity=job/output
+                        if (artifact is not None and identity.is_file() and
+                                not identity.is_symlink()):
+                            shutil.copyfile(identity,artifact/(name+"_"+output))
+                raise
             self.assertEqual(
                 compared["format"],
                 "nvp.usd_film02m_h.real_native_two_district_revision_comparison.v1")
