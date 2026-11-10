@@ -21,7 +21,8 @@ class CgroupLaunchContractTests(unittest.TestCase):
             (group / "cgroup.procs").write_bytes(b"")
             with patch("backend.nvp_filming_cgroup_launch._verify_current_process_membership") as verify, patch("backend.nvp_filming_cgroup_launch.os.execv") as execv:
                 attach_then_exec(group, "/bin/true", ["/bin/true"])
-                verify.assert_called_once()\n                self.assertIsInstance(verify.call_args.args[0], int)
+                verify.assert_called_once()
+                self.assertIsInstance(verify.call_args.args[0], int)
                 self.assertEqual((group / "cgroup.procs").read_bytes(), b"0")
                 execv.assert_called_once_with("/bin/true", ["/bin/true"])
 
