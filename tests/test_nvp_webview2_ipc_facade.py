@@ -112,6 +112,19 @@ class FlatWebView2APIContractTests(unittest.TestCase):
             self.api.request_camera_still({})
         self.assertEqual(self.window.prompts, 0)
 
+    def test_plan03_original_render_requires_exact_scope_before_os_dialog(self):
+        with self.assertRaises(PermissionError):
+            self.api.plan03_render_original_once({})
+        with self.assertRaises(PermissionError):
+            self.api.plan03_render_original_once({
+                "project_id":self.project_id,
+                "selection":{},
+                "selection_sha256":"0"*64,
+                "tick":0,
+                "worker_command":"cmd.exe"
+            })
+        self.assertEqual(self.window.prompts,0)
+
     def test_bridge_closure_revokes_browser_ipc(self):
         self.bridge._close()
         with self.assertRaises(PermissionError):
