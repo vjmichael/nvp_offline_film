@@ -57,5 +57,12 @@ Section "Uninstall"
     RMDir "$SMPROGRAMS\NVP"
     DeleteRegKey HKCU "${PRODUCT_KEY}"
     RMDir /r "$INSTDIR"
+    ; NSIS may otherwise return a success status after silently failing to
+    ; delete an in-use NVP.exe. Treat an incomplete uninstall as a real error.
+    IfFileExists "$INSTDIR\NVP.exe" uninstall_incomplete uninstall_complete
+    uninstall_incomplete:
+        SetErrorLevel 79
+        Abort "NVP.exe remains after uninstall. Close NVP and retry; creator Projects were not touched."
+    uninstall_complete:
     ; Never remove LOCALAPPDATA\NVP\Projects: user-owned film work.
 SectionEnd

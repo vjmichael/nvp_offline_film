@@ -15,6 +15,7 @@ import NativeColorGradePanel from './NativeColorGradePanel.jsx';
 import ResourceActivityPanel from './ResourceActivityPanel.jsx';
 import FilmCameraSourcePanel from './FilmCameraSourcePanel.jsx';
 import DataFirstAVPanel from './DataFirstAVPanel.jsx';
+import SceneLibraryPanel from './SceneLibraryPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -75,6 +76,8 @@ export default function App() {
   const [selectedShot, setSelectedShot] = useState(null);
   const [shotEdit, setShotEdit] = useState(null);
   const [tab, setTab] = useState('story');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [quickDraft, setQuickDraft] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -96,6 +99,7 @@ export default function App() {
     setSelectedScene(data.scenes[0]?.id || null);
     setSelectedShot(null);
     setShotEdit(null);
+    setQuickDraft(null);
   }
 
   async function refreshCreative(projectId) {
@@ -299,15 +303,18 @@ export default function App() {
       setProjects(await api('/projects'));
       await refreshCreative(result.id);
       setNotice('Your movie is saved on this computer.');
-      setTab(startMode === 'script' ? 'story' : 'develop');
+      setTab(startMode === 'script' ? 'library' : 'story');
+      setAdvancedOpen(false);
     });
   }
 
   function open(id) {
     action(async () => {
-      accept(await api('/projects/' + id));
+      const opened = await api('/projects/' + id);
+      accept(opened);
       await refreshCreative(id);
-      setTab('develop');
+      setTab(opened.scenes.length ? 'library' : 'story');
+      setAdvancedOpen(false);
     });
   }
 
@@ -329,7 +336,40 @@ export default function App() {
       });
       accept(result);
       await refreshCreative(project.id);
-      setNotice('Screenplay saved. Review the extracted scenes.');
+      setNotice('Screenplay saved. Choose a scene to continue your movie.');
+      setTab('library');setAdvancedOpen(false);
+    });
+  }
+
+  function generateSimpleScreenplay() {
+    action(async () => {
+      if (!selectedModelId) throw Error('Connect a local model in Advanced Studio → Writing assistant first.');
+      const draft=await api('/projects/'+project.id+'/creative-drafts/generate','POST',{
+        model_id:selectedModelId,
+        model_port:modelServerPort?Number(modelServerPort):null,
+        stage:'screenplay',
+        instructions:'Draft a short, simple screenplay with scene headings and dialogue from the movie idea. Return an editable proposal, not an approved source.',
+        scene_id:null
+      });
+      await refreshCreative(project.id);
+      setQuickDraft(draft);
+      setNotice('The local AI created a draft. Review it before using it as your screenplay.');
+    });
+  }
+
+  function useSimpleScreenplay() {
+    action(async () => {
+      if (!quickDraft||quickDraft.status!=='proposed') throw Error('No unapproved screenplay proposal is available.');
+      if (project.screenplay.trim()&&!window.confirm(
+        'Replace the current screenplay with this AI proposal? The old revision is retained.'))return;
+      const changed=await api('/projects/'+project.id+'/creative-drafts/'+
+        quickDraft.id+'/decision','POST',{
+          decision:'use_as_screenplay',expected_project_revision:project.revision
+        });
+      accept(changed);
+      await refreshCreative(project.id);
+      setTab('library');setAdvancedOpen(false);
+      setNotice('Screenplay accepted by you. Review the resulting scene library.');
     });
   }
 
@@ -404,27 +444,40 @@ export default function App() {
         <p className="fineprint">Your ideas stay on this computer. Final film rendering is still in development. Installed NVP supports approved native camera studies for authored OpenUSD scenes; ordinary browsers show read-only lens previews.</p>
       </div> : <div className="page">
         <div className="kicker">YOUR MOVIE</div><h1>{project.title}</h1><p className="lead">{project.idea || 'Every story starts somewhere.'}</p>
-        <nav className="tabs">
-          <button className={tab === 'develop' ? 'active' : ''} onClick={() => setTab('develop')}>1 · Develop the idea</button>
-          <button className={tab === 'story' ? 'active' : ''} onClick={() => setTab('story')}>2 · Screenplay</button>
-          <button className={tab === 'bible' ? 'active' : ''} onClick={() => setTab('bible')}>3 · Story Bible</button>
-          <button className={tab === 'timeline' ? 'active' : ''} onClick={() => setTab('timeline')}>4 · Story timeline</button>
-          <button className={tab === 'mind' ? 'active' : ''} onClick={() => setTab('mind')}>5 · Scene minds</button>
-          <button className={tab === 'review' ? 'active' : ''} onClick={() => setTab('review')}>6 · Review screenplay</button>
-          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>7 · Plan scenes</button>
-          <button className={tab === 'stage' ? 'active' : ''} onClick={() => setTab('stage')}>8 · Stage 3D scene</button>
-          <button className={tab === 'direct' ? 'active' : ''} onClick={() => setTab('direct')}>9 · Direct the scene</button>
-          <button className={tab === 'take' ? 'active' : ''} onClick={() => setTab('take')}>10 · Film the sequence</button>
-          <button className={tab === 'rig' ? 'active' : ''} onClick={() => setTab('rig')}>11 · Rigged motion</button>
-          <button className={tab === 'skin' ? 'active' : ''} onClick={() => setTab('skin')}>12 · Skin the character</button>
-          <button className={tab === 'character' ? 'active' : ''} onClick={() => setTab('character')}>13 · Real characters</button>
-          <button className={tab === 'retarget' ? 'active' : ''} onClick={() => setTab('retarget')}>14 · Calibrate actors</button>
-          <button className={tab === 'grade' ? 'active' : ''} onClick={() => setTab('grade')}>15 · Grade color</button>
-          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>16 · Make the film</button>
-          <button className={tab === 'camera' ? 'active' : ''} onClick={() => setTab('camera')}>17 · Virtual camera</button>
-          <button className={tab === 'data-av' ? 'active' : ''} onClick={() => setTab('data-av')}>18 · Native 3D sound</button>
-          <button className={tab === 'color-guide' ? 'active' : ''} onClick={() => setTab('color-guide')}>Help · Color grading</button>
+        <nav className="tabs filmmaker-navigation" aria-label="Filmmaker navigation">
+          <button className={tab === 'story' ? 'active' : ''} onClick={() => setTab('story')}>Screenplay</button>
+          <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')}>Scene Library</button>
+          <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>Review the movie</button>
+          <button aria-expanded={advancedOpen} onClick={() => setAdvancedOpen(open=>!open)}>
+            Advanced Studio {advancedOpen ? '▲' : '▼'}
+          </button>
         </nav>
+        {advancedOpen&&<nav className="tabs advanced-navigation" aria-label="Advanced production tools">
+          <button className={tab === 'develop' ? 'active' : ''} onClick={() => setTab('develop')}>Writing assistant</button>
+          <button className={tab === 'bible' ? 'active' : ''} onClick={() => setTab('bible')}>Story Bible</button>
+          <button className={tab === 'timeline' ? 'active' : ''} onClick={() => setTab('timeline')}>Story timeline</button>
+          <button className={tab === 'mind' ? 'active' : ''} onClick={() => setTab('mind')}>Scene minds</button>
+          <button className={tab === 'review' ? 'active' : ''} onClick={() => setTab('review')}>Review screenplay</button>
+          <button className={tab === 'scenes' ? 'active' : ''} onClick={() => setTab('scenes')}>Shot planning</button>
+          <button className={tab === 'stage' ? 'active' : ''} onClick={() => setTab('stage')}>Stage 3D scene</button>
+          <button className={tab === 'direct' ? 'active' : ''} onClick={() => setTab('direct')}>Direct the scene</button>
+          <button className={tab === 'take' ? 'active' : ''} onClick={() => setTab('take')}>Film the sequence</button>
+          <button className={tab === 'rig' ? 'active' : ''} onClick={() => setTab('rig')}>Rigged motion</button>
+          <button className={tab === 'skin' ? 'active' : ''} onClick={() => setTab('skin')}>Skin the character</button>
+          <button className={tab === 'character' ? 'active' : ''} onClick={() => setTab('character')}>Character rig</button>
+          <button className={tab === 'retarget' ? 'active' : ''} onClick={() => setTab('retarget')}>Calibrate actors</button>
+          <button className={tab === 'grade' ? 'active' : ''} onClick={() => setTab('grade')}>Grade color</button>
+          <button className={tab === 'camera' ? 'active' : ''} onClick={() => setTab('camera')}>Virtual camera</button>
+          <button className={tab === 'data-av' ? 'active' : ''} onClick={() => setTab('data-av')}>Native 3D sound</button>
+          <button className={tab === 'color-guide' ? 'active' : ''} onClick={() => setTab('color-guide')}>Color grading help</button>
+        </nav>}
+        {tab === 'library'&&<SceneLibraryPanel project={project} api={api}
+          modelId={selectedModelId} modelPort={modelServerPort}
+          onEditScreenplay={()=>setTab('story')}
+          onOpenSceneTool={(destination,sceneId)=>{
+            setSelectedScene(sceneId);setWritingSceneId(sceneId);
+            setTab(destination);setAdvancedOpen(true);
+          }}/>}
         {tab === 'camera' && <FilmCameraSourcePanel projectId={project.id} api={api}/>}
         {tab === 'data-av' && <DataFirstAVPanel projectId={project.id}/>}
         {tab === 'develop' && <div className="columns">
@@ -560,6 +613,27 @@ export default function App() {
               <button className="primary" disabled={busy || !unsaved} onClick={saveScript}>Save and find scenes</button>
             </div>
             {unsaved && <p className="fineprint">Unsaved screenplay edits.</p>}
+            <details className="scene-story-assistant">
+              <summary>Get help writing a screenplay with local AI (optional)</summary>
+              <p className="fineprint">Your local model can draft a simple script
+                from this movie idea. No screenplay is replaced without your approval.</p>
+              <button className="secondary" disabled={busy||!selectedModelId}
+                onClick={generateSimpleScreenplay}>Ask local AI for a screenplay draft</button>
+              {!selectedModelId&&<p className="fineprint">No local model connected.
+                Write manually, or select one in Advanced Studio → Writing assistant.</p>}
+              {quickDraft?.status==='proposed'&&<div className="card">
+                <h3>Unapproved AI screenplay proposal</h3>
+                <p className="fineprint">Review this draft before accepting it.</p>
+                <pre className="scene-library-script">{quickDraft.content}</pre>
+                <div className="actions">
+                  <button className="primary" disabled={busy||unsaved}
+                    onClick={useSimpleScreenplay}>Use this screenplay</button>
+                  <button className="secondary" onClick={()=>{
+                    selectDraft(quickDraft);setTab('develop');setAdvancedOpen(true);
+                  }}>Edit this draft in Writing assistant</button>
+                </div>
+              </div>}
+            </details>
           </section>
           <section className="card"><h2>Your story so far</h2>
             <p>{project.scenes.length} scenes found · {project.bible.characters.length} speaking characters</p>
@@ -689,8 +763,10 @@ export default function App() {
             </div>}
           </> : <p>Choose a scene on the left.</p>}</section>
         </div>}
-        {tab === 'stage' && <SceneStagePanel project={project} api={api} action={action} busy={busy} />}
-        {tab === 'direct' && <ProductionAuthoringPanel project={project} api={api} action={action} busy={busy} />}
+        {tab === 'stage' && <SceneStagePanel project={project} api={api} action={action} busy={busy}
+          selectedSceneId={selectedScene||''} />}
+        {tab === 'direct' && <ProductionAuthoringPanel project={project} api={api} action={action} busy={busy}
+          selectedSceneId={selectedScene||''} />}
         {tab === 'take' && <ExactFilmTimeShotPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'rig' && <MotionRigPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'skin' && <SkinningPanel project={project} api={api} action={action} busy={busy} />}
@@ -698,10 +774,35 @@ export default function App() {
         {tab === 'retarget' && <RetargetPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'grade' && <NativeColorGradePanel project={project} api={api} action={action} busy={busy}/>}
         {tab === 'color-guide' && <ColorGradingGuide />}
-        {tab === 'make' && <section className="card make"><div className="kicker">FUTURE MILESTONE</div>
-          <h2>Bring your movie to life</h2><p>NVP will eventually build 3D sets, animate characters, film camera shots, edit scenes, mix audio and export the movie. This is not implemented in this foundation build.</p>
-          <div className="future"><span>Build a location — planned</span><span>Animate characters — planned</span><span>Film a scene — planned</span><span>Edit and export — planned</span></div>
-          <p className="fineprint">AMD, NVIDIA and CPU backends will be supported by capability, without requiring CUDA just to launch NVP.</p>
+        {tab === 'make' && <section className="card make">
+          <div className="kicker">REVIEW YOUR MOVIE</div>
+          <h2>See your movie take shape</h2>
+          <p>Review your scenes in screenplay order, work on an individual shot,
+            or audition an existing frozen OpenUSD Digital Take with its original PCM.
+            No conventional video file is silently created as the source.</p>
+          {project.scenes.length===0&&<p className="muted">
+            Write and save your screenplay first to build a scene list.</p>}
+          <div className="scene-review-list">
+            {project.scenes.map(scene=><button key={scene.id} className="scene-item"
+              onClick={()=>{setSelectedScene(scene.id);setTab('library')}}>
+              <small>Scene {scene.number} · source lines {scene.start_line}–{scene.end_line}</small>
+              <strong>{scene.heading}</strong>
+              <span>{scene.shots.length} planned shot(s)</span>
+            </button>)}
+          </div>
+          <div className="actions">
+            <button className="primary" onClick={()=>{
+              setTab('data-av');setAdvancedOpen(true);
+            }}>Preview original picture and 3D sound</button>
+            <button className="secondary" disabled={!project.scenes.length}
+              onClick={()=>{setTab('direct');setAdvancedOpen(true)}}>
+              Plan source-bound shots and rendering
+            </button>
+          </div>
+          <p className="fineprint">Native 3D source audition is already available
+            for approved frozen Takes. Full photoreal rendering, finished film
+            export and SMPTE DCP still require separately verified presentation
+            and creator authorization; a successful test preview is not a final master.</p>
         </section>}
       </div>}
     </main>

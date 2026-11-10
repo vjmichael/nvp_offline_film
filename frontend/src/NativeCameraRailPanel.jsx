@@ -21,6 +21,9 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
   const [direction,setDirection]=useState('Frame the original scene with a gentle dolly.');
   const [candidate,setCandidate]=useState(null);
   const [receipt,setReceipt]=useState(null);
+  const [raster,setRaster]=useState(null);
+  const [protectedRaster,setProtectedRaster]=useState(null);
+  const [rasterName,setRasterName]=useState('DirectorStill001');
   const [error,setError]=useState('');
   const [note,setNote]=useState('');
   const [busy,setBusy]=useState(false);
@@ -63,6 +66,7 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
 
   function changeSpec(next){
     setSpec(next);setPreview(null);setCandidate(null);setReceipt(null);
+    setRaster(null);setProtectedRaster(null);
     onPreviewChange?.(null);
     setNote('');
   }
@@ -148,11 +152,102 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
     }catch(e){setError(e.message)}
     finally{setBusy(false)}
   }
+  async function rasterAction(publish=false){
+    if(!spec||busy||!native)return;
+    setBusy(true);setError('');setNote('');
+    try{
+      if(publish){
+        if(!raster||!sha(raster.png_sha256)||
+           typeof native.plan02d_raster_publish!=='function')
+          throw Error('Generate an unchanged genuine native PNG first');
+        const saved=await native.plan02d_raster_publish({
+          project_id:projectId,presentation_id:rasterName,
+          selection:raster.selection,
+          selection_sha256:raster.source_selection_sha256,
+          tick:raster.film_tick,
+          expected_png_sha256:raster.png_sha256});
+        if(saved.status!=='VERIFIED_DERIVED_OPENUSD_PNG'||
+           saved.source_modified!==false||!sha(saved.png_sha256))
+          throw Error('Native OS-approved picture publication was not verified');
+        setNote('Independent native PNG persisted with SHA receipt. No original changes or film mastering authorization.');
+        return;
+      }
+      if(typeof native.plan02d_preview!=='function'||
+         typeof native.plan02d_raster_preview!=='function')
+        throw Error('Native source-selected OpenUSD raster adapter unavailable');
+      const first=spec.film_start_tick;
+      const last=spec.film_end_tick;
+      if(!safeTick(first)||!safeTick(last)||last<=first)
+        throw Error('Original camera source Film Time cannot be represented exactly');
+      const selected={
+        take_id:spec.take_id,take_document_sha256:spec.take_document_sha256,
+        camera_timeline_id:spec.camera_timeline_id,
+        camera_timeline_revision:spec.camera_timeline_revision,
+        camera_timeline_sha256:spec.camera_timeline_sha256,
+        first_tick:first,last_tick_exclusive:last,
+        camera_mode:receipt?'approved_rail':'original',
+        rail_id:receipt?railId:null,
+        rail_revision:receipt?receipt.revision:null,
+        rail_document_sha256:receipt?receipt.rail_document_sha256:null
+      };
+      const tick=first+Math.floor((last-first)/2);
+      const opened=await native.plan02d_preview({
+        project_id:projectId,selection:selected});
+      if(!sha(opened.selection_sha256)||
+         opened.renderer_worker_authorized!==false||
+         opened.take_document_sha256!==spec.take_document_sha256)
+        throw Error('Source-selected camera scope was rejected');
+      const picture=await native.plan02d_raster_preview({
+        project_id:projectId,selection:selected,
+        selection_sha256:opened.selection_sha256,tick});
+      if(picture.format!=='nvp.plan02d.native_source_selected_png.v1'||
+         picture.status!=='DERIVED_MEMORY_PREVIEW_NOT_PUBLISHED'||
+         picture.source_modified!==false||picture.ffmpeg_used!==false||
+         !sha(picture.png_sha256)||
+         typeof picture.png_base64!=='string'||
+         !/^[A-Za-z0-9+/]+={0,2}$/.test(picture.png_base64))
+        throw Error('Native OpenUSD PNG receipt did not verify');
+      setRaster({...picture,selection:selected});
+      setNote('Real bounded native source image evaluated at exact Film Time. This is not an approved cinematic master.');
+    }catch(e){setRaster(null);setError(e.message)}
+    finally{setBusy(false)}
+  }
+
+  async function renderWithNativeCustody(){
+    if(!raster||busy||typeof native?.plan03_render_original_once!=='function')return;
+    setBusy(true);setError('');setNote('');setProtectedRaster(null);
+    try{
+      const result=await native.plan03_render_original_once({
+        project_id:projectId,
+        selection:raster.selection,
+        selection_sha256:raster.source_selection_sha256,
+        tick:raster.film_tick,
+      });
+      if(result?.status==='NATIVE_SOURCE_REVIEW_REFUSED'){
+        setNote('Native source review was refused; no worker started.');
+        return;
+      }
+      if(result?.format!=='nvp.plan03.trusted_original_scene_render_result.v1'||
+         result.status!=='VERIFIED_DERIVED_OS_CONTAINED_PNG'||
+         result.original_source_modified!==false||
+         result.film_master_approved!==false||
+         result.source_take_sha256!==spec.take_document_sha256||
+         result.source_tick!==raster.film_tick||
+         !sha(result.png_sha256)||
+         !/^[A-Za-z0-9+/]+={0,2}$/.test(result.png_base64||''))
+        throw Error('OS-supervised source renderer returned an invalid receipt');
+      setProtectedRaster(result);
+      setNote('OS-contained native source render verified with independent PNG SHA. No original source, sound or cinema master changed.');
+    }catch(e){setError(e.message)}
+    finally{setBusy(false)}
+  }
+
   function pick(index){
     const entry=sources[index];if(!entry)return;
     setChoice(index);setExpectedRevision(0);setRailId('DirectorRail001');
     setSpec(entry.suggested_unapproved_rail_spec);
     setReceipt(null);setPreview(null);setCandidate(null);
+    setRaster(null);setProtectedRaster(null);
     onPreviewChange?.(null);
   }
 
@@ -247,6 +342,50 @@ export default function NativeCameraRailPanel({projectId,native=null,sourceRevis
         {receipt.revision}, SHA {receipt.rail_document_sha256.slice(0,16)}…;
         no original change.</p>}
     </>}
+    {spec&&<section aria-label="Native source-selected camera PNG">
+      <h4>Actual OpenUSD camera picture (source-selected)</h4>
+      <div className="actions">
+        <button disabled={busy||typeof native?.plan02d_raster_preview!=='function'}
+          onClick={()=>rasterAction(false)}>
+          Render one genuine source-time PNG (no worker)
+        </button>
+      </div>
+      {raster&&<>
+        <img src={'data:image/png;base64,'+raster.png_base64}
+          alt="Native source-selected OpenUSD procedural-geometry picture"
+          style={{maxWidth:'100%',height:'auto'}}/>
+        <p className="fineprint">Exact Film Time tick {raster.film_tick}; derived PNG
+          SHA <code>{raster.png_sha256.slice(0,20)}…</code>. This raster does
+          not assert cinema-quality actor meshes, Hydra, Cycles or DCP compliance.</p>
+        <label>New derivative presentation ID
+          <input aria-label="Native PNG presentation identity"
+            value={rasterName} disabled={busy}
+            onChange={e=>setRasterName(e.target.value)}/>
+        </label>
+        <button disabled={busy||typeof native?.plan02d_raster_publish!=='function'}
+          onClick={()=>rasterAction(true)}>
+          Publish this exact PNG with new OS approval
+        </button>
+        <div className="scene-library-protected-render">
+          <button disabled={busy||typeof native?.plan03_render_original_once!=='function'}
+            onClick={renderWithNativeCustody}>
+            Render with protected native worker (two OS approvals)
+          </button>
+          <p className="fineprint">Launches NVP's source-bound renderer
+            under Windows Job Object or Linux delegated cgroup-v2 with
+            separate source and execution approvals; no movie export.</p>
+          {protectedRaster&&<>
+            <img src={'data:image/png;base64,'+protectedRaster.png_base64}
+              alt="Independently verified native OpenUSD source rendering"
+              style={{maxWidth:'100%',height:'auto'}}/>
+            <p role="status">Protected native renderer:
+              {' '+protectedRaster.native_worker_custody}.
+              PNG SHA {protectedRaster.png_sha256.slice(0,20)}…
+            </p>
+          </>}
+        </div>
+      </>}
+    </section>}
     <p className="fineprint">Camera rails never retime an original actor or
       sound recording. This view does not grant Blender/Cycles execution,
       FFmpeg, film export, full GGUF model attestation or theatrical approval.</p>

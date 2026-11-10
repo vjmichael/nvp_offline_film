@@ -73,14 +73,17 @@ class CgroupLaunchContractTests(unittest.TestCase):
             group.mkdir()
             (group / "cgroup.procs").write_bytes(b"")
             moved = Path(tmp) / "moved"
+            # Bind the actual kernel membership verifier before the mock:
+            # importing it within the mock callback recurses indefinitely.
+            from backend.nvp_filming_cgroup_launch import (
+                _verify_current_process_membership as real_verify_membership)
             def replace_group_and_verify(directory):
                 group.rename(moved)
                 group.mkdir()
                 (group / "cgroup.procs").write_text(str(os.getpid()))
                 # Reopened path would observe the attacker-controlled replacement;
                 # pinned descriptor must still read the original empty mock file.
-                from backend.nvp_filming_cgroup_launch import _verify_current_process_membership
-                _verify_current_process_membership(directory)
+                real_verify_membership(directory)
             with patch("backend.nvp_filming_cgroup_launch._verify_current_process_membership", side_effect=replace_group_and_verify), patch("backend.nvp_filming_cgroup_launch.os.execv") as execv:
                 with self.assertRaisesRegex(RuntimeError, "membership"):
                     attach_then_exec(group, "/bin/true", ["/bin/true"])

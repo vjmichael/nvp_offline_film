@@ -10,8 +10,9 @@ function downloadText(name, value) {
   URL.revokeObjectURL(url);
 }
 
-export default function ProductionAuthoringPanel({ project, api, action, busy }) {
-  const [sceneId, setSceneId] = useState(project.scenes[0]?.id || '');
+export default function ProductionAuthoringPanel({ project, api, action, busy, selectedSceneId='' }) {
+  const [sceneId, setSceneId] = useState(
+    project.scenes.some(x=>x.id===selectedSceneId)?selectedSceneId:(project.scenes[0]?.id||''));
   const [world, setWorld] = useState(null);
   const [dialogue, setDialogue] = useState(null);
   const [blocking, setBlocking] = useState([]);
@@ -44,7 +45,8 @@ export default function ProductionAuthoringPanel({ project, api, action, busy })
   const people = (world?.manifest?.instances || []).filter(item => item.category === 'character');
   const room = world?.manifest?.room_m || [8, 6, 3];
 
-  useEffect(() => { setSceneId(project.scenes[0]?.id || ''); }, [project.id]);
+  useEffect(() => { setSceneId(project.scenes.some(x=>x.id===selectedSceneId)?
+    selectedSceneId:(project.scenes[0]?.id||'')); }, [project.id,selectedSceneId]);
   useEffect(() => { setRenderPreflight(null); }, [project.id, sceneId, project.revision, world?.revision]);
 
   async function refresh() {
