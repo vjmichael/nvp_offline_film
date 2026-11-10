@@ -432,9 +432,11 @@ def main(argv=None):
                         help="Launch a real native Windows WebView2 and verify page loaded")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
+    parser.add_argument("--smoke-plan02d",action="store_true",
+                        help="Verify installed exact source camera PNG, OS review stand-in and SQLite restart")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
-            args.smoke_window,args.smoke_data_av))>1:
+            args.smoke_window,args.smoke_data_av,args.smoke_plan02d))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
@@ -446,6 +448,13 @@ def main(argv=None):
         _smoke_checkpoint("after_native_acceptance_import")
         result = run_installed_data_av_smoke()
         _smoke_checkpoint("after_native_acceptance_run")
+        return result
+    if args.smoke_plan02d:
+        _smoke_checkpoint("before_plan02d_installed_import")
+        from tools.nvp_plan02d_installed_acceptance import run_installed_plan02d_smoke
+        _smoke_checkpoint("before_plan02d_installed_run")
+        result=run_installed_plan02d_smoke()
+        _smoke_checkpoint("after_plan02d_installed_run")
         return result
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
