@@ -86,7 +86,7 @@ class WindowsJobProcess:
 
 
 def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0,
-                     linux_cgroup_tree_required=False, stdin=None):
+                     linux_cgroup_tree_required=False, stdin=None, env=None):
     """Trusted host launches pinned absolute executable with OS containment."""
     if not isinstance(command, list) or not command or not Path(command[0]).is_absolute():
         raise ValueError("Containment requires an absolute executable path")
@@ -96,9 +96,11 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0,
         raise ValueError("Linux whole-tree containment mode must be boolean")
     if os.name == "nt":
         return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr,
-                               memory_mb=memory_mb, stdin=stdin)
+                               memory_mb=memory_mb, stdin=stdin, env=env)
     if sys.platform == "linux":
         if linux_cgroup_tree_required:
+            if env is not None:
+                raise RuntimeError("Delegated cgroup worker requires separately reviewed environment handling")
             if stdin is not None:
                 raise RuntimeError("Protected stdin requires a separately reviewed delegated cgroup transport")
             from backend.nvp_worker_linux_cgroup import launch_cgroup_tree
@@ -107,13 +109,13 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0,
         command = [sys.executable, str(shim), "--parent", str(os.getpid()),
                    "--memory-mb", str(memory_mb)] + command
         proc = subprocess.Popen(command, cwd=cwd, stdin=stdin or subprocess.DEVNULL,
-                                stdout=stdout, stderr=stderr, shell=False, close_fds=True,
+                                stdout=stdout, stderr=stderr, env=env, shell=False, close_fds=True,
                                 start_new_session=True)
         return LinuxContainedProcess(proc)
     raise RuntimeError("Unsupported OS containment platform")
 
 
-def _launch_windows(command, *, cwd, stdout, stderr, memory_mb, stdin=None):
+def _launch_windows(command, *, cwd, stdout, stderr, memory_mb, stdin=None, env=None):
     """Suspended Win32 creation: no Blender instruction runs outside the job."""
     import msvcrt
     import win32job
@@ -142,9 +144,11 @@ def _launch_windows(command, *, cwd, stdout, stderr, memory_mb, stdin=None):
         startup.dwFlags |= win32process.STARTF_USESTDHANDLES
         startup.hStdInput, startup.hStdOutput, startup.hStdError = handles
         flags = win32process.CREATE_SUSPENDED | win32process.CREATE_NO_WINDOW
+        if env is not None:
+            flags |= win32process.CREATE_UNICODE_ENVIRONMENT
         ph, th, pid, _ = win32process.CreateProcess(
             command[0], subprocess.list2cmdline(command), None, None,
-            True, flags, None, str(cwd), startup)
+            True, flags, env, str(cwd), startup)
         try:
             win32job.AssignProcessToJobObject(job, ph)
             if not win32job.IsProcessInJob(ph, job):
