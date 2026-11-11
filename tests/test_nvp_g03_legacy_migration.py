@@ -83,6 +83,33 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertFalse(report["full_film_cutover_authorized"])
         self.assert_untouched()
 
+    def test_uncheckpointed_worker_wal_changes_revoke_reviewed_inventory(self):
+        import sqlite3
+        database=self.root/"worker-recovery"/"worker_jobs.sqlite3"
+        database.parent.mkdir()
+        conn=sqlite3.connect(database)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA wal_autocheckpoint=0")
+            conn.execute("CREATE TABLE journal_rows(project_id TEXT, state TEXT)")
+            conn.execute("INSERT INTO journal_rows VALUES (?,?)",
+                         (self.pid,"RUNNING"))
+            conn.commit()
+            wal=Path(str(database)+"-wal")
+            self.assertTrue(wal.exists(),"Actual SQLite WAL missing")
+            first=self.migration.inspect(self.pid)
+            evidence=first["global_worker_journal_provenance"][0]
+            self.assertTrue(any(x["name"]=="worker_jobs.sqlite3-wal"
+                                for x in evidence["wal_and_shm"]))
+            self.assertEqual(evidence["matching_project_rows"],1)
+            conn.execute("UPDATE journal_rows SET state='CANCELLED'")
+            conn.commit()
+            second=self.migration.inspect(self.pid)
+            self.assertNotEqual(first["inventory_sha256"],second["inventory_sha256"])
+            self.assertFalse(second["full_film_cutover_authorized"])
+        finally:
+            conn.close()
+
     def test_real_global_worker_sqlite_is_classified_without_assuming_custody(self):
         import sqlite3
         journal=self.root/"worker-service"/"worker_jobs.sqlite3"
