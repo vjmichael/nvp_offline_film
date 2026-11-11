@@ -1116,6 +1116,13 @@ def run_g03_vault_smoke():
 
 
 def main(argv=None):
+    args=list(sys.argv[1:] if argv is None else argv)
+    if args and args[0]=="--g08-export-worker":
+        # The reviewed native exporter runs as the SAME installed executable
+        # under OS Job Object/process custody. It does not launch another
+        # backend server, open a WebView or accept arbitrary worker scripts.
+        from tools.nvp_g08_export_worker import main as g08_worker
+        return g08_worker(args[1:])
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
@@ -1151,7 +1158,7 @@ def main(argv=None):
                         help="Audit and non-destructively encrypt a synthetic legacy film")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
-    args=parser.parse_args(argv)
+    args=parser.parse_args(args)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_g03_window,args.smoke_vault,
             args.smoke_live_create,args.smoke_live_reopen,
