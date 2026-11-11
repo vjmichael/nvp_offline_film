@@ -512,6 +512,79 @@ class LiveFilmStore:
                     pid,grant["token"],asset_name,data,receipt_id=lease)
             raise LiveFilmError("Unsupported worker operation")
 
+    def worker_run_transition(self,pid,token,worker_id,source_name,
+                              source_sha256,state,*,output_sha256=None,
+                              exit_code=None):
+        """Host-only durable receipt; always encrypted with live movie SQL.
+
+        Native ownership evidence must accompany a terminal result. A source
+        string, process command or original path is never stored in a public
+        telemetry/worker SQLite journal.
+        """
+        valid={"RUNNING","SUCCEEDED","CANCELLED","FAILED",
+               "INTERRUPTED_UNVERIFIED","CUSTODY_UNPROVEN"}
+        if not isinstance(worker_id,str) or not re.fullmatch(r"[a-f0-9]{32}",worker_id):
+            raise LiveFilmError("Invalid worker run identity")
+        if state not in valid:
+            raise LiveFilmError("Invalid protected worker state")
+        if not isinstance(source_sha256,str) or not re.fullmatch(
+                r"[a-f0-9]{64}",source_sha256):
+            raise LiveFilmError("Original digest is invalid")
+        def record(db,key,folder):
+            db.execute("""CREATE TABLE IF NOT EXISTS protected_worker_runs(
+                worker_id TEXT PRIMARY KEY,source_name TEXT NOT NULL,
+                source_sha256 TEXT NOT NULL,state TEXT NOT NULL,
+                output_sha256 TEXT,exit_code INTEGER,
+                recorded_at TEXT NOT NULL)""")
+            prior=db.execute("SELECT state FROM protected_worker_runs WHERE worker_id=?",
+                             (worker_id,)).fetchone()
+            if prior is None:
+                if state!="RUNNING":
+                    raise LiveFilmError("Protected worker must first be registered")
+                db.execute("""INSERT INTO protected_worker_runs
+                    (worker_id,source_name,source_sha256,state,output_sha256,
+                     exit_code,recorded_at) VALUES (?,?,?,?,?,?,?)""",
+                    (worker_id,source_name,source_sha256,state,None,None,now()))
+            else:
+                if prior[0]!="RUNNING":
+                    raise LiveFilmError("Protected worker already has a terminal state")
+                if state=="RUNNING":
+                    raise LiveFilmError("Protected worker run ID cannot be replayed")
+                db.execute("""UPDATE protected_worker_runs SET state=?,
+                    output_sha256=?,exit_code=?,recorded_at=? WHERE worker_id=?""",
+                    (state,output_sha256,exit_code,now(),worker_id))
+        self._change(pid,token,record)
+
+    def protected_worker_runs(self,pid,token):
+        with self._guard:
+            key=self._session(pid,token)
+            db,_=self._read_db(self._folder(pid),pid,key)
+            try:
+                exists=db.execute("""SELECT 1 FROM sqlite_master WHERE
+                    type='table' AND name='protected_worker_runs'""").fetchone()
+                if not exists:return []
+                return [dict(r) for r in db.execute(
+                    "SELECT * FROM protected_worker_runs ORDER BY worker_id")]
+            finally:
+                db.close()
+
+    def reconcile_interrupted_workers(self,pid,token):
+        """Cold-start journal reconciliation; never infer process-tree death.
+
+        The OS job should terminate on handle close, but after a crash there
+        is no independently observed job-handle exit receipt. Keep the run
+        interrupted/unverified, never publish its staged output or replay.
+        """
+        with self._guard:
+            records=self.protected_worker_runs(pid,token)
+            incomplete=[r for r in records if r["state"]=="RUNNING"]
+            if not incomplete:return []
+            for row in incomplete:
+                self.worker_run_transition(
+                    pid,token,row["worker_id"],row["source_name"],
+                    row["source_sha256"],"INTERRUPTED_UNVERIFIED")
+            return [r["worker_id"] for r in incomplete]
+
     def worker_receipts(self,pid,token):
         """Auditable receipts remain inside authenticated live SQLite."""
         with self._guard:
