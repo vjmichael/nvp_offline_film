@@ -84,7 +84,8 @@ async def film_project_access_guard(request: Request, call_next):
                 request.method=="POST" and tail=="live/source") or (
                 tail=="live/preproduction" or tail.startswith("live/preproduction/")) or (
                 tail.startswith("live/stage/")) or (
-                tail.startswith("live/film/"))
+                tail.startswith("live/film/")) or (
+                tail=="live/edit" or tail.startswith("live/edit/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -1876,3 +1877,8 @@ def native_color_read(project_id:str,grade_id:str,
 # project access checks, and does not introduce a technical UI.
 from backend.nvp_g06_routes import mount_g06_routes
 mount_g06_routes(app,studio,live_films,COOKIE)
+
+# G07 editor is a separate director-facing Post-Production workspace. These
+# routes retain G03 host project/key checks and do not authorize rendering.
+from backend.nvp_g07_routes import mount_g07_routes
+mount_g07_routes(app,studio,live_films,COOKIE)
