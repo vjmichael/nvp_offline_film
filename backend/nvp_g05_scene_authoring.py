@@ -41,8 +41,16 @@ PRESETS={
     "sun":("Sun","light","sun",[1,1,1],"#fff4cf"),
     "camera":("Camera","camera","camera",[.4,.35,.6],"#7cc6e3"),
     "sphere":("Sphere","prop","sphere",[1,1,1],"#b79bbb"),
+    "building":("Building","set","box",[5,5,10],"#8496a7"),
+    "door":("Door","set","box",[1.2,.12,2.3],"#8e6d56"),
+    "bench":("Bench","prop","box",[2.4,.7,.55],"#99826c"),
+    "bed":("Bed","prop","box",[2.2,1.4,.65],"#b5a8a2"),
+    "shrub":("Shrub","environment","cone",[1.4,1.4,1.5],"#548966"),
+    "dune":("Dune","environment","cone",[7,6,2.2],"#d7b579"),
+    "planet":("Planet","environment","sphere",[8,8,8],"#597da4"),
 }
-SCENE_STYLE=("interior","mountains","coast","forest","open")
+SCENE_STYLE=("interior","mountains","coast","forest","city",
+             "desert","farmland","space","abstract","open")
 CAMERA_ID="O_"+hashlib.sha256(b"NVP-G05-CAMERA").hexdigest()[:12]
 
 
@@ -123,6 +131,21 @@ def _scene_style(handoff):
         return "coast"
     if any(name in description for name in ("forest","woods","grove")):
         return "forest"
+    if any(name in description for name in (
+            "desert","dune","sandstorm","oasis","badlands")):
+        return "desert"
+    if any(name in description for name in (
+            "street","city","downtown","urban","alley","boulevard")):
+        return "city"
+    if any(name in description for name in (
+            "farm","meadow","field","prairie","pasture")):
+        return "farmland"
+    if any(name in description for name in (
+            "orbit","outer space","starfield","asteroid","galaxy","nebula")):
+        return "space"
+    if any(name in description for name in (
+            "abstract","empty void","nonrepresentational")):
+        return "abstract"
     return "open"
 
 
@@ -138,7 +161,12 @@ def _initial_plan(handoff):
     floor_color="#647f61" if style!="interior" else "#b5aa93"
     if style=="coast":floor_color="#d2bd8e"
     if style=="mountains":floor_color="#5b8465"
-    put("ground","Ground","environment","box",[0,0,-.2],[30,30,.4],floor_color)
+    if style=="desert":floor_color="#d8b988"
+    if style=="city":floor_color="#77828d"
+    if style=="farmland":floor_color="#83a16d"
+    if style not in ("space","abstract"):
+        put("ground","Ground","environment","box",
+            [0,0,-.2],[30,30,.4],floor_color)
     if style=="interior":
         put("back_wall","Back wall","set","box",[0,8,3.0],[23,.35,6],"#aab3b6")
         put("left_wall","Side wall","set","box",[-11,0,3.0],[.35,17,6],"#b3bab5")
@@ -146,6 +174,18 @@ def _initial_plan(handoff):
             put("counter","Kitchen counter","set","box",[-5,5,.9],[5,1.1,1.8],"#a98b6b")
             put("table","Dining table","prop","box",[1,1,.4],[2.4,1.3,.8],"#947657")
             put("cupboard","Cupboard","set","box",[7,6,1.5],[2,1.1,3],"#b0a084")
+        setting=(env["location"]+" "+handoff["scene_name"]).casefold()
+        if any(x in setting for x in ("bedroom","sleeping","hotel room")):
+            put("bed","Bed","prop","box",[1,2,.36],[2.4,1.7,.72],"#bdac9c")
+            put("wardrobe","Wardrobe cabinet","set","box",[6,6,1.4],
+                [1.4,1,2.8],"#998a77")
+        if any(x in setting for x in ("office","classroom","study")):
+            for i,(x,y) in enumerate([(-4,1),(-1,1),(2,1)],1):
+                put("desk:"+str(i),"Desk "+str(i),"prop","box",
+                    [x,y,.42],[2,1.2,.84],"#9c8f7f")
+        if any(x in setting for x in ("hospital","clinic","ward")):
+            put("hospital_bed","Examination bed","prop","box",[1,3,.6],
+                [2.4,1.1,1.2],"#b8c9cc")
     elif style=="mountains":
         for i,(x,y,height) in enumerate([
             (-10,8,8),(1,13,12),(12,7,9),(-6,17,11)],1):
@@ -162,6 +202,32 @@ def _initial_plan(handoff):
                                      (10,-3,5),(-10,-5,7)],1):
             put("tree:"+str(i),"Tree "+str(i),"environment","cone",
                 [x,y,h*.48],[2.8,2.8,h],"#4a7356")
+    elif style=="desert":
+        for i,(x,y,h) in enumerate([(-9,7,2),(8,10,2.7),(2,14,3.1)],1):
+            put("dune:"+str(i),"Sand dune "+str(i),"environment","cone",
+                [x,y,h*.5],[7,7,h],"#d0ab70")
+        put("stone","Desert rock","environment","sphere",
+            [4,-3,.8],[1.8,1.5,1.6],"#8e7d70")
+    elif style=="city":
+        put("street","Street","set","box",[0,4,-.05],[7,29,.12],"#434d5e")
+        for i,(x,y,h) in enumerate([
+            (-9,5,9),(9,7,12),(-9,15,7),(10,18,11)],1):
+            put("building:"+str(i),"Building "+str(i),"set","box",
+                [x,y,h*.5],[5,5,h],
+                "#6e7f92" if i%2 else "#8596a8")
+        put("streetlight","Street lamp","light","lamp",[-5,-2,5],
+            [.4,.4,.4],"#f1d5a6")
+    elif style=="farmland":
+        put("farmhouse","Farm building","set","box",[7,8,2],
+            [5,5,4],"#aa8b74")
+        for i,(x,y,h) in enumerate([(-8,9,5),(-11,3,4.4),(11,0,5.5)],1):
+            put("tree:"+str(i),"Tree "+str(i),"environment","cone",
+                [x,y,h*.5],[3,3,h],"#5c8460")
+    elif style=="space":
+        put("planet","Distant planet","environment","sphere",
+            [0,14,4],[7,7,7],"#5680a5")
+        put("asteroid","Asteroid","environment","sphere",
+            [-9,4,-1],[2,1.6,1.4],"#6d6e74")
     for i,actor in enumerate(handoff["cast"][:16]):
         aid=actor["actor_id"]
         if not aid:continue
@@ -839,7 +905,8 @@ class G05SceneAuthoring:
         model=models["models"][0]["id"]
         writer=ProvenLocalModelWriter(writer_for(model))
         catalog=["box","table","chair","rock","tree","mountain",
-                 "water","lamp","sphere"]
+                 "water","lamp","sphere","building","door","bench",
+                 "bed","shrub","dune","planet"]
         schema={
             "type":"object","properties":{
                 "suggestions":{"type":"array","maxItems":4,
