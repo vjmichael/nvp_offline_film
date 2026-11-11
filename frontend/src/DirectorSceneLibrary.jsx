@@ -144,8 +144,8 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
     update(()=>action(base+'/scenes/'+encodeURIComponent(selected.id)+'/suggestions','POST'),
       'Here are some ideas to review. Nothing has been added to your film without your approval.');
   }
-  function identifySpeaker(cue) {
-    const actor=speakerChoices[cue]||'new';
+  function identifySpeaker(cue,defaultActorId=null) {
+    const actor=speakerChoices[cue]||defaultActorId||'new';
     const payload={
       source_cue:cue,
       expected_screenplay_revision:data.screenplay_revision,
@@ -214,8 +214,12 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
             render={x=>x.name}/>
           <BibleGroup title="Approved props" items={data.bible.props||[]}
             render={x=>x.name}/>
+          <BibleGroup title="Scene settings" items={data.bible.scene_settings||[]}
+            render={x=><><strong>{x.scene_name}</strong>: {[
+              x.location,x.time_of_day,x.era,x.season,x.weather
+            ].filter(Boolean).join(' · ')||'Not specified'}</>}/>
           <BibleGroup title="Continuity notes" items={data.bible.continuity||[]}
-            render={x=>x.note}/>
+            render={x=><>{x.origin==='review_suggestion'?'To review: ':''}{x.note}</>}/>
         </details>
       </div>
       {selected&&<div className="director-scene-workspace">
@@ -262,6 +266,34 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
                 </button>
               </div>)}
           </section>}
+        {selected.cast?.some(person=>person.source_cue&&!person.needs_review)&&
+          <details className="director-speaker-alias">
+            <summary>Connect character names across scenes</summary>
+            <p className="film-muted">If the screenplay uses another name for
+              the same performer, you can link it here without changing the script.</p>
+            {selected.cast.filter(person=>person.source_cue&&!person.needs_review)
+              .map(person=><div className="director-speaker-choice" key={person.source_cue}>
+              <span>{person.source_cue}</span>
+              <select aria-label={'Identity for '+person.source_cue}
+                value={speakerChoices[person.source_cue]||person.actor_id}
+                onChange={e=>setSpeakerChoices(x=>({
+                  ...x,[person.source_cue]:e.target.value}))}>
+                <option value="new">Name a new character</option>
+                {(data.bible.cast||[]).map(actor=><option
+                  key={actor.actor_id} value={actor.actor_id}>{actor.name}</option>)}
+              </select>
+              {speakerChoices[person.source_cue]==='new'&&<input
+                aria-label={'New name for '+person.source_cue}
+                maxLength={100} value={speakerNames[person.source_cue]||''}
+                onChange={e=>setSpeakerNames(x=>({
+                  ...x,[person.source_cue]:e.target.value}))}/>}
+              <button className="film-secondary" disabled={busy||(
+                speakerChoices[person.source_cue]==='new'&&
+                !speakerNames[person.source_cue]?.trim())}
+                onClick={()=>identifySpeaker(person.source_cue,person.actor_id)}>
+                Link Character</button>
+            </div>)}
+          </details>}
         {selected.script_excerpt&&<details className="director-script-source">
           <summary>Read the original scene</summary>
           <pre>{selected.script_excerpt}</pre>
