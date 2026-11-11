@@ -117,6 +117,8 @@ jobs:
           Run-Checked $installed '--smoke-vault' 110 'installed_windows_dpapi_source_archive'
           Run-Checked $installed '--smoke-create' 110 'installed_project_create'
           Run-Checked $installed '--smoke-reopen' 110 'installed_project_reopen'
+          Run-Checked $installed '--smoke-live-create' 110 'encrypted_live_film_creation_and_disk_inspection'
+          Run-Checked $installed '--smoke-live-reopen' 110 'encrypted_live_reopen_source_and_relock'
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
           }
