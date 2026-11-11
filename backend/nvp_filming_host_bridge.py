@@ -37,13 +37,15 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
         # digest verification, while this bridge fixes metadata at handoff.
         if any(type(event) is not dict for event in batch):
             raise ValueError("Recorder events must be typed dictionaries")
-        batch = [dict(event) for event in batch]
-        # Clock attestations contain nested dictionaries/lists. Snapshot only
-        # these metadata fields; PCM iterators must retain stream identity.
+        # Snapshot every metadata field, not just the known clock attestations.
+        # New structured metadata must not remain mutable across worker shutdown.
+        # Preserve only the original PCM stream handle, which capture spools.
+        snapshot = []
         for event in batch:
-            for field in ("source_sync", "clock_evidence"):
-                if field in event:
-                    event[field] = deepcopy(event[field])
+            frozen = {key: (value if key == "pcm_chunks" else deepcopy(value))
+                      for key, value in event.items()}
+            snapshot.append(frozen)
+        batch = snapshot
     except BaseException as exc:
         recording_error = exc
     # Custody is mandatory even when the recording supplier raises. A shutdown
