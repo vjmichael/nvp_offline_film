@@ -458,13 +458,40 @@ def render_film(assembly,output,*,cancel=None,progress=None):
                 raise RuntimeError("Production scene altered frozen source")
             derived_receipts[take_id]=receipt
             del derived
+    acting=assembly.get("actor_performances",{})
+    actor_receipts={}
+    if acting:
+        from backend.nvp_g09_actor import _json as _actor_json,_sha as _actor_sha
+        from backend.nvp_g09_actor_rig import (
+            ActorFrameEvaluator,author_actor_world)
+        from backend.nvp_g09_render import render_production_picture
+        actual=_actor_sha(_actor_json({key:{
+            "revision":v["revision"],"sha256":v["sha256"]}
+            for key,v in sorted(acting.items())}).encode("utf8"))
+        if actual!=assembly.get("actor_performances_sha256"):
+            raise RuntimeError("Approved acting direction digest was changed")
+        if set(acting)-set(sources):
+            raise RuntimeError("An acting profile is not bound to the original film")
+        for take_id,approval in acting.items():
+            record=sources[take_id]
+            if not approval["performance"]["actors"]:
+                continue
+            derived,receipt=author_actor_world(
+                record["performance_usd"],record,approval,
+                source_pcm=record["audio"])
+            if receipt["original_audio_untouched"] is not True:
+                raise RuntimeError("Actor animation tried to alter original speech")
+            worlds[take_id].actor_frame_evaluator=ActorFrameEvaluator(
+                record,approval)
+            actor_receipts[take_id]=receipt
+            del derived
     writer=MjpegPcmAvi(output,frames)
     for frame in range(frames):
         if cancel is not None and cancel():
             raise InterruptedError("Movie export was cancelled")
         tick=frame*TICKS_FRAME
         jpeg=(render_production_picture(assembly,worlds,tick)
-              if production else render_picture(assembly,worlds,tick))
+              if production or acting else render_picture(assembly,worlds,tick))
         sound=_audio_frame(assembly,sources,frame*2000,2000)
         writer.frame(jpeg,sound)
         if progress and (frame%6==0 or frame==frames-1):
@@ -477,6 +504,17 @@ def render_film(assembly,output,*,cancel=None,progress=None):
     result["profile"]=PROFILE
     result["approved_look_sha256"]=assembly.get("production_looks_sha256")
     result["approved_production_look_applied"]=bool(production)
+    result["approved_actor_performances_sha256"]=assembly.get(
+        "actor_performances_sha256")
+    result["animated_actor_count"]=sum(
+        receipt["actors"] for receipt in actor_receipts.values())
+    if acting:
+        result["derived_actor_usd_receipts_sha256"]=_sha(_json({
+            key:{"source":value["original_usd_sha256"],
+                 "derived":value["derived_usd_sha256"],
+                 "approved":value["actor_approved_sha256"]}
+            for key,value in sorted(actor_receipts.items())
+        }).encode("utf8"))
     result["derived_usd_scene_count"]=len(derived_receipts)
     if production:
         result["derived_usd_receipts_sha256"]=_sha(
