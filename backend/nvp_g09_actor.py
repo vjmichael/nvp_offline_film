@@ -1,0 +1,390 @@
+"""G09-B: human-reviewed original-ActorID performance, non-destructive.
+
+A film actor is always the authoritative G04 ActorID already present in a
+G06 frozen Digital Take. This layer never changes or invents a performer,
+word, speaker, PCM source, USD original or capture authority.
+
+Director-approved body/face/gait/wardrobe and original-voice selections are
+immutable derived revisions. Voice *performance* is the native microphone
+source itself, not a model-generated stand-in. Envelope-driven jaw animation
+is real source-synchronized animation, NOT speech recognition, phoneme/viseme
+alignment, recorded facial motion, or ElevenLabs-class synthetic acting.
+"""
+from __future__ import annotations
+
+import copy
+from datetime import datetime,timezone
+import json
+import math
+import uuid
+
+from backend.nvp_g07_edit import G07Editor,_sha,_json
+from backend.nvp_g06_filming import HEX,RATE
+from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+
+FORMAT="nvp.g09.actor_performance.v1"
+MOTION=("neutral","natural","restrained","energetic","heavy")
+EMOTION=("neutral","joy","sadness","anger","fear","surprise","focus")
+HAIR=("bald","short","medium","long")
+VOICE_STATES=("unreviewed","approved","rejected")
+MAX_ACTORS=12
+MAX_VOICES_PER_ACTOR=12
+MAX_VER=3000
+FROZEN_CONSTRAINT="source_take_unchanged"
+MAX_TIME=3*3600*TICKS_PER_SECOND
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _number(value,lo,hi,name):
+    if type(value) not in (int,float) or type(value) is bool or (
+            not math.isfinite(value)) or not lo<=value<=hi:
+        raise ValueError("Choose a realistic "+name)
+    return float(value)
+
+
+def _color(value):
+    import re
+    if type(value) is not str or not re.fullmatch(r"#[0-9a-fA-F]{6}",value):
+        raise ValueError("Choose a character color")
+    return value.lower()
+
+
+def _profile(source):
+    return {"actor_id":source["actor_id"],"object_id":source["id"],
+        "name":source["name"],"movement":"natural",
+        "emotion":"neutral","expression_strength":.55,
+        "gait_strength":.7,"blink_rate":13.,
+        "height_scale":1.0,"shoulder_width":1.,
+        "skin_color":"#b38b71","hair_color":"#46332f",
+        "hair":"short","wardrobe_color":source["color"],
+        "eye_color":"#3d4748","voice_clips":[],"director_note":""}
+
+
+def _original_actors(doc):
+    original=doc.get("stage_objects")
+    if type(original) is not list:
+        raise RuntimeError("Frozen Digital Take has no original scene geometry")
+    seen=set()
+    cast={}
+    for obj in original:
+        if obj["role"]!="actor":continue
+        actor_id=obj["actor_id"]
+        if (type(actor_id) is not str or not actor_id.startswith("ACT_") or
+                not obj["id"].startswith("O_") or actor_id in cast):
+            raise RuntimeError("Original scene has an invalid or duplicate ActorID")
+        cast[actor_id]=obj
+    if len(cast)>MAX_ACTORS:
+        raise ValueError("This initial performer workspace supports up to twelve characters")
+    return cast
+
+
+def _clip_sources(doc):
+    result={}
+    for entry in doc.get("audio",[]):
+        if not HEX.fullmatch(entry["clip_id"]):
+            raise RuntimeError("Original voice identity is invalid")
+        result[entry["clip_id"]]=entry
+    return result
+
+
+def _validate_voice(v,actor_id,clips):
+    if (type(v) is not dict or set(v)!={"clip_id","review","delivery",
+                                       "dialogue_note","actor_id"} or
+        v["actor_id"]!=actor_id or type(v["clip_id"]) is not str or
+        v["clip_id"] not in clips or clips[v["clip_id"]]["actor_id"]!=actor_id):
+        raise ValueError("Select original sound recorded for this character")
+    if type(v["review"]) is not str or v["review"] not in VOICE_STATES:
+        raise ValueError("The actor's delivery needs director review")
+    if (type(v["delivery"]) is not str or len(v["delivery"])>140 or
+        type(v["dialogue_note"]) is not str or
+        len(v["dialogue_note"])>600 or
+        any(ord(c)<32 and c not in "\t\n" for c in v["dialogue_note"])):
+        raise ValueError("Keep performance direction short")
+    # Direction/notes do not claim that the recording contains those words.
+    return v
+
+
+def _validate_profile(profile,original,clips):
+    if (type(profile) is not dict or set(profile)!={
+        "actor_id","object_id","name","movement","emotion",
+        "expression_strength","gait_strength","blink_rate",
+        "height_scale","shoulder_width","skin_color","hair_color",
+        "hair","wardrobe_color","eye_color","voice_clips","director_note"}):
+        raise ValueError("Actor performance has an unknown field")
+    if (profile["actor_id"]!=original["actor_id"] or
+        profile["object_id"]!=original["id"] or
+        profile["name"]!=original["name"]):
+        raise RuntimeError("ActorID source identity was changed")
+    if profile["movement"] not in MOTION or profile["emotion"] not in EMOTION or (
+            profile["hair"] not in HAIR):
+        raise ValueError("Choose a supported acting or appearance style")
+    for field,lo,hi in (("expression_strength",0,1),("gait_strength",0,2),
+                        ("blink_rate",0,40),("height_scale",.65,1.45),
+                        ("shoulder_width",.55,1.55)):
+        _number(profile[field],lo,hi,field.replace("_"," "))
+    for field in ("skin_color","hair_color","wardrobe_color","eye_color"):
+        _color(profile[field])
+    if (type(profile["director_note"]) is not str or
+            len(profile["director_note"])>1000):
+        raise ValueError("Keep the character direction short")
+    voice=profile["voice_clips"]
+    if type(voice) is not list or len(voice)>MAX_VOICES_PER_ACTOR:
+        raise ValueError("Too many original voice sources")
+    ids=set()
+    for item in voice:
+        _validate_voice(item,profile["actor_id"],clips)
+        if item["clip_id"] in ids:
+            raise ValueError("The same original voice was selected twice")
+        ids.add(item["clip_id"])
+    return profile
+
+
+def _default(take_id,take_sha,doc):
+    cast=_original_actors(doc)
+    clips=_clip_sources(doc)
+    profiles=[]
+    for actor in cast.values():
+        profile=_profile(actor)
+        for clip in clips.values():
+            if clip["actor_id"]==actor["actor_id"]:
+                profile["voice_clips"].append({
+                    "clip_id":clip["clip_id"],"actor_id":actor["actor_id"],
+                    "review":"unreviewed","delivery":"","dialogue_note":""})
+        profiles.append(profile)
+    return {"format":FORMAT,"take_id":take_id,"take_sha256":take_sha,
+        "actors":profiles,"frozen_originals_preserved":True}
+
+
+def _validate(doc,take_id,take_sha,original):
+    if (type(doc) is not dict or set(doc)!={
+        "format","take_id","take_sha256","actors","frozen_originals_preserved"
+    } or doc["format"]!=FORMAT or doc["take_id"]!=take_id or
+        doc["take_sha256"]!=take_sha or
+        doc["frozen_originals_preserved"] is not True or
+        type(doc["actors"]) is not list):
+        raise ValueError("The acting direction belongs to a different original Take")
+    cast=_original_actors(original)
+    if len(doc["actors"])!=len(cast):
+        raise ValueError("Every original performer must keep their ActorID")
+    clips=_clip_sources(original)
+    seen=set()
+    for profile in doc["actors"]:
+        if type(profile) is not dict:
+            raise ValueError("Actor profile is invalid")
+        actor_id=profile.get("actor_id")
+        if actor_id not in cast or actor_id in seen:
+            raise ValueError("The acting plan contains an unknown character")
+        _validate_profile(profile,cast[actor_id],clips)
+        seen.add(actor_id)
+    if len(_json(doc).encode("utf8"))>180000:
+        raise ValueError("Actor direction has exceeded its size budget")
+    return doc
+
+
+def _schema(db):
+    db.execute("""CREATE TABLE IF NOT EXISTS g09_actor_versions(
+        project_id TEXT NOT NULL,take_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,take_sha256 TEXT NOT NULL,
+        document_json TEXT NOT NULL,document_sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(project_id,take_id,revision))""")
+    db.execute("""CREATE TABLE IF NOT EXISTS g09_actor_heads(
+        project_id TEXT NOT NULL,take_id TEXT NOT NULL,
+        draft_revision INTEGER NOT NULL,approved_revision INTEGER NOT NULL,
+        take_sha256 TEXT NOT NULL,updated_at TEXT NOT NULL,
+        PRIMARY KEY(project_id,take_id))""")
+    db.execute("""CREATE TABLE IF NOT EXISTS g09_actor_templates(
+        project_id TEXT NOT NULL,actor_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,profile_json TEXT NOT NULL,
+        profile_sha256 TEXT NOT NULL,source_take_sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(project_id,actor_id,revision))""")
+
+
+def _take(db,pid,take_id):
+    # G06's independent original-media validator checks USD, PCM hashes
+    # and the Take manifest before any derived acting records are usable.
+    from backend.nvp_g06_filming import G06Filming
+    # Caller already has an editor and passes its validator separately.
+    row=db.execute("""SELECT take_sha256,performance_json FROM g06_frozen_takes
+        WHERE project_id=? AND take_id=?""",(pid,take_id)).fetchone()
+    if row is None:raise KeyError("Original recorded Take not found")
+    doc=json.loads(row["performance_json"])
+    return row["take_sha256"],doc
+
+
+def _version(db,pid,take_id,version):
+    row=db.execute("""SELECT document_json,document_sha256,take_sha256
+        FROM g09_actor_versions WHERE project_id=? AND take_id=?
+          AND revision=?""",(pid,take_id,version)).fetchone()
+    if not row:raise KeyError("Earlier actor performance version was not found")
+    if _sha(row["document_json"].encode("utf8"))!=row["document_sha256"]:
+        raise RuntimeError("Recorded actor direction history was changed")
+    doc=json.loads(row["document_json"])
+    if doc["take_sha256"]!=row["take_sha256"]:
+        raise RuntimeError("Actor direction is no longer bound to its original")
+    return doc,row["document_sha256"]
+
+
+def _current(db,pid,take_id,take_sha,source):
+    head=db.execute("""SELECT draft_revision,approved_revision,take_sha256
+        FROM g09_actor_heads WHERE project_id=? AND take_id=?""",
+        (pid,take_id)).fetchone()
+    if head is None:
+        return 0,0,_default(take_id,take_sha,source)
+    if head["take_sha256"]!=take_sha:
+        raise RuntimeError("Character direction refers to a different original Take")
+    doc,_=_version(db,pid,take_id,head["draft_revision"])
+    _validate(doc,take_id,take_sha,source)
+    return head["draft_revision"],head["approved_revision"],doc
+
+
+def _save(db,pid,take_id,take_sha,doc,expected,approved):
+    row=db.execute("""SELECT draft_revision FROM g09_actor_heads
+        WHERE project_id=? AND take_id=?""",(pid,take_id)).fetchone()
+    current=row["draft_revision"] if row else 0
+    if current!=expected:
+        raise RuntimeError("The character directions changed in another window")
+    new=current+1
+    if new>MAX_VER:
+        raise RuntimeError("Actor direction history limit reached")
+    raw=_json(doc);sha=_sha(raw.encode("utf8"))
+    db.execute("""INSERT INTO g09_actor_versions
+        (project_id,take_id,revision,take_sha256,document_json,
+         document_sha256,created_at)
+        VALUES (?,?,?,?,?,?,?)""",
+        (pid,take_id,new,take_sha,raw,sha,_now()))
+    db.execute("""INSERT INTO g09_actor_heads
+        (project_id,take_id,draft_revision,approved_revision,take_sha256,
+         updated_at) VALUES (?,?,?,?,?,?)
+        ON CONFLICT(project_id,take_id) DO UPDATE SET
+        draft_revision=excluded.draft_revision,updated_at=excluded.updated_at""",
+        (pid,take_id,new,approved,take_sha,_now()))
+    return new
+
+
+def _public(db,pid,take_id,take_sha,source):
+    draft,approved,doc=_current(db,pid,take_id,take_sha,source)
+    clips=[{"clip_id":entry["clip_id"],
+            "actor_id":entry["actor_id"],
+            "start_seconds":entry["start_tick"]/TICKS_PER_SECOND,
+            "duration_seconds":entry["duration_tick"]/TICKS_PER_SECOND}
+            for entry in source.get("audio",[]) if entry["actor_id"]]
+    history=[{"revision":row["revision"],"created_at":row["created_at"]}
+             for row in db.execute("""SELECT revision,created_at
+                FROM g09_actor_versions WHERE project_id=? AND take_id=?
+                ORDER BY revision DESC LIMIT 35""",(pid,take_id))]
+    return {"format":FORMAT,"take_id":take_id,"take_sha256":take_sha,
+        "revision":draft,"approved_revision":approved,
+        "approved_for_film":approved>0,
+        "draft":doc,"available_recorded_voices":clips,
+        "history":history,"original_media_preserved":True,
+        "dialogue_fabricated":False,
+        "true_phoneme_alignment":False}
+
+
+class G09Actors:
+    def __init__(self,studio,live=None,token=None):
+        self.editor=G07Editor(studio,live,token)
+
+    def _execute(self,pid,fn,mutate=False):
+        def work(db,movie):
+            _schema(db)
+            self.editor.filming._schema(db)
+            return fn(db,movie)
+        return self.editor._execute(pid,work,mutate=mutate)
+
+    def view(self,pid,take_id):
+        def read(db,movie):
+            row,source,audio=self.editor._take(db,pid,take_id,{})
+            return _public(db,pid,take_id,row["take_sha256"],source)
+        return self._execute(pid,read)
+
+    def change(self,pid,take_id,actor_id,expected_revision,operation,details):
+        if (type(expected_revision) is not int or expected_revision<0 or
+            type(actor_id) is not str or not actor_id.startswith("ACT_") or
+            type(operation) is not str or type(details) is not dict):
+            raise ValueError("Choose a known actor and current direction")
+        def change_tx(db,movie):
+            row,source,audio=self.editor._take(db,pid,take_id,{})
+            take_sha=row["take_sha256"]
+            rev,approved,doc=_current(db,pid,take_id,take_sha,source)
+            if rev!=expected_revision:
+                raise RuntimeError("Your performance directions were updated elsewhere")
+            doc=copy.deepcopy(doc)
+            profile=next((x for x in doc["actors"]
+                          if x["actor_id"]==actor_id),None)
+            if profile is None:raise KeyError("ActorID not part of this filmed Take")
+            if operation=="appearance":
+                if set(details)!={"skin_color","hair_color","hair",
+                                   "wardrobe_color","eye_color",
+                                   "height_scale","shoulder_width"}:
+                    raise ValueError("Choose a complete character appearance")
+                for key,val in details.items():profile[key]=val
+            elif operation=="acting":
+                if set(details)!={"movement","emotion","expression_strength",
+                                   "gait_strength","blink_rate","director_note"}:
+                    raise ValueError("Choose an acting and movement style")
+                for key,val in details.items():profile[key]=val
+            elif operation=="review_voice":
+                if set(details)!={"clip_id","review","delivery","dialogue_note"}:
+                    raise ValueError("Choose one original voice to review")
+                entry=next((x for x in profile["voice_clips"]
+                            if x["clip_id"]==details["clip_id"]),None)
+                if entry is None:raise KeyError("This recording belongs to another actor")
+                entry.update(details)
+                _validate_voice(entry,actor_id,_clip_sources(source))
+            else:raise ValueError("This acting change is not supported")
+            _validate(doc,take_id,take_sha,source)
+            _save(db,pid,take_id,take_sha,doc,expected_revision,approved)
+            return _public(db,pid,take_id,take_sha,source)
+        return self._execute(pid,change_tx,mutate=True)
+
+    def approve(self,pid,take_id,expected_revision):
+        if type(expected_revision) is not int or expected_revision<1:
+            raise ValueError("Review a saved character direction first")
+        def commit(db,movie):
+            row,source,audio=self.editor._take(db,pid,take_id,{})
+            rev,approved,doc=_current(db,pid,take_id,row["take_sha256"],source)
+            if rev!=expected_revision:
+                raise RuntimeError("Actor performance changed while being reviewed")
+            _validate(doc,take_id,row["take_sha256"],source)
+            db.execute("""UPDATE g09_actor_heads SET approved_revision=?,
+                updated_at=? WHERE project_id=? AND take_id=?""",
+                (rev,_now(),pid,take_id))
+            return _public(db,pid,take_id,row["take_sha256"],source)
+        return self._execute(pid,commit,mutate=True)
+
+    def restore(self,pid,take_id,source_revision,expected_revision):
+        if (type(source_revision) is not int or source_revision<=0 or
+                type(expected_revision) is not int or expected_revision<0):
+            raise ValueError("Choose earlier actor directions")
+        def restore_tx(db,movie):
+            row,source,audio=self.editor._take(db,pid,take_id,{})
+            rev,approved,doc=_current(db,pid,take_id,row["take_sha256"],source)
+            if rev!=expected_revision:
+                raise RuntimeError("Reopen the current actor directions")
+            saved,sha=_version(db,pid,take_id,source_revision)
+            _validate(saved,take_id,row["take_sha256"],source)
+            _save(db,pid,take_id,row["take_sha256"],saved,expected_revision,approved)
+            return _public(db,pid,take_id,row["take_sha256"],source)
+        return self._execute(pid,restore_tx,mutate=True)
+
+    @staticmethod
+    def approved_source(db,pid,take_id,take_sha,original):
+        """Only exact immutable director-approved ActorID/source revisions."""
+        _schema(db)
+        head=db.execute("""SELECT approved_revision,take_sha256
+            FROM g09_actor_heads WHERE project_id=? AND take_id=?""",
+            (pid,take_id)).fetchone()
+        if not head or not head["approved_revision"]:
+            return None
+        if head["take_sha256"]!=take_sha:
+            raise RuntimeError("Actor performance is from a different Take")
+        doc,digest=_version(db,pid,take_id,head["approved_revision"])
+        _validate(doc,take_id,take_sha,original)
+        return {"revision":head["approved_revision"],"sha256":digest,
+                "performance":doc}
