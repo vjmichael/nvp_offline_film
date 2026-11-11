@@ -182,7 +182,13 @@ def _actor_proxy_faces(out,world,original,actor,evaluator,tick,basis,light,
       "RightHand":("sphere",(.11,.11,.11),"skin_color",0),
       "Jaw":("sphere",(.16,.14,.085*(1+pose["jaw"]*1.5)),"skin_color",5),
       "LeftEye":("sphere",(.06,.06,.06*(1-pose["blink"]*.9)),"eye_color",0),
-      "RightEye":("sphere",(.06,.06,.06*(1-pose["blink"]*.9)),"eye_color",0)}
+      "RightEye":("sphere",(.06,.06,.06*(1-pose["blink"]*.9)),"eye_color",0),
+      "LeftBrow":("sphere",(.115,.045,.04),"hair_color",0),
+      "RightBrow":("sphere",(.115,.045,.04),"hair_color",0),
+      "MouthLeft":("sphere",(.06*(1+max(0.,pose["smile"])*.5),.05,.048),
+                   "skin_color",0),
+      "MouthRight":("sphere",(.06*(1+max(0.,pose["smile"])*.5),.05,.048),
+                    "skin_color",0)}
     if actor["hair"]!="bald":
         height={"short":.19,"medium":.25,"long":.38}[actor["hair"]]
         standard["Hair"]=("sphere",(.31,.31,height),"hair_color",0)
