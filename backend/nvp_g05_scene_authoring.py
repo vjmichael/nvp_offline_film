@@ -178,6 +178,16 @@ def _initial_plan(handoff):
         [.65,.65,.65],"#68b8d3")
     put("sun","Key light","light","sun",[-7,-6,12],
         [1,1,1],"#ffd7a0" if night else "#fff3c5")
+    explicit_weather=env["weather"].strip()
+    if explicit_weather:
+        weather_source=explicit_weather
+    else:
+        # The setting may explicitly say "foggy valley" even when the
+        # screenplay has no dedicated weather field.
+        weather_source=" ".join([
+            env["location"],handoff["scene_name"],
+            handoff["director_intent"]["description"],
+            handoff["director_intent"]["action"]])
     return {"format":FORMAT,
             "source":{"scene_id":sid,"project_id":handoff["project_id"],
                 "scene_sha256":handoff["scene_source_sha256"],
@@ -189,8 +199,9 @@ def _initial_plan(handoff):
             "setting":{"location":env["location"],
                        "time_of_day":env["time_of_day"],
                        "season":env["season"],"era":env["era"],
-                       "weather":_weather(env["weather"]),
-                       "weather_description":env["weather"],
+                       "weather":_weather(weather_source),
+                       "weather_description":explicit_weather or
+                           weather_source[:240],
                        "daylight":_daylight(env["time_of_day"])},
             "objects":objects,
             "cast_refs":[{"actor_id":actor["actor_id"],"name":actor["name"]}
@@ -624,6 +635,59 @@ class G05SceneAuthoring:
             plan=_initial_plan(source)
             return self._persist(db,pid,source,plan,expected_revision,"draft")
         return self._with(pid,scene_id,operation,mutate=True)
+
+    def reconcile(self,pid,scene_id,expected_revision):
+        """Director chooses to keep arrangement after source changes.
+
+        Actor placements are retained ONLY when their exact ActorIDs still
+        belong to this scene. New actors and newly approved props become
+        proposed typed objects. Old versions are never rewritten/deleted.
+        """
+        if type(expected_revision) is not int or expected_revision<1:
+            raise ValueError("Choose a saved scene to reconcile")
+        def change(db,movie,source):
+            head,record=self._record(db,pid,scene_id)
+            if head is None or head["revision"]!=expected_revision:
+                raise RuntimeError("Stage changed; reopen before reconciling")
+            if head["source_sha256"]==source["scene_source_sha256"]:
+                raise RuntimeError("This stage already matches the current screenplay")
+            old=json.loads(record["plan_json"])
+            old_ids={o["id"] for o in old.get("objects",[])}
+            actors={p["actor_id"] for p in source["cast"]}
+            preserved=[copy.deepcopy(o) for o in old["objects"]
+                       if o["role"]!="actor" or o["actor_id"] in actors]
+            refreshed=_initial_plan(source)
+            refreshed["objects"]=preserved
+            already={o["actor_id"] for o in preserved if o["role"]=="actor"}
+            for item in _initial_plan(source)["objects"]:
+                if item["role"]=="actor" and item["actor_id"] not in already:
+                    if len(refreshed["objects"])>=MAX_OBJECTS:break
+                    if item["id"] in old_ids:
+                        item["id"]="O_"+uuid.uuid4().hex[:12]
+                    refreshed["objects"].append(item)
+            missing_props={x.casefold() for x in source["approved_props"]}
+            for item in preserved:
+                missing_props.discard(item["name"].casefold())
+            for item in _initial_plan(source)["objects"]:
+                if (item["role"]=="prop" and
+                        item["name"].casefold() in missing_props and
+                        len(refreshed["objects"])<MAX_OBJECTS):
+                    if item["id"] in old_ids:
+                        item["id"]="O_"+uuid.uuid4().hex[:12]
+                    refreshed["objects"].append(item)
+                    missing_props.discard(item["name"].casefold())
+            # Keep the director's voluntary visual choices wherever they
+            # do not conflict with newly explicit screenplay facts.
+            old_setting=old.get("setting",{})
+            for choice in ("daylight","weather"):
+                if not source["environment"].get(
+                    "time_of_day" if choice=="daylight" else "weather"):
+                    if old_setting.get(choice) in (
+                            ("day","night","dawn","dusk") if choice=="daylight"
+                            else WEATHER):
+                        refreshed["setting"][choice]=old_setting[choice]
+            return self._persist(db,pid,source,refreshed,expected_revision,"draft")
+        return self._with(pid,scene_id,change,mutate=True)
 
     def edit(self,pid,scene_id,expected_revision,operation,details):
         """All visual edits commit actual new OpenUSD versions, never a fake UI."""
