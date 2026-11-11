@@ -889,7 +889,11 @@ class G04Preproduction:
             "approved_story_canon":[{
                 "name":item["name"][:100],
                 "kind":item["kind"],
-                "facts":item["facts"][:5]}
+                "facts":[{
+                    "name":fact["name"][:60],
+                    "value":fact["value"][:200],
+                    "scope":fact["scope"][:80]}
+                    for fact in item["facts"][:5]]}
                 for item in before["bible"]["approved_story"][:12]],
         }
         system=("You are a careful filmmaker's pre-production assistant. "
