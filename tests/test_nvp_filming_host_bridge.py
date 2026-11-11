@@ -178,3 +178,38 @@ def test_unsnapshotable_metadata_still_reaps_and_denies_take():
                     {"pcm_chunks": iter(()), "custom": Uncopyable()}])
         session.stop_and_verify.assert_called_once()
         capture.capture.assert_not_called()
+
+
+def test_shutdown_cannot_expand_capture_source_consent_or_options():
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        options = {"allowed_sources": ["microphone-A"], "consent": {"scope": ["scene-1"]}}
+        def shutdown(**kwargs):
+            options["allowed_sources"].append("microphone-B")
+            options["consent"]["scope"].append("scene-2")
+            return GOOD
+        session.stop_and_verify.side_effect = shutdown
+        finish_linux_recording_and_freeze(
+            session, capture, "p", "t",
+            recordings=lambda: [{"pcm_chunks": iter(())}], **options)
+        forwarded = capture.capture.call_args.kwargs
+        assert forwarded["allowed_sources"] == ["microphone-A"]
+        assert forwarded["consent"] == {"scope": ["scene-1"]}
+
+
+def test_unsnapshotable_capture_options_still_reap_and_deny_take():
+    class Uncopyable:
+        def __deepcopy__(self, memo):
+            raise ValueError("consent snapshot failed")
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        session.stop_and_verify.return_value = GOOD
+        with pytest.raises(ValueError, match="consent snapshot failed"):
+            finish_linux_recording_and_freeze(
+                session, capture, "p", "t",
+                recordings=lambda: [{"pcm_chunks": iter(())}],
+                consent=Uncopyable())
+        session.stop_and_verify.assert_called_once()
+        capture.capture.assert_not_called()
