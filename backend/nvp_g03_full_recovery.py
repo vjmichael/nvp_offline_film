@@ -133,7 +133,16 @@ def reconstruct_and_reopen(candidate_root,pid,passphrase,inventory):
             root=Path(tmp)
             sqlite_path=root/"studio.sqlite3"
             schema_count,row_count=_rebuild_sqlite(sqlite_path,source,pid)
-            restored_count=0;pcm_count=0
+            restored_count=0;pcm_count=0;usd_count=0
+            def verify_native_usda(payload,label):
+                # A checksum alone does not prove the film scene can be
+                # reopened by the genuine OpenUSD runtime.
+                from pxr import Sdf,Usd
+                layer=Sdf.Layer.CreateAnonymous("g03-restored-"+label+".usda")
+                if not layer.ImportFromString(payload.decode("utf8","strict")):
+                    raise MigrationRefused("Reconstructed original USDA could not be parsed")
+                if Usd.Stage.Open(layer) is None:
+                    raise MigrationRefused("Original OpenUSD stage cannot reopen")
             for item in inventory.get("filmindex_blobs",[]):
                 sha=item["sha256"]
                 if not _SHA.fullmatch(sha):
@@ -147,7 +156,10 @@ def reconstruct_and_reopen(candidate_root,pid,passphrase,inventory):
                 with target.open("xb") as output:
                     output.write(payload);output.flush();os.fsync(output.fileno())
                 restored_count+=1
-                if str(item.get("media_type","")).startswith("audio/"):pcm_count+=1
+                media=str(item.get("media_type",""))
+                if media.startswith("audio/"):pcm_count+=1
+                if media in ("model/vnd.usda","application/vnd.usd","application/usd"):
+                    verify_native_usda(payload,sha[:16]);usd_count+=1
             for item in inventory.get("project_sidecars",[]):
                 relative=item["relative"]
                 parts=relative.split("/")
@@ -165,6 +177,8 @@ def reconstruct_and_reopen(candidate_root,pid,passphrase,inventory):
                 with dest.open("xb") as output:
                     output.write(payload);output.flush();os.fsync(output.fileno())
                 restored_count+=1
+                if dest.suffix.lower()==".usda":
+                    verify_native_usda(payload,item["sha256"][:16]);usd_count+=1
             from backend.nvp_studio import Studio
             from backend.nvp_film_index import FilmIndex
             studio=Studio(sqlite_path)
@@ -190,6 +204,7 @@ def reconstruct_and_reopen(candidate_root,pid,passphrase,inventory):
                 "reconstructed_project_rows":row_count,
                 "authenticated_original_assets":restored_count,
                 "reopened_pcm_blobs":pcm_count,
+                "reopened_native_opensud_layers":usd_count,
                 "reopened_studio_and_filmindex":True,
                 "actual_sqlite_schema_and_fk_verified":True,
                 "plaintext_restored_to_original_location":False,
