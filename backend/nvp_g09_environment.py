@@ -370,6 +370,31 @@ class G09Environment:
             return _public(db,pid,take_id,take_sha,source)
         return self._execute(pid,edit_tx,mutate=True)
 
+    def preview(self,pid,take_id):
+        """A disposable real OpenUSD picture of the current draft look."""
+        def render(db,movie):
+            take_sha,original=_take(db,pid,take_id)
+            rev,approved,doc=_current(db,pid,take_id,take_sha,original)
+            from backend.nvp_g08_native_avi import SourceWorld
+            from backend.nvp_g09_render import _one_shot
+            from backend.nvp_g07_edit import _default_grade
+            row,data,audio=self.editor._take(db,pid,take_id,{})
+            views=self.editor.filming._camera(db,pid,take_id)["views"]
+            world=SourceWorld({
+                "performance_usd":bytes(row["performance_usd"]),
+                "performance_sha256":row["performance_usd_sha256"],
+                "stage_objects":data["stage_objects"],
+                "stage_setting":data["stage_setting"]})
+            segment={"take_id":take_id,"take_sha256":take_sha,
+                "camera":views[0],"grade":_default_grade()}
+            image=_one_shot(segment,world,0,{
+                "look":doc,"sha256":_sha(_json(doc).encode("utf8"))})
+            from io import BytesIO
+            buffer=BytesIO()
+            image.save(buffer,format="JPEG",quality=78,subsampling=1)
+            return buffer.getvalue()
+        return self._execute(pid,render)
+
     def approve(self,pid,take_id,expected_revision):
         def authorize(db,movie):
             take_sha,source=_take(db,pid,take_id)
