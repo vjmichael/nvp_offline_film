@@ -162,6 +162,7 @@ class ProtectedCaptureSupervisor:
                 if size!=len(pcm) or size!=frames*channels*2:
                     raise ProtectedCaptureError("Native original PCM sample count mismatch")
                 if cancel is not None and cancel.is_set():
+                    outcome="CANCELLED"
                     raise ProtectedCaptureError("Capture cancelled before encryption")
                 original_sha=hashlib.sha256(pcm).hexdigest()
                 write=self.store.worker_grant(
