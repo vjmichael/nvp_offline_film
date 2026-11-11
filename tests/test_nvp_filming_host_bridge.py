@@ -128,7 +128,7 @@ def test_shutdown_cannot_rewrite_nested_clock_attestation():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
         "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
         session, capture = S(), C()
-        pcm = iter((b"\\x00\\x00",))
+        pcm = iter((b"\x00\x00",))
         event = {"pcm_chunks": pcm, "source_sync": {"anchors": [{"tick": 42}]},
                  "clock_evidence": {"proof": ["original"]}}
         def shutdown(**kwargs):
@@ -148,7 +148,7 @@ def test_shutdown_cannot_rewrite_new_nested_metadata_fields():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
         "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
         session, capture = S(), C()
-        pcm = iter((b"\\x00\\x00",))
+        pcm = iter((b"\x00\x00",))
         event = {"pcm_chunks": pcm, "actor_metadata": {"markers": [{"tick": 17}]},
                  "custom_tags": ["original"]}
         def shutdown(**kwargs):
@@ -222,7 +222,7 @@ def test_pcm_is_drained_before_worker_shutdown():
         live = {"worker": True}
         def pcm():
             assert live["worker"], "Original PCM consumed after worker termination"
-            yield b"\\x00\\x00"
+            yield b"\x00\x00"
         def shutdown(**kwargs):
             live["worker"] = False
             return GOOD
@@ -230,7 +230,7 @@ def test_pcm_is_drained_before_worker_shutdown():
         finish_linux_recording_and_freeze(session, capture, "p", "t",
             recordings=lambda: [{"pcm_chunks": pcm()}])
         forwarded = capture.capture.call_args.kwargs["recordings"][0]
-        assert list(forwarded["pcm_chunks"]) == [b"\\x00\\x00"]
+        assert list(forwarded["pcm_chunks"]) == [b"\x00\x00"]
 
 
 def test_invalid_pcm_still_stops_worker_and_denies_publication():
@@ -240,6 +240,6 @@ def test_invalid_pcm_still_stops_worker_and_denies_publication():
         session.stop_and_verify.return_value = GOOD
         with pytest.raises(ValueError, match="PCM16LE"):
             finish_linux_recording_and_freeze(session, capture, "p", "t",
-                recordings=lambda: [{"pcm_chunks": iter((b"\\x00",))}])
+                recordings=lambda: [{"pcm_chunks": iter((b"\x00",))}])
         session.stop_and_verify.assert_called_once()
         capture.capture.assert_not_called()
