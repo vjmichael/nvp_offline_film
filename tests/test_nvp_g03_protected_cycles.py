@@ -18,7 +18,7 @@ import zlib
 
 from backend.nvp_g03_protected_cycles_supervisor import (
     ProtectedCyclesError,ProtectedCyclesSupervisor,_verify_png,
-    _geometry_from_opensud)
+    _geometry_from_opensud,SYNTHETIC_CI_USDA)
 from tools.nvp_g03_cycles_inmemory_worker import (
     _decode_spec,_png_rgba)
 
@@ -27,6 +27,10 @@ PASS="G03 synthetic Blender source and renderer passphrase"
 
 
 class CyclesProtocolTests(unittest.TestCase):
+    def test_uncontained_ci_exception_matches_only_public_fixture_bytes(self):
+        self.assertEqual(SYNTHETIC_CI_USDA,SAMPLE)
+        self.assertNotIn(b"private",SYNTHETIC_CI_USDA.lower())
+
     def test_png_from_float_pixels_has_valid_crc_dimensions(self):
         data=_png_rgba(32,32,[0.25,0.5,0.75,1.0]*1024)
         self.assertEqual(_verify_png(data,width=32,height=32),None)
@@ -125,6 +129,13 @@ class CyclesProtocolTests(unittest.TestCase):
                     data=file.read_bytes()
                     self.assertNotIn(b"OriginalBox",data)
                     self.assertNotIn(b"\x89PNG",data)
+            different="reviewed-nonfixture-"+secrets.token_hex(24)
+            approvals.add(different)
+            with self.assertRaisesRegex(ProtectedCyclesError,"non-fixture"):
+                worker.render(pid,token,"original/box.usda",
+                              "derived/private-scene.png",different,
+                              synthetic_ci_only=True)
+            self.assertEqual(len(store.read(pid,token)["source_assets"]),2)
             with self.assertRaises(ProtectedCyclesError):
                 worker.render(pid,token,"original/box.usda",
                               "derived/cycles2.png",ticket,synthetic_ci_only=True)
