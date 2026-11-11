@@ -38,6 +38,12 @@ from tools.nvp_g03_cycles_inmemory_worker import MAGIC_IN,MAGIC_OUT,MAX_SPEC,MAX
 class ProtectedCyclesError(LiveFilmError):
     pass
 
+# The unsandboxed CI exception accepts this public synthetic USD fixture
+# ONLY. A caller cannot mark private movie source as "synthetic" to bypass
+# the independent AppContainer filesystem/network requirement.
+SYNTHETIC_CI_USDA=(
+    b'#usda 1.0\\n\\ndef Cube "OriginalBox" { double size = 2 }\\n')
+
 
 def _geometry_from_opensud(source):
     """Reject all external assets and unsupported USD prims, never skip them."""
@@ -163,8 +169,10 @@ class ProtectedCyclesSupervisor:
             raise ProtectedCyclesError("Protected Windows native Job and DPAPI required")
         isolated=(callable(self.os_isolation_attestor) and
                   self.os_isolation_attestor())
+        synthetic=(synthetic_ci_only is True and
+                   os.environ.get("GITHUB_ACTIONS")=="true")
         if not isolated:
-            if not (synthetic_ci_only and os.environ.get("GITHUB_ACTIONS")=="true"):
+            if not synthetic:
                 raise ProtectedCyclesError(
                     "Private Blender/Cycles is blocked: independently verified "
                     "AppContainer filesystem/network confinement is unavailable")
@@ -180,6 +188,11 @@ class ProtectedCyclesSupervisor:
             pid,token,source_name,"read_original",human_approved=True)
         source=self.store.worker_execute(
             pid,source_lease,"read_original",source_name)
+        if synthetic and (source_name!="original/box.usda" or
+                          output_name!="derived/cycles.png" or
+                          source!=SYNTHETIC_CI_USDA):
+            raise ProtectedCyclesError(
+                "Synthetic CI exception refuses any non-fixture original film")
         canonical=_geometry_from_opensud(source)
         original_sha=hashlib.sha256(source).hexdigest()
         run_id=secrets.token_hex(16)
