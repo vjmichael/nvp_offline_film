@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import re
@@ -65,6 +66,56 @@ class LiveFilmStore:
         if not isinstance(pid, str) or not ID.fullmatch(pid):
             raise LiveFilmError("Invalid encrypted movie ID")
         return self.root / pid
+
+    @contextmanager
+    def _write_mutex(self,folder):
+        """Host-level OS file lock, not just a Python-thread lock.
+
+        Two independent NVP processes must not deserialize the same encrypted
+        HEAD and accidentally publish competing stale SQLite state.
+        """
+        target=folder/".host-commit.lock"
+        if target.exists():
+            _no_link(target)
+        flags=os.O_CREAT|os.O_RDWR
+        flags|=getattr(os,"O_NOFOLLOW",0)
+        fd=os.open(str(target),flags,0o600)
+        locked=False
+        start=self.clock()
+        try:
+            if os.fstat(fd).st_size==0:
+                os.write(fd,b"\0")
+                os.fsync(fd)
+            if os.name=="nt":
+                import msvcrt
+                while self.clock()-start<20:
+                    os.lseek(fd,0,os.SEEK_SET)
+                    try:
+                        msvcrt.locking(fd,msvcrt.LK_NBLCK,1)
+                        locked=True
+                        break
+                    except OSError:
+                        time.sleep(.05)
+            else:
+                import fcntl
+                while self.clock()-start<20:
+                    try:
+                        fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                        locked=True
+                        break
+                    except BlockingIOError:
+                        time.sleep(.05)
+            if not locked:
+                raise LiveFilmError("Encrypted film is busy with another host writer")
+            yield
+        finally:
+            if locked:
+                if os.name=="nt":
+                    os.lseek(fd,0,os.SEEK_SET)
+                    msvcrt.locking(fd,msvcrt.LK_UNLCK,1)
+                else:
+                    fcntl.flock(fd,fcntl.LOCK_UN)
+            os.close(fd)
 
     def exists(self, pid):
         path = self._folder(pid)
@@ -294,30 +345,31 @@ class LiveFilmStore:
         with self._guard:
             key=self._session(pid,token)
             folder=self._folder(pid)
-            db,head=self._read_db(folder,pid,key)
-            try:
-                result=mutator(db,key,folder)
+            with self._write_mutex(folder):
+                return self._change_locked(pid,token,mutator,key,folder)
+
+    def _change_locked(self,pid,token,mutator,key,folder):
+        db,head=self._read_db(folder,pid,key)
+        try:
+            result=mutator(db,key,folder)
                 db.commit()
-                raw=db.serialize()
-                if len(raw)>MAX_DB_BYTES:
-                    raise LiveFilmError("Live encrypted film database too large")
-                # Crash between an immutable revision write and HEAD publish
-                # leaves an encrypted orphan. Never clobber it on restart:
-                # select an unused strictly higher sequence instead.
-                nums=[head["sequence"]]
-                for candidate in (folder/"revisions").glob("db.*.nvpsealed"):
-                    match=re.fullmatch(r"db\.(\d{12})\.nvpsealed",candidate.name)
-                    if match:
-                        nums.append(int(match.group(1)))
-                next_seq=max(nums)+1
-                record=self._seal_db(folder,pid,key,raw,next_seq)
-                # A concurrent lock/revoke must abort publication even if
-                # the host's encrypted bytes were already fully staged.
-                self._session(pid,token)
-                self._publish_head(folder,record)
-                return result
-            finally:
-                db.close()
+            raw=db.serialize()
+            if len(raw)>MAX_DB_BYTES:
+                raise LiveFilmError("Live encrypted film database too large")
+            # Crash between an immutable revision write and HEAD publish
+            # leaves an encrypted orphan. Never clobber it on restart.
+            nums=[head["sequence"]]
+            for candidate in (folder/"revisions").glob("db.*.nvpsealed"):
+                match=re.fullmatch(r"db\.(\d{12})\.nvpsealed",candidate.name)
+                if match:
+                    nums.append(int(match.group(1)))
+            next_seq=max(nums)+1
+            record=self._seal_db(folder,pid,key,raw,next_seq)
+            self._session(pid,token)
+            self._publish_head(folder,record)
+            return result
+        finally:
+            db.close()
 
     def save_screenplay(self,pid,token,screenplay,expected_revision):
         if type(screenplay) is not str or len(screenplay)>MAX_SCREENPLAY:
@@ -459,6 +511,17 @@ class LiveFilmStore:
                 return self.put_original(
                     pid,grant["token"],asset_name,data,receipt_id=lease)
             raise LiveFilmError("Unsupported worker operation")
+
+    def worker_receipts(self,pid,token):
+        """Auditable receipts remain inside authenticated live SQLite."""
+        with self._guard:
+            key=self._session(pid,token)
+            db,_=self._read_db(self._folder(pid),pid,key)
+            try:
+                return [dict(x) for x in db.execute(
+                    "SELECT * FROM worker_receipts ORDER BY recorded_at,receipt_id")]
+            finally:
+                db.close()
 
     def recovery_candidates(self,pid,token):
         """Return authenticated immutable revision IDs for human review.
