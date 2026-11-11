@@ -132,11 +132,9 @@ export default function FilmmakerHome() {
       const name=title.trim();
       if (!name)throw new Error('Give your movie a title.');
       if(mode==='script'&&!script.trim())throw new Error('Upload or paste your script.');
-      let movie=await request('/projects','POST',{title:name,idea:idea.trim()});
-      if(mode==='script'){
-        movie=await request('/projects/'+movie.id+'/screenplay','PUT',
-          {screenplay:script,expected_revision:movie.revision});
-      }
+      const movie=await request('/projects','POST',{
+        title:name,idea:idea.trim(),screenplay:mode==='script'?script:''
+      });
       await refreshProjects();
       attachMovie(movie);
       goPhase('scenes',movie.id);
@@ -380,7 +378,7 @@ export default function FilmmakerHome() {
                 autoComplete="off" value={confirmPhrase} onChange={e=>setConfirmPhrase(e.target.value)} required/>
             </>}
           </>}
-          <p className="film-hint">Movie locking protects access through NVP. It does not encrypt files on your computer.</p>
+          <p className="film-hint">Movie locking protects access through NVP, not files on your computer. Keep your passphrase: password recovery is not yet available.</p>
           <div className="film-actions">
             <button type="button" className="film-secondary" onClick={()=>{setLockTarget(null);setPassphrase('');setError('')}}>Cancel</button>
             <button className="film-primary" disabled={busy} type="submit">
