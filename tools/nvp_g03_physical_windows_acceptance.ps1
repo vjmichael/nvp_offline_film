@@ -124,7 +124,7 @@ try {
     throw 'Installed encrypted live film could not reopen in a fresh process'
   }
   Write-Host 'G03 installed live encrypted film, OpenUSD source, revision and relock passed.'
-  foreach ($mode in @('--smoke-live-worker','--smoke-legacy-migration')) {
+  foreach ($mode in @('--smoke-live-worker','--smoke-legacy-migration','--smoke-capture-denied')) {
     $native=Start-Process -FilePath $InstalledExe -ArgumentList $mode -PassThru
     if(-not $native.WaitForExit(110000)){
       & taskkill.exe /PID $native.Id /T /F 2>$null | Out-Null
@@ -134,8 +134,23 @@ try {
       throw "Installed G03 native acceptance failed: $mode"
     }
   }
-  Write-Host 'Protected native three-camera staging and no-delete migration candidate passed.'
+  Write-Host 'Protected native three-camera staging, non-destructive migration and mic consent denial passed.'
   Write-Host "Isolated test films: $testHome"
+  $physicalMicAnswer=(Read-Host 'Optional physical microphone test: enter RECORD for a real 1-second recording (two native Yes/No prompts) or SKIP').Trim().ToUpperInvariant()
+  $physicalMicPassed=$false
+  if($physicalMicAnswer -eq 'RECORD'){
+    $capture=Start-Process -FilePath $InstalledExe -ArgumentList '--g03-physical-capture-owner' -PassThru
+    if(-not $capture.WaitForExit(120000)){
+      & taskkill.exe /PID $capture.Id /T /F 2>$null | Out-Null
+      throw 'Physical native microphone test did not exit'
+    }
+    if($capture.ExitCode -ne 0){
+      throw 'Real physical microphone capture/consent/encryption test did not pass'
+    }
+    $physicalMicPassed=$true
+  }elseif($physicalMicAnswer -ne 'SKIP'){
+    throw 'Enter RECORD or SKIP for physical microphone acceptance'
+  }
   Write-Host "No existing NVP projects will be deleted or encrypted."
   Start-IsolatedNvp
   $uia+=@(Check-Uia 'New Movie' 'ControlType.Button' $true)
@@ -154,6 +169,11 @@ try {
   $uia+=@(Check-Uia 'New Movie' 'ControlType.Button' $true)
   Ask-Operator 'Saved movies after restart' 'Choose Resume Working and confirm all test movies, including the encrypted one, retained their scripts. The encrypted movie must demand the passphrase after restart. No plaintext export/filming is allowed.'
   Ask-Operator 'Accessibility after restart' 'Try keyboard-only navigation and a screen reader in the restarted UI; verify New Movie, Resume, project switching, Lock and Edit Film are navigable.'
+  if($physicalMicPassed){
+    Ask-Operator 'Physical microphone result' 'Did the two native microphone approval dialogs appear, did recording require Yes twice, and did the installed binary return success without a visible plaintext audio file?'
+  }else{
+    $script:checks+=@([ordered]@{check='Physical microphone result';result='SKIP'})
+  }
   $fail=@($script:checks|Where-Object {$_.result -ne 'PASS'})
   $record=[ordered]@{
     format='nvp.g03.physical_windows_user_acceptance.v1'
@@ -169,6 +189,8 @@ try {
     new_live_encrypted_film_restart_smoke_passed=$true
     windows_job_opensud_staging_smoke_passed=$true
     nondestructive_legacy_migration_candidate_smoke_passed=$true
+    native_microphone_consent_denial_passed=$true
+    physical_native_microphone_recording_passed=$physicalMicPassed
     legacy_project_data_encryption_accepted=$false
     protected_external_workers_accepted=$false
     lu_model_integration_deferred=$true
