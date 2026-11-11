@@ -110,7 +110,8 @@ class ProjectAccessTests(unittest.TestCase):
 
     def test_idle_expiry_and_repeated_wrong_password_delay(self):
         now=[1000.0]
-        x=ProjectAccess(nvp_api.studio.db_path,clock=lambda:now[0])
+        x=ProjectAccess(nvp_api.studio.db_path,clock=lambda:now[0],
+                        wall_clock=lambda:now[0])
         x.protect(self.a["id"],SECRET)
         for _ in range(5):
             with self.assertRaises(PermissionError):
@@ -122,6 +123,46 @@ class ProjectAccessTests(unittest.TestCase):
         self.assertTrue(x.permitted(self.a["id"],tok))
         now[0]+=1201.0
         self.assertFalse(x.permitted(self.a["id"],tok))
+
+    def test_failed_attempts_stay_blocked_across_restart(self):
+        now=[2000.0]
+        def instance():
+            return ProjectAccess(nvp_api.studio.db_path,
+                clock=lambda:now[0],wall_clock=lambda:now[0])
+        original=instance()
+        original.protect(self.a["id"],SECRET)
+        for _ in range(4):
+            with self.assertRaises(PermissionError):
+                original.unlock(self.a["id"],"A wrong long test passphrase")
+        restarted=instance()
+        with self.assertRaises(PermissionError):
+            restarted.unlock(self.a["id"],"A wrong long test passphrase")
+        restarted_again=instance()
+        with self.assertRaisesRegex(PermissionError,"Too many attempts"):
+            restarted_again.unlock(self.a["id"],SECRET)
+        now[0]+=31.0
+        self.assertTrue(restarted_again.unlock(self.a["id"],SECRET))
+
+    def test_every_registered_project_route_is_locked(self):
+        import re
+        from fastapi.routing import APIRoute
+        self.protect()
+        checked=0
+        for route in nvp_api.app.routes:
+            if not isinstance(route,APIRoute):
+                continue
+            if not route.path.startswith("/api/projects/{project_id}"):
+                continue
+            if route.path.endswith(("/unlock","/protect")):
+                continue
+            uri=route.path.replace("{project_id}",self.a["id"])
+            uri=re.sub(r"\{[^{}]+\}","fixture",uri)
+            for method in sorted(route.methods & {"GET","POST","PUT","PATCH","DELETE"}):
+                result=self.client.request(method,uri,json={},headers=HEADERS)
+                self.assertEqual(result.status_code,423,
+                    f"{method} {route.path} bypassed project lock: {result.text[:120]}")
+                checked+=1
+        self.assertGreater(checked,90)
 
     def test_unprotected_existing_user_journey_unchanged(self):
         self.assertEqual(self.client.get(self.base).status_code,200)

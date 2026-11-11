@@ -314,7 +314,7 @@ export default function FilmmakerHome() {
             <p className="film-muted">{project.idea||'Develop your story one scene at a time.'}</p></div>
           <div>
             {targetProject?.locked?<button className="film-secondary" onClick={()=>startLock('lock',targetProject)}>Lock Movie</button>
-              :<button className="film-secondary" onClick={()=>startLock('protect',{id:project.id,title:project.title})}>Protect Movie</button>}
+              :<button className="film-secondary" onClick={()=>startLock('protect',{id:project.id,title:project.title})}>Lock in NVP</button>}
           </div>
         </div>
         <nav className="film-steps" aria-label="Filmmaking steps">
@@ -387,7 +387,7 @@ export default function FilmmakerHome() {
       {lockTarget&&<div className="film-modal-backdrop" role="dialog" aria-modal="true"
         aria-labelledby="film-lock-title" onKeyDown={keepDialogFocus}>
         <form className="film-modal" onSubmit={lockAction==='unlock'?unlockMovie:protectOrRelock}>
-          <h2 id="film-lock-title">{lockAction==='unlock'?'Unlock Movie':lockAction==='protect'?'Protect Movie':'Lock Movie'}</h2>
+          <h2 id="film-lock-title">{lockAction==='unlock'?'Unlock Movie':lockAction==='protect'?'Lock in NVP':'Lock Movie'}</h2>
           <p className="film-muted">{lockTarget.title}</p>
           {lockAction!=='lock'&&<>
             <label htmlFor="film-passphrase">Movie passphrase (at least 12 characters)</label>
@@ -399,7 +399,7 @@ export default function FilmmakerHome() {
                 autoComplete="off" value={confirmPhrase} onChange={e=>setConfirmPhrase(e.target.value)} required/>
             </>}
           </>}
-          <p className="film-hint">Movie locking protects access through NVP, not files on your computer. Keep your passphrase: password recovery is not yet available.</p>
+          <p className="film-hint">This only restricts opening the movie in NVP. It does not encrypt its SQLite data, OpenUSD, original audio or backups. Other software under your Windows account can still read the files. There is no passphrase recovery.</p>
           <div className="film-actions">
             <button type="button" ref={lockAction==='lock'?lockFocus:null} className="film-secondary" onClick={()=>{setLockTarget(null);setPassphrase('');setError('')}}>Cancel</button>
             <button className="film-primary" disabled={busy} type="submit">

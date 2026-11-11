@@ -26,16 +26,20 @@ COOLDOWN_SECONDS = 30
 
 
 class ProjectAccess:
-    def __init__(self, db_path, *, clock=time.monotonic):
+    def __init__(self, db_path, *, clock=time.monotonic, wall_clock=time.time):
         self.db_path = str(db_path)
         self.clock = clock
+        self.wall_clock = wall_clock
         self._guard = threading.RLock()
         self._sessions = {}
-        self._denied = {}
         with self._db() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS project_access_locks(
                 project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
                 salt BLOB NOT NULL, verifier BLOB NOT NULL, created_at REAL NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS project_access_attempts(
+                project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+                failures INTEGER NOT NULL CHECK(failures>=0 AND failures<=5),
+                blocked_until REAL NOT NULL DEFAULT 0)""")
 
     @contextmanager
     def _db(self):
@@ -97,27 +101,42 @@ class ProjectAccess:
         self._check_id(project_id)
         secret = self._check_password(password)
         with self._guard:
-            now = self.clock()
-            count, until = self._denied.get(project_id, (0, 0.0))
-            if until > now:
-                raise PermissionError("Too many attempts; try again later")
+            now = self.wall_clock()
             with self._db() as db:
+                # BEGIN IMMEDIATE makes failed-attempt accounting atomic even
+                # across separate NVP processes opening one SQLite store.
+                db.execute("BEGIN IMMEDIATE")
+                attempt = db.execute("""SELECT failures,blocked_until
+                    FROM project_access_attempts WHERE project_id=?""",
+                    (project_id,)).fetchone()
+                count, until = attempt if attempt is not None else (0, 0.0)
+                if until > now:
+                    raise PermissionError("Too many attempts; try again later")
                 row = db.execute(
                     "SELECT salt,verifier FROM project_access_locks WHERE project_id=?",
                     (project_id,)).fetchone()
-            if row is None:
-                raise PermissionError("Movie has no protection configured")
-            actual = self._derive(secret, row[0])
-            if not hmac.compare_digest(actual, row[1]):
-                count += 1
-                self._denied[project_id] = (
-                    0 if count >= MAX_ATTEMPTS else count,
-                    now + COOLDOWN_SECONDS if count >= MAX_ATTEMPTS else 0.0)
-                raise PermissionError("Movie passphrase is incorrect")
-            self._denied.pop(project_id, None)
+                if row is None:
+                    raise PermissionError("Movie has no protection configured")
+                actual = self._derive(secret, row[0])
+                if not hmac.compare_digest(actual, row[1]):
+                    count += 1
+                    blocked = now + COOLDOWN_SECONDS if count >= MAX_ATTEMPTS else 0.0
+                    db.execute("""INSERT INTO project_access_attempts
+                        (project_id,failures,blocked_until) VALUES (?,?,?)
+                        ON CONFLICT(project_id) DO UPDATE SET
+                        failures=excluded.failures,
+                        blocked_until=excluded.blocked_until""",
+                        (project_id,0 if count>=MAX_ATTEMPTS else count,blocked))
+                    # Explicit commit: a rejected request must still persist
+                    # the failed attempt, including through process restart.
+                    db.commit()
+                    raise PermissionError("Movie passphrase is incorrect")
+                db.execute("DELETE FROM project_access_attempts WHERE project_id=?",
+                           (project_id,))
+                db.commit()
             self._revoke(project_id)
             token = secrets.token_urlsafe(32)
-            self._sessions[token] = (project_id, now + SESSION_SECONDS)
+            self._sessions[token] = (project_id, self.clock() + SESSION_SECONDS)
             return token
 
     def permitted(self, project_id, token, *, renew=False):
