@@ -339,6 +339,14 @@ class G04SceneNotes(BaseModel):
 class G04SceneAdd(BaseModel):
     expected_screenplay_revision: int = Field(ge=0)
 
+class G04ScreenplayPrompt(BaseModel):
+    direction: str = Field(default="",max_length=1200)
+
+class G04ScreenplayDecision(BaseModel):
+    decision: str
+    expected_screenplay_revision: int = Field(ge=0)
+    edited_text: str | None = Field(default=None,max_length=1_000_000)
+
 class G04SpeakerAssignment(BaseModel):
     source_cue: str = Field(min_length=1,max_length=40)
     expected_screenplay_revision: int = Field(ge=0)
@@ -360,6 +368,25 @@ def _director_preproduction(project_id: str, request: Request):
 @app.get("/api/projects/{project_id}/live/preproduction")
 def g04_scene_library(project_id: str,request: Request):
     return run(lambda: _director_preproduction(project_id,request).view(project_id))
+
+@app.post("/api/projects/{project_id}/preproduction/screenplay/suggestions")
+@app.post("/api/projects/{project_id}/live/preproduction/screenplay/suggestions")
+def g04_suggest_screenplay(project_id:str,request:Request,
+                           payload:G04ScreenplayPrompt):
+    try:
+        return run(lambda:_director_preproduction(project_id,request)
+            .generate_screenplay(project_id,payload.direction))
+    except LocalModelUnavailable:
+        raise HTTPException(status_code=503,
+            detail="AI writing is unavailable. You can continue writing your own screenplay.")
+
+@app.post("/api/projects/{project_id}/preproduction/screenplay/{draft_id}/decision")
+@app.post("/api/projects/{project_id}/live/preproduction/screenplay/{draft_id}/decision")
+def g04_review_screenplay(project_id:str,draft_id:str,request:Request,
+                          payload:G04ScreenplayDecision):
+    return run(lambda:_director_preproduction(project_id,request)
+        .decide_screenplay(project_id,draft_id,payload.decision,
+            payload.expected_screenplay_revision,payload.edited_text))
 
 @app.post("/api/projects/{project_id}/preproduction/scenes")
 @app.post("/api/projects/{project_id}/live/preproduction/scenes")
