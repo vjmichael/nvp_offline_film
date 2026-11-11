@@ -177,11 +177,27 @@ def _render(doc):
     scene.render.resolution_percentage=100
     scene.render.film_transparent=False
     scene.render.image_settings.file_format="PNG"
+    # Blender 5.x Render Result is not an ordinary Image with readable pixels.
+    # Use a compositor Viewer node to copy native Cycles pixels into an
+    # in-memory readable Image. No file-output compositor nodes are permitted.
+    tree=bpy.data.node_groups.new("NVP_Memory_Only_Compositor",
+                                  "CompositorNodeTree")
+    scene.compositing_node_group=tree
+    tree.interface.new_socket(
+        name="Image",in_out="OUTPUT",socket_type="NodeSocketColor")
+    render_layers=tree.nodes.new("CompositorNodeRLayers")
+    group_output=tree.nodes.new("NodeGroupOutput")
+    viewer=tree.nodes.new("CompositorNodeViewer")
+    tree.links.new(render_layers.outputs["Image"],
+                   group_output.inputs["Image"])
+    tree.links.new(render_layers.outputs["Image"],viewer.inputs[0])
+    scene.render.use_compositing=True
     # write_still=False is mandatory: no file-backed render or .blend saved.
     bpy.ops.render.render(write_still=False)
-    image=bpy.data.images.get("Render Result")
-    if image is None:
-        raise RuntimeError("Blender did not produce a real Render Result")
+    image=bpy.data.images.get("Viewer Node")
+    if image is None or len(image.pixels)!=doc["width"]*doc["height"]*4:
+        raise RuntimeError(
+            "Blender headless compositor did not expose memory-only Cycles pixels")
     return _png_rgba(doc["width"],doc["height"],list(image.pixels))
 
 
