@@ -87,7 +87,8 @@ class TrustedHostDouble:
         self.receipts.append(dict(receipt))
         return {"status":"recorded",
                 "request_sha256":receipt["request_sha256"],
-                "generated_sha256":receipt["generated_sha256"]}
+                "generated_sha256":receipt["generated_sha256"],
+                "proposal_sha256":receipt["proposal_sha256"]}
 
     def save_proposal(self, scope, *, stage, content, instructions, expected_revision):
         self.verify_scope(scope,"host_save_proposal")
@@ -95,12 +96,12 @@ class TrustedHostDouble:
             raise LuHostError("stale project cannot save proposal")
         digest=sha256(content.encode("utf8")).hexdigest()
         if (digest in self.consumed_sha256 or
-                not any(x["generated_sha256"]==digest for x in self.receipts)):
+                not any(x["proposal_sha256"]==digest for x in self.receipts)):
             raise LuHostError("missing or replayed completed-generation receipt")
         self.consumed_sha256.add(digest)
         self.saved.append(dict(stage=stage, content=content, status="proposed"))
         return {"status":"proposed","stage":stage,"content":content,
-                "completed_generation_sha256":digest,"source_mutated":False}
+                "consumed_proposal_sha256":digest,"source_mutated":False}
 
     def cancel_active(self, scope):
         self.verify_scope(scope,"host_cancel")
@@ -169,6 +170,16 @@ class LuG02FilmContractTests(unittest.TestCase):
         self.assertEqual(self.host.project["screenplay"],"")
         self.assertTrue(self.host.verify_calls.count("generate")>=3)
 
+    def test_whitespace_normalization_keeps_raw_and_proposal_provenance(self):
+        self.host.generated = "  " + TEXT + "\\n\\n"
+        self.workspace.propose(self.host.scope,stage="screenplay")
+        self.assertEqual(len(self.host.saved),1)
+        self.assertEqual(self.host.saved[0]["content"],TEXT)
+        self.assertNotEqual(self.host.receipts[0]["generated_sha256"],
+                            self.host.receipts[0]["proposal_sha256"])
+        self.assertEqual(self.host.receipts[0]["proposal_sha256"],
+                         sha256(TEXT.encode("utf8")).hexdigest())
+
     def test_direct_proposal_write_without_completed_generation_is_denied(self):
         with self.assertRaisesRegex(LuHostError,"missing or replayed"):
             self.port.save_proposal(self.host.scope,stage="screenplay",
@@ -184,7 +195,7 @@ class LuG02FilmContractTests(unittest.TestCase):
 
     def test_host_mismatched_receipt_evidence_is_rejected_by_adapter(self):
         def forged(scope, **kw):
-            return {"status":"proposed","completed_generation_sha256":"0"*64,
+            return {"status":"proposed","consumed_proposal_sha256":"0"*64,
                     "source_mutated":False}
         self.host.save_proposal=forged
         with self.assertRaisesRegex(LuHostError,"exact completed-generation"):
