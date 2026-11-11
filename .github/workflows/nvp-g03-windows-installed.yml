@@ -194,17 +194,17 @@ jobs:
           # verify original project count, locked movie credentials and schemas.
           $env:G03_VERIFY_DB=Join-Path $owned 'nvp_studio.sqlite3'
           @'
-import os, sqlite3
-db=sqlite3.connect(os.environ["G03_VERIFY_DB"])
-try:
-    assert db.execute("PRAGMA integrity_check").fetchone()[0]=="ok"
-    assert db.execute("SELECT COUNT(*) FROM projects").fetchone()[0]>=2
-    assert db.execute("SELECT COUNT(*) FROM project_access_locks").fetchone()[0]>=1
-    assert db.execute("SELECT COUNT(*) FROM projects WHERE length(screenplay)>0").fetchone()[0]>=2
-finally:
-    db.close()
-print("G03_INDEPENDENT_UNINSTALL_SQLITE_REOPEN_PASS")
-'@ | python -
+          import os, sqlite3
+          db=sqlite3.connect(os.environ["G03_VERIFY_DB"])
+          try:
+              assert db.execute("PRAGMA integrity_check").fetchone()[0]=="ok"
+              assert db.execute("SELECT COUNT(*) FROM projects").fetchone()[0]>=2
+              assert db.execute("SELECT COUNT(*) FROM project_access_locks").fetchone()[0]>=1
+              assert db.execute("SELECT COUNT(*) FROM projects WHERE length(screenplay)>0").fetchone()[0]>=2
+          finally:
+              db.close()
+          print("G03_INDEPENDENT_UNINSTALL_SQLITE_REOPEN_PASS")
+          '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Independent SQLite reopen after uninstall failed' }
           Write-Host 'G03_UNINSTALL_ORIGINALS_SHA256_UNCHANGED_PASS'
       - uses: actions/upload-artifact@v4
