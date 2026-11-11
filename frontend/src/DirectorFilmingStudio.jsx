@@ -464,6 +464,61 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   function cameraField(field,value){
     setViews(x=>x.map((v,i)=>i===activeView?{...v,[field]:value}:v));
   }
+  function contextAt(objectId,x,y){
+    const chosen=objects.find(o=>o.id===objectId);
+    const rect=reelRef.current?.getBoundingClientRect();
+    setSelectedObject(chosen?.role==='actor'||chosen?.role==='prop'||
+      chosen?.role==='set'||chosen?.role==='environment'?chosen.id:'');
+    setNotePopup({
+      object_id:chosen?.role==='actor'?chosen.id:null,
+      target_id:chosen?.id||null,
+      role:chosen?.role||'environment',name:chosen?.name||'Environment',
+      x:rect?Math.max(8,Math.min(rect.width-210,x-rect.left)):12,
+      y:rect?Math.max(65,Math.min(rect.height-220,y-rect.top)):90
+    });
+  }
+  function giveNote(type='gesture'){
+    if(notePopup){
+      setSelectedObject(notePopup.target_id||'');
+      const chosen=objects.find(o=>o.id===notePopup.target_id);
+      setKind(chosen?.role==='actor'?type:
+        chosen?.role==='environment'||chosen?.role==='prop'||
+          chosen?.role==='set'?'prop_action':'ambient_action');
+    }
+    setNotePopup(null);
+    document.querySelector('.director-film-direction-target')?.focus();
+  }
+  function askAINote(){
+    const popup=notePopup;
+    perform(()=>call(endpoint+'/notes/suggest','POST',{
+      object_id:popup?.object_id||(
+        activeObject?.role==='actor'?activeObject.id:null),
+      at_seconds:String(Number(time.toFixed(2))),
+      instructions:noteInstruction
+    }),'Here is a performance idea for you to review.');
+    setNotePopup(null);
+  }
+  function reviewNote(idea,decision){
+    perform(()=>call(endpoint+'/notes/'+idea.id+'/decision','POST',{
+      decision,expected_revision:film.work_revision,
+      ...(decision==='accept'&&noteEdits[idea.id]!==undefined
+        ?{edited_note:noteEdits[idea.id]}:{})
+    }),decision==='accept'?'Direction approved and added to the scene.':
+      'Suggestion declined; no performance change was made.');
+  }
+  async function listenTo(clipId){
+    await perform(async()=>{
+      const result=await fetch(endpoint+'/originals/'+clipId+'/listen',{
+        credentials:'same-origin',headers:{'x-nvp-director':'1'}});
+      if(!result.ok){
+        const msg=await result.json().catch(()=>({}));
+        throw new Error(msg.detail||'Original sound could not be played');
+      }
+      const raw=await result.blob();
+      if(raw.type!=='audio/wav')throw new Error('Original sound format is unavailable');
+      setListenUrl(URL.createObjectURL(raw));
+    },'Original sound ready to listen to. The source recording is unchanged.');
+  }
 
   return <section className="film-card director-film-studio"
     aria-label="Film Scenes">
@@ -499,7 +554,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
         <button className="film-secondary" onClick={retake} disabled={busy}>
           Start Fresh Performance</button>
       </div>}
-      <div className="director-film-reel">
+      <div className="director-film-reel" ref={reelRef}>
         <div className="director-film-reel-heading">
           <h3>Scene preview</h3>
           <p className="film-muted">These are three different views of the same
@@ -549,7 +604,8 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
               value={intensity} onChange={e=>setIntensity(Number(e.target.value))}/>
             <small>{intensity} / 10</small></label>}
           <label>Direction note (optional)
-            <textarea rows={3} maxLength={1000} value={note}
+            <textarea className="director-film-direction-target"
+              rows={3} maxLength={1000} value={note}
               onChange={e=>setNote(e.target.value)}
               placeholder="Describe the timing, intention or mood…"/>
           </label>
