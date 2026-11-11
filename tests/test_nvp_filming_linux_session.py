@@ -110,7 +110,7 @@ def test_kernel_phase_consumes_worker_reap_budget():
         "scope": "linux-cgroup-v2",
     }
     with patch("backend.nvp_filming_linux_session.time.monotonic",
-               side_effect=[100.0, 102.5]):
+               side_effect=[100.0, 102.5, 102.6]):
         LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     custody.stop_and_verify.assert_called_once_with(timeout=3)
     child.wait.assert_called_once_with(timeout=0.5)
@@ -200,7 +200,37 @@ def test_exactly_exhausted_kernel_budget_only_allows_nonblocking_reap():
         "scope": "linux-cgroup-v2",
     }
     with patch("backend.nvp_filming_linux_session.time.monotonic",
-               side_effect=[100.0, 103.0]):
+               side_effect=[100.0, 103.0, 103.0]):
         result = LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     child.wait.assert_called_once_with(timeout=0.0)
+    assert result["worker_exit_verified"] is True
+
+
+def test_worker_wait_overrun_refuses_bounded_shutdown_receipt():
+    """A late wait return cannot retroactively satisfy the shared deadline."""
+    child = Mock(returncode=-9)
+    custody = Mock()
+    custody.stop_and_verify.return_value = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    with patch("backend.nvp_filming_linux_session.time.monotonic",
+               side_effect=[100.0, 101.0, 103.01]):
+        with pytest.raises(RuntimeError, match="Worker reaping exceeded"):
+            LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
+    child.wait.assert_called_once_with(timeout=2.0)
+
+
+def test_worker_wait_exact_deadline_is_not_an_overrun():
+    child = Mock(returncode=-9)
+    custody = Mock()
+    custody.stop_and_verify.return_value = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    with patch("backend.nvp_filming_linux_session.time.monotonic",
+               side_effect=[100.0, 101.0, 103.0]):
+        result = LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     assert result["worker_exit_verified"] is True
