@@ -150,7 +150,7 @@ def _validate_profile(profile,original,clips,duration):
             set(cue)!={"id","at_tick","emotion","strength"} or
             type(cue["id"]) is not str or not HEX.fullmatch(cue["id"]) or
             cue["id"] in ids or type(cue["at_tick"]) is not int or
-            not 0<=cue["at_tick"]<duration or cue["at_tick"]<previous or
+            not 0<=cue["at_tick"]<duration or cue["at_tick"]<=previous or
             type(cue["emotion"]) is not str or
             cue["emotion"] not in EMOTION):
             raise ValueError("An expression cue is outside the original scene")
