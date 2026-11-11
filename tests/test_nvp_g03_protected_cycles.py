@@ -66,6 +66,44 @@ class CyclesProtocolTests(unittest.TestCase):
             _geometry_from_opensud(
                 b'#usda 1.0\n(\n subLayers = [@../../other.usda@]\n)\n')
 
+    @unittest.skipUnless(sys.platform=="win32","Windows AppContainer required")
+    def test_native_blender_cycles_inside_real_appcontainer_and_encrypted_readback(self):
+        blender=os.environ.get("NVP_NATIVE_BLENDER_EXECUTABLE")
+        probe=os.environ.get("NVP_G03_NATIVE_SANDBOX_PROBE")
+        if not blender or not probe:
+            self.skipTest("SHA-verified Blender and independent token probe required")
+        from backend.nvp_blender_worker import sha_file
+        from backend.nvp_g03_live_store import LiveFilmStore
+        import secrets
+        with tempfile.TemporaryDirectory(prefix="nvp-g03-appcontainer-cycles-") as tmp:
+            root=Path(tmp)/"vault"
+            vault=LiveFilmStore(root)
+            pid=secrets.token_hex(16)
+            token="real-sandbox-"+secrets.token_hex(20)
+            vault.create(pid,"Synthetic sandbox film","","",PASS)
+            vault.authorize(pid,PASS,token)
+            vault.put_original(pid,token,"original/box.usda",SAMPLE)
+            ticket="reviewed-kernel-sandbox-"+secrets.token_hex(20)
+            approvals={ticket}
+            def approve(*args):
+                if args[-1] not in approvals:return False
+                approvals.remove(args[-1]);return True
+            worker=ProtectedCyclesSupervisor(
+                vault,blender_executable=blender,blender_sha256=sha_file(Path(blender)),
+                review_authority=approve,os_isolation_attestor=lambda:True)
+            rendered=worker.render(pid,token,"original/box.usda",
+                "derived/verified-sandbox.png",ticket)
+            self.assertEqual(rendered["state"],"SUCCEEDED")
+            self.assertTrue(rendered["native_cycles"])
+            png=vault.get_original(pid,token,"derived/verified-sandbox.png")
+            _verify_png(png)
+            self.assertEqual(hashlib.sha256(png).hexdigest(),rendered["output_sha256"])
+            self.assertEqual(vault.get_original(pid,token,"original/box.usda"),SAMPLE)
+            self.assertEqual(vault.protected_worker_runs(pid,token)[0]["state"],"SUCCEEDED")
+            with self.assertRaises(ProtectedCyclesError):
+                worker.render(pid,token,"original/box.usda",
+                    "derived/second-render.png",ticket)
+
     @unittest.skipUnless(sys.platform=="win32","Windows private film only")
     def test_real_windows_private_renderer_denied_without_sandbox(self):
         blender=os.environ.get("NVP_NATIVE_BLENDER_EXECUTABLE")
