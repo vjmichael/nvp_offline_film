@@ -144,6 +144,16 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
     update(()=>action(base+'/scenes/'+encodeURIComponent(selected.id)+'/suggestions','POST'),
       'Here are some ideas to review. Nothing has been added to your film without your approval.');
   }
+  function restoreNotes(revision) {
+    if(!selected)return;
+    if(!window.confirm('Restore an earlier version of your scene details? Your current version will remain in the history.'))return;
+    update(()=>action(base+'/scenes/'+encodeURIComponent(selected.id)+'/restore',
+      'POST',{
+        source_revision:revision,
+        expected_notes_revision:selected.notes_revision,
+        expected_screenplay_revision:data.screenplay_revision
+      }),'Earlier scene details restored. Your other versions are preserved.');
+  }
   function identifySpeaker(cue,defaultActorId=null) {
     const actor=speakerChoices[cue]||defaultActorId||'new';
     const payload={
@@ -323,6 +333,18 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
             <button className="film-primary" disabled={busy||!hasNotes}
               onClick={save}>Save Scene Details</button>
           </div>
+          {selected.notes_history?.length>1&&<details className="director-note-history">
+            <summary>Earlier scene details</summary>
+            <p className="film-muted">Choose an earlier version if you want to
+              revisit a creative decision. Restoring it preserves the current version.</p>
+            {selected.notes_history.slice(1).map(version=><div
+              className="director-history-row" key={version.revision}>
+              <span>Version {version.revision}: {version.notes.description||
+                version.notes.location||version.notes.action||'Scene notes'}</span>
+              <button className="film-secondary" disabled={busy}
+                onClick={()=>restoreNotes(version.revision)}>Restore</button>
+            </div>)}
+          </details>}
         </div>
         {sceneFacts.length>0&&<section className="director-approved-details">
           <h4>Approved scene details</h4>
