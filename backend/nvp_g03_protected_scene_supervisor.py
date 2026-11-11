@@ -152,11 +152,16 @@ class ProtectedSceneSupervisor:
         threads=[]
         try:
             with tempfile.TemporaryDirectory(prefix="nvp-g03-protected-scene-") as empty_cwd:
-                proc=launch_contained(_pinned_command(),cwd=empty_cwd,
+                command=_pinned_command()
+                trusted=([] if getattr(sys,"frozen",False)
+                         else [Path(command[-1])])
+                proc=launch_contained(command,cwd=empty_cwd,
                       stdin=input_stream,stdout=output_stream,
                       stderr=error_stream,memory_mb=2048,
                       env=_sanitized_worker_env(),
-                      windows_appcontainer_required=isolated)
+                      windows_appcontainer_required=isolated,
+                      appcontainer_code_roots=[Path(command[0]).parent],
+                      appcontainer_code_files=trusted)
                 # Closing the parent's copies is vital for EOF and cancellation.
                 input_stream.close();output_stream.close();error_stream.close()
                 for fn,args in (
