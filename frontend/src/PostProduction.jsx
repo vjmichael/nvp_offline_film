@@ -1,6 +1,7 @@
 import React, {useEffect,useState} from 'react';
 import './index.css';
 import './filmmaker-home.css';
+import DirectorFilmEditor from './DirectorFilmEditor.jsx';
 
 export default function PostProduction() {
   const query=new URLSearchParams(window.location.search);
@@ -50,25 +51,7 @@ export default function PostProduction() {
       <h1>{movie?.title||'Edit your movie'}</h1>
       {status&&<p role="status">{status}</p>}
       {movie&&<>
-        {movie.encrypted&&<p className="film-hint" role="status">
-          Encrypted movie. Editing and rendering workers remain disabled
-          until protected production is independently verified.</p>}
-        <p className="film-muted">Choose the performances and views you want the audience to see.
-          Your original filming data remains unchanged.</p>
-        <section className="film-card">
-          <h2>Scenes in this film</h2>
-          {movie.scenes?.length?movie.scenes.map(s=><article key={s.id} className="film-post-scene">
-            <span>Scene {s.number}</span><strong>{s.heading}</strong>
-          </article>):<p className="film-muted">No screenplay scenes have been prepared yet.</p>}
-        </section>
-        <section className="film-card">
-          <h2>Editing timeline</h2>
-          <div className="film-stage-placeholder">Editorial timeline is not yet connected.</div>
-          <p className="film-hint">This window is separate from scene setup and filming.
-            Cutting, grading and derived presentation will be integrated later.
-            Opening the window does not create an edit or alter a frozen Take.</p>
-          <button className="film-primary" disabled>Export Film — not available yet</button>
-        </section>
+        <DirectorFilmEditor key={movie.id+':'+movie.revision} movie={movie}/>
       </>}
       <a href="/" className="film-secondary" style={{textDecoration:'none'}}>Return to movie projects</a>
     </main>
