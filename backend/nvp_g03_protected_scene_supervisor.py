@@ -32,6 +32,10 @@ from tools.nvp_g03_protected_scene_worker import (
 class ProtectedWorkerError(LiveFilmError):
     pass
 
+# Exact public, synthetic fixture, never an arbitrary director film.
+SYNTHETIC_SCENE_CI_USDA=(
+    b'#usda 1.0\n\ndef Xform "Original" {}\n')
+
 
 def _sanitized_worker_env():
     # No NVP_HOME, API token, user secrets or optional cloud credentials.
@@ -80,14 +84,15 @@ def _stream_write(file, payload, errors):
 
 
 class ProtectedSceneSupervisor:
-    def __init__(self,store,*,review_authority):
+    def __init__(self,store,*,review_authority,os_isolation_attestor=None):
         if not callable(review_authority):
             raise ValueError("Trusted human approval checker is required")
         self.store=store
         self.review_authority=review_authority
+        self.os_isolation_attestor=os_isolation_attestor
 
     def run(self,pid,token,source_name,output_name,approval_id,
-            *,cancel=None,timeout=60):
+            *,cancel=None,timeout=60,synthetic_ci_only=False):
         """Synchronously publish a new encrypted OpenUSD camera-coverage layer.
 
         The injected host authority must independently consume the creator's
@@ -96,6 +101,14 @@ class ProtectedSceneSupervisor:
         """
         if sys.platform!="win32":
             raise ProtectedWorkerError("No native Windows job custody")
+        isolated=(callable(self.os_isolation_attestor) and
+                  self.os_isolation_attestor(pid,source_name,output_name))
+        synthetic=(synthetic_ci_only is True and
+                   os.environ.get("GITHUB_ACTIONS")=="true")
+        if not isolated and not synthetic:
+            raise ProtectedWorkerError(
+                "Private scene worker requires independently verified AppContainer "
+                "filesystem/network sandbox, not Job Object custody")
         if type(timeout) not in (int,float) or not 5<=timeout<=90:
             raise ValueError("Worker timeout must be 5..90 seconds")
         if not isinstance(approval_id,str) or len(approval_id)<24:
@@ -108,6 +121,11 @@ class ProtectedSceneSupervisor:
         grant=self.store.worker_grant(pid,token,source_name,"read_original",
                                      human_approved=True)
         source=self.store.worker_execute(pid,grant,"read_original",source_name)
+        if synthetic and (source_name!="original/scene.usda" or
+                          output_name!="review/camera-coverage.usda" or
+                          source!=SYNTHETIC_SCENE_CI_USDA):
+            raise ProtectedWorkerError(
+                "Synthetic scene CI exception refuses non-fixture original film")
         if len(source)>MAX_SOURCE:
             raise ProtectedWorkerError("Native OpenUSD worker source exceeds cap")
         source_hash=hashlib.sha256(source).hexdigest()
@@ -137,7 +155,8 @@ class ProtectedSceneSupervisor:
                 proc=launch_contained(_pinned_command(),cwd=empty_cwd,
                       stdin=input_stream,stdout=output_stream,
                       stderr=error_stream,memory_mb=2048,
-                      env=_sanitized_worker_env())
+                      env=_sanitized_worker_env(),
+                      windows_appcontainer_required=isolated)
                 # Closing the parent's copies is vital for EOF and cancellation.
                 input_stream.close();output_stream.close();error_stream.close()
                 for fn,args in (
