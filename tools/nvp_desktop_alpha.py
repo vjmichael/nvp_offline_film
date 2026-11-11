@@ -759,6 +759,10 @@ def run_g03_legacy_migration_installed_smoke():
         index=FilmIndex(studio)
         audio=b"PCM_NATIVE_ORIGINAL_FROZEN_DATA"*1000
         sha=index.put_blob(pid,audio,"audio/pcm")
+        scene=root/"production"/pid/"original-scene.usda"
+        scene.parent.mkdir(parents=True,exist_ok=True)
+        scene.write_bytes(b'#usda 1.0\n\ndef Xform "Original" {}\n')
+        scene_hash=hashlib.sha256(scene.read_bytes()).hexdigest()
         approval={"used":False}
         def review(reviewed_pid,manifest):
             if reviewed_pid!=pid or approval["used"]:
@@ -795,6 +799,23 @@ def run_g03_legacy_migration_installed_smoke():
                 received.get("known_source_count")!=2):
             raise RuntimeError("Independent installed original-film byte receipt invalid")
         _smoke_checkpoint("g03_legacy_independent_native_original_byte_reopen_pass")
+        rebuilt=subprocess.run([sys.executable,"--g03-candidate-reconstruction"],
+            input=json.dumps(request),capture_output=True,text=True,timeout=90)
+        if rebuilt.returncode!=0:
+            raise RuntimeError("Fresh installed Windows original-film relational rebuild failed")
+        evidence_recovered=json.loads(rebuilt.stdout)
+        if not (
+                evidence_recovered.get("reopened_studio_and_filmindex") is True and
+                evidence_recovered.get("actual_sqlite_schema_and_fk_verified") is True and
+                evidence_recovered.get("authenticated_original_assets")==2 and
+                evidence_recovered.get("reopened_pcm_blobs")==1 and
+                evidence_recovered.get("source_cutover_authorized") is False and
+                evidence_recovered.get("plaintext_restored_to_original_location") is False and
+                evidence_recovered.get("reviewed_inventory_sha256")==evidence["inventory_sha256"]):
+            raise RuntimeError("Installed original-film relational recovery receipt invalid")
+        if hashlib.sha256(scene.read_bytes()).hexdigest()!=scene_hash:
+            raise RuntimeError("Legacy OpenUSD original changed by recovery")
+        _smoke_checkpoint("g03_legacy_independent_full_sqlite_filmindex_pcm_usd_recovery_pass")
         reopened=LiveFilmStore(root/"nvp_g03_migration_candidates")
         token="trusted-installed-test-"+("b"*32)
         reopened.authorize(pid,"G03-SYNTHETIC-LEGACY-MIGRATION-PASSPHRASE-2026",token)
