@@ -389,6 +389,19 @@ class G04Preproduction:
                 elif proposal["category"]=="continuity":
                     continuity.append({"scene_id":scene["id"],"note":name,
                                        "origin":"approved"})
+        for current,following in zip(setting_facts,setting_facts[1:]):
+            if (current["location"] and following["location"] and
+                    current["location"].casefold()==following["location"].casefold()):
+                changed=[field for field in ("era","season","weather","time_of_day")
+                         if current[field] and following[field] and
+                         current[field].casefold()!=following[field].casefold()]
+                if changed:
+                    continuity.append({
+                        "scene_id":following["scene_id"],
+                        "note":"Check "+", ".join(changed).replace("_"," ")+" at "+
+                               following["location"]+" between "+
+                               current["scene_name"]+" and "+following["scene_name"],
+                        "origin":"review_suggestion"})
         for scene in scenes:
             # Prepared only after director-approved additions are projected.
             scene["has_unreviewed_ideas"]=any(
