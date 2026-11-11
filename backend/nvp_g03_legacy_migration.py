@@ -111,7 +111,7 @@ class LegacyFilmMigration:
                         unknown.append(table)
                     continue
                 rows=memory.execute(
-                    f'SELECT * FROM "{table}" WHERE "{key}"=?',(pid,)).fetchall())
+                    f'SELECT * FROM "{table}" WHERE "{key}"=?',(pid,)).fetchall()
                 stored=[]
                 for row in rows:
                     count+=1
