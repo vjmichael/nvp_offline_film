@@ -62,6 +62,7 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
   const [data,setData]=useState(null);
   const [current,setCurrent]=useState('');
   const [notes,setNotes]=useState(emptyNotes);
+  const [quickAnswer,setQuickAnswer]=useState('');
   const [edits,setEdits]=useState({});
   const [speakerChoices,setSpeakerChoices]=useState({});
   const [speakerNames,setSpeakerNames]=useState({});
@@ -89,6 +90,7 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
   useEffect(()=>{
     if(!selected)return;
     setNotes({...emptyNotes(),...selected.notes});
+    setQuickAnswer('');
     setEdits({});
     setSpeakerChoices({});
     setSpeakerNames({});
@@ -112,6 +114,19 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
     setCurrent(scene.id);
   }
 
+  function saveQuestionAnswer() {
+    if(!selected||!quickAnswer.trim())return;
+    const prompt=selected.questions?.[0]||'';
+    const field=prompt.startsWith('Where')?'location':'action';
+    const updated={...notes,[field]:quickAnswer.trim()};
+    update(async()=>{
+      const result=await action(base+'/scenes/'+encodeURIComponent(selected.id),
+        'PUT',{notes:updated,expected_notes_revision:selected.notes_revision,
+          expected_screenplay_revision:data.screenplay_revision});
+      setQuickAnswer('');
+      return result;
+    },'Your answer has been saved with this scene.');
+  }
   function save() {
     if(!selected)return;
     update(()=>action(base+'/scenes/'+encodeURIComponent(selected.id),'PUT',{
@@ -206,7 +221,7 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
       {selected&&<div className="director-scene-workspace">
         <div className="director-stage-preview" aria-label="Scene preview not yet available">
           <span>Scene preview</span>
-          <p>The setting will appear here when the visual scene builder is connected.</p>
+          <p>Your scene's visual setting has not been created yet.</p>
         </div>
         <h3>{selected.heading}</h3>
         <p className="film-muted">{selected.location?
@@ -287,6 +302,15 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
           <h4>Ideas for this scene</h4>
           {selected.questions?.map(question=><p key={question}
             className="director-assistant-question">{question}</p>)}
+          {selected.questions?.length>0&&<div className="director-quick-answer">
+            <label htmlFor="director-context-answer">Tell me about it</label>
+            <textarea id="director-context-answer" rows={2} maxLength={1500}
+              value={quickAnswer} placeholder="Your scene, in your own words…"
+              onChange={e=>setQuickAnswer(e.target.value)}/>
+            <div className="film-actions"><button className="film-secondary"
+              disabled={busy||!quickAnswer.trim()} onClick={saveQuestionAnswer}>
+              Save Answer</button></div>
+          </div>}
           <p className="film-muted">I can suggest details based on your screenplay
             and notes. You choose what belongs in your movie.</p>
           <button className="film-secondary" onClick={askAI} disabled={busy||!aiReady}>
