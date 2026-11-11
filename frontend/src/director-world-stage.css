@@ -56,3 +56,13 @@
 @media(max-width:1080px){.director-world-layout{grid-template-columns:1fr}.director-world-object-list{max-height:180px}}
 @media(max-width:540px){.director-world{padding:10px}.director-world-axes{gap:4px;padding:7px}.director-world-inspector,.director-world-list{padding:10px}.director-stage-start{padding:15px}}
 @media(prefers-reduced-motion:reduce){.director-world *{transition:none!important;animation:none!important}}
+
+.director-world-ai{margin-top:17px;padding:17px;border-radius:11px;border:1px solid #5a505c;background:#292d37}
+.director-world-ai-heading{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.director-world-ai-heading h5{margin:0 5px 0 0}
+.director-world-ai-heading p{flex:1;min-width:180px;margin:0}
+.director-world-ai-heading .film-hint{flex-basis:100%;min-width:100%;margin:0}
+.director-world-ai-idea{border-top:1px solid #51505c;padding:13px 0 3px;margin-top:14px}
+.director-world-ai-idea strong{display:block;font-size:14px}
+.director-world-ai-idea>span{display:block;color:#dcb993;font-size:11px;margin-top:5px}
+.director-world-ai-idea p{font-size:13px;line-height:1.5}
