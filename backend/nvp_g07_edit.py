@@ -310,11 +310,16 @@ class G07Editor:
         missing=[]
         try:
             length,segments=self._validate(db,pid,doc)
-        except (RuntimeError,KeyError,ValueError) as exc:
-            # A damaged/missing original is never silently substituted or
-            # replaced by a proxy. Keep every edit revision intact for repair.
+        except (RuntimeError,KeyError):
+            # Never substitute a stand-in video or another Take. Protect
+            # original failure details as internal technical diagnostics.
             length=0;segments=[]
-            missing=[str(exc)]
+            missing=["One or more original recordings could not be opened. " +
+                     "Restore the originals or remove the affected shot."]
+        except ValueError:
+            length=0;segments=[]
+            missing=["Some saved edit choices need attention. " +
+                     "Restore an earlier edit version to continue."]
         ideas=[{"id":row["id"],"clip_id":row["clip_id"],
                 "kind":row["kind"],"reason":row["reason"],
                 "status":row["status"]}
@@ -684,6 +689,7 @@ class G07Editor:
                         "audio":sound,"duration_tick":doc["duration_tick"]}
             return {"format":FORMAT,"project_id":pid,
                 "edit_revision":source_revision,
+                "edit_document_sha256":_sha(_json(document).encode("utf8")),
                 "duration_tick":total,"segments":segments,
                 "original_takes":sources,"master_gain":document["master_gain"],
                 "source_media_modified":False,
