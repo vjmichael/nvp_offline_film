@@ -171,7 +171,7 @@ class LuG02FilmContractTests(unittest.TestCase):
         self.assertTrue(self.host.verify_calls.count("generate")>=3)
 
     def test_whitespace_normalization_keeps_raw_and_proposal_provenance(self):
-        self.host.generated = "  " + TEXT + "\\n\\n"
+        self.host.generated = "  " + TEXT + "\n\n"
         self.workspace.propose(self.host.scope,stage="screenplay")
         self.assertEqual(len(self.host.saved),1)
         self.assertEqual(self.host.saved[0]["content"],TEXT)
