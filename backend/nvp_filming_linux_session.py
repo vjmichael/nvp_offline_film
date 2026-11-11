@@ -75,4 +75,9 @@ def launch_linux_filming_session(delegated_root: Path, executable: str,
         # Retain the exact group and live child handle for host recovery.
         # Never terminate only the direct child: descendants may survive.
         raise FilmingCustodyInitializationError(group, child) from exc
+    # A worker that has already exited cannot be an active filming session.
+    # Retain its exact group and handle for host reconciliation rather than
+    # treating a successful cgroup constructor as an execution receipt.
+    if child.poll() is not None:
+        raise FilmingCustodyInitializationError(group, child)
     return LinuxFilmingSession(group, child, custody)
