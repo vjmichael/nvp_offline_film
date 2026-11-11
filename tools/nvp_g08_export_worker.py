@@ -114,8 +114,11 @@ def main(argv=None):
     except BaseException as exc:
         # Do not print screenplay contents, plaintext project paths, PCM,
         # protected file secrets or G06 film content into child logs.
-        print("NVP native export did not complete: "+type(exc).__name__,
-              file=sys.stderr)
+        # PyInstaller --windowed workers have no console stderr; never
+        # throw a secondary error while reporting the real worker failure.
+        if sys.stderr is not None:
+            print("NVP native export did not complete: "+type(exc).__name__,
+                  file=sys.stderr)
         return 1
 
 
