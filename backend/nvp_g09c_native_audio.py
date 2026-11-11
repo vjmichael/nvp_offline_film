@@ -163,9 +163,16 @@ def _weather_at(seg,tick,setting):
     return 0.,None
 
 def _soft_limit(v):
-    # Bounded analytic soft clipping; no dependency on buffer history.
-    # 16-bit PCM source is never modified; result is derived output only.
-    return int(_clamp(round(32767*math.tanh(v/32767.)), -32768,32767))
+    # Preserve unity-gain speech and source PCM dynamics through the normal
+    # range. Only protect the last ~8% before 16-bit clipping. This
+    # deterministic knee cannot vary with chunk, frame rate or seek order.
+    knee=30000.
+    absolute=abs(v)
+    if absolute<=knee:
+        return int(_clamp(round(v),-32768,32767))
+    limit=32767.
+    shaped=knee+(limit-knee)*math.tanh((absolute-knee)/(limit-knee))
+    return int(_clamp(round(math.copysign(shaped,v)),-32768,32767))
 
 class SpatialFilmMixer:
     """Continuous audio presentation clock, accepts source-safe random seeks.
