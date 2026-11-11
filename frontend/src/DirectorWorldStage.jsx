@@ -10,7 +10,9 @@ import './director-world-stage.css';
 const PRESET_LABELS={
   box:'Simple object',table:'Table',chair:'Chair',rock:'Rock',
   tree:'Tree',mountain:'Mountain',water:'Water',lamp:'Lamp',
-  sun:'Sunlight',camera:'Camera',sphere:'Sphere'
+  sun:'Sunlight',camera:'Camera',sphere:'Sphere',
+  building:'Building',door:'Door',bench:'Bench',bed:'Bed',
+  shrub:'Shrub',dune:'Dune',planet:'Planet'
 };
 const CAMERA_VIEWS={
   perspective:[19,-23,17],above:[0,-.1,35],front:[0,-32,10],
@@ -69,8 +71,8 @@ function disposeGraph(parent) {
   });
 }
 
-function StageCanvas({objects,setting,selected,onChoose,mode,onTransform,view,
-                      onOpenContext}) {
+function StageCanvas({objects,setting,visualStyle,selected,onChoose,mode,
+                      onTransform,view,onOpenContext}) {
   const mountRef=useRef(null);
   const worldRef=useRef(null);
   const callbacksRef=useRef({onChoose,onTransform,onOpenContext});
@@ -282,12 +284,14 @@ function StageCanvas({objects,setting,selected,onChoose,mode,onTransform,view,
     else gizmo.detach();
     const daylight=setting?.daylight||'day';
     const weather=setting?.weather||'clear';
-    scene.background=new THREE.Color(daylight==='night'?'#101628':
+    scene.background=new THREE.Color(visualStyle==='space'?'#080c1b':
+      visualStyle==='abstract'?'#202133':
+      daylight==='night'?'#101628':
       daylight==='dusk'?'#8e7992':daylight==='dawn'?'#b7a0a1':'#8db4cc');
     const fogAmount=weather==='fog'?.055:weather==='rain'?.019:
       weather==='snow'?.025:weather==='cloudy'?.012:0;
-    scene.fog=fogAmount?new THREE.FogExp2(
-      daylight==='night'?0x151e2a:0xb1c1c6,fogAmount):null;
+    scene.fog=visualStyle==='space'?null:(fogAmount?new THREE.FogExp2(
+      daylight==='night'?0x151e2a:0xb1c1c6,fogAmount):null);
     ambient.intensity=daylight==='night'?.65:daylight==='dusk'?1.2:1.6;
     direct.intensity=daylight==='night'?.35:daylight==='dusk'?1.7:2.8;
     const key=objects.find(x=>x.role==='light'&&x.shape==='sun');
@@ -300,27 +304,30 @@ function StageCanvas({objects,setting,selected,onChoose,mode,onTransform,view,
       world.weatherParticles.material.dispose();
       world.weatherParticles=null;
     }
-    if(weather==='rain'||weather==='snow'){
-      const count=weather==='snow'?180:300;
+    if(weather==='rain'||weather==='snow'||visualStyle==='space'){
+      const count=visualStyle==='space'?380:weather==='snow'?180:300;
       const positions=new Float32Array(count*3);
       for(let i=0;i<count;i++){
         // Deterministic spatial distribution avoids flicker across edits.
         const t=i+1;
-        positions[i*3]=((t*47)%89)/89*32-16;
-        positions[i*3+1]=((t*71)%97)/97*32-16;
-        positions[i*3+2]=((t*37)%67)/67*14+.5;
+        positions[i*3]=((t*47)%89)/89*(visualStyle==='space'?110:32)-
+          (visualStyle==='space'?55:16);
+        positions[i*3+1]=((t*71)%97)/97*(visualStyle==='space'?110:32)-
+          (visualStyle==='space'?55:16);
+        positions[i*3+2]=((t*37)%67)/67*(visualStyle==='space'?70:14)+.5;
       }
       const geometry=new THREE.BufferGeometry();
       geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));
       const material=new THREE.PointsMaterial({
-        color:weather==='snow'?0xe7f1ff:0x94bad0,
-        size:weather==='snow'?.085:.047,
+        color:visualStyle==='space'?0xf8f7f6:
+          weather==='snow'?0xe7f1ff:0x94bad0,
+        size:visualStyle==='space'?.16:weather==='snow'?.085:.047,
         transparent:true,opacity:.78,sizeAttenuation:true});
       world.weatherParticles=new THREE.Points(geometry,material);
       scene.add(world.weatherParticles);
     }
     redraw();
-  },[objects,setting?.weather,setting?.daylight,selected]);
+  },[objects,setting?.weather,setting?.daylight,visualStyle,selected]);
 
   useEffect(()=>{
     const world=worldRef.current;
@@ -555,7 +562,7 @@ export default function DirectorWorldStage({movie,scene}) {
         </label>
       </div>
       <StageCanvas objects={stage.objects} setting={stage.setting}
-        selected={selected} onChoose={choose} mode={mode} view={view}
+        visualStyle={stage.visual_style} selected={selected} onChoose={choose} mode={mode} view={view}
         onTransform={transform} onOpenContext={openContext}/>
       <p className="director-world-help">Drag to orbit · Scroll to zoom · Click
         an object to select it · Drag the handles to place it.</p>
