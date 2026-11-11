@@ -18,16 +18,18 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
     """
     if not isinstance(session, LinuxFilmingSession):
         raise TypeError("Host-owned Linux filming session required")
-    if not isinstance(capture, NativeSceneSoundCapture):
-        raise TypeError("Trusted original-scene capture service required")
-    if not callable(recordings):
-        raise TypeError("Trusted native recording batch supplier required")
     batch = None
     recording_error = None
     try:
+        # Even invalid host inputs must not leave an admitted worker running.
+        # Validate them inside the protected shutdown region, not before it.
+        if not isinstance(capture, NativeSceneSoundCapture):
+            raise TypeError("Trusted original-scene capture service required")
+        if not callable(recordings):
+            raise TypeError("Trusted native recording batch supplier required")
         batch = recordings()
-        if type(batch) is not list:
-            raise TypeError("Recorder must return a bounded original-event list")
+        if type(batch) is not list or not 1 <= len(batch) <= 32:
+            raise ValueError("Recorder must return 1..32 original sound events")
     except BaseException as exc:
         recording_error = exc
     # Custody is mandatory even when the recording supplier raises. A shutdown
