@@ -179,8 +179,7 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
 
  it('creates an opt-in encrypted movie using protected host route, never plaintext creation',async()=>{
   const sent=[];
-  const secure={...MOVIE,encrypted:true,revision:0,scenes:[],
-    screenplay:'',idea:'A private film'};
+  const secure={...MOVIE,encrypted:true,revision:0,idea:'A private film'};
   vi.stubGlobal('fetch',vi.fn(async(url,options={})=>{
     sent.push({url,method:options.method||'GET',data:options.body});
     let data={};
@@ -203,7 +202,8 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   fireEvent.click(screen.getByRole('button',{name:'Next →'}));
   await waitFor(()=>expect(sent.some(x=>x.url==='/api/projects/encrypted'&&x.method==='POST')).toBe(true));
   expect(sent.some(x=>x.url==='/api/projects'&&x.method==='POST')).toBe(false);
-  expect(screen.getByText(/Encrypted movie/)).toBeTruthy();
+  await waitFor(()=>expect(screen.getByText(/Encrypted movie/)).toBeTruthy());
+  fireEvent.click(screen.getByRole('button',{name:/Film Scenes/}));
   expect(screen.getByRole('button',{name:/Save Shot Suggestions/}).disabled).toBe(true);
  });
 
