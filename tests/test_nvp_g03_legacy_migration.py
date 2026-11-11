@@ -83,6 +83,46 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertFalse(report["full_film_cutover_authorized"])
         self.assert_untouched()
 
+    def test_real_global_worker_sqlite_is_classified_without_assuming_custody(self):
+        import sqlite3
+        journal=self.root/"worker-service"/"worker_jobs.sqlite3"
+        journal.parent.mkdir()
+        db=sqlite3.connect(journal)
+        try:
+            db.execute("""CREATE TABLE job_project_index(
+                job_id TEXT PRIMARY KEY,project_id TEXT NOT NULL)""")
+            db.execute("""CREATE TABLE worker_jobs(
+                job_id TEXT PRIMARY KEY,spec_json TEXT,state TEXT)""")
+            db.execute("INSERT INTO job_project_index VALUES (?,?)",
+                       ("job-owner",self.pid))
+            db.execute("INSERT INTO job_project_index VALUES (?,?)",
+                       ("job-foreign","f"*32))
+            db.execute("INSERT INTO worker_jobs VALUES (?,?,?)",
+                       ("job-owner",'{"film":"private"}',"RUNNING"))
+            db.commit()
+        finally:
+            db.close()
+        report=self.migration.inspect(self.pid)
+        evidence=report["global_worker_journal_provenance"]
+        self.assertEqual(len(evidence),1)
+        self.assertEqual(evidence[0]["format"],"sqlite")
+        self.assertEqual(evidence[0]["matching_project_rows"],1)
+        self.assertIn("worker_jobs",evidence[0]["unclassified_tables"])
+        self.assertFalse(evidence[0]["live_worker_custody_proved"])
+        self.assertFalse(evidence[0]["safe_to_cutover"])
+        self.assertNotIn("private",str(report))
+        self.assert_untouched()
+        # Changing the global journal invalidates the reviewed inventory.
+        previous=report["inventory_sha256"]
+        db=sqlite3.connect(journal)
+        try:
+            db.execute("UPDATE worker_jobs SET state='SUCCEEDED'")
+            db.commit()
+        finally:
+            db.close()
+        self.assertNotEqual(self.migration.inspect(self.pid)["inventory_sha256"],
+                            previous)
+
     def test_unknown_global_sql_tables_are_reported_not_hidden(self):
         with self.studio._connection() as db:
             db.execute("CREATE TABLE migration_unknown_global_notes(data TEXT)")
