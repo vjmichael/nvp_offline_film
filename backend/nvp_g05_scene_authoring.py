@@ -627,9 +627,11 @@ class G05SceneAuthoring:
         if _sha(record["usd_layer"])!=record["usd_sha256"]:
             raise RuntimeError("A saved scene has been altered")
         plan=json.loads(record["plan_json"])
-        _validate(plan,source) if head["source_sha256"]==source["scene_source_sha256"] else None
         if head["source_sha256"]==source["scene_source_sha256"]:
-            _reopen_usd(record["usd_layer"],plan)
+            _validate(plan,source)
+        # An older stage can be displayed for reconciliation only after its
+        # original native geometry has independently reopened successfully.
+        _reopen_usd(record["usd_layer"],plan)
         versions=db.execute("""SELECT revision,status,created_at
             FROM g05_scene_versions WHERE project_id=? AND scene_id=?
             ORDER BY revision DESC LIMIT 20""",
@@ -721,7 +723,10 @@ class G05SceneAuthoring:
                 raise RuntimeError("Stage changed; reopen before reconciling")
             if head["source_sha256"]==source["scene_source_sha256"]:
                 raise RuntimeError("This stage already matches the current screenplay")
+            if _sha(record["usd_layer"])!=record["usd_sha256"]:
+                raise RuntimeError("Earlier stage bytes changed; do not reuse this arrangement")
             old=json.loads(record["plan_json"])
+            _reopen_usd(record["usd_layer"],old)
             old_ids={o["id"] for o in old.get("objects",[])}
             actors={p["actor_id"] for p in source["cast"]}
             preserved=[copy.deepcopy(o) for o in old["objects"]
@@ -785,7 +790,7 @@ class G05SceneAuthoring:
                     role="actor";shape="cylinder";scale=[.62,.62,1.9]
                     color="#b4a2c9";actor_id=selected["actor_id"]
                 else:
-                    if preset not in PRESETS:
+                    if type(preset) is not str or preset not in PRESETS:
                         raise ValueError("Choose an available scene object")
                     label,role,shape,scale,color=PRESETS[preset]
                     actor_id=None
@@ -844,7 +849,9 @@ class G05SceneAuthoring:
                         raise ValueError("A scene needs one camera")
                     objects.remove(item)
             elif operation=="weather":
-                if set(details)!={"weather"} or details["weather"] not in WEATHER:
+                if (set(details)!={"weather"} or
+                        type(details["weather"]) is not str or
+                        details["weather"] not in WEATHER):
                     raise ValueError("Choose fog, snow, rain, clouds or clear sky")
                 plan["setting"]["weather"]=details["weather"]
             elif operation=="daylight":
