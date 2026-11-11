@@ -484,6 +484,14 @@ def verify_movie(data,expected_frames,*,expected_sha=None):
         if tag==b"00dc":
             if not raw.startswith(b"\xff\xd8") or not raw.endswith(b"\xff\xd9"):
                 raise RuntimeError("AVI picture chunk is not JPEG")
+            # Decode EVERY recorded picture in an independently supervised
+            # verifier process. Header-only JPEG checks cannot satisfy
+            # the G08 proof that the complete movie is actually playable.
+            with Image.open(BytesIO(raw)) as decoded:
+                decoded.load()
+                if decoded.size!=(WIDTH,HEIGHT) or decoded.mode not in (
+                        "RGB","YCbCr","L"):
+                    raise RuntimeError("One filmed picture could not be decoded")
             frames+=1
             if first is None:first=raw
             last=raw
@@ -497,12 +505,8 @@ def verify_movie(data,expected_frames,*,expected_sha=None):
         raise RuntimeError("Movie frames and sound are not continuous")
     if struct.unpack_from("<I",data,idx+4)[0]!=chunk_count*16:
         raise RuntimeError("Movie index is incomplete")
-    # Actual native JPEG decoding, not just marker inspection.
-    for raw in (first,last):
-        with Image.open(BytesIO(raw)) as image:
-            image.load()
-            if image.size!=(WIDTH,HEIGHT):
-                raise RuntimeError("Decoded movie picture has the wrong resolution")
+    # All picture frames have been decoded above, and every per-frame
+    # stereo PCM payload has been checked against the exact sample clock.
     return {"verified":True,"frames":frames,"audio_samples_per_channel":audio,
         "duration_seconds":frames/FPS,"sha256":sha256(data).hexdigest(),
         "bytes":len(data),"picture_codec":"MJPEG",
