@@ -888,10 +888,12 @@ def run_g03_protected_native_worker_smoke():
     """
     import secrets
     from backend.nvp_g03_live_store import LiveFilmStore
-    from backend.nvp_g03_protected_scene_supervisor import ProtectedSceneSupervisor
+    from backend.nvp_g03_protected_scene_supervisor import (
+        ProtectedSceneSupervisor,SYNTHETIC_SCENE_CI_USDA)
+    if os.environ.get("GITHUB_ACTIONS")!="true":
+        raise RuntimeError("Installed synthetic scene smoke requires CI; private film sandbox unavailable")
     _smoke_checkpoint("g03_protected_scene_worker_entered")
-    data=(b'#usda 1.0\n'
-          b'def Xform "Original" {}\n')
+    data=SYNTHETIC_SCENE_CI_USDA
     with tempfile.TemporaryDirectory(prefix="nvp-g03-protected-worker-") as tmp:
         root=Path(tmp)/"sealed"
         store=LiveFilmStore(root)
@@ -900,26 +902,27 @@ def run_g03_protected_native_worker_smoke():
         token="host-test-approval-"+secrets.token_hex(20)
         store.create(pid,"Synthetic protected original","", "", password)
         store.authorize(pid,password,token)
-        store.put_original(pid,token,"scene/original.usda",data,
+        store.put_original(pid,token,"original/scene.usda",data,
                            "model/vnd.usda")
         approval_id="ci-reviewed-synthetic-ticket-"+secrets.token_hex(16)
         tickets={approval_id}
         def reviewed(review_pid,source_name,target_name,ticket):
-            if (review_pid!=pid or source_name!="scene/original.usda" or
-                    target_name!="scene/three-camera-coverage.usda" or
+            if (review_pid!=pid or source_name!="original/scene.usda" or
+                    target_name!="review/camera-coverage.usda" or
                     ticket not in tickets):
                 return False
             tickets.remove(ticket)
             return True
         result=ProtectedSceneSupervisor(
             store,review_authority=reviewed).run(
-                pid,token,"scene/original.usda",
-                "scene/three-camera-coverage.usda",approval_id)
+                pid,token,"original/scene.usda",
+                "review/camera-coverage.usda",approval_id,
+                synthetic_ci_only=True)
         if not(result["encrypted_output"] and result["native_job_tree_exited"]):
             raise RuntimeError("Protected native worker lacked custody")
         from pxr import Sdf,Usd
-        source=store.get_original(pid,token,"scene/original.usda")
-        derived=store.get_original(pid,token,"scene/three-camera-coverage.usda")
+        source=store.get_original(pid,token,"original/scene.usda")
+        derived=store.get_original(pid,token,"review/camera-coverage.usda")
         if source != data:
             raise RuntimeError("Protected original was modified")
         check=Sdf.Layer.CreateAnonymous("smoke-verified.usda")
@@ -938,7 +941,7 @@ def run_g03_protected_native_worker_smoke():
         unlocked=LiveFilmStore(root)
         unlocked.authorize(pid,password,"fresh-authorized-"+secrets.token_hex(20))
         if unlocked.get_original(pid,list(unlocked._keys)[0],
-                                 "scene/three-camera-coverage.usda")!=derived:
+                                 "review/camera-coverage.usda")!=derived:
             raise RuntimeError("Native protected worker output lost after reopen")
         for f in root.rglob("*"):
             if f.is_file():
