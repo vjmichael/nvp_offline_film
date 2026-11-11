@@ -30,6 +30,12 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
         batch = recordings()
         if type(batch) is not list or not 1 <= len(batch) <= 32:
             raise ValueError("Recorder must return 1..32 original sound events")
+        # Freeze event dictionaries before shutdown invokes worker callbacks.
+        # Keep original PCM iterators: capture owns their bounded spooling and
+        # digest verification, while this bridge fixes metadata at handoff.
+        if any(type(event) is not dict for event in batch):
+            raise ValueError("Recorder events must be typed dictionaries")
+        batch = [dict(event) for event in batch]
     except BaseException as exc:
         recording_error = exc
     # Custody is mandatory even when the recording supplier raises. A shutdown
