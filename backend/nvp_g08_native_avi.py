@@ -477,7 +477,10 @@ def render_film(assembly,output,*,cancel=None,progress=None):
     result["profile"]=PROFILE
     result["approved_look_sha256"]=assembly.get("production_looks_sha256")
     result["approved_production_look_applied"]=bool(production)
-    result["derived_usd_receipts"]=derived_receipts
+    result["derived_usd_scene_count"]=len(derived_receipts)
+    if production:
+        result["derived_usd_receipts_sha256"]=_sha(
+            _json(derived_receipts).encode("utf8"))
     result["original_sources_changed"]=False
     return result
 
