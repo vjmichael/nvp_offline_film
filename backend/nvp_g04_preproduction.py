@@ -478,6 +478,69 @@ class G04Preproduction:
             return self._view(db,movie)
         return self._execute(pid,op,mutate=True)
 
+    def scene_handoff(self,pid,scene_id):
+        """Host-only G05 input: exact source + director decisions, never execution.
+
+        The AI/scene constructor can infer a *proposed* visual plan from this
+        shape. It receives no keys, filesystem paths, worker API tokens,
+        unreviewed model assertions or permission to publish/film.
+        """
+        if type(scene_id) is not str or not SCENE_ID.fullmatch(scene_id):
+            raise ValueError("Select a current movie scene")
+        library=self.view(pid)
+        scene=next((x for x in library["scenes"] if x["id"]==scene_id),None)
+        if scene is None:raise KeyError("Film scene is not current")
+        approved=[x for x in library["bible"]["facts"]
+                  if x["scene_id"]==scene_id]
+        approved_by_kind={}
+        for fact in approved:
+            approved_by_kind.setdefault(fact["category"],[]).append(fact["value"])
+        director=scene["notes"]
+        unresolved=[person["source_cue"] for person in scene["cast"]
+                    if person.get("needs_review")]
+        # Never interpret a generic VOICE or GUARD as an automatically
+        # identified real character or a filmable dialogue performance.
+        return {
+            "format":"nvp.g04.g05_scene_handoff.v1",
+            "project_id":pid,"scene_id":scene_id,
+            "script_revision":library["screenplay_revision"],
+            "scene_source_sha256":scene["source_sha256"],
+            "original_script_sha256":scene["script_source_sha256"],
+            "director_notes_revision":scene["notes_revision"],
+            "source_line_range":scene["script_lines"],
+            "scene_name":scene["heading"],
+            "creative_source":scene["origin"],
+            "environment":{
+                "interior_exterior":scene["interior_exterior"],
+                "location":director["location"] or scene["location"],
+                "time_of_day":director["time_of_day"] or scene["time_of_day"],
+                "era":director["era"],
+                "season":director["season"],
+                "weather":director["weather"]},
+            "director_intent":{
+                key:director[key] for key in ("description","action",
+                                              "dialogue","director_note")},
+            "cast":[{"actor_id":person["actor_id"],"name":person["name"],
+                     "origin":person["origin"]}
+                    for person in scene["cast"] if person["actor_id"]],
+            "dialogue":[{"speaker":line["speaker"],
+                         "actor_id":line["actor_id"],
+                         "source_line":line["line_number"],
+                         "original_text":line["line"]}
+                        for line in scene["dialogue"]],
+            "approved_production_facts":approved_by_kind,
+            "approved_props":approved_by_kind.get("prop",[]),
+            "continuity_review":[item["note"]
+                for item in library["bible"]["continuity"]
+                if item["scene_id"]==scene_id],
+            "unresolved_speaker_cues":unresolved,
+            "unresolved_questions":scene["questions"],
+            "model_proposals_automatically_accepted":False,
+            "scene_geometry_generated":False,
+            "worker_execution_authorized":False,
+            "digital_take_frozen":False,
+        }
+
     def add_scene(self,pid,expected_screenplay_revision):
         def op(db,movie):
             if movie["revision"]!=expected_screenplay_revision:
