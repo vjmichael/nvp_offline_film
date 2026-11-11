@@ -199,7 +199,7 @@ function LookPreview({objects,events,second,views,weather,daylight,onContext}){
       but the original performance and camera settings remain saved.</p>}
   </div>;
 }
-function TimeLine({duration,events,position,onChange,playing,onPlay}){
+function TimeLine({duration,events,audio=[],position,onChange,playing,onPlay}){
   return <div className="director-film-timeline">
     <div className="director-film-time-head"><strong>Performance timeline</strong>
       <span>{Number(position).toFixed(1)} / {Number(duration).toFixed(1)} seconds</span></div>
@@ -215,6 +215,11 @@ function TimeLine({duration,events,position,onChange,playing,onPlay}){
         key={e.id} style={{left:(e.start_seconds/duration*100)+'%',
           width:Math.max(1.8,(e.end_seconds-e.start_seconds)/duration*100)+'%'}}
         title={e.kind+' at '+e.start_seconds+' seconds}/>)}
+      {audio.map((clip,index)=><div className="director-film-audio-mark"
+        key={clip.clip_id||index}
+        style={{left:(clip.start_seconds/duration*100)+'%',
+          width:Math.max(1.8,(clip.duration_seconds/duration*100))+'%'}}
+        title={'Original sound from '+clip.start_seconds+' seconds'}/>)}
     </div>
   </div>;
 }
@@ -247,6 +252,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   const [playing,setPlaying]=useState(false);
   const [recordSession,setRecordSession]=useState(null);
   const sessionRef=useRef(null);
+  const recordStartRef=useRef(0);
   const [micActor,setMicActor]=useState('');
   const [selectedClips,setSelectedClips]=useState([]);
   const [clipStarts,setClipStarts]=useState({});
@@ -349,6 +355,12 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   const clips=film?.audio_clips||[];
   const takeId=take?.take_id||film?.takes?.[0]?.id||null;
   const filmEvents=take?.events||film?.events||[];
+  const previewDuration=take?.duration_seconds||film?.duration_seconds||30;
+  const currentAudio=take?.original_audio||selectedClips.map(id=>{
+    const clip=clips.find(c=>c.id===id);
+    return {clip_id:id,start_seconds:Number(clipStarts[id]||0),
+      duration_seconds:clip?.seconds||0};
+  });
 
   async function perform(task,ok){
     if(busyRef.current)return;
@@ -399,6 +411,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
     perform(async()=>{
       const opened=await call(endpoint+'/microphone/start','POST',{
         actor_id:micActor||null});
+      recordStartRef.current=time;
       sessionRef.current={session_id:opened.session_id,endpoint};
       setRecordSession(opened);
       return opened;
@@ -412,6 +425,8 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
       sessionRef.current=null;setRecordSession(null);
       const updated=await call(endpoint);setFilm(updated);
       setSelectedClips(x=>[...x,result.clip_id]);
+      setClipStarts(x=>({...x,[result.clip_id]:
+        String(Number(recordStartRef.current.toFixed(1)))}));
       return result;
     },'Original sound recorded and saved. You can include it in a Take.');
   }
@@ -549,11 +564,15 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
       Create a scene in Set Up Scenes to start filming.</p>}
     {film&&<>
       {!film.work_current&&<div className="director-film-warning">
-        The approved scene changed. Start a new performance draft to use the
-        latest arrangement. Earlier directions and Takes remain preserved.
-        <button className="film-secondary" onClick={retake} disabled={busy}>
-          Start Fresh Performance</button>
-      </div>}
+        {film.stage_ready?
+          'The approved scene changed. Begin a new performance draft. Your earlier work remains safe.':
+          'Your visual scene needs approval before you can record a new performance. Earlier Takes remain available.'}
+        {film.stage_ready?<button className="film-secondary"
+          onClick={retake} disabled={busy||!!recordSession}>
+          Start Fresh Performance</button>:
+          <button className="film-secondary" onClick={onSetUpScenes}>
+            Review Visual Scene</button>}
+      </div>
       <div className="director-film-reel" ref={reelRef}>
         <div className="director-film-reel-heading">
           <h3>Scene preview</h3>
@@ -562,10 +581,10 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
         </div>
         <LookPreview objects={objects} events={filmEvents} second={time}
           views={take?views:standardFrames}
-          weather={stage?.setting?.weather||'clear'}
-          daylight={stage?.setting?.daylight||'day'}
+          weather={take?.stage_setting?.weather||stage?.setting?.weather||'clear'}
+          daylight={take?.stage_setting?.daylight||stage?.setting?.daylight||'day'}
           onContext={contextAt}/>
-        <TimeLine duration={film.duration_seconds} events={filmEvents}
+        <TimeLine duration={previewDuration} events={filmEvents} audio={currentAudio}
           position={time} onChange={t=>{setTime(t);setPlaying(false)}}
           playing={playing} onPlay={()=>setPlaying(x=>!x)}/>
         {notePopup&&<div className="director-film-context"
