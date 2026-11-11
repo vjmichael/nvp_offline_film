@@ -115,7 +115,8 @@ class G08MovieExporter:
             # Protected movies must never have their plaintext USD/PCM staged
             # by an ordinary user-privileged movie worker or disk exporter.
             raise PermissionError(
-                "This protected movie needs the sealed export worker before delivery")
+                "Secure movie delivery is not yet available on this installation. " +
+                "Your original film remains protected.")
 
     def reconcile(self):
         with self._guard:
@@ -297,10 +298,8 @@ class G08MovieExporter:
             self._set(pid,job,"verifying",progress=record["expected_frames"],
                       sha=actual_sha,size=partial.stat().st_size,
                       expected={"rendering"})
-            # No UI delivery until a separate independently launched verifier
-            # decodes and audits the native media stream.
-            os.replace(partial,final)
-            _fsync_folder(folder)
+            # No final movie name is published before an independent
+            # verifier has decoded and inspected the complete candidate.
             record["output_sha256"]=actual_sha
             self._run_worker("verify",pid,job,folder,record)
             verified=_receipt(folder/(job+".verify.json"))
@@ -313,9 +312,16 @@ class G08MovieExporter:
             with self._guard:
                 if job in self._revoked:raise InterruptedError()
             self._check_movie(pid,token)
+            # No-overwrite publish on the SAME filesystem. A hostile
+            # preexisting filename or link can never be silently replaced.
+            if final.exists() or final.is_symlink():
+                raise RuntimeError("A finished movie path is already occupied")
+            os.link(partial,final,follow_symlinks=False)
+            _fsync_folder(folder)
             self._set(pid,job,"completed",progress=record["expected_frames"],
                       sha=actual_sha,size=verified["bytes"],receipt=verified,
                       expected={"verifying"})
+            partial.unlink(missing_ok=True)
         except InterruptedError:
             try:
                 with self._db() as db:
