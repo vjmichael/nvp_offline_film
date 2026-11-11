@@ -263,7 +263,8 @@ def _initial_plan(handoff):
                 "scene_sha256":handoff["scene_source_sha256"],
                 "script_revision":handoff["script_revision"],
                 "notes_revision":handoff["director_notes_revision"],
-                "original_script_sha256":handoff["original_script_sha256"]},
+                "original_script_sha256":handoff["original_script_sha256"],
+                "original_line_range":handoff["source_line_range"]},
             "scene_name":handoff["scene_name"],
             "visual_style":style,
             "setting":{"location":env["location"],
@@ -563,6 +564,20 @@ class G05SceneAuthoring:
         approved={}
         for item in facts:
             approved.setdefault(item["category"],[]).append(item["value"])
+        # Older approved Story Bible prop entities retain their identity.
+        # Link only the ones evidenced by this exact original scene SHA.
+        tables={row[0] for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if {"bible_entities","bible_scene_links"}<=tables:
+            for item in db.execute("""SELECT e.name FROM bible_entities e
+                JOIN bible_scene_links l ON l.entity_id=e.id AND
+                    l.project_id=e.project_id
+                WHERE e.project_id=? AND e.kind='prop'
+                  AND l.scene_id=? AND l.scene_sha=?
+                ORDER BY e.name""",(movie["id"],scene_id,
+                                 scene["script_source_sha256"] or "")):
+                approved.setdefault("prop",[]).append(item["name"])
+        approved["prop"]=list(dict.fromkeys(approved.get("prop",[])))
         return {"format":"nvp.g04.g05_scene_handoff.v1",
             "scene_id":scene_id,"project_id":movie["id"],
             "scene_source_sha256":scene["source_sha256"],
