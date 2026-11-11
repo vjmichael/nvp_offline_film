@@ -1,6 +1,7 @@
 """Director-facing G09-A scene finishing, no technical asset/worker surface."""
 from __future__ import annotations
 from fastapi import HTTPException,Request
+from fastapi.responses import Response
 from pydantic import BaseModel,Field
 from backend.nvp_g09_environment import G09Environment
 
@@ -51,6 +52,14 @@ def mount_g09_routes(app,studio,live_films,cookie_name):
     def look(project_id:str,take_id:str,request:Request):
         return _safe(lambda:service(project_id,request).view(project_id,take_id))
     routes("GET","{take_id}",look)
+
+    def preview(project_id:str,take_id:str,request:Request):
+        picture=_safe(lambda:service(project_id,request).preview(
+            project_id,take_id))
+        return Response(picture,media_type="image/jpeg",headers={
+            "Cache-Control":"private, no-store, max-age=0",
+            "X-Content-Type-Options":"nosniff"})
+    routes("GET","{take_id}/preview",preview)
 
     def change(project_id:str,take_id:str,request:Request,payload:LookChange):
         return _safe(lambda:service(project_id,request).edit(
