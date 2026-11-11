@@ -143,7 +143,7 @@ class LegacyFilmMigration:
                         not isinstance(ddl,str) or len(ddl)>1024*1024):
                     raise MigrationRefused("Legacy schema has unreviewed DDL")
                 if kind=="table" and not re.match(
-                        r"^CREATE\\s+TABLE\\b",ddl,re.IGNORECASE):
+                        r"^CREATE\s+TABLE\b",ddl,re.IGNORECASE):
                     raise MigrationRefused(
                         "Legacy virtual/extension table needs independent converter")
                 schema.append({"type":kind,"name":name,"table":owner,"sql":ddl})
