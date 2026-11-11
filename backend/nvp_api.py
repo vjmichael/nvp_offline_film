@@ -1,5 +1,6 @@
 """Truthful local NVP planning API and optional local screenplay-writing proposals."""
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from backend.nvp_studio import Studio
 from backend.nvp_screenplay_review import ScreenplayContinuityReview
@@ -9,10 +10,65 @@ from backend.nvp_model_service import discover_models, writer_for
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_render_preflight import preflight_scene
 import uuid
+import re
+from backend.nvp_project_access import ProjectAccess, COOKIE, SESSION_SECONDS
 
 app = FastAPI(title="NVP — Your movie, your way", version="0.3.0-creative-foundation")
 studio = Studio()
 resource_activity = TaskLedger()
+_film_access = None
+_film_access_db = None
+
+
+def film_access():
+    """Attach lock state to this exact Studio DB, including test DB swaps."""
+    global _film_access, _film_access_db
+    source = str(studio.db_path)
+    if _film_access is None or _film_access_db != source:
+        _film_access = ProjectAccess(source)
+        _film_access_db = source
+    return _film_access
+
+
+@app.middleware("http")
+async def film_project_access_guard(request: Request, call_next):
+    """All project-id URL families share the same authoritative lock gate."""
+    path = request.url.path
+    parts = path.split("/")
+    if (len(parts) >= 4 and parts[:3] == ["", "api", "projects"] and
+            re.fullmatch(r"[a-f0-9]{32}", parts[3])):
+        project_id = parts[3]
+        action = parts[4] if len(parts) == 5 else ""
+        if action in {"unlock", "protect"}:
+            if request.headers.get("x-nvp-director") != "1":
+                return JSONResponse({"detail": "Film action requires the local director UI"},
+                                    status_code=403)
+            return await call_next(request)
+        locks = film_access()
+        try:
+            protected = locks.protected(project_id)
+            authorized = locks.permitted(project_id, request.cookies.get(COOKIE),
+                                         renew=protected)
+        except KeyError:
+            return JSONResponse({"detail": "Movie not found"}, status_code=404)
+        if not authorized:
+            return JSONResponse({"detail": "This movie is locked. Unlock it to continue."},
+                                status_code=423)
+        if (protected and request.method not in {"GET", "HEAD", "OPTIONS"} and
+                request.headers.get("x-nvp-director") != "1"):
+            return JSONResponse({"detail": "Film action requires the local director UI"},
+                                status_code=403)
+        response = await call_next(request)
+        if protected:
+            # A renewed HTTP-only cookie expires after an idle session.
+            token = request.cookies.get(COOKIE)
+            if token and locks.permitted(project_id, token):
+                response.set_cookie(COOKIE, token, httponly=True,
+                                    samesite="strict", secure=request.url.scheme == "https",
+                                    max_age=SESSION_SECONDS, path="/api")
+        return response
+    return await call_next(request)
+
 
 
 @app.get('/api/system/activity')
@@ -62,8 +118,49 @@ def status():
 
 
 @app.get("/api/projects")
-def projects():
-    return studio.list_projects()
+def projects(request: Request):
+    return film_access().public_projects(studio.list_projects(), request.cookies.get(COOKIE))
+
+
+class FilmPassphrase(BaseModel):
+    passphrase: str = Field(min_length=12, max_length=256)
+
+
+@app.post("/api/projects/{project_id}/protect")
+def protect_movie(project_id: str, payload: FilmPassphrase):
+    try:
+        return film_access().protect(project_id, payload.passphrase)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    except PermissionError:
+        raise HTTPException(status_code=409, detail="Movie already locked")
+
+
+@app.post("/api/projects/{project_id}/unlock")
+def unlock_movie(project_id: str, payload: FilmPassphrase, request: Request):
+    try:
+        token = film_access().unlock(project_id, payload.passphrase)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Unable to unlock movie")
+    response = JSONResponse({"locked": False, "access": "unlocked"})
+    response.set_cookie(COOKIE, token, httponly=True, samesite="strict",
+                        secure=request.url.scheme == "https",
+                        max_age=SESSION_SECONDS, path="/api")
+    return response
+
+
+@app.post("/api/projects/{project_id}/lock")
+def lock_movie(project_id: str, request: Request):
+    try:
+        result = film_access().lock(project_id, request.cookies.get(COOKIE))
+    except (PermissionError, KeyError):
+        raise HTTPException(status_code=403, detail="Unable to lock movie")
+    response = JSONResponse(result)
+    response.delete_cookie(COOKIE, path="/api")
+    return response
+
 
 
 @app.post("/api/projects", status_code=201)
