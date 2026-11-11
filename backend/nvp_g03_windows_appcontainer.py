@@ -16,6 +16,7 @@ import re
 import secrets
 import subprocess
 import sys
+import time
 
 class AppContainerFailure(RuntimeError):
     pass
@@ -175,8 +176,25 @@ class AppContainerJobProcess:
     def close(self):
         if self._worker is None:return
         try:
-            if self._worker.poll() is None:
-                self._worker.terminate_tree()
+            # A direct renderer exit is not proof that an escaped descendant
+            # has died. Query the actual kernel Job and reject publication
+            # until every associated process has left.
+            import win32job
+            job=self._worker._job
+            if job is None:
+                raise AppContainerFailure("Kernel Job custody handle missing")
+            info=win32job.QueryInformationJobObject(
+                job,win32job.JobObjectBasicAccountingInformation)
+            if info["ActiveProcesses"]:
+                win32job.TerminateJobObject(job,13)
+                deadline=time.monotonic()+12
+                while time.monotonic()<deadline:
+                    info=win32job.QueryInformationJobObject(
+                        job,win32job.JobObjectBasicAccountingInformation)
+                    if info["ActiveProcesses"]==0:break
+                    time.sleep(.03)
+                if info["ActiveProcesses"]!=0:
+                    raise AppContainerFailure("AppContainer descendant process still active")
             self._worker.close()
         finally:
             self._worker=None
