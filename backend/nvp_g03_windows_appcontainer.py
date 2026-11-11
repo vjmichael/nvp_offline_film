@@ -223,8 +223,8 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
             if not kernel.CreateProcessW(str(exe),argv,None,None,True,flags,
                    C.cast(block,W.LPVOID),str(work),C.byref(si),C.byref(pi)):
                 _check("CreateProcessW AppContainer")
-            ph=pywintypes.HANDLE(int(pi.hProcess))
-            thread=pywintypes.HANDLE(int(pi.hThread))
+            ph=pywintypes.HANDLE(pi.hProcess.value)
+            thread=pywintypes.HANDLE(pi.hThread.value)
             job=win32job.CreateJobObject(None,"NVP-AC-"+secrets.token_hex(10))
             info=win32job.QueryInformationJobObject(job,win32job.JobObjectExtendedLimitInformation)
             info["BasicLimitInformation"]["LimitFlags"]|=0x2000|0x200
@@ -235,7 +235,7 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
                 raise AppContainerFailure("Suspended child not in kernel Job")
             if win32process.ResumeThread(thread)==0xffffffff:
                 raise AppContainerFailure("AppContainer child resume failed")
-            wrapped=WindowsJobProcess(job,ph,int(pi.dwProcessId))
+            wrapped=WindowsJobProcess(job,ph,pi.dwProcessId)
             ph=None;job=None
             return AppContainerJobProcess(wrapped,profile,sid,grants,userenv)
         finally:
