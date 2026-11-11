@@ -113,6 +113,41 @@ class LegacyMigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(MigrationRefused,"inventory changed"):
             reopen_known_originals(root,self.pid,password,altered)
 
+    @unittest.skipUnless(sys.platform=="win32","Original Windows DPAPI source required")
+    def test_fresh_process_reconstructs_original_shots_history_pcm_and_usd(self):
+        import subprocess
+        with self.studio._connection() as db:
+            db.execute("""INSERT INTO shots(project_id,scene_id,shot_id,framing,
+                subject,intent,notes,status,updated_at) VALUES (?,?,?,?,?,?,?,?,?)""",
+                (self.pid,"old-scene","camera-A","Wide","ActorID:1",
+                 "Preserve staging","Original note","planned","2026-11-10"))
+            db.execute("""INSERT INTO screenplay_revisions
+                (project_id,revision,screenplay,saved_at,reason)
+                VALUES (?,?,?,?,?)""",(self.pid,0,SCENE,"2026-11-10","original"))
+        self.original=self.studio.get_project(self.pid)
+        evidence=self.migration.inspect(self.pid)
+        password="G03 full historical original-film reconstruction passphrase"
+        self.migration.stage_encrypted_candidate(
+            self.pid,password,evidence["inventory_sha256"])
+        request={"root":str(self.root/"nvp_g03_migration_candidates"),
+                 "pid":self.pid,"passphrase":password,"inventory":evidence}
+        result=subprocess.run(
+            [sys.executable,"-m","tools.nvp_g03_full_recovery_readback"],
+            input=json.dumps(request),capture_output=True,text=True,timeout=90)
+        self.assertEqual(result.returncode,0,result.stderr)
+        receipt=json.loads(result.stdout)
+        self.assertTrue(receipt["reopened_studio_and_filmindex"])
+        self.assertTrue(receipt["actual_sqlite_schema_and_fk_verified"])
+        self.assertGreaterEqual(receipt["reconstructed_sql_schema_objects"],5)
+        self.assertGreaterEqual(receipt["reconstructed_project_rows"],4)
+        self.assertEqual(receipt["authenticated_original_assets"],2)
+        self.assertEqual(receipt["reopened_pcm_blobs"],1)
+        self.assertFalse(receipt["source_cutover_authorized"])
+        self.assertFalse(receipt["plaintext_restored_to_original_location"])
+        self.assertEqual(receipt["reviewed_inventory_sha256"],
+                         evidence["inventory_sha256"])
+        self.assert_untouched()
+
     def test_recovery_verifier_refuses_edited_review_evidence(self):
         from backend.nvp_g03_candidate_recovery import _verified_inventory
         review=self.migration.inspect(self.pid)
