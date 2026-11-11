@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from backend.nvp_studio import Studio
 from backend.nvp_g04_preproduction import G04Preproduction
+from backend.nvp_g05_scene_authoring import G05SceneAuthoring
 from backend.nvp_screenplay_review import ScreenplayContinuityReview
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
@@ -81,7 +82,8 @@ async def film_project_access_guard(request: Request, call_next):
                 request.method=="GET" and tail in {"live","live/recovery"}) or (
                 request.method=="PUT" and tail=="live/screenplay") or (
                 request.method=="POST" and tail=="live/source") or (
-                tail=="live/preproduction" or tail.startswith("live/preproduction/"))
+                tail=="live/preproduction" or tail.startswith("live/preproduction/")) or (
+                tail.startswith("live/stage/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -441,6 +443,61 @@ def g04_review_ai(project_id:str,proposal_id:str,request:Request,
     return run(lambda:_director_preproduction(project_id,request).decide(
         project_id,proposal_id,payload.decision,
         payload.expected_screenplay_revision,payload.approved_value))
+
+
+# G05: model and UI may draft a native OpenUSD stage but cannot run
+# rendering, filmmaking workers, nor freeze a Take. All project identity,
+# G04 source and director approval checks remain native-host decisions.
+class G05Revision(BaseModel):
+    expected_revision: int = Field(ge=0,le=1000000)
+
+class G05Change(G05Revision):
+    operation: str = Field(min_length=2,max_length=20)
+    details: dict
+
+class G05Undo(G05Revision):
+    source_revision: int = Field(ge=1,le=1000000)
+
+def _director_scene_authoring(project_id: str,request: Request):
+    secured=live_films().exists(project_id)
+    return G05SceneAuthoring(studio,live=live_films() if secured else None,
+                            token=request.cookies.get(COOKIE) if secured else None)
+
+@app.get("/api/projects/{project_id}/stage/{scene_id}")
+@app.get("/api/projects/{project_id}/live/stage/{scene_id}")
+def g05_stage_read(project_id:str,scene_id:str,request:Request):
+    return run(lambda:_director_scene_authoring(project_id,request)
+               .view(project_id,scene_id))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/generate")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/generate")
+def g05_stage_generate(project_id:str,scene_id:str,request:Request,
+                       payload:G05Revision):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .generate(project_id,scene_id,payload.expected_revision))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/edit")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/edit")
+def g05_stage_edit(project_id:str,scene_id:str,request:Request,
+                   payload:G05Change):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .edit(project_id,scene_id,payload.expected_revision,
+              payload.operation,payload.details))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/restore")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/restore")
+def g05_stage_restore(project_id:str,scene_id:str,request:Request,
+                      payload:G05Undo):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .restore(project_id,scene_id,payload.expected_revision,
+                 payload.source_revision))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/approve")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/approve")
+def g05_stage_approve(project_id:str,scene_id:str,request:Request,
+                      payload:G05Revision):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .approve(project_id,scene_id,payload.expected_revision))
 
 
 @app.post("/api/projects/{project_id}/scenes/{scene_id}/shot-plan")
