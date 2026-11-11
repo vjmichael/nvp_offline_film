@@ -93,6 +93,16 @@ class LinuxFilmingSession:
             raise RuntimeError("Worker reaping exceeded filming shutdown deadline; bounded receipt refused")
         if self.child.returncode is None:
             raise RuntimeError("Worker wait returned without an exit status")
+        # The group can be repopulated while the direct worker is being reaped.
+        # A pre-wait empty observation is not a post-wait tree custody receipt.
+        receipt = self.custody.verify_still_empty()
+        if (not isinstance(receipt, dict)
+                or receipt.get("process_tree_custody_verified") is not True
+                or receipt.get("empty_group_verified") is not True
+                or receipt.get("scope") != "linux-cgroup-v2"):
+            raise RuntimeError("Post-reap kernel custody did not verify an empty filming group")
+        if time.monotonic() - started > timeout:
+            raise RuntimeError("Post-reap kernel verification exceeded filming shutdown deadline")
         return {**receipt, "worker_exit_verified": True,
                 "worker_returncode": self.child.returncode}
 
