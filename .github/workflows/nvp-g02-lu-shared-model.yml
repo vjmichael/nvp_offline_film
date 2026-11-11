@@ -1,0 +1,58 @@
+name: G02 Lu-hosted NVP contract (NOT installed Workspace acceptance)
+
+on:
+  push:
+    branches:
+      - nvp/g02-lu-shared-model-boundary-20261110
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nvp-lu-port:
+    name: G02 host scope/inference/cancel contract / ${{ matrix.os }} / Python ${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11', '3.13']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Pin exact candidate head and compile G02 port
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          python -m compileall -q backend/nvp_lu_g02_port.py backend/nvp_lu_workspace.py tests/test_lu_g02_film_port.py
+      - name: Strict source-only host scope, status, stream and draft tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_lu_g02_film_port.py' -v
+          python -m unittest discover -s tests -p 'test_lu_workspace.py' -v
+          python -m unittest discover -s tests -p 'test_lu_alpha_contract.py' -v
+      - name: Preserve strict no second model runtime / no FFmpeg in new adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          content=Path("backend/nvp_lu_g02_port.py").read_text("utf8")
+          for forbidden in ("import socket", "import subprocess", "urllib.request",
+                            "http.client", "import requests", "llama-server",
+                            "ffmpeg", "os.system", "shell=True"):
+              if forbidden in content:
+                  raise SystemExit("Forbidden native runtime or export dependency in Lu boundary: "+forbidden)
+          print("G02_SCOPE_ONLY_NO_MODEL_SERVER_NO_FFMPEG_PASS")
+          PY
+      - name: Acceptance scope banner
+        shell: bash
+        run: |
+          echo "PASS here means Python Lu-host contract tests ONLY."
+          echo "No external Lu Workspace mounted, no real GGUF, no Radeon VRAM or physical Windows acceptance."
