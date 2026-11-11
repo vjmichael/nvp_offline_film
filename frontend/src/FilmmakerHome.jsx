@@ -3,6 +3,7 @@ import LineNumberedTextarea from './LineNumberedTextarea.jsx';
 import DirectorSceneLibrary from './DirectorSceneLibrary.jsx';
 import DirectorScreenplayAssistant from './DirectorScreenplayAssistant.jsx';
 import DirectorFilmingStudio from './DirectorFilmingStudio.jsx';
+import DirectorExportFilm from './DirectorExportFilm.jsx';
 import './filmmaker-home.css';
 
 const PHASES = [
@@ -444,12 +445,11 @@ export default function FilmmakerHome() {
           <a className="film-primary film-open-editor" href={postUrl} target="_blank" rel="noopener noreferrer">Open Post-Production Window ↗</a>
           <p className="film-hint">Your original recordings remain unchanged when you open the editing window.</p>
         </section>}
-        {phase==='export'&&<section className="film-card">
-          <h2>Export Film</h2>
-          <p className="film-muted">A finished presentation will be generated here from approved Takes and editing decisions.</p>
-          <button className="film-primary" disabled>Export unavailable until filming and editing are connected</button>
-          <p className="film-hint">No finished movie has been exported yet.</p>
-        </section>}
+        {phase==='export'&&<DirectorExportFilm
+          key={project.id+':'+project.revision}
+          movie={project}
+          onEditFilm={()=>goPhase('edit')}
+          onFilmScenes={()=>goPhase('film')}/>
       </div>}
       {lockTarget&&<div className="film-modal-backdrop" role="dialog" aria-modal="true"
         aria-labelledby="film-lock-title" onKeyDown={keepDialogFocus}>
