@@ -150,6 +150,136 @@ def _preset(name,base_color):
         "atmosphere":{"density":fog,"color":sky}}
 
 
+def _preset_pieces(take_id,name):
+    """Bounded, deterministic cinematic set dressing around an existing Take.
+
+    This is authored EDITABLE 3D geometry, not a backdrop illustration.
+    No random network model or file-backed procedural executable is used.
+    All identities are stable within this frozen Take and chosen kit.
+    """
+    if name not in PRESETS:
+        raise ValueError("Choose a known environment")
+    pieces=[]
+    def add(key,label,shape,pos,size,color,kind="stone",
+            roughness=.72,metallic=0,detail=0):
+        stable="O_"+_sha((take_id+"\\0g09-kit:"+name+":"+key).encode("utf8"))[:12]
+        material={"color":color,"roughness":roughness,
+                  "metallic":metallic,"emission":0.,"kind":kind}
+        pieces.append({"id":stable,"name":"Environment · "+label,
+            "shape":shape,"position":[float(x) for x in pos],
+            "rotation":[0.,0.,0.],"scale":[float(x) for x in size],
+            "material":material,"lod":detail})
+    if name=="interior":
+        add("floor","Room floor","box",(0,0,-.3),(34,28,.35),"#92867a","wood")
+        add("rear","Back wall","box",(0,14,6),(34,.35,12),"#b0a597","plaster")
+        add("left","Left wall","box",(-17,0,6),(.3,28,12),"#9b958d","plaster")
+        add("right","Right wall","box",(17,0,6),(.3,28,12),"#9b958d","plaster")
+        add("door-post-l","Door frame","box",(-3,13.5,3),(.35,.45,6),
+            "#55443d","wood")
+        add("door-post-r","Door frame","box",(3,13.5,3),(.35,.45,6),
+            "#55443d","wood")
+        add("door-head","Door lintel","box",(0,13.5,6.1),(6,.4,.4),
+            "#55443d","wood")
+        for k,x in enumerate((-10,10)):
+            add("table"+str(k),"Room furniture","box",(x,5,1.2),
+                (3,1.7,.25),"#75614c","wood")
+    elif name=="city":
+        add("road","Roadway","box",(0,0,-.4),(32,90,.3),
+            "#373e45","stone",.9)
+        for i in range(24):
+            side=-1 if i%2==0 else 1
+            row=i//2
+            x=side*(21+(row%3)*3)
+            y=-39+row*7.1
+            height=8+(i*7)%25
+            add("building"+str(i),"City building "+str(i+1),"box",
+                (x,y,height/2),(8+(i%3)*2,6.6,height),
+                ["#68737c","#9a8d7e","#656e83","#a6a8a2"][i%4],
+                "stone",.68,.15,2 if row>8 else 1)
+        for i in range(7):
+            y=-24+i*8
+            add("streetlight"+str(i),"Street lamp","cylinder",
+                (14,y,4),(0.25,.25,8),"#6d737b","metal",.35,.65)
+    elif name=="forest":
+        add("earth","Forest floor","box",(0,0,-.38),(100,100,.2),
+            "#3e6041","earth",.98)
+        for i in range(24):
+            x=((i*37)%77)-38
+            y=((i*61)%83)-41
+            # Leave an actual clearable center for the original performer.
+            if abs(x)<9 and abs(y)<9:continue
+            height=7+(i*13)%12
+            add("trunk"+str(i),"Tree trunk","cylinder",
+                (x,y,height*.42),(.9,.9,height*.85),
+                "#6f5238","wood",.88,0,1 if abs(x)+abs(y)>45 else 0)
+            add("foliage"+str(i),"Tree canopy","cone",
+                (x,y,height*1.1),(5.8,5.8,10.),
+                ["#315d43","#49764b","#66874c"][i%3],
+                "foliage",.98,0,1 if abs(x)+abs(y)>45 else 0)
+    elif name=="desert":
+        add("sand","Desert floor","box",(0,0,-.55),(110,110,.25),
+            "#ccac77","earth",1.)
+        for i in range(20):
+            x=((i*31)%91)-45
+            y=((i*53)%91)-45
+            if abs(x)<10 and abs(y)<10:continue
+            add("dune"+str(i),"Sand dune","cone",(x,y,.7+(i%5)*.4),
+                (6+(i%4)*3,7+(i%3)*2,2.5+(i%5)),
+                "#ccaa70","earth",1.,0,1)
+        for i in range(7):
+            add("rock"+str(i),"Desert rock","sphere",
+                ((i*31)%57-28,(i*17)%53-26,.5),
+                (1+(i%3),1+(i%2),.9),"#8a786c","stone",.85)
+    elif name=="mountains":
+        add("stone","Mountain ground","box",(0,0,-.5),(110,110,.25),
+            "#868984","earth")
+        for i in range(18):
+            x=((i*47)%145)-72
+            y=25+((i*23)%80)
+            h=17+(i*19)%44
+            add("peak"+str(i),"Mountain ridge","cone",
+                (x,y,h*.4),(24+(i%5)*6,19+(i%3)*6,h),
+                ["#777f83","#a7abb0","#686f76"][i%3],
+                "stone",.93,0,2)
+    elif name=="coast":
+        add("beach","Beach","box",(0,-3,-.5),(90,48,.3),
+            "#d4bf8d","earth")
+        add("sea","Open water","box",(0,52,-.64),(160,72,.2),
+            "#4c8ca8","glass",.12,.2,1)
+        for i in range(8):
+            x=((i*29)%63)-31;y=((i*17)%38)-19
+            add("shore"+str(i),"Coastal rock","sphere",(x,y,1),
+                (2+(i%4),2,1.6),"#838b86","stone",.9)
+    elif name=="farmland":
+        add("field","Field soil","box",(0,0,-.5),(115,100,.25),
+            "#5f7950","earth")
+        for i in range(26):
+            x=((i*7)%27)-13
+            y=-42+(i*19)%91
+            if abs(x)<7 and abs(y)<9:continue
+            add("crop"+str(i),"Crop row","cone",(x,y,1.8),
+                (1.6,1.6,3.6),"#6f9850","foliage",1.,0,1)
+        for i in range(14):
+            side=1 if i%2==0 else -1
+            add("fence"+str(i),"Fence post","box",
+                (side*21,-36+(i//2)*12,1.4),(.25,.25,2.8),
+                "#8c7759","wood",.95,0,1)
+    elif name=="space":
+        for i in range(32):
+            x=((i*37)%115)-57;y=((i*19)%130)-65;z=((i*29)%61)-30
+            if abs(x)<8 and abs(y)<8 and abs(z)<8:continue
+            add("rock"+str(i),"Asteroid","sphere",(x,y,z),
+                (1+(i%7)*.7,1+(i%5)*.8,1+(i%4)*.7),
+                "#666e80","stone",.89,.1,2 if abs(z)>15 else 1)
+    elif name=="open":
+        add("ground","Landscape ground","box",(0,0,-.55),(110,110,.3),
+            "#728971","earth")
+    # original leaves the original environment and custom dressing intact.
+    if len(pieces)>MAX_ITEMS:
+        raise RuntimeError("Built-in set exceeded the scene budget")
+    return pieces
+
+
 def _default(take_id,take_sha,source):
     setting=source.get("stage_setting",{})
     source_style=setting.get("style")
@@ -296,12 +426,17 @@ class G09Environment:
             if operation=="preset":
                 if set(details)!={"preset"} or details["preset"] not in PRESETS:
                     raise ValueError("Choose a production environment")
-                name=details["preset"];previous=doc["set_pieces"]
+                name=details["preset"]
+                custom=[x for x in doc["set_pieces"] if
+                        not x["name"].startswith("Environment · ")]
+                generated=_preset_pieces(take_id,name)
+                if len(generated)+len(custom)>MAX_ITEMS:
+                    raise ValueError("This setting needs fewer custom objects")
                 doc.update(_preset(name,"#718fa8"))
                 doc["preset"]=name
-                # Existing authored decoration remains in place; a preset
-                # only changes the environment/weather/lighting, not props.
-                doc["set_pieces"]=previous
+                # Generated set objects are replaced by a new kit while
+                # director-added custom objects remain exactly intact.
+                doc["set_pieces"]=generated+custom
             elif operation=="light":
                 if set(details)!={"sun","atmosphere","sky","ground"}:
                     raise ValueError("Adjust the complete scene lighting")
