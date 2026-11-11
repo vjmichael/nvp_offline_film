@@ -87,6 +87,23 @@ function LookPreview({objects,events,second,views,weather,daylight,onContext}){
       scene.add(new THREE.AmbientLight(0xffffff,1.35));
       const sun=new THREE.DirectionalLight(0xffe4c4,2);
       sun.position.set(-7,-7,14);scene.add(sun);
+      // A bounded scenic cue. Original precipitation/wind remain semantic
+      // Film Time events authored by the native OpenUSD filming engine.
+      const particlePositions=new Float32Array(220*3);
+      for(let i=0;i<220;i++){
+        const n=i+1;
+        particlePositions[i*3]=((n*43)%97)/97*25-12.5;
+        particlePositions[i*3+1]=((n*71)%101)/101*30-15;
+        particlePositions[i*3+2]=((n*19)%73)/73*12+.5;
+      }
+      const particleGeometry=new THREE.BufferGeometry();
+      particleGeometry.setAttribute('position',
+        new THREE.BufferAttribute(particlePositions,3));
+      const particleMaterial=new THREE.PointsMaterial({
+        color:0xdde9f2,size:.075,transparent:true,opacity:.78});
+      const precipitation=new THREE.Points(particleGeometry,particleMaterial);
+      precipitation.visible=false;
+      scene.add(precipitation);
       for(const item of objects||[]){
         const group=new THREE.Group();
         group.userData.id=item.id;
@@ -127,7 +144,7 @@ function LookPreview({objects,events,second,views,weather,daylight,onContext}){
         renderer.setScissorTest(false);
       };
       engine.current={meshes,scene,renderer,views,events,second,
-        render,sun,cameras,root};
+        render,sun,cameras,root,precipitation};
       const rightClick=(e)=>{
         e.preventDefault();
         const state=engine.current;
@@ -164,6 +181,7 @@ function LookPreview({objects,events,second,views,weather,daylight,onContext}){
             node.geometry?.dispose();node.material?.dispose();
           });
         }
+        particleGeometry.dispose();particleMaterial.dispose();
         renderer.dispose();
         if(root.contains(renderer.domElement))root.removeChild(renderer.domElement);
         engine.current=null;
@@ -184,10 +202,26 @@ function LookPreview({objects,events,second,views,weather,daylight,onContext}){
     state.scene.background.set(dark?'#111626':
       daylight==='dusk'?'#806c83':'#789cb5');
     state.scene.fog=fog?new THREE.FogExp2(dark?0x1a2430:0xaabcc1,.045):null;
-    state.sun.intensity=dark?.5:daylight==='dusk'?1.3:2;
+    const light=current.find(x=>x.kind==='light');
+    state.sun.intensity=(dark?.5:daylight==='dusk'?1.3:2)*
+      (light?Math.max(.01,light.intensity):1);
+    const precip=current.find(x=>x.kind==='snow'||x.kind==='rain');
+    const weatherKind=precip?.kind||
+      (weather==='snow'||weather==='rain'?weather:'clear');
+    state.precipitation.visible=weatherKind==='snow'||weatherKind==='rain';
+    state.precipitation.material.color.set(
+      weatherKind==='snow'?'#eaf3fc':'#8eaac7');
+    state.precipitation.material.size=weatherKind==='snow'?.09:.045;
+    const wind=current.find(x=>x.kind==='wind');
     for(const item of objects){
       const group=state.meshes.get(item.id);
-      if(group)group.position.set(...positionAt(item,events,second));
+      if(group){
+        const pos=positionAt(item,events,second);
+        if(wind&&item.name.toLowerCase().includes('tree')){
+          pos[0]+=.07*wind.intensity*Math.sin(second*1.8+pos[0]);
+        }
+        group.position.set(...pos);
+      }
     }
     state.render();
   },[objects,events,second,views,weather,daylight]);
@@ -328,17 +362,18 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   useEffect(()=>{
     if(!film||!playing)return;
     const start=performance.now(),baseTime=time;
+    const duration=take?.duration_seconds||film.duration_seconds;
     let frame=0;
     const step=()=>{
-      const current=Math.min(film.duration_seconds,
+      const current=Math.min(duration,
         baseTime+(performance.now()-start)/1000);
       setTime(current);
-      if(current>=film.duration_seconds){setPlaying(false);return}
+      if(current>=duration){setPlaying(false);return}
       frame=requestAnimationFrame(step);
     };
     frame=requestAnimationFrame(step);
     return()=>cancelAnimationFrame(frame);
-  },[playing,film?.duration_seconds]);
+  },[playing,film?.duration_seconds,take?.duration_seconds]);
 
   const objects=take?.stage_objects||film?.stage_objects||[];
   const options=useMemo(()=>{
