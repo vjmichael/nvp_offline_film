@@ -148,6 +148,10 @@ class G04Preproduction:
             approved_value TEXT, model_receipt_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
             CHECK(status IN ('proposed','accepted','rejected')))""")
+        db.execute("""CREATE TABLE IF NOT EXISTS g04_scene_note_history(
+            project_id TEXT NOT NULL,scene_id TEXT NOT NULL,
+            revision INTEGER NOT NULL,notes_json TEXT NOT NULL,
+            saved_at TEXT NOT NULL,PRIMARY KEY(project_id,scene_id,revision))""")
         db.execute("""CREATE INDEX IF NOT EXISTS g04_by_scene
             ON g04_proposals(project_id,scene_id,created_at)""")
         db.execute("""CREATE TABLE IF NOT EXISTS g04_actor_bindings(
@@ -250,6 +254,12 @@ class G04Preproduction:
                 # review snapshot. Stale suggestions never silently survive
                 # changes to either surface.
                 source_sha=_sha(script_scene["text"]+"\x00"+_json(notes))
+                history=[{"revision":row["revision"],
+                          "notes":json.loads(row["notes_json"])}
+                         for row in db.execute("""SELECT revision,notes_json
+                            FROM g04_scene_note_history
+                            WHERE project_id=? AND scene_id=?
+                            ORDER BY revision DESC LIMIT 15""",(pid,sid))]
                 scenes.append({
                     "id":sid,"number":position,
                     "heading":script_scene["heading"],"origin":"script_derived",
@@ -263,6 +273,7 @@ class G04Preproduction:
                     "time_of_day":heading["time_of_day"],
                     "cast":cast,"dialogue":dialogue,
                     "notes":notes,"notes_revision":note_revision,
+                    "notes_history":history,
                     "script_revision":movie["revision"]
                 })
         else:
@@ -282,6 +293,12 @@ class G04Preproduction:
                 cast=[{"actor_id":_actor_id(pid,name),"name":name,
                        "origin":"creator_specified","role_type":"unspecified"}
                       for name in dict.fromkeys(performers)]
+                history=[{"revision":item["revision"],
+                          "notes":json.loads(item["notes_json"])}
+                         for item in db.execute("""SELECT revision,notes_json
+                            FROM g04_scene_note_history
+                            WHERE project_id=? AND scene_id=?
+                            ORDER BY revision DESC LIMIT 15""",(pid,sid))]
                 scenes.append({"id":sid,"number":record["position"],
                     "heading":("Scene %02d"%record["position"]),
                     "origin":"creator_specified","script_lines":None,
@@ -292,6 +309,7 @@ class G04Preproduction:
                     "time_of_day":notes["time_of_day"],
                     "cast":cast,"dialogue":[],"notes":notes,
                     "notes_revision":record["revision"],
+                    "notes_history":history,
                     "script_revision":movie["revision"]})
         return scenes
 
@@ -586,6 +604,11 @@ class G04Preproduction:
             if scene["notes_revision"]!=expected_notes_revision:
                 raise RuntimeError("Scene changed; reload before editing")
             stamp=_clock()
+            db.execute("""INSERT OR IGNORE INTO g04_scene_note_history
+                (project_id,scene_id,revision,notes_json,saved_at)
+                VALUES (?,?,?,?,?)""",
+                (pid,scene_id,scene["notes_revision"],
+                 _json(scene["notes"]),stamp))
             changed=db.execute("""UPDATE g04_idea_scenes SET revision=revision+1,
                 notes_json=?,updated_at=? WHERE project_id=? AND scene_id=?
                 AND revision=?""",(_json(notes),stamp,pid,scene_id,
@@ -598,8 +621,53 @@ class G04Preproduction:
                   VALUES (?,?,?,?,?,?,?)""",
                   (pid,scene_id,-scene["number"] if scene["origin"]=="script_derived"
                    else scene["number"],1,_json(notes),stamp,stamp))
+            db.execute("""INSERT INTO g04_scene_note_history
+                (project_id,scene_id,revision,notes_json,saved_at)
+                VALUES (?,?,?,?,?)""",
+                (pid,scene_id,expected_notes_revision+1,_json(notes),stamp))
             return self._view(db,movie)
         return self._execute(pid,op,mutate=True)
+
+    def restore_notes(self,pid,scene_id,source_revision,expected_notes_revision,
+                      expected_screenplay_revision):
+        if (type(scene_id) is not str or not SCENE_ID.fullmatch(scene_id) or
+                type(source_revision) is not int or source_revision<0 or
+                type(expected_notes_revision) is not int or
+                type(expected_screenplay_revision) is not int):
+            raise ValueError("Choose a saved scene version")
+        def action(db,movie):
+            if movie["revision"]!=expected_screenplay_revision:
+                raise RuntimeError("Screenplay changed; reload before restoring notes")
+            scene=next((x for x in self._scenes(db,movie) if x["id"]==scene_id),None)
+            if scene is None:raise KeyError("Scene is no longer current")
+            if scene["notes_revision"]!=expected_notes_revision:
+                raise RuntimeError("Scene has newer changes; reopen before restoring")
+            previous=db.execute("""SELECT notes_json FROM g04_scene_note_history
+                WHERE project_id=? AND scene_id=? AND revision=?""",
+                (pid,scene_id,source_revision)).fetchone()
+            if previous is None:
+                raise KeyError("Earlier scene version not found")
+            snapshot=json.loads(previous["notes_json"])
+            if not isinstance(snapshot,dict) or set(snapshot)!=NOTE_FIELDS:
+                raise RuntimeError("Earlier scene notes cannot be reopened safely")
+            stamp=_clock()
+            db.execute("""INSERT OR IGNORE INTO g04_scene_note_history
+                (project_id,scene_id,revision,notes_json,saved_at)
+                VALUES (?,?,?,?,?)""",
+                (pid,scene_id,scene["notes_revision"],
+                 _json(scene["notes"]),stamp))
+            changed=db.execute("""UPDATE g04_idea_scenes SET revision=revision+1,
+                notes_json=?,updated_at=? WHERE project_id=? AND scene_id=?
+                AND revision=?""",
+                (_json(snapshot),stamp,pid,scene_id,expected_notes_revision))
+            if changed.rowcount!=1:
+                raise RuntimeError("Cannot restore a scene that has no saved revision")
+            db.execute("""INSERT INTO g04_scene_note_history
+                (project_id,scene_id,revision,notes_json,saved_at)
+                VALUES (?,?,?,?,?)""",
+                (pid,scene_id,expected_notes_revision+1,_json(snapshot),stamp))
+            return self._view(db,movie)
+        return self._execute(pid,action,mutate=True)
 
     def decide(self,pid,proposal_id,decision,expected_screenplay_revision,
                approved_value=None):
