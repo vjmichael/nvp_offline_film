@@ -19,6 +19,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Syntax-check owner-operated Windows acceptance handoff (do not fabricate results)
+        shell: pwsh
+        run: |
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'tools/nvp_g03_physical_windows_acceptance.ps1').Path,
+            [ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.ToString() }
+            throw 'Physical Windows handoff script has syntax errors'
+          }
+          Write-Host 'G03_PHYSICAL_HANDOFF_SCRIPT_SYNTAX_PASS_NOT_EXECUTED'
       - name: Verify NVP packaging guard rejects fake Windows payloads
         shell: bash
         run: |
