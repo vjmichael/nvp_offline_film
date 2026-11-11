@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import './director-film-editor.css';
 import DirectorEnvironmentLook from './DirectorEnvironmentLook.jsx';
 import DirectorActorStudio from './DirectorActorStudio.jsx';
+import DirectorAVMonitor from './DirectorAVMonitor.jsx';
+import DirectorSoundStage from './DirectorSoundStage.jsx';
 
 const EPS=.0001;
 const TPS=7056000000;
@@ -480,17 +482,17 @@ export default function DirectorFilmEditor({movie}){
       <p>{edit.missing_sources.join(' · ')}</p></div>}
     {!edit&&!error&&<p role="status">Opening the film editing room…</p>}
     {edit&&<>
+      {edit.revision>0&&edit.clips.length>0&&
+        !edit.missing_sources?.length&&<DirectorAVMonitor
+          key={movie.id+':av:'+edit.revision}
+          movie={movie} editRevision={edit.revision}/>}
       <section className="film-editor-monitor-area">
+        <h3>Inspect an original picture moment</h3>
         <PicturePreview sample={sample} working={pendingPreview}
           position={position}/>
         <div className="film-editor-transport">
-          <button className="film-secondary" disabled={!edit.clips.length}
-            onClick={()=>{
-              if(position>=total-.01)setPosition(0);
-              setPlaying(v=>!v);
-            }}>{playing?'Pause':'Play preview'}</button>
           <button className="film-secondary" onClick={cancelPreview}
-            disabled={!playing&&!pendingPreview}>Stop Preview</button>
+            disabled={!pendingPreview}>Stop Picture Inspection</button>
           <input type="range" min="0" max={total||1} step=".05"
             value={Math.min(position,total||0)}
             disabled={!total} aria-label="Film playhead position"
@@ -758,6 +760,9 @@ export default function DirectorFilmEditor({movie}){
       {selected&&<DirectorActorStudio
         key={movie.id+':actors:'+selected.take_id}
         movie={movie} takeId={selected.take_id}/>}
+      {selected&&<DirectorSoundStage
+        key={movie.id+':sound:'+selected.take_id}
+        movie={movie} takeId={selected.take_id}/>} 
       {selected&&<DirectorEnvironmentLook
         key={movie.id+':looks:'+selected.take_id}
         movie={movie} takeId={selected.take_id}/>}
