@@ -214,6 +214,8 @@ export default function DirectorFilmEditor({movie}){
   const [position,setPosition]=useState(0);
   const [playing,setPlaying]=useState(false);
   const [takeChoice,setTakeChoice]=useState('');
+  const [aiAvailable,setAiAvailable]=useState(false);
+  const [aiDirection,setAiDirection]=useState('');
   const [selectedId,setSelectedId]=useState(null);
   const [dragId,setDragId]=useState(null);
   const [trimIn,setTrimIn]=useState('0');
@@ -232,6 +234,14 @@ export default function DirectorFilmEditor({movie}){
   const busyRef=useRef(false);
   const previewController=useRef(null);
   const audioController=useRef(null);
+
+  useEffect(()=>{
+    let active=true;
+    directorCall('/api/creative/models').then(result=>{
+      if(active)setAiAvailable(result.state==='available');
+    }).catch(()=>{if(active)setAiAvailable(false)});
+    return()=>{active=false};
+  },[]);
 
   useEffect(()=>{
     let live=true;
@@ -335,6 +345,33 @@ export default function DirectorFilmEditor({movie}){
     }finally{busyRef.current=false;setBusy(false)}
     return null;
   }
+  async function askEditingAI(){
+    if(!aiAvailable||!edit||busyRef.current)return;
+    busyRef.current=true;setBusy(true);setError('');
+    setNotice('Preparing some editing ideas for you to review…');
+    try{
+      const result=await directorCall(base+'/ideas','POST',{direction:aiDirection});
+      setEdit(result);
+      setNotice((result.ai_suggestions||[]).some(i=>i.status==='proposed')?
+        'Editing ideas are ready. You choose whether to use them.':
+        'The film assistant had no additional changes to suggest.');
+    }catch(e){setError(e.message)}
+    finally{busyRef.current=false;setBusy(false)}
+  }
+  async function decideEditingAI(idea,decision){
+    if(busyRef.current||!edit)return;
+    busyRef.current=true;setBusy(true);setError('');
+    try{
+      const result=await directorCall(base+'/ideas/'+idea.id+'/decision','POST',{
+        expected_revision:edit.revision,decision});
+      setEdit(result);
+      setNotice(decision==='accept'?
+        'Your approved editorial suggestion is saved as a new edit version.':
+        'Suggestion declined. Your film edit is unchanged.');
+    }catch(e){setError(e.message)}
+    finally{busyRef.current=false;setBusy(false)}
+  }
+
   async function restore(version){
     if(!window.confirm('Restore this earlier film edit? All current and previous versions will remain saved.'))return;
     if(busyRef.current)return;
@@ -481,6 +518,44 @@ export default function DirectorFilmEditor({movie}){
         {edit.timeline.length>0&&<div className="film-editor-timeline-help">
           Select a shot to edit it. Drag shots to rearrange them, or use
           the move controls below.</div>}
+      </section>
+      <section className="film-editor-assistant">
+        <div className="film-editor-section-heading">
+          <div><h3>Ask for editing ideas</h3>
+            <p className="film-muted">NVP can suggest a different shot order,
+              softer cut or color mood. Every change needs your approval.</p>
+          </div>
+          <button className="film-secondary" disabled={
+            busy||!aiAvailable||!edit.clips.length||!!edit.missing_sources.length}
+            onClick={askEditingAI}>Ask AI for Suggestions</button>
+        </div>
+        {aiAvailable&&<label>What would you like to improve? (optional)
+          <input maxLength={700} value={aiDirection}
+            placeholder="A slower beginning, more tension, warmer outdoor colors…"
+            onChange={e=>setAiDirection(e.target.value)}/>
+        </label>}
+        {!aiAvailable&&<p className="film-hint">
+          AI assistance is unavailable right now. All editing controls
+          are still available.</p>}
+        <div className="film-editor-ai-ideas">
+          {(edit.ai_suggestions||[]).filter(i=>i.status==='proposed').map(idea=>
+            <article key={idea.id}>
+              <strong>{({
+                move_earlier:'Move this shot earlier',
+                move_later:'Move this shot later',
+                soft_dissolve:'Try a soft transition',
+                warmer_color:'Make this shot warmer',
+                cooler_color:'Make this shot cooler'
+              })[idea.kind]||'Editing suggestion'}</strong>
+              <p>{idea.reason}</p>
+              <div className="film-actions">
+                <button className="film-secondary" disabled={busy}
+                  onClick={()=>decideEditingAI(idea,'reject')}>Decline</button>
+                <button className="film-primary" disabled={busy}
+                  onClick={()=>decideEditingAI(idea,'accept')}>Approve Change</button>
+              </div>
+            </article>)}
+        </div>
       </section>
       <div className="film-editor-layout">
         <section className="film-editor-panel">
