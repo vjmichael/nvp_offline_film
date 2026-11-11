@@ -92,17 +92,10 @@ class LegacyMigrationTests(unittest.TestCase):
         root=self.root/"nvp_g03_migration_candidates"
         # The verifier creates its own store/session and does not inspect the
         # original Studio DB; execute it in a new interpreter after staging.
-        code=("""
-import json,sys
-from backend.nvp_g03_candidate_recovery import reopen_known_originals
-request=json.load(sys.stdin)
-result=reopen_known_originals(
-    request["root"],request["pid"],request["passphrase"],request["inventory"])
-print(json.dumps(result,sort_keys=True))
-""")
         request={"root":str(root),"pid":self.pid,
                  "passphrase":password,"inventory":inventory}
-        run=subprocess.run([sys.executable,"-c",code],input=json.dumps(request),
+        run=subprocess.run([sys.executable,"-m","tools.nvp_g03_candidate_readback"],
+                           input=json.dumps(request),
                            capture_output=True,text=True,timeout=45)
         self.assertEqual(run.returncode,0,run.stderr)
         recovered=json.loads(run.stdout)
