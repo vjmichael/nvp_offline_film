@@ -69,6 +69,7 @@ export default function DirectorEnvironmentLook({movie,takeId}){
   const [pieceScale,setPieceScale]=useState([1,1,1]);
   const [pieceMaterial,setPieceMaterial]=useState(materialDefault);
   const [selectedPiece,setSelectedPiece]=useState('');
+  const [pieceDraft,setPieceDraft]=useState(null);
   const [kitName,setKitName]=useState('');
   const [selectedKit,setSelectedKit]=useState('');
   const alive=useRef(true);
@@ -95,6 +96,14 @@ export default function DirectorEnvironmentLook({movie,takeId}){
     setObjectMaterial({...materialDefault,...(
       data.draft.materials?.[selectedObject]||{})});
   },[data?.revision,selectedObject]);
+  useEffect(()=>{
+    const selected=data?.draft?.set_pieces?.find(x=>x.id===selectedPiece);
+    setPieceDraft(selected?{...selected,
+      position:[...selected.position],
+      rotation:[...selected.rotation],
+      scale:[...selected.scale],
+      material:{...selected.material}}:null);
+  },[selectedPiece,data?.revision]);
 
   useEffect(()=>{
     if(!data||!takeId)return;
@@ -273,9 +282,13 @@ export default function DirectorEnvironmentLook({movie,takeId}){
                   {item.name}</option>)}
               </select></label>
             {sourcePiece&&<>
-              <Coords name="Set-piece position" values={sourcePiece.position}
-                onChange={v=>update('update_piece',{item:{
-                  ...sourcePiece,position:v}},'Set position changed.')}/>
+              <Coords name="Set-piece position"
+                values={pieceDraft?.position||sourcePiece.position}
+                onChange={v=>setPieceDraft(old=>({...old,position:v}))}/>
+              <button className="film-secondary" disabled={busy||!pieceDraft}
+                onClick={()=>update('update_piece',{item:pieceDraft},
+                  'Set position saved. The original performance is unchanged.')}>
+                Save Position</button>
               <button className="film-secondary" disabled={busy}
                 onClick={()=>update('remove_piece',{item_id:selectedPiece},
                   'Set piece removed without changing the original Take.')}>
