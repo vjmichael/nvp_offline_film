@@ -151,6 +151,8 @@ def mount_g06_routes(app,studio,live_films,cookie_name):
     def mic_start(project_id:str,scene_id:str,request:Request,
                   payload:MicrophoneStart):
         current=_safe(lambda:service(project_id,request).view(project_id,scene_id))
+        if not current["stage_ready"] or not current["work_current"]:
+            raise HTTPException(409,detail="Approve the current scene before recording original sound")
         if payload.actor_id is not None and payload.actor_id not in {
                 obj["actor_id"] for obj in current["stage_objects"]
                 if obj["role"]=="actor"}:
