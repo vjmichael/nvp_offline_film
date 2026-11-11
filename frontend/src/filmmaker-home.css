@@ -80,3 +80,8 @@
 @media(max-width:900px){.film-shell{grid-template-columns:190px minmax(0,1fr)}.film-page,.film-home{padding:28px 20px 65px}.film-scene-layout{grid-template-columns:1fr}.film-steps{gap:5px}}
 @media(max-width:650px){.film-shell{display:block}.film-sidebar{border-right:0;border-bottom:1px solid #3b3945;padding:15px}.film-project-list{min-height:0;max-height:130px;overflow:auto}.film-sidebar-footer{display:none}.film-topbar{height:auto;min-height:60px;padding:14px;flex-wrap:wrap}.film-page,.film-home{padding:24px 15px 50px}.film-coverage{grid-template-columns:1fr}.film-steps button{font-size:11px}.film-card{padding:17px}}
 @media(prefers-reduced-motion:reduce){.film-shell *{scroll-behavior:auto;animation:none;transition:none}}
+
+.film-encryption-choice{padding:17px;margin-top:18px;border:1px solid #76624a;border-radius:12px;background:#2a2a36;display:flex;flex-direction:column;gap:9px}
+.film-encryption-choice .film-encryption-label{display:flex;align-items:center;gap:10px;font-weight:700}
+.film-encryption-choice input[type=checkbox]{width:19px;height:19px;accent-color:#eeb882}
+.film-encryption-choice .film-hint{margin:0}

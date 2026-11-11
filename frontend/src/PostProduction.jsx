@@ -3,7 +3,9 @@ import './index.css';
 import './filmmaker-home.css';
 
 export default function PostProduction() {
-  const id=new URLSearchParams(window.location.search).get('project');
+  const query=new URLSearchParams(window.location.search);
+  const id=query.get('project');
+  const encrypted=query.get('encrypted')==='1';
   const [movie,setMovie]=useState(null);
   const [status,setStatus]=useState('Loading movie…');
   useEffect(()=>{
@@ -15,7 +17,7 @@ export default function PostProduction() {
       setStatus('This movie is locked. Unlock it from the NVP home first.');};
     const load=()=>{
       const observed=++sequence;
-      fetch('/api/projects/'+id,{credentials:'same-origin'})
+      fetch('/api/projects/'+id+(encrypted?'/live':''),{credentials:'same-origin'})
         .then(async response=>{
           if(!response.ok)throw new Error(response.status===423
             ? 'This movie is locked. Unlock it from the NVP home first.'
@@ -39,7 +41,7 @@ export default function PostProduction() {
       window.removeEventListener('storage',onStorage);
       window.removeEventListener('focus',load);
     };
-  },[id]);
+  },[id,encrypted]);
   return <div className="film-post-window">
     <header className="film-topbar"><span>NVP · POST-PRODUCTION</span>
       <span>Edit Film</span></header>
@@ -48,6 +50,9 @@ export default function PostProduction() {
       <h1>{movie?.title||'Edit your movie'}</h1>
       {status&&<p role="status">{status}</p>}
       {movie&&<>
+        {movie.encrypted&&<p className="film-hint" role="status">
+          Encrypted movie. Editing and rendering workers remain disabled
+          until protected production is independently verified.</p>}
         <p className="film-muted">Choose the performances and views you want the audience to see.
           Your original filming data remains unchanged.</p>
         <section className="film-card">
