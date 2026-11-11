@@ -177,6 +177,63 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   expect(screen.getByRole('heading',{name:'Resume Working'})).toBeTruthy();
  });
 
+ it('creates an opt-in encrypted movie using protected host route, never plaintext creation',async()=>{
+  const sent=[];
+  const secure={...MOVIE,encrypted:true,revision:0,scenes:[],
+    screenplay:'',idea:'A private film'};
+  vi.stubGlobal('fetch',vi.fn(async(url,options={})=>{
+    sent.push({url,method:options.method||'GET',data:options.body});
+    let data={};
+    if(url==='/api/status')data={status:'ready',capabilities:{
+      project_file_encryption:'new_windows_movies_only'}};
+    else if(url==='/api/projects')data=[];
+    else if(url==='/api/projects/encrypted'&&options.method==='POST')data=secure;
+    else if(url==='/api/projects/'+ID+'/live')data=secure;
+    return {ok:true,json:async()=>data};
+  }));
+  render(<FilmmakerHome/>);
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'New Movie'}));
+  const option=await screen.findByLabelText('Encrypt this new movie on this Windows account');
+  fireEvent.click(option);
+  fireEvent.change(screen.getByLabelText('Movie title'),{target:{value:'Private nature film'}});
+  fireEvent.change(screen.getByLabelText('Movie passphrase'),
+    {target:{value:'Human-operator-private-passphrase-2026'}});
+  fireEvent.change(screen.getByLabelText('Confirm movie passphrase'),
+    {target:{value:'Human-operator-private-passphrase-2026'}});
+  fireEvent.click(screen.getByRole('button',{name:'Next →'}));
+  await waitFor(()=>expect(sent.some(x=>x.url==='/api/projects/encrypted'&&x.method==='POST')).toBe(true));
+  expect(sent.some(x=>x.url==='/api/projects'&&x.method==='POST')).toBe(false);
+  expect(screen.getByText(/Encrypted movie/)).toBeTruthy();
+  expect(screen.getByRole('button',{name:/Save Shot Suggestions/}).disabled).toBe(true);
+ });
+
+ it('reopens an unlocked encrypted movie only via the host secure route',async()=>{
+  const encrypted={...snapshot,locked:true,unlocked:false,encrypted:true};
+  const calls=[];
+  let granted=false;
+  vi.stubGlobal('fetch',vi.fn(async(url,options={})=>{
+    calls.push(url);
+    if(url==='/api/status')return {ok:true,json:async()=>({status:'ready'})};
+    if(url==='/api/projects')return {ok:true,json:async()=>
+      [{...encrypted,unlocked:granted}]};
+    if(url==='/api/projects/'+ID+'/unlock') {
+      granted=true;return {ok:true,json:async()=>({locked:false,encrypted:true})};
+    }
+    if(url==='/api/projects/'+ID+'/live')
+      return {ok:true,json:async()=>({...MOVIE,encrypted:true})};
+    throw Error('Unexpected insecure request: '+url);
+  }));
+  render(<FilmmakerHome/>);
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Resume Working'}));
+  fireEvent.click(screen.getByRole('button',{name:/Forest Documentary.*Locked/i}));
+  const dialog=screen.getByRole('dialog',{name:'Unlock Movie'});
+  fireEvent.change(within(dialog).getByLabelText(/Movie passphrase/),
+    {target:{value:'Human-operator-private-passphrase-2026'}});
+  fireEvent.click(within(dialog).getByRole('button',{name:'Unlock'}));
+  await waitFor(()=>expect(calls.includes('/api/projects/'+ID+'/live')).toBe(true));
+  expect(calls.includes('/api/projects/'+ID)).toBe(false);
+ });
+
  it('keeps AI unavailability explicit rather than pretending to generate film',async()=>{
   server();
   render(<FilmmakerHome/>);
