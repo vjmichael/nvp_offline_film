@@ -74,6 +74,20 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
     .toContain('postproduction.html');
  });
 
+ it('keeps the real source-line screenplay editor editable on resume',async()=>{
+  server();
+  render(<FilmmakerHome/>);
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Resume Working'}));
+  fireEvent.click(screen.getByRole('button',{name:/Forest Documentary.*Resume movie/i}));
+  await waitFor(()=>expect(screen.getByRole('navigation',{name:'Filmmaking steps'})).toBeTruthy());
+  fireEvent.click(screen.getByRole('button',{name:/^1Script/i}));
+  const editor=screen.getByRole('textbox',{name:'Edit screenplay'});
+  const revision='EXT. GARDEN - DAWN\\n\\nA bird lands.';
+  fireEvent.change(editor,{target:{value:revision}});
+  expect(editor.value).toBe(revision);
+  expect(screen.getByRole('button',{name:'Save Screenplay'}).disabled).toBe(false);
+ });
+
  it('requests unlock before reading a locked film',async()=>{
   const {log}=server([{...snapshot,locked:true,unlocked:false,idea:undefined}]);
   render(<FilmmakerHome/>);
