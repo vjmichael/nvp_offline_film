@@ -8,6 +8,7 @@ No unsandboxed fallback. Scoped code ACLs are removed after job closure.
 """
 from __future__ import annotations
 import ctypes as C
+import hashlib
 from ctypes import wintypes as W
 import os
 from pathlib import Path
@@ -58,6 +59,8 @@ def _api():
     u.CreateAppContainerProfile.argtypes=[W.LPCWSTR,W.LPCWSTR,W.LPCWSTR,
                                            W.LPVOID,W.DWORD,C.POINTER(W.LPVOID)]
     u.CreateAppContainerProfile.restype=C.c_long
+    u.GetAppContainerFolderPath.argtypes=[W.LPCWSTR,C.POINTER(W.LPWSTR)]
+    u.GetAppContainerFolderPath.restype=C.c_long
     u.DeleteAppContainerProfile.argtypes=[W.LPCWSTR]
     u.DeleteAppContainerProfile.restype=C.c_long
     a.ConvertSidToStringSidW.argtypes=[W.LPVOID,C.POINTER(W.LPWSTR)]
@@ -102,13 +105,60 @@ def _paths(command,cwd,code_roots,code_files):
             raise AppContainerFailure("Code ACL overlaps original movie storage")
     return exe,work,roots,files
 
+def _profile_folder(userenv,sid):
+    """Resolve the exact OS AppContainer data directory, never guess its path."""
+    location=W.LPWSTR()
+    hr=userenv.GetAppContainerFolderPath(sid,C.byref(location))&0xffffffff
+    if hr or not location or not location.value:
+        raise AppContainerFailure("AppContainer profile data root not independently known")
+    try:
+        root=Path(location.value).resolve(strict=True)
+        if not root.is_dir() or root==root.parent:
+            raise AppContainerFailure("Invalid AppContainer data directory")
+        film=os.environ.get("NVP_HOME")
+        if film:
+            home=Path(film).resolve()
+            if root==home or root.is_relative_to(home) or home.is_relative_to(root):
+                raise AppContainerFailure("Sandbox profile overlaps original film home")
+        return root
+    finally:
+        ole=C.WinDLL("ole32")
+        ole.CoTaskMemFree.argtypes=[W.LPVOID]
+        ole.CoTaskMemFree(C.cast(location,W.LPVOID))
+
+
+def _profile_inventory(folder):
+    """Fail closed on unreviewed profile writes, not just scratch cwd writes."""
+    result={}
+    if not folder.exists():
+        raise AppContainerFailure("Kernel AppContainer profile disappeared")
+    seen=0
+    for item in folder.rglob("*"):
+        if item.is_symlink():
+            raise AppContainerFailure("Sandbox profile contains reparse link")
+        if item.is_dir():
+            continue
+        if not item.is_file():
+            raise AppContainerFailure("Unexpected sandbox profile object")
+        seen+=1
+        stat=item.stat()
+        if seen>1000 or stat.st_size>64*1024*1024:
+            raise AppContainerFailure("Unbounded sandbox profile data")
+        data=item.read_bytes()
+        result[item.relative_to(folder).as_posix()]=(
+            len(data),hashlib.sha256(data).hexdigest())
+    return result
+
+
 class AppContainerJobProcess:
-    def __init__(self,wrapped,profile,sid,grants,userenv):
+    def __init__(self,wrapped,profile,sid,grants,userenv,profile_folder,baseline):
         self._worker=wrapped
         self._profile=profile
         self._sid=sid
         self._grants=grants
         self._userenv=userenv
+        self._profile_folder=profile_folder
+        self._baseline=baseline
         self.pid=wrapped.pid
         self.returncode=None
         self.sandbox_identity="windows-appcontainer-with-zero-network-capabilities"
@@ -131,6 +181,11 @@ class AppContainerJobProcess:
         finally:
             self._worker=None
             errors=[]
+            try:
+                if _profile_inventory(self._profile_folder)!=self._baseline:
+                    errors.append("Native worker wrote AppContainer profile data")
+            except Exception as exc:
+                errors.append(str(exc))
             for path,recursive in reversed(self._grants):
                 try:_acl(path,self._sid,"",recursive,remove=True)
                 except Exception as exc:errors.append(str(exc))
@@ -165,6 +220,8 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
         sid=sidstr.value
         if not sid or not sid.startswith("S-1-15-2-"):
             raise AppContainerFailure("Not a package SID")
+        profile_folder=_profile_folder(userenv,sid)
+        baseline=_profile_inventory(profile_folder)
         # Traverse-only on ancestors; recursive RX ONLY for trusted binary
         # distributions and exact read access ONLY for a vetted worker script.
         for root in roots:
@@ -237,7 +294,8 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
                 raise AppContainerFailure("AppContainer child resume failed")
             wrapped=WindowsJobProcess(job,ph,pi.dwProcessId)
             ph=None;job=None
-            return AppContainerJobProcess(wrapped,profile,sid,grants,userenv)
+            return AppContainerJobProcess(wrapped,profile,sid,grants,userenv,
+                                          profile_folder,baseline)
         finally:
             for handle,inherit in zip(handles,original):
                 os.set_handle_inheritable(handle,inherit)
