@@ -91,6 +91,10 @@ class LiveFilmStoreWindows(unittest.TestCase):
         self.assertTrue(write["encrypted"])
         self.assertEqual(self.store.get_original(PID,self.token,"scene/actor.pcm"),
                          b"\x01\x02\x03")
+        receipts=self.store.worker_receipts(PID,self.token)
+        self.assertEqual(len(receipts),2)
+        self.assertEqual({r["operation"] for r in receipts},
+                         {"read_original","write_original"})
         self.leaked()
 
     def test_lock_revokes_all_native_keys_and_grants(self):
@@ -120,6 +124,48 @@ class LiveFilmStoreWindows(unittest.TestCase):
         self.assertEqual(self.store.save_screenplay(PID,self.token,UPDATED,0)["revision"],1)
         self.assertGreaterEqual(len(list((self.root/PID/"revisions").glob("*.nvpsealed"))),3)
         self.leaked()
+
+    def test_authenticated_original_rejects_tampered_ciphertext(self):
+        self.store.put_original(PID,self.token,"scene/original.usda",SOURCE)
+        path=next((self.root/PID/"assets").glob("*.nvpsealed"))
+        data=bytearray(path.read_bytes())
+        data[-1] ^= 0x01
+        path.write_bytes(data)
+        with self.assertRaises(VaultError):
+            self.store.get_original(PID,self.token,"scene/original.usda")
+        self.leaked()
+
+    def test_two_process_writers_cannot_replace_committed_film_revision(self):
+        import threading
+        second=LiveFilmStore(self.root,grant_checker=lambda pid,t:(pid,t) in self.grants)
+        second.authorize(PID,PASSPHRASE,self.token)
+        outcomes=[]
+        barrier=threading.Barrier(2)
+        def commit(store,source):
+            barrier.wait(timeout=5)
+            try:
+                result=store.save_screenplay(PID,self.token,source,0)
+                outcomes.append(("ok",result["revision"]))
+            except LiveFilmError as error:
+                outcomes.append(("denied",str(error)))
+        a=threading.Thread(target=commit,args=(self.store,UPDATED))
+        b=threading.Thread(target=commit,args=(second,SCREENPLAY+"\nAnother line."))
+        a.start();b.start()
+        a.join(timeout=25);b.join(timeout=25)
+        self.assertFalse(a.is_alive() or b.is_alive())
+        self.assertEqual(sum(x[0]=="ok" for x in outcomes),1,outcomes)
+        self.assertEqual(sum(x[0]=="denied" for x in outcomes),1,outcomes)
+        self.assertEqual(self.store.read(PID,self.token)["revision"],1)
+        self.leaked()
+
+    def test_corrupt_head_never_silently_rolls_back_private_history(self):
+        self.store.save_screenplay(PID,self.token,UPDATED,0)
+        head=self.root/PID/"HEAD.json"
+        raw=bytearray(head.read_bytes())
+        raw[-1] ^= 0x01
+        head.write_bytes(raw)
+        with self.assertRaises((LiveFilmError,ValueError)):
+            self.store.read(PID,self.token)
 
     def test_asset_after_ciphertext_before_sqlite_commit_can_resume(self):
         from backend import nvp_g03_live_store as module
