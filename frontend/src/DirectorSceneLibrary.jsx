@@ -1,5 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import './director-scene-library.css';
+import DirectorWorldStage from './DirectorWorldStage.jsx';
 
 // Only creative details belong in a filmmaking screen. Project authorization,
 // source hashes, model selection and production worker decisions belong to NVP.
@@ -241,10 +242,9 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
         </details>
       </div>
       {selected&&<div className="director-scene-workspace">
-        <div className="director-stage-preview" aria-label="Scene preview not yet available">
-          <span>Scene preview</span>
-          <p>Your scene's visual setting has not been created yet.</p>
-        </div>
+        <DirectorWorldStage
+          key={movie.id+':'+selected.id+':'+selected.notes_revision+':'+movie.revision}
+          movie={movie} scene={selected}/>
         <h3>{selected.heading}</h3>
         <p className="film-muted">{selected.location?
           <>From the script: <strong>{selected.location}</strong>
