@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from backend.nvp_filming_linux_session import (
-    LinuxFilmingSession, launch_linux_filming_session,
+    LinuxFilmingSession, FilmingCustodyInitializationError, launch_linux_filming_session,
 )
 
 
@@ -79,3 +79,20 @@ def test_worker_exit_status_must_be_observed():
     with pytest.raises(RuntimeError, match="exit status"):
         LinuxFilmingSession("/group", child, custody).stop_and_verify()
     child.wait.assert_called_once()
+
+def test_failed_custody_exposes_exact_worker_and_group_for_recovery():
+    """The host must not lose its live child handle after constructor failure."""
+    child = Mock(pid=91234)
+    group = "/sys/fs/cgroup/delegated/nvp-film-test"
+    with patch("backend.nvp_filming_linux_session.create_private_group_and_launch",
+               return_value=(group, child)), patch(
+               "backend.nvp_filming_linux_session.LinuxFilmingCgroup",
+               side_effect=OSError("kernel denied custody")):
+        with pytest.raises(FilmingCustodyInitializationError) as caught:
+            launch_linux_filming_session("/sys/fs/cgroup/delegated",
+                                         "/bin/true", ["/bin/true"])
+    assert caught.value.group == group
+    assert caught.value.child is child
+    assert isinstance(caught.value.__cause__, OSError)
+    child.kill.assert_not_called()
+    child.terminate.assert_not_called()
