@@ -424,6 +424,133 @@ def run_visible_window_smoke():
                 shutil.rmtree(test_home,ignore_errors=True)
 
 
+
+def run_g03_window_smoke():
+    """Real Windows WebView2 director-first UI, not the legacy engineering tabs.
+
+    An ephemeral movie is created in a throwaway home. Source is inspected in
+    the actual native React page, including the separate editor navigation.
+    This is runner UI acceptance, not an owner-operated physical workstation.
+    """
+    import webview
+    from threading import Event
+    temp_home=Path(tempfile.mkdtemp(prefix="nvp-g03-native-"))
+    previous=os.environ.get("NVP_HOME")
+    os.environ["NVP_HOME"]=str(temp_home)
+    server=worker=sock=None
+    try:
+        app=create_app()
+        from backend.nvp_api import studio
+        movie=studio.create_project(
+            "G03 Visual Movie",
+            "A valley in the early morning",
+            "EXT. VALLEY - MORNING\\n\\nMist drifts across the hillside.")
+        server,worker,port,sock=serve(app)
+        loaded=Event()
+        result={"passed":False,"phase":"not_started"}
+        window=webview.create_window(
+            "NVP Director-first Acceptance",
+            "http://127.0.0.1:"+str(port),width=1100,height=760)
+        window.events.loaded += lambda:loaded.set()
+
+        def assert_visible():
+            try:
+                if not loaded.wait(30):
+                    raise RuntimeError("G03 native WebView did not load")
+                deadline=time.monotonic()+25
+                ready=False
+                while time.monotonic()<deadline:
+                    ready=window.evaluate_js(
+                        "Boolean(document.querySelector('div[role=\\\"dialog\\\"]') "
+                        "&& document.querySelector('aside.film-sidebar') "
+                        "&& document.body.textContent.includes('New Movie') "
+                        "&& document.body.textContent.includes('Resume Working'))")
+                    if ready is True:break
+                    time.sleep(.2)
+                if not ready:
+                    raise RuntimeError("New Movie / Resume Working director home missing")
+                result["phase"]="welcome"
+                # Verify that the old engineering navigation is not mounted.
+                technical=window.evaluate_js(
+                    "Boolean(document.querySelector('nav.tabs') "
+                    "|| document.querySelector('aside .sidebar-bottom') "
+                    "|| document.querySelector('[aria-label=\\\"Data-first native A/V preview\\\"]'))")
+                if technical:
+                    raise RuntimeError("Old engineering workspace remains visible")
+                choose=window.evaluate_js(
+                    "(()=>{const d=document.querySelector('div[role=\\\"dialog\\\"]');"
+                    "const b=[...d.querySelectorAll('button')].find(x=>"
+                    "x.textContent.trim()==='Resume Working');"
+                    "if(!b)return false;b.click();return true;})()")
+                if not choose:
+                    raise RuntimeError("Resume Working cannot be selected")
+                deadline=time.monotonic()+18
+                opened=False
+                while time.monotonic()<deadline:
+                    opened=window.evaluate_js(
+                        "(()=>{const b=[...document.querySelectorAll('button.film-movie-card')]"
+                        ".find(x=>x.textContent.includes('G03 Visual Movie'));"
+                        "if(!b)return false;b.click();return true;})()")
+                    if opened:break
+                    time.sleep(.2)
+                if not opened:
+                    raise RuntimeError("Saved film missing from Resume Working")
+                deadline=time.monotonic()+20
+                scene=False
+                while time.monotonic()<deadline:
+                    scene=window.evaluate_js(
+                        "Boolean(document.querySelector('nav.film-steps')"
+                        "&& document.body.textContent.includes('Actor-free scenes welcome')"
+                        "&& document.body.textContent.includes('EXT. VALLEY - MORNING'))")
+                    if scene:break
+                    time.sleep(.2)
+                if not scene:
+                    raise RuntimeError("Real saved actor-free scene not visible")
+                result["phase"]="scenes"
+                switched=window.evaluate_js(
+                    "(()=>{const b=[...document.querySelectorAll('nav.film-steps button')]"
+                    ".find(x=>x.textContent.includes('Edit Film'));"
+                    "if(!b)return false;b.click();return true;})()")
+                if not switched:
+                    raise RuntimeError("Edit Film phase cannot be selected")
+                deadline=time.monotonic()+15
+                link=False
+                while time.monotonic()<deadline:
+                    link=window.evaluate_js(
+                        "Boolean(document.querySelector("
+                        "'a[href*=\\\"postproduction.html\\\"][target=\\\"_blank\\\"]'))")
+                    if link:break
+                    time.sleep(.2)
+                if not link:
+                    raise RuntimeError("Separate Post-Production window link missing")
+                result["phase"]="postproduction_link"
+                with urllib.request.urlopen(
+                    "http://127.0.0.1:"+str(port)+"/postproduction.html",
+                    timeout=5) as response:
+                    if response.status!=200 or b"/assets/" not in response.read():
+                        raise RuntimeError("Installed editor HTML not served")
+                result["phase"]="postproduction_loaded"
+                result["passed"]=True
+            except Exception as exc:
+                result["failure"]=str(exc)
+            finally:
+                window.destroy()
+
+        webview.start(func=assert_visible,gui="edgechromium",debug=False)
+        if not result["passed"]:
+            raise RuntimeError("G03 native WebView acceptance failed ("+
+                               result["phase"]+"): "+
+                               result.get("failure","unknown"))
+        print("G03_NATIVE_WEBVIEW_DIRECTOR_RESUME_EDITOR_PASS")
+        return 0
+    finally:
+        if server is not None:server.should_exit=True
+        if worker is not None:worker.join(timeout=12)
+        if sock is not None:sock.close()
+        if previous is None:os.environ.pop("NVP_HOME",None)
+        else:os.environ["NVP_HOME"]=previous
+        shutil.rmtree(temp_home,ignore_errors=True)
+
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
@@ -434,16 +561,20 @@ def main(argv=None):
                         help="Reopen same project after fully exiting previous installed app")
     parser.add_argument("--smoke-window",action="store_true",
                         help="Launch a real native Windows WebView2 and verify page loaded")
+    parser.add_argument("--smoke-g03-window",action="store_true",
+                        help="Test director-first New/Resume, actor-free scene and edit window in native WebView2")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
-            args.smoke_window,args.smoke_data_av))>1:
+            args.smoke_window,args.smoke_g03_window,args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
     if args.smoke_window:
         return run_visible_window_smoke()
+    if args.smoke_g03_window:
+        return run_g03_window_smoke()
     if args.smoke_data_av:
         _smoke_checkpoint("before_native_acceptance_import")
         from tools.nvp_data_av_installed_acceptance import run_installed_data_av_smoke
