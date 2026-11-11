@@ -47,6 +47,8 @@ export default function DirectorActorStudio({movie,takeId}){
   const [voiceUrl,setVoiceUrl]=useState('');
   const [previewUrl,setPreviewUrl]=useState('');
   const [sceneTime,setSceneTime]=useState('0');
+  const [expressionCue,setExpressionCue]=useState('joy');
+  const [expressionIntensity,setExpressionIntensity]=useState(.7);
   const [busy,setBusy]=useState(false);
   const [previewBusy,setPreviewBusy]=useState(false);
   const [error,setError]=useState('');
@@ -163,6 +165,26 @@ export default function DirectorActorStudio({movie,takeId}){
     }catch(e){if(alive.current)setError(e.message)}
     finally{if(alive.current)setBusy(false)}
   }
+  async function characterContinuity(action){
+    if(!data||busy||!actorId)return;
+    if(!window.confirm(action==='save'?
+      'Save this approved character appearance for reuse in other scenes?':
+      'Apply the saved character appearance? Your original voice and scene-specific acting will remain here.'))return;
+    setBusy(true);setError('');setNotice('');
+    try{
+      const result=await perform(base+'/'+(
+        action==='save'?'save-character':'use-character'),'POST',{
+        actor_id:actorId,expected_revision:data.revision});
+      if(alive.current){
+        setData(result);
+        setNotice(action==='save'?
+          'Your character look and baseline acting style are available in other scenes.':
+          'Saved character continuity applied. Review and approve it for this Take.');
+      }
+    }catch(e){if(alive.current)setError(e.message)}
+    finally{if(alive.current)setBusy(false)}
+  }
+
   async function listen(){
     if(!voiceClip||!data)return;
     voiceRequest.current?.abort();
@@ -312,6 +334,44 @@ export default function DirectorActorStudio({movie,takeId}){
           </>}
         </section>
       </div>
+      <section className="director-actor-expressions">
+        <h4>Expression changes during the scene</h4>
+        <p className="film-muted">A character can become hopeful, frightened
+          or focused at a particular moment rather than holding one expression
+          throughout the performance.</p>
+        <div className="director-actor-expression-add">
+          <label>Emotion at {fmt(sceneTime)} seconds
+            <select value={expressionCue}
+              onChange={e=>setExpressionCue(e.target.value)}>
+              {Object.entries(emotions).map(([key,label])=>
+                <option key={key} value={key}>{label}</option>)}
+            </select>
+          </label>
+          <label>Strength
+            <input type="range" min="0" max="1" step=".05"
+              value={expressionIntensity}
+              onChange={e=>setExpressionIntensity(Number(e.target.value))}/>
+          </label>
+          <button className="film-secondary" disabled={busy||!actorId}
+            onClick={()=>save('add_expression',{
+              at_seconds:sceneTime,emotion:expressionCue,
+              strength:expressionIntensity
+            },'Expression added at that exact scene moment. Review your preview.')}>
+            Add Expression at This Moment</button>
+        </div>
+        {performer?.expression_cues?.length>0&&
+          <div className="director-actor-cue-list">
+            {performer.expression_cues.map(cue=><div key={cue.id}>
+              <span>{fmt(cue.at_tick/7056000000)}s ·
+                {' '}{emotions[cue.emotion]} ·
+                {' '}{Math.round(cue.strength*100)}%</span>
+              <button className="film-secondary" disabled={busy}
+                onClick={()=>save('remove_expression',{cue_id:cue.id},
+                  'The earlier facial cue was removed from the edit.')}>
+                Remove</button>
+            </div>)}
+          </div>}
+      </section>
       <section className="director-actor-voice">
         <h4>Original voice and dialogue delivery</h4>
         <p className="film-muted">Use the actual recorded performance and
@@ -366,6 +426,21 @@ export default function DirectorActorStudio({movie,takeId}){
         <p className="film-hint">Facial timing follows energy in the recorded
           voice. Precise speech sounds, phonemes and full facial-capture
           realism are not yet generated automatically.</p>
+      </section>
+      <section className="director-actor-continuity">
+        <h4>Keep the character consistent</h4>
+        <p className="film-muted">Preserve the approved character's appearance
+          and baseline movement across scenes. Each Take still owns its
+          original dialogue and unique performance directions.</p>
+        <div className="director-actor-review-buttons">
+          <button className="film-secondary" disabled={busy||!approved}
+            onClick={()=>characterContinuity('save')}>
+            Save Character for Other Scenes</button>
+          <button className="film-secondary" disabled={busy||
+            !data.continuity_profiles?.[actorId]}
+            onClick={()=>characterContinuity('use')}>
+            Reuse Approved Character</button>
+        </div>
       </section>
       <section className="director-actor-approve">
         <div><strong>{approved?'This performance is approved':
