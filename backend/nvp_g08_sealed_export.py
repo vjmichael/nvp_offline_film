@@ -38,12 +38,17 @@ def _now():
 def _schema(db):
     db.execute("""CREATE TABLE IF NOT EXISTS g08_sealed_export_jobs(
         id TEXT PRIMARY KEY,edit_revision INTEGER NOT NULL,
-        edit_sha256 TEXT NOT NULL,expected_frames INTEGER NOT NULL,
+        edit_sha256 TEXT NOT NULL,
+        look_sha256 TEXT NOT NULL DEFAULT '',
+        expected_frames INTEGER NOT NULL,
         status TEXT NOT NULL,output_sha256 TEXT,output_bytes INTEGER,
         receipt_json TEXT,issue TEXT,created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         CHECK(status IN ('queued','rendering','verifying','completed',
                          'cancelled','failed','interrupted')))""")
+    if "look_sha256" not in {
+          r["name"] for r in db.execute("PRAGMA table_info(g08_sealed_export_jobs)") }:
+        db.execute("ALTER TABLE g08_sealed_export_jobs ADD COLUMN look_sha256 TEXT NOT NULL DEFAULT ''")
     db.execute("""CREATE TABLE IF NOT EXISTS g08_sealed_delivery_assets(
         job_id TEXT PRIMARY KEY,opaque_id TEXT NOT NULL,
         digest TEXT NOT NULL,size_bytes INTEGER NOT NULL,
@@ -186,10 +191,11 @@ class G08SealedDelivery:
                 LIMIT 1""").fetchone():
                 raise RuntimeError("A movie is already being finished")
             db.execute("""INSERT INTO g08_sealed_export_jobs
-                (id,edit_revision,edit_sha256,expected_frames,
+                (id,edit_revision,edit_sha256,look_sha256,expected_frames,
                  status,created_at,updated_at)
-                VALUES (?,?,?,?,'queued',?,?)""",
+                VALUES (?,?,?,?,?,'queued',?,?)""",
                 (job,expected_revision,assembly["edit_document_sha256"],
+                 assembly["production_looks_sha256"],
                  length//TICKS_FRAME,_now(),_now()))
         self._change(pid,token,enqueue)
         runner=threading.Thread(target=self._run,
