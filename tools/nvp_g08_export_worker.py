@@ -39,11 +39,13 @@ def _owned(args):
     root_resolved=root.resolve(strict=True)
     if root_resolved!=root or root.is_symlink():
         raise ValueError("The film export directory is not an owned NVP directory")
-    file=root/(args.job+".partial.avi" if args.action=="render" else args.job+".avi")
+    # Independent verifier reads the unpublished candidate; the host makes
+    # the final movie visible only AFTER verification succeeds.
+    file=root/(args.job+".partial.avi")
     if file.is_symlink():
         raise RuntimeError("Movie output path is not a regular file")
     if args.action=="verify" and not file.is_file():
-        raise RuntimeError("There is no committed film to verify")
+        raise RuntimeError("There is no complete candidate movie to verify")
     return db,file,root
 
 
