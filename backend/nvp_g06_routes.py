@@ -165,23 +165,39 @@ def mount_g06_routes(app,studio,live_films,cookie_name):
                 obj["actor_id"] for obj in current["stage_objects"]
                 if obj["role"]=="actor"}:
             raise HTTPException(422,detail="Choose a performer in this scene")
+        from backend.nvp_g09c_capture import G09CCaptureJournal
+        creator=service(project_id,request)
         return _safe(lambda:RECORDER.begin(
-            project_id,scene_id,payload.actor_id,request.cookies.get(cookie_name)))
+            project_id,scene_id,payload.actor_id,request.cookies.get(cookie_name),
+            audit=G09CCaptureJournal(creator)))
     routes("POST","scene/{scene_id}/microphone/start",mic_start)
 
     def mic_finish(project_id:str,scene_id:str,request:Request,
                    payload:MicrophoneSession):
         # Bound to the same cookie/session that started the recording.
+        from backend.nvp_g09c_capture import G09CCaptureJournal
+        creator=service(project_id,request)
         return _safe(lambda:RECORDER.finish(
             project_id,payload.session_id,request.cookies.get(cookie_name),
-            service(project_id,request)))
+            creator,audit=G09CCaptureJournal(creator)))
     routes("POST","scene/{scene_id}/microphone/finish",mic_finish)
 
     def mic_cancel(project_id:str,scene_id:str,request:Request,
                    payload:MicrophoneSession):
+        from backend.nvp_g09c_capture import G09CCaptureJournal
+        creator=service(project_id,request)
         return _safe(lambda:RECORDER.cancel(
-            project_id,payload.session_id,request.cookies.get(cookie_name)))
+            project_id,payload.session_id,request.cookies.get(cookie_name),
+            audit=G09CCaptureJournal(creator)))
     routes("POST","scene/{scene_id}/microphone/cancel",mic_cancel)
+
+    def recording_health(project_id:str,scene_id:str,request:Request):
+        from backend.nvp_g09c_capture import G09CCaptureJournal
+        creator=service(project_id,request)
+        return _safe(lambda:G09CCaptureJournal(creator).list(
+            project_id,scene_id,
+            RECORDER.active_sessions(project_id,scene_id)))
+    routes("GET","scene/{scene_id}/microphone/health",recording_health)
 
     def listen(project_id:str,scene_id:str,clip_id:str,request:Request):
         original=_safe(lambda:service(project_id,request).original_preview(
