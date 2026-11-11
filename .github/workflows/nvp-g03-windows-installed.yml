@@ -62,10 +62,13 @@ jobs:
       - name: Create NSIS single-click installer
         shell: pwsh
         run: |
-          $nsis = Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
-          if (-not (Test-Path $nsis)) {
-            $nsis = (Get-Command makensis -ErrorAction Stop).Source
-          }
+          $candidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'),
+            (Join-Path $env:ProgramFiles 'NSIS/makensis.exe'),
+            (Join-Path $env:ChocolateyInstall 'bin/makensis.exe')
+          )
+          $nsis = $candidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $nsis) { throw 'Pinned installed NSIS makensis.exe not found' }
           & $nsis '/V3' 'packaging/nvp-alpha.nsi'
           if ($LASTEXITCODE -ne 0) { throw 'NSIS failed' }
           if (-not (Test-Path 'dist/NVP-Alpha-Setup.exe')) { throw 'Missing NSIS installer' }
