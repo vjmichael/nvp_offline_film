@@ -33,6 +33,15 @@ class Event(Version):
 class Retake(Version):
     reason:str=Field(default="retake",max_length=160)
 
+class NoteIdea(BaseModel):
+    object_id:str|None=Field(default=None,max_length=40)
+    at_seconds:str=Field(min_length=1,max_length=30)
+    instructions:str=Field(default="",max_length=750)
+
+class NoteReview(Version):
+    decision:str=Field(min_length=6,max_length=6)
+    edited_note:str|None=Field(default=None,max_length=400)
+
 
 class Freeze(Version):
     clip_ids:list[str]=Field(default_factory=list,max_length=32)
@@ -64,6 +73,9 @@ def _safe(action):
     except ValueError as exc:
         raise HTTPException(422,detail=str(exc)) from exc
     except RuntimeError as exc:
+        from backend.nvp_idea_pipeline import LocalModelUnavailable
+        if isinstance(exc,LocalModelUnavailable):
+            raise HTTPException(503,detail="AI assistance is unavailable right now") from exc
         raise HTTPException(409,detail=str(exc)) from exc
     except ImportError as exc:
         raise HTTPException(503,detail="This computer's microphone is unavailable") from exc
@@ -115,6 +127,19 @@ def mount_g06_routes(app,studio,live_films,cookie_name):
         return _safe(lambda:service(project_id,request).remove_event(
             project_id,scene_id,event_id,expected_revision))
     routes("DELETE","scene/{scene_id}/events/{event_id}",remove)
+
+    def ask_note(project_id:str,scene_id:str,request:Request,payload:NoteIdea):
+        return _safe(lambda:service(project_id,request).ask_performance_note(
+            project_id,scene_id,object_id=payload.object_id,
+            at_seconds=payload.at_seconds,instructions=payload.instructions))
+    routes("POST","scene/{scene_id}/notes/suggest",ask_note)
+
+    def review_note(project_id:str,scene_id:str,note_id:str,request:Request,
+                    payload:NoteReview):
+        return _safe(lambda:service(project_id,request).review_performance_note(
+            project_id,scene_id,note_id,payload.decision,payload.expected_revision,
+            payload.edited_note))
+    routes("POST","scene/{scene_id}/notes/{note_id}/decision",review_note)
 
     def retake(project_id:str,scene_id:str,request:Request,payload:Retake):
         return _safe(lambda:service(project_id,request).restart_scene(
