@@ -1,0 +1,262 @@
+"""G03-M1: no-destruction migration staging for existing NVP films.
+
+A live legacy Studio film has more than its screenplay: SQLite project rows,
+FilmIndex content-addressed blobs, scene/take metadata, and some worker/caches
+whose project identity may not be safely known. This migrator inventories
+known project rows and verified FilmIndex blobs into a *separate* DPAPI/AES-GCM
+candidate, NEVER switches the live project or deletes/rewrites originals.
+
+A candidate is an encrypted immutable archive, NOT a completed native film
+migration. Unknown global tables, untracked source roots and worker journals
+block cutover; a future explicit reviewed converter must account for them.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+from pathlib import Path
+import re
+import secrets
+import sqlite3
+
+from backend.nvp_g03_live_store import LiveFilmStore, LiveFilmError
+from backend.nvp_g03_windows_vault import _no_link
+from backend.nvp_studio import Studio
+
+ID=re.compile(r"[a-f0-9]{32}\Z")
+SHA=re.compile(r"[a-f0-9]{64}\Z")
+MAX_ROWS=250_000
+MAX_BLOB_BYTES=256*1024*1024
+MAX_TOTAL=1024*1024*1024
+MAX_TABLES=512
+
+
+class MigrationRefused(RuntimeError):
+    pass
+
+
+def _encode_sql(value):
+    if isinstance(value,bytes):
+        return {"bytes_b64":base64.b64encode(value).decode("ascii")}
+    if value is None or isinstance(value,(str,int,float)):
+        return value
+    raise MigrationRefused("Unsupported legacy SQL field type")
+
+
+def _sha_file(file):
+    h=hashlib.sha256()
+    with file.open("rb") as stream:
+        while chunk:=stream.read(512*1024):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _component_check(path,root):
+    """Reject junction/reparse/symlink through every path component."""
+    if not path.is_relative_to(root):
+        raise MigrationRefused("Legacy asset escapes owned source root")
+    check=root
+    _no_link(check)
+    for component in path.relative_to(root).parts:
+        check=check/component
+        _no_link(check)
+
+
+class LegacyFilmMigration:
+    def __init__(self,studio,*,candidate_root=None,review_check=None):
+        if not isinstance(studio,Studio):
+            raise TypeError("Original trusted NVP Studio required")
+        self.studio=studio
+        self.root=studio.db_path.parent.absolute()
+        self.candidates=Path(candidate_root or
+            (self.root/"nvp_g03_migration_candidates")).absolute()
+        if self.candidates==self.root or not self.candidates.is_relative_to(self.root):
+            raise MigrationRefused("Stage must remain in the same owner-controlled film home")
+        if review_check is not None and not callable(review_check):
+            raise TypeError("Trusted creator review callback required")
+        self.review_check=review_check
+
+    def _snapshot(self,pid):
+        if type(pid) is not str or not ID.fullmatch(pid):
+            raise MigrationRefused("Invalid legacy film ID")
+        source=sqlite3.connect(
+            "file:"+str(self.studio.db_path.resolve())+"?mode=ro",uri=True,timeout=15)
+        memory=sqlite3.connect(":memory:")
+        memory.row_factory=sqlite3.Row
+        try:
+            source.backup(memory, pages=100)
+            tables=[x[0] for x in memory.execute(
+                """SELECT name FROM sqlite_master
+                   WHERE type='table' AND name NOT LIKE 'sqlite_%'
+                   ORDER BY name""").fetchall()]
+            if not tables or len(tables)>MAX_TABLES or "projects" not in tables:
+                raise MigrationRefused("Unexpected Studio SQLite schema")
+            project=memory.execute(
+                "SELECT * FROM projects WHERE id=?",(pid,)).fetchone()
+            if project is None:
+                raise MigrationRefused("Legacy movie does not exist")
+            index={}
+            unknown=[]
+            count=0
+            for table in tables:
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*",table):
+                    raise MigrationRefused("Unknown SQL table identity")
+                columns=[r[1] for r in memory.execute(
+                    f'PRAGMA table_info("{table}")').fetchall()]
+                key="id" if table=="projects" else "project_id" if "project_id" in columns else None
+                if key is None:
+                    nonempty=memory.execute(f'SELECT 1 FROM "{table}" LIMIT 1').fetchone()
+                    if nonempty is not None:
+                        unknown.append(table)
+                    continue
+                rows=memory.execute(
+                    f'SELECT * FROM "{table}" WHERE "{key}"=?',(pid,)).fetchall()
+                ).__iter__()
+                stored=[]
+                for row in rows:
+                    count+=1
+                    if count>MAX_ROWS:
+                        raise MigrationRefused("Legacy film SQL row inventory exceeds cap")
+                    stored.append({column:_encode_sql(row[column])
+                                   for column in columns})
+                if stored:
+                    # JSON sorting provides stable contents across DB reopens;
+                    # no row semantics are inferred from SQLite insertion order.
+                    canonical=lambda row:json.dumps(row,sort_keys=True,
+                        separators=(",",":"),allow_nan=False)
+                    index[table]=sorted(stored,key=canonical)
+            data={"format":"nvp.g03.legacy.sql_snapshot.v1",
+                  "project_id":pid,"tables":index}
+            encoded=json.dumps(data,sort_keys=True,
+                separators=(",",":"),ensure_ascii=True).encode("utf8")
+            if len(encoded)>MAX_TOTAL:
+                raise MigrationRefused("Legacy SQL snapshot exceeds migration limit")
+            return dict(project),encoded,unknown
+        finally:
+            memory.close()
+            source.close()
+
+    def _blob_inventory(self,pid):
+        """Index *all* registered FilmIndex source blobs; do not infer refs."""
+        blob_root=self.root/(self.studio.db_path.stem+"_film_blobs")
+        with self.studio._connection() as db:
+            exists=db.execute("""SELECT 1 FROM sqlite_master WHERE
+                type='table' AND name='film_blob_refs'""").fetchone()
+            records=(db.execute("""SELECT sha256,size_bytes,media_type
+                FROM film_blob_refs WHERE project_id=? ORDER BY sha256""",
+                (pid,)).fetchall() if exists else [])
+        result=[]
+        total=0
+        for row in records:
+            sha,size,mime=row
+            if (type(sha) is not str or not SHA.fullmatch(sha) or
+                    type(size) is not int or not 0<=size<=MAX_BLOB_BYTES):
+                raise MigrationRefused("Bad FilmIndex source asset metadata")
+            source=blob_root/pid/sha[:2]/sha
+            if not source.is_file():
+                raise MigrationRefused("Original FilmIndex blob missing")
+            _component_check(source,self.root)
+            if source.stat().st_size!=size or _sha_file(source)!=sha:
+                raise MigrationRefused("Original FilmIndex blob changed/corrupt")
+            total+=size
+            if total>MAX_TOTAL:
+                raise MigrationRefused("Legacy FilmIndex source exceeds migration budget")
+            result.append({"sha256":sha,"size_bytes":size,"media_type":mime,
+                           "path":source})
+        # The original FilmIndex can retain unindexed/orphan source payloads.
+        # Never represent a complete migration without an independent audit
+        # of those bytes and their provenance.
+        folder=blob_root/pid
+        if folder.exists():
+            _component_check(folder,self.root)
+            known={row["path"] for row in result}
+            extra=[]
+            count=0
+            for candidate in folder.rglob("*"):
+                count+=1
+                if count>MAX_ROWS:
+                    raise MigrationRefused("FilmIndex filesystem exceeds inventory cap")
+                _component_check(candidate,self.root)
+                if candidate.is_file() and candidate not in known:
+                    extra.append(candidate.relative_to(folder).as_posix())
+            if extra:
+                raise MigrationRefused(
+                    "Unindexed FilmIndex bytes require independent recovery review")
+        return result
+
+    def inspect(self,pid):
+        metadata,raw,unknown=self._snapshot(pid)
+        blobs=self._blob_inventory(pid)
+        evidence={"format":"nvp.g03.migration_inventory.v1",
+                  "project_id":pid,
+                  "legacy_sql_sha256":hashlib.sha256(raw).hexdigest(),
+                  "legacy_sql_bytes":len(raw),
+                  "filmindex_blobs":[
+                      {"sha256":b["sha256"],"size_bytes":b["size_bytes"],
+                       "media_type":b["media_type"]}
+                      for b in blobs],
+                  "unknown_nonproject_tables":unknown,
+                  "full_film_cutover_authorized":False,
+                  "original_film_modified":False,
+                  "active_legacy_workers_migrated":False}
+        seal=json.dumps(evidence,sort_keys=True,separators=(",",":")).encode()
+        evidence["inventory_sha256"]=hashlib.sha256(seal).hexdigest()
+        return evidence
+
+    def stage_encrypted_candidate(self,pid,passphrase,reviewed_inventory_sha):
+        """Reviewed copy-only seal; no switching/erasing original movies."""
+        if self.review_check is None:
+            raise MigrationRefused("No real director review authority was supplied")
+        first=self.inspect(pid)
+        if (reviewed_inventory_sha != first["inventory_sha256"] or
+                not self.review_check(pid,reviewed_inventory_sha)):
+            raise MigrationRefused("Director has not approved this exact inventory")
+        # Unknown global rows do not prevent *copying* known bytes into an
+        # encrypted candidate, but the candidate is never a complete cutover.
+        meta,raw,unknown=self._snapshot(pid)
+        blobs=self._blob_inventory(pid)
+        if hashlib.sha256(raw).hexdigest()!=first["legacy_sql_sha256"]:
+            raise MigrationRefused("Original film changed after creator review")
+        self.candidates.mkdir(parents=True,exist_ok=True)
+        _no_link(self.candidates)
+        store=LiveFilmStore(self.candidates)
+        if store.exists(pid):
+            raise MigrationRefused("A protected migration candidate already exists")
+        # Create separate encrypted snapshot with same project ID and
+        # authoritative screenplay. The original Studio DB is untouched.
+        store.create(pid,meta["title"],meta["idea"],meta["screenplay"],passphrase)
+        token="g03-staging-"+secrets.token_urlsafe(32)
+        store.authorize(pid,passphrase,token)
+        try:
+            summary=store.put_original(pid,token,
+                "migration/legacy-project-tables.json",raw,"application/json")
+            if summary["sha256"]!=first["legacy_sql_sha256"]:
+                raise MigrationRefused("Sealed SQLite snapshot disagrees with source")
+            for blob in blobs:
+                data=blob["path"].read_bytes()
+                if hashlib.sha256(data).hexdigest()!=blob["sha256"]:
+                    raise MigrationRefused("Original source changed during sealing")
+                saved=store.put_original(pid,token,
+                    "migration/filmindex/"+blob["sha256"],data,
+                    blob["media_type"])
+                if saved["sha256"]!=blob["sha256"]:
+                    raise MigrationRefused("Stored encrypted FilmIndex source mismatch")
+            fresh=self.inspect(pid)
+            if fresh["inventory_sha256"]!=first["inventory_sha256"]:
+                raise MigrationRefused("Original source changed during migration staging")
+            if store.get_original(pid,token,
+                "migration/legacy-project-tables.json")!=raw:
+                raise MigrationRefused("Staged SQL failed independent decrypt/reopen")
+            for blob in blobs:
+                if hashlib.sha256(store.get_original(pid,token,
+                    "migration/filmindex/"+blob["sha256"])).hexdigest()!=blob["sha256"]:
+                    raise MigrationRefused("Staged FilmIndex blob failed verification")
+            return {"status":"ENCRYPTED_CANDIDATE_VERIFIED",
+                    "project_id":pid,"inventory_sha256":first["inventory_sha256"],
+                    "copied_filmindex_blobs":len(blobs),
+                    "unknown_global_tables":unknown,
+                    "legacy_film_untouched":True,"active_project_switched":False,
+                    "complete_confidentiality":False}
+        finally:
+            store.revoke(pid)
