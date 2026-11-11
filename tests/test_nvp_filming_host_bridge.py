@@ -122,3 +122,23 @@ def test_malformed_recording_event_still_stops_worker():
                 session, capture, "p", "t", recordings=lambda: [None])
         session.stop_and_verify.assert_called_once()
         capture.capture.assert_not_called()
+
+
+def test_shutdown_cannot_rewrite_nested_clock_attestation():
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        pcm = iter((b"\\x00\\x00",))
+        event = {"pcm_chunks": pcm, "source_sync": {"anchors": [{"tick": 42}]},
+                 "clock_evidence": {"proof": ["original"]}}
+        def shutdown(**kwargs):
+            event["source_sync"]["anchors"][0]["tick"] = 999
+            event["clock_evidence"]["proof"][0] = "altered"
+            return GOOD
+        session.stop_and_verify.side_effect = shutdown
+        finish_linux_recording_and_freeze(
+            session, capture, "p", "t", recordings=lambda: [event])
+        forwarded = capture.capture.call_args.kwargs["recordings"][0]
+        assert forwarded["source_sync"]["anchors"][0]["tick"] == 42
+        assert forwarded["clock_evidence"]["proof"] == ["original"]
+        assert forwarded["pcm_chunks"] is pcm
