@@ -61,7 +61,7 @@ def _dpapi():
 
 
 def _project(project_id):
-    if type(project_id) is not str or not PROJECT.fullmatch(project_id):
+    if type(project_id) is not str or not PROJECT_ID.fullmatch(project_id):
         raise VaultError("Invalid film project identity")
     return project_id
 

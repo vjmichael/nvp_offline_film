@@ -829,6 +829,12 @@ def installed_smoke_entry():
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(traceback.format_exc())
+                stream.flush()
+                os.fsync(stream.fileno())
+            # The windowed PyInstaller bootloader would otherwise display a
+            # modal exception dialog, preventing the OS runner from observing
+            # a deterministic failure. This is still a FAILED nonzero exit.
+            return 1
         raise
 
 
