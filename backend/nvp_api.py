@@ -339,6 +339,12 @@ class G04SceneNotes(BaseModel):
 class G04SceneAdd(BaseModel):
     expected_screenplay_revision: int = Field(ge=0)
 
+class G04SpeakerAssignment(BaseModel):
+    source_cue: str = Field(min_length=1,max_length=40)
+    expected_screenplay_revision: int = Field(ge=0)
+    actor_id: str | None = Field(default=None,max_length=40)
+    new_name: str | None = Field(default=None,max_length=100)
+
 class G04SuggestionDecision(BaseModel):
     decision: str
     expected_screenplay_revision: int = Field(ge=0)
@@ -368,6 +374,15 @@ def g04_edit_scene(project_id:str,scene_id:str,request:Request,
     return run(lambda:_director_preproduction(project_id,request).save_scene(
         project_id,scene_id,payload.notes,payload.expected_notes_revision,
         payload.expected_screenplay_revision))
+
+@app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/speakers")
+@app.post("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}/speakers")
+def g04_assign_speaker(project_id:str,scene_id:str,request:Request,
+                       payload:G04SpeakerAssignment):
+    return run(lambda:_director_preproduction(project_id,request).bind_speaker(
+        project_id,scene_id,payload.source_cue,
+        payload.expected_screenplay_revision,
+        actor_id=payload.actor_id,new_name=payload.new_name))
 
 @app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/suggestions")
 @app.post("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}/suggestions")
