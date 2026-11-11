@@ -433,8 +433,32 @@ def _canonical(doc):
         separators=(",",":"),allow_nan=False).encode("utf8")
 
 
+class ActorFrameEvaluator:
+    """Bounded native frame evaluator; original PCM parsed once per Take.
+
+    Many film frames reuse the same frozen source. Decoding 48kHz PCM on
+    every frame would waste memory/CPU and hurt preview frame pacing.
+    """
+    def __init__(self,source,approval):
+        doc=approval["performance"]
+        if approval["sha256"]!=sha256(_canonical(doc)).hexdigest():
+            raise RuntimeError("Approved actor source digest changed")
+        validate_actor_doc(doc,doc["take_id"],source["take_sha256"],source)
+        self.cast={x["actor_id"]:x for x in doc["actors"]}
+        self.events={id:_source_events(source,id) for id in self.cast}
+        self.voice={id:_voice_envelopes(source,actor,source["audio"])
+                    for id,actor in self.cast.items()}
+
+    def sample(self,actor_id,tick):
+        actor=self.cast.get(actor_id)
+        if actor is None:
+            raise KeyError("The selected ActorID was not in this original Take")
+        pose=_local_pose(actor,self.events[actor_id],tick,self.voice[actor_id])
+        return _proxy_positions(actor,pose),pose
+
+
 def sample_visible_actor(source,actor,original_audio,tick):
-    """G08 software portrait uses the SAME stylized acting source as USD."""
+    """Single-shot native evaluation; use ActorFrameEvaluator for sequences."""
     events=_source_events(source,actor["actor_id"])
     voice=_voice_envelopes(source,actor,original_audio)
     pose=_local_pose(actor,events,tick,voice)
