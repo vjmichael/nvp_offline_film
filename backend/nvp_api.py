@@ -89,7 +89,9 @@ async def film_project_access_guard(request: Request, call_next):
                 tail=="live/edit" or tail.startswith("live/edit/")) or (
                 tail=="live/export" or tail.startswith("live/export/")) or (
                 tail.startswith("live/production/looks/")) or (
-                tail.startswith("live/production/actors/"))
+                tail.startswith("live/production/actors/")) or (
+                tail.startswith("live/production/sound/")) or (
+                tail=="live/av" or tail.startswith("live/av/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -1904,3 +1906,8 @@ mount_g09_routes(app,studio,live_films,COOKIE)
 # non-destructive animation share the existing G03 unlock/session boundary.
 from backend.nvp_g09_actor_routes import mount_g09_actor_routes
 mount_g09_actor_routes(app,studio,live_films,COOKIE)
+
+# G09-C source-time spatial picture and authentic original-sound playback,
+# guarded by the existing G03 project unlock and director-session middleware.
+from backend.nvp_g09c_routes import mount_g09c_routes
+mount_g09c_routes(app,studio,live_films,COOKIE)
