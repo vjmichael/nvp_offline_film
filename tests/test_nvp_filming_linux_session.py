@@ -10,6 +10,7 @@ from backend.nvp_filming_linux_session import (
 
 def test_launch_retains_actual_child_and_custody():
     child = Mock()
+    child.poll.return_value = None
     with patch("backend.nvp_filming_linux_session.create_private_group_and_launch",
                return_value=("/sys/fs/cgroup/delegated/leaf", child)) as launch, patch(
                "backend.nvp_filming_linux_session.LinuxFilmingCgroup") as custody:
@@ -137,3 +138,20 @@ def test_invalid_deadline_refused_before_kernel_custody(timeout):
         LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=timeout)
     custody.stop_and_verify.assert_not_called()
     child.wait.assert_not_called()
+
+
+def test_exited_worker_cannot_be_admitted_as_live_filming_session():
+    """A completed bootstrap is not evidence of a running protected worker."""
+    child = Mock(pid=91235)
+    child.poll.return_value = 0
+    group = "/sys/fs/cgroup/delegated/nvp-film-exited"
+    with patch("backend.nvp_filming_linux_session.create_private_group_and_launch",
+               return_value=(group, child)), patch(
+               "backend.nvp_filming_linux_session.LinuxFilmingCgroup"):
+        with pytest.raises(FilmingCustodyInitializationError) as caught:
+            launch_linux_filming_session("/sys/fs/cgroup/delegated",
+                                         "/bin/true", ["/bin/true"])
+    assert caught.value.child is child
+    assert caught.value.group == group
+    child.kill.assert_not_called()
+    child.terminate.assert_not_called()
