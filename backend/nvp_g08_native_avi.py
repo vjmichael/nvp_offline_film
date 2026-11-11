@@ -472,18 +472,31 @@ def render_film(assembly,output,*,cancel=None,progress=None):
             raise RuntimeError("Approved acting direction digest was changed")
         if set(acting)-set(sources):
             raise RuntimeError("An acting profile is not bound to the original film")
+        # One Take can be reused in multiple edits with a different
+        # original-audio placement/mute each time. Derive the acting
+        # source against EACH edited shot so USD jaw time stays equal to
+        # the final audible G07 PCM window, not a stale Take-default.
+        actor_segments=[seg for seg in assembly["segments"]
+                        if seg["take_id"] in acting]
+        if len(actor_segments)>32:
+            raise ValueError("This initial actor export supports up to thirty-two edited character shots")
         for take_id,approval in acting.items():
             record=sources[take_id]
-            if not approval["performance"]["actors"]:
-                continue
+            if approval["performance"]["actors"]:
+                worlds[take_id].actor_frame_evaluator=ActorFrameEvaluator(
+                    record,approval)
+        for seg in actor_segments:
+            take_id=seg["take_id"]
+            approval=acting[take_id]
+            record=sources[take_id]
+            if not approval["performance"]["actors"]:continue
             derived,receipt=author_actor_world(
                 record["performance_usd"],record,approval,
-                source_pcm=record["audio"])
+                source_pcm=record["audio"],voice_edits=seg["audio"],
+                edit_clip_id=seg["clip_id"])
             if receipt["original_audio_untouched"] is not True:
                 raise RuntimeError("Actor animation tried to alter original speech")
-            worlds[take_id].actor_frame_evaluator=ActorFrameEvaluator(
-                record,approval)
-            actor_receipts[take_id]=receipt
+            actor_receipts[seg["clip_id"]]=receipt
             del derived
     writer=MjpegPcmAvi(output,frames)
     for frame in range(frames):
@@ -507,12 +520,15 @@ def render_film(assembly,output,*,cancel=None,progress=None):
     result["approved_actor_performances_sha256"]=assembly.get(
         "actor_performances_sha256")
     result["animated_actor_count"]=sum(
-        receipt["actors"] for receipt in actor_receipts.values())
+        len(approval["performance"]["actors"])
+        for approval in acting.values())
     if acting:
         result["derived_actor_usd_receipts_sha256"]=_actor_sha(_actor_json({
             key:{"source":value["original_usd_sha256"],
                  "derived":value["derived_usd_sha256"],
-                 "approved":value["actor_approved_sha256"]}
+                 "approved":value["actor_approved_sha256"],
+                 "sound_edit":value["sound_edit_sha256"],
+                 "clip":value["edit_clip_id"]}
             for key,value in sorted(actor_receipts.items())
         }).encode("utf8"))
     result["derived_usd_scene_count"]=len(derived_receipts)
