@@ -116,7 +116,7 @@ def test_kernel_phase_consumes_worker_reap_budget():
     child.wait.assert_called_once_with(timeout=0.5)
 
 
-def test_exhausted_kernel_budget_cannot_block_on_worker_wait():
+def test_exhausted_kernel_budget_cannot_claim_bounded_shutdown():
     child = Mock(returncode=-9)
     custody = Mock()
     custody.stop_and_verify.return_value = {
@@ -126,8 +126,9 @@ def test_exhausted_kernel_budget_cannot_block_on_worker_wait():
     }
     with patch("backend.nvp_filming_linux_session.time.monotonic",
                side_effect=[100.0, 105.0]):
-        LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
-    child.wait.assert_called_once_with(timeout=0.0)
+        with pytest.raises(RuntimeError, match="exceeded filming shutdown deadline"):
+            LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
+    child.wait.assert_not_called()
 
 
 @pytest.mark.parametrize("timeout", [0, -1, 61, float("nan"), float("inf"), float("-inf"), True, "5"])
@@ -189,3 +190,17 @@ def test_failed_admission_recovery_refuses_incomplete_kernel_receipt():
         with pytest.raises(RuntimeError, match="affirmative Linux"):
             error.reconcile_and_stop('/owned')
     child.wait.assert_not_called()
+
+
+def test_exactly_exhausted_kernel_budget_only_allows_nonblocking_reap():
+    child = Mock(returncode=-9)
+    custody = Mock()
+    custody.stop_and_verify.return_value = {
+        "process_tree_custody_verified": True, "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    with patch("backend.nvp_filming_linux_session.time.monotonic",
+               side_effect=[100.0, 103.0]):
+        result = LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
+    child.wait.assert_called_once_with(timeout=0.0)
+    assert result["worker_exit_verified"] is True
