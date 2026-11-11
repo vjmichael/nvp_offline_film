@@ -20,6 +20,21 @@ from backend.nvp_g03_live_store import LiveFilmStore,LiveFilmError
 
 
 class CaptureProtocolTests(unittest.TestCase):
+    def test_private_appcontainer_launch_fails_closed_before_any_child(self):
+        # Job Object lifetime custody is not filesystem/network confinement.
+        # Even a caller claiming isolation cannot convert a full-user worker
+        # into an approved private-film sandbox.
+        from backend.nvp_worker_containment import launch_contained
+        with tempfile.TemporaryDirectory() as empty:
+            with self.assertRaisesRegex(RuntimeError,"AppContainer launcher"):
+                launch_contained([str(Path(sys.executable).resolve()),"-V"],
+                                 cwd=empty,stdout=None,stderr=None,
+                                 windows_appcontainer_required=True)
+            with self.assertRaises(ValueError):
+                launch_contained([str(Path(sys.executable).resolve()),"-V"],
+                                 cwd=empty,stdout=None,stderr=None,
+                                 windows_appcontainer_required="attested")
+
     def test_exact_request_contract_and_bounded_sample_count(self):
         self.assertEqual(_validate({
             "device_id":-1,"channels":1,"frames":48000})["frames"],48000)
