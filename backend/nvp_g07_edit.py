@@ -360,7 +360,8 @@ class G07Editor:
                         for item in audio],
                     "note":""})
             elif operation in ("trim","split","remove","move","transition",
-                               "camera","grade","audio","note"):
+                               "camera","grade","audio","note","duplicate",
+                               "replace_take"):
                 if type(details.get("clip_id")) is not str or not HEX.fullmatch(
                         details["clip_id"]):
                     raise ValueError("Select a clip in the movie")
@@ -369,7 +370,28 @@ class G07Editor:
                 if index is None:
                     raise KeyError("This edit clip was removed")
                 clip=clips[index]
-                if operation=="trim":
+                if operation=="duplicate":
+                    if set(details)!={"clip_id"} or len(clips)>=MAX_EDL_CLIPS:
+                        raise ValueError("This shot cannot be duplicated")
+                    duplicated=copy.deepcopy(clip)
+                    duplicated["id"]=uuid.uuid4().hex
+                    duplicated["transition"]={"kind":"cut","duration_tick":0}
+                    clips.insert(index+1,duplicated)
+                elif operation=="replace_take":
+                    if set(details)!={"clip_id","take_id"} or (
+                        type(details["take_id"]) is not str):
+                        raise ValueError("Choose a replacement Take")
+                    newrow,newsource,newaudio=self._take(db,pid,details["take_id"],{})
+                    clip["take_id"]=details["take_id"]
+                    clip["take_sha256"]=newrow["take_sha256"]
+                    clip["source_in_tick"]=0
+                    clip["source_out_tick"]=newsource["duration_tick"]
+                    clip["camera"]=_camera(
+                        self.filming._camera(db,pid,details["take_id"])["views"][0])
+                    clip["audio"]=[{"clip_id":v["clip_id"],"enabled":True,
+                        "gain":1.0,"pan":0.,"spatial":True,"offset_tick":0}
+                        for v in newaudio]
+                elif operation=="trim":
                     if set(details)!={"clip_id","in_seconds","out_seconds"}:
                         raise ValueError("Choose exact source In and Out points")
                     clip["source_in_tick"]=_sec(details["in_seconds"])
