@@ -63,6 +63,11 @@ class LinuxFilmingSession:
         receipt = self._verified_tree_receipt
         if receipt is None:
             receipt = self.custody.stop_and_verify(timeout=timeout)
+        else:
+            # A historical empty-tree receipt cannot authorize a later reap:
+            # the group may have been repopulated after the first observation.
+            # Reobserve kernel state without repeating the one-use kill.
+            receipt = self.custody.verify_still_empty()
         if (not isinstance(receipt, dict)
                 or receipt.get("process_tree_custody_verified") is not True
                 or receipt.get("empty_group_verified") is not True
