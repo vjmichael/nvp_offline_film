@@ -29,6 +29,9 @@ class LegacyMigrationTests(unittest.TestCase):
         self.film=FilmIndex(self.studio)
         self.blob_id=self.film.put_blob(self.pid,SECRET,"audio/pcm")
         self.path=self.film.blob_root/self.pid/self.blob_id[:2]/self.blob_id
+        self.sidecar=self.root/"production"/self.pid/"scene-original.usda"
+        self.sidecar.parent.mkdir(parents=True)
+        self.sidecar.write_bytes(b"#usda 1.0\n# ORIGINAL SIDE DATA")
         self.original=self.studio.get_project(self.pid)
         self.migration=LegacyFilmMigration(self.studio,
             review_check=lambda pid,sha:pid==self.pid and len(sha)==64)
@@ -37,6 +40,8 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertEqual(self.studio.get_project(self.pid),self.original)
         self.assertEqual(self.path.read_bytes(),SECRET)
         self.assertEqual(self.film.get_blob(self.pid,self.blob_id),SECRET)
+        self.assertEqual(self.sidecar.read_bytes(),
+                         b"#usda 1.0\n# ORIGINAL SIDE DATA")
 
     def test_dry_run_lists_referenced_blobs_and_leaves_originals_unchanged(self):
         before=self.migration.inspect(self.pid)
@@ -46,6 +51,9 @@ class LegacyMigrationTests(unittest.TestCase):
             "sha256":self.blob_id,"size_bytes":len(SECRET),"media_type":"audio/pcm"
         }])
         self.assertFalse(before["full_film_cutover_authorized"])
+        self.assertEqual(len(before["project_sidecars"]),1)
+        self.assertEqual(before["project_sidecars"][0]["sha256"],
+                         hashlib.sha256(self.sidecar.read_bytes()).hexdigest())
         self.assertFalse(before["active_legacy_workers_migrated"])
         self.assertFalse((self.root/"nvp_g03_migration_candidates").exists())
         self.assert_untouched()
@@ -64,6 +72,16 @@ class LegacyMigrationTests(unittest.TestCase):
         self.path.unlink()
         with self.assertRaisesRegex(MigrationRefused,"missing"):
             self.migration.inspect(self.pid)
+
+    def test_unclassified_global_worker_journal_stays_a_review_blocker(self):
+        worker=self.root/"native_workers"/"worker_jobs.sqlite3"
+        worker.parent.mkdir()
+        worker.write_bytes(b"UNCLASSIFIED_WORKER_RECOVERY_STATE")
+        report=self.migration.inspect(self.pid)
+        self.assertIn("native_workers/worker_jobs.sqlite3",
+                      report["unclassified_worker_journals"])
+        self.assertFalse(report["full_film_cutover_authorized"])
+        self.assert_untouched()
 
     def test_unknown_global_sql_tables_are_reported_not_hidden(self):
         with self.studio._connection() as db:
@@ -100,6 +118,10 @@ class LegacyMigrationTests(unittest.TestCase):
         blob=stage.get_original(self.pid,token,
                                 "migration/filmindex/"+self.blob_id)
         self.assertEqual(blob,SECRET)
+        self.assertEqual(stage.get_original(
+            self.pid,token,"migration/sidecars/production/"+
+            self.pid+"/scene-original.usda"),self.sidecar.read_bytes())
+        self.assertEqual(result["copied_project_sidecars"],1)
         for path in (self.root/"nvp_g03_migration_candidates").rglob("*"):
             if path.is_file():
                 raw=path.read_bytes()
