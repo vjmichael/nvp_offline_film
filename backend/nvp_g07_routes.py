@@ -20,6 +20,13 @@ class Restore(BaseModel):
     expected_revision:int=Field(ge=0,le=15000)
     source_revision:int=Field(ge=1,le=15000)
 
+class EditingIdeaPrompt(BaseModel):
+    direction:str=Field(default="",max_length=700)
+
+class EditingIdeaReview(BaseModel):
+    expected_revision:int=Field(ge=0,le=15000)
+    decision:str=Field(min_length=6,max_length=6)
+
 
 def _safe(task):
     try:
@@ -32,6 +39,11 @@ def _safe(task):
         raise HTTPException(422,detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(409,detail=str(exc)) from exc
+    except Exception as exc:
+        from backend.nvp_idea_pipeline import LocalModelUnavailable
+        if isinstance(exc,LocalModelUnavailable):
+            raise HTTPException(503,detail="AI editing assistance is unavailable right now") from exc
+        raise
 
 
 def mount_g07_routes(app,studio,live_films,cookie_name):
@@ -63,6 +75,17 @@ def mount_g07_routes(app,studio,live_films,cookie_name):
         return _safe(lambda:editor(project_id,request).restore(
             project_id,payload.source_revision,payload.expected_revision))
     routes("POST","/restore",restore)
+
+    def ask_ideas(project_id:str,request:Request,payload:EditingIdeaPrompt):
+        return _safe(lambda:editor(project_id,request).suggest_editing(
+            project_id,payload.direction))
+    routes("POST","/ideas",ask_ideas)
+
+    def decide_idea(project_id:str,idea_id:str,request:Request,
+                    payload:EditingIdeaReview):
+        return _safe(lambda:editor(project_id,request).decide_editing_idea(
+            project_id,idea_id,payload.decision,payload.expected_revision))
+    routes("POST","/ideas/{idea_id}/decision",decide_idea)
 
     def sample(project_id:str,request:Request,seconds:str="0"):
         service=editor(project_id,request)
