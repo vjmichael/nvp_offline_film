@@ -74,9 +74,13 @@ def serve(app):
     listening.listen(128)
     listening.set_inheritable(False)
     port=listening.getsockname()[1]
+    # Frozen PyInstaller --windowed deliberately has sys.stdout and
+    # sys.stderr set to None. Uvicorn's default formatter calls isatty(),
+    # crashing before the actual loopback server starts. No console logger
+    # belongs in the installed filmmaker app: use host-owned diagnostics.
     config=uvicorn.Config(app,host="127.0.0.1",port=port,
                           access_log=False,log_level="warning",
-                          proxy_headers=False)
+                          log_config=None,proxy_headers=False)
     server=uvicorn.Server(config)
     server.install_signal_handlers=lambda:None
     worker=threading.Thread(target=server.run,kwargs={"sockets":[listening]},

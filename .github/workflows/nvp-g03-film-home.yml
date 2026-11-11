@@ -37,6 +37,8 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_nvp_g03_project_access.py' -v
           python -m unittest discover -s tests -p 'test_api.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_windowed_server.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_slate08b_native_camera_ipc.py' -v
 
   director-ui:
     name: G03 React film home, separate edit window and production bundle
