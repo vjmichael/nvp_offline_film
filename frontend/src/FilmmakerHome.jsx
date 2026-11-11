@@ -84,9 +84,9 @@ export default function FilmmakerHome() {
   }
   function showWelcome() {setProject(null);setFlow('welcome');setError('');setNotice('')}
   function beginMovie() {setProject(null);setFlow('new');setAskMode(true);setError('');setNotice('')}
-  function goPhase(next) {
+  function goPhase(next, movieId=project?.id) {
     setPhase(next);
-    try{window.localStorage.setItem('nvp-film-phase-'+project.id,next)}catch{}
+    if(movieId)try{window.localStorage.setItem('nvp-film-phase-'+movieId,next)}catch{}
   }
   function attachMovie(movie) {
     setProject(movie);
@@ -139,7 +139,7 @@ export default function FilmmakerHome() {
       }
       await refreshProjects();
       attachMovie(movie);
-      goPhase('scenes');
+      goPhase('scenes',movie.id);
       setNotice(mode==='script'
         ? 'Script saved and its scenes listed. You decide how the scenes are performed.'
         : 'Idea saved. Set up your first scene when you are ready.');
