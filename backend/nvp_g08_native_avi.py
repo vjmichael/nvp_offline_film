@@ -509,7 +509,7 @@ def render_film(assembly,output,*,cancel=None,progress=None):
     result["animated_actor_count"]=sum(
         receipt["actors"] for receipt in actor_receipts.values())
     if acting:
-        result["derived_actor_usd_receipts_sha256"]=_sha(_json({
+        result["derived_actor_usd_receipts_sha256"]=_actor_sha(_actor_json({
             key:{"source":value["original_usd_sha256"],
                  "derived":value["derived_usd_sha256"],
                  "approved":value["actor_approved_sha256"]}
