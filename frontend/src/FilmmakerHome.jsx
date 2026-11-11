@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import LineNumberedTextarea from './LineNumberedTextarea.jsx';
+import DirectorSceneLibrary from './DirectorSceneLibrary.jsx';
 import './filmmaker-home.css';
 
 const PHASES = [
@@ -74,6 +75,7 @@ export default function FilmmakerHome() {
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const [serviceAvailable,setServiceAvailable]=useState(false);
+  const [aiStatus,setAiStatus]=useState('AI unavailable');
   const [canEncrypt,setCanEncrypt]=useState(false);
   const [encryptMovie,setEncryptMovie]=useState(false);
   const [moviePassphrase,setMoviePassphrase]=useState('');
@@ -88,6 +90,10 @@ export default function FilmmakerHome() {
   }
   useEffect(()=>{
     let mounted=true;
+    request('/creative/models').then(result=>{
+      if(mounted)setAiStatus(result.state==='available'?'AI ready':
+        result.state==='unavailable'?'AI unavailable':'AI not loaded');
+    }).catch(()=>{if(mounted)setAiStatus('AI unavailable')});
     Promise.all([request('/status'),request('/projects')])
       .then(([status,list])=>{
         if (!mounted) return;
@@ -284,7 +290,7 @@ export default function FilmmakerHome() {
     <main className="film-main">
       <header className="film-topbar">
         <span>{project?'MAKING '+project.title.toUpperCase():'YOUR FILM STUDIO'}</span>
-        <span className="film-ai-state" aria-label="AI connection status">AI assistance not connected</span>
+        <span className="film-ai-state" aria-label="AI connection status">{aiStatus}</span>
       </header>
       {error&&<div role="alert" className="film-error">{error}</div>}
       {notice&&<div role="status" className="film-notice">{notice}</div>}
@@ -396,8 +402,8 @@ export default function FilmmakerHome() {
         <div className="film-film-head">
           <div><div className="film-eyebrow">YOUR MOVIE</div><h1>{project.title}</h1>
             <p className="film-muted">{project.idea||'Develop your story one scene at a time.'}</p>
-            {project.encrypted&&<p className="film-hint" role="status">Encrypted movie.
-              Film and rendering workers are unavailable until protected production is connected.</p>}</div>
+            {project.encrypted&&<p className="film-hint" role="status">This movie is encrypted.
+              You can write and plan your scenes here. Filming is not yet available for protected movies.</p>}</div>
           <div>
             {targetProject?.locked?<button className="film-secondary" onClick={()=>startLock('lock',targetProject)}>Lock Movie</button>
               :<button className="film-secondary" onClick={()=>startLock('protect',{id:project.id,title:project.title})}>Lock in NVP</button>}
@@ -418,35 +424,8 @@ export default function FilmmakerHome() {
               onClick={()=>goPhase('scenes')}>Set Up Scenes →</button></div>
           {dirty&&<p className="film-hint">Unsaved screenplay changes are not part of the scene inventory yet.</p>}
         </section>}
-        {phase==='scenes'&&<section className="film-card">
-          <div className="film-card-head"><div><h2>Set Up Scenes</h2>
-            <p className="film-muted">Choose a scene, review the setting and decide what should happen.</p></div>
-            <button className="film-secondary" onClick={()=>goPhase('script')}>Edit Screenplay</button>
-          </div>
-          {!project.scenes?.length?<div className="film-blank-stage">
-            <div className="film-stage-placeholder" aria-hidden="true">◫</div>
-            <h3>Your first scene starts here</h3>
-            <p>Describe a location and what happens there. Creating the editable 3D scene is a later milestone; none has been generated yet.</p>
-            <button className="film-primary" onClick={()=>goPhase('script')}>Write a scene →</button>
-          </div>:<div className="film-scene-layout">
-            <div className="film-scene-list">
-              {project.scenes.map(s=><button key={s.id}
-                className={s.id===scene?.id?'selected':''} onClick={()=>chooseScene(s.id)}>
-                <small>SCENE {s.number}</small><strong>{s.heading}</strong>
-                <span>{s.characters.length?s.characters.join(', '):'No characters required'}</span>
-              </button>)}
-            </div>
-            <div className="film-scene-details">
-              <div className="film-stage-placeholder" aria-label="3D scene not generated">Scene preview not generated</div>
-              <h3>{scene?.heading}</h3>
-              <p className="film-muted">Location and time come from the script header. Confirm season, weather, props and what moves or happens.</p>
-              <div className="film-script-excerpt">{scene?.text}</div>
-              <div className="film-chip-row">{scene?.characters.map(c=><span key={c}>{c}</span>)}
-                {!scene?.characters.length&&<span>Actor-free scenes welcome</span>}</div>
-              <button className="film-secondary" onClick={()=>goPhase('film')}>Go to Filming →</button>
-            </div>
-          </div>}
-        </section>}
+        {phase==='scenes'&&<DirectorSceneLibrary key={project.id+':'+project.revision}
+          movie={project} onScript={()=>goPhase('script')} onFilm={()=>goPhase('film')}/>}
         {phase==='film'&&<section className="film-card">
           <h2>Film Scenes</h2>
           <p className="film-muted">Direct what happens. Three familiar views are suggested, but filming should preserve the full performance data so you can change framing later.</p>
@@ -456,13 +435,13 @@ export default function FilmmakerHome() {
           {scene&&<div className="film-actions"><button className="film-secondary" disabled={busy||project.encrypted}
             title={project.encrypted?'Protected workers not yet integrated':undefined}
             onClick={()=>suggestShots(scene)}>Save Shot Suggestions</button></div>}
-          <p role="status" className="film-hint">Production capture is not connected to this filmmaker screen yet. These are suggestions, not recorded film.</p>
+          <p role="status" className="film-hint">Your scene plans are saved separately from recorded performances. Filming is not yet available here.</p>
         </section>}
         {phase==='edit'&&<section className="film-card">
           <h2>Edit Film</h2>
           <p className="film-muted">Editing opens in a separate Post-Production window so the scene workspace stays dedicated to directing.</p>
           <a className="film-primary film-open-editor" href={postUrl} target="_blank" rel="noopener noreferrer">Open Post-Production Window ↗</a>
-          <p className="film-hint">The editorial timeline will be integrated in G07. Existing original Takes are never edited by opening this window.</p>
+          <p className="film-hint">Your original recordings remain unchanged when you open the editing window.</p>
         </section>}
         {phase==='export'&&<section className="film-card">
           <h2>Export Film</h2>
