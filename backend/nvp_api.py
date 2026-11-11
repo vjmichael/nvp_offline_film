@@ -88,7 +88,8 @@ async def film_project_access_guard(request: Request, call_next):
                 tail.startswith("live/film/")) or (
                 tail=="live/edit" or tail.startswith("live/edit/")) or (
                 tail=="live/export" or tail.startswith("live/export/")) or (
-                tail.startswith("live/production/looks/"))
+                tail.startswith("live/production/looks/")) or (
+                tail.startswith("live/production/actors/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -1898,3 +1899,8 @@ _g08_controller=mount_g08_routes(app,studio,film_access,live_films,COOKIE)
 # not a separate technical tool or Blender authorization endpoint.
 from backend.nvp_g09_routes import mount_g09_routes
 mount_g09_routes(app,studio,live_films,COOKIE)
+
+# G09-B director-driven actor performances; ActorID, original voice and
+# non-destructive animation share the existing G03 unlock/session boundary.
+from backend.nvp_g09_actor_routes import mount_g09_actor_routes
+mount_g09_actor_routes(app,studio,live_films,COOKIE)
