@@ -38,60 +38,38 @@ function modelGeometry(shape){
 }
 function NativeShotCanvas({shot}){
   const ref=useRef(null);
+  const world=useRef(null);
   const [unavailable,setUnavailable]=useState(false);
+
   useEffect(()=>{
-    const host=ref.current;if(!host||!shot)return;
-    let renderer=null,observer=null;
-    let meshes=[];
+    const host=ref.current;if(!host)return;
+    let renderer=null,observer=null,worldState=null;
     try{
       renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'low-power'});
       renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.5));
       renderer.outputColorSpace=THREE.SRGBColorSpace;
       host.appendChild(renderer.domElement);
       const scene=new THREE.Scene();
-      const dusk=shot.scene_setting?.daylight==='dusk';
-      const night=shot.scene_setting?.daylight==='night';
-      scene.background=new THREE.Color(night?'#151b2a':
-        dusk?'#866e82':'#86adc4');
-      scene.add(new THREE.AmbientLight(0xffffff,night?.55:1.5));
-      const light=new THREE.DirectionalLight(0xffe9cc,night?.5:2.1);
+      scene.background=new THREE.Color('#86adc4');
+      const ambient=new THREE.AmbientLight(0xffffff,1.5);
+      scene.add(ambient);
+      const light=new THREE.DirectionalLight(0xffe9cc,2.1);
       light.position.set(-7,-6,13);scene.add(light);
-      const ambient=shot.active_events||[];
-      if(ambient.some(e=>e.kind==='fog')||shot.scene_setting?.weather==='fog'){
-        scene.fog=new THREE.FogExp2(night?0x111827:0xbccbd0,.038);
-      }
-      for(const object of shot.objects||[]){
-        const group=new THREE.Group();
-        const mat=new THREE.MeshStandardMaterial({
-          color:new THREE.Color(object.color||'#a8b5bb'),
-          roughness:.8,side:THREE.DoubleSide});
-        const obj=new THREE.Mesh(modelGeometry(object.shape),mat);
-        group.add(obj);
-        meshes.push(obj);
-        if(object.role==='actor'){
-          const head=new THREE.Mesh(new THREE.SphereGeometry(.4,12,8),
-            mat.clone());
-          head.position.z=.45;group.add(head);meshes.push(head);
-        }
-        group.position.set(...object.position);
-        group.rotation.set(...(object.rotation||[0,0,0]).map(v=>
-          THREE.MathUtils.degToRad(v)));
-        group.scale.set(...object.scale);
-        scene.add(group);
-      }
       const camera=new THREE.PerspectiveCamera(50,1,.08,450);
       camera.up.set(0,0,1);
-      camera.position.set(...shot.camera.position);
-      camera.lookAt(...shot.camera.look_at);
+      const group=new THREE.Group();
+      scene.add(group);
       const render=()=>{
+        if(!world.current)return;
         const width=Math.max(300,Math.floor(host.clientWidth||720));
         const height=Math.max(240,Math.min(520,Math.round(width*.56)));
         camera.aspect=width/height;
-        camera.fov=2*Math.atan(24/(2*shot.camera.focal_mm))*180/Math.PI;
         camera.updateProjectionMatrix();
         renderer.setSize(width,height);
         renderer.render(scene,camera);
       };
+      worldState={scene,ambient,light,camera,group,renderer,render};
+      world.current=worldState;
       if(typeof ResizeObserver!=='undefined'){
         observer=new ResizeObserver(render);observer.observe(host);
       }
@@ -99,13 +77,70 @@ function NativeShotCanvas({shot}){
       setUnavailable(false);
     }catch(error){
       setUnavailable(true);
+      if(renderer&&host.contains(renderer.domElement))
+        host.removeChild(renderer.domElement);
+      renderer?.dispose();
     }
     return()=>{
       observer?.disconnect();
-      for(const obj of meshes){obj.geometry.dispose();obj.material.dispose()}
+      if(worldState){
+        for(const child of [...worldState.group.children]){
+          child.traverse(node=>{
+            node.geometry?.dispose();node.material?.dispose();
+          });
+          worldState.group.remove(child);
+        }
+      }
+      world.current=null;
+      renderer?.forceContextLoss?.();
       renderer?.dispose();
-      if(renderer&&host.contains(renderer.domElement))host.removeChild(renderer.domElement);
+      if(renderer&&host.contains(renderer.domElement))
+        host.removeChild(renderer.domElement);
     };
+  },[]);
+
+  useEffect(()=>{
+    const state=world.current;
+    if(!state||!shot)return;
+    const {group,scene,ambient,light,camera,render}=state;
+    for(const child of [...group.children]){
+      child.traverse(node=>{
+        node.geometry?.dispose();node.material?.dispose();
+      });
+      group.remove(child);
+    }
+    const dusk=shot.scene_setting?.daylight==='dusk';
+    const night=shot.scene_setting?.daylight==='night';
+    scene.background.set(night?'#151b2a':dusk?'#866e82':'#86adc4');
+    ambient.intensity=night?.55:1.5;
+    light.intensity=night?.5:2.1;
+    const actions=shot.active_events||[];
+    scene.fog=(actions.some(e=>e.kind==='fog')||
+      shot.scene_setting?.weather==='fog')?
+      new THREE.FogExp2(night?0x111827:0xbccbd0,.038):null;
+    for(const object of shot.objects||[]){
+      const wrapper=new THREE.Group();
+      const material=new THREE.MeshStandardMaterial({
+        color:new THREE.Color(object.color||'#a8b5bb'),
+        roughness:.8,side:THREE.DoubleSide});
+      wrapper.add(new THREE.Mesh(modelGeometry(object.shape),material));
+      if(object.role==='actor'){
+        const head=new THREE.Mesh(new THREE.SphereGeometry(.4,12,8),
+          material.clone());
+        head.position.z=.45;
+        wrapper.add(head);
+      }
+      wrapper.position.set(...object.position);
+      wrapper.rotation.set(...(object.rotation||[0,0,0]).map(v=>
+        THREE.MathUtils.degToRad(v)));
+      wrapper.scale.set(...object.scale);
+      group.add(wrapper);
+    }
+    camera.position.set(...shot.camera.position);
+    camera.lookAt(...shot.camera.look_at);
+    camera.fov=2*Math.atan(24/(2*shot.camera.focal_mm))*180/Math.PI;
+    camera.updateProjectionMatrix();
+    render();
   },[shot]);
   const grade=shot.grade||defaultGrade;
   return <div ref={ref} className="film-editor-native-shot"
