@@ -65,6 +65,61 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertFalse((self.root/"nvp_g03_migration_candidates").exists())
         self.assert_untouched()
 
+    def test_unattributed_legacy_originals_become_reviewed_inventory_blockers(self):
+        orphan=self.root/"unassigned-original-sound.pcm"
+        orphan.write_bytes(SECRET)
+        first=self.migration.inspect(self.pid)
+        items=first["unattributed_original_files"]
+        self.assertEqual(len(items),1)
+        self.assertEqual(items[0]["relative"],orphan.name)
+        self.assertEqual(items[0]["sha256"],hashlib.sha256(SECRET).hexdigest())
+        self.assertFalse(first["full_film_cutover_authorized"])
+        self.assertNotIn(SECRET.decode("ascii"),str(first))
+        orphan.write_bytes(SECRET+b"-NEW")
+        second=self.migration.inspect(self.pid)
+        self.assertNotEqual(first["inventory_sha256"],second["inventory_sha256"])
+        self.assert_untouched()
+
+    @unittest.skipUnless(sys.platform=="win32","Requires real Windows DPAPI")
+    def test_fresh_process_reopens_known_film_without_modifying_originals(self):
+        import subprocess
+        from backend.nvp_g03_candidate_recovery import reopen_known_originals
+        inventory=self.migration.inspect(self.pid)
+        password="G03 independent original film recovery test phrase"
+        original_sqlite=self.studio.db_path.read_bytes()
+        self.migration.stage_encrypted_candidate(
+            self.pid,password,inventory["inventory_sha256"])
+        root=self.root/"nvp_g03_migration_candidates"
+        # The verifier creates its own store/session and does not inspect the
+        # original Studio DB; execute it in a new interpreter after staging.
+        code=("""
+import json,sys
+from backend.nvp_g03_candidate_recovery import reopen_known_originals
+request=json.load(sys.stdin)
+result=reopen_known_originals(
+    request["root"],request["pid"],request["passphrase"],request["inventory"])
+print(json.dumps(result,sort_keys=True))
+""")
+        request={"root":str(root),"pid":self.pid,
+                 "passphrase":password,"inventory":inventory}
+        run=subprocess.run([sys.executable,"-c",code],input=json.dumps(request),
+                           capture_output=True,text=True,timeout=45)
+        self.assertEqual(run.returncode,0,run.stderr)
+        recovered=json.loads(run.stdout)
+        self.assertTrue(recovered["known_payloads_authenticated"])
+        self.assertEqual(recovered["known_source_count"],3)
+        self.assertFalse(recovered["full_film_cutover_authorized"])
+        self.assertFalse(recovered["plaintext_restoration_performed"])
+        self.assertFalse(recovered["sql_schema_reconstruction_verified"])
+        self.assertEqual(recovered["unresolved_unattributed_files"],0)
+        self.assertEqual(recovered["reviewed_inventory_sha256"],
+                         inventory["inventory_sha256"])
+        self.assertEqual(self.studio.db_path.read_bytes(),original_sqlite)
+        self.assert_untouched()
+        altered=dict(inventory,legacy_sql_sha256="0"*64)
+        with self.assertRaisesRegex(MigrationRefused,"inventory changed"):
+            reopen_known_originals(root,self.pid,password,altered)
+
     def test_missing_or_changed_filmindex_blob_denies_migration(self):
         self.path.write_bytes(b"modified source")
         with self.assertRaisesRegex(MigrationRefused,"corrupt"):
