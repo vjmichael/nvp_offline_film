@@ -85,11 +85,20 @@ def _voice_envelopes(source,actor,original):
     return selected
 
 
-def _amplitude_at(source,tick,voice):
-    """Jaw amplitude from local RMS 20ms, not a phoneme/word classifier."""
+def _amplitude_at(source,tick,voice,edits=None):
+    """Actual PCM jaw timing follows G07 sound enable, gain and offset.
+
+    Each editorial shot can shift or mute the source independently. Reusing
+    one Take never silently reuses a stale mouth animation.
+    """
+    decisions=({v["clip_id"]:v for v in edits} if edits is not None else None)
     peak=0.
     for ref,pcm in voice:
-        start=ref["start_tick"]
+        choice=decisions.get(ref["clip_id"]) if decisions is not None else None
+        if decisions is not None and (
+                choice is None or not choice["enabled"] or not choice["gain"]):
+            continue
+        start=ref["start_tick"]+(choice["offset_tick"] if choice else 0)
         duration=ref["duration_tick"]
         if not start<=tick<start+duration:continue
         sample=int((tick-start)*SAMPLE_RATE//TICKS_PER_SECOND)
@@ -109,7 +118,7 @@ def _active(events,tick,kind):
             e["start_tick"]<=tick<e["end_tick"]]
 
 
-def _local_pose(actor,events,tick,voice):
+def _local_pose(actor,events,tick,voice,voice_edits=None):
     """Deterministic, bounded joint rotations and visible body keypoints."""
     motion=_active(events,tick,ACTION_STYLES)
     movement=motion[-1] if motion else None
@@ -146,7 +155,7 @@ def _local_pose(actor,events,tick,voice):
     gesture=any(x["kind"]=="gesture" for x in note)
     look=any(x["kind"]=="look" for x in note)
     joy=emotion_strength
-    jaw=_amplitude_at(None,tick,voice)*(.45+.55*joy)
+    jaw=_amplitude_at(None,tick,voice,voice_edits)*(.45+.55*joy)
     rate=actor["blink_rate"]
     blink=0.
     if rate>0:
@@ -196,7 +205,7 @@ def _quat(rot):
     return _q(z,(0.,0.,1.))*_q(y,(0.,1.,0.))*_q(x,(1.,0.,0.))
 
 
-def _times(duration,events,source_audio):
+def _times(duration,events,source_audio,voice_edits=None,expression_cues=()):
     if type(duration) is not int or duration<=0 or duration>3*3600*TICKS_PER_SECOND:
         raise ValueError("Original film duration is outside this character profile")
     # Cues begin/end on exact Film Time; 24 Hz interleaved world-frame
@@ -206,9 +215,20 @@ def _times(duration,events,source_audio):
     for event in events:
         values.add(event["start_tick"])
         values.add(event["end_tick"])
+    audio_choices=({v["clip_id"]:v for v in voice_edits}
+                   if voice_edits is not None else None)
     for clip in source_audio:
-        values.add(clip["start_tick"])
-        values.add(clip["start_tick"]+clip["duration_tick"])
+        choice=audio_choices.get(clip["clip_id"]) if audio_choices is not None else None
+        if audio_choices is not None and (
+                choice is None or not choice["enabled"] or not choice["gain"]):
+            continue
+        start=clip["start_tick"]+(choice["offset_tick"] if choice else 0)
+        for boundary in (start,start+clip["duration_tick"]):
+            if 0<=boundary<=duration:values.add(boundary)
+    for cue in expression_cues:
+        values.add(cue["at_tick"])
+        eased=cue["at_tick"]+TICKS_PER_SECOND//4
+        if eased<=duration:values.add(eased)
     # Exact director facial cues and a modest ease-in key preserve film-time
     # intent even when the film format is projected at a different frame rate.
     for cue in events:
@@ -353,7 +373,8 @@ def _write_proxy_key(prims,actor,pose,tick):
             {"short":.65,"medium":1.,"long":1.35}[hair]),t)
 
 
-def author_actor_world(original_usd,source,approved,*,source_pcm):
+def author_actor_world(original_usd,source,approved,*,source_pcm,
+                       voice_edits=None,edit_clip_id=None):
     """Returns exact new acting USD bytes and independently checked receipt."""
     if (type(original_usd) is not bytes or len(original_usd)>8*1024*1024
         or type(source_pcm) is not list):
@@ -415,11 +436,12 @@ def author_actor_world(original_usd,source,approved,*,source_pcm):
         voice=_voice_envelopes(source,actor,source_pcm)
         times=_times(source["duration_tick"],events,
                      [s for s in source["audio"]
-                      if s["actor_id"]==actor["actor_id"]])
+                      if s["actor_id"]==actor["actor_id"]],
+                     voice_edits,actor["expression_cues"])
         offsets=Vt.Vec3fArray([Gf.Vec3f(*x) for x in OFFSETS])
         scales=Vt.Vec3hArray([Gf.Vec3h(1.,1.,1.) for _ in J])
         for tick in times:
-            pose=_local_pose(actor,events,tick,voice)
+            pose=_local_pose(actor,events,tick,voice,voice_edits)
             anim.GetTranslationsAttr().Set(offsets,Usd.TimeCode(float(tick)))
             rotations=Vt.QuatfArray([_quat(x) for x in pose["rotations"]])
             anim.GetRotationsAttr().Set(rotations,Usd.TimeCode(float(tick)))
@@ -451,7 +473,12 @@ def author_actor_world(original_usd,source,approved,*,source_pcm):
         sample=query.ComputeJointSkelTransforms(Usd.TimeCode(0))
         if sample is None or len(sample)!=len(J):
             raise RuntimeError("Animated USD actor joint transforms did not evaluate")
+    from backend.nvp_g09_actor import _json as _ajson,_sha as _asha
+    sound_digest=(_asha(_ajson(voice_edits).encode("utf8"))
+                  if voice_edits is not None else None)
     return produced,{"format":"nvp.g09.actor_usd.v1",
+        "edit_clip_id":edit_clip_id,
+        "sound_edit_sha256":sound_digest,
         "take_sha256":source["take_sha256"],
         "actor_approved_sha256":approved["sha256"],
         "original_usd_sha256":sha256(original_usd).hexdigest(),
@@ -487,11 +514,12 @@ class ActorFrameEvaluator:
         self.voice={id:_voice_envelopes(source,actor,source["audio"])
                     for id,actor in self.cast.items()}
 
-    def sample(self,actor_id,tick):
+    def sample(self,actor_id,tick,voice_edits=None):
         actor=self.cast.get(actor_id)
         if actor is None:
             raise KeyError("The selected ActorID was not in this original Take")
-        pose=_local_pose(actor,self.events[actor_id],tick,self.voice[actor_id])
+        pose=_local_pose(actor,self.events[actor_id],tick,
+                         self.voice[actor_id],voice_edits)
         return _proxy_positions(actor,pose),pose
 
 
