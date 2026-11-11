@@ -81,6 +81,7 @@ def resource_activity_snapshot():
 class NewProject(BaseModel):
     title: str = Field(min_length=1, max_length=150)
     idea: str = Field(default="", max_length=10000)
+    screenplay: str = Field(default="", max_length=1_000_000)
 
 
 class ScreenplayUpdate(BaseModel):
@@ -165,7 +166,7 @@ def lock_movie(project_id: str, request: Request):
 
 @app.post("/api/projects", status_code=201)
 def create_project(payload: NewProject):
-    return run(lambda: studio.create_project(payload.title, payload.idea))
+    return run(lambda: studio.create_project(payload.title, payload.idea, payload.screenplay))
 
 
 @app.get("/api/projects/{project_id}")
