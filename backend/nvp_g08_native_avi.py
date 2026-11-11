@@ -434,9 +434,11 @@ def render_film(assembly,output,*,cancel=None,progress=None):
             raise RuntimeError("Original performance is not native OpenUSD bytes")
     worlds={key:SourceWorld(value) for key,value in sources.items()}
     production=assembly.get("production_looks",{})
+    derived_receipts={}
     if production:
         from backend.nvp_g09_environment import _json,_sha
         from backend.nvp_g09_render import render_production_picture
+        from backend.nvp_g09_production_usd import author_derived_world
         actual=_sha(_json({key:{
             "revision":v["revision"],"sha256":v["sha256"]}
             for key,v in sorted(production.items())}).encode("utf8"))
@@ -444,6 +446,18 @@ def render_film(assembly,output,*,cancel=None,progress=None):
             raise RuntimeError("Approved scene look digest was changed")
         if set(production)-set(sources):
             raise RuntimeError("An approved set is not bound to a frozen Take")
+        # Independently author and reopen the production PBR/MaterialX USD
+        # layer for each actual original scene before deriving any pixels.
+        # Only the receipt is retained; original USD is never overwritten.
+        for take_id,approval in production.items():
+            derived,receipt=author_derived_world(
+                sources[take_id]["performance_usd"],take_id,
+                sources[take_id]["take_sha256"],approval["look"],
+                sources[take_id])
+            if receipt["source_modified"] is not False:
+                raise RuntimeError("Production scene altered frozen source")
+            derived_receipts[take_id]=receipt
+            del derived
     writer=MjpegPcmAvi(output,frames)
     for frame in range(frames):
         if cancel is not None and cancel():
@@ -463,6 +477,7 @@ def render_film(assembly,output,*,cancel=None,progress=None):
     result["profile"]=PROFILE
     result["approved_look_sha256"]=assembly.get("production_looks_sha256")
     result["approved_production_look_applied"]=bool(production)
+    result["derived_usd_receipts"]=derived_receipts
     result["original_sources_changed"]=False
     return result
 
