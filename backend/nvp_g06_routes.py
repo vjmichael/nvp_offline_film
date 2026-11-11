@@ -33,6 +33,9 @@ class Event(Version):
 class Retake(Version):
     reason:str=Field(default="retake",max_length=160)
 
+class Restore(Version):
+    source_revision:int=Field(ge=1,le=1000000)
+
 class NoteIdea(BaseModel):
     object_id:str|None=Field(default=None,max_length=40)
     at_seconds:str=Field(min_length=1,max_length=30)
@@ -142,6 +145,11 @@ def mount_g06_routes(app,studio,live_films,cookie_name):
             project_id,scene_id,note_id,payload.decision,payload.expected_revision,
             payload.edited_note))
     routes("POST","scene/{scene_id}/notes/{note_id}/decision",review_note)
+
+    def restore(project_id:str,scene_id:str,request:Request,payload:Restore):
+        return _safe(lambda:service(project_id,request).restore_performance(
+            project_id,scene_id,payload.source_revision,payload.expected_revision))
+    routes("POST","scene/{scene_id}/restore",restore)
 
     def retake(project_id:str,scene_id:str,request:Request,payload:Retake):
         return _safe(lambda:service(project_id,request).restart_scene(
