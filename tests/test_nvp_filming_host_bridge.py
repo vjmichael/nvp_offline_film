@@ -91,3 +91,34 @@ def test_invalid_capture_service_still_stops_worker():
             finish_linux_recording_and_freeze(
                 session, object(), "p", "t", recordings=lambda: [])
         session.stop_and_verify.assert_called_once()
+
+
+def test_shutdown_callback_cannot_rewrite_recording_event_metadata():
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        event = {"event_id": "original", "pcm_chunks": iter(())}
+        def shutdown(**kwargs):
+            event["event_id"] = "tampered"
+            event["start_tick"] = 999
+            return GOOD
+        session.stop_and_verify.side_effect = shutdown
+        capture.capture.return_value = {"ok": True}
+        finish_linux_recording_and_freeze(
+            session, capture, "p", "t", recordings=lambda: [event], scene_id="scene")
+        forwarded = capture.capture.call_args.kwargs["recordings"]
+        assert forwarded[0]["event_id"] == "original"
+        assert "start_tick" not in forwarded[0]
+        assert forwarded[0] is not event
+
+
+def test_malformed_recording_event_still_stops_worker():
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        session.stop_and_verify.return_value = GOOD
+        with pytest.raises(ValueError, match="typed dictionaries"):
+            finish_linux_recording_and_freeze(
+                session, capture, "p", "t", recordings=lambda: [None])
+        session.stop_and_verify.assert_called_once()
+        capture.capture.assert_not_called()
