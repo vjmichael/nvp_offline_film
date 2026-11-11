@@ -32,6 +32,12 @@ Plaintext may include SQLite planning tables, screenplay and Production Bible, S
 
 **Release decision:** Security controls in G03 are suitable for preventing inadvertent opening inside NVP, not protecting film data from an OS-account adversary. Full confidentiality is an unresolved **security release blocker** and must not be marked complete based on the current CI evidence. Zero FFmpeg in the active pipeline remains mandatory.
 
+## Windows key custody and encrypted archive implementation (separate from active film storage)
+
+`backend/nvp_g03_windows_vault.py` implements a bounded streaming AES-256-GCM archive with Windows **current-user** DPAPI-wrapped random per-project key and a *passphrase-derived optional-entropy binding*. Distinct project/relative-source identities are bound into associated data, source paths are hidden behind keyed opaque names, and source files are authenticated again on independent readback. The writer rejects symlink/reparse sources, writes into a same-volume staging directory, fsyncs files, and promotes only after successful independent verification. Restore targets must be new directories, cannot clobber originals, and are removed on tamper/incomplete decrypt. Wrong passphrase, foreign project, tampered manifest/source, source race, larger PCM streaming and Windows DPAPI are covered by native tests. The actual installed Windows executable has a synthetic-only `--smoke-vault` smoke mode.
+
+**This provides verified encrypted copies**, not complete at-rest protection of the working project. No active Studio database, its WAL/SHM, working OpenUSD, PCM, Take cache or prior backups are deleted or encrypted. A creator does **not** see “Encrypt Film” as a complete feature. No encrypted-archive operation is called when a movie is merely locked. Accepting active encrypted-storage confidentiality still requires a complete audited per-project filesystem/DB/worker migration, actual OS-key/cross-user/accessibility tests and user-reviewed recovery semantics.
+
 ## Evidence and next steps
 
 - Grouped project API/full inventory tests, windowed-server runtime tests and frontend checks: workflow nvp-g03-film-home.yml.

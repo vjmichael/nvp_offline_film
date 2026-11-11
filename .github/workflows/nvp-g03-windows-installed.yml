@@ -44,7 +44,7 @@ jobs:
           # SLATE-08B's bundled native scene readers must have real OpenUSD.
           python -m pip install --only-binary=:all: 'usd-core==26.11'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19' 'cryptography>=43,<49'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -101,6 +101,7 @@ jobs:
           # GITHUB_ENV carries the exact owned path into subsequent isolated
           # PowerShell steps; never depend on the previous step's process env.
           "NVP_HOME=$env:NVP_HOME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Run-Checked $installed '--smoke-vault' 110 'installed_windows_dpapi_source_archive'
           Run-Checked $installed '--smoke-create' 110 'installed_project_create'
           Run-Checked $installed '--smoke-reopen' 110 'installed_project_reopen'
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {

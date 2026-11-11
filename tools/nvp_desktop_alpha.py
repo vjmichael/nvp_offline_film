@@ -684,6 +684,55 @@ def run_g03_window_smoke():
         else:os.environ["NVP_HOME"]=previous
         shutil.rmtree(temp_home,ignore_errors=True)
 
+def run_g03_vault_smoke():
+    """Independent Windows-account cryptography inside packaged NVP.exe.
+
+    Uses ONLY synthetic data and never modifies the live movie project.
+    This verifies DPAPI identity binding and AES-GCM archive authenticity;
+    it does not imply active project data has been encrypted.
+    """
+    import tempfile
+    from hashlib import sha256
+    from backend.nvp_g03_windows_vault import (
+        VaultError, create_archive, verify_archive, restore_archive
+    )
+    _smoke_checkpoint("windows_key_custody_entered")
+    with tempfile.TemporaryDirectory(prefix="nvp-g03-vault-smoke-") as tmp:
+        root=Path(tmp)/"plaintext-originals"
+        root.mkdir()
+        source_scene=root/"scene.usda"
+        source_audio=root/"source.pcm"
+        source_scene.write_bytes(b"#usda 1.0\n\n def Xform \"Nature\" {}")
+        source_audio.write_bytes(bytes(range(256))*1000)
+        original={p.name:sha256(p.read_bytes()).hexdigest()
+                  for p in (source_scene,source_audio)}
+        encrypted=Path(tmp)/"encrypted"
+        reopened=Path(tmp)/"reopened"
+        pid="a"*32
+        passphrase="G03-SYNTHETIC-WINDOWS-LOCAL-PASS-2026"
+        record=create_archive(pid,root,encrypted,passphrase)
+        if record["status"]!="sealed_archive_verified":
+            raise RuntimeError("Windows authenticated archive not sealed")
+        _smoke_checkpoint("windows_key_custody_sealed")
+        if verify_archive(pid,encrypted,passphrase)["source_files"]!=2:
+            raise RuntimeError("Sealed film originals could not authenticate")
+        try:
+            verify_archive(pid,encrypted,"wrong test passphrase 2026")
+        except VaultError:
+            pass
+        else:
+            raise RuntimeError("Windows DPAPI accepted incorrect entropy")
+        restore_archive(pid,encrypted,reopened,passphrase)
+        if any(sha256((reopened/name).read_bytes()).hexdigest()!=digest
+               for name,digest in original.items()):
+            raise RuntimeError("Reopened originals do not match independent hash")
+        if any(sha256((root/name).read_bytes()).hexdigest()!=digest
+               for name,digest in original.items()):
+            raise RuntimeError("Archive changed original working sources")
+        _smoke_checkpoint("windows_key_custody_reopened_verified")
+    return 0
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
@@ -696,11 +745,14 @@ def main(argv=None):
                         help="Launch a real native Windows WebView2 and verify page loaded")
     parser.add_argument("--smoke-g03-window",action="store_true",
                         help="Test director-first New/Resume, actor-free scene and edit window in native WebView2")
+    parser.add_argument("--smoke-vault",action="store_true",
+                        help="Verify Windows-user DPAPI/AES-GCM encrypted source archive")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
-            args.smoke_window,args.smoke_g03_window,args.smoke_data_av))>1:
+            args.smoke_window,args.smoke_g03_window,args.smoke_vault,
+            args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
@@ -708,6 +760,8 @@ def main(argv=None):
         return run_visible_window_smoke()
     if args.smoke_g03_window:
         return run_g03_window_smoke()
+    if args.smoke_vault:
+        return run_g03_vault_smoke()
     if args.smoke_data_av:
         _smoke_checkpoint("before_native_acceptance_import")
         from tools.nvp_data_av_installed_acceptance import run_installed_data_av_smoke
