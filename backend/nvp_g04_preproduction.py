@@ -414,6 +414,35 @@ class G04Preproduction:
         approved_story=[]
         tables={row[0] for row in db.execute("""SELECT name FROM sqlite_master
             WHERE type='table'""")}
+        # Director-authored wardrobe changes stay tied to the exact
+        # G05-approved stage and ActorID. Projected here as creative Bible
+        # continuity; an older Take remains unaffected by future changes.
+        if {"g06_working","g05_scene_versions"}<=tables:
+            current_scenes={scene["id"]:scene for scene in scenes}
+            for row in db.execute("""SELECT w.scene_id,w.events_json,
+                v.source_sha256 FROM g06_working w
+                JOIN g05_scene_versions v ON
+                    v.project_id=w.project_id AND
+                    v.scene_id=w.scene_id AND
+                    v.revision=w.scene_stage_revision AND
+                    v.usd_sha256=w.stage_sha256
+                WHERE w.project_id=?""",(pid,)):
+                scene=current_scenes.get(row["scene_id"])
+                if scene is None or scene["source_sha256"]!=row["source_sha256"]:
+                    continue
+                for event in json.loads(row["events_json"]):
+                    if (event.get("kind")!="wardrobe" or
+                        not event.get("actor_id") or
+                        not event.get("note")):
+                        continue
+                    person=actors.get(event["actor_id"])
+                    label=person["name"] if person else "Performer"
+                    approved_facts.append({
+                        "scene_id":row["scene_id"],
+                        "category":"wardrobe",
+                        "value":label+": "+event["note"][:500],
+                        "origin":"director_authored_performance",
+                        "source_line":None})
         if {"bible_entities","bible_facts","bible_scene_links"}<=tables:
             raw=db.execute("""SELECT e.id AS entity_id,e.kind,e.name,
                 f.fact_key,f.fact_value,f.story_scope,
