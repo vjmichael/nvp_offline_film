@@ -42,7 +42,7 @@ class ProtectedCyclesError(LiveFilmError):
 # ONLY. A caller cannot mark private movie source as "synthetic" to bypass
 # the independent AppContainer filesystem/network requirement.
 SYNTHETIC_CI_USDA=(
-    b'#usda 1.0\\n\\ndef Cube "OriginalBox" { double size = 2 }\\n')
+    b'#usda 1.0\n\ndef Cube "OriginalBox" { double size = 2 }\n')
 
 
 def _geometry_from_opensud(source):
