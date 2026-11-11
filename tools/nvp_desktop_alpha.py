@@ -444,7 +444,7 @@ def run_g03_window_smoke():
         movie=studio.create_project(
             "G03 Visual Movie",
             "A valley in the early morning",
-            "EXT. VALLEY - MORNING\\n\\nMist drifts across the hillside.")
+            "EXT. VALLEY - MORNING\n\nMist drifts across the hillside.")
         server,worker,port,sock=serve(app)
         loaded=Event()
         result={"passed":False,"phase":"not_started"}
