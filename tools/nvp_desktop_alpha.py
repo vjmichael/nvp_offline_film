@@ -791,6 +791,60 @@ def run_g03_live_installed_smoke(mode):
             raise RuntimeError("Encrypted installed app did not close cleanly")
 
 
+def run_g03_legacy_migration_installed_smoke():
+    """Review-then-seal synthetic original film in installed Windows NVP.
+
+    This does not switch the active original or silently claim full migration.
+    Approval is a pinned synthetic CI ticket, not a human dialog receipt.
+    """
+    import hashlib
+    from backend.nvp_studio import Studio
+    from backend.nvp_film_index import FilmIndex
+    from backend.nvp_g03_legacy_migration import LegacyFilmMigration
+    from backend.nvp_g03_live_store import LiveFilmStore
+    if sys.platform!="win32":
+        raise RuntimeError("Native Windows DPAPI migration only")
+    _smoke_checkpoint("g03_legacy_migration_entered")
+    with tempfile.TemporaryDirectory(prefix="nvp-g03-installed-migration-") as temp:
+        root=Path(temp)
+        studio=Studio(root/"original-studio.sqlite3")
+        original=studio.create_project("Original historical film",
+            "Private idea that must survive migration",
+            "EXT. ORIGINAL COAST - MORNING\n\nNo actor required.")
+        pid=original["id"]
+        index=FilmIndex(studio)
+        audio=b"PCM_NATIVE_ORIGINAL_FROZEN_DATA"*1000
+        sha=index.put_blob(pid,audio,"audio/pcm")
+        approval={"used":False}
+        def review(reviewed_pid,manifest):
+            if reviewed_pid!=pid or approval["used"]:
+                return False
+            approval["used"]=True
+            return True
+        migrator=LegacyFilmMigration(studio,review_check=review)
+        evidence=migrator.inspect(pid)
+        if evidence["filmindex_blobs"][0]["sha256"]!=sha:
+            raise RuntimeError("Original historical blob missing in inventory")
+        sealed=migrator.stage_encrypted_candidate(
+            pid,"G03-SYNTHETIC-LEGACY-MIGRATION-PASSPHRASE-2026",
+            evidence["inventory_sha256"])
+        if not sealed["legacy_film_untouched"] or sealed["active_project_switched"]:
+            raise RuntimeError("Legacy original modified or migration prematurely activated")
+        reopened=LiveFilmStore(root/"nvp_g03_migration_candidates")
+        token="trusted-installed-test-"+("b"*32)
+        reopened.authorize(pid,"G03-SYNTHETIC-LEGACY-MIGRATION-PASSPHRASE-2026",token)
+        if reopened.get_original(pid,token,"migration/filmindex/"+sha)!=audio:
+            raise RuntimeError("Independent encrypted FilmIndex PCM reopen failed")
+        if reopened.read(pid,token)["screenplay"]!=original["screenplay"]:
+            raise RuntimeError("Original screenplay not preserved in sealed candidate")
+        if studio.get_project(pid)!=original or index.get_blob(pid,sha)!=audio:
+            raise RuntimeError("Non-destructive migration changed creator originals")
+        if (root/"nvp_g03_encrypted_live"/pid).exists():
+            raise RuntimeError("Migration silently switched the active film")
+        _smoke_checkpoint("g03_legacy_candidate_sealed_and_reopened_original_untouched")
+    return 0
+
+
 def run_g03_protected_native_worker_smoke():
     """Actually installed DPAPI movie and contained native USD worker.
 
@@ -928,6 +982,8 @@ def main(argv=None):
                         help=argparse.SUPPRESS)
     parser.add_argument("--smoke-live-worker",action="store_true",
                         help="Run synthetic real Windows Job Object protected OpenUSD staging")
+    parser.add_argument("--smoke-legacy-migration",action="store_true",
+                        help="Audit and non-destructively encrypt a synthetic legacy film")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(argv)
@@ -935,13 +991,15 @@ def main(argv=None):
             args.smoke_window,args.smoke_g03_window,args.smoke_vault,
             args.smoke_live_create,args.smoke_live_reopen,
             args.g03_protected_scene_worker,args.smoke_live_worker,
-            args.smoke_data_av))>1:
+            args.smoke_legacy_migration,args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.g03_protected_scene_worker:
         from tools.nvp_g03_protected_scene_worker import worker_entry
         return worker_entry()
     if args.smoke_live_worker:
         return run_g03_protected_native_worker_smoke()
+    if args.smoke_legacy_migration:
+        return run_g03_legacy_migration_installed_smoke()
     if args.smoke:
         return run_smoke()
     if args.smoke_window:
