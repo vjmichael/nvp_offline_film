@@ -89,7 +89,7 @@ def _object(scene_id,key,label,role,shape,position,scale,color,actor_id=None):
     return {"id":_oid(scene_id,key),"name":label,"role":role,
         "shape":shape,"position":position,"rotation":[0.0,0.0,0.0],
         "scale":scale,"color":color,"actor_id":actor_id,
-        "preset":key.split(":")[0]}
+        "preset":key.split(":")[0],"director_note":"","wardrobe_note":""}
 
 
 def _daylight(when):
@@ -235,13 +235,18 @@ def _validate(plan,handoff):
     for item in objects:
         if (type(item) is not dict or
             set(item)!={"id","name","role","shape","position","rotation",
-                        "scale","color","actor_id","preset"} or
+                        "scale","color","actor_id","preset",
+                        "director_note","wardrobe_note"} or
             type(item["id"]) is not str or not OBJECT_ID.fullmatch(item["id"]) or
             item["id"] in ids):
             raise ValueError("The scene contains a duplicate or unknown object")
         ids.add(item["id"])
         _name(item["name"]);_vec(item["position"]);_vec(item["rotation"],360)
         _scale(item["scale"])
+        if (any(type(item[k]) is not str or len(item[k])>1500
+                for k in ("director_note","wardrobe_note")) or
+                (item["role"]!="actor" and item["wardrobe_note"])):
+            raise ValueError("Invalid creative object note")
         if (item["role"] not in ROLES or item["shape"] not in VALID_SHAPES
                 or type(item["color"]) is not str or
                 not COLOR.fullmatch(item["color"]) or
@@ -312,6 +317,12 @@ def _build_usd(plan):
         holder.CreateAttribute("nvp:semanticRole",Sdf.ValueTypeNames.String).Set(object_["role"])
         if object_["actor_id"]:
             holder.CreateAttribute("nvp:ActorID",Sdf.ValueTypeNames.String).Set(object_["actor_id"])
+        if object_["director_note"]:
+            holder.CreateAttribute("nvp:directorNote",Sdf.ValueTypeNames.String).Set(
+                object_["director_note"])
+        if object_["wardrobe_note"]:
+            holder.CreateAttribute("nvp:wardrobeNote",Sdf.ValueTypeNames.String).Set(
+                object_["wardrobe_note"])
         geometry_path=path+"/Geometry"
         shape=object_["shape"]
         if shape=="box":
@@ -495,10 +506,9 @@ class G05SceneAuthoring:
                 "scene_name":source["scene_name"],
                 "status":"not_created","current":True,
                 "draft":True,"revision":0,"objects":[],
-                "available_presets":sorted(PRESETS),
+                "available_presets":sorted(PRESETS),"actor_choices":source["cast"],
                 "past_versions":[],"filming_authorized":False}
-        if (_sha(record["usd_layer"])!=record["usd_sha256"] or
-            _sha(record["plan_json"].encode("utf8"))=="" ):
+        if _sha(record["usd_layer"])!=record["usd_sha256"]:
             raise RuntimeError("A saved scene has been altered")
         plan=json.loads(record["plan_json"])
         _validate(plan,source) if head["source_sha256"]==source["scene_source_sha256"] else None
@@ -521,7 +531,7 @@ class G05SceneAuthoring:
             "visual_style":plan["visual_style"],
             "stage_sha256":record["usd_sha256"],
             "stage_native_opensud_reopened":current,
-            "available_presets":sorted(PRESETS),
+            "available_presets":sorted(PRESETS),"actor_choices":source["cast"],
             "past_versions":[dict(v) for v in versions],
             "unresolved_questions":plan["unknowns"],
             "filming_authorized":False}
@@ -607,8 +617,10 @@ class G05SceneAuthoring:
                 objects.append({"id":new_id,"name":label,"role":role,
                     "shape":shape,"position":[0.,0.,1. if shape not in ("sun","camera") else 5.],
                     "rotation":[0.,0.,0.],"scale":list(scale),
-                    "color":color,"actor_id":actor_id,"preset":preset})
-            elif operation in ("move","rotate","resize","recolor","rename","remove"):
+                    "color":color,"actor_id":actor_id,"preset":preset,
+                    "director_note":"","wardrobe_note":""})
+            elif operation in ("move","rotate","resize","recolor","rename",
+                                "note","wardrobe","remove"):
                 if type(details.get("id")) is not str or not OBJECT_ID.fullmatch(
                         details["id"]):
                     raise ValueError("Choose an existing scene object")
@@ -632,6 +644,14 @@ class G05SceneAuthoring:
                 if operation=="rename":
                     if set(details)!={"id","name"}:raise ValueError("Invalid object label")
                     item["name"]=_name(details["name"])
+                if operation in ("note","wardrobe"):
+                    field="director_note" if operation=="note" else "wardrobe_note"
+                    if set(details)!={"id","value"} or type(details["value"]) is not str or (
+                        len(details["value"])>1500):
+                        raise ValueError("Choose a short creative note")
+                    if operation=="wardrobe" and item["role"]!="actor":
+                        raise ValueError("Only characters can have wardrobe notes")
+                    item[field]=details["value"]
                 if operation=="remove":
                     if item["role"]=="camera" and sum(
                             o["role"]=="camera" for o in objects)==1:
