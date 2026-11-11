@@ -3,6 +3,7 @@ project/cookie gate has been installed. No rendering worker permissions here."""
 from __future__ import annotations
 
 from fastapi import HTTPException,Request
+from fastapi.responses import Response
 from pydantic import BaseModel,Field
 
 from backend.nvp_g06_filming import G06Filming
@@ -35,6 +36,7 @@ class Retake(Version):
 
 class Freeze(Version):
     clip_ids:list[str]=Field(default_factory=list,max_length=32)
+    clip_starts:dict[str,str]=Field(default_factory=dict)
 
 
 class MicrophoneStart(BaseModel):
@@ -63,6 +65,8 @@ def _safe(action):
         raise HTTPException(422,detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(409,detail=str(exc)) from exc
+    except ImportError as exc:
+        raise HTTPException(503,detail="This computer's microphone is unavailable") from exc
 
 
 def mount_g06_routes(app,studio,live_films,cookie_name):
@@ -142,9 +146,18 @@ def mount_g06_routes(app,studio,live_films,cookie_name):
             project_id,payload.session_id,request.cookies.get(cookie_name)))
     routes("POST","scene/{scene_id}/microphone/cancel",mic_cancel)
 
+    def listen(project_id:str,scene_id:str,clip_id:str,request:Request):
+        original=_safe(lambda:service(project_id,request).original_preview(
+            project_id,scene_id,clip_id))
+        return Response(content=original,media_type="audio/wav",
+            headers={"Cache-Control":"private, no-store, max-age=0",
+                     "X-Content-Type-Options":"nosniff"})
+    routes("GET","scene/{scene_id}/originals/{clip_id}/listen",listen)
+
     def freeze(project_id:str,scene_id:str,request:Request,payload:Freeze):
         return _safe(lambda:service(project_id,request).freeze_take(
-            project_id,scene_id,payload.expected_revision,payload.clip_ids))
+            project_id,scene_id,payload.expected_revision,payload.clip_ids,
+        payload.clip_starts))
     routes("POST","scene/{scene_id}/takes",freeze)
 
     def take(project_id:str,scene_id:str,take_id:str,request:Request):
