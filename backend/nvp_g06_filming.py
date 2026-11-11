@@ -814,7 +814,51 @@ class G06Filming:
                         for entry in audio],
                     "stage_objects":doc["stage_objects"],"camera":views,
                     "camera_changes_preserve_take":True}
-        return self._with(pid,scene_id,read)
+        return self.g05.g04._execute(pid,lambda db,movie:(
+            self._schema(db),read(db,movie,None))[1])
+
+    def native_take(self,pid,take_id):
+        """Internal-only G07/G08 source, not exposed to the film WebView.
+
+        Frozen picture/world bytes and original recorded PCM survive changes
+        to or deletion of the current screenplay scene. Source restoration
+        must never depend on a *current* G04/G05 authoring record.
+        """
+        def read(db,movie):
+            self._schema(db)
+            row,document,audio=self._take(db,pid,take_id)
+            clips=[]
+            for item in audio:
+                source=db.execute("""SELECT pcm,pcm_sha256,sample_count
+                    FROM g06_original_pcm WHERE project_id=? AND
+                    scene_id=? AND id=?""",
+                    (pid,row["scene_id"],item["clip_id"])).fetchone()
+                if (source is None or
+                    _sha(source["pcm"])!=item["pcm_sha256"] or
+                    source["pcm_sha256"]!=item["pcm_sha256"]):
+                    raise RuntimeError("Frozen original audio unavailable")
+                clips.append({"clip_id":item["clip_id"],
+                    "pcm16le":bytes(source["pcm"]),
+                    "start_tick":item["start_tick"],
+                    "duration_tick":item["duration_tick"],
+                    "emitter_path":item["emitter_path"],
+                    "emitter_actor_id":item["actor_id"],
+                    "pcm_sha256":item["pcm_sha256"],
+                    "sample_rate":RATE,"channels":1})
+            return {"format":TAKE_FORMAT,
+                    "project_id":pid,"scene_id":row["scene_id"],
+                    "take_id":take_id,"take_sha256":row["take_sha256"],
+                    "original_scene_usd":bytes(row["original_usd"]),
+                    "original_scene_sha256":row["original_usd_sha256"],
+                    "performance_usd":bytes(row["performance_usd"]),
+                    "performance_sha256":row["performance_usd_sha256"],
+                    "event_manifest":document["events"],
+                    "duration_tick":document["duration_tick"],
+                    "original_audio":clips,
+                    "camera_selections":self._camera(db,pid,take_id),
+                    "source_immutable":True,
+                    "no_frozen_camera_projection":True}
+        return self.g05.g04._execute(pid,read)
 
     @staticmethod
     def _camera(db,pid,take_id):
@@ -862,4 +906,5 @@ class G06Filming:
             return {"take_id":take_id,"take_digest":row["take_sha256"],
                     "camera":self._camera(db,pid,take_id),
                     "original_take_unchanged":True}
-        return self._with(pid,scene_id,revise,mutate=True)
+        return self.g05.g04._execute(pid,lambda db,movie:(
+            self._schema(db),revise(db,movie,None))[1],mutate=True)
