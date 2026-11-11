@@ -233,10 +233,76 @@ class LegacyFilmMigration:
         return sorted(located,key=lambda x:x["relative"]),sorted(set(ambiguous))
 
 
+    def _journal_provenance(self,pid,ambiguous):
+        """Read-only forensic classification; never acquire/write worker journal.
+
+        A global worker record may mention a movie ID but still be owned by an
+        active process. Evidence is deliberately *not* interpreted as permission
+        to migrate, pause, relaunch, scrub or delete that worker.
+        """
+        report=[]
+        for relative in ambiguous:
+            path=self.root/relative
+            _component_check(path,self.root)
+            size=path.stat().st_size
+            if size>64*1024*1024:
+                raise MigrationRefused("Global worker journal exceeds forensic cap")
+            digest=_sha_file(path)
+            info={"relative":relative,"sha256":digest,
+                  "size_bytes":size,"format":"unknown",
+                  "matching_project_rows":0,
+                  "unclassified_tables":[],
+                  "live_worker_custody_proved":False,
+                  "safe_to_cutover":False}
+            with path.open("rb") as stream:
+                signature=stream.read(16)
+            if signature==b"SQLite format 3\x00":
+                conn=sqlite3.connect(
+                    "file:"+str(path.resolve())+"?mode=ro",uri=True,timeout=5)
+                try:
+                    conn.row_factory=sqlite3.Row
+                    checked=conn.execute("PRAGMA integrity_check").fetchone()
+                    if checked is None or checked[0]!="ok":
+                        raise MigrationRefused("Global worker journal SQLite corrupt")
+                    tables=[r[0] for r in conn.execute(
+                        """SELECT name FROM sqlite_master WHERE type='table'
+                           AND name NOT LIKE 'sqlite_%' ORDER BY name""")]
+                    if len(tables)>MAX_TABLES:
+                        raise MigrationRefused("Too many native worker journal tables")
+                    for table in tables:
+                        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*",table):
+                            raise MigrationRefused("Unknown worker SQLite table identity")
+                        columns=[r[1] for r in conn.execute(
+                            f'PRAGMA table_info("{table}")')]
+                        if "project_id" in columns:
+                            count=conn.execute(
+                                f'SELECT COUNT(*) FROM "{table}" WHERE project_id=?',
+                                (pid,)).fetchone()[0]
+                            info["matching_project_rows"]+=count
+                            if count>MAX_ROWS:
+                                raise MigrationRefused("Excess worker custody records")
+                        elif conn.execute(
+                                f'SELECT 1 FROM "{table}" LIMIT 1').fetchone():
+                            info["unclassified_tables"].append(table)
+                    info["format"]="sqlite"
+                    info["tables"]=len(tables)
+                finally:
+                    conn.close()
+            else:
+                info["format"]="opaque_unclassified"
+            # Recheck after forensic read; concurrent writer invalidates any
+            # inventory hash, never implies safe process custody.
+            if _sha_file(path)!=digest:
+                raise MigrationRefused("Global worker journal changed during review")
+            report.append(info)
+        return report
+
+
     def inspect(self,pid):
         metadata,raw,unknown=self._snapshot(pid)
         blobs=self._blob_inventory(pid)
         sidecars,ambiguous=self._sidecar_inventory(pid)
+        journals=self._journal_provenance(pid,ambiguous)
         evidence={"format":"nvp.g03.migration_inventory.v1",
                   "project_id":pid,
                   "legacy_sql_sha256":hashlib.sha256(raw).hexdigest(),
@@ -247,6 +313,7 @@ class LegacyFilmMigration:
                       for b in blobs],
                   "unknown_nonproject_tables":unknown,
                   "unclassified_worker_journals":ambiguous,
+                  "global_worker_journal_provenance":journals,
                   "project_sidecars":[
                       {"relative":entry["relative"],"sha256":entry["sha256"],
                        "size_bytes":entry["size_bytes"]} for entry in sidecars],
