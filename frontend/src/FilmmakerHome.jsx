@@ -92,14 +92,58 @@ export default function FilmmakerHome() {
       }).catch(()=>{if(mounted)setError('NVP is not connected. Your saved movie remains on this computer.');});
     return ()=>{mounted=false};
   },[]);
+  // WebView2 may leave a screenplay partially edited while the director
+  // selects another movie. Never discard that source silently.
+  function confirmLeavingUnsaved() {
+    return !project || script===project.screenplay ||
+      window.confirm('This screenplay has unsaved edits. Leave without saving?');
+  }
+  useEffect(()=>{
+    if(!project?.id)return;
+    let active=true;
+    const id=project.id;
+    const revoke=()=>{
+      if(!active)return;
+      active=false;
+      setProject(null);
+      setScript('');
+      setSelectedScene('');
+      setFlow('resume');
+      setError('This movie was locked or is no longer available. Unlock it to continue.');
+      request('/projects').then(list=>setProjects(list)).catch(()=>{});
+    };
+    const verify=()=>{
+      request('/projects/'+id).catch(error=>{
+        if(active&&(error.status===423||error.status===404))revoke();
+      });
+    };
+    const onStorage=(event)=>{
+      if(event.key==='nvp-film-lock-'+id)revoke();
+    };
+    window.addEventListener('storage',onStorage);
+    window.addEventListener('focus',verify);
+    const poll=window.setInterval(verify,15000);
+    return ()=>{
+      active=false;
+      window.removeEventListener('storage',onStorage);
+      window.removeEventListener('focus',verify);
+      window.clearInterval(poll);
+    };
+  },[project?.id]);
   async function perform(fn) {
     if(busy)return;
     setBusy(true);setError('');setNotice('');
     try{await fn()}catch(err){setError(err.message)}
     finally{setBusy(false)}
   }
-  function showWelcome() {setProject(null);setFlow('welcome');setError('');setNotice('')}
-  function beginMovie() {setProject(null);setFlow('new');setAskMode(true);setError('');setNotice('')}
+  function showWelcome(force=false) {
+    if(!force&&!confirmLeavingUnsaved())return;
+    setProject(null);setFlow('welcome');setError('');setNotice('');
+  }
+  function beginMovie() {
+    if(!confirmLeavingUnsaved())return;
+    setProject(null);setFlow('new');setAskMode(true);setError('');setNotice('');
+  }
   function goPhase(next, movieId=project?.id) {
     setPhase(next);
     if(movieId)try{window.localStorage.setItem('nvp-film-phase-'+movieId,next)}catch{}
@@ -115,6 +159,8 @@ export default function FilmmakerHome() {
     setFlow('working');
   }
   async function openMovie(id) {
+    if(id===project?.id)return;
+    if(!confirmLeavingUnsaved())return;
     const record=projects.find(x=>x.id===id);
     if(record?.locked&&!record.unlocked) {
       setLockTarget(record);setLockAction('unlock');setPassphrase('');setConfirmPhrase('');
@@ -143,7 +189,7 @@ export default function FilmmakerHome() {
       }
       try{window.localStorage.setItem('nvp-film-lock-'+lockTarget.id,String(Date.now()))}catch{}
       setLockTarget(null);setPassphrase('');setConfirmPhrase('');
-      await refreshProjects();showWelcome();
+      await refreshProjects();showWelcome(true);
       setNotice('Movie locked. Its scenes and screenplay require unlocking again.');
     });
   }
