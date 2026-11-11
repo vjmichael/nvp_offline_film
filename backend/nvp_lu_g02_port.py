@@ -46,7 +46,7 @@ class NativeLuHostPort(Protocol):
         """Host atomically consumes the matching journaled complete generation
         and saves proposal-only content under source-revision CAS. It must
         reject direct, stale, different-project and duplicate receipt writes.
-        Returns completed_generation_sha256 and source_mutated=False.
+        Returns consumed_proposal_sha256 and source_mutated=False.
         """
     def cancel_active(self, scope: object) -> bool: ...
 
@@ -207,6 +207,7 @@ class LuG02FilmPort:
             raise LuHostError("Lu inference ended without verified text completion")
         self._scope(scope, "receipt")
         generated = "".join(output)
+        normalized_proposal = generated.strip()
         receipt = {
             "format": "nvp.g02.lu_completed_proposal.v1",
             "workspace": original["workspace"],
@@ -217,6 +218,7 @@ class LuG02FilmPort:
             "generationId": generation,
             "request_sha256": request_sha,
             "generated_sha256": sha256(generated.encode("utf8")).hexdigest(),
+            "proposal_sha256": sha256(normalized_proposal.encode("utf8")).hexdigest(),
             "output_characters": len(generated),
             "host_reported_finished": True,
             "model_weights_verified_here": False,
@@ -228,7 +230,8 @@ class LuG02FilmPort:
         self._scope(scope, "receipt")
         if (type(saved) is not dict or saved.get("status") != "recorded" or
                 saved.get("request_sha256") != request_sha or
-                saved.get("generated_sha256") != receipt["generated_sha256"]):
+                saved.get("generated_sha256") != receipt["generated_sha256"] or
+                saved.get("proposal_sha256") != receipt["proposal_sha256"]):
             raise LuHostError("Lu did not durably journal the completed generation")
         return generated
 
@@ -248,7 +251,7 @@ class LuG02FilmPort:
         after = self._scope(scope, "save")
         if (before != after or type(result) is not dict or
                 result.get("status") != "proposed" or
-                result.get("completed_generation_sha256") != generated_sha or
+                result.get("consumed_proposal_sha256") != generated_sha or
                 result.get("source_mutated") is not False):
             raise LuHostError("Lu did not atomically consume the exact completed-generation receipt")
         return result
