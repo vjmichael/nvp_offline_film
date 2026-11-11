@@ -100,7 +100,7 @@ class LiveFilmStoreWindows(unittest.TestCase):
         with self.assertRaisesRegex(LiveFilmError,"permission"):
             self.store.worker_execute(PID,lease,"write_original",
                                       "scene/a.usda",data=SOURCE)
-        self.assertFalse((self.root/PID/"assets").glob("*.nvpsealed").__iter__().__next__ if False else False)
+        self.assertEqual(list((self.root/PID/"assets").glob("*.nvpsealed")),[])
         with self.assertRaises(LiveFilmError):
             self.store.read(PID,self.token)
 

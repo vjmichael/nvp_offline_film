@@ -184,7 +184,10 @@ class ProjectAccessTests(unittest.TestCase):
 
     def test_unencrypted_project_files_are_truthfully_disclosed(self):
         flags=self.client.get("/api/status").json()["capabilities"]
-        self.assertEqual(flags["project_file_encryption"],"not_available")
+        import sys
+        self.assertEqual(flags["project_file_encryption"],
+                         "new_windows_movies_only" if sys.platform=="win32"
+                         else "not_available")
         self.protect()
         # Demonstrate the known release blocker rather than asserting
         # that an HTTP lock encrypted original SQLite data.
