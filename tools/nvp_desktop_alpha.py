@@ -973,6 +973,42 @@ def run_g03_protected_native_worker_smoke():
         return 0
 
 
+def _emit_g03_recovery_receipt(receipt):
+    """Hash-only stdout, including PyInstaller --windowed executable."""
+    import json
+    encoded=(json.dumps(receipt,sort_keys=True,separators=(",",":"))+"\n").encode("utf8")
+    if sys.stdout is not None:
+        sys.stdout.buffer.write(encoded)
+        sys.stdout.buffer.flush()
+        return
+    if sys.platform!="win32":
+        raise RuntimeError("Independent recovery has no stdout pipe")
+    import ctypes,msvcrt
+    kernel=ctypes.windll.kernel32
+    kernel.GetStdHandle.argtypes=[ctypes.c_ulong]
+    kernel.GetStdHandle.restype=ctypes.c_void_p
+    h=kernel.GetStdHandle((-11)&0xffffffff)
+    if not h or h==ctypes.c_void_p(-1).value:
+        raise RuntimeError("Native installed recovery stdout unavailable")
+    fd=msvcrt.open_osfhandle(h,os.O_BINARY|os.O_WRONLY)
+    with os.fdopen(fd,"wb",buffering=0) as output:
+        output.write(encoded)
+
+
+def run_g03_candidate_reconstruction_process():
+    """Only an independent fresh process may reconstruct historical originals."""
+    import json
+    from backend.nvp_g03_full_recovery import reconstruct_and_reopen
+    request=json.load(sys.stdin)
+    if not isinstance(request,dict) or set(request)!={
+            "root","pid","passphrase","inventory"}:
+        raise ValueError("Exact original-film reconstruction request required")
+    receipt=reconstruct_and_reopen(request["root"],request["pid"],
+        request["passphrase"],request["inventory"])
+    _emit_g03_recovery_receipt(receipt)
+    return 0
+
+
 def run_g03_candidate_readback_process():
     """Isolated hash-only original recovery from stdin; no CLI passphrase."""
     import json
@@ -983,7 +1019,7 @@ def run_g03_candidate_readback_process():
         raise ValueError("Exact reviewed original film recovery request required")
     receipt=reopen_known_originals(request["root"],request["pid"],
         request["passphrase"],request["inventory"])
-    print(json.dumps(receipt,sort_keys=True,separators=(",",":")))
+    _emit_g03_recovery_receipt(receipt)
     return 0
 
 
@@ -1064,6 +1100,8 @@ def main(argv=None):
                         help=argparse.SUPPRESS)
     parser.add_argument("--smoke-live-worker",action="store_true",
                         help="Run synthetic real Windows Job Object protected OpenUSD staging")
+    parser.add_argument("--g03-candidate-reconstruction",action="store_true",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--g03-candidate-readback",action="store_true",
                         help=argparse.SUPPRESS)
     parser.add_argument("--smoke-legacy-migration",action="store_true",
@@ -1077,7 +1115,8 @@ def main(argv=None):
             args.g03_protected_scene_worker,args.g03_protected_capture_worker,
             args.smoke_live_worker,args.smoke_capture_denied,
             args.g03_physical_capture_owner,args.smoke_legacy_migration,
-            args.g03_candidate_readback,args.smoke_data_av))>1:
+            args.g03_candidate_readback,args.g03_candidate_reconstruction,
+            args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.g03_protected_scene_worker:
         from tools.nvp_g03_protected_scene_worker import worker_entry
@@ -1093,6 +1132,8 @@ def main(argv=None):
         return run_g03_protected_native_worker_smoke()
     if args.g03_candidate_readback:
         return run_g03_candidate_readback_process()
+    if args.g03_candidate_reconstruction:
+        return run_g03_candidate_reconstruction_process()
     if args.smoke_legacy_migration:
         return run_g03_legacy_migration_installed_smoke()
     if args.smoke:
