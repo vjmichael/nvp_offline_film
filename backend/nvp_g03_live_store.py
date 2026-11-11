@@ -352,7 +352,7 @@ class LiveFilmStore:
         db,head=self._read_db(folder,pid,key)
         try:
             result=mutator(db,key,folder)
-                db.commit()
+            db.commit()
             raw=db.serialize()
             if len(raw)>MAX_DB_BYTES:
                 raise LiveFilmError("Live encrypted film database too large")
