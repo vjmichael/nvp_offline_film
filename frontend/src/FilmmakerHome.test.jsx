@@ -80,9 +80,9 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Resume Working'}));
   fireEvent.click(screen.getByRole('button',{name:/Forest Documentary.*Resume movie/i}));
   await waitFor(()=>expect(screen.getByRole('navigation',{name:'Filmmaking steps'})).toBeTruthy());
-  fireEvent.click(screen.getByRole('button',{name:/^1Script/i}));
+  fireEvent.click(screen.getByRole('button',{name:/Script/}));
   const editor=screen.getByRole('textbox',{name:'Edit screenplay'});
-  const revision='EXT. GARDEN - DAWN\\n\\nA bird lands.';
+  const revision='EXT. GARDEN - DAWN\n\nA bird lands.';
   fireEvent.change(editor,{target:{value:revision}});
   expect(editor.value).toBe(revision);
   expect(screen.getByRole('button',{name:'Save Screenplay'}).disabled).toBe(false);
