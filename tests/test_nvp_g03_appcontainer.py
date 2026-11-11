@@ -121,7 +121,7 @@ p=launch_contained([str(probe),"--sleep"],cwd=work,stdin=pairs[0][0],
  env={"SYSTEMROOT":os.environ["SYSTEMROOT"],"WINDIR":os.environ["WINDIR"],
       "PATH":os.environ["PATH"]})
 pairs[0][0].close();pairs[1][1].close();pairs[2][1].close()
-line=pairs[1][0].read(512)
+line=pairs[1][0].readline()
 assert b"G03_NATIVE_KERNEL_APPCONTAINER_TOKEN_PASS" in line,line
 marker.write_text(json.dumps({"pid":p.pid,"sid":p._sid,"profile":p._profile,
     "grants":[[str(a),b] for a,b in p._grants]}))
