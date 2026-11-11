@@ -237,7 +237,11 @@ def _initial_plan(handoff):
             [x,y,.95],[.62,.62,1.9],"#b4a2c9",aid)
     for i,name in enumerate(handoff["approved_props"][:18]):
         if type(name) is not str or not name.strip():continue
-        put("approved_prop:"+str(i),name[:100],"prop","box",
+        # Director-approved prose may contain line breaks. It remains fully
+        # intact in the Production Bible; the stage needs a safe short label.
+        short=" ".join(name.split())[:100].strip()
+        if not short:continue
+        put("approved_prop:"+str(i),short,"prop","box",
             [-5+(i%5)*2.2,-3-(i//5)*2.2,.55],
             [1,1,1.1],"#c3a780")
     put("camera","Main camera","camera","camera",[10,-15,8],
@@ -788,8 +792,10 @@ class G05SceneAuthoring:
                 if len(objects)>=MAX_OBJECTS:
                     raise ValueError("This scene has reached its object limit")
                 new_id="O_"+uuid.uuid4().hex[:12]
+                initial_height=(5. if shape in ("sun","camera") else
+                                (3. if shape=="lamp" else float(scale[2])/2.))
                 objects.append({"id":new_id,"name":label,"role":role,
-                    "shape":shape,"position":[0.,0.,1. if shape not in ("sun","camera") else 5.],
+                    "shape":shape,"position":[0.,0.,initial_height],
                     "rotation":[0.,0.,0.],"scale":list(scale),
                     "color":color,"actor_id":actor_id,"preset":preset,
                     "director_note":"","wardrobe_note":""})
