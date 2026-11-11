@@ -83,7 +83,8 @@ async def film_project_access_guard(request: Request, call_next):
                 request.method=="PUT" and tail=="live/screenplay") or (
                 request.method=="POST" and tail=="live/source") or (
                 tail=="live/preproduction" or tail.startswith("live/preproduction/")) or (
-                tail.startswith("live/stage/"))
+                tail.startswith("live/stage/")) or (
+                tail.startswith("live/film/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -226,6 +227,8 @@ def unlock_movie(project_id: str, payload: FilmPassphrase, request: Request):
 def lock_movie(project_id: str, request: Request):
     try:
         result = film_access().lock(project_id, request.cookies.get(COOKIE))
+        from backend.nvp_g06_routes import revoke_recording
+        revoke_recording(project_id)
         live_films().revoke(project_id)
     except (PermissionError, KeyError):
         raise HTTPException(status_code=403, detail="Unable to lock movie")
@@ -1868,3 +1871,8 @@ def native_color_read(project_id:str,grade_id:str,
                       revision:int|None=_FilmCameraQuery(default=None,ge=1,le=1000000)):
     return run(lambda:_NativeColor(_FilmCameraIndex(studio)).read(
         project_id,grade_id,revision))
+
+# G06 director-only film workspace. Separate route component reuses all G03
+# project access checks, and does not introduce a technical UI.
+from backend.nvp_g06_routes import mount_g06_routes
+mount_g06_routes(app,studio,live_films,COOKIE)
