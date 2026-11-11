@@ -305,7 +305,7 @@ export default function FilmmakerHome() {
           <h2>Your screenplay (optional)</h2>
           <p className="film-muted">You do not need a script to build and film scenes. Imported dialogue and characters are planning details, not recorded performances.</p>
           <LineNumberedTextarea label="Edit screenplay" value={script} rows={19}
-            maxLength={1000000} onChange={setScript}/>
+            maxLength={1000000} onChange={event=>setScript(event.target.value)}/>
           <div className="film-actions"><button className="film-primary" disabled={busy||!dirty}
             onClick={saveScript}>Save Screenplay</button><button className="film-secondary"
               onClick={()=>goPhase('scenes')}>Set Up Scenes →</button></div>
