@@ -142,3 +142,39 @@ def test_shutdown_cannot_rewrite_nested_clock_attestation():
         assert forwarded["source_sync"]["anchors"][0]["tick"] == 42
         assert forwarded["clock_evidence"]["proof"] == ["original"]
         assert forwarded["pcm_chunks"] is pcm
+
+
+def test_shutdown_cannot_rewrite_new_nested_metadata_fields():
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        pcm = iter((b"\\x00\\x00",))
+        event = {"pcm_chunks": pcm, "actor_metadata": {"markers": [{"tick": 17}]},
+                 "custom_tags": ["original"]}
+        def shutdown(**kwargs):
+            event["actor_metadata"]["markers"][0]["tick"] = 1000
+            event["custom_tags"].append("altered")
+            return GOOD
+        session.stop_and_verify.side_effect = shutdown
+        finish_linux_recording_and_freeze(
+            session, capture, "p", "t", recordings=lambda: [event])
+        forwarded = capture.capture.call_args.kwargs["recordings"][0]
+        assert forwarded["actor_metadata"]["markers"][0]["tick"] == 17
+        assert forwarded["custom_tags"] == ["original"]
+        assert forwarded["pcm_chunks"] is pcm
+
+
+def test_unsnapshotable_metadata_still_reaps_and_denies_take():
+    class Uncopyable:
+        def __deepcopy__(self, memo):
+            raise ValueError("metadata cannot be frozen")
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        session.stop_and_verify.return_value = GOOD
+        with pytest.raises(ValueError, match="cannot be frozen"):
+            finish_linux_recording_and_freeze(
+                session, capture, "p", "t", recordings=lambda: [
+                    {"pcm_chunks": iter(()), "custom": Uncopyable()}])
+        session.stop_and_verify.assert_called_once()
+        capture.capture.assert_not_called()
