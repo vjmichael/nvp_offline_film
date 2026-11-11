@@ -774,6 +774,27 @@ def run_g03_legacy_migration_installed_smoke():
             evidence["inventory_sha256"])
         if not sealed["legacy_film_untouched"] or sealed["active_project_switched"]:
             raise RuntimeError("Legacy original modified or migration prematurely activated")
+        # A DISTINCT native installed NVP.exe process independently decrypts
+        # every known original payload and validates the reviewed inventory.
+        # No plaintext recovery is written and this never authorizes cutover.
+        import json
+        import subprocess
+        source_candidate=root/"nvp_g03_migration_candidates"
+        request={"root":str(source_candidate),"pid":pid,
+                 "passphrase":"G03-SYNTHETIC-LEGACY-MIGRATION-PASSPHRASE-2026",
+                 "inventory":evidence}
+        checked=subprocess.run([sys.executable,"--g03-candidate-readback"],
+            input=json.dumps(request),capture_output=True,text=True,timeout=90)
+        if checked.returncode!=0:
+            raise RuntimeError("Fresh installed-process original-film readback failed")
+        received=json.loads(checked.stdout)
+        if (received.get("known_payloads_authenticated") is not True or
+                received.get("full_film_cutover_authorized") is not False or
+                received.get("plaintext_restoration_performed") is not False or
+                received.get("reviewed_inventory_sha256")!=evidence["inventory_sha256"] or
+                received.get("known_source_count")!=2):
+            raise RuntimeError("Independent installed original-film byte receipt invalid")
+        _smoke_checkpoint("g03_legacy_independent_native_original_byte_reopen_pass")
         reopened=LiveFilmStore(root/"nvp_g03_migration_candidates")
         token="trusted-installed-test-"+("b"*32)
         reopened.authorize(pid,"G03-SYNTHETIC-LEGACY-MIGRATION-PASSPHRASE-2026",token)
@@ -952,6 +973,20 @@ def run_g03_protected_native_worker_smoke():
         return 0
 
 
+def run_g03_candidate_readback_process():
+    """Isolated hash-only original recovery from stdin; no CLI passphrase."""
+    import json
+    from backend.nvp_g03_candidate_recovery import reopen_known_originals
+    request=json.load(sys.stdin)
+    if not isinstance(request,dict) or set(request)!={
+            "root","pid","passphrase","inventory"}:
+        raise ValueError("Exact reviewed original film recovery request required")
+    receipt=reopen_known_originals(request["root"],request["pid"],
+        request["passphrase"],request["inventory"])
+    print(json.dumps(receipt,sort_keys=True,separators=(",",":")))
+    return 0
+
+
 def run_g03_vault_smoke():
     """Independent Windows-account cryptography inside packaged NVP.exe.
 
@@ -1029,6 +1064,8 @@ def main(argv=None):
                         help=argparse.SUPPRESS)
     parser.add_argument("--smoke-live-worker",action="store_true",
                         help="Run synthetic real Windows Job Object protected OpenUSD staging")
+    parser.add_argument("--g03-candidate-readback",action="store_true",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--smoke-legacy-migration",action="store_true",
                         help="Audit and non-destructively encrypt a synthetic legacy film")
     parser.add_argument("--smoke-data-av",action="store_true",
@@ -1040,7 +1077,7 @@ def main(argv=None):
             args.g03_protected_scene_worker,args.g03_protected_capture_worker,
             args.smoke_live_worker,args.smoke_capture_denied,
             args.g03_physical_capture_owner,args.smoke_legacy_migration,
-            args.smoke_data_av))>1:
+            args.g03_candidate_readback,args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.g03_protected_scene_worker:
         from tools.nvp_g03_protected_scene_worker import worker_entry
@@ -1054,6 +1091,8 @@ def main(argv=None):
         return run_g03_physical_capture_owner()
     if args.smoke_live_worker:
         return run_g03_protected_native_worker_smoke()
+    if args.g03_candidate_readback:
+        return run_g03_candidate_readback_process()
     if args.smoke_legacy_migration:
         return run_g03_legacy_migration_installed_smoke()
     if args.smoke:
