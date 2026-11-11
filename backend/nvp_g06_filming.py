@@ -689,8 +689,8 @@ class G06Filming:
                 {"revision":head["revision"],"usd_sha256":record["usd_sha256"]},plan)
         return self._with(pid,scene_id,change,mutate=True)
 
-    def record_native_audio(self,pid,scene_id,actor_id,pcm):
-        """Trusted host only; accepts bytes from G06NativeRecorder, not HTTP."""
+    def record_native_audio(self,pid,scene_id,actor_id,pcm,*,capture_receipt=None):
+        """Trusted host only; source PCM and capture provenance commit together."""
         if type(pcm) is not bytes or not 2<=len(pcm)<=RATE*2*MAX_NATIVE_PCM_SECONDS or len(pcm)%2:
             raise ValueError("Native microphone recording has invalid PCM bytes")
         if actor_id is not None and (
@@ -707,6 +707,13 @@ class G06Filming:
                  sample_rate,channels,sample_count,recorded_at)
                 VALUES (?,?,?,?,'native_microphone_pcm16le',?,?,?,?,?)""",
                 (cid,pid,scene_id,actor_id,pcm,_sha(pcm),RATE,1,len(pcm)//2,_now()))
+            if capture_receipt is not None:
+                from backend.nvp_g09c_capture import G09CCaptureJournal
+                if (capture_receipt.get("original_pcm_sha256")!=_sha(pcm) or
+                    capture_receipt.get("sample_count")!=len(pcm)//2 or
+                    capture_receipt.get("actor_id")!=actor_id):
+                    raise RuntimeError("Native microphone provenance does not match source PCM")
+                G09CCaptureJournal.seal(db,pid,scene_id,cid,capture_receipt)
             return {"clip_id":cid,"sample_count":len(pcm)//2,
                     "duration_seconds":len(pcm)//2/RATE,
                     "recorded_from_native_microphone":True}
