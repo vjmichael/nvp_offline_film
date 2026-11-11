@@ -973,6 +973,33 @@ def run_g03_protected_native_worker_smoke():
         return 0
 
 
+def _read_g03_recovery_request():
+    """Read exact JSON only from inherited anonymous stdin (windowed-safe)."""
+    import json
+    if sys.stdin is not None:
+        request=json.load(sys.stdin)
+    else:
+        if sys.platform!="win32":
+            raise RuntimeError("No native recovery input pipe")
+        import ctypes,msvcrt
+        kernel=ctypes.windll.kernel32
+        kernel.GetStdHandle.argtypes=[ctypes.c_ulong]
+        kernel.GetStdHandle.restype=ctypes.c_void_p
+        handle=kernel.GetStdHandle((-10)&0xffffffff)
+        if not handle or handle==ctypes.c_void_p(-1).value:
+            raise RuntimeError("Native independent recovery stdin unavailable")
+        fd=msvcrt.open_osfhandle(handle,os.O_BINARY|os.O_RDONLY)
+        with os.fdopen(fd,"rb",buffering=0) as source:
+            data=source.read(16*1024*1024+1)
+        if len(data)>16*1024*1024:
+            raise ValueError("Reviewed recovery input exceeded IPC budget")
+        request=json.loads(data.decode("utf8"))
+    if not isinstance(request,dict) or set(request)!={
+            "root","pid","passphrase","inventory"}:
+        raise ValueError("Exact reviewed original-film recovery request required")
+    return request
+
+
 def _emit_g03_recovery_receipt(receipt):
     """Hash-only stdout, including PyInstaller --windowed executable."""
     import json
@@ -999,10 +1026,7 @@ def run_g03_candidate_reconstruction_process():
     """Only an independent fresh process may reconstruct historical originals."""
     import json
     from backend.nvp_g03_full_recovery import reconstruct_and_reopen
-    request=json.load(sys.stdin)
-    if not isinstance(request,dict) or set(request)!={
-            "root","pid","passphrase","inventory"}:
-        raise ValueError("Exact original-film reconstruction request required")
+    request=_read_g03_recovery_request()
     receipt=reconstruct_and_reopen(request["root"],request["pid"],
         request["passphrase"],request["inventory"])
     _emit_g03_recovery_receipt(receipt)
@@ -1013,10 +1037,7 @@ def run_g03_candidate_readback_process():
     """Isolated hash-only original recovery from stdin; no CLI passphrase."""
     import json
     from backend.nvp_g03_candidate_recovery import reopen_known_originals
-    request=json.load(sys.stdin)
-    if not isinstance(request,dict) or set(request)!={
-            "root","pid","passphrase","inventory"}:
-        raise ValueError("Exact reviewed original film recovery request required")
+    request=_read_g03_recovery_request()
     receipt=reopen_known_originals(request["root"],request["pid"],
         request["passphrase"],request["inventory"])
     _emit_g03_recovery_receipt(receipt)
