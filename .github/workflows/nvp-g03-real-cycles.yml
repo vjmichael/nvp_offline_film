@@ -48,6 +48,8 @@ jobs:
           $env:NVP_G03_NATIVE_SANDBOX_PROBE=(Resolve-Path '_g03_kernel_probe.exe').Path
           python -m unittest discover -s tests -p 'test_nvp_g03_appcontainer.py' -v
           if($LASTEXITCODE -ne 0){throw 'Real AppContainer token/ACL/TCP/crash test failed'}
+          python -m unittest discover -s tests -p 'test_nvp_g03_protected_scene_supervisor.py' -v
+          if($LASTEXITCODE -ne 0){throw 'Native protected OpenUSD source/Job/AppContainer matrix failed'}
           Write-Host 'G03_REAL_WINDOWS_APPCONTAINER_TOKEN_FILE_NETWORK_CRASH_ACCEPTED'
       - name: Download independent official Blender and verify published SHA
         shell: pwsh
