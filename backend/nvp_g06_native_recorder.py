@@ -233,6 +233,13 @@ class G06NativeRecorder:
             if self.active==session_id:self.active=None
         return {"status":"cancelled","original_audio_published":False}
 
+    def active_sessions(self,project_id,scene_id):
+        with self.lock:
+            return tuple(sid for sid,s in self.sessions.items()
+                         if s.project_id==project_id and
+                         s.scene_id==scene_id and s.status in (
+                             "recording","stopping","stopped"))
+
     def cancel_project(self,project_id):
         # Called by trusted host whenever a movie is locked or revoked.
         with self.lock:
