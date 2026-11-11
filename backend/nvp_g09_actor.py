@@ -278,6 +278,7 @@ def _public(db,pid,take_id,take_sha,source):
                 FROM g09_actor_versions WHERE project_id=? AND take_id=?
                 ORDER BY revision DESC LIMIT 35""",(pid,take_id))]
     return {"format":FORMAT,"take_id":take_id,"take_sha256":take_sha,
+        "duration_seconds":source["duration_tick"]/TICKS_PER_SECOND,
         "revision":draft,"approved_revision":approved,
         "approved_for_film":approved>0,
         "draft":doc,"available_recorded_voices":clips,
