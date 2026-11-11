@@ -667,9 +667,11 @@ class G07Editor:
             total,segments=self._validate(db,pid,document)
             from backend.nvp_g09_environment import G09Environment
             from backend.nvp_g09_actor import G09Actors
+            from backend.nvp_g09c_acoustics import G09CAcoustics
             sources={}
             production_looks={}
             actor_performances={}
+            acoustic_looks={}
             for clip in document["clips"]:
                 take_id=clip["take_id"]
                 if take_id not in sources:
@@ -693,6 +695,10 @@ class G07Editor:
                         db,pid,take_id,row["take_sha256"],doc)
                     if acting is not None:
                         actor_performances[take_id]=acting
+                    sound=G09CAcoustics.approved_source(
+                        db,pid,take_id,row["take_sha256"],doc)
+                    if sound is not None:
+                        acoustic_looks[take_id]=sound
                     sources[take_id]={"scene_id":row["scene_id"],
                         "take_sha256":row["take_sha256"],
                         "original_usd":bytes(original["original_usd"]),
@@ -715,6 +721,11 @@ class G07Editor:
                     for key,val in sorted(actor_performances.items())
                 }).encode("utf8")),
                 "actor_performances":actor_performances,
+                "acoustic_looks_sha256":_sha(_json({
+                    key:{"revision":v["revision"],"sha256":v["sha256"]}
+                    for key,v in sorted(acoustic_looks.items())
+                }).encode("utf8")),
+                "acoustic_looks":acoustic_looks,
                 "duration_tick":total,"segments":segments,
                 "original_takes":sources,"master_gain":document["master_gain"],
                 "source_media_modified":False,
