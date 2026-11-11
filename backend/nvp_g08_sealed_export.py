@@ -133,8 +133,8 @@ class G08SealedDelivery:
             row=db.execute("""SELECT status FROM g08_sealed_export_jobs
                 WHERE id=?""",(job,)).fetchone()
             if row is None:raise KeyError("Movie export is missing")
-            if row["status"]=="completed":
-                raise RuntimeError("Completed movies cannot be modified")
+            if row["status"] in ("completed","cancelled","failed","interrupted"):
+                raise RuntimeError("This movie export is no longer running")
             db.execute("""UPDATE g08_sealed_export_jobs SET
                 status=?,issue=COALESCE(?,issue),updated_at=?
                 WHERE id=?""",(status,issue,_now(),job))
@@ -144,8 +144,8 @@ class G08SealedDelivery:
         # A previous process has no live thread in this host. Its incomplete
         # record is not proof that a finished movie was ever delivered.
         with self._guard:
-            active={job for job,thread in self._jobs.items()
-                    if thread.is_alive()}
+            active={job for job,(owner,thread) in self._jobs.items()
+                    if owner==pid and thread.is_alive()}
         def fix(db,key,folder):
             rows=db.execute("""SELECT id FROM g08_sealed_export_jobs
                 WHERE status IN ('queued','rendering','verifying')""").fetchall()
@@ -187,7 +187,7 @@ class G08SealedDelivery:
         runner=threading.Thread(target=self._run,
             args=(pid,token,job,assembly),daemon=True,name="nvp-g08-sealed-"+job[:8])
         with self._guard:
-            self._jobs[job]=runner
+            self._jobs[job]=(pid,runner)
             self._progress[job]=0
         runner.start()
         return self.read(pid,job,token,refresh=False)
@@ -281,7 +281,8 @@ class G08SealedDelivery:
 
     def cancel_project(self,pid):
         with self._guard:
-            self._revoked.update(self._jobs)
+            self._revoked.update(job for job,(owner,_) in self._jobs.items()
+                                 if owner==pid)
 
     def movie_bytes(self,pid,job,token):
         current=self.read(pid,job,token)
