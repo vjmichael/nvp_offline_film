@@ -155,3 +155,37 @@ def test_exited_worker_cannot_be_admitted_as_live_filming_session():
     assert caught.value.group == group
     child.kill.assert_not_called()
     child.terminate.assert_not_called()
+
+def test_failed_admission_reconciles_same_group_and_worker():
+    child = Mock(returncode=-9)
+    custody_receipt = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    error = FilmingCustodyInitializationError("/owned/leaf", child)
+    with patch("backend.nvp_filming_linux_session.LinuxFilmingCgroup") as factory:
+        factory.return_value.stop_and_verify.return_value = custody_receipt
+        result = error.reconcile_and_stop('/owned', timeout=2)
+    factory.assert_called_once_with(private_group='/owned/leaf', delegated_root='/owned')
+    assert result['worker_exit_verified'] is True
+    child.wait.assert_called_once()
+
+def test_failed_admission_recovery_denial_never_reaps_child():
+    child = Mock()
+    error = FilmingCustodyInitializationError("/owned/leaf", child)
+    with patch("backend.nvp_filming_linux_session.LinuxFilmingCgroup",
+               side_effect=OSError("replaced cgroup")):
+        with pytest.raises(OSError, match="replaced cgroup"):
+            error.reconcile_and_stop('/owned')
+    child.wait.assert_not_called()
+    child.kill.assert_not_called()
+
+def test_failed_admission_recovery_refuses_incomplete_kernel_receipt():
+    child = Mock()
+    error = FilmingCustodyInitializationError("/owned/leaf", child)
+    with patch("backend.nvp_filming_linux_session.LinuxFilmingCgroup") as factory:
+        factory.return_value.stop_and_verify.return_value = {}
+        with pytest.raises(RuntimeError, match="affirmative Linux"):
+            error.reconcile_and_stop('/owned')
+    child.wait.assert_not_called()
