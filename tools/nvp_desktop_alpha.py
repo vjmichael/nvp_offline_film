@@ -809,6 +809,7 @@ def run_g03_legacy_migration_installed_smoke():
                 evidence_recovered.get("actual_sqlite_schema_and_fk_verified") is True and
                 evidence_recovered.get("authenticated_original_assets")==2 and
                 evidence_recovered.get("reopened_pcm_blobs")==1 and
+                evidence_recovered.get("reopened_native_opensud_layers")==1 and
                 evidence_recovered.get("source_cutover_authorized") is False and
                 evidence_recovered.get("plaintext_restored_to_original_location") is False and
                 evidence_recovered.get("reviewed_inventory_sha256")==evidence["inventory_sha256"]):
