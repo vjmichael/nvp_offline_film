@@ -69,6 +69,24 @@ class LiveFilmStoreWindows(unittest.TestCase):
         self.assertEqual(fresh.read(PID,self.token)["screenplay"],UPDATED)
         self.assertEqual(len(fresh.recovery_candidates(PID,self.token)),2)
 
+    def test_human_reviewed_recovery_preserves_immutable_originals(self):
+        self.store.put_original(PID,self.token,"scene/source.usda",SOURCE)
+        self.store.save_screenplay(PID,self.token,UPDATED,0)
+        self.assertEqual(self.store.read(PID,self.token)["revision"],1)
+        with self.assertRaisesRegex(LiveFilmError,"Director-approved"):
+            self.store.recover_screenplay(PID,self.token,0,1)
+        restored=self.store.recover_screenplay(
+            PID,self.token,0,1,human_approved=True)
+        self.assertEqual(restored["revision"],2)
+        self.assertEqual(restored["screenplay"],SCREENPLAY)
+        self.assertEqual(self.store.get_original(PID,self.token,"scene/source.usda"),
+                         SOURCE)
+        receipts=self.store.recovery_receipts(PID,self.token)
+        self.assertEqual(len(receipts),1)
+        self.assertEqual(receipts[0]["selected_commit_sequence"],0)
+        self.assertEqual(receipts[0]["resulting_revision"],2)
+        self.leaked()
+
     def test_original_data_encrypted_and_worker_authority_one_use(self):
         src=self.store.put_original(PID,self.token,"scene/original.usda",SOURCE,
                                     "model/vnd.usda")
