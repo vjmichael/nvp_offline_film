@@ -41,7 +41,8 @@ def test_stop_returns_tree_and_worker_receipts():
     assert result["process_tree_custody_verified"]
     assert result["worker_exit_verified"]
     assert result["worker_returncode"] == -9
-    child.wait.assert_called_once_with(timeout=2)
+    child.wait.assert_called_once()
+    assert 0 <= child.wait.call_args.kwargs["timeout"] <= 2
 
 
 def test_failed_custody_construction_does_not_claim_success():
@@ -96,3 +97,33 @@ def test_failed_custody_exposes_exact_worker_and_group_for_recovery():
     assert isinstance(caught.value.__cause__, OSError)
     child.kill.assert_not_called()
     child.terminate.assert_not_called()
+
+
+def test_kernel_phase_consumes_worker_reap_budget():
+    """A slow kernel phase must not grant another full worker timeout."""
+    child = Mock(returncode=-9)
+    custody = Mock()
+    custody.stop_and_verify.return_value = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    with patch("backend.nvp_filming_linux_session.time.monotonic",
+               side_effect=[100.0, 102.5]):
+        LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
+    custody.stop_and_verify.assert_called_once_with(timeout=3)
+    child.wait.assert_called_once_with(timeout=0.5)
+
+
+def test_exhausted_kernel_budget_cannot_block_on_worker_wait():
+    child = Mock(returncode=-9)
+    custody = Mock()
+    custody.stop_and_verify.return_value = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    with patch("backend.nvp_filming_linux_session.time.monotonic",
+               side_effect=[100.0, 105.0]):
+        LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
+    child.wait.assert_called_once_with(timeout=0.0)
