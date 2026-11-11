@@ -54,7 +54,7 @@ def _position(world,path,tick,fallback):
         raise RuntimeError("Original sound movement cannot be evaluated")
     return xyz
 
-def _obstructed(world,emitter,camera,tick,emitter_path):
+def _obstructed(world,emitter,camera,tick,emitter_path,derived_pieces=()):
     """Ray versus bounded stage-object spheres; conservative coarse proxy.
 
     True production acoustics uses worker-verified mesh BVH/ray tracing later.
@@ -84,9 +84,18 @@ def _obstructed(world,emitter,camera,tick,emitter_path):
         if not .12<along<segment_len-.12:continue
         near=[offset[i]-along*direction[i] for i in range(3)]
         if _dot(near,near)<(radius*.83)**2:return True
+    # Approved G09-A architecture remains a DERIVED physical set, but it
+    # can still obstruct a source speaker without rewriting G06 geometry.
+    for piece in derived_pieces:
+        radius=.5*max(piece["scale"])
+        offset=_sub(piece["position"],emitter)
+        along=_dot(offset,direction)
+        if not .12<along<segment_len-.12:continue
+        near=[offset[i]-along*direction[i] for i in range(3)]
+        if _dot(near,near)<(radius*.83)**2:return True
     return False
 
-def _spatial(world,recorded,seg,source_tick,setting,edit):
+def _spatial(world,recorded,seg,source_tick,setting,edit,derived_pieces=()):
     cam=seg["camera"]["position"]
     forward=_norm(_sub(seg["camera"]["look_at"],cam))
     if forward is None:raise RuntimeError("Film listening camera has no direction")
@@ -103,7 +112,7 @@ def _spatial(world,recorded,seg,source_tick,setting,edit):
         alignment=_dot(unit,side) if unit is not None else 0
         balance=_clamp(balance+alignment*setting["stereo_width"],-1,1)
         obstruction=(_obstructed(world,emitter,cam,source_tick,
-                                recorded["emitter_path"])
+                                recorded["emitter_path"],derived_pieces)
                      if setting["obstruction"] else False)
         rolloff=setting["distance_rolloff"]
         distance_gain=1./(1.+max(0.,dist-1.)/15.)**rolloff
@@ -196,9 +205,15 @@ class SpatialFilmMixer:
                 if (len(item["pcm16le"])!=item["sample_count"]*2 or
                     sha256(item["pcm16le"]).hexdigest()!=item["pcm_sha256"]):
                     raise RuntimeError("Original audio bytes changed after filming")
+            approved_set=assembly.get("production_looks",{}).get(take_id)
+            pieces=(approved_set["look"]["set_pieces"]
+                    if approved_set else ())
+            if len(pieces)>110:
+                raise ValueError("The film has too many derived sound obstacles")
             self.context[seg["clip_id"]]={
                 "seg":seg,"index":i,"world":worlds[take_id],
-                "setting":setting,"audio":audio,"cells":{}}
+                "setting":setting,"audio":audio,"cells":{},
+                "derived_pieces":pieces}
             seg["_source_events"]=source["events"]
     def _cell(self,ctx,item,edit,tick):
         seg=ctx["seg"]
@@ -210,7 +225,8 @@ class SpatialFilmMixer:
         if cell not in cache:
             if len(cache)>650:cache.clear()
             cache[cell]=_spatial(
-                ctx["world"],item,seg,src_tick,ctx["setting"],edit)
+                ctx["world"],item,seg,src_tick,ctx["setting"],edit,
+                ctx["derived_pieces"])
         return cache[cell]
     def window(self,start_sample,count):
         if (type(start_sample) is not int or start_sample<0 or
@@ -237,7 +253,20 @@ class SpatialFilmMixer:
                 item=source_audio[edit["clip_id"]]
                 base=seg["start_tick"]+item["start_tick"]+edit["offset_tick"]-seg["source_in_tick"]
                 signal_start=max(first,math.ceil((base-start_tick)/TICK_SAMPLE))
-                signal_end=min(last,math.ceil((base+item["duration_tick"]-start_tick)/TICK_SAMPLE))
+                # True delayed source reflections can arrive after the last
+                # original PCM sample. Include that causal tail while the
+                # present edited shot is still active; never invent source.
+                echo_tail=0
+                if edit["spatial"]:
+                    if setting["reflections"]:
+                        echo_tail=max(echo_tail,round(RATE*
+                            setting["room_size"]*1.58/343.))
+                    if setting["reverb"]:
+                        echo_tail=max(echo_tail,round(RATE*
+                            setting["room_size"]*2.5/343.)+29)
+                signal_end=min(last,math.ceil((
+                    base+item["duration_tick"]+echo_tail*TICK_SAMPLE-
+                    start_tick)/TICK_SAMPLE))
                 if signal_start>=signal_end:continue
                 master=edit["gain"]*self.assembly["master_gain"]
                 for n in range(signal_start,signal_end):
