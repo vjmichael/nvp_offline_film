@@ -498,6 +498,19 @@ def render_film(assembly,output,*,cancel=None,progress=None):
                 raise RuntimeError("Actor animation tried to alter original speech")
             actor_receipts[seg["clip_id"]]=receipt
             del derived
+    acoustics=assembly.get("acoustic_looks",{})
+    spatial_mixer=None
+    if acoustics:
+        from backend.nvp_g09c_native_audio import SpatialFilmMixer
+        from backend.nvp_g09c_acoustics import _json as _cjson,_sha as _csha
+        expected=_csha(_cjson({
+            key:{"revision":val["revision"],"sha256":val["sha256"]}
+            for key,val in sorted(acoustics.items())
+        }).encode("utf8"))
+        if (expected!=assembly.get("acoustic_looks_sha256") or
+            set(acoustics)-set(sources)):
+            raise RuntimeError("The approved sound environment was changed")
+        spatial_mixer=SpatialFilmMixer(assembly,worlds)
     writer=MjpegPcmAvi(output,frames)
     for frame in range(frames):
         if cancel is not None and cancel():
@@ -505,7 +518,9 @@ def render_film(assembly,output,*,cancel=None,progress=None):
         tick=frame*TICKS_FRAME
         jpeg=(render_production_picture(assembly,worlds,tick)
               if production or acting else render_picture(assembly,worlds,tick))
-        sound=_audio_frame(assembly,sources,frame*2000,2000)
+        sound=(spatial_mixer.window(frame*2000,2000)[0]
+               if spatial_mixer is not None
+               else _audio_frame(assembly,sources,frame*2000,2000))
         writer.frame(jpeg,sound)
         if progress and (frame%6==0 or frame==frames-1):
             progress(frame+1,frames)
@@ -517,6 +532,10 @@ def render_film(assembly,output,*,cancel=None,progress=None):
     result["profile"]=PROFILE
     result["approved_look_sha256"]=assembly.get("production_looks_sha256")
     result["approved_production_look_applied"]=bool(production)
+    result["approved_acoustic_looks_sha256"]=assembly.get(
+        "acoustic_looks_sha256")
+    result["source_based_3d_audio_mixed"]=spatial_mixer is not None
+    result["original_pcm_preserved"]=True
     result["approved_actor_performances_sha256"]=assembly.get(
         "actor_performances_sha256")
     result["animated_actor_count"]=sum(
