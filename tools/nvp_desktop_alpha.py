@@ -298,7 +298,8 @@ def run_visible_window_smoke():
         from backend.nvp_film_index import FilmIndex
         from backend.nvp_openusd_scene import OpenUSDSceneBridge
         project=studio.create_project("SLATE-08B Window Acceptance",
-            "One native source camera scene")
+            "One native source camera scene",
+            "EXT. NATIVE CAMERA SOUND SOURCE - DAY\n\nA field and an owl.")
         OpenUSDSceneBridge(FilmIndex(studio)).publish(
             project["id"],"smoke_scene",
             prims=[
@@ -341,165 +342,108 @@ def run_visible_window_smoke():
         shutil.rmtree(test_home,ignore_errors=True)
         raise
     loaded=Event()
-    result={"passed":False}
+    result={"passed":False,"phase":"started"}
     bridge=None
     try:
         bridge=create_trusted_camera_bridge(port)
-        window=webview.create_window("NVP Alpha Window Acceptance",
-            "http://127.0.0.1:"+str(port),width=1000,height=700,
-            js_api=bridge)
+        window=webview.create_window("NVP Director-first Native Sound Acceptance",
+            "http://127.0.0.1:"+str(port),width=1100,height=760,js_api=bridge)
         bridge._attach_window(window)
         window.events.loaded += lambda:loaded.set()
+        def wait_js(expression,seconds,description):
+            deadline=time.monotonic()+seconds
+            while time.monotonic()<deadline:
+                if window.evaluate_js(expression) is True:
+                    return
+                time.sleep(.2)
+            raise RuntimeError(description)
         def inspect_and_close():
             try:
-                if not loaded.wait(timeout=25):
-                    raise RuntimeError("Native WebView2 did not fire page-loaded event")
-                # HTML loaded is insufficient: require actual React DOM mount.
-                deadline=time.monotonic()+20
-                while time.monotonic()<deadline:
-                    mounted=window.evaluate_js(
-                        "Boolean(document.querySelector('#root') && "
-                        "document.querySelector('#root').children.length > 0)")
-                    if mounted is True:
-                        ipc=window.evaluate_js(
-                            "Boolean(window.pywebview && window.pywebview.api && "
-                            "typeof window.pywebview.api.request_camera_still === 'function' && "
-                            "typeof window.pywebview.api.poll_camera_still === 'function' && "
-                            "typeof window.pywebview.api.cancel_camera_still === 'function')")
-                        if ipc is True:
-                            # Type signatures alone don't prove that the
-                            # installed WebView2 can invoke native host code.
-                            # Execute a REAL non-mutating JS -> Python IPC,
-                            # without approving any Blender worker.
-                            window.evaluate_js(
-                                "window.__nvpCameraProbe = 'PENDING';"
-                                "window.pywebview.api.camera_render_capabilities()"
-                                ".then(x => { window.__nvpCameraProbe = "
-                                "x.format === 'nvp.camera.desktop_capability.v1' "
-                                "&& x.native_window === true ? 'PASSED' : 'FAILED'; })"
-                                ".catch(() => { window.__nvpCameraProbe = 'FAILED'; });")
-                            until=time.monotonic()+10
-                            while time.monotonic()<until:
-                                outcome=window.evaluate_js(
-                                    "window.__nvpCameraProbe")
-                                if outcome=="PASSED":
-                                    result["passed"]=True
-                                    break
-                                if outcome=="FAILED":
-                                    raise RuntimeError(
-                                        "Desktop native camera JS IPC failed origin/capability validation")
-                                time.sleep(.1)
-                            if result["passed"]:
-                                # The browser must ALSO open a real project,
-                                # visit its camera tab, resolve the authored
-                                # source from SQLite and load native USD.
-                                result["passed"]=False
-                                window.evaluate_js(
-                                    "(() => {const b=[...document.querySelectorAll('aside button')]"
-                                    ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance'));"
-                                    "if(b){b.click();return true;}return false;})()")
-                                end=time.monotonic()+20
-                                while time.monotonic()<end:
-                                    clicked=window.evaluate_js(
-                                        "(() => {const b=[...document.querySelectorAll('nav.tabs button')]"
-                                        ".find(x=>x.textContent.includes('Virtual camera'));"
-                                        "if(b){b.click();return true;}return false;})()")
-                                    if clicked is True:
-                                        break
-                                    time.sleep(.2)
-                                if clicked is not True:
-                                    raise RuntimeError(
-                                        "Installed camera tab did not appear in actual project")
-                                end=time.monotonic()+20
-                                while time.monotonic()<end:
-                                    panel=window.evaluate_js(
-                                        "Boolean(document.querySelector("
-                                        "'section[aria-label=\\\"Film source camera\\\"]') && "
-                                        "document.querySelector("
-                                        "'section[aria-label=\\\"Virtual Camera Workbench\\\"]') && "
-                                        "document.body.textContent.includes('smoke_scene'))")
-                                    if panel is True:
-                                        result["passed"]=True
-                                        break
-                                    time.sleep(.2)
-                                if not result["passed"]:
-                                    raise RuntimeError(
-                                        "Installed OpenUSD camera source did not reach real React workbench")
-                                # The same installed WebView2 must expose
-                                # actual data-first 3D audio from a frozen
-                                # Digital Take, without any FFmpeg discovery.
-                                result["passed"]=False
-                                have_bridge=window.evaluate_js(
-                                    "Boolean(window.pywebview.api.data_av_catalog "
-                                    "&& window.pywebview.api.data_av_begin "
-                                    "&& window.pywebview.api.data_av_audio_window "
-                                    "&& (window.AudioContext || window.webkitAudioContext))")
-                                if not have_bridge:
-                                    raise RuntimeError(
-                                        "Native WebView2 sound bridge or Web Audio unavailable")
-                                window.evaluate_js(
-                                    "window.__nvpDataAVProbe='PENDING';"
-                                    "window.pywebview.api.data_av_catalog('"+
-                                    project["id"]+"').then(x=>{"
-                                    "window.__nvpDataAVProbe="
-                                    "x.format==='nvp.data_av.native_session.v1' &&"
-                                    "x.ffmpeg_runtime_required===false &&"
-                                    "x.takes.some(t=>t.take_id==='smoke_frozen_take')"
-                                    "?'PASSED':'FAILED';}).catch(()=>{"
-                                    "window.__nvpDataAVProbe='FAILED';});")
-                                until=time.monotonic()+15
-                                while time.monotonic()<until:
-                                    state=window.evaluate_js("window.__nvpDataAVProbe")
-                                    if state=="PASSED":break
-                                    if state=="FAILED":
-                                        raise RuntimeError("Native sound catalog IPC failed")
-                                    time.sleep(.2)
-                                if state!="PASSED":
-                                    raise RuntimeError("Native sound IPC timed out")
-                                window.evaluate_js(
-                                    "(()=>{const b=[...document.querySelectorAll('nav.tabs button')]"
-                                    ".find(x=>x.textContent.includes('Native 3D sound'));"
-                                    "if(b){b.click();return true;}return false;})()")
-                                until=time.monotonic()+20
-                                while time.monotonic()<until:
-                                    ready=window.evaluate_js(
-                                        "Boolean(document.querySelector("
-                                        "'section[aria-label=\\\"Data-first native A/V preview\\\"]')"
-                                        " && document.body.textContent.includes('smoke_frozen_take'))")
-                                    if ready:
-                                        result["passed"]=True
-                                        break
-                                    time.sleep(.2)
-                                if not result["passed"]:
-                                    raise RuntimeError(
-                                        "Data-first source audition UI not mounted in installed WebView2")
-                                break
-                    time.sleep(.2)
-                if not result["passed"]:
-                    raise RuntimeError("Bundled NVP React interface did not render")
-            except Exception as exc:
-                result["failure"]=str(exc)
+                if not loaded.wait(timeout=30):
+                    raise RuntimeError("Installed WebView2 page-loaded event missing")
+                # Director-first navigation has replaced old engineering tabs.
+                # Native A/V remains accessible to host/bridge, not in a
+                # visible technical panel.
+                wait_js(
+                    "Boolean(document.querySelector('div[role=\"dialog\"]') "
+                    "&& document.querySelector('aside.film-sidebar') "
+                    "&& document.body.textContent.includes('New Movie') "
+                    "&& document.body.textContent.includes('Resume Working'))",
+                    25,"Real director New/Resume UI not mounted")
+                technical=window.evaluate_js(
+                    "Boolean(document.querySelector('nav.tabs') || "
+                    "document.querySelector('section[aria-label=\"Data-first native A/V preview\"]'))")
+                if technical:
+                    raise RuntimeError("Hidden engineering panels visible to filmmaker")
+                # Real native JS -> Python camera interface, not name existence.
+                window.evaluate_js(
+                    "window.__nvpBridgeCheck='PENDING';"
+                    "Promise.resolve(window.pywebview?.api?.camera_render_capabilities?.())"
+                    ".then(x=>{window.__nvpBridgeCheck="
+                    "x?.format==='nvp.camera.desktop_capability.v1' && "
+                    "x?.native_window===true ? 'PASSED':'FAILED'})"
+                    ".catch(()=>{window.__nvpBridgeCheck='FAILED'})")
+                wait_js("window.__nvpBridgeCheck==='PASSED'",15,
+                        "Native camera host bridge did not answer in WebView2")
+                # Real UI opens a project, but no technical tabs are restored.
+                selected=window.evaluate_js(
+                    "(()=>{let d=document.querySelector('div[role=\"dialog\"]');"
+                    "let b=[...d.querySelectorAll('button')].find(x=>"
+                    "x.textContent.includes('Resume Working'));"
+                    "if(!b)return false;b.click();return true})()")
+                if not selected:
+                    raise RuntimeError("Director Resume Working button not clickable")
+                wait_js(
+                    "Boolean([...document.querySelectorAll('button.film-movie-card')]"
+                    ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance')))",
+                    25,"Original film missing from director project list")
+                chosen=window.evaluate_js(
+                    "(()=>{let b=[...document.querySelectorAll('button.film-movie-card')]"
+                    ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance'));"
+                    "if(!b)return false;b.click();return true})()")
+                if not chosen:
+                    raise RuntimeError("Director cannot open saved frozen source")
+                wait_js(
+                    "Boolean(document.querySelector('nav.film-steps') && "
+                    "document.body.textContent.includes('EXT. NATIVE CAMERA SOUND SOURCE'))",
+                    25,"Native original's film source not visible in director screen")
+                # Direct native sound catalog via the same installed WebView2
+                # bridge. --smoke-data-av separately proves sample-accurate
+                # PCM output; this checks the actual native JS/host boundary.
+                window.evaluate_js(
+                    "window.__nvpNativeSoundCheck='PENDING';"
+                    "window.pywebview.api.data_av_catalog('"+project["id"]+"')"
+                    ".then(x=>{window.__nvpNativeSoundCheck="
+                    "x.format==='nvp.data_av.native_session.v1' && "
+                    "x.ffmpeg_runtime_required===false && "
+                    "x.takes.some(t=>t.take_id==='smoke_frozen_take')"
+                    "?'PASSED':'FAILED'})"
+                    ".catch(()=>{window.__nvpNativeSoundCheck='FAILED'})")
+                wait_js("window.__nvpNativeSoundCheck==='PASSED'",
+                        20,"Installed native sound bridge cannot read original Digital Take")
+                result["passed"]=True
+                _smoke_checkpoint("native_data_av_bridge_director_screen_pass")
+            except Exception as error:
+                result["failure"]=str(error)
             finally:
                 window.destroy()
         webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
         if not result["passed"]:
             raise RuntimeError(
-                "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
+                "Native director screen or data-first IPC failed: "+
+                result.get("failure","unknown"))
         return 0
     finally:
         try:
             if bridge is not None:
                 bridge._close()
         finally:
-            try:
-                server.should_exit=True
-                worker.join(timeout=12)
-                sock.close()
-            finally:
-                if old_home is None: os.environ.pop("NVP_HOME",None)
-                else: os.environ["NVP_HOME"]=old_home
-                shutil.rmtree(test_home,ignore_errors=True)
-
+            server.should_exit=True
+            worker.join(timeout=12)
+            sock.close()
+            if old_home is None: os.environ.pop("NVP_HOME",None)
+            else: os.environ["NVP_HOME"]=old_home
+            shutil.rmtree(test_home,ignore_errors=True)
 
 
 def run_g03_window_smoke():
