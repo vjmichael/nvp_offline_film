@@ -5,6 +5,10 @@ on:
     branches:
       - nvp/g03-film-home-project-access-20261110
   workflow_dispatch:
+concurrency:
+  group: g03-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 jobs:
