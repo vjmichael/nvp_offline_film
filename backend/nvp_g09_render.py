@@ -156,7 +156,7 @@ def _background(look):
 
 
 def _actor_proxy_faces(out,world,original,actor,evaluator,tick,basis,light,
-                       light_color,power,fill,fog):
+                       light_color,power,fill,fog,voice_edits):
     """Actual articulated human proxy, not the G05 cylinder stand-in.
 
     Joint positions/pose are shared with the native derived USD skeleton.
@@ -169,7 +169,8 @@ def _actor_proxy_faces(out,world,original,actor,evaluator,tick,basis,light,
         raise RuntimeError("The original ActorID geometry is absent")
     transform=UsdGeom.Xformable(root).ComputeLocalToWorldTransform(
         Usd.TimeCode(float(tick)))
-    positions,pose=evaluator.sample(actor["actor_id"],tick)
+    positions,pose=evaluator.sample(
+        actor["actor_id"],tick,voice_edits)
     z=actor["height_scale"];shoulder=actor["shoulder_width"]
     standard={
       "Torso":("cylinder",(.27*shoulder,.26*shoulder,.77*z),"wardrobe_color",0),
@@ -237,7 +238,7 @@ def _one_shot(seg,world,tick,approved):
             _actor_proxy_faces(
                 faces,world,item,performance.cast[item["actor_id"]],
                 performance,tick,basis,light,light_color,
-                sun_power,fill,look["atmosphere"])
+                sun_power,fill,look["atmosphere"],seg["audio"])
             continue
         if item["shape"] not in MESH:continue
         mat=UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(clock)
