@@ -27,6 +27,7 @@ _film_access = None
 _film_access_db = None
 _live_films = None
 _live_films_db = None
+_g08_controller = None
 
 def live_films():
     """One trusted per-Studio encrypted live store, no keys in JavaScript."""
@@ -85,7 +86,8 @@ async def film_project_access_guard(request: Request, call_next):
                 tail=="live/preproduction" or tail.startswith("live/preproduction/")) or (
                 tail.startswith("live/stage/")) or (
                 tail.startswith("live/film/")) or (
-                tail=="live/edit" or tail.startswith("live/edit/"))
+                tail=="live/edit" or tail.startswith("live/edit/")) or (
+                tail=="live/export" or tail.startswith("live/export/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -230,6 +232,8 @@ def lock_movie(project_id: str, request: Request):
         result = film_access().lock(project_id, request.cookies.get(COOKIE))
         from backend.nvp_g06_routes import revoke_recording
         revoke_recording(project_id)
+        if _g08_controller is not None:
+            _g08_controller.cancel_project(project_id)
         live_films().revoke(project_id)
     except (PermissionError, KeyError):
         raise HTTPException(status_code=403, detail="Unable to lock movie")
@@ -1882,3 +1886,8 @@ mount_g06_routes(app,studio,live_films,COOKIE)
 # routes retain G03 host project/key checks and do not authorize rendering.
 from backend.nvp_g07_routes import mount_g07_routes
 mount_g07_routes(app,studio,live_films,COOKIE)
+
+# G08 first-party export route and OS-custodied worker manager. Fixed
+# software renderer/AVI container is not a legacy FFmpeg/ProRes pipeline.
+from backend.nvp_g08_routes import mount_g08_routes
+_g08_controller=mount_g08_routes(app,studio,film_access,live_films,COOKIE)
