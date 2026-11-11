@@ -791,6 +791,72 @@ def run_g03_live_installed_smoke(mode):
             raise RuntimeError("Encrypted installed app did not close cleanly")
 
 
+def run_g03_protected_native_worker_smoke():
+    """Actually installed DPAPI movie and contained native USD worker.
+
+    The acceptance ticket is SYNTHETIC and pinned to this test-only source;
+    it does not simulate a human OS approval dialog.
+    """
+    import secrets
+    from backend.nvp_g03_live_store import LiveFilmStore
+    from backend.nvp_g03_protected_scene_supervisor import ProtectedSceneSupervisor
+    _smoke_checkpoint("g03_protected_scene_worker_entered")
+    data=(b'#usda 1.0\n'
+          b'def Xform "Original" {}\n')
+    with tempfile.TemporaryDirectory(prefix="nvp-g03-protected-worker-") as tmp:
+        root=Path(tmp)/"sealed"
+        store=LiveFilmStore(root)
+        pid=secrets.token_hex(16)
+        password="G03 synthetic test-only protected native worker passphrase"
+        token="host-test-approval-"+secrets.token_hex(20)
+        store.create(pid,"Synthetic protected original","", "", password)
+        store.authorize(pid,password,token)
+        store.put_original(pid,token,"scene/original.usda",data,
+                           "model/vnd.usda")
+        approval_id="ci-reviewed-synthetic-ticket-"+secrets.token_hex(16)
+        tickets={approval_id}
+        def reviewed(review_pid,source_name,target_name,ticket):
+            if (review_pid!=pid or source_name!="scene/original.usda" or
+                    target_name!="scene/three-camera-coverage.usda" or
+                    ticket not in tickets):
+                return False
+            tickets.remove(ticket)
+            return True
+        result=ProtectedSceneSupervisor(
+            store,review_authority=reviewed).run(
+                pid,token,"scene/original.usda",
+                "scene/three-camera-coverage.usda",approval_id)
+        if not(result["encrypted_output"] and result["native_job_tree_exited"]):
+            raise RuntimeError("Protected native worker lacked custody")
+        from pxr import Sdf
+        source=store.get_original(pid,token,"scene/original.usda")
+        derived=store.get_original(pid,token,"scene/three-camera-coverage.usda")
+        if source != data:
+            raise RuntimeError("Protected original was modified")
+        for camera in (b'/NVP_Coverage',b'Wide',b'Medium',b'CloseUp'):
+            if camera not in derived:
+                raise RuntimeError("Protected native OpenUSD camera not delivered")
+        check=Sdf.Layer.CreateAnonymous("smoke-verified.usda")
+        if not check.ImportFromString(derived.decode("utf8")):
+            raise RuntimeError("Native staged USD did not reopen")
+        records=store.protected_worker_runs(pid,token)
+        if len(records)!=1 or records[0]["state"]!="SUCCEEDED":
+            raise RuntimeError("Encrypted native worker acceptance receipt missing")
+        store.revoke(pid)
+        unlocked=LiveFilmStore(root)
+        unlocked.authorize(pid,password,"fresh-authorized-"+secrets.token_hex(20))
+        if unlocked.get_original(pid,list(unlocked._keys)[0],
+                                 "scene/three-camera-coverage.usda")!=derived:
+            raise RuntimeError("Native protected worker output lost after reopen")
+        for f in root.rglob("*"):
+            if f.is_file():
+                raw=f.read_bytes()
+                if b'Original' in raw or b'NVP_Coverage' in raw:
+                    raise RuntimeError("Native protected USD leaked to plaintext disk")
+        _smoke_checkpoint("g03_protected_scene_worker_encrypted_verified")
+        return 0
+
+
 def run_g03_vault_smoke():
     """Independent Windows-account cryptography inside packaged NVP.exe.
 
@@ -858,14 +924,24 @@ def main(argv=None):
                         help="Create real encrypted live film/source in packaged Windows host")
     parser.add_argument("--smoke-live-reopen",action="store_true",
                         help="Reopen encrypted live film in fresh installed host")
+    parser.add_argument("--g03-protected-scene-worker",action="store_true",
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--smoke-live-worker",action="store_true",
+                        help="Run synthetic real Windows Job Object protected OpenUSD staging")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_g03_window,args.smoke_vault,
             args.smoke_live_create,args.smoke_live_reopen,
+            args.g03_protected_scene_worker,args.smoke_live_worker,
             args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
+    if args.g03_protected_scene_worker:
+        from tools.nvp_g03_protected_scene_worker import worker_entry
+        return worker_entry()
+    if args.smoke_live_worker:
+        return run_g03_protected_native_worker_smoke()
     if args.smoke:
         return run_smoke()
     if args.smoke_window:
