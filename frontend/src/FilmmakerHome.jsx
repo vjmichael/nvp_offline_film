@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import LineNumberedTextarea from './LineNumberedTextarea.jsx';
 import DirectorSceneLibrary from './DirectorSceneLibrary.jsx';
 import DirectorScreenplayAssistant from './DirectorScreenplayAssistant.jsx';
+import DirectorFilmingStudio from './DirectorFilmingStudio.jsx';
 import './filmmaker-home.css';
 
 const PHASES = [
@@ -404,7 +405,7 @@ export default function FilmmakerHome() {
           <div><div className="film-eyebrow">YOUR MOVIE</div><h1>{project.title}</h1>
             <p className="film-muted">{project.idea||'Develop your story one scene at a time.'}</p>
             {project.encrypted&&<p className="film-hint" role="status">This movie is encrypted.
-              You can write and plan your scenes here. Filming is not yet available for protected movies.</p>}</div>
+              Your approved scenes and original recordings remain in its protected workspace.</p>}</div>
           <div>
             {targetProject?.locked?<button className="film-secondary" onClick={()=>startLock('lock',targetProject)}>Lock Movie</button>
               :<button className="film-secondary" onClick={()=>startLock('protect',{id:project.id,title:project.title})}>Lock in NVP</button>}
@@ -434,17 +435,9 @@ export default function FilmmakerHome() {
         </section>}
         {phase==='scenes'&&<DirectorSceneLibrary key={project.id+':'+project.revision}
           movie={project} onScript={()=>goPhase('script')} onFilm={()=>goPhase('film')}/>}
-        {phase==='film'&&<section className="film-card">
-          <h2>Film Scenes</h2>
-          <p className="film-muted">Direct what happens. Three familiar views are suggested, but filming should preserve the full performance data so you can change framing later.</p>
-          <div className="film-coverage">{['Wide shot','Medium shot','Close-up'].map(v=><div key={v}>
-            <div className="film-coverage-preview">No footage recorded</div><strong>{v}</strong>
-          </div>)}</div>
-          {scene&&<div className="film-actions"><button className="film-secondary" disabled={busy||project.encrypted}
-            title={project.encrypted?'Filming is not available for this protected movie yet':undefined}
-            onClick={()=>suggestShots(scene)}>Save Shot Suggestions</button></div>}
-          <p role="status" className="film-hint">Your scene plans are saved separately from recorded performances. Filming is not yet available here.</p>
-        </section>}
+        {phase==='film'&&<DirectorFilmingStudio
+          key={project.id+':'+project.revision}
+          movie={project} onSetUpScenes={()=>goPhase('scenes')}/>}
         {phase==='edit'&&<section className="film-card">
           <h2>Edit Film</h2>
           <p className="film-muted">Editing opens in a separate Post-Production window so the scene workspace stays dedicated to directing.</p>
