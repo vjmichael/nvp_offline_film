@@ -130,6 +130,10 @@ jobs:
               -not ((Get-Content -Raw -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH).Contains($expectedReadback))) {
             throw 'G03 independent installed NVP.exe recovery process did not authenticate known original-film bytes'
           }
+          if (-not ((Get-Content -Raw -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH).Contains(
+               'g03_legacy_independent_full_sqlite_filmindex_pcm_usd_recovery_pass'))) {
+            throw 'G03 full original-film SQL/FilmIndex/USD/PCM reconstruction lacks independent installed receipt'
+          }
           Run-Checked $installed '--smoke-capture-denied' 110 'physical_microphone_consent_refusal_no_pcm_no_worker'
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
