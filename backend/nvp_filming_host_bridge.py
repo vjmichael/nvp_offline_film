@@ -21,6 +21,7 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
     if not isinstance(session, LinuxFilmingSession):
         raise TypeError("Host-owned Linux filming session required")
     batch = None
+    frozen_options = None
     recording_error = None
     try:
         # Even invalid host inputs must not leave an admitted worker running.
@@ -46,6 +47,9 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
                       for key, value in event.items()}
             snapshot.append(frozen)
         batch = snapshot
+        # Source scope, consent and publication options must be fixed before
+        # shutdown callbacks run; never trust caller-owned nested references.
+        frozen_options = deepcopy(capture_options)
     except BaseException as exc:
         recording_error = exc
     # Custody is mandatory even when the recording supplier raises. A shutdown
@@ -59,4 +63,4 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
         raise RuntimeError("Filming custody unverified; frozen Take publication denied")
     if recording_error is not None:
         raise recording_error
-    return capture.capture(project_id, take_id, recordings=batch, **capture_options)
+    return capture.capture(project_id, take_id, recordings=batch, **frozen_options)
