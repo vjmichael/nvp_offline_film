@@ -223,7 +223,7 @@ class G08MovieExporter:
         if not reviewed.is_file() or reviewed.is_symlink():
             raise RuntimeError("NVP's fixed native exporter is not installed")
         return [str(Path(sys.executable).resolve(strict=True)),"-B",
-                str(reviewed),action,
+                "-m","tools.nvp_g08_export_worker",action,
                 "--db",str(Path(studio.db_path).resolve(strict=True)),
                 "--project",pid,"--job",job,
                 "--revision",str(record["edit_revision"]),
@@ -266,10 +266,13 @@ class G08MovieExporter:
                     with self._guard:self._procs.pop(job,None)
 
     def _perform(self,pid,job,token):
-        folder=_folder(self.studio.db_path,pid)
-        partial=folder/(job+".partial.avi")
-        final=folder/(job+".avi")
+        folder=None
+        partial=None
+        final=None
         try:
+            folder=_folder(self.studio.db_path,pid)
+            partial=folder/(job+".partial.avi")
+            final=folder/(job+".avi")
             with self._db() as db:
                 record=dict(db.execute("""SELECT * FROM g08_export_jobs
                     WHERE id=? AND project_id=?""",(job,pid)).fetchone())
@@ -314,14 +317,25 @@ class G08MovieExporter:
                       sha=actual_sha,size=verified["bytes"],receipt=verified,
                       expected={"verifying"})
         except InterruptedError:
-            try:self._set(pid,job,"cancelled",issue="Movie export cancelled")
+            try:
+                with self._db() as db:
+                    state=db.execute("""SELECT status FROM g08_export_jobs
+                        WHERE id=?""",(job,)).fetchone()
+                if state and state["status"]!="cancelled":
+                    self._set(pid,job,"cancelled",issue="Movie export cancelled")
             except Exception:pass
         except Exception:
-            try:self._set(pid,job,"failed",
-                issue="Movie export did not complete; your original recordings are safe.")
+            try:
+                with self._db() as db:
+                    state=db.execute("""SELECT status FROM g08_export_jobs
+                        WHERE id=?""",(job,)).fetchone()
+                if state and state["status"] not in {"cancelled","interrupted"}:
+                    self._set(pid,job,"failed",
+                        issue="Movie export did not complete; your original recordings are safe.")
             except Exception:pass
         finally:
             for file in (partial,final):
+                if file is None:continue
                 # A delivered file is not removed on successful completion.
                 try:
                     with self._db() as db:
