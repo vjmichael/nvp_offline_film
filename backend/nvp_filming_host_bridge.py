@@ -5,6 +5,8 @@ The caller owns the native worker and supplies its original PCM event batch.
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
 from backend.nvp_filming_linux_session import LinuxFilmingSession
 from backend.nvp_data_first_filming import NativeSceneSoundCapture
 
@@ -36,6 +38,12 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
         if any(type(event) is not dict for event in batch):
             raise ValueError("Recorder events must be typed dictionaries")
         batch = [dict(event) for event in batch]
+        # Clock attestations contain nested dictionaries/lists. Snapshot only
+        # these metadata fields; PCM iterators must retain stream identity.
+        for event in batch:
+            for field in ("source_sync", "clock_evidence"):
+                if field in event:
+                    event[field] = deepcopy(event[field])
     except BaseException as exc:
         recording_error = exc
     # Custody is mandatory even when the recording supplier raises. A shutdown
