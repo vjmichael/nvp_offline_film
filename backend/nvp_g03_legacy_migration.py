@@ -112,7 +112,6 @@ class LegacyFilmMigration:
                     continue
                 rows=memory.execute(
                     f'SELECT * FROM "{table}" WHERE "{key}"=?',(pid,)).fetchall()
-                ).__iter__()
                 stored=[]
                 for row in rows:
                     count+=1
