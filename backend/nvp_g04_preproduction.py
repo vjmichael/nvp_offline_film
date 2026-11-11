@@ -181,6 +181,14 @@ class G04Preproduction:
         pid=movie["id"]
         screenplay=movie["screenplay"]
         parsed=parse_screenplay(screenplay) if screenplay.strip() else []
+        # Fountain title-page metadata is not a film scene. Keep all original
+        # line numbers intact; only filter the parser's synthetic preamble.
+        parsed=[x for x in parsed if not (
+            x["heading"]=="SCENE WITHOUT HEADING" and
+            all(not line.strip() or re.match(
+                r"^(Title|Credit|Author|Source|Draft date|Contact|Copyright|Notes):",
+                line.strip(),re.I)
+                for line in x["text"].splitlines()))]
         scenes=[]
         if parsed:
             if len(parsed)>MAX_SCENES:raise ValueError("Movie has too many scenes")
@@ -189,7 +197,11 @@ class G04Preproduction:
                 heading=_heading(script_scene["heading"])
                 cast,dialogue=_script_cast(pid,script_scene,screenplay)
                 note_revision,notes=self._stored_notes(db,pid,sid)
-                source_sha=_sha(script_scene["text"])
+                script_source_sha=_sha(script_scene["text"])
+                # Both creator notes and source bytes are part of the exact
+                # review snapshot. Stale suggestions never silently survive
+                # changes to either surface.
+                source_sha=_sha(script_scene["text"]+"\x00"+_json(notes))
                 scenes.append({
                     "id":sid,"number":script_scene["number"],
                     "heading":script_scene["heading"],"origin":"script_derived",
@@ -197,6 +209,7 @@ class G04Preproduction:
                                     "end":script_scene["end_line"]},
                     "script_excerpt":script_scene["text"][:12000],
                     "source_sha256":source_sha,
+                    "script_source_sha256":script_source_sha,
                     "location":heading["location"],
                     "interior_exterior":heading["interior_exterior"],
                     "time_of_day":heading["time_of_day"],
@@ -225,6 +238,7 @@ class G04Preproduction:
                     "origin":"creator_specified","script_lines":None,
                     "script_excerpt":"",
                     "source_sha256":_sha(_json(notes)),
+                    "script_source_sha256":None,
                     "location":notes["location"],"interior_exterior":"",
                     "time_of_day":notes["time_of_day"],
                     "cast":cast,"dialogue":[],"notes":notes,
@@ -257,6 +271,19 @@ class G04Preproduction:
                  "status","approved_value","stale")})
         return results
 
+    @staticmethod
+    def _title_conflict(movie):
+        for line in movie["screenplay"].splitlines()[:60]:
+            found=re.match(r"^Title:\s*(.{1,150})\s*$",line.strip(),re.I)
+            if found:
+                script_title=found.group(1).strip()
+                if script_title.casefold()!=movie["title"].strip().casefold():
+                    return {"movie_title":movie["title"],
+                            "script_title":script_title,
+                            "resolution":"director_review_required"}
+                break
+        return None
+
     def _view(self,db,movie):
         scenes=self._scenes(db,movie)
         pid=movie["id"]
@@ -264,6 +291,7 @@ class G04Preproduction:
         locations={}
         props={}
         continuity=[]
+        approved_facts=[]
         for scene in scenes:
             scene["proposals"]=self._proposal_rows(db,pid,scene)
             scene["questions"]=self._questions(scene)
@@ -278,6 +306,10 @@ class G04Preproduction:
                 if proposal["status"]!="accepted" or proposal["stale"]:
                     continue
                 name=proposal["approved_value"] or proposal["value"]
+                approved_facts.append({
+                    "scene_id":scene["id"],"category":proposal["category"],
+                    "value":name,"origin":"approved",
+                    "source_line":proposal["evidence_line"]})
                 if proposal["category"]=="character":
                     actor={"actor_id":_actor_id(pid,name),"name":name,
                            "origin":"approved","role_type":"unspecified"}
@@ -298,11 +330,12 @@ class G04Preproduction:
                 "project_id":pid,"screenplay_revision":movie["revision"],
                 "screenplay_sha256":_sha(movie["screenplay"]),
                 "mode":"script" if movie["screenplay"].strip() else "idea",
+                "title_conflict":self._title_conflict(movie),
                 "scenes":scenes,
                 "bible":{"story":movie["idea"],"cast":list(actors.values()),
                          "locations":list(locations.values()),
                          "props":list(props.values()),
-                         "continuity":continuity},
+                         "continuity":continuity,"facts":approved_facts},
                 "ready_for_scene_generation":False,
                 "filming_authorized":False}
 
@@ -320,6 +353,13 @@ class G04Preproduction:
             next_id=2 if rows[0] is None else rows[0]+1
             if next_id>MAX_SCENES:raise ValueError("Movie scene limit reached")
             now=_clock()
+            if rows[0] is None:
+                # Initial idea scene is visible before any DB write. Preserve
+                # Scene 01 before making Scene 02 durable.
+                db.execute("""INSERT INTO g04_idea_scenes
+                    (project_id,scene_id,position,notes_json,created_at,updated_at)
+                    VALUES (?,?,?,?,?,?)""",
+                    (pid,INITIAL_ID,1,_json(EMPTY_FIELDS),now,now))
             db.execute("""INSERT INTO g04_idea_scenes
                 (project_id,scene_id,position,notes_json,created_at,updated_at)
                 VALUES (?,?,?,?,?,?)""",
@@ -357,7 +397,8 @@ class G04Preproduction:
                 db.execute("""INSERT INTO g04_idea_scenes
                   (project_id,scene_id,position,revision,notes_json,created_at,updated_at)
                   VALUES (?,?,?,?,?,?,?)""",
-                  (pid,scene_id,scene["number"],1,_json(notes),stamp,stamp))
+                  (pid,scene_id,-scene["number"] if scene["origin"]=="script_derived"
+                   else scene["number"],1,_json(notes),stamp,stamp))
             return self._view(db,movie)
         return self._execute(pid,op,mutate=True)
 
