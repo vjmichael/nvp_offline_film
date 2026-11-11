@@ -322,6 +322,7 @@ export default function DirectorWorldStage({movie,scene}) {
   const [view,setView]=useState('perspective');
   const [addPreset,setAddPreset]=useState('box');
   const [addActor,setAddActor]=useState('');
+  const [aiAvailable,setAiAvailable]=useState(false);
   const [draftTransform,setDraftTransform]=useState(null);
   const [editName,setEditName]=useState('');
   const [editColor,setEditColor]=useState('#a4b3be');
@@ -333,6 +334,14 @@ export default function DirectorWorldStage({movie,scene}) {
   const stageRef=useRef(null);
   const busyRef=useRef(false);
   stageRef.current=stage;
+
+  useEffect(()=>{
+    let alive=true;
+    filmAction('/api/creative/models').then(result=>{
+      if(alive)setAiAvailable(result.state==='available');
+    }).catch(()=>{if(alive)setAiAvailable(false)});
+    return ()=>{alive=false};
+  },[]);
 
   useEffect(()=>{
     let active=true;
@@ -416,6 +425,17 @@ export default function DirectorWorldStage({movie,scene}) {
     update(()=>filmAction(endpoint+'/approve','POST',{
       expected_revision:stage.revision
     }),'Scene approved. Your original creative source remains unchanged.');
+  }
+  function askSceneAI() {
+    update(()=>filmAction(endpoint+'/ideas','POST'),
+      'Here are some possible additions. You decide what enters the scene.');
+  }
+  function decideAI(ideaId,decision) {
+    const old=stageRef.current;
+    update(()=>filmAction(endpoint+'/ideas/'+ideaId+'/decision','POST',{
+      expected_revision:old.revision,decision
+    }),decision==='accept'?'Added to your scene as an editable object.':
+      'Idea declined. Your scene is unchanged.');
   }
   function openContext(id,x,y) {
     setSelected(id);
@@ -559,7 +579,8 @@ export default function DirectorWorldStage({movie,scene}) {
               onClick={()=>revise('recolor',{id:chosen.id,color:editColor})}>
               Apply Color</button></div>
             <label>Give a note
-              <textarea rows={3} maxLength={1500} value={directorNote}
+              <textarea className="director-world-note-target" rows={3}
+                maxLength={1500} value={directorNote}
                 onChange={e=>setDirectorNote(e.target.value)}
                 placeholder="How should this object or performer behave?"/></label>
             <div className="film-actions"><button className="film-secondary"
@@ -614,6 +635,32 @@ export default function DirectorWorldStage({movie,scene}) {
               <option value="snow">Snow</option>
             </select></label>
         </div>
+      </div>
+      <div className="director-world-ai">
+        <div className="director-world-ai-heading">
+          <h5>Ask for scene ideas</h5>
+          <p className="film-muted">I can suggest objects and where to place them.
+            Every idea is yours to accept or decline.</p>
+          <button className="film-secondary" onClick={askSceneAI}
+            disabled={!editable||!aiAvailable}>
+            {busy?'Working on your scene…':'Ask AI to help arrange this scene'}
+          </button>
+          {!aiAvailable&&<p className="film-hint">
+            AI assistance isn't available right now. You can build the entire
+            scene manually.</p>}
+        </div>
+        {(stage.ai_suggestions||[]).filter(x=>x.status==='proposed').map(idea=>
+          <article className="director-world-ai-idea" key={idea.id}>
+            <strong>{idea.name}</strong>
+            <span>{PRESET_LABELS[idea.preset]||'Scene object'} · Suggested placement</span>
+            <p>{idea.why}</p>
+            <div className="film-actions">
+              <button className="film-secondary" disabled={!editable}
+                onClick={()=>decideAI(idea.id,'reject')}>Decline</button>
+              <button className="film-primary" disabled={!editable}
+                onClick={()=>decideAI(idea.id,'accept')}>Add to Scene</button>
+            </div>
+          </article>)}
       </div>
       <div className="director-world-footer">
         <button className="film-secondary" onClick={()=>setHistoryOpen(x=>!x)}>
