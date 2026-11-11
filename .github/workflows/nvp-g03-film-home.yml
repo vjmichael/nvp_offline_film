@@ -70,6 +70,26 @@ jobs:
               assert forbidden not in entry, forbidden
           print('G03_DIRECTOR_ONLY_ENTRY_AND_SEPARATE_EDITOR_PASS')
           PY
+      - name: Verify actual NVP local desktop serves director and Post-Production pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt httpx
+          python - <<'PY'
+          from pathlib import Path
+          from unittest.mock import patch
+          from fastapi.testclient import TestClient
+          from tools import nvp_desktop_alpha as desktop
+          dist=Path('frontend/dist').resolve()
+          with patch.object(desktop,'static_root',return_value=dist):
+              app=desktop.create_app()
+              client=TestClient(app,base_url='http://127.0.0.1')
+              for path in ('/','/postproduction.html'):
+                  response=client.get(path)
+                  assert response.status_code==200,(path,response.status_code,response.text[:400])
+                  assert '/assets/' in response.text,path
+              print('G03_NATIVE_LOCAL_DESKTOP_TWO_ENTRY_HTTP_PASS')
+          PY
       - name: Scope declaration
         run: |
           echo 'Source and web UI tests only. No installed NSIS user interaction proved.'
