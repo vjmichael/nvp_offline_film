@@ -2,6 +2,7 @@ import React,{useEffect,useMemo,useRef,useState} from 'react';
 import * as THREE from 'three';
 import './director-film-editor.css';
 import DirectorEnvironmentLook from './DirectorEnvironmentLook.jsx';
+import DirectorActorStudio from './DirectorActorStudio.jsx';
 
 const EPS=.0001;
 const TPS=7056000000;
@@ -754,8 +755,11 @@ export default function DirectorFilmEditor({movie}){
           </>}
         </section>
       </div>
+      {selected&&<DirectorActorStudio
+        key={movie.id+':actors:'+selected.take_id}
+        movie={movie} takeId={selected.take_id}/>}
       {selected&&<DirectorEnvironmentLook
-        key={movie.id+':'+selected.take_id}
+        key={movie.id+':looks:'+selected.take_id}
         movie={movie} takeId={selected.take_id}/>}
       <section className="film-editor-footer-panel">
         <div><h3>Movie-wide sound</h3>
