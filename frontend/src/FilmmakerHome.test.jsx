@@ -138,6 +138,45 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   window.history.replaceState({},'','/');
  });
 
+ it('does not silently discard edited screenplay on movie switch',async()=>{
+  const another='b'.repeat(32);
+  const original={...snapshot};
+  const other={...snapshot,id:another,title:'Other Movie'};
+  const {handler}=server([original,other]);
+  handler.mockImplementation(async url=>{
+    if(url==='/api/status')return {ok:true,json:async()=>({status:'ready'})};
+    if(url==='/api/projects')return {ok:true,json:async()=>[original,other]};
+    if(url==='/api/projects/'+ID)return {ok:true,json:async()=>MOVIE};
+    if(url==='/api/projects/'+another)return {ok:true,json:async()=>({...MOVIE,id:another,title:'Other Movie'})};
+    throw new Error('Unexpected request '+url);
+  });
+  const confirmation=vi.spyOn(window,'confirm').mockReturnValue(false);
+  render(<FilmmakerHome/>);
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Resume Working'}));
+  fireEvent.click(screen.getByRole('button',{name:/Forest Documentary.*Resume movie/i}));
+  await waitFor(()=>expect(screen.getByRole('heading',{name:'Forest Documentary'})).toBeTruthy());
+  fireEvent.click(screen.getByRole('button',{name:/Script/}));
+  const field=screen.getByRole('textbox',{name:'Edit screenplay'});
+  fireEvent.change(field,{target:{value:'EXT. MOUNTAIN - DAY\n\nAn unsaved scene.'}});
+  fireEvent.click(screen.getByRole('button',{name:'Resume movie: Other Movie'}));
+  expect(confirmation).toHaveBeenCalled();
+  expect(screen.getByRole('heading',{name:'Forest Documentary'})).toBeTruthy();
+  expect(field.value).toContain('An unsaved scene.');
+  confirmation.mockRestore();
+ });
+
+ it('relock from a second director window clears cached screenplay immediately',async()=>{
+  server();
+  render(<FilmmakerHome/>);
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Resume Working'}));
+  fireEvent.click(screen.getByRole('button',{name:/Forest Documentary.*Resume movie/i}));
+  await waitFor(()=>expect(screen.getByRole('heading',{name:'Forest Documentary'})).toBeTruthy());
+  fireEvent(window,new StorageEvent('storage',{key:'nvp-film-lock-'+ID,newValue:'2'}));
+  await waitFor(()=>expect(screen.queryByRole('heading',{name:'Forest Documentary'})).toBeNull());
+  expect(screen.getByText(/This movie was locked/)).toBeTruthy();
+  expect(screen.getByRole('heading',{name:'Resume Working'})).toBeTruthy();
+ });
+
  it('keeps AI unavailability explicit rather than pretending to generate film',async()=>{
   server();
   render(<FilmmakerHome/>);
