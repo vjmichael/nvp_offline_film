@@ -686,6 +686,9 @@ class G07Editor:
                         "original_usd":bytes(original["original_usd"]),
                         "performance_usd":bytes(original["performance_usd"]),
                         "events":doc["events"],"stage_objects":doc["stage_objects"],
+                        "stage_setting":doc["stage_setting"],
+                        "performance_sha256":row["performance_usd_sha256"],
+                        "original_sha256":row["original_usd_sha256"],
                         "audio":sound,"duration_tick":doc["duration_tick"]}
             return {"format":FORMAT,"project_id":pid,
                 "edit_revision":source_revision,
