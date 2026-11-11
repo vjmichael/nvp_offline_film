@@ -523,6 +523,74 @@ class LiveFilmStore:
             finally:
                 db.close()
 
+    def recover_screenplay(self,pid,token,commit_sequence,expected_revision,
+                           *,human_approved=False):
+        """Human-reviewed, new encrypted revision from an authenticated earlier one.
+
+        Never changes or deletes original Take/source assets. No silent
+        downgrade: optimistic revision conflict and host grant are mandatory.
+        """
+        if human_approved is not True:
+            raise LiveFilmError("Director-approved recovery is required")
+        if type(commit_sequence) is not int or commit_sequence<0:
+            raise LiveFilmError("Invalid authenticated recovery sequence")
+        with self._guard:
+            key=self._session(pid,token)
+            folder=self._folder(pid)
+            db,head=self._read_db(folder,pid,key)
+            db.close()
+            if commit_sequence>head["sequence"]:
+                raise LiveFilmError("Cannot restore an uncommitted film revision")
+            path=folder/"revisions"/f"db.{commit_sequence:012d}.nvpsealed"
+            _no_link(path)
+            buffer=io.BytesIO()
+            _decrypt_file(path,buffer,key=key,project_id=pid,
+                          name=f"live-sqlite-v1/{commit_sequence}")
+            old=self._open_sqlite(buffer.getvalue())
+            try:
+                previous=old.execute(
+                    "SELECT screenplay FROM film_metadata WHERE id=1").fetchone()
+                if previous is None:
+                    raise LiveFilmError("Recovered film metadata missing")
+                screenplay=previous[0]
+            finally:
+                old.close()
+            def revise(db,key,folder):
+                current=db.execute(
+                    "SELECT revision,screenplay FROM film_metadata WHERE id=1").fetchone()
+                if current is None or current["revision"]!=expected_revision:
+                    raise LiveFilmError("Movie changed after recovery was reviewed")
+                db.execute("""INSERT OR IGNORE INTO revisions
+                    (revision,screenplay,updated_at) VALUES (?,?,?)""",
+                    (expected_revision,current["screenplay"],now()))
+                db.execute("""UPDATE film_metadata SET screenplay=?,revision=?,
+                    updated_at=? WHERE id=1""",
+                    (screenplay,expected_revision+1,now()))
+                db.execute("""CREATE TABLE IF NOT EXISTS recovery_receipts(
+                    receipt_id TEXT PRIMARY KEY,
+                    selected_commit_sequence INTEGER NOT NULL,
+                    resulting_revision INTEGER NOT NULL,
+                    source_sha256 TEXT NOT NULL, recorded_at TEXT NOT NULL)""")
+                db.execute("""INSERT INTO recovery_receipts VALUES (?,?,?,?,?)""",(
+                    secrets.token_hex(16),commit_sequence,expected_revision+1,
+                    hashlib.sha256(screenplay.encode("utf8")).hexdigest(),now()))
+            self._change(pid,token,revise)
+            return self.read(pid,token)
+
+    def recovery_receipts(self,pid,token):
+        with self._guard:
+            key=self._session(pid,token)
+            db,_=self._read_db(self._folder(pid),pid,key)
+            try:
+                exists=db.execute("""SELECT 1 FROM sqlite_master
+                    WHERE type='table' AND name='recovery_receipts'""").fetchone()
+                if not exists:
+                    return []
+                return [dict(r) for r in db.execute(
+                    "SELECT * FROM recovery_receipts ORDER BY recorded_at")]
+            finally:
+                db.close()
+
     def recovery_candidates(self,pid,token):
         """Return authenticated immutable revision IDs for human review.
 
