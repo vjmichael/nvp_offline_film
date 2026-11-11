@@ -28,16 +28,23 @@ class FilmingCustodyInitializationError(RuntimeError):
         uses kernel-wide termination before reaping the retained child. A
         failed attempt is not an empty-group or publication receipt.
         """
-        custody = LinuxFilmingCgroup(
-            private_group=self.group, delegated_root=delegated_root
-        )
-        return LinuxFilmingSession(self.group, self.child, custody).stop_and_verify(
-            timeout=timeout
-        )
+        # Preserve one-use kernel custody across retries on this exception. A
+        # timed-out direct-child reap must not reconstruct a fresh kill handle.
+        if self._recovery_session is None:
+            custody = LinuxFilmingCgroup(
+                private_group=self.group, delegated_root=delegated_root
+            )
+            self._recovery_session = LinuxFilmingSession(self.group, self.child, custody)
+            self._recovery_root = delegated_root
+        elif delegated_root != self._recovery_root:
+            raise RuntimeError("Filming recovery delegated root changed")
+        return self._recovery_session.stop_and_verify(timeout=timeout)
 
     def __init__(self, group: Path, child: subprocess.Popen):
         self.group = group
         self.child = child
+        self._recovery_session = None
+        self._recovery_root = None
         super().__init__(
             "Filming worker launched without established cgroup custody; "
             "host must reconcile the private group before publication"
