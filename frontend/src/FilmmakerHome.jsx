@@ -441,7 +441,7 @@ export default function FilmmakerHome() {
             <div className="film-coverage-preview">No footage recorded</div><strong>{v}</strong>
           </div>)}</div>
           {scene&&<div className="film-actions"><button className="film-secondary" disabled={busy||project.encrypted}
-            title={project.encrypted?'Protected workers not yet integrated':undefined}
+            title={project.encrypted?'Filming is not available for this protected movie yet':undefined}
             onClick={()=>suggestShots(scene)}>Save Shot Suggestions</button></div>}
           <p role="status" className="film-hint">Your scene plans are saved separately from recorded performances. Filming is not yet available here.</p>
         </section>}
@@ -455,7 +455,7 @@ export default function FilmmakerHome() {
           <h2>Export Film</h2>
           <p className="film-muted">A finished presentation will be generated here from approved Takes and editing decisions.</p>
           <button className="film-primary" disabled>Export unavailable until filming and editing are connected</button>
-          <p className="film-hint">No render, movie, or Presentation Package has been created by this screen.</p>
+          <p className="film-hint">No finished movie has been exported yet.</p>
         </section>}
       </div>}
       {lockTarget&&<div className="film-modal-backdrop" role="dialog" aria-modal="true"
@@ -473,7 +473,7 @@ export default function FilmmakerHome() {
                 autoComplete="off" value={confirmPhrase} onChange={e=>setConfirmPhrase(e.target.value)} required/>
             </>}
           </>}
-          <p className="film-hint">This only restricts opening the movie in NVP. It does not encrypt its SQLite data, OpenUSD, original audio or backups. Other software under your Windows account can still read the files. There is no passphrase recovery.</p>
+          <p className="film-hint">This limits access inside NVP only. It does not encrypt movie files or backups on your computer. Other software with access to your Windows account may still read them. A lost passphrase cannot currently be recovered.</p>
           <div className="film-actions">
             <button type="button" ref={lockAction==='lock'?lockFocus:null} className="film-secondary" onClick={()=>{setLockTarget(null);setPassphrase('');setError('')}}>Cancel</button>
             <button className="film-primary" disabled={busy} type="submit">
