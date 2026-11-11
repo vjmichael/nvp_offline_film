@@ -52,14 +52,18 @@ def create_app():
     from starlette.responses import FileResponse
     dist=static_root()
     entry=dist/"index.html"
-    if not entry.is_file() or not (dist/"assets").is_dir():
-        raise RuntimeError("NVP frontend assets not installed: "+str(dist))
+    editor=dist/"postproduction.html"
+    if not entry.is_file() or not editor.is_file() or not (dist/"assets").is_dir():
+        raise RuntimeError("NVP director/editor frontend assets not installed: "+str(dist))
     app.add_middleware(TrustedHostMiddleware,
                        allowed_hosts=["127.0.0.1","localhost"])
     app.mount("/assets",StaticFiles(directory=str(dist/"assets")),name="nvp_assets")
     @app.get("/",include_in_schema=False)
     def desktop_home():
         return FileResponse(entry)
+    @app.get("/postproduction.html",include_in_schema=False)
+    def desktop_postproduction():
+        return FileResponse(editor)
     return app
 
 
