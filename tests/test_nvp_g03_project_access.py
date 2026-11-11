@@ -164,6 +164,35 @@ class ProjectAccessTests(unittest.TestCase):
                 checked+=1
         self.assertGreater(checked,90)
 
+    def test_global_activity_does_not_leak_locked_project_titles(self):
+        original=nvp_api.resource_activity
+        class SecretLedger:
+            def snapshot(self):
+                return {"format":"nvp.system.resource_activity.v1",
+                        "tasks":[{"title":"PrivateMovieSecretStoryTitle"}]}
+        try:
+            nvp_api.resource_activity=SecretLedger()
+            self.protect()
+            response=self.client.get("/api/system/activity")
+            self.assertEqual(response.status_code,200)
+            self.assertTrue(response.json()["redacted"])
+            self.assertEqual(response.json()["tasks"],[])
+            self.assertNotIn("PrivateMovieSecretStoryTitle",response.text)
+            self.assertIsNone(response.json()["sample"])
+        finally:
+            nvp_api.resource_activity=original
+
+    def test_unencrypted_project_files_are_truthfully_disclosed(self):
+        flags=self.client.get("/api/status").json()["capabilities"]
+        self.assertEqual(flags["project_file_encryption"],"not_available")
+        self.protect()
+        # Demonstrate the known release blocker rather than asserting
+        # that an HTTP lock encrypted original SQLite data.
+        with nvp_api.studio._connection() as db:
+            idea=db.execute("SELECT idea FROM projects WHERE id=?",
+                            (self.a["id"],)).fetchone()[0]
+        self.assertEqual(idea,"A quiet nature documentary")
+
     def test_unprotected_existing_user_journey_unchanged(self):
         self.assertEqual(self.client.get(self.base).status_code,200)
         self.assertEqual(self.client.put(self.base+"/screenplay",json={

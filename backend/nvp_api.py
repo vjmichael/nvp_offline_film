@@ -73,7 +73,14 @@ async def film_project_access_guard(request: Request, call_next):
 
 @app.get('/api/system/activity')
 def resource_activity_snapshot():
-    # Read-only, host-derived telemetry; no web-exposed arbitrary job launcher.
+    # Task descriptions can contain director-created project names, source
+    # notes and sensitive movie details. Public telemetry must not bypass the
+    # protected-project API gate simply because its URI lacks a project ID.
+    if film_access().any_protected():
+        return {"format":"nvp.system.resource_activity.v1",
+                "redacted":True,"tasks":[],"sample":None,
+                "reservations":None,
+                "message":"Activity hidden while movies are locked"}
     return resource_activity.snapshot()
 
 
@@ -114,6 +121,7 @@ def status():
             "capabilities": {"project_storage": "ready", "script_breakdown": "basic_fountain",
                              "editable_shots": "ready", "local_llm": "not_connected",
                              "3d_renderer": "not_connected", "voice": "not_connected",
+                             "project_file_encryption": "not_available",
                              "3d_stage_planning": "deterministic_proxies_ready",
                              "blender_export": "bpy_script_only_not_executed"}}
 
