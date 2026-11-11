@@ -108,8 +108,7 @@ class ProtectedSceneTests(unittest.TestCase):
                 PID,self.token,"original/scene.usda",
                 "review/camera-coverage.usda",
                 "approved-native-"+("1"*32))
-        self.assertEqual(len(self.store.protected_worker_runs(
-            PID,"unauthorized")) if False else 0,0)
+        self.assertEqual(len(list((self.root/PID/"assets").glob("*.nvpsealed"))),1)
 
     def test_recover_running_worker_does_not_fake_process_tree_exit(self):
         sha=hashlib.sha256(SOURCE).hexdigest()

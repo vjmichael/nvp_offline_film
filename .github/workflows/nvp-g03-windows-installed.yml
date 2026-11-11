@@ -123,6 +123,7 @@ jobs:
           Run-Checked $installed '--smoke-reopen' 110 'installed_project_reopen'
           Run-Checked $installed '--smoke-live-create' 110 'encrypted_live_film_creation_and_disk_inspection'
           Run-Checked $installed '--smoke-live-reopen' 110 'encrypted_live_reopen_source_and_relock'
+          Run-Checked $installed '--smoke-live-worker' 110 'native_job_object_opensud_three_camera_staging_encrypted'
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
           }

@@ -34,11 +34,12 @@ jobs:
           python -m pip install -r requirements-foundation.txt httpx 'cryptography>=43,<49'
           if [ "$RUNNER_OS" = "Windows" ]; then
             python -m pip install 'pywin32>=306'
+            python -m pip install --only-binary=:all: 'usd-core==26.11'
           fi
       - name: Compile new project access guard and API
         shell: bash
         run: |
-          python -m compileall -q backend/nvp_project_access.py backend/nvp_api.py backend/nvp_g03_live_store.py tests/test_nvp_g03_project_access.py tests/test_nvp_g03_live_store.py
+          python -m compileall -q backend/nvp_project_access.py backend/nvp_api.py backend/nvp_g03_live_store.py backend/nvp_g03_protected_scene_supervisor.py backend/nvp_worker_containment.py tools/nvp_g03_protected_scene_worker.py tests/test_nvp_g03_project_access.py tests/test_nvp_g03_live_store.py tests/test_nvp_g03_protected_scene_supervisor.py
       - name: Test real FastAPI lock authorization and existing movie routes
         shell: bash
         run: |
@@ -48,6 +49,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_slate08b_native_camera_ipc.py' -v
           python -m unittest discover -s tests -p 'test_nvp_g03_windows_vault.py' -v
           python -m unittest discover -s tests -p 'test_nvp_g03_live_store.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_protected_scene_supervisor.py' -v
 
   director-ui:
     name: G03 React film home, separate edit window and production bundle
