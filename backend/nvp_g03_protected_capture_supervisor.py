@@ -119,7 +119,8 @@ class ProtectedCaptureSupervisor:
                 proc=launch_contained(
                     self._command(),cwd=empty,
                     stdin=input_reader,stdout=output_writer,stderr=error_writer,
-                    memory_mb=1024,env=_sanitized_worker_env())
+                    memory_mb=1024,env=_sanitized_worker_env(),
+                    windows_appcontainer_required=isolated)
                 input_reader.close();output_writer.close();error_writer.close()
                 for fn,args in (
                     (_stream_write,(input_writer,input_bytes,errors)),
