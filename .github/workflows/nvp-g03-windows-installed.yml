@@ -125,6 +125,11 @@ jobs:
           Run-Checked $installed '--smoke-live-reopen' 110 'encrypted_live_reopen_source_and_relock'
           Run-Checked $installed '--smoke-live-worker' 110 'native_job_object_opensud_three_camera_staging_encrypted'
           Run-Checked $installed '--smoke-legacy-migration' 110 'legacy_sql_filmindex_encrypted_candidate_without_cutover'
+          $expectedReadback='g03_legacy_independent_native_original_byte_reopen_pass'
+          if (-not (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) -or
+              -not ((Get-Content -Raw -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH).Contains($expectedReadback))) {
+            throw 'G03 independent installed NVP.exe recovery process did not authenticate known original-film bytes'
+          }
           Run-Checked $installed '--smoke-capture-denied' 110 'physical_microphone_consent_refusal_no_pcm_no_worker'
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
