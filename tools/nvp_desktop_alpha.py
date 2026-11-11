@@ -159,7 +159,7 @@ def run_persistent_installed_smoke(mode):
                                          "x-nvp-director":"1"}
         request=urllib.request.Request(base+path,headers=headers,
                                        data=data,method=method)
-        with (client or urllib.request).open(request,timeout=12) as reply:
+        with (client or urllib.request.build_opener()).open(request,timeout=12) as reply:
             return json.load(reply)
 
     def denied(path,expected=423,*,client=None):

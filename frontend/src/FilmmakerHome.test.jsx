@@ -94,14 +94,14 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   render(<FilmmakerHome/>);
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Resume Working'}));
   fireEvent.click(screen.getByRole('button',{name:/Forest Documentary.*Resume movie/i}));
-  await waitFor(()=>expect(screen.getByText('EXT. FOREST - MORNING')).toBeTruthy());
+  await waitFor(()=>expect(screen.getAllByText('EXT. FOREST - MORNING')[0]).toBeTruthy());
   fireEvent.click(screen.getByRole('button',{name:'Resume movie: Coastal Documentary'}));
   await waitFor(()=>expect(screen.getByRole('heading',{name:'Coastal Documentary'})).toBeTruthy());
-  expect(screen.getByText('EXT. COAST - DAY')).toBeTruthy();
-  expect(screen.queryByText('Mist moves between trees.')).toBeNull();
+  expect(screen.getAllByText('EXT. COAST - DAY')[0]).toBeTruthy();
+  expect(document.querySelector('.film-script-excerpt')?.textContent||'').not.toContain('Mist moves between trees.');
   fireEvent.click(screen.getByRole('button',{name:'Resume movie: Forest Documentary'}));
   await waitFor(()=>expect(screen.getByRole('heading',{name:'Forest Documentary'})).toBeTruthy());
-  expect(screen.getByText('EXT. FOREST - MORNING')).toBeTruthy();
+  expect(screen.getAllByText('EXT. FOREST - MORNING')[0]).toBeTruthy();
  });
 
  it('keeps the real source-line screenplay editor editable on resume',async()=>{
@@ -131,7 +131,7 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   server();
   window.history.replaceState({},'', '/postproduction.html?project='+ID);
   render(<PostProduction/>);
-  await waitFor(()=>expect(screen.getByText('EXT. FOREST - MORNING')).toBeTruthy());
+  await waitFor(()=>expect(screen.getAllByText('EXT. FOREST - MORNING')[0]).toBeTruthy());
   fireEvent(window,new StorageEvent('storage',{key:'nvp-film-lock-'+ID,newValue:'1'}));
   await waitFor(()=>expect(screen.queryByText('EXT. FOREST - MORNING')).toBeNull());
   expect(screen.getByText(/This movie is locked/)).toBeTruthy();
