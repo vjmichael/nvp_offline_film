@@ -233,7 +233,8 @@ def lock_movie(project_id: str, request: Request):
         from backend.nvp_g06_routes import revoke_recording
         revoke_recording(project_id)
         if _g08_controller is not None:
-            _g08_controller.cancel_project(project_id)
+            _g08_controller["ordinary"].cancel_project(project_id)
+            _g08_controller["sealed"].cancel_project(project_id)
         live_films().revoke(project_id)
     except (PermissionError, KeyError):
         raise HTTPException(status_code=403, detail="Unable to lock movie")
