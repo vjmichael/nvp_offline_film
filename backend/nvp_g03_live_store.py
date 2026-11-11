@@ -486,7 +486,8 @@ class LiveFilmStore:
                                       "expires":self.clock()+30}
             return receipt_id
 
-    def worker_execute(self,pid,lease,operation,asset_name,*,data=None):
+    def worker_execute(self,pid,lease,operation,asset_name,*,data=None,
+                       media_type="application/octet-stream"):
         """Restricted in-process host broker. Legacy external workers are DENIED."""
         asset_name=str(_relative(asset_name))
         with self._guard:
@@ -509,7 +510,8 @@ class LiveFilmStore:
                 return payload
             if operation=="write_original":
                 return self.put_original(
-                    pid,grant["token"],asset_name,data,receipt_id=lease)
+                    pid,grant["token"],asset_name,data,
+                    media_type=media_type,receipt_id=lease)
             raise LiveFilmError("Unsupported worker operation")
 
     def worker_run_transition(self,pid,token,worker_id,source_name,
