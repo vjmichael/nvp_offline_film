@@ -41,7 +41,8 @@ async function action(url,method='GET',data) {
 
 function People({cast}) {
   return <div className="director-scene-chips">
-    {cast?.length?cast.map(person=><span key={person.actor_id}>{person.name}</span>):
+    {cast?.length?cast.map(person=><span key={person.actor_id||person.source_cue}>
+      {person.name}{person.needs_review?' · speaker to identify':''}</span>):
       <span>No performers required</span>}
   </div>;
 }
@@ -62,6 +63,8 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
   const [current,setCurrent]=useState('');
   const [notes,setNotes]=useState(emptyNotes);
   const [edits,setEdits]=useState({});
+  const [speakerChoices,setSpeakerChoices]=useState({});
+  const [speakerNames,setSpeakerNames]=useState({});
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
   const [busy,setBusy]=useState(false);
@@ -87,6 +90,8 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
     if(!selected)return;
     setNotes({...emptyNotes(),...selected.notes});
     setEdits({});
+    setSpeakerChoices({});
+    setSpeakerNames({});
   },[selected?.id,selected?.notes_revision]);
 
   async function update(work,success) {
@@ -123,6 +128,18 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
     if(!selected)return;
     update(()=>action(base+'/scenes/'+encodeURIComponent(selected.id)+'/suggestions','POST'),
       'Here are some ideas to review. Nothing has been added to your film without your approval.');
+  }
+  function identifySpeaker(cue) {
+    const actor=speakerChoices[cue]||'new';
+    const payload={
+      source_cue:cue,
+      expected_screenplay_revision:data.screenplay_revision,
+      ...(actor==='new'?{new_name:(speakerNames[cue]||'').trim()}:
+        {actor_id:actor}),
+    };
+    update(()=>action(base+'/scenes/'+encodeURIComponent(selected.id)+'/speakers',
+      'POST',payload),
+      'Speaker linked to the character you chose.');
   }
   function review(proposal,decision) {
     update(()=>action(base+'/suggestions/'+proposal.id+'/decision','POST',{
@@ -197,6 +214,39 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
             {selected.time_of_day?' · '+selected.time_of_day:''}</>:
           'You can choose the location and describe the scene below.'}</p>
         <People cast={selected.cast}/>
+        {selected.cast?.some(person=>person.needs_review)&&
+          <section className="director-speaker-review" aria-label="Identify speakers">
+            <h4>Who is speaking?</h4>
+            <p className="film-muted">A script label may refer to different
+              people in different scenes. Choose the correct character.</p>
+            {selected.cast.filter(person=>person.needs_review).map(person=>
+              <div className="director-speaker-choice" key={person.source_cue}>
+                <strong>{person.source_cue}</strong>
+                <label>
+                  <span>Character</span>
+                  <select value={speakerChoices[person.source_cue]||'new'}
+                    onChange={e=>setSpeakerChoices(s=>({
+                      ...s,[person.source_cue]:e.target.value}))}>
+                    <option value="new">Name a new character</option>
+                    {(data.bible.cast||[]).map(actor=><option
+                      key={actor.actor_id} value={actor.actor_id}>{actor.name}</option>)}
+                  </select>
+                </label>
+                {(speakerChoices[person.source_cue]||'new')==='new'&&<label>
+                  <span>Character name</span>
+                  <input maxLength={100} value={speakerNames[person.source_cue]||''}
+                    onChange={e=>setSpeakerNames(s=>({
+                      ...s,[person.source_cue]:e.target.value}))}
+                    placeholder="Give this speaker a name"/>
+                </label>}
+                <button className="film-secondary" disabled={busy||(
+                  (speakerChoices[person.source_cue]||'new')==='new'&&
+                  !speakerNames[person.source_cue]?.trim())}
+                  onClick={()=>identifySpeaker(person.source_cue)}>
+                  Confirm Character
+                </button>
+              </div>)}
+          </section>}
         {selected.script_excerpt&&<details className="director-script-source">
           <summary>Read the original scene</summary>
           <pre>{selected.script_excerpt}</pre>
