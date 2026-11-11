@@ -27,6 +27,9 @@ class ActorReview(BaseModel):
 class ActorRestore(ActorReview):
     source_revision:int=Field(ge=1,le=3000)
 
+class ActorContinuity(ActorReview):
+    actor_id:str=Field(min_length=8,max_length=100)
+
 
 def _safe(work):
     try:return work()
@@ -76,6 +79,18 @@ def mount_g09_actor_routes(app,studio,live_films,cookie_name):
         return _safe(lambda:studio_for(project_id,request).restore(
             project_id,take_id,payload.source_revision,payload.expected_revision))
     route("POST","{take_id}/restore",restore)
+
+    def save_character(project_id:str,take_id:str,request:Request,
+                       payload:ActorContinuity):
+        return _safe(lambda:studio_for(project_id,request).save_character(
+            project_id,take_id,payload.actor_id,payload.expected_revision))
+    route("POST","{take_id}/save-character",save_character)
+
+    def use_character(project_id:str,take_id:str,request:Request,
+                      payload:ActorContinuity):
+        return _safe(lambda:studio_for(project_id,request).use_character(
+            project_id,take_id,payload.actor_id,payload.expected_revision))
+    route("POST","{take_id}/use-character",use_character)
 
     def picture(project_id:str,take_id:str,request:Request,seconds:str="0"):
         raw=_safe(lambda:studio_for(project_id,request).picture_preview(
