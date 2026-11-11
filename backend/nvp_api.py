@@ -87,7 +87,8 @@ async def film_project_access_guard(request: Request, call_next):
                 tail.startswith("live/stage/")) or (
                 tail.startswith("live/film/")) or (
                 tail=="live/edit" or tail.startswith("live/edit/")) or (
-                tail=="live/export" or tail.startswith("live/export/"))
+                tail=="live/export" or tail.startswith("live/export/")) or (
+                tail.startswith("live/production/looks/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -1892,3 +1893,8 @@ mount_g07_routes(app,studio,live_films,COOKIE)
 # software renderer/AVI container is not a legacy FFmpeg/ProRes pipeline.
 from backend.nvp_g08_routes import mount_g08_routes
 _g08_controller=mount_g08_routes(app,studio,film_access,live_films,COOKIE)
+
+# G09-A production looks live in the same director-reviewed film project,
+# not a separate technical tool or Blender authorization endpoint.
+from backend.nvp_g09_routes import mount_g09_routes
+mount_g09_routes(app,studio,live_films,COOKIE)
