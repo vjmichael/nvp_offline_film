@@ -845,6 +845,96 @@ def run_g03_legacy_migration_installed_smoke():
     return 0
 
 
+def run_g03_protected_capture_denial_smoke():
+    """Installed real Windows host: consent denial cannot open a microphone."""
+    import secrets
+    from backend.nvp_g03_live_store import LiveFilmStore
+    from backend.nvp_g03_protected_capture_supervisor import (
+        ProtectedCaptureSupervisor,ProtectedCaptureError)
+    _smoke_checkpoint("g03_protected_capture_consent_denied_entered")
+    if sys.platform!="win32":
+        raise RuntimeError("Windows native audio capture consent smoke required")
+    with tempfile.TemporaryDirectory(prefix="nvp-g03-capture-denied-") as tmp:
+        root=Path(tmp)/"secured"
+        pid=secrets.token_hex(16)
+        store=LiveFilmStore(root)
+        password="synthetic no-capture test phrase for DPAPI"
+        token="native-host-"+secrets.token_hex(24)
+        store.create(pid,"Microphone privacy acceptance","","",password)
+        store.authorize(pid,password,token)
+        review_ticket="reviewed-no-microphone-"+secrets.token_hex(20)
+        consent_calls=[]
+        supervisor=ProtectedCaptureSupervisor(
+            store,review_authority=lambda *scope:scope[-1]==review_ticket,
+            native_os_prompt=lambda *scope:consent_calls.append(scope) or False)
+        try:
+            supervisor.capture(pid,token,"capture/test.pcm16le",review_ticket,
+                               device_id=-1,channels=1,frames=48000)
+        except ProtectedCaptureError:
+            pass
+        else:
+            raise RuntimeError("Native mic capture bypassed operator refusal")
+        if len(consent_calls)!=1 or store.read(pid,token)["source_assets"]:
+            raise RuntimeError("Operator refusal created original PCM or skipped prompt")
+        if store.protected_worker_runs(pid,token):
+            raise RuntimeError("Refused microphone permission spawned a worker")
+        _smoke_checkpoint("g03_protected_capture_denied_no_pcm_no_job")
+    return 0
+
+
+def run_g03_physical_capture_owner():
+    """Explicit owner action only. Never run this mode in unattended CI."""
+    import ctypes
+    import hashlib
+    import secrets
+    from backend.nvp_g03_live_store import LiveFilmStore
+    from backend.nvp_g03_protected_capture_supervisor import ProtectedCaptureSupervisor
+    if sys.platform!="win32":
+        raise RuntimeError("Physical Windows microphone approval required")
+    if os.environ.get("GITHUB_ACTIONS") or os.environ.get("CI"):
+        raise RuntimeError("Physical microphone recording is forbidden in CI")
+    question=("NVP physical microphone acceptance. Record exactly 1 second "
+              "of real default microphone PCM (48 kHz, 16-bit, mono) into "
+              "a NEW synthetic encrypted test film? No actual movie will be used. "
+              "Press Yes only if you are the machine owner.")
+    answer=ctypes.windll.user32.MessageBoxW(
+        None,question,"NVP — Approve protected microphone capture",0x4|0x20|0x1000)
+    if answer!=6:
+        return 2
+    root=Path(tempfile.mkdtemp(prefix="nvp-g03-owner-audio-"))/"secured"
+    pid=secrets.token_hex(16)
+    store=LiveFilmStore(root)
+    phrase="synthetic physical owner device acceptance "+secrets.token_hex(16)
+    token="physical-owner-"+secrets.token_hex(24)
+    store.create(pid,"Owner microphone consent test","","",phrase)
+    store.authorize(pid,phrase,token)
+    ticket="physical-owner-reviewed-"+secrets.token_hex(24)
+    valid={ticket}
+    def one_use(*scope):
+        if scope[-1] not in valid:
+            return False
+        valid.remove(scope[-1])
+        return True
+    host=ProtectedCaptureSupervisor(
+        store,review_authority=one_use,
+        native_os_prompt=lambda *scope:ctypes.windll.user32.MessageBoxW(
+            None,
+            "Confirm you want to START exactly one second of live microphone "
+            "recording, project-bound, then immediately encrypt the captured "
+            "PCM with Windows DPAPI. Refuse = no recording.",
+            "NVP — Final one-use microphone permission",0x4|0x30|0x1000)==6)
+    result=host.capture(pid,token,"capture/physical-owner-test.pcm16le",
+                        ticket,device_id=-1,channels=1,frames=48000)
+    if result["frames"]!=48000 or result["take_frozen"]:
+        raise RuntimeError("Physical original capture contract failed")
+    recovered=store.get_original(pid,token,"capture/physical-owner-test.pcm16le")
+    if hashlib.sha256(recovered).hexdigest()!=result["pcm_sha256"]:
+        raise RuntimeError("Physical native source SHA mismatch")
+    _smoke_checkpoint("g03_physical_native_mic_pcm_encrypted_one_second_verified")
+    store.revoke(pid)
+    return 0
+
+
 def run_g03_protected_native_worker_smoke():
     """Actually installed DPAPI movie and contained native USD worker.
 
@@ -983,6 +1073,12 @@ def main(argv=None):
                         help="Reopen encrypted live film in fresh installed host")
     parser.add_argument("--g03-protected-scene-worker",action="store_true",
                         help=argparse.SUPPRESS)
+    parser.add_argument("--g03-protected-capture-worker",action="store_true",
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--smoke-capture-denied",action="store_true",
+                        help="Real installed native capture consent-denial smoke")
+    parser.add_argument("--g03-physical-capture-owner",action="store_true",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--smoke-live-worker",action="store_true",
                         help="Run synthetic real Windows Job Object protected OpenUSD staging")
     parser.add_argument("--smoke-legacy-migration",action="store_true",
@@ -993,12 +1089,21 @@ def main(argv=None):
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_g03_window,args.smoke_vault,
             args.smoke_live_create,args.smoke_live_reopen,
-            args.g03_protected_scene_worker,args.smoke_live_worker,
-            args.smoke_legacy_migration,args.smoke_data_av))>1:
+            args.g03_protected_scene_worker,args.g03_protected_capture_worker,
+            args.smoke_live_worker,args.smoke_capture_denied,
+            args.g03_physical_capture_owner,args.smoke_legacy_migration,
+            args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.g03_protected_scene_worker:
         from tools.nvp_g03_protected_scene_worker import worker_entry
         return worker_entry()
+    if args.g03_protected_capture_worker:
+        from tools.nvp_g03_protected_capture_worker import worker_entry
+        return worker_entry()
+    if args.smoke_capture_denied:
+        return run_g03_protected_capture_denial_smoke()
+    if args.g03_physical_capture_owner:
+        return run_g03_physical_capture_owner()
     if args.smoke_live_worker:
         return run_g03_protected_native_worker_smoke()
     if args.smoke_legacy_migration:
