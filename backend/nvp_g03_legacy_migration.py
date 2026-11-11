@@ -15,6 +15,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
+import stat
 from pathlib import Path
 import re
 import secrets
@@ -184,9 +186,57 @@ class LegacyFilmMigration:
                     "Unindexed FilmIndex bytes require independent recovery review")
         return result
 
+    def _sidecar_inventory(self,pid):
+        """Account for identified project-scoped files outside FilmIndex.
+
+        Never guess that a global native worker journal belongs to this film.
+        Report those separately for independent host/source review.
+        """
+        exclude=(self.candidates,
+                 self.root/"nvp_g03_encrypted_live",
+                 self.root/(self.studio.db_path.stem+"_film_blobs"))
+        located=[]
+        ambiguous=[]
+        seen=0
+        total=0
+        for directory,dirs,files in os.walk(self.root,followlinks=False):
+            here=Path(directory)
+            safe=[]
+            for name in dirs:
+                candidate=here/name
+                if any(candidate==root or candidate.is_relative_to(root)
+                       for root in exclude):
+                    continue
+                safe.append(name)
+            dirs[:]=safe
+            for name in files:
+                seen+=1
+                if seen>MAX_ROWS:
+                    raise MigrationRefused("Unclassified film home has too many files")
+                source=here/name
+                relative=source.relative_to(self.root).as_posix()
+                if name in {"worker_jobs.sqlite3","worker_journal.sqlite3"} and (
+                        pid not in source.parts and pid not in name):
+                    ambiguous.append(relative)
+                if pid not in source.parts and pid not in source.name:
+                    continue
+                _component_check(source,self.root)
+                info=source.lstat()
+                if not stat.S_ISREG(info.st_mode) or info.st_size>MAX_BLOB_BYTES:
+                    raise MigrationRefused("Project sidecar is not a bounded regular file")
+                digest=_sha_file(source)
+                total+=info.st_size
+                if total>MAX_TOTAL:
+                    raise MigrationRefused("Project sidecar files exceed migration budget")
+                located.append({"relative":relative,"sha256":digest,
+                                "size_bytes":info.st_size,"path":source})
+        return sorted(located,key=lambda x:x["relative"]),sorted(set(ambiguous))
+
+
     def inspect(self,pid):
         metadata,raw,unknown=self._snapshot(pid)
         blobs=self._blob_inventory(pid)
+        sidecars,ambiguous=self._sidecar_inventory(pid)
         evidence={"format":"nvp.g03.migration_inventory.v1",
                   "project_id":pid,
                   "legacy_sql_sha256":hashlib.sha256(raw).hexdigest(),
@@ -196,6 +246,10 @@ class LegacyFilmMigration:
                        "media_type":b["media_type"]}
                       for b in blobs],
                   "unknown_nonproject_tables":unknown,
+                  "unclassified_worker_journals":ambiguous,
+                  "project_sidecars":[
+                      {"relative":entry["relative"],"sha256":entry["sha256"],
+                       "size_bytes":entry["size_bytes"]} for entry in sidecars],
                   "full_film_cutover_authorized":False,
                   "original_film_modified":False,
                   "active_legacy_workers_migrated":False}
@@ -215,6 +269,7 @@ class LegacyFilmMigration:
         # encrypted candidate, but the candidate is never a complete cutover.
         meta,raw,unknown=self._snapshot(pid)
         blobs=self._blob_inventory(pid)
+        sidecars,ambiguous=self._sidecar_inventory(pid)
         if hashlib.sha256(raw).hexdigest()!=first["legacy_sql_sha256"]:
             raise MigrationRefused("Original film changed after creator review")
         self.candidates.mkdir(parents=True,exist_ok=True)
@@ -241,6 +296,15 @@ class LegacyFilmMigration:
                     blob["media_type"])
                 if saved["sha256"]!=blob["sha256"]:
                     raise MigrationRefused("Stored encrypted FilmIndex source mismatch")
+            for sidecar in sidecars:
+                raw_sidecar=sidecar["path"].read_bytes()
+                if hashlib.sha256(raw_sidecar).hexdigest()!=sidecar["sha256"]:
+                    raise MigrationRefused("Original sidecar changed during sealing")
+                stored=store.put_original(pid,token,
+                    "migration/sidecars/"+sidecar["relative"],raw_sidecar,
+                    "application/octet-stream")
+                if stored["sha256"]!=sidecar["sha256"]:
+                    raise MigrationRefused("Staged sidecar differs from original")
             fresh=self.inspect(pid)
             if fresh["inventory_sha256"]!=first["inventory_sha256"]:
                 raise MigrationRefused("Original source changed during migration staging")
@@ -251,9 +315,16 @@ class LegacyFilmMigration:
                 if hashlib.sha256(store.get_original(pid,token,
                     "migration/filmindex/"+blob["sha256"])).hexdigest()!=blob["sha256"]:
                     raise MigrationRefused("Staged FilmIndex blob failed verification")
+            for sidecar in sidecars:
+                restored=store.get_original(pid,token,
+                    "migration/sidecars/"+sidecar["relative"])
+                if hashlib.sha256(restored).hexdigest()!=sidecar["sha256"]:
+                    raise MigrationRefused("Candidate sidecar reopened with wrong bytes")
             return {"status":"ENCRYPTED_CANDIDATE_VERIFIED",
                     "project_id":pid,"inventory_sha256":first["inventory_sha256"],
                     "copied_filmindex_blobs":len(blobs),
+                    "copied_project_sidecars":len(sidecars),
+                    "unclassified_worker_journals":ambiguous,
                     "unknown_global_tables":unknown,
                     "legacy_film_untouched":True,"active_project_switched":False,
                     "complete_confidentiality":False}
