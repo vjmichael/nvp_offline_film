@@ -258,8 +258,9 @@ def _validate(plan,handoff):
                 raise ValueError("Scene actor must have a verified film ActorID")
         elif item["actor_id"] is not None:
             raise ValueError("Only performers may carry film ActorIDs")
+        if (item["shape"]=="camera")!=(item["role"]=="camera"):
+            raise ValueError("A scene camera must remain a camera")
         if item["role"]=="camera":
-            if item["shape"]!="camera":raise ValueError("Invalid scene camera")
             camera+=1
         if item["shape"] in ("sun","lamp") and item["role"]!="light":
             raise ValueError("Invalid light")
@@ -287,6 +288,18 @@ def _build_usd(plan):
     UsdGeom.SetStageUpAxis(stage,UsdGeom.Tokens.z)
     root=UsdGeom.Xform.Define(stage,"/World")
     stage.SetDefaultPrim(root.GetPrim())
+    world_prim=root.GetPrim()
+    original=plan["source"]
+    world_prim.CreateAttribute("nvp:projectId",Sdf.ValueTypeNames.String).Set(
+        original["project_id"])
+    world_prim.CreateAttribute("nvp:sceneId",Sdf.ValueTypeNames.String).Set(
+        original["scene_id"])
+    world_prim.CreateAttribute("nvp:sceneSourceSha256",Sdf.ValueTypeNames.String).Set(
+        original["scene_sha256"])
+    world_prim.CreateAttribute("nvp:scriptRevision",Sdf.ValueTypeNames.Int).Set(
+        original["script_revision"])
+    world_prim.CreateAttribute("nvp:directorNotesRevision",Sdf.ValueTypeNames.Int).Set(
+        original["notes_revision"])
     UsdGeom.Scope.Define(stage,"/World/Looks")
     UsdGeom.Xform.Define(stage,"/World/Objects")
     palette={}
@@ -380,7 +393,7 @@ def _build_usd(plan):
 
 def _reopen_usd(raw,plan):
     """Use a NEW layer, not the authoring stage, for a real parse/shape audit."""
-    from pxr import Sdf,Usd,UsdGeom
+    from pxr import Sdf,Usd,UsdGeom,UsdLux
     layer=Sdf.Layer.CreateAnonymous("nvp-director-reopen.usda")
     if not layer.ImportFromString(raw.decode("utf8")):
         raise RuntimeError("Original OpenUSD scene did not reopen")
@@ -391,6 +404,13 @@ def _reopen_usd(raw,plan):
         UsdGeom.GetStageUpAxis(stage)!=UsdGeom.Tokens.z or
         abs(UsdGeom.GetStageMetersPerUnit(stage)-1.)>1e-7):
         raise RuntimeError("Scene spatial metadata is not native")
+    provenance=stage.GetPrimAtPath("/World")
+    if (not provenance or
+            provenance.GetAttribute("nvp:projectId").Get()!=plan["source"]["project_id"] or
+            provenance.GetAttribute("nvp:sceneId").Get()!=plan["source"]["scene_id"] or
+            provenance.GetAttribute("nvp:sceneSourceSha256").Get()!=
+                plan["source"]["scene_sha256"]):
+        raise RuntimeError("Reopened USD stage does not belong to this scene")
     manifest=[]
     for item in plan["objects"]:
         prim=stage.GetPrimAtPath("/World/Objects/"+item["id"])
@@ -409,6 +429,10 @@ def _reopen_usd(raw,plan):
         }
         if shape in expected and (not geometry or not geometry.IsA(expected[shape])):
             raise RuntimeError("Reopened USD geometry differs from the stage")
+        if shape=="sun" and (not geometry or not geometry.IsA(UsdLux.DistantLight)):
+            raise RuntimeError("Reopened sun is not a real USD distant light")
+        if shape=="lamp" and (not geometry or not geometry.IsA(UsdLux.SphereLight)):
+            raise RuntimeError("Reopened lamp is not a real USD sphere light")
         transform=UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(
             Usd.TimeCode.Default())
         loc=transform.ExtractTranslation()
