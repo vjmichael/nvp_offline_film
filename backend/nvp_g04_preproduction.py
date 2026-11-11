@@ -144,7 +144,8 @@ class G04Preproduction:
             evidence_line INTEGER, evidence_quote TEXT NOT NULL DEFAULT '',
             source_sha256 TEXT NOT NULL, screenplay_revision INTEGER NOT NULL,
             model_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'proposed',
-            approved_value TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            approved_value TEXT, model_receipt_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
             CHECK(status IN ('proposed','accepted','rejected')))""")
         db.execute("""CREATE INDEX IF NOT EXISTS g04_by_scene
             ON g04_proposals(project_id,scene_id,created_at)""")
@@ -158,16 +159,28 @@ class G04Preproduction:
             content TEXT NOT NULL,instructions TEXT NOT NULL,
             source_sha256 TEXT NOT NULL,source_revision INTEGER NOT NULL,
             model_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'proposed',
+            model_receipt_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
             CHECK(status IN ('proposed','accepted','discarded')))""")
         db.execute("""CREATE INDEX IF NOT EXISTS g04_drafts_by_movie
             ON g04_screenplay_drafts(project_id,created_at)""")
+        G04Preproduction._schema_upgrade(db)
+
+    @staticmethod
+    def _schema_upgrade(db):
+        """Preserve earlier unreleased G04 drafts if branch is reopened."""
+        for table in ("g04_proposals","g04_screenplay_drafts"):
+            columns={row[1] for row in db.execute('PRAGMA table_info("'+table+'")')}
+            if "model_receipt_json" not in columns:
+                db.execute('ALTER TABLE "'+table+
+                           '" ADD COLUMN model_receipt_json TEXT NOT NULL DEFAULT \'{}\'')
 
     def _execute(self,pid,fn,*,mutate=False):
         if not isinstance(pid,str) or not HEX_ID.fullmatch(pid):
             raise ValueError("Movie identity is invalid")
         if self.live is None:
             with self.studio._connection() as db:
+                if mutate:db.execute("BEGIN IMMEDIATE")
                 self._schema(db)
                 row=db.execute("""SELECT id,title,idea,screenplay,revision
                     FROM projects WHERE id=?""",(pid,)).fetchone()
@@ -175,6 +188,7 @@ class G04Preproduction:
                 return fn(db,dict(row))
         if mutate:
             def change(db,key,folder):
+                db.execute("BEGIN IMMEDIATE")
                 self._schema(db)
                 row=db.execute("SELECT title,idea,screenplay,revision FROM film_metadata WHERE id=1").fetchone()
                 if row is None:raise KeyError("Movie not found")
@@ -565,6 +579,11 @@ class G04Preproduction:
             "film_idea":before["idea"][:5000],
             "existing_screenplay":before["screenplay"][:9000],
             "director_direction":instructions}))
+        receipt=writer.completion_receipt
+        if (not isinstance(receipt,dict) or
+                receipt.get("selected_model_id")!=selected or
+                receipt.get("provider_completion_finish_reason")!="stop"):
+            raise ValueError("AI screenplay generation was not completed")
         from backend.nvp_studio import SCENE_HEADING,MAX_SCRIPT_CHARS
         if (len(raw)>MAX_SCRIPT_CHARS or not any(
                 SCENE_HEADING.fullmatch(line.strip()) for line in raw.splitlines())):
@@ -578,10 +597,10 @@ class G04Preproduction:
             stamp=_clock()
             db.execute("""INSERT INTO g04_screenplay_drafts
                 (id,project_id,content,instructions,source_sha256,
-                source_revision,model_id,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?)""",
+                source_revision,model_id,model_receipt_json,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (uuid.uuid4().hex,pid,raw,instructions,expected,
-                 before["revision"],selected,stamp,stamp))
+                 before["revision"],selected,_json(receipt),stamp,stamp))
             return self._view(db,movie)
         return self._execute(pid,commit,mutate=True)
 
@@ -675,6 +694,11 @@ class G04Preproduction:
             "the director explicitly requests them. Missing facts may remain unknown. "
             "All outputs are unapproved suggestions; do not imply approval.")
         raw=writer.complete(system,_json(context))
+        receipt=writer.completion_receipt
+        if (not isinstance(receipt,dict) or
+                receipt.get("selected_model_id")!=selected or
+                receipt.get("provider_completion_finish_reason")!="stop"):
+            raise ValueError("AI scene suggestions were not completed")
         try:
             parsed=json.loads(raw)
         except (ValueError,TypeError) as exc:
@@ -722,10 +746,10 @@ class G04Preproduction:
                 db.execute("""INSERT INTO g04_proposals
                     (id,project_id,scene_id,category,value,evidence_line,
                     evidence_quote,source_sha256,screenplay_revision,model_id,
-                    created_at,updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    model_receipt_json,created_at,updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (uuid.uuid4().hex,pid,scene_id,kind,content,lineno,quote,
                      scene["source_sha256"],scene["script_revision"],selected,
-                     _clock(),_clock()))
+                     _json(receipt),_clock(),_clock()))
             return self._view(db,movie)
         return self._execute(pid,commit,mutate=True)
