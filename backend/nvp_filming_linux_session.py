@@ -63,8 +63,10 @@ class LinuxFilmingSession:
                 or receipt.get("empty_group_verified") is not True
                 or receipt.get("scope") != "linux-cgroup-v2"):
             raise RuntimeError("Kernel custody did not return an affirmative Linux empty-tree receipt")
+        remaining = timeout - (time.monotonic() - started)
+        if remaining < 0:
+            raise RuntimeError("Kernel custody exceeded filming shutdown deadline; worker exit unverified")
         try:
-            remaining = max(0.0, timeout - (time.monotonic() - started))
             self.child.wait(timeout=remaining)
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError("Cgroup empty but owned worker exit unverified") from exc
