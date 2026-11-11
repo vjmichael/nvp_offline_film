@@ -44,7 +44,7 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   expect(screen.queryByText(/Protobuf|FFmpeg|workers|GPU allocation|cgroup/i)).toBeNull();
   fireEvent.click(within(dialog).getByRole('button',{name:'New Movie'}));
   expect(screen.getByText(/Start with a script or just an idea/)).toBeTruthy();
-  expect(screen.getByRole('button',{name:'Next →'})).toBeDisabled;
+  expect(screen.getByRole('button',{name:'Next →'}).disabled).toBe(true);
  });
 
  it('new movie can start with an idea and expose the five creative steps',async()=>{
@@ -56,7 +56,7 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   fireEvent.click(screen.getByRole('button',{name:'Next →'}));
   await waitFor(()=>expect(log.some(x=>x.method==='POST'&&x.url==='/api/projects')).toBe(true));
   await waitFor(()=>expect(screen.getByRole('navigation',{name:'Filmmaking steps'})).toBeTruthy());
-  expect(screen.getByText('Set Up Scenes')).toBeTruthy();
+  expect(screen.getByRole('button',{name:/Set Up Scenes/})).toBeTruthy();
   expect(screen.getByRole('button',{name:/Edit Film/})).toBeTruthy();
   expect(screen.queryByText('Stage 3D scene')).toBeNull();
  });
