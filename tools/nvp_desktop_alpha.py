@@ -868,7 +868,8 @@ def run_g03_physical_capture_owner():
             "PCM with Windows DPAPI. Refuse = no recording.",
             "NVP — Final one-use microphone permission",0x4|0x30|0x1000)==6)
     result=host.capture(pid,token,"capture/physical-owner-test.pcm16le",
-                        ticket,device_id=-1,channels=1,frames=48000)
+                        ticket,device_id=-1,channels=1,frames=48000,
+                        synthetic_owner_only=True)
     if result["frames"]!=48000 or result["take_frozen"]:
         raise RuntimeError("Physical original capture contract failed")
     recovered=store.get_original(pid,token,"capture/physical-owner-test.pcm16le")

@@ -77,7 +77,8 @@ class NativeCaptureConsentWindows(unittest.TestCase):
                          self.ticket,device_id=-1,channels=1,frames=48000)
         allowed=ProtectedCaptureSupervisor(
             self.store,review_authority=lambda *scope:True,
-            native_os_prompt=lambda *scope:True)
+            native_os_prompt=lambda *scope:True,
+            os_isolation_attestor=lambda *scope:True)
         self.store.revoke(self.pid)
         with patch("backend.nvp_g03_protected_capture_supervisor.launch_contained",
                    side_effect=AssertionError("locked movie launched audio")):
