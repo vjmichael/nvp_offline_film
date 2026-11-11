@@ -73,12 +73,14 @@ def _safe(action):
     except ValueError as exc:
         raise HTTPException(422,detail=str(exc)) from exc
     except RuntimeError as exc:
+        raise HTTPException(409,detail=str(exc)) from exc
+    except ImportError as exc:
+        raise HTTPException(503,detail="A required filmmaking component is unavailable") from exc
+    except Exception as exc:
         from backend.nvp_idea_pipeline import LocalModelUnavailable
         if isinstance(exc,LocalModelUnavailable):
             raise HTTPException(503,detail="AI assistance is unavailable right now") from exc
-        raise HTTPException(409,detail=str(exc)) from exc
-    except ImportError as exc:
-        raise HTTPException(503,detail="This computer's microphone is unavailable") from exc
+        raise
 
 
 def mount_g06_routes(app,studio,live_films,cookie_name):
