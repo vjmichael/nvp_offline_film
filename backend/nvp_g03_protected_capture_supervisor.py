@@ -37,12 +37,14 @@ class ProtectedCaptureError(LiveFilmError):
 
 
 class ProtectedCaptureSupervisor:
-    def __init__(self,store,*,review_authority,native_os_prompt):
+    def __init__(self,store,*,review_authority,native_os_prompt,
+                 os_isolation_attestor=None):
         if not callable(review_authority) or not callable(native_os_prompt):
             raise TypeError("Host one-use review and native OS prompt are both required")
         self.store=store
         self.review_authority=review_authority
         self.native_os_prompt=native_os_prompt
+        self.os_isolation_attestor=os_isolation_attestor
 
     @staticmethod
     def _command():
@@ -58,7 +60,8 @@ class ProtectedCaptureSupervisor:
         return [str(executable),"-B",str(source)]
 
     def capture(self,pid,token,source_name,approval_id,
-                *,device_id,channels,frames,cancel=None):
+                *,device_id,channels,frames,cancel=None,
+                synthetic_owner_only=False):
         if sys.platform!="win32":
             raise ProtectedCaptureError("Windows mic capture is unavailable here")
         if (type(device_id) is not int or not -1<=device_id<=65535 or
@@ -74,6 +77,20 @@ class ProtectedCaptureSupervisor:
             raise ProtectedCaptureError("Creator review refused or replayed")
         if not self.native_os_prompt(*scope):
             raise ProtectedCaptureError("Native operator refused microphone capture")
+        # Job Objects contain process trees but give a worker the same user's
+        # filesystem/network access. Do not expose private original audio to a
+        # full-account PortAudio child before a separately verified sandbox.
+        # Synthetic owner hardware diagnosis is an explicit test-only exception.
+        isolated=(callable(self.os_isolation_attestor) and
+                  self.os_isolation_attestor(pid,source_name,device_id))
+        synthetic=(synthetic_owner_only is True and
+                   source_name=="capture/physical-owner-test.pcm16le" and
+                   os.environ.get("GITHUB_ACTIONS") is None and
+                   os.environ.get("CI") is None)
+        if not (isolated or synthetic):
+            raise ProtectedCaptureError(
+                "Private microphone capture requires independently verified "
+                "Windows AppContainer filesystem/network confinement")
         self.store._session(pid,token)
         if cancel is not None and cancel.is_set():
             raise ProtectedCaptureError("Microphone capture cancelled before launch")
