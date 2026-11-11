@@ -96,6 +96,17 @@ $script:app=$null
 $receipt=Join-Path $OutputDirectory ("G03-Physical-"+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.json')
 try {
   Write-Host "NVP installed SHA256: $exeHash"
+  # Cryptography must execute in the actual installed executable, under
+  # the operator's Windows DPAPI identity. Synthetic test sources only.
+  $crypto=Start-Process -FilePath $InstalledExe -ArgumentList '--smoke-vault' -PassThru
+  if(-not $crypto.WaitForExit(90000)){
+    & taskkill.exe /PID $crypto.Id /T /F 2>$null | Out-Null
+    throw 'Installed Windows DPAPI vault smoke exceeded 90 seconds'
+  }
+  if($crypto.ExitCode -ne 0){
+    throw 'Installed Windows DPAPI archive/restore verification failed'
+  }
+  Write-Host 'Windows current-account DPAPI and encrypted source archive smoke passed.'
   Write-Host "Isolated test films: $testHome"
   Write-Host "No existing NVP projects will be deleted or encrypted."
   Start-IsolatedNvp
@@ -125,7 +136,8 @@ try {
     actual_windows_uia=$uia
     operator_checks=$script:checks
     all_operator_checks_passed=($fail.Count -eq 0)
-    project_data_encryption_accepted=$false
+    windows_user_dpapi_archive_smoke_passed=$true
+    active_project_data_encryption_accepted=$false
     lu_model_integration_deferred=$true
     physical_radeon_inference_tested=$false
   }
