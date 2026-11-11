@@ -77,15 +77,23 @@ while((Get-Date) -lt $deadline) {
         Offscreen=$matching[0].Offscreen
       })
     }
-    $focusTarget=@($controls|Where-Object {
-      $_.Name -eq $target[0].name -and
-      $_.Role -eq $target[0].role
-    })[0]
-    $focusTarget.Element.SetFocus()
+    # The visible filmmaking step has an accessible numeric prefix, e.g.
+    # "4Edit Film"; find it by the same role/name contract as the control
+    # check instead of incorrectly demanding an exact label.
+    $focusTargets=@($controls|Where-Object {
+      $_.Name -like "*$($target[0].name)*" -and
+      $_.Role -eq $target[0].role -and
+      $_.Focusable -eq $true -and
+      $_.Offscreen -eq $false
+    })
+    if($focusTargets.Count -lt 1) {
+      throw "No real UIA focus target for $($target[0].name)"
+    }
+    $focusTargets[0].Element.SetFocus()
     Start-Sleep -Milliseconds 160
     $focused=[System.Windows.Automation.AutomationElement]::FocusedElement
     if($null -eq $focused -or
-       $focused.Current.Name -ne $target[0].name) {
+       $focused.Current.Name -notlike "*$($target[0].name)*") {
       throw "UIA keyboard focus did not reach $($target[0].name)"
     }
     $focusName=$focused.Current.Name
