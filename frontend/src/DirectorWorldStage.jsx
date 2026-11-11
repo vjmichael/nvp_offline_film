@@ -203,6 +203,11 @@ function StageCanvas({objects,setting,selected,onChoose,mode,onTransform,view,
         gizmo.removeEventListener('mouseUp',release);
         gizmo.detach();gizmo.dispose();
         for(const group of groups.values())disposeGraph(group);
+        if(worldRef.current?.weatherParticles){
+          scene.remove(worldRef.current.weatherParticles);
+          worldRef.current.weatherParticles.geometry.dispose();
+          worldRef.current.weatherParticles.material.dispose();
+        }
         grid.geometry.dispose();grid.material.dispose();
         renderer.dispose();
         if(host.contains(renderer.domElement))host.removeChild(renderer.domElement);
@@ -242,6 +247,12 @@ function StageCanvas({objects,setting,selected,onChoose,mode,onTransform,view,
         const mesh=new THREE.Mesh(geometryFor(item),material);
         mesh.userData.objectId=item.id;
         group.add(mesh);
+        if(item.role==='light'&&item.shape==='lamp'){
+          // Preview illumination only; the source is a genuine UsdLux
+          // SphereLight authored and reopened by the native scene engine.
+          const lamp=new THREE.PointLight(item.color||'#ffe7b0',35,16,1.6);
+          group.add(lamp);
+        }
         if(item.role==='actor'){
           const head=new THREE.Mesh(new THREE.SphereGeometry(.42,12,8),
             material.clone());
@@ -281,6 +292,33 @@ function StageCanvas({objects,setting,selected,onChoose,mode,onTransform,view,
     direct.intensity=daylight==='night'?.35:daylight==='dusk'?1.7:2.8;
     const key=objects.find(x=>x.role==='light'&&x.shape==='sun');
     if(key)direct.position.set(...key.position);
+    // Visual weather cues, derived from the authored stage weather state.
+    // They are NOT recorded performances or animation Takes.
+    if(world.weatherParticles){
+      scene.remove(world.weatherParticles);
+      world.weatherParticles.geometry.dispose();
+      world.weatherParticles.material.dispose();
+      world.weatherParticles=null;
+    }
+    if(weather==='rain'||weather==='snow'){
+      const count=weather==='snow'?180:300;
+      const positions=new Float32Array(count*3);
+      for(let i=0;i<count;i++){
+        // Deterministic spatial distribution avoids flicker across edits.
+        const t=i+1;
+        positions[i*3]=((t*47)%89)/89*32-16;
+        positions[i*3+1]=((t*71)%97)/97*32-16;
+        positions[i*3+2]=((t*37)%67)/67*14+.5;
+      }
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));
+      const material=new THREE.PointsMaterial({
+        color:weather==='snow'?0xe7f1ff:0x94bad0,
+        size:weather==='snow'?.085:.047,
+        transparent:true,opacity:.78,sizeAttenuation:true});
+      world.weatherParticles=new THREE.Points(geometry,material);
+      scene.add(world.weatherParticles);
+    }
     redraw();
   },[objects,setting?.weather,setting?.daylight,selected]);
 
@@ -333,6 +371,7 @@ export default function DirectorWorldStage({movie,scene}) {
   const [refresh,setRefresh]=useState(0);
   const stageRef=useRef(null);
   const busyRef=useRef(false);
+  const sectionRef=useRef(null);
   stageRef.current=stage;
 
   useEffect(()=>{
@@ -439,7 +478,9 @@ export default function DirectorWorldStage({movie,scene}) {
   }
   function openContext(id,x,y) {
     setSelected(id);
-    setContext({id,x,y});
+    const rect=sectionRef.current?.getBoundingClientRect();
+    setContext({id,x:rect?Math.max(8,Math.min(x-rect.left,rect.width-190)):15,
+      y:rect?Math.max(85,Math.min(y-rect.top,rect.height-200)):140});
   }
   function changeAxis(group,index,value) {
     setDraftTransform(existing=>{
@@ -452,7 +493,10 @@ export default function DirectorWorldStage({movie,scene}) {
   const editable=!!stage?.created&&stage?.current&&!busy;
   const past=stage?.past_versions?.filter(v=>v.revision!==stage.revision)||[];
 
-  return <section className="director-world" aria-label="Visual Scene Builder">
+  return <section ref={sectionRef} className="director-world"
+    aria-label="Visual Scene Builder" onKeyDown={e=>{
+      if(e.key==='Escape')setContext(null);
+    }}>
     <div className="director-world-heading">
       <div><h4>Your visual scene</h4>
         <p className="film-muted">See your setting in 3D. Move things, change
@@ -589,7 +633,8 @@ export default function DirectorWorldStage({movie,scene}) {
               Save Note</button></div>
             {chosen.role==='actor'&&<>
               <label>Wardrobe or appearance
-                <textarea rows={2} maxLength={1500} value={wardrobeNote}
+                <textarea className="director-world-wardrobe-target"
+                rows={2} maxLength={1500} value={wardrobeNote}
                   placeholder="Describe the look of this character…"
                   onChange={e=>setWardrobeNote(e.target.value)}/></label>
               <div className="film-actions"><button className="film-secondary"
@@ -681,7 +726,8 @@ export default function DirectorWorldStage({movie,scene}) {
           </div>)}
       </div>}
       {context&&chosen&&<div className="director-world-context"
-        role="menu" aria-label={'Actions for '+chosen.name}>
+        role="menu" style={{left:context.x,top:context.y,right:'auto'}}
+        aria-label={'Actions for '+chosen.name}>
         <strong>{chosen.name}</strong>
         <button role="menuitem" onClick={()=>{setMode('translate');setContext(null)}}>
           Move this object</button>
@@ -689,8 +735,17 @@ export default function DirectorWorldStage({movie,scene}) {
           Rotate this object</button>
         <button role="menuitem" onClick={()=>{
           setContext(null);
-          document.querySelector('.director-world-note-target')?.focus();
+          sectionRef.current?.querySelector('.director-world-note-target')?.focus();
         }}>Give a note</button>
+        {chosen.role==='actor'&&<button role="menuitem" onClick={()=>{
+          setContext(null);
+          sectionRef.current?.querySelector('.director-world-wardrobe-target')?.focus();
+        }}>Change Wardrobe</button>}
+        {chosen.role==='actor'&&<button role="menuitem" onClick={()=>{
+          setContext(null);
+          sectionRef.current?.querySelector('.director-world-inspector')?.scrollIntoView({
+            behavior:'smooth',block:'nearest'});
+        }}>Inspect Character</button>}
         <button role="menuitem" onClick={()=>setContext(null)}>Close menu</button>
       </div>}
     </>}
