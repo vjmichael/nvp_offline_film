@@ -197,8 +197,13 @@ class LegacyFilmMigration:
                  self.root/(self.studio.db_path.stem+"_film_blobs"))
         located=[]
         ambiguous=[]
+        unattributed=[]
         seen=0
         total=0
+        # The Studio database is shared, not a project sidecar. Its WAL/SHM
+        # are captured by the SQL backup, not silently assigned to one movie.
+        database=self.studio.db_path.relative_to(self.root).as_posix()
+        shared_sql={database,database+"-wal",database+"-shm"}
         for directory,dirs,files in os.walk(self.root,followlinks=False):
             here=Path(directory)
             safe=[]
@@ -221,6 +226,18 @@ class LegacyFilmMigration:
                         pid not in source.parts and pid not in name):
                     ambiguous.append(relative)
                 if pid not in source.parts and pid not in source.name:
+                    if relative not in shared_sql:
+                        _component_check(source,self.root)
+                        info=source.lstat()
+                        if (not stat.S_ISREG(info.st_mode) or
+                                info.st_size>MAX_BLOB_BYTES):
+                            raise MigrationRefused(
+                                "Unattributed legacy file requires manual recovery review")
+                        total+=info.st_size
+                        if total>MAX_TOTAL:
+                            raise MigrationRefused("Unattributed legacy data exceeds inventory cap")
+                        unattributed.append({"relative":relative,
+                            "sha256":_sha_file(source),"size_bytes":info.st_size})
                     continue
                 _component_check(source,self.root)
                 info=source.lstat()
@@ -232,7 +249,9 @@ class LegacyFilmMigration:
                     raise MigrationRefused("Project sidecar files exceed migration budget")
                 located.append({"relative":relative,"sha256":digest,
                                 "size_bytes":info.st_size,"path":source})
-        return sorted(located,key=lambda x:x["relative"]),sorted(set(ambiguous))
+        return (sorted(located,key=lambda x:x["relative"]),
+                sorted(set(ambiguous)),
+                sorted(unattributed,key=lambda x:x["relative"]))
 
 
     def _journal_provenance(self,pid,ambiguous):
@@ -328,7 +347,7 @@ class LegacyFilmMigration:
     def inspect(self,pid):
         metadata,raw,unknown=self._snapshot(pid)
         blobs=self._blob_inventory(pid)
-        sidecars,ambiguous=self._sidecar_inventory(pid)
+        sidecars,ambiguous,unattributed=self._sidecar_inventory(pid)
         journals=self._journal_provenance(pid,ambiguous)
         evidence={"format":"nvp.g03.migration_inventory.v1",
                   "project_id":pid,
@@ -340,6 +359,7 @@ class LegacyFilmMigration:
                       for b in blobs],
                   "unknown_nonproject_tables":unknown,
                   "unclassified_worker_journals":ambiguous,
+                  "unattributed_original_files":unattributed,
                   "global_worker_journal_provenance":journals,
                   "project_sidecars":[
                       {"relative":entry["relative"],"sha256":entry["sha256"],
@@ -363,7 +383,7 @@ class LegacyFilmMigration:
         # encrypted candidate, but the candidate is never a complete cutover.
         meta,raw,unknown=self._snapshot(pid)
         blobs=self._blob_inventory(pid)
-        sidecars,ambiguous=self._sidecar_inventory(pid)
+        sidecars,ambiguous,unattributed=self._sidecar_inventory(pid)
         if hashlib.sha256(raw).hexdigest()!=first["legacy_sql_sha256"]:
             raise MigrationRefused("Original film changed after creator review")
         self.candidates.mkdir(parents=True,exist_ok=True)
@@ -419,6 +439,7 @@ class LegacyFilmMigration:
                     "copied_filmindex_blobs":len(blobs),
                     "copied_project_sidecars":len(sidecars),
                     "unclassified_worker_journals":ambiguous,
+                    "unattributed_original_files":[x["relative"] for x in unattributed],
                     "unknown_global_tables":unknown,
                     "legacy_film_untouched":True,"active_project_switched":False,
                     "complete_confidentiality":False}
