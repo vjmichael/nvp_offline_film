@@ -619,13 +619,19 @@ class G05SceneAuthoring:
                     "rotation":[0.,0.,0.],"scale":list(scale),
                     "color":color,"actor_id":actor_id,"preset":preset,
                     "director_note":"","wardrobe_note":""})
-            elif operation in ("move","rotate","resize","recolor","rename",
+            elif operation in ("move","rotate","resize","transform","recolor","rename",
                                 "note","wardrobe","remove"):
                 if type(details.get("id")) is not str or not OBJECT_ID.fullmatch(
                         details["id"]):
                     raise ValueError("Choose an existing scene object")
                 item=next((x for x in objects if x["id"]==details["id"]),None)
                 if item is None:raise KeyError("That scene object no longer exists")
+                if operation=="transform":
+                    if set(details)!={"id","position","rotation","scale"}:
+                        raise ValueError("Select a valid object change")
+                    item["position"]=_vec(details["position"])
+                    item["rotation"]=_vec(details["rotation"],360)
+                    item["scale"]=_scale(details["scale"])
                 if operation=="move":
                     if set(details)!={"id","position"}:raise ValueError("Invalid move")
                     item["position"]=_vec(details["position"])
