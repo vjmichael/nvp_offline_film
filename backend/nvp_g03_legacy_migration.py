@@ -215,7 +215,9 @@ class LegacyFilmMigration:
                     raise MigrationRefused("Unclassified film home has too many files")
                 source=here/name
                 relative=source.relative_to(self.root).as_posix()
-                if name in {"worker_jobs.sqlite3","worker_journal.sqlite3"} and (
+                if (name in {"worker_jobs.sqlite3","worker_journal.sqlite3"} or
+                        (name.endswith(".sqlite3") and
+                         "worker" in relative.lower())) and (
                         pid not in source.parts and pid not in name):
                     ambiguous.append(relative)
                 if pid not in source.parts and pid not in source.name:
@@ -248,8 +250,23 @@ class LegacyFilmMigration:
             if size>64*1024*1024:
                 raise MigrationRefused("Global worker journal exceeds forensic cap")
             digest=_sha_file(path)
+            # SQLite may keep freshly committed worker state in its separate
+            # WAL. Hash and recheck it independently; inspecting only the
+            # database file is not an exact worker-journal inventory.
+            sidecar_paths=[Path(str(path)+ext) for ext in ("-wal","-shm")]
+            sidecars=[]
+            for extra in sidecar_paths:
+                if not extra.exists():
+                    continue
+                _component_check(extra,self.root)
+                if not extra.is_file() or extra.stat().st_size>64*1024*1024:
+                    raise MigrationRefused("Worker WAL/SHM is invalid or oversized")
+                sidecars.append({"name":extra.name,
+                                 "sha256":_sha_file(extra),
+                                 "size_bytes":extra.stat().st_size})
             info={"relative":relative,"sha256":digest,
                   "size_bytes":size,"format":"unknown",
+                  "wal_and_shm":sidecars,
                   "matching_project_rows":0,
                   "unclassified_tables":[],
                   "live_worker_custody_proved":False,
@@ -294,6 +311,16 @@ class LegacyFilmMigration:
             # inventory hash, never implies safe process custody.
             if _sha_file(path)!=digest:
                 raise MigrationRefused("Global worker journal changed during review")
+            for item in sidecars:
+                replay=path.parent/item["name"]
+                if (not replay.is_file() or
+                        replay.stat().st_size!=item["size_bytes"] or
+                        _sha_file(replay)!=item["sha256"]):
+                    raise MigrationRefused("Worker WAL/SHM changed during inventory")
+            for extra in sidecar_paths:
+                if extra.exists() and extra.name not in {
+                        entry["name"] for entry in sidecars}:
+                    raise MigrationRefused("New worker WAL/SHM appeared during review")
             report.append(info)
         return report
 
