@@ -161,7 +161,9 @@ class ProtectedCyclesSupervisor:
                *,cancel=None,synthetic_ci_only=False):
         if sys.platform!="win32":
             raise ProtectedCyclesError("Protected Windows native Job and DPAPI required")
-        if not callable(self.os_isolation_attestor) or not self.os_isolation_attestor():
+        isolated=(callable(self.os_isolation_attestor) and
+                  self.os_isolation_attestor())
+        if not isolated:
             if not (synthetic_ci_only and os.environ.get("GITHUB_ACTIONS")=="true"):
                 raise ProtectedCyclesError(
                     "Private Blender/Cycles is blocked: independently verified "
@@ -208,7 +210,8 @@ class ProtectedCyclesSupervisor:
                             "BLENDER_USER_SCRIPTS":str(Path(cwd)/"scripts"),
                             "BLENDER_USER_DATAFILES":str(Path(cwd)/"datafiles")})
                 proc=launch_contained(args,cwd=cwd,stdin=inp,stdout=out,
-                    stderr=errout,memory_mb=4096,env=env)
+                    stderr=errout,memory_mb=4096,env=env,
+                    windows_appcontainer_required=isolated)
                 inp.close();out.close();errout.close()
                 request=MAGIC_IN+struct.pack("!I",len(canonical))+canonical
                 for fn,params in (
