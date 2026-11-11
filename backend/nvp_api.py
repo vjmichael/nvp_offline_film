@@ -487,6 +487,13 @@ def g05_stage_edit(project_id:str,scene_id:str,request:Request,
         .edit(project_id,scene_id,payload.expected_revision,
               payload.operation,payload.details))
 
+@app.post("/api/projects/{project_id}/stage/{scene_id}/reconcile")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/reconcile")
+def g05_stage_reconcile(project_id:str,scene_id:str,request:Request,
+                        payload:G05Revision):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .reconcile(project_id,scene_id,payload.expected_revision))
+
 @app.post("/api/projects/{project_id}/stage/{scene_id}/restore")
 @app.post("/api/projects/{project_id}/live/stage/{scene_id}/restore")
 def g05_stage_restore(project_id:str,scene_id:str,request:Request,
