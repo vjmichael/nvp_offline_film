@@ -85,7 +85,10 @@ class WindowsJobProcess:
             self._process = None
 
 
-def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False):
+def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0,
+                     linux_cgroup_tree_required=False, stdin=None, env=None,
+                     windows_appcontainer_required=False,
+                     appcontainer_code_roots=(),appcontainer_code_files=()):
     """Trusted host launches pinned absolute executable with OS containment."""
     if not isinstance(command, list) or not command or not Path(command[0]).is_absolute():
         raise ValueError("Containment requires an absolute executable path")
@@ -93,23 +96,39 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
         raise ValueError("Invalid OS memory limit")
     if type(linux_cgroup_tree_required) is not bool:
         raise ValueError("Linux whole-tree containment mode must be boolean")
+    if type(windows_appcontainer_required) is not bool:
+        raise ValueError("Windows AppContainer requirement must be boolean")
+    # Never silently downgrade a private film worker to normal user custody.
+    if windows_appcontainer_required:
+        if os.name!="nt":
+            raise RuntimeError("Windows AppContainer kernel isolation required")
+        from backend.nvp_g03_windows_appcontainer import launch_appcontainer
+        return launch_appcontainer(command,cwd=cwd,stdin=stdin,stdout=stdout,
+            stderr=stderr,memory_mb=memory_mb,env=env,
+            code_roots=appcontainer_code_roots,
+            code_files=appcontainer_code_files)
     if os.name == "nt":
-        return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr, memory_mb=memory_mb)
+        return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr,
+                               memory_mb=memory_mb, stdin=stdin, env=env)
     if sys.platform == "linux":
         if linux_cgroup_tree_required:
+            if env is not None:
+                raise RuntimeError("Delegated cgroup worker requires separately reviewed environment handling")
+            if stdin is not None:
+                raise RuntimeError("Protected stdin requires a separately reviewed delegated cgroup transport")
             from backend.nvp_worker_linux_cgroup import launch_cgroup_tree
             return launch_cgroup_tree(command,cwd=cwd,stdout=stdout,stderr=stderr,memory_mb=memory_mb)
         shim = Path(__file__).with_name("nvp_worker_linux_launcher.py").resolve()
         command = [sys.executable, str(shim), "--parent", str(os.getpid()),
                    "--memory-mb", str(memory_mb)] + command
-        proc = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL,
-                                stdout=stdout, stderr=stderr, shell=False, close_fds=True,
+        proc = subprocess.Popen(command, cwd=cwd, stdin=stdin or subprocess.DEVNULL,
+                                stdout=stdout, stderr=stderr, env=env, shell=False, close_fds=True,
                                 start_new_session=True)
         return LinuxContainedProcess(proc)
     raise RuntimeError("Unsupported OS containment platform")
 
 
-def _launch_windows(command, *, cwd, stdout, stderr, memory_mb):
+def _launch_windows(command, *, cwd, stdout, stderr, memory_mb, stdin=None, env=None):
     """Suspended Win32 creation: no Blender instruction runs outside the job."""
     import msvcrt
     import win32job
@@ -126,7 +145,8 @@ def _launch_windows(command, *, cwd, stdout, stderr, memory_mb):
     win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, info)
 
     nul = open("NUL", "rb", buffering=0)
-    handles = (msvcrt.get_osfhandle(nul.fileno()),
+    handles = (msvcrt.get_osfhandle(
+                   nul.fileno() if stdin is None else stdin.fileno()),
                msvcrt.get_osfhandle(stdout.fileno()),
                msvcrt.get_osfhandle(stderr.fileno()))
     previous = [os.get_handle_inheritable(h) for h in handles]
@@ -137,9 +157,11 @@ def _launch_windows(command, *, cwd, stdout, stderr, memory_mb):
         startup.dwFlags |= win32process.STARTF_USESTDHANDLES
         startup.hStdInput, startup.hStdOutput, startup.hStdError = handles
         flags = win32process.CREATE_SUSPENDED | win32process.CREATE_NO_WINDOW
+        if env is not None:
+            flags |= win32process.CREATE_UNICODE_ENVIRONMENT
         ph, th, pid, _ = win32process.CreateProcess(
             command[0], subprocess.list2cmdline(command), None, None,
-            True, flags, None, str(cwd), startup)
+            True, flags, env, str(cwd), startup)
         try:
             win32job.AssignProcessToJobObject(job, ph)
             if not win32job.IsProcessInJob(ph, job):

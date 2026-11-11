@@ -162,15 +162,25 @@ class Studio:
                 raise RuntimeError("Screenplay changed during restore; reload and try again")
         return self.get_project(project_id)
 
-    def create_project(self, title: str, idea: str):
+    def create_project(self, title: str, idea: str, screenplay: str = ""):
+        """Atomically create a film, optionally with its original screenplay.
+
+        A rejected source cannot leave behind an empty half-created movie.
+        This is screenplay parsing, NOT a claim that AI has staged scenes.
+        """
+        if not all(isinstance(x, str) for x in (title, idea, screenplay)):
+            raise ValueError("Movie title, idea and screenplay must be text")
         title, idea = title.strip(), idea.strip()
         if not title or len(title) > 150 or len(idea) > 10000:
             raise ValueError("Enter a title (up to 150 characters) and an idea under 10,000 characters")
+        parse_screenplay(screenplay)
         project_id = uuid.uuid4().hex
         stamp = now()
         with self._connection() as db:
-            db.execute("INSERT INTO projects (id, title, idea, created_at, updated_at) VALUES (?,?,?,?,?)",
-                       (project_id, title, idea, stamp, stamp))
+            db.execute("""INSERT INTO projects
+                (id, title, idea, screenplay, created_at, updated_at)
+                VALUES (?,?,?,?,?,?)""",
+                (project_id, title, idea, screenplay, stamp, stamp))
         return self.get_project(project_id)
 
     def list_projects(self):

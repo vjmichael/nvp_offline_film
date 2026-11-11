@@ -1,0 +1,114 @@
+name: G03 director-first home and project access (source/native, not installed UX)
+
+on:
+  push:
+    branches:
+      - nvp/g03-film-home-project-access-20261110
+  workflow_dispatch:
+
+concurrency:
+  group: g03-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  project-access:
+    name: G03 server-side movie lock / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 24
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native Python planning API test dependencies
+        shell: bash
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx 'cryptography>=43,<49'
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            python -m pip install 'pywin32>=306'
+            python -m pip install --only-binary=:all: 'usd-core==26.11'
+          fi
+      - name: Compile new project access guard and API
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_project_access.py backend/nvp_api.py backend/nvp_g03_live_store.py backend/nvp_g03_protected_scene_supervisor.py backend/nvp_g03_protected_capture_supervisor.py backend/nvp_g03_protected_cycles_supervisor.py backend/nvp_worker_containment.py backend/nvp_g03_windows_appcontainer.py backend/nvp_g03_legacy_migration.py backend/nvp_g03_candidate_recovery.py backend/nvp_g03_full_recovery.py tools/nvp_g03_candidate_readback.py tools/nvp_g03_full_recovery_readback.py tools/nvp_g03_protected_scene_worker.py tools/nvp_g03_protected_capture_worker.py tools/nvp_g03_cycles_inmemory_worker.py tests/test_nvp_g03_protected_capture.py tests/test_nvp_g03_protected_cycles.py tests/test_nvp_g03_appcontainer.py tests/test_nvp_g03_full_recovery.py tests/test_nvp_g03_project_access.py tests/test_nvp_g03_live_store.py tests/test_nvp_g03_protected_scene_supervisor.py tests/test_nvp_g03_legacy_migration.py
+      - name: Test real FastAPI lock authorization and existing movie routes
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p 'test_nvp_g03_project_access.py' -v
+          python -m unittest discover -s tests -p 'test_api.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_windowed_server.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_slate08b_native_camera_ipc.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_windows_vault.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_live_store.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_protected_scene_supervisor.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_protected_capture.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_protected_cycles.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_legacy_migration.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_g03_full_recovery.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_editorial_catalog.py' -v
+
+  director-ui:
+    name: G03 React film home, separate edit window and production bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install frontend (repository currently has no npm lockfile)
+        working-directory: frontend
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Run director-only React interaction tests
+        working-directory: frontend
+        run: npm run test:ui -- src/FilmmakerHome.test.jsx
+      - name: Build real two-entry Vite frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Independently verify two HTML entrypoints and absent engineering panels
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s frontend/dist/index.html
+          test -s frontend/dist/postproduction.html
+          python - <<'PY'
+          from pathlib import Path
+          entry=Path('frontend/src/App.jsx').read_text('utf8')
+          assert 'FilmmakerHome' in entry
+          for forbidden in ('ResourceActivityPanel','MotionRigPanel','DataFirstAVPanel','NvpProjectWizard'):
+              assert forbidden not in entry, forbidden
+          print('G03_DIRECTOR_ONLY_ENTRY_AND_SEPARATE_EDITOR_PASS')
+          PY
+      - name: Verify actual NVP local desktop serves director and Post-Production pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt httpx
+          python - <<'PY'
+          from pathlib import Path
+          from unittest.mock import patch
+          from fastapi.testclient import TestClient
+          from tools import nvp_desktop_alpha as desktop
+          dist=Path('frontend/dist').resolve()
+          with patch.object(desktop,'static_root',return_value=dist):
+              app=desktop.create_app()
+              client=TestClient(app,base_url='http://127.0.0.1')
+              for path in ('/','/postproduction.html'):
+                  response=client.get(path)
+                  assert response.status_code==200,(path,response.status_code,response.text[:400])
+                  assert '/assets/' in response.text,path
+              print('G03_NATIVE_LOCAL_DESKTOP_TWO_ENTRY_HTTP_PASS')
+          PY
+      - name: Scope declaration
+        run: |
+          echo 'Source and web UI tests only. No installed NSIS user interaction proved.'
+          echo 'Movie locks guard FastAPI, not local disk encryption or OS account access.'

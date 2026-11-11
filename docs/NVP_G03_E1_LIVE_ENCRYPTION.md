@@ -1,0 +1,58 @@
+# G03-E1 — Host-owned encrypted live film storage
+
+**State:** Implemented in draft PR #155; native Windows/Linux test and installed NSIS acceptance pending exact-head verification. Standalone NVP; G02 Lu integration deferred; canonical DATA-AV PR #74 unchanged; zero FFmpeg.
+
+## Creator behavior
+
+New Movie offers an optional **Encrypt this new movie on this Windows account** choice with a director-supplied passphrase. The idea, screenplay, scene headers, dialogue, revisions, first source OpenUSD/PCM files and recovery/worker receipts go directly into the encrypted host service, never through a working plaintext SQLite file. The existing shared catalog contains only movie ID/title and empty placeholder rows; titles remain PUBLIC.
+
+An encrypted film reopens via the host protected /live route and can be manually edited, relocked and viewed in the separate Post-Production shell. Production capture, rendering and final export are not turned on by encryption. **Existing plaintext movies are not automatically converted**, so the existing Lock in NVP API-only feature must not be described as encryption of older film files.
+
+## Cryptographic and crash-safety design
+
+- The per-film random 256-bit AES-GCM content key is wrapped with current-user Windows DPAPI and a scrypt-derived passphrase entropy binding. The key never enters React, model prompts, HTTP requests, process arguments, worker messages or a plaintext key file.
+- Host in-memory SQLite uses Python 3.11+ serialize/deserialize and memory-only journal/temp storage. All live ideas, screenplay revisions, source-asset index, native receipts and recovery decisions reside inside authenticated encrypted immutable SQLite snapshots.
+- Private root: NVP_HOME/nvp_g03_encrypted_live/{project_id}. It stores key.nvpdpapi, a non-secret HEAD.json revision pointer, immutable encrypted revisions/db.<sequence>.nvpsealed and opaque keyed asset ciphertext in assets/*.nvpsealed. No plaintext .sqlite/.usda/.pcm/-wal/-shm is written by this new mode.
+- For every revision the host takes a Python and native Windows/Linux OS-level per-film mutex, validates the host grant and expected revision, writes/flushes a new encrypted immutable snapshot, then atomically updates HEAD. Previous snapshots remain encrypted. After power loss, an orphan encrypted revision can be retained and a later commit advances to a fresh sequence without overwriting it.
+- Original source bytes are encrypted before the SQLite index is published, independently decrypted/hashed and never edited in place. A crash after ciphertext but before index is recoverable only if an authenticated original matches the expected identity and digest. Logical source names remain only inside encrypted SQLite; filenames use opaque keyed HMAC identities.
+- A human-reviewed screenplay recovery can replay a prior authenticated checkpoint as a **new** encrypted revision with a recovery receipt. Original takes/assets are not rewound or deleted.
+
+## Native worker authority
+
+Legacy WebView2 camera/audio and production APIs are denied for encrypted movies. Native camera/sound access also remains conservatively closed if any protected film is present.
+
+The host-owned worker broker supports one-use, 30-second, actor/asset-operation-scoped authority (read original or seal new original), separately requiring explicit human approval. The broker consumes a grant once, checks live project session state, and stores an encrypted receipt. It never gives a model, browser or worker the content key or original filesystem path. **The source broker is trusted and host-owned.** G03-F1 additionally executes real OpenUSD camera staging in a suspended-start Windows Job Object and publishes AES-GCM-protected derivative USD, but a Job Object does not restrict same-user file or network access. G03-F2 adds a native PortAudio/PCM capture adapter with separate one-use review and actual OS confirmation, and it refuses private filming unless a host-proven filesystem/network sandbox exists. G03-F3 adds a SHA-pinned real Blender/Cycles pipeline with typed geometry, memory-only native PNG and encrypted output; private films fail closed without independent AppContainer isolation. Synthetic CI/owner trials do **not** count as permission to render confidential movies.
+
+## G03-F1 supervised native scene staging and G03-M1/M2 migration candidates
+
+A real **Windows suspended-start Job Object** worker now ingests a vetted OpenUSD original over an anonymous memory pipe, creates three actual USD camera prims (wide, medium, close-up), and returns verified source bytes through a separate pipe to the trusted host. The host seals the derived OpenUSD with AES-GCM and keeps job output and cancellation/recovery receipts in the encrypted live SQLite history. The fixed worker does not accept a model-provided script, executable or source path. Native Job Object cancellation and replay denial are tested. **This is authentic scene staging, not Blender/Cycles rendering, capture or completed shots.** External production processes remain blocked until each specialized worker has the same zero-plaintext custody and source guarantees.
+
+The **legacy-film migration** now inventories project-scoped Studio SQLite rows, SHA-addressed FilmIndex blobs and project-identified sidecar files, and reports global/ambiguous worker journals. An inventory-specific director review must approve any staging. A separately encrypted candidate is independently reopened and byte-verified while the original project, its source media and its active SQLite state remain untouched. **Migration does not cut over existing films** or imply unrelated directories/caches/backups have been covered. No original data is removed. These gates are source- and installed-app tested with synthetic films; no real user's project has been migrated.
+
+## G03-F2/F3 native microphone and Blender/Cycles security gates
+
+- **Native audio capture:** `tools/nvp_g03_protected_capture_worker.py` uses actual PortAudio on a native input, bounds input to 48 kHz PCM16LE (one or two channels, at most six seconds), refuses overflow/partial samples, and streams the original through an anonymous pipe. The host binds the exact device, source, sample count and project to two explicit checks (creator review and a native OS consent prompt). Only after verified worker termination and host authority does it seal the resulting PCM via DPAPI/AES-GCM and store an encrypted receipt. A declined prompt cannot start a microphone or create original PCM. Full live private-film capture remains disabled until verified filesystem/network sandboxing; only an independently opted-in **synthetic physical-owner** one-second smoke may run without that sandbox.
+- **Native Blender/Cycles:** `tools/nvp_g03_cycles_inmemory_worker.py` is a fixed, reviewed Blender script that accepts only bounded typed data derived from native OpenUSD mesh/sphere/cube prims, refuses external asset paths, uses real Cycles CPU and emits PNG bytes over stdout without saving a .blend/source/render file. `backend/nvp_g03_protected_cycles_supervisor.py` checks the operator-pinned Blender executable SHA, one-use review, OS Job Object custody, bounded payload/output, exact PNG CRC/dimensions and encrypted publication. Job Objects alone are insufficient to stop Blender modules from accessing same-user files or network; therefore **private protected-film use is blocked** pending an independently verified AppContainer or equivalent. The new native Windows CI gate uses only synthetic films and an official Blender distribution SHA.
+- **Other worker paths:** Existing legacy Blender, old microphone spools and FFmpeg-dependent editorial services are **not** rerouted into encrypted projects. There is no model/browser ability to waive native approval, expand the allowed executable/script set or write plaintext previews.
+
+## G03-M3 global worker/recovery provenance
+
+Migration now opens identified unclassified global worker SQLite journals in **read-only mode**, verifies SQLite integrity, records SHA-256, counts only project-bound rows where a declared `project_id` exists and marks all unmapped tables as unknown. Opaque/non-SQLite journal bytes are inventoried but never interpreted as custody proof. Concurrent changes to journal content invalidate the reviewed inventory hash. A matching project row does not prove process termination, recoverability, safe key migration, or permission to erase the source. User-owned existing film/PCM/USD backups and caches are never deleted or activated automatically. **Legacy active-film cutover remains blocked until every global/backup path is classified and a real human reauthorization plus independent recovery passes.**
+
+## Verification gates
+
+The real Windows DPAPI test matrix covers encrypted in-memory SQLite create/restart, screenplay revision, original source audit, no plaintext film markers in the secured root or public catalog, wrong passphrase/foreign project denial, tamper rejection, cross-process concurrent writer conflict, one-use worker grant/replay/expiry, relock revocation, sealed receipts, interrupted HEAD commit, interrupted original index commit, independent recovery readback and human-approved history restore. Non-Windows test explicitly rejects DPAPI instead of using fake security.
+
+The Windows installed NSIS workflow runs the real packaged executable to create an encrypted live movie and OpenUSD, then reopens that exact data in a fresh executable/process, verifies SHA-256, encryption-at-rest invariants, recovery revisions and relock. The source matrix separately runs FastAPI, React and native test suites.
+
+**Never count queued CI runs as passing.** CI native Windows acceptance is distinct from creator-operated physical workstation accessibility and restart checks.
+
+## Remaining confidential-film release blockers
+
+1. Safely migrate already-existing shared Studio/FilmIndex plaintext movies, including SQLite/WAL, OpenUSD layers, original PCM, Takes, asset caches, recovery journals, previews, derivatives and backups. Migration must be human-approved, crash-safe, independently verified, and preserve originals until acceptance; source copies in snapshots cannot be presumed erased.
+2. Connect actual protected Blender, render, device/audio and capture workers through host authorization, native Windows Job Object/AppContainer and Linux delegated cgroup custody, cancellation/restart, and encrypted temporary/derived output. Current encrypted films have this production pipeline DISABLED.
+3. Independent physical Windows filesystem and machine-account key custody review, screen-reader/keyboard, multi-process approval/revocation, and backup-recovery tests; plan DPAPI account/device recovery before offering irreversible protection.
+4. Recognize that AES-GCM gives modification detection, but does NOT prevent a same-account attacker with direct file access from replaying an older genuine HEAD and snapshot. A trusted monotonic revision ledger is required for anti-rollback.
+5. Report key-residency risk (active host memory), inability to guarantee secure deletion of preexisting plaintext and public movie titles honestly.
+
+**Security classification:** New encrypted live storage is an isolated production-bound design under exact-head acceptance. Native OpenUSD camera staging is verified, while full private Blender/Cycles and microphone capture are deliberately blocked until filesystem/network sandboxing and owner-operated approval are proven. Existing plaintext projects, global journals and historical backups remain an explicit G03 security gate. No claim of complete NVP confidentiality.
