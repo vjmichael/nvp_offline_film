@@ -90,8 +90,16 @@ async def film_project_access_guard(request: Request, call_next):
                                 status_code=403)
         response = await call_next(request)
         if protected:
-            # A renewed HTTP-only cookie expires after an idle session.
+            # Another native host may relock while a request is in progress.
+            # Never return decrypted body content after a grant was revoked.
             token = request.cookies.get(COOKIE)
+            if (live_films().exists(project_id) and action!="lock" and
+                    not locks.permitted(project_id, token)):
+                live_films().revoke(project_id)
+                return JSONResponse(
+                    {"detail":"Movie locked while this operation was in progress"},
+                    status_code=423)
+            # A renewed HTTP-only cookie expires after an idle session.
             if token and locks.permitted(project_id, token):
                 response.set_cookie(COOKIE, token, httponly=True,
                                     samesite="strict", secure=request.url.scheme == "https",
