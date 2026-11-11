@@ -487,11 +487,17 @@ class G06Filming:
                     "recorded_from_native_microphone":True}
         return self._with(pid,scene_id,save,mutate=True)
 
-    def freeze_take(self,pid,scene_id,expected_revision,clip_ids=()):
+    def freeze_take(self,pid,scene_id,expected_revision,clip_ids=(),
+                    clip_starts=None):
         if (type(clip_ids) not in (list,tuple) or len(clip_ids)>32 or
                 len(set(clip_ids))!=len(clip_ids) or
                 any(type(x) is not str or not HEX.fullmatch(x) for x in clip_ids)):
             raise ValueError("Select valid original audio clips")
+        if clip_starts is None:clip_starts={}
+        if (type(clip_starts) is not dict or set(clip_starts)-set(clip_ids)
+                or any(type(key) is not str or type(value) is not str
+                       for key,value in clip_starts.items())):
+            raise ValueError("Original audio timings do not match selected recordings")
         def freeze(db,movie,source):
             head,record,plan,original=_stage(db,source,pid,scene_id)
             working=self._working(db,pid,scene_id,
@@ -517,13 +523,23 @@ class G06Filming:
                     clip["sample_rate"]!=RATE or clip["channels"]!=1 or
                     len(clip["pcm"])!=clip["sample_count"]*2):
                     raise RuntimeError("Original source audio failed its integrity check")
-                if clip["sample_count"]*SAMPLE_TICKS>working["duration_tick"]:
-                    raise ValueError("Original sound is longer than this scene")
+                start_tick=_seconds(clip_starts.get(clip_id,"0"))
+                duration_tick=clip["sample_count"]*SAMPLE_TICKS
+                if start_tick+duration_tick>working["duration_tick"]:
+                    raise ValueError("Original sound does not fit within this scene")
+                emitter=next((o for o in plan["objects"]
+                    if o["role"]=="actor" and
+                    o["actor_id"]==clip["actor_id"]),None) if clip["actor_id"] else None
+                if clip["actor_id"] is not None and emitter is None:
+                    raise RuntimeError("Recorded character is no longer in the frozen stage")
                 audio.append({"clip_id":clip_id,"actor_id":clip["actor_id"],
+                    "emitter_path":"/World/Objects/"+emitter["id"]
+                        if emitter else "/World",
+                    "emitter_position":emitter["position"] if emitter else [0.,0.,0.],
                     "pcm_sha256":clip["pcm_sha256"],
                     "sample_rate":RATE,"channels":1,
-                    "sample_count":clip["sample_count"],"start_tick":0,
-                    "duration_tick":clip["sample_count"]*SAMPLE_TICKS})
+                    "sample_count":clip["sample_count"],"start_tick":start_tick,
+                    "duration_tick":duration_tick})
             take_id=uuid.uuid4().hex
             document={"format":TAKE_FORMAT,"project_id":pid,
                 "scene_id":scene_id,"source_stage_revision":head["revision"],
@@ -533,6 +549,11 @@ class G06Filming:
                 "duration_tick":working["duration_tick"],
                 "tick_rate":TICKS_PER_SECOND,
                 "events":working["events"],"audio":audio,
+                "stage_objects":[{"id":o["id"],"name":o["name"],"shape":o["shape"],
+                    "color":o["color"],"position":o["position"],
+                    "rotation":o["rotation"],"scale":o["scale"],
+                    "actor_id":o["actor_id"],"role":o["role"]}
+                    for o in plan["objects"]],
                 "camera_tracks_frozen":False,"immutable":True,
                 "source_is_original_openusd":True,
                 "picture_frames_rendered":False}
@@ -553,6 +574,28 @@ class G06Filming:
                     "audio_clip_count":len(audio),"frozen":True,
                     "camera_changes_preserve_take":True}
         return self._with(pid,scene_id,freeze,mutate=True)
+
+    def original_preview(self,pid,scene_id,clip_id):
+        """Disposable standard PCM WAV listening envelope, never film source."""
+        if type(clip_id) is not str or not HEX.fullmatch(clip_id):
+            raise ValueError("Select an original sound recording")
+        def read(db,movie,source):
+            row=db.execute("""SELECT actor_id,pcm,pcm_sha256,sample_rate,
+                channels,sample_count FROM g06_original_pcm
+                WHERE project_id=? AND scene_id=? AND id=?""",
+                (pid,scene_id,clip_id)).fetchone()
+            if row is None:raise KeyError("Original sound is not in this scene")
+            if (_sha(row["pcm"])!=row["pcm_sha256"] or
+                    row["sample_rate"]!=RATE or row["channels"]!=1 or
+                    row["sample_count"]*2!=len(row["pcm"])):
+                raise RuntimeError("Original sound integrity check failed")
+            import io,wave
+            stream=io.BytesIO()
+            with wave.open(stream,"wb") as output:
+                output.setnchannels(1);output.setsampwidth(2)
+                output.setframerate(RATE);output.writeframes(row["pcm"])
+            return stream.getvalue()
+        return self._with(pid,scene_id,read)
 
     def _take(self,db,pid,take_id,with_audio=False):
         if type(take_id) is not str or not HEX.fullmatch(take_id):
@@ -605,7 +648,13 @@ class G06Filming:
                         "start_seconds":float(_time(e["start_tick"])),
                         "end_seconds":float(_time(e["end_tick"]))}
                         for e in doc["events"]],
-                    "audio_clip_count":len(audio),"camera":views,
+                    "audio_clip_count":len(audio),
+                    "original_audio":[{"clip_id":entry["clip_id"],
+                        "actor_id":entry["actor_id"],
+                        "start_seconds":float(_time(entry["start_tick"])),
+                        "duration_seconds":entry["sample_count"]/RATE}
+                        for entry in audio],
+                    "stage_objects":doc["stage_objects"],"camera":views,
                     "camera_changes_preserve_take":True}
         return self._with(pid,scene_id,read)
 
