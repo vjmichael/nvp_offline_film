@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
+import time
 
 from backend.nvp_filming_cgroup_launch import create_private_group_and_launch
 from backend.nvp_filming_cgroup_custody import LinuxFilmingCgroup
@@ -36,6 +37,9 @@ class LinuxFilmingSession:
 
     def stop_and_verify(self, *, timeout: float = 5.0) -> dict:
         """Kill the entire cgroup before waiting on the direct child."""
+        # One deadline covers kernel termination AND worker reaping.
+        # Never grant a second full timeout after the kernel phase.
+        started = time.monotonic()
         receipt = self.custody.stop_and_verify(timeout=timeout)
         if (not isinstance(receipt, dict)
                 or receipt.get("process_tree_custody_verified") is not True
@@ -43,7 +47,8 @@ class LinuxFilmingSession:
                 or receipt.get("scope") != "linux-cgroup-v2"):
             raise RuntimeError("Kernel custody did not return an affirmative Linux empty-tree receipt")
         try:
-            self.child.wait(timeout=timeout)
+            remaining = max(0.0, timeout - (time.monotonic() - started))
+            self.child.wait(timeout=remaining)
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError("Cgroup empty but owned worker exit unverified") from exc
         if self.child.returncode is None:
