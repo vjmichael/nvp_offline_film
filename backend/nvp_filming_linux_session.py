@@ -70,6 +70,8 @@ class LinuxFilmingSession:
             self.child.wait(timeout=remaining)
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError("Cgroup empty but owned worker exit unverified") from exc
+        if time.monotonic() - started > timeout:
+            raise RuntimeError("Worker reaping exceeded filming shutdown deadline; bounded receipt refused")
         if self.child.returncode is None:
             raise RuntimeError("Worker wait returned without an exit status")
         return {**receipt, "worker_exit_verified": True,
