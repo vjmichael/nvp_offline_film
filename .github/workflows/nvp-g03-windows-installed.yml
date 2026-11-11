@@ -98,6 +98,9 @@ jobs:
           $installedHash=(Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
           if ($installedHash -ne $builtHash) { throw 'Installed NVP.exe does not match verified build payload' }
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
+          # GITHUB_ENV carries the exact owned path into subsequent isolated
+          # PowerShell steps; never depend on the previous step's process env.
+          "NVP_HOME=$env:NVP_HOME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Run-Checked $installed '--smoke-create' 110 'installed_project_create'
           Run-Checked $installed '--smoke-reopen' 110 'installed_project_reopen'
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
@@ -146,10 +149,29 @@ jobs:
         run: |
           $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstaller)) { throw 'Uninstaller missing' }
-          $owned=$env:NVP_HOME
+          # Reconstruct the deterministic user-owned film path independently,
+          # and reject a missing/stale or divergent inherited environment.
+          $owned=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
+          if (-not $env:NVP_HOME -or $env:NVP_HOME -ne $owned) {
+            throw 'Installed film home environment was not preserved across workflow steps'
+          }
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) {
             throw 'Missing creator SQLite film database before uninstall'
           }
+          # Independent, byte-for-byte file evidence, including a synthetic
+          # original OpenUSD layer and source PCM file under the user's
+          # project home. Use private test content only, not a real film.
+          $originals=Join-Path $owned 'original-test-media'
+          New-Item -ItemType Directory -Force -Path $originals | Out-Null
+          [IO.File]::WriteAllBytes((Join-Path $originals 'native-source.pcm'), [byte[]](0..255))
+          [IO.File]::WriteAllText((Join-Path $originals 'scene.usda'), '#usda 1.0' + [Environment]::NewLine)
+          $before=Get-ChildItem -LiteralPath $owned -Recurse -File |
+            Where-Object { $_.Name -notlike '*-wal' -and $_.Name -notlike '*-shm' } |
+            ForEach-Object {
+              [pscustomobject]@{relative=$_.FullName.Substring($owned.Length+1);sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash;length=$_.Length}
+            } | Sort-Object relative
+          if ($before.Count -lt 3) { throw 'Insufficient independently checked original film files' }
+          $before | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-originals-before.json') -Encoding utf8
           $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru
           if (-not $result.WaitForExit(120000)) {
             & taskkill.exe /PID $result.Id /T /F 2>$null | Out-Null
@@ -159,6 +181,40 @@ jobs:
           Start-Sleep -Seconds 2
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
+          $after=Get-ChildItem -LiteralPath $owned -Recurse -File |
+            Where-Object { $_.Name -notlike '*-wal' -and $_.Name -notlike '*-shm' } |
+            ForEach-Object {
+              [pscustomobject]@{relative=$_.FullName.Substring($owned.Length+1);sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash;length=$_.Length}
+            } | Sort-Object relative
+          if (($before | ConvertTo-Json -Compress) -ne ($after | ConvertTo-Json -Compress)) {
+            throw 'Installer removed or modified original film data'
+          }
+          $after | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-originals-after.json') -Encoding utf8
+          # Independently reopen the surviving SQLite via another process and
+          # verify original project count, locked movie credentials and schemas.
+          $env:G03_VERIFY_DB=Join-Path $owned 'nvp_studio.sqlite3'
+          @'
+import os, sqlite3
+db=sqlite3.connect(os.environ["G03_VERIFY_DB"])
+try:
+    assert db.execute("PRAGMA integrity_check").fetchone()[0]=="ok"
+    assert db.execute("SELECT COUNT(*) FROM projects").fetchone()[0]>=2
+    assert db.execute("SELECT COUNT(*) FROM project_access_locks").fetchone()[0]>=1
+    assert db.execute("SELECT COUNT(*) FROM projects WHERE length(screenplay)>0").fetchone()[0]>=2
+finally:
+    db.close()
+print("G03_INDEPENDENT_UNINSTALL_SQLITE_REOPEN_PASS")
+'@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Independent SQLite reopen after uninstall failed' }
+          Write-Host 'G03_UNINSTALL_ORIGINALS_SHA256_UNCHANGED_PASS'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-g03-uninstall-independent-evidence
+          path: |
+            ${{ runner.temp }}/nvp-g03-originals-before.json
+            ${{ runner.temp }}/nvp-g03-originals-after.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: always()
         with:
