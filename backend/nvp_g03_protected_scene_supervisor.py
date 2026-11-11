@@ -184,12 +184,18 @@ class ProtectedSceneSupervisor:
                 if proc.poll() is None:
                     proc.terminate_tree()
                 code=proc.wait(timeout=12)
-                custody_verified=True
                 # A cancelled worker may still have output in its buffer;
                 # never publish that output, even if the worker exits zero.
                 for th in threads:th.join(timeout=6)
                 if any(th.is_alive() for th in threads):
                     raise ProtectedWorkerError("Worker pipe custody is incomplete")
+                # Mandatory pre-publication boundary: close the actual Job
+                # and audit disposable cwd + AppContainer profile BEFORE
+                # issuing any encrypted output grant or success receipt.
+                exited=proc
+                proc=None
+                exited.close()
+                custody_verified=True
                 if status=="CANCELLED":
                     raise ProtectedWorkerError("Creator cancelled contained scene worker")
                 if errors or code!=0:
