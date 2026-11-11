@@ -698,14 +698,28 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
           <h4>Original recordings</h4>
           {clips.length===0?<p className="film-muted">
             No original sound has been recorded yet. Silent scenes are allowed.</p>:
-            <div className="director-film-clips">{clips.map(clip=><label key={clip.id}>
-              <input type="checkbox" disabled={!!take}
-                checked={selectedClips.includes(clip.id)}
-                onChange={e=>setSelectedClips(old=>e.target.checked?
-                  [...old,clip.id]:old.filter(id=>id!==clip.id))}/>
-              {clip.actor_id?'Performer sound':'Scene sound'} · {
-                clip.seconds}s
-            </label>)}</div>}
+            <div className="director-film-clips">{clips.map(clip=>
+              <div className="director-film-clip" key={clip.id}>
+                <label><input type="checkbox" disabled={!!take}
+                  checked={selectedClips.includes(clip.id)}
+                  onChange={e=>setSelectedClips(old=>e.target.checked?
+                    [...old,clip.id]:old.filter(id=>id!==clip.id))}/>
+                  {clip.actor_id?'Performer sound':'Scene sound'} · {
+                    clip.seconds}s</label>
+                <button className="film-secondary" disabled={busy}
+                  onClick={()=>listenTo(clip.id)}>Listen</button>
+                {selectedClips.includes(clip.id)&&<label>
+                  Begins at (seconds)
+                  <input type="number" min="0" step=".1"
+                    max={film.duration_seconds} value={clipStarts[clip.id]||'0'}
+                    onChange={e=>setClipStarts(old=>({
+                      ...old,[clip.id]:e.target.value}))}/>
+                </label>}
+              </div>)}</div>}
+          {listenUrl&&<audio className="director-film-audio-player"
+            controls autoPlay preload="none" src={listenUrl}>
+            Your computer cannot play the original sound preview.
+          </audio>
           <div className="director-film-duration">
             <h4>Scene duration</h4>
             <div className="director-film-time-inputs">
