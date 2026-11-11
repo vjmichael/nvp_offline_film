@@ -35,11 +35,18 @@ class ProjectAccess:
         with self._db() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS project_access_locks(
                 project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-                salt BLOB NOT NULL, verifier BLOB NOT NULL, created_at REAL NOT NULL)""")
+                salt BLOB NOT NULL, verifier BLOB NOT NULL, created_at REAL NOT NULL,
+                generation INTEGER NOT NULL DEFAULT 1)""")
             db.execute("""CREATE TABLE IF NOT EXISTS project_access_attempts(
                 project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
                 failures INTEGER NOT NULL CHECK(failures>=0 AND failures<=5),
                 blocked_until REAL NOT NULL DEFAULT 0)""")
+            columns={row[1] for row in db.execute(
+                "PRAGMA table_info(project_access_locks)").fetchall()}
+            if "generation" not in columns:
+                # Non-destructive migration for projects protected before G03.
+                db.execute("""ALTER TABLE project_access_locks
+                    ADD COLUMN generation INTEGER NOT NULL DEFAULT 1""")
 
     @contextmanager
     def _db(self):
@@ -113,7 +120,7 @@ class ProjectAccess:
                 if until > now:
                     raise PermissionError("Too many attempts; try again later")
                 row = db.execute(
-                    "SELECT salt,verifier FROM project_access_locks WHERE project_id=?",
+                    "SELECT salt,verifier,generation FROM project_access_locks WHERE project_id=?",
                     (project_id,)).fetchone()
                 if row is None:
                     raise PermissionError("Movie has no protection configured")
@@ -133,20 +140,27 @@ class ProjectAccess:
                     raise PermissionError("Movie passphrase is incorrect")
                 db.execute("DELETE FROM project_access_attempts WHERE project_id=?",
                            (project_id,))
+                # Every successful host unlock revokes older grants in ALL
+                # processes, not merely this process's in-memory sessions.
+                new_generation=int(row[2])+1
+                db.execute("""UPDATE project_access_locks
+                    SET generation=? WHERE project_id=? AND generation=?""",
+                    (new_generation,project_id,row[2]))
                 db.commit()
             self._revoke(project_id)
             token = secrets.token_urlsafe(32)
-            self._sessions[token] = (project_id, self.clock() + SESSION_SECONDS)
+            self._sessions[token] = (
+                project_id, self.clock() + SESSION_SECONDS, new_generation)
             return token
 
     def permitted(self, project_id, token, *, renew=False):
         self._check_id(project_id)
         with self._guard:
             with self._db() as db:
-                locked = db.execute(
-                    "SELECT 1 FROM project_access_locks WHERE project_id=?",
-                    (project_id,)).fetchone() is not None
-            if not locked:
+                lock_row = db.execute(
+                    "SELECT generation FROM project_access_locks WHERE project_id=?",
+                    (project_id,)).fetchone()
+            if lock_row is None:
                 return True
             if not token or not isinstance(token, str):
                 return False
@@ -158,8 +172,13 @@ class ProjectAccess:
                 return False
             if not hmac.compare_digest(entry[0], project_id):
                 return False
+            if entry[2] != lock_row[0]:
+                # Another native process relocked or unlocked the same film.
+                del self._sessions[token]
+                return False
             if renew:
-                self._sessions[token] = (project_id, self.clock() + SESSION_SECONDS)
+                self._sessions[token] = (
+                    project_id, self.clock() + SESSION_SECONDS, entry[2])
             return True
 
     def lock(self, project_id, token):
@@ -167,6 +186,19 @@ class ProjectAccess:
         with self._guard:
             if not self.protected(project_id) or not self.permitted(project_id, token):
                 raise PermissionError("Unlock the protected movie before locking")
+            entry=self._sessions.get(token)
+            if entry is None:
+                raise PermissionError("Active host unlock session required")
+            with self._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                row=db.execute(
+                    "SELECT generation FROM project_access_locks WHERE project_id=?",
+                    (project_id,)).fetchone()
+                if row is None or row[0]!=entry[2]:
+                    raise PermissionError("Another process revoked this movie session")
+                db.execute("""UPDATE project_access_locks SET generation=generation+1
+                    WHERE project_id=? AND generation=?""",(project_id,row[0]))
+                db.commit()
             self._revoke(project_id)
         return {"locked": True, "access": "locked"}
 

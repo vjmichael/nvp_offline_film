@@ -193,6 +193,20 @@ class ProjectAccessTests(unittest.TestCase):
                             (self.a["id"],)).fetchone()[0]
         self.assertEqual(idea,"A quiet nature documentary")
 
+    def test_another_nvp_process_revokes_old_unlock_grants(self):
+        first=ProjectAccess(nvp_api.studio.db_path)
+        second=ProjectAccess(nvp_api.studio.db_path)
+        first.protect(self.a["id"],SECRET)
+        one=first.unlock(self.a["id"],SECRET)
+        self.assertTrue(first.permitted(self.a["id"],one))
+        # The second native host unlocks; old grants cannot survive even if
+        # the first host process is still open with its in-memory token.
+        two=second.unlock(self.a["id"],SECRET)
+        self.assertFalse(first.permitted(self.a["id"],one))
+        self.assertTrue(second.permitted(self.a["id"],two))
+        second.lock(self.a["id"],two)
+        self.assertFalse(second.permitted(self.a["id"],two))
+
     def test_unprotected_existing_user_journey_unchanged(self):
         self.assertEqual(self.client.get(self.base).status_code,200)
         self.assertEqual(self.client.put(self.base+"/screenplay",json={
