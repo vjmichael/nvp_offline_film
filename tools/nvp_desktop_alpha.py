@@ -131,6 +131,7 @@ def run_smoke():
 
 def run_persistent_installed_smoke(mode):
     """Installed-app launch, exit, reopen must retain SQLite project data."""
+    _smoke_checkpoint("persistent_"+mode+"_entered")
     import json
     home=os.environ.get("NVP_HOME")
     if not home:
@@ -139,7 +140,9 @@ def run_persistent_installed_smoke(mode):
     root.mkdir(parents=True,exist_ok=True)
     marker=root/"installed-smoke-project.json"
     app=create_app()
+    _smoke_checkpoint("persistent_"+mode+"_app_ready")
     server,worker,port,sock=serve(app)
+    _smoke_checkpoint("persistent_"+mode+"_server_started")
     base="http://127.0.0.1:"+str(port)
     try:
         with urllib.request.urlopen(base+"/api/status",timeout=10) as reply:
@@ -148,6 +151,7 @@ def run_persistent_installed_smoke(mode):
         with urllib.request.urlopen(base+"/",timeout=10) as reply:
             if "assets/" not in reply.read().decode("utf8"):
                 raise RuntimeError("React desktop bundle unavailable after install")
+        _smoke_checkpoint("persistent_"+mode+"_html_ok")
         if mode=="create":
             if marker.exists():
                 raise RuntimeError("Persistent test project marker already exists")
@@ -168,6 +172,7 @@ def run_persistent_installed_smoke(mode):
                 saved=json.load(reply)
             if saved.get("revision")!=1:
                 raise RuntimeError("NVP installed screenplay save did not commit")
+            _smoke_checkpoint("persistent_create_screenplay_saved")
             marker.write_text(json.dumps({"id":record["id"],
                         "title":record["title"],"screenplay":screenplay,
                         "revision":1}),encoding="utf8")
@@ -186,11 +191,14 @@ def run_persistent_installed_smoke(mode):
                 or durable["screenplay"]!=expected["screenplay"]
                 or durable["revision"]!=expected["revision"]):
                 raise RuntimeError("SQLite screenplay revision changed after reopening app")
+            _smoke_checkpoint("persistent_reopen_db_verified")
+        _smoke_checkpoint("persistent_"+mode+"_completed")
         return 0
     finally:
         server.should_exit=True
         worker.join(timeout=12)
         sock.close()
+        _smoke_checkpoint("persistent_"+mode+"_server_shutdown")
         if worker.is_alive():
             raise RuntimeError("Installed NVP failed to exit cleanly")
 

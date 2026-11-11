@@ -75,28 +75,48 @@ jobs:
       - name: Silent install and execute installed native alpha
         shell: pwsh
         run: |
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-g03-installed-smoke-stages.txt'
+          function Run-Checked([string]$exe,[string]$argument,[int]$seconds,[string]$label) {
+            Add-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH -Value ("WIN_CI_BEGIN "+$label)
+            $p=Start-Process -FilePath $exe -ArgumentList $argument -PassThru
+            if (-not $p.WaitForExit($seconds*1000)) {
+              & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
+              Get-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH
+              throw "Installed native process timed out: $label ($seconds seconds)"
+            }
+            Add-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH -Value ("WIN_CI_EXIT "+$label+" "+$p.ExitCode)
+            if ($p.ExitCode -ne 0) {
+              Get-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH
+              throw "Installed native process failed: $label with code $($p.ExitCode)"
+            }
+          }
           $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
-          $process=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw 'NSIS silent install failed' }
+          Run-Checked $setup '/S' 180 'nsis_silent_install'
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           if (-not (Test-Path $installed)) { throw 'Installed NVP.exe missing' }
           $builtHash=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash
           $installedHash=(Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
           if ($installedHash -ne $builtHash) { throw 'Installed NVP.exe does not match verified build payload' }
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
-          $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru -Wait
-          if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed' }
-          $second=Start-Process -FilePath $installed -ArgumentList '--smoke-reopen' -PassThru -Wait
-          if ($second.ExitCode -ne 0) { throw 'Second fresh native app launch lost SQLite film project' }
+          Run-Checked $installed '--smoke-create' 110 'installed_project_create'
+          Run-Checked $installed '--smoke-reopen' 110 'installed_project_reopen'
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
           }
+          Get-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH
       - name: Require actual director home, Resume and separate editor in real WebView2
         shell: pwsh
         run: |
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
-          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-g03-window' -PassThru -Wait
-          if ($window.ExitCode -ne 0) {
+          $p=Start-Process -FilePath $installed -ArgumentList '--smoke-g03-window' -PassThru
+          if (-not $p.WaitForExit(110000)) {
+            & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
+            throw 'Native G03 WebView2 acceptance timed out at 110 seconds'
+          }
+          if ($p.ExitCode -ne 0) {
+            if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
+              Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH
+            }
             throw 'Real G03 WebView2 filmmaker navigation did not pass'
           }
       - name: Uninstall without deleting creator project data
@@ -108,11 +128,21 @@ jobs:
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) {
             throw 'Missing creator SQLite film database before uninstall'
           }
-          $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+          $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru
+          if (-not $result.WaitForExit(120000)) {
+            & taskkill.exe /PID $result.Id /T /F 2>$null | Out-Null
+            throw 'Native NVP NSIS uninstall timed out'
+          }
           if ($result.ExitCode -ne 0) { throw 'Uninstall failed' }
           Start-Sleep -Seconds 2
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-g03-windows-installed-smoke-stage-logs
+          path: ${{ runner.temp }}/nvp-g03-installed-smoke-stages.txt
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -126,3 +156,4 @@ jobs:
           path: dist/NVP-Alpha-Setup.exe
           if-no-files-found: warn
           retention-days: 7
+
