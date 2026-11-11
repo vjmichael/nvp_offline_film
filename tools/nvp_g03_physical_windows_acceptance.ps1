@@ -124,6 +124,17 @@ try {
     throw 'Installed encrypted live film could not reopen in a fresh process'
   }
   Write-Host 'G03 installed live encrypted film, OpenUSD source, revision and relock passed.'
+  foreach ($mode in @('--smoke-live-worker','--smoke-legacy-migration')) {
+    $native=Start-Process -FilePath $InstalledExe -ArgumentList $mode -PassThru
+    if(-not $native.WaitForExit(110000)){
+      & taskkill.exe /PID $native.Id /T /F 2>$null | Out-Null
+      throw "Installed G03 native acceptance timed out: $mode"
+    }
+    if($native.ExitCode -ne 0){
+      throw "Installed G03 native acceptance failed: $mode"
+    }
+  }
+  Write-Host 'Protected native three-camera staging and no-delete migration candidate passed.'
   Write-Host "Isolated test films: $testHome"
   Write-Host "No existing NVP projects will be deleted or encrypted."
   Start-IsolatedNvp
@@ -156,6 +167,8 @@ try {
     all_operator_checks_passed=($fail.Count -eq 0)
     windows_user_dpapi_archive_smoke_passed=$true
     new_live_encrypted_film_restart_smoke_passed=$true
+    windows_job_opensud_staging_smoke_passed=$true
+    nondestructive_legacy_migration_candidate_smoke_passed=$true
     legacy_project_data_encryption_accepted=$false
     protected_external_workers_accepted=$false
     lu_model_integration_deferred=$true

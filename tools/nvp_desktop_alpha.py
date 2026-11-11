@@ -882,17 +882,20 @@ def run_g03_protected_native_worker_smoke():
                 "scene/three-camera-coverage.usda",approval_id)
         if not(result["encrypted_output"] and result["native_job_tree_exited"]):
             raise RuntimeError("Protected native worker lacked custody")
-        from pxr import Sdf
+        from pxr import Sdf,Usd
         source=store.get_original(pid,token,"scene/original.usda")
         derived=store.get_original(pid,token,"scene/three-camera-coverage.usda")
         if source != data:
             raise RuntimeError("Protected original was modified")
-        for camera in (b'/NVP_Coverage',b'Wide',b'Medium',b'CloseUp'):
-            if camera not in derived:
-                raise RuntimeError("Protected native OpenUSD camera not delivered")
         check=Sdf.Layer.CreateAnonymous("smoke-verified.usda")
         if not check.ImportFromString(derived.decode("utf8")):
             raise RuntimeError("Native staged USD did not reopen")
+        stage=Usd.Stage.Open(check)
+        if stage is None:
+            raise RuntimeError("Native staged OpenUSD stage unavailable")
+        for camera in ("Wide","Medium","CloseUp"):
+            if not stage.GetPrimAtPath("/NVP_Coverage/"+camera):
+                raise RuntimeError("Native OpenUSD camera missing from derived stage")
         records=store.protected_worker_runs(pid,token)
         if len(records)!=1 or records[0]["state"]!="SUCCEEDED":
             raise RuntimeError("Encrypted native worker acceptance receipt missing")
