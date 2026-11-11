@@ -13,6 +13,21 @@ from backend.nvp_filming_cgroup_launch import create_private_group_and_launch
 from backend.nvp_filming_cgroup_custody import LinuxFilmingCgroup
 
 
+class FilmingCustodyInitializationError(RuntimeError):
+    """Retain the exact launched worker and private group for host recovery.
+
+    This exception is NOT a cleanup or publication receipt. The caller must
+    reconcile the retained cgroup before allowing any frozen Take publication.
+    """
+    def __init__(self, group: Path, child: subprocess.Popen):
+        self.group = group
+        self.child = child
+        super().__init__(
+            "Filming worker launched without established cgroup custody; "
+            "host must reconcile the private group before publication"
+        )
+
+
 @dataclass
 class LinuxFilmingSession:
     group: Path
@@ -48,11 +63,8 @@ def launch_linux_filming_session(delegated_root: Path, executable: str,
     group, child = create_private_group_and_launch(delegated_root, executable, argv)
     try:
         custody = LinuxFilmingCgroup(private_group=group, delegated_root=delegated_root)
-    except BaseException:
-        # Do not silently claim cleanup: the child may have descendants.
-        # The group remains for independent host recovery.
-        raise RuntimeError(
-            "Filming worker launched without established cgroup custody; "
-            "host must reconcile the private group before publication"
-        )
+    except Exception as exc:
+        # Retain the exact group and live child handle for host recovery.
+        # Never terminate only the direct child: descendants may survive.
+        raise FilmingCustodyInitializationError(group, child) from exc
     return LinuxFilmingSession(group, child, custody)
