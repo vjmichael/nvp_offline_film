@@ -61,7 +61,6 @@ def process(source):
         camera=UsdGeom.Camera.Define(stage,"/NVP_Coverage/"+name)
         camera.CreateFocalLengthAttr(focal)
         camera.AddTranslateOp().Set(Gf.Vec3d(*position))
-    layer.Save if False else None  # Never write to a path
     result=layer.ExportToString().encode("utf-8")
     if not 1<=len(result)<=MAX_OUTPUT:
         raise ValueError("Derived original exceeded worker output limit")
