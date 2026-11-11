@@ -39,6 +39,14 @@ class NativeMicrophoneSession:
         self.started_at=None
         self.error=None
         self.lock=threading.RLock()
+        # G09-C host observations do NOT stand in for hardware ADC timestamps.
+        self.started_ns=None
+        self.stopped_ns=None
+        self.first_callback_ns=None
+        self.last_callback_ns=None
+        self.chunks=0
+        self.peak_abs=0
+        self.largest_gap_ns=[]
 
     def _callback(self):
         samples=yield
@@ -59,6 +67,18 @@ class NativeMicrophoneSession:
                                 raise RuntimeError("Original microphone samples were incomplete")
                             if self.bytes+len(raw)>MAX_BYTES:
                                 raise RuntimeError("Original sound reached its 120-second limit")
+                            now=time.monotonic_ns()
+                            if self.first_callback_ns is None:
+                                self.first_callback_ns=now
+                            elif self.last_callback_ns is not None:
+                                gap=now-self.last_callback_ns
+                                self.largest_gap_ns.append(gap)
+                                self.largest_gap_ns=sorted(
+                                    self.largest_gap_ns,reverse=True)[:30]
+                            self.last_callback_ns=now
+                            self.chunks+=1
+                            self.peak_abs=max(self.peak_abs,
+                                max(abs(x) for x in samples))
                             self.parts.append(raw)
                             self.bytes+=len(raw)
                             self.frames+=sample_count
@@ -77,6 +97,7 @@ class NativeMicrophoneSession:
                     factory=_capture_device
                 self.device=factory()
                 self.status="recording"
+                self.started_ns=time.monotonic_ns()
                 callback=self._callback()
                 next(callback)
                 self.device.start(callback)
@@ -110,6 +131,7 @@ class NativeMicrophoneSession:
             raise
         with self.lock:
             self.status="stopped"
+            self.stopped_ns=time.monotonic_ns()
             self.device=None
             if self.error is not None:
                 raise RuntimeError("The microphone recording was interrupted; do not use it")
@@ -156,7 +178,7 @@ class G06NativeRecorder:
             raise PermissionError("The recording does not belong to this movie session")
         return session
 
-    def begin(self,project_id,scene_id,actor_id,grant):
+    def begin(self,project_id,scene_id,actor_id,grant,audit=None):
         with self.lock:
             if self.active:
                 raise RuntimeError("The microphone is already recording for a scene")
@@ -164,14 +186,19 @@ class G06NativeRecorder:
                 session_grant=self._token(grant))
             self.sessions[session.id]=session
             self.active=session.id
-        try:return session.begin()
+        try:
+            result=session.begin()
+            if audit is not None:audit.begin(session)
+            return result
         except Exception:
+            try:session.cancel()
+            except Exception:pass
             with self.lock:
                 self.sessions.pop(session.id,None)
                 if self.active==session.id:self.active=None
             raise
 
-    def finish(self,project_id,session_id,grant,filming:G06Filming):
+    def finish(self,project_id,session_id,grant,filming:G06Filming,audit=None):
         with self.lock:
             session=self._get(project_id,session_id,grant)
             if session.status=="recording":
@@ -183,8 +210,13 @@ class G06NativeRecorder:
             else:
                 raise RuntimeError("Recording is no longer available or its sample stream was incomplete")
             if self.active==session.id:self.active=None
+        receipt=None
+        if audit is not None:
+            from backend.nvp_g09c_capture import _receipt
+            receipt=_receipt(session,raw)
         result=filming.record_native_audio(
-            project_id,session.scene_id,session.actor_id,raw)
+            project_id,session.scene_id,session.actor_id,raw,
+            capture_receipt=receipt)
         with self.lock:
             session.status="finished"
             session.parts.clear()
@@ -192,10 +224,11 @@ class G06NativeRecorder:
             self.sessions.pop(session.id,None)
         return result
 
-    def cancel(self,project_id,session_id,grant):
+    def cancel(self,project_id,session_id,grant,audit=None):
         with self.lock:
             session=self._get(project_id,session_id,grant)
             session.cancel()
+            if audit is not None:audit.cancel(session)
             self.sessions.pop(session_id,None)
             if self.active==session_id:self.active=None
         return {"status":"cancelled","original_audio_published":False}
