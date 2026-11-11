@@ -21,6 +21,12 @@ Plaintext may include SQLite planning tables, screenplay and Production Bible, S
 | Physical Windows | Automated NSIS, WebView2 and OS UIAutomation gates added | Owner's actual workstation keyboard/screen-reader and restart acceptance remain separately required |
 | Lu/GGUF and film render | No integration or generated film claimed | Deferred G02, future G05/G06/G07/G08 |
 
+## G03-F2/F3 security delta
+
+The protected Windows Job Object worker supports in-memory original USD staging, but **does not** provide AppContainer filesystem or network isolation. The new PortAudio capture and SHA-verified Blender/Cycles adapters require separate creator approvals and operate over bounded anonymous pipes. For confidential movie assets, both explicitly **fail closed** until the native sandbox is independently verified. A synthetic microphone owner test and a synthetic CI Cycles render are not accepted live production.
+
+Legacy migration includes read-only, SHA-verified global worker SQLite provenance and reports unknown custody rather than claiming stopped workers or deleting private backups. Full legacy project conversion remains blocked.
+
 ## G03-E1 new encrypted live project integration
 
 New opt-in encrypted Windows movies now use a host-owned **in-memory SQLite** project store, immutable authenticated encrypted revisions, project-bound AES-GCM original source ciphertext, SHA-256 readback, OS-level writer serialization, encrypted recovery and one-use host worker receipts. The shared public catalog gets only a title/ID and empty project placeholder. All legacy project APIs and direct native WebView2 camera/audio paths are denied for secured IDs. The director's separate Post-Production window uses the secure live route.
