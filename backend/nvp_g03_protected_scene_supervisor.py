@@ -210,6 +210,7 @@ class ProtectedSceneSupervisor:
                 if not check.ImportFromString(derived.decode("utf8")):
                     raise ProtectedWorkerError("Native output did not parse")
                 if cancel is not None and cancel.is_set():
+                    status="CANCELLED"
                     raise ProtectedWorkerError("Cancelled after worker returned")
                 write_grant=self.store.worker_grant(
                     pid,token,output_name,"write_original",human_approved=True)
