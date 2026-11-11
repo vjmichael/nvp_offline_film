@@ -10,7 +10,7 @@ import sys
 import time
 import unittest
 
-from backend.nvp_filming_cgroup_launch import create_private_group_and_launch
+from backend.nvp_filming_linux_session import launch_linux_filming_session
 
 
 @unittest.skipUnless(
@@ -32,9 +32,10 @@ class RealDelegatedCgroupAcceptance(unittest.TestCase):
         # Resolve to the actual interpreter for this real-kernel acceptance.
         interpreter = str(pathlib.Path(sys.executable).resolve(strict=True))
         self.assertTrue(os.access(interpreter, os.X_OK))
-        group, worker = create_private_group_and_launch(
+        session = launch_linux_filming_session(
             root, interpreter, [interpreter, "-c", code]
         )
+        group, worker = session.group, session.child
         try:
             deadline = time.monotonic() + 10
             observed_descendant = False
@@ -47,18 +48,15 @@ class RealDelegatedCgroupAcceptance(unittest.TestCase):
                     self.fail("worker exited before descendant observation")
                 time.sleep(0.05)
             self.assertTrue(observed_descendant, "worker PID and separate live descendant not jointly observed in delegated cgroup")
-            (group / "cgroup.kill").write_text("1")
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline:
-                fields = dict(
-                    line.split() for line in (group / "cgroup.events").read_text().splitlines()
-                )
-                if fields.get("populated") == "0":
-                    break
-                time.sleep(0.05)
-            else:
-                self.fail("kernel did not attest empty cgroup after cgroup.kill")
-            worker.wait(timeout=5)
+            # Exercise the actual host session's kernel custody and worker
+            # reconciliation, not an independent test-only kill shortcut.
+            receipt = session.stop_and_verify(timeout=10)
+            self.assertIs(receipt["process_tree_custody_verified"], True)
+            self.assertIs(receipt["empty_group_verified"], True)
+            self.assertIs(receipt["worker_exit_verified"], True)
+            self.assertEqual(receipt["scope"], "linux-cgroup-v2")
+            self.assertIsNotNone(receipt["worker_returncode"])
+            self.assertEqual(worker.returncode, receipt["worker_returncode"])
         finally:
             # Never claim cleanup from a process handle alone. A failed
             # assertion may leave a worker; terminate via cgroup.kill.
