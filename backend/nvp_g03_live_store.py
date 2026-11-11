@@ -301,10 +301,19 @@ class LiveFilmStore:
                 raw=db.serialize()
                 if len(raw)>MAX_DB_BYTES:
                     raise LiveFilmError("Live encrypted film database too large")
-                next_seq=head["sequence"]+1
+                # Crash between an immutable revision write and HEAD publish
+                # leaves an encrypted orphan. Never clobber it on restart:
+                # select an unused strictly higher sequence instead.
+                nums=[head["sequence"]]
+                for candidate in (folder/"revisions").glob("db.*.nvpsealed"):
+                    match=re.fullmatch(r"db\.(\d{12})\.nvpsealed",candidate.name)
+                    if match:
+                        nums.append(int(match.group(1)))
+                next_seq=max(nums)+1
                 record=self._seal_db(folder,pid,key,raw,next_seq)
-                # Successful durable atomic HEAD publication is the *only*
-                # completion point. Old ciphertext remains crash recovery.
+                # A concurrent lock/revoke must abort publication even if
+                # the host's encrypted bytes were already fully staged.
+                self._session(pid,token)
                 self._publish_head(folder,record)
                 return result
             finally:
@@ -327,7 +336,8 @@ class LiveFilmStore:
         self._change(pid,token,update)
         return self.read(pid,token)
 
-    def put_original(self,pid,token,name,data,media_type="application/octet-stream"):
+    def put_original(self,pid,token,name,data,media_type="application/octet-stream",
+                     *,receipt_id=None):
         """Original source bytes sealed before SQLite index publication.
 
         Data comes through the trusted host. No raw filesystem path is accepted
@@ -344,9 +354,21 @@ class LiveFilmStore:
             opaque=_token(name,key)
             final=folder/"assets"/(opaque+".nvpsealed")
             if final.exists():
-                raise LiveFilmError("Original source ciphertext already exists")
-            _encrypt_file(io.BytesIO(data),final,key=key,project_id=pid,
-                          name="original/"+name)
+                # A power cut after source sealing but before the encrypted
+                # SQLite commit may leave an unindexed original. Resume only
+                # when that original authenticates and exactly matches this
+                # proposed immutable identity and source data.
+                _no_link(final)
+                previous=_decrypt_file(final,_HashSink(),key=key,
+                                       project_id=pid,name="original/"+name)
+                if previous!={"sha256":hashlib.sha256(data).hexdigest(),
+                             "size_bytes":len(data)}:
+                    raise LiveFilmError("Existing original differs after interrupted commit")
+                reused=True
+            else:
+                _encrypt_file(io.BytesIO(data),final,key=key,project_id=pid,
+                              name="original/"+name)
+                reused=False
             try:
                 # Independent authenticated readback before index publication.
                 result=_decrypt_file(final,_HashSink(),key=key,
@@ -358,10 +380,16 @@ class LiveFilmStore:
                     (name,opaque_id,sha256,size_bytes,media_type,created_at)
                     VALUES (?,?,?,?,?,?)""",
                     (name,opaque,digest,len(data),media_type,now()))
+                if receipt_id is not None:
+                    db.execute("""INSERT INTO worker_receipts
+                        (receipt_id,asset_name,operation,digest,recorded_at)
+                        VALUES (?,?,?,?,?)""",
+                        (receipt_id,name,"write_original",digest,now()))
                 return {"name":name,"sha256":digest,"size_bytes":len(data),
                         "original_modified":False,"encrypted":True}
             except Exception:
-                final.unlink(missing_ok=True)
+                if not reused:
+                    final.unlink(missing_ok=True)
                 raise
         return self._change(pid,token,mutate)
 
@@ -387,8 +415,14 @@ class LiveFilmStore:
                 raise LiveFilmError("Protected original failed independent digest")
             return target.getvalue()
 
-    def worker_grant(self,pid,token,asset_name,operation):
-        """One-use, brief host grant. Never return raw key or filesystem path."""
+    def worker_grant(self,pid,token,asset_name,operation,*,human_approved=False):
+        """One-use reviewed host grant. Never return raw key or source path.
+
+        This does NOT authorize legacy external workers. Only supervised
+        in-process host broker calls can redeem these grants.
+        """
+        if human_approved is not True:
+            raise LiveFilmError("Human-approved one-use worker permission required")
         asset_name=str(_relative(asset_name))
         if operation not in {"read_original","write_original"}:
             raise LiveFilmError("Unrecognized protected worker operation")
@@ -412,9 +446,18 @@ class LiveFilmStore:
                 raise LiveFilmError("Worker authority expired, replayed or mismatched")
             self._session(pid,grant["token"])
             if operation=="read_original":
-                return self.get_original(pid,grant["token"],asset_name)
+                payload=self.get_original(pid,grant["token"],asset_name)
+                def receipt(db,key,folder):
+                    db.execute("""INSERT INTO worker_receipts
+                        (receipt_id,asset_name,operation,digest,recorded_at)
+                        VALUES (?,?,?,?,?)""",
+                        (lease,asset_name,operation,
+                         hashlib.sha256(payload).hexdigest(),now()))
+                self._change(pid,grant["token"],receipt)
+                return payload
             if operation=="write_original":
-                return self.put_original(pid,grant["token"],asset_name,data)
+                return self.put_original(
+                    pid,grant["token"],asset_name,data,receipt_id=lease)
             raise LiveFilmError("Unsupported worker operation")
 
     def recovery_candidates(self,pid,token):
