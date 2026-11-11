@@ -42,8 +42,7 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
             if type(batch) is not list or not 1 <= len(batch) <= 32:
                 raise ValueError("Recorder must return 1..32 original sound events")
             # Freeze event dictionaries before shutdown invokes worker callbacks.
-            # Keep original PCM iterators: capture owns their bounded spooling and
-            # digest verification, while this bridge fixes metadata at handoff.
+            # Snapshot metadata first; PCM is bounded and spooled before shutdown.
             if any(type(event) is not dict for event in batch):
                 raise ValueError("Recorder events must be typed dictionaries")
             # Snapshot every metadata field, not just the known clock attestations.
@@ -58,40 +57,40 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
             # Source scope, consent and publication options must be fixed before
             # shutdown callbacks run; never trust caller-owned nested references.
             frozen_options = deepcopy(capture_options)
-        # Bound original PCM before terminating its producer. Spooled files
-        # preserve streaming semantics without holding a full Take in RAM.
-        for event in batch:
-            spool = streams.enter_context(tempfile.SpooledTemporaryFile(
-                max_size=MAX_CHUNK_BYTES, mode="w+b"))
-            count = 0
-            for chunk in event["pcm_chunks"]:
-                if (type(chunk) is not bytes or not 0 < len(chunk) <= MAX_CHUNK_BYTES
-                        or len(chunk) % 2 or count >= MAX_CHUNKS):
-                    raise ValueError("Invalid original PCM16LE chunk")
-                header = struct.pack("<I", len(chunk))
-                if spool.write(header) != 4 or spool.write(chunk) != len(chunk):
-                    raise OSError("Incomplete original PCM spool write")
-                count += 1
-            if not count:
-                raise ValueError("Empty original PCM stream")
-            spool.flush()
-            spool.seek(0)
-            def replay(source=spool):
-                source.seek(0)
-                while True:
-                    header = source.read(4)
-                    if not header:
-                        return
-                    if len(header) != 4:
-                        raise RuntimeError("Damaged original PCM spool header")
-                    size = struct.unpack("<I", header)[0]
-                    if not 0 < size <= MAX_CHUNK_BYTES or size % 2:
-                        raise RuntimeError("Damaged original PCM spool size")
-                    chunk = source.read(size)
-                    if len(chunk) != size:
-                        raise RuntimeError("Truncated original PCM spool")
-                    yield chunk
-            event["pcm_chunks"] = replay()
+            # Bound original PCM before terminating its producer. Spooled files
+            # preserve streaming semantics without holding a full Take in RAM.
+            for event in batch:
+                spool = streams.enter_context(tempfile.SpooledTemporaryFile(
+                    max_size=MAX_CHUNK_BYTES, mode="w+b"))
+                count = 0
+                for chunk in event["pcm_chunks"]:
+                    if (type(chunk) is not bytes or not 0 < len(chunk) <= MAX_CHUNK_BYTES
+                            or len(chunk) % 2 or count >= MAX_CHUNKS):
+                        raise ValueError("Invalid original PCM16LE chunk")
+                    header = struct.pack("<I", len(chunk))
+                    if spool.write(header) != 4 or spool.write(chunk) != len(chunk):
+                        raise OSError("Incomplete original PCM spool write")
+                    count += 1
+                if not count:
+                    raise ValueError("Empty original PCM stream")
+                spool.flush()
+                spool.seek(0)
+                def replay(source=spool):
+                    source.seek(0)
+                    while True:
+                        header = source.read(4)
+                        if not header:
+                            return
+                        if len(header) != 4:
+                            raise RuntimeError("Damaged original PCM spool header")
+                        size = struct.unpack("<I", header)[0]
+                        if not 0 < size <= MAX_CHUNK_BYTES or size % 2:
+                            raise RuntimeError("Damaged original PCM spool size")
+                        chunk = source.read(size)
+                        if len(chunk) != size:
+                            raise RuntimeError("Truncated original PCM spool")
+                        yield chunk
+                event["pcm_chunks"] = replay()
         except BaseException as exc:
             recording_error = exc
         # Custody is mandatory even when the recording supplier raises. A shutdown
