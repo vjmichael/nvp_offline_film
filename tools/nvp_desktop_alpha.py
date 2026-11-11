@@ -197,11 +197,12 @@ def run_persistent_installed_smoke(mode):
 
 def create_trusted_camera_bridge(port):
     """Desktop-only pywebview IPC; never registered as an HTTP route."""
-    from backend.nvp_api import studio
+    from backend.nvp_api import studio, film_access
     from backend.nvp_film_index import FilmIndex
     from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
     return TrustedDesktopCameraBridge(
-        FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
+        FilmIndex(studio),origin="http://127.0.0.1:"+str(port),
+        project_lock_check=film_access().any_protected)
 
 
 def run_visible_window_smoke():

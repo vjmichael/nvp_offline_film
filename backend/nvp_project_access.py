@@ -151,6 +151,12 @@ class ProjectAccess:
             self._revoke(project_id)
         return {"locked": True, "access": "locked"}
 
+    def any_protected(self):
+        """Conservative native IPC barrier until per-project key custody."""
+        with self._db() as db:
+            return db.execute(
+                "SELECT 1 FROM project_access_locks LIMIT 1").fetchone() is not None
+
     def public_projects(self, projects, token):
         result = []
         for p in projects:
