@@ -18,7 +18,7 @@ import json
 import math
 import uuid
 
-from backend.nvp_g07_edit import G07Editor,_sha,_json
+from backend.nvp_g07_edit import G07Editor,_sha,_json,_sec
 from backend.nvp_g06_filming import HEX,RATE
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 
@@ -60,7 +60,8 @@ def _profile(source):
         "height_scale":1.0,"shoulder_width":1.,
         "skin_color":"#b38b71","hair_color":"#46332f",
         "hair":"short","wardrobe_color":source["color"],
-        "eye_color":"#3d4748","voice_clips":[],"director_note":""}
+        "eye_color":"#3d4748","voice_clips":[],
+        "expression_cues":[],"director_note":""}
 
 
 def _original_actors(doc):
@@ -107,12 +108,13 @@ def _validate_voice(v,actor_id,clips):
     return v
 
 
-def _validate_profile(profile,original,clips):
+def _validate_profile(profile,original,clips,duration):
     if (type(profile) is not dict or set(profile)!={
         "actor_id","object_id","name","movement","emotion",
         "expression_strength","gait_strength","blink_rate",
         "height_scale","shoulder_width","skin_color","hair_color",
-        "hair","wardrobe_color","eye_color","voice_clips","director_note"}):
+        "hair","wardrobe_color","eye_color","voice_clips",
+        "expression_cues","director_note"}):
         raise ValueError("Actor performance has an unknown field")
     if (profile["actor_id"]!=original["actor_id"] or
         profile["object_id"]!=original["id"] or
@@ -139,6 +141,21 @@ def _validate_profile(profile,original,clips):
         if item["clip_id"] in ids:
             raise ValueError("The same original voice was selected twice")
         ids.add(item["clip_id"])
+    cues=profile["expression_cues"]
+    if type(cues) is not list or len(cues)>64:
+        raise ValueError("Choose up to sixty-four facial expression changes")
+    previous=-1;ids=set()
+    for cue in cues:
+        if (type(cue) is not dict or
+            set(cue)!={"id","at_tick","emotion","strength"} or
+            type(cue["id"]) is not str or not HEX.fullmatch(cue["id"]) or
+            cue["id"] in ids or type(cue["at_tick"]) is not int or
+            not 0<=cue["at_tick"]<duration or cue["at_tick"]<previous or
+            type(cue["emotion"]) is not str or
+            cue["emotion"] not in EMOTION):
+            raise ValueError("An expression cue is outside the original scene")
+        _number(cue["strength"],0,1,"expression intensity")
+        ids.add(cue["id"]);previous=cue["at_tick"]
     return profile
 
 
@@ -177,7 +194,8 @@ def _validate(doc,take_id,take_sha,original):
         actor_id=profile.get("actor_id")
         if actor_id not in cast or actor_id in seen:
             raise ValueError("The acting plan contains an unknown character")
-        _validate_profile(profile,cast[actor_id],clips)
+        _validate_profile(profile,cast[actor_id],clips,
+                          original["duration_tick"])
         seen.add(actor_id)
     if len(_json(doc).encode("utf8"))>180000:
         raise ValueError("Actor direction has exceeded its size budget")
@@ -330,6 +348,27 @@ class G09Actors:
                                    "gait_strength","blink_rate","director_note"}:
                     raise ValueError("Choose an acting and movement style")
                 for key,val in details.items():profile[key]=val
+            elif operation=="add_expression":
+                if set(details)!={"at_seconds","emotion","strength"}:
+                    raise ValueError("Choose the scene moment and expression")
+                at_tick=_sec(details["at_seconds"])
+                if at_tick>=source["duration_tick"]:
+                    raise ValueError("Choose a moment inside this Take")
+                cue={"id":uuid.uuid4().hex,"at_tick":at_tick,
+                     "emotion":details["emotion"],
+                     "strength":details["strength"]}
+                profile["expression_cues"].append(cue)
+                profile["expression_cues"].sort(key=lambda v:(
+                    v["at_tick"],v["id"]))
+            elif operation=="remove_expression":
+                if set(details)!={"cue_id"}:
+                    raise ValueError("Choose an expression cue to remove")
+                before=len(profile["expression_cues"])
+                profile["expression_cues"]=[
+                    v for v in profile["expression_cues"]
+                    if v["id"]!=details["cue_id"]]
+                if before==len(profile["expression_cues"]):
+                    raise KeyError("This facial cue was already removed")
             elif operation=="review_voice":
                 if set(details)!={"clip_id","review","delivery","dialogue_note"}:
                     raise ValueError("Choose one original voice to review")
