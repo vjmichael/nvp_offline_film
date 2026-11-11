@@ -10,8 +10,8 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 $target=if($Phase -eq 'welcome') {
   @(
-    @{name='New Movie';role='ControlType.Button'},
-    @{name='Resume Working';role='ControlType.Button'}
+    @{name='New Movie';role='ControlType.Button';exact=$true},
+    @{name='Resume Working';role='ControlType.Button';exact=$false}
   )
 } else {
   @(
@@ -58,7 +58,11 @@ while((Get-Date) -lt $deadline) {
     $observed=@()
     foreach($wanted in $target) {
       $matching=@($controls|Where-Object {
-        $_.Name -like "*$($wanted.name)*" -and
+        $(if($wanted.ContainsKey('exact') -and $wanted.exact) {
+          $_.Name -eq $wanted.name
+        } else {
+          $_.Name -like "*$($wanted.name)*"
+        }) -and
         $_.Role -eq $wanted.role -and
         $_.Focusable -eq $true -and
         $_.Offscreen -eq $false
@@ -74,14 +78,14 @@ while((Get-Date) -lt $deadline) {
       })
     }
     $focusTarget=@($controls|Where-Object {
-      $_.Name -like "*$($target[0].name)*" -and
+      $_.Name -eq $target[0].name -and
       $_.Role -eq $target[0].role
     })[0]
     $focusTarget.Element.SetFocus()
     Start-Sleep -Milliseconds 160
     $focused=[System.Windows.Automation.AutomationElement]::FocusedElement
     if($null -eq $focused -or
-       $focused.Current.Name -notlike "*$($target[0].name)*") {
+       $focused.Current.Name -ne $target[0].name) {
       throw "UIA keyboard focus did not reach $($target[0].name)"
     }
     $focusName=$focused.Current.Name

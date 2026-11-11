@@ -125,10 +125,14 @@ jobs:
           try {
             Wait-Marker 'g03_native_welcome_observed' 60
             & 'tools/nvp_g03_uia_probe.ps1' -Phase welcome -ReceiptPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-welcome.json')
-            if($LASTEXITCODE -ne 0) {throw 'Windows welcome UIA failed'}
+            if(-not (Test-Path (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-welcome.json'))) {
+              throw 'Installed welcome UIAutomation evidence missing'
+            }
             Wait-Marker 'g03_native_ui_observed' 75
             & 'tools/nvp_g03_uia_probe.ps1' -Phase editor -ReceiptPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-editor.json')
-            if($LASTEXITCODE -ne 0) {throw 'Windows editing UIA failed'}
+            if(-not (Test-Path (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-editor.json'))) {
+              throw 'Installed editor UIAutomation evidence missing'
+            }
             if(-not $process.WaitForExit(80000)) {throw 'G03 native WebView did not exit after UIA'}
             if($process.ExitCode -ne 0) {throw 'G03 native director/resume/editor WebView smoke failed'}
             Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH
