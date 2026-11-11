@@ -35,7 +35,14 @@ def mount_g08_routes(app,studio,film_access,live_films,cookie_name):
         studio,access=film_access,protected_movie=live_films)
 
     def auth(request):
-        if request.headers.get("x-nvp-director")!="1":
+        if request.method=="GET":
+            # A normal clicked Save Movie link cannot add custom headers.
+            # The existing project lock/session middleware still protects
+            # this read-only download; refuse cross-site navigation.
+            if request.headers.get("sec-fetch-site") not in (
+                    None,"same-origin","none"):
+                raise HTTPException(403,detail="Open your movie in NVP")
+        elif request.headers.get("x-nvp-director")!="1":
             raise HTTPException(403,detail="Open Export Film in your movie workspace")
         return request.cookies.get(cookie_name)
 
