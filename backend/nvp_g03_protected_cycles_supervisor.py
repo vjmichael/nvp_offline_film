@@ -224,7 +224,9 @@ class ProtectedCyclesSupervisor:
                             "BLENDER_USER_DATAFILES":str(Path(cwd)/"datafiles")})
                 proc=launch_contained(args,cwd=cwd,stdin=inp,stdout=out,
                     stderr=errout,memory_mb=4096,env=env,
-                    windows_appcontainer_required=isolated)
+                    windows_appcontainer_required=isolated,
+                    appcontainer_code_roots=[self.binary.parent],
+                    appcontainer_code_files=[trusted])
                 inp.close();out.close();errout.close()
                 request=MAGIC_IN+struct.pack("!I",len(canonical))+canonical
                 for fn,params in (
