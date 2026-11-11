@@ -16,7 +16,7 @@ def test_host_freezes_only_after_verified_shutdown():
         session.stop_and_verify.side_effect = lambda **kw: (order.append("stop"), GOOD)[1]
         capture.capture.side_effect = lambda *a, **kw: (order.append("freeze"), {"ok": True})[1]
         assert finish_linux_recording_and_freeze(
-            session, capture, "p", "t", recordings=lambda: [{"pcm_chunks": iter(())}],
+            session, capture, "p", "t", recordings=lambda: [{"pcm_chunks": iter((b'\x00\x00',))}],
             scene_id="scene") == {"ok": True}
         assert order == ["stop", "freeze"]
 
@@ -97,7 +97,7 @@ def test_shutdown_callback_cannot_rewrite_recording_event_metadata():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
         "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
         session, capture = S(), C()
-        event = {"event_id": "original", "pcm_chunks": iter(())}
+        event = {"event_id": "original", "pcm_chunks": iter((b'\x00\x00',))}
         def shutdown(**kwargs):
             event["event_id"] = "tampered"
             event["start_tick"] = 999
@@ -141,7 +141,7 @@ def test_shutdown_cannot_rewrite_nested_clock_attestation():
         forwarded = capture.capture.call_args.kwargs["recordings"][0]
         assert forwarded["source_sync"]["anchors"][0]["tick"] == 42
         assert forwarded["clock_evidence"]["proof"] == ["original"]
-        assert forwarded["pcm_chunks"] is pcm
+        assert list(forwarded["pcm_chunks"]) == [b'\x00\x00']
 
 
 def test_shutdown_cannot_rewrite_new_nested_metadata_fields():
@@ -161,7 +161,7 @@ def test_shutdown_cannot_rewrite_new_nested_metadata_fields():
         forwarded = capture.capture.call_args.kwargs["recordings"][0]
         assert forwarded["actor_metadata"]["markers"][0]["tick"] == 17
         assert forwarded["custom_tags"] == ["original"]
-        assert forwarded["pcm_chunks"] is pcm
+        assert list(forwarded["pcm_chunks"]) == [b'\x00\x00']
 
 
 def test_unsnapshotable_metadata_still_reaps_and_denies_take():
@@ -175,7 +175,7 @@ def test_unsnapshotable_metadata_still_reaps_and_denies_take():
         with pytest.raises(ValueError, match="cannot be frozen"):
             finish_linux_recording_and_freeze(
                 session, capture, "p", "t", recordings=lambda: [
-                    {"pcm_chunks": iter(()), "custom": Uncopyable()}])
+                    {"pcm_chunks": iter((b'\x00\x00',)), "custom": Uncopyable()}])
         session.stop_and_verify.assert_called_once()
         capture.capture.assert_not_called()
 
@@ -192,7 +192,7 @@ def test_shutdown_cannot_expand_capture_source_consent_or_options():
         session.stop_and_verify.side_effect = shutdown
         finish_linux_recording_and_freeze(
             session, capture, "p", "t",
-            recordings=lambda: [{"pcm_chunks": iter(())}], **options)
+            recordings=lambda: [{"pcm_chunks": iter((b'\x00\x00',))}], **options)
         forwarded = capture.capture.call_args.kwargs
         assert forwarded["allowed_sources"] == ["microphone-A"]
         assert forwarded["consent"] == {"scope": ["scene-1"]}
@@ -209,7 +209,37 @@ def test_unsnapshotable_capture_options_still_reap_and_deny_take():
         with pytest.raises(ValueError, match="consent snapshot failed"):
             finish_linux_recording_and_freeze(
                 session, capture, "p", "t",
-                recordings=lambda: [{"pcm_chunks": iter(())}],
+                recordings=lambda: [{"pcm_chunks": iter((b'\x00\x00',))}],
                 consent=Uncopyable())
+        session.stop_and_verify.assert_called_once()
+        capture.capture.assert_not_called()
+
+
+def test_pcm_is_drained_before_worker_shutdown():
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        live = {"worker": True}
+        def pcm():
+            assert live["worker"], "Original PCM consumed after worker termination"
+            yield b"\\x00\\x00"
+        def shutdown(**kwargs):
+            live["worker"] = False
+            return GOOD
+        session.stop_and_verify.side_effect = shutdown
+        finish_linux_recording_and_freeze(session, capture, "p", "t",
+            recordings=lambda: [{"pcm_chunks": pcm()}])
+        forwarded = capture.capture.call_args.kwargs["recordings"][0]
+        assert list(forwarded["pcm_chunks"]) == [b"\\x00\\x00"]
+
+
+def test_invalid_pcm_still_stops_worker_and_denies_publication():
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        session.stop_and_verify.return_value = GOOD
+        with pytest.raises(ValueError, match="PCM16LE"):
+            finish_linux_recording_and_freeze(session, capture, "p", "t",
+                recordings=lambda: [{"pcm_chunks": iter((b"\\x00",))}])
         session.stop_and_verify.assert_called_once()
         capture.capture.assert_not_called()
