@@ -116,11 +116,15 @@ class ProtectedCaptureSupervisor:
         outcome="FAILED";exit_code=None;job_closed=False
         try:
             with tempfile.TemporaryDirectory(prefix="nvp-protected-mic-") as empty:
+                command=self._command()
+                trusted=[] if getattr(sys,"frozen",False) else [Path(command[-1])]
                 proc=launch_contained(
-                    self._command(),cwd=empty,
+                    command,cwd=empty,
                     stdin=input_reader,stdout=output_writer,stderr=error_writer,
                     memory_mb=1024,env=_sanitized_worker_env(),
-                    windows_appcontainer_required=isolated)
+                    windows_appcontainer_required=isolated,
+                    appcontainer_code_roots=[Path(command[0]).parent],
+                    appcontainer_code_files=trusted)
                 input_reader.close();output_writer.close();error_writer.close()
                 for fn,args in (
                     (_stream_write,(input_writer,input_bytes,errors)),
