@@ -1,0 +1,62 @@
+name: G03-F3 Real Windows Blender Cycles in-memory synthetic containment
+on:
+  push:
+    branches: [nvp/g03-film-home-project-access-20261110]
+  workflow_dispatch:
+
+concurrency:
+  group: g03-real-cycles-\${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actual-blender-cycles:
+    name: SHA-pinned Blender / native Job Object / memory PNG / synthetic DPAPI film
+    runs-on: windows-2025
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual OpenUSD, Windows job custody and AES-GCM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install -r requirements-foundation.txt 'cryptography>=43,<49' 'pywin32>=306' httpx
+          if($LASTEXITCODE -ne 0){ throw 'Real Windows protected Blender dependency installation failed' }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if($LASTEXITCODE -ne 0){ throw 'Actual USD library unavailable' }
+      - name: Download independent official Blender and verify published SHA
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='https://download.blender.org/release/Blender5.2'
+          $archive='blender-5.2.3-windows-x64.zip'
+          & curl.exe --fail --location --retry 3 --retry-delay 5 --output $archive "$base/$archive"
+          if($LASTEXITCODE -ne 0){ throw 'Official Blender archive download failed' }
+          & curl.exe --fail --location --retry 3 --retry-delay 5 --output blender.sha256 "$base/blender-5.2.3.sha256"
+          if($LASTEXITCODE -ne 0){ throw 'Blender official manifest missing' }
+          $line=Get-Content blender.sha256 | Where-Object {
+            $_ -match '(?i)^[a-f0-9]{64}\s+\*?blender-5\.2\.3-windows-x64\.zip\s*$'
+          } | Select-Object -First 1
+          if(-not $line){throw 'Official manifest does not pin the expected Blender archive'}
+          $want=($line -split '\s+')[0].ToLowerInvariant()
+          $got=(Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if($got -ne $want){ throw 'Blender SHA mismatch; refuse real worker' }
+          Expand-Archive -LiteralPath $archive -DestinationPath '_g03_real_blender' -Force
+          $binary=Get-ChildItem _g03_real_blender -Filter blender.exe -Recurse -File | Select-Object -First 1
+          if(-not $binary){throw 'Real Blender executable missing'}
+          "NVP_NATIVE_BLENDER_EXECUTABLE=$($binary.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $binary.FullName -b --version
+          if($LASTEXITCODE -ne 0){throw 'Real Blender version probe failed'}
+      - name: Test PRIVATE film sandbox denial and actual synthetic Cycles worker
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m unittest discover -s tests -p 'test_nvp_g03_protected_cycles.py' -v
+          if($LASTEXITCODE -ne 0){throw 'Native Blender Cycles real-process/PNG tests failed'}
+          Write-Host 'G03_REAL_BLENDER_SYNTHETIC_PIPE_AND_ENCRYPTED_PNG_PASS_IF_TESTS_SUCCEEDED'
+          Write-Host 'NOT A USER-FILM APP-CONTAINER OR PHYSICAL OWNER ACCEPTANCE'
