@@ -176,12 +176,12 @@ class G06NativeRecorder:
             session=self._get(project_id,session_id,grant)
             if session.status=="recording":
                 raw=session.stop()
-            elif session.status=="stopped" and session.parts:
+            elif session.status=="stopped" and session.parts and session.error is None:
                 # Retry publication after a recoverable DB error. Original
                 # bytes remain unchanged in this host until saved successfully.
                 raw=b"".join(session.parts)
             else:
-                raise RuntimeError("Recording is no longer available")
+                raise RuntimeError("Recording is no longer available or its sample stream was incomplete")
             if self.active==session.id:self.active=None
         result=filming.record_native_audio(
             project_id,session.scene_id,session.actor_id,raw)
