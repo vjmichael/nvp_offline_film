@@ -16,7 +16,7 @@ from unittest.mock import patch
 from tools.nvp_g03_protected_capture_worker import _validate
 from backend.nvp_g03_protected_capture_supervisor import (
     ProtectedCaptureSupervisor,ProtectedCaptureError)
-from backend.nvp_g03_live_store import LiveFilmStore
+from backend.nvp_g03_live_store import LiveFilmStore,LiveFilmError
 
 
 class CaptureProtocolTests(unittest.TestCase):
@@ -81,10 +81,10 @@ class NativeCaptureConsentWindows(unittest.TestCase):
         self.store.revoke(self.pid)
         with patch("backend.nvp_g03_protected_capture_supervisor.launch_contained",
                    side_effect=AssertionError("locked movie launched audio")):
-            with self.assertRaisesRegex(Exception,"locked|unavailable"):
+            with self.assertRaisesRegex(LiveFilmError,"locked"):
                 allowed.capture(self.pid,self.token,"original/mic.pcm16le",
                                 self.ticket,device_id=-1,channels=1,frames=48000)
-        self.assertFalse(self.store.exists(self.pid) is False)
+        self.assertTrue(self.store.exists(self.pid))
 
 
 if __name__=="__main__":
