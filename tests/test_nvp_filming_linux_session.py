@@ -127,3 +127,13 @@ def test_exhausted_kernel_budget_cannot_block_on_worker_wait():
                side_effect=[100.0, 105.0]):
         LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     child.wait.assert_called_once_with(timeout=0.0)
+
+
+@pytest.mark.parametrize("timeout", [0, -1, 61, float("nan"), float("inf"), float("-inf"), True, "5"])
+def test_invalid_deadline_refused_before_kernel_custody(timeout):
+    child = Mock()
+    custody = Mock()
+    with pytest.raises(ValueError, match="Bounded positive"):
+        LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=timeout)
+    custody.stop_and_verify.assert_not_called()
+    child.wait.assert_not_called()
