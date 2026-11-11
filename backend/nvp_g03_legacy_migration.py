@@ -127,8 +127,32 @@ class LegacyFilmMigration:
                     canonical=lambda row:json.dumps(row,sort_keys=True,
                         separators=(",",":"),allow_nan=False)
                     index[table]=sorted(stored,key=canonical)
-            data={"format":"nvp.g03.legacy.sql_snapshot.v1",
-                  "project_id":pid,"tables":index}
+            # Project rows alone do not reconstruct a usable original film.
+            # Record the actual reviewed SQLite DDL so an independent process
+            # can rebuild relational constraints, indexes and revision history
+            # without touching source. sqlite_autoindex is implicit in CREATE
+            # TABLE; never synthesize a replacement constraint.
+            schema=[]
+            for kind,name,owner,ddl in memory.execute(
+                """SELECT type,name,tbl_name,sql FROM sqlite_master
+                   WHERE name NOT LIKE 'sqlite_%'
+                     AND type IN ('table','index','view','trigger')
+                   ORDER BY type,name"""):
+                if (not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*",name) or
+                        not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*",owner) or
+                        not isinstance(ddl,str) or len(ddl)>1024*1024):
+                    raise MigrationRefused("Legacy schema has unreviewed DDL")
+                if kind=="table" and not re.match(
+                        r"^CREATE\\s+TABLE\\b",ddl,re.IGNORECASE):
+                    raise MigrationRefused(
+                        "Legacy virtual/extension table needs independent converter")
+                schema.append({"type":kind,"name":name,"table":owner,"sql":ddl})
+            if len(schema)>MAX_TABLES*4:
+                raise MigrationRefused("Legacy relational schema exceeds bound")
+            data={"format":"nvp.g03.legacy.sql_snapshot.v2",
+                  "project_id":pid,"tables":index,"schema":schema,
+                  "user_version":memory.execute("PRAGMA user_version").fetchone()[0],
+                  "application_id":memory.execute("PRAGMA application_id").fetchone()[0]}
             encoded=json.dumps(data,sort_keys=True,
                 separators=(",",":"),ensure_ascii=True).encode("utf8")
             if len(encoded)>MAX_TOTAL:
