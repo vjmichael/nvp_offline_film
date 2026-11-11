@@ -162,6 +162,9 @@ class G08MovieExporter:
         if not assembly["segments"]:
             raise ValueError("Add at least one recorded Take to your film")
         with self._db() as db:
+            # Exactly one movie export at a time even across two independent
+            # NVP hosts. SELECT + publication share SQLite writer custody.
+            db.execute("BEGIN IMMEDIATE")
             queued=db.execute("""SELECT id FROM g08_export_jobs
                 WHERE project_id=? AND status IN ('queued','rendering','verifying')
                 LIMIT 1""",(pid,)).fetchone()
@@ -188,11 +191,14 @@ class G08MovieExporter:
     def _set(self,pid,job,status,*,progress=None,sha=None,size=None,
              receipt=None,issue=None,expected=None):
         with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
             row=db.execute("""SELECT status FROM g08_export_jobs
                 WHERE id=? AND project_id=?""",(job,pid)).fetchone()
             if row is None:raise KeyError("Movie export job is missing")
             if expected is not None and row["status"] not in expected:
                 raise RuntimeError("Export changed while processing")
+            if row["status"] in FINISHED and status!=row["status"]:
+                raise RuntimeError("A finished export cannot be reopened")
             db.execute("""UPDATE g08_export_jobs SET status=?,
                 progress_frames=COALESCE(?,progress_frames),
                 output_sha256=COALESCE(?,output_sha256),
