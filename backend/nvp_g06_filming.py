@@ -468,6 +468,13 @@ class G06Filming:
                    "intensity":intensity if kind in AMBIENT_ACTIONS else None,
                    "note":note,"status":"director_authored"}
             _event_validate(event,objects,working["duration_tick"])
+            if kind in MOVING and any(
+                    existing["kind"] in MOVING and
+                    existing["object_id"]==event["object_id"] and
+                    max(existing["start_tick"],event["start_tick"])<
+                    min(existing["end_tick"],event["end_tick"])
+                    for existing in working["events"]):
+                raise ValueError("This performer already moves during those moments")
             working["events"].append(event)
             self._save(db,pid,scene_id,working,expected_revision)
             return self._manifest(db,pid,scene_id,source,
@@ -629,6 +636,38 @@ class G06Filming:
             return self._manifest(db,pid,scene_id,source,
                 {"revision":head["revision"],"usd_sha256":record["usd_sha256"]},plan)
         return self._with(pid,scene_id,review,mutate=True)
+
+    def restore_performance(self,pid,scene_id,source_revision,
+                            expected_revision):
+        """Restore an older working direction set as a NEW revision."""
+        if (type(source_revision) is not int or source_revision<1 or
+                type(expected_revision) is not int or expected_revision<0):
+            raise ValueError("Choose an earlier performance version")
+        def change(db,movie,source):
+            head,record,plan,raw=_stage(db,source,pid,scene_id)
+            working=self._working(db,pid,scene_id,
+                {"revision":head["revision"],"usd_sha256":record["usd_sha256"]})
+            self._current(working,head,record)
+            if working["revision"]!=expected_revision:
+                raise RuntimeError("Performance has changed; reopen the current draft")
+            row=db.execute("""SELECT snapshot_json FROM g06_work_history
+                WHERE project_id=? AND scene_id=? AND revision=?""",
+                (pid,scene_id,source_revision)).fetchone()
+            if row is None:raise KeyError("Earlier performance was not found")
+            snapshot=json.loads(row["snapshot_json"])
+            if (snapshot.get("scene_stage_revision")!=head["revision"] or
+                    snapshot.get("stage_sha256")!=record["usd_sha256"]):
+                raise RuntimeError("Earlier performance belongs to a different visual scene")
+            objects={o["id"]:o for o in plan["objects"]}
+            duration=snapshot["duration_tick"]
+            for event in snapshot["events"]:
+                _event_validate(event,objects,duration)
+            working["events"]=snapshot["events"]
+            working["duration_tick"]=duration
+            self._save(db,pid,scene_id,working,expected_revision)
+            return self._manifest(db,pid,scene_id,source,
+                {"revision":head["revision"],"usd_sha256":record["usd_sha256"]},plan)
+        return self._with(pid,scene_id,change,mutate=True)
 
     def restart_scene(self,pid,scene_id,expected_revision,reason="retake"):
         reason=_short(reason,160)
