@@ -133,7 +133,7 @@ def test_exhausted_kernel_budget_cannot_claim_bounded_shutdown():
     with patch("backend.nvp_filming_linux_session.time.monotonic",
                side_effect=[100.0, 105.0]):
         with pytest.raises(RuntimeError, match="exceeded filming shutdown deadline"):
-            custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
+        custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
         LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     child.wait.assert_not_called()
 
@@ -226,7 +226,7 @@ def test_worker_wait_overrun_refuses_bounded_shutdown_receipt():
     with patch("backend.nvp_filming_linux_session.time.monotonic",
                side_effect=[100.0, 101.0, 103.01]):
         with pytest.raises(RuntimeError, match="Worker reaping exceeded"):
-            custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
+        custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
         LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     child.wait.assert_called_once_with(timeout=2.0)
 
