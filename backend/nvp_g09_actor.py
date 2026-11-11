@@ -295,7 +295,12 @@ def _public(db,pid,take_id,take_sha,source):
              for row in db.execute("""SELECT revision,created_at
                 FROM g09_actor_versions WHERE project_id=? AND take_id=?
                 ORDER BY revision DESC LIMIT 35""",(pid,take_id))]
+    continuity={}
+    for row in db.execute("""SELECT actor_id,MAX(revision) AS version
+       FROM g09_actor_templates WHERE project_id=? GROUP BY actor_id""",(pid,)):
+        continuity[row["actor_id"]]=row["version"]
     return {"format":FORMAT,"take_id":take_id,"take_sha256":take_sha,
+        "continuity_profiles":continuity,
         "duration_seconds":source["duration_tick"]/TICKS_PER_SECOND,
         "revision":draft,"approved_revision":approved,
         "approved_for_film":approved>0,
@@ -412,6 +417,73 @@ class G09Actors:
             _save(db,pid,take_id,row["take_sha256"],saved,expected_revision,approved)
             return _public(db,pid,take_id,row["take_sha256"],source)
         return self._execute(pid,restore_tx,mutate=True)
+
+    def save_character(self,pid,take_id,actor_id,expected_revision):
+        """Save approved appearance/acting baseline for the SAME ActorID.
+
+        Recorded voice IDs, expression timings, source object IDs and
+        source-scoped dialogue notes are never reused across Takes.
+        """
+        if type(actor_id) is not str or not actor_id.startswith("ACT_"):
+            raise ValueError("Choose a real cast character")
+        if type(expected_revision) is not int or expected_revision<1:
+            raise ValueError("Approve your character direction before saving")
+        baseline=("movement","emotion","expression_strength",
+                  "gait_strength","blink_rate","height_scale",
+                  "shoulder_width","skin_color","hair_color",
+                  "hair","wardrobe_color","eye_color")
+        def save(db,movie):
+            row,original,_=self.editor._take(db,pid,take_id,{})
+            rev,approved,doc=_current(db,pid,take_id,row["take_sha256"],original)
+            if rev!=expected_revision or approved!=rev:
+                raise RuntimeError("Approve this current acting version first")
+            actor=next((p for p in doc["actors"]
+                        if p["actor_id"]==actor_id),None)
+            if actor is None:raise KeyError("ActorID was not in this source Take")
+            profile={"actor_id":actor_id,**{k:actor[k] for k in baseline}}
+            raw=_json(profile)
+            last=db.execute("""SELECT COALESCE(MAX(revision),0) AS revision
+              FROM g09_actor_templates WHERE project_id=? AND actor_id=?""",
+              (pid,actor_id)).fetchone()["revision"]
+            if last>=500:raise RuntimeError("Too many character continuity versions")
+            db.execute("""INSERT INTO g09_actor_templates
+                (project_id,actor_id,revision,profile_json,profile_sha256,
+                 source_take_sha256,created_at) VALUES (?,?,?,?,?,?,?)""",
+                (pid,actor_id,last+1,raw,_sha(raw.encode("utf8")),
+                 row["take_sha256"],_now()))
+            return _public(db,pid,take_id,row["take_sha256"],original)
+        return self._execute(pid,save,mutate=True)
+
+    def use_character(self,pid,take_id,actor_id,expected_revision):
+        """Copy approved creative identity, NEVER the source-bound voice/cues."""
+        if type(actor_id) is not str or not actor_id.startswith("ACT_"):
+            raise ValueError("Choose the current film character")
+        if type(expected_revision) is not int or expected_revision<0:
+            raise ValueError("Review this character's current version")
+        def use(db,movie):
+            row,original,_=self.editor._take(db,pid,take_id,{})
+            rev,approved,doc=_current(db,pid,take_id,row["take_sha256"],original)
+            if rev!=expected_revision:
+                raise RuntimeError("Another performance revision was saved")
+            template=db.execute("""SELECT profile_json,profile_sha256
+               FROM g09_actor_templates WHERE project_id=? AND actor_id=?
+               ORDER BY revision DESC LIMIT 1""",(pid,actor_id)).fetchone()
+            if template is None:raise KeyError("No approved profile for this character")
+            if _sha(template["profile_json"].encode("utf8"))!=template["profile_sha256"]:
+                raise RuntimeError("The saved character continuity record changed")
+            source=json.loads(template["profile_json"])
+            if source.get("actor_id")!=actor_id:
+                raise RuntimeError("This character continuity belongs to another ActorID")
+            doc=copy.deepcopy(doc)
+            actor=next((x for x in doc["actors"]
+                        if x["actor_id"]==actor_id),None)
+            if actor is None:raise KeyError("This character does not occur in the Take")
+            for field,value in source.items():
+                if field!="actor_id":actor[field]=value
+            _validate(doc,take_id,row["take_sha256"],original)
+            _save(db,pid,take_id,row["take_sha256"],doc,rev,approved)
+            return _public(db,pid,take_id,row["take_sha256"],original)
+        return self._execute(pid,use,mutate=True)
 
     def voice_preview(self,pid,take_id,clip_id):
         """Audition the verified source recording before approving a voice."""
