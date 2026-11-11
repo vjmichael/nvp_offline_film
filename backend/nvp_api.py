@@ -339,6 +339,11 @@ class G04SceneNotes(BaseModel):
 class G04SceneAdd(BaseModel):
     expected_screenplay_revision: int = Field(ge=0)
 
+class G04RestoreSceneNotes(BaseModel):
+    source_revision: int = Field(ge=0)
+    expected_notes_revision: int = Field(ge=0)
+    expected_screenplay_revision: int = Field(ge=0)
+
 class G04ScreenplayPrompt(BaseModel):
     direction: str = Field(default="",max_length=1200)
 
@@ -400,6 +405,14 @@ def g04_edit_scene(project_id:str,scene_id:str,request:Request,
                    payload:G04SceneNotes):
     return run(lambda:_director_preproduction(project_id,request).save_scene(
         project_id,scene_id,payload.notes,payload.expected_notes_revision,
+        payload.expected_screenplay_revision))
+
+@app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/restore")
+@app.post("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}/restore")
+def g04_restore_scene_details(project_id:str,scene_id:str,request:Request,
+                             payload:G04RestoreSceneNotes):
+    return run(lambda:_director_preproduction(project_id,request).restore_notes(
+        project_id,scene_id,payload.source_revision,payload.expected_notes_revision,
         payload.expected_screenplay_revision))
 
 @app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/speakers")
