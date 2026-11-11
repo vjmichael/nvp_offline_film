@@ -35,7 +35,7 @@ def test_stop_returns_tree_and_worker_receipts():
     child = Mock(returncode=-9)
     custody = Mock()
     custody.stop_and_verify.return_value = {
-        "process_tree_custody_verified": True, "empty_group_verified": True}
+        "process_tree_custody_verified": True, "empty_group_verified": True, "scope": "linux-cgroup-v2"}
     session = LinuxFilmingSession("/group", child, custody)
     result = session.stop_and_verify(timeout=2)
     assert result["process_tree_custody_verified"]
@@ -51,3 +51,31 @@ def test_failed_custody_construction_does_not_claim_success():
                side_effect=RuntimeError("not delegated")):
         with pytest.raises(RuntimeError, match="reconcile"):
             launch_linux_filming_session("/root", "/bin/true", ["/bin/true"])
+
+
+@pytest.mark.parametrize("receipt", [
+    {},
+    {"process_tree_custody_verified": False, "empty_group_verified": True, "scope": "linux-cgroup-v2"},
+    {"process_tree_custody_verified": True, "empty_group_verified": False, "scope": "linux-cgroup-v2"},
+    {"process_tree_custody_verified": True, "empty_group_verified": True, "scope": "untrusted"},
+])
+def test_incomplete_kernel_receipt_cannot_claim_worker_shutdown(receipt):
+    child = Mock(returncode=-9)
+    custody = Mock()
+    custody.stop_and_verify.return_value = receipt
+    with pytest.raises(RuntimeError, match="affirmative Linux"):
+        LinuxFilmingSession("/group", child, custody).stop_and_verify()
+    child.wait.assert_not_called()
+
+
+def test_worker_exit_status_must_be_observed():
+    child = Mock(returncode=None)
+    custody = Mock()
+    custody.stop_and_verify.return_value = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    with pytest.raises(RuntimeError, match="exit status"):
+        LinuxFilmingSession("/group", child, custody).stop_and_verify()
+    child.wait.assert_called_once()
