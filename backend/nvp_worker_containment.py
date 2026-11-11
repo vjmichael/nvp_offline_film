@@ -86,7 +86,8 @@ class WindowsJobProcess:
 
 
 def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0,
-                     linux_cgroup_tree_required=False, stdin=None, env=None):
+                     linux_cgroup_tree_required=False, stdin=None, env=None,
+                     windows_appcontainer_required=False):
     """Trusted host launches pinned absolute executable with OS containment."""
     if not isinstance(command, list) or not command or not Path(command[0]).is_absolute():
         raise ValueError("Containment requires an absolute executable path")
@@ -94,6 +95,17 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0,
         raise ValueError("Invalid OS memory limit")
     if type(linux_cgroup_tree_required) is not bool:
         raise ValueError("Linux whole-tree containment mode must be boolean")
+    if type(windows_appcontainer_required) is not bool:
+        raise ValueError("Windows AppContainer requirement must be boolean")
+    # A Job Object supplies lifetime/memory custody, NOT Windows sandboxing.
+    # Never let an externally supplied 'isolation attestor' promote the old
+    # full-user launch into permission to process confidential original film.
+    # A future kernel-token/AppContainer launcher must replace this denial
+    # and supply its own independently tested sandbox launch receipt.
+    if windows_appcontainer_required:
+        raise RuntimeError(
+            "Production AppContainer launcher not implemented: "
+            "private filesystem/network sandbox is unverified")
     if os.name == "nt":
         return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr,
                                memory_mb=memory_mb, stdin=stdin, env=env)
