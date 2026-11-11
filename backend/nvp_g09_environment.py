@@ -64,7 +64,7 @@ def _vec(value,low=-150,high=150):
 def _material(value):
     if type(value) is not dict or set(value)!={
         "color","roughness","metallic","emission","kind"
-    } or value["kind"] not in MATERIALS:
+    } or type(value["kind"]) is not str or value["kind"] not in MATERIALS:
         raise ValueError("Choose a real material preset")
     return {"color":_check_color(value["color"]),
             "roughness":_number(value["roughness"],.03,1.,"roughness"),
@@ -100,7 +100,7 @@ def _item(value):
     if type(value["name"]) is not str or not 1<=len(value["name"])<=80 or any(
             ord(ch)<32 for ch in value["name"]):
         raise ValueError("Choose a short set-piece name")
-    if value["shape"] not in SHAPES or type(value["lod"]) is not int or (
+    if type(value["shape"]) is not str or value["shape"] not in SHAPES or type(value["lod"]) is not int or (
             value["lod"] not in (0,1,2)):
         raise ValueError("Set piece has an unsupported geometry or detail level")
     size=_vec(value["scale"],.03,70)
@@ -321,7 +321,8 @@ def _validate(doc,take_id,take_sha,original):
         "external_assets"
     } or doc["format"]!=FORMAT or doc["kit_source"]!=BUILTIN_VERSION or
         doc["take_id"]!=take_id or doc["take_sha256"]!=take_sha or
-        doc["preset"] not in PRESETS or doc["external_assets"] is not False):
+        type(doc["preset"]) is not str or doc["preset"] not in PRESETS or
+        doc["external_assets"] is not False):
         raise ValueError("This production look cannot be applied to this original Take")
     _check_color(doc["sky"]);_check_color(doc["ground"])
     _light(doc["sun"]);_fog(doc["atmosphere"])
@@ -424,7 +425,9 @@ class G09Environment:
                 raise RuntimeError("This scene look was updated elsewhere")
             doc=copy.deepcopy(doc)
             if operation=="preset":
-                if set(details)!={"preset"} or details["preset"] not in PRESETS:
+                if (set(details)!={"preset"} or
+                        type(details["preset"]) is not str or
+                        details["preset"] not in PRESETS):
                     raise ValueError("Choose a production environment")
                 name=details["preset"]
                 custom=[x for x in doc["set_pieces"] if
