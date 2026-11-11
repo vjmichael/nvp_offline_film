@@ -7,10 +7,11 @@ film receives an NVP-owned read-only download link.
 from __future__ import annotations
 
 from fastapi import HTTPException,Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse,Response
 from pydantic import BaseModel,Field
 
 from backend.nvp_g08_export import G08MovieExporter
+from backend.nvp_g08_sealed_export import G08SealedDelivery
 
 
 class StartFilm(BaseModel):
@@ -33,6 +34,10 @@ def _safe(action):
 def mount_g08_routes(app,studio,film_access,live_films,cookie_name):
     exporter=G08MovieExporter(
         studio,access=film_access,protected_movie=live_films)
+    sealed=G08SealedDelivery(live_films,studio,film_access)
+
+    def for_project(pid):
+        return sealed if live_films().exists(pid) else exporter
 
     def auth(request):
         if request.method=="GET":
@@ -56,7 +61,7 @@ def mount_g08_routes(app,studio,film_access,live_films,cookie_name):
 
     def jobs(project_id:str,request:Request):
         return {"format":"nvp.g08.delivery.v1",
-                "exports":_safe(lambda:exporter.list(
+                "exports":_safe(lambda:for_project(project_id).list(
                     project_id,auth(request)))}
     routes("GET","",jobs)
 
@@ -64,29 +69,36 @@ def mount_g08_routes(app,studio,film_access,live_films,cookie_name):
         if payload.director_confirmed is not True:
             raise HTTPException(422,detail="Choose Export Film yourself to begin")
         token=auth(request)
-        return _safe(lambda:exporter.prepare(
-            project_id,payload.expected_revision,token))
+        job=for_project(project_id)
+        return _safe(lambda:(
+            job.start(project_id,payload.expected_revision,token)
+            if job is sealed else
+            job.prepare(project_id,payload.expected_revision,token)))
     routes("POST","/start",start)
 
     def progress(project_id:str,job_id:str,request:Request):
-        return _safe(lambda:exporter.read(
+        return _safe(lambda:for_project(project_id).read(
             project_id,job_id,auth(request)))
     routes("GET","/{job_id}",progress)
 
     def cancel(project_id:str,job_id:str,request:Request):
-        return _safe(lambda:exporter.cancel(
+        return _safe(lambda:for_project(project_id).cancel(
             project_id,job_id,auth(request)))
     routes("POST","/{job_id}/cancel",cancel)
 
     def movie(project_id:str,job_id:str,request:Request):
-        path=_safe(lambda:exporter.movie_path(
-            project_id,job_id,auth(request)))
-        # FileResponse handles byte-range requests for browser and native
-        # media players. No file path is disclosed in the JSON project API.
+        token=auth(request)
+        if live_films().exists(project_id):
+            contents=_safe(lambda:sealed.movie_bytes(project_id,job_id,token))
+            return Response(contents,media_type="video/x-msvideo",headers={
+                "Content-Disposition":'attachment; filename="NVP-Film-'+job_id[:8]+'.avi"',
+                "Cache-Control":"private, no-store, max-age=0",
+                "X-Content-Type-Options":"nosniff"})
+        path=_safe(lambda:exporter.movie_path(project_id,job_id,token))
         return FileResponse(path,media_type="video/x-msvideo",
             filename="NVP-Film-"+job_id[:8]+".avi",
             content_disposition_type="attachment",
             headers={"Cache-Control":"private, no-store, max-age=0",
                      "X-Content-Type-Options":"nosniff"})
     routes("GET","/{job_id}/movie",movie)
-    return exporter
+    return {"ordinary":exporter,"sealed":sealed}
