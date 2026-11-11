@@ -16,10 +16,18 @@ Plaintext may include SQLite planning tables, screenplay and Production Bible, S
 | Native camera/sound/rail IPC | The installed host refuses old native source calls when ANY project is protected; existing worker cleanup/cancel remains accessible | Conservative shutdown also disables other movies' native A/V; no fine-grained host-owned grant or proof about previously started worker outputs |
 | Browser interface | Only five creative stages; a separate Post-Production shell clears its cached content on localStorage relock and rechecks authorization | Other already-rendered content or browser memory may remain; no confidentiality guarantee |
 | Global system activity endpoint | Task titles and resource details are redacted while any movie is protected; no film title leaked through this alternate route | Underlying host SQLite worker journal remains readable on disk |
-| Data on disk | None | SQLite, WAL, OpenUSD, PCM, media objects, journals, cache and backups are NOT encrypted |
+| Data on disk | New opt-in Windows movies now use DPAPI+passphrase AES-GCM protected in-memory SQLite revisions and opaque encrypted originals, with sealed recovery receipts | Existing shared SQLite/WAL, legacy OpenUSD/PCM, old Takes, worker staging, caches and backups are NOT migrated or covered |
 | OS credential/identity boundary | Per-user install and trusted loopback Host check | Not a Windows DPAPI/CNG film vault; lack of independent host/account authorization |
 | Physical Windows | Automated NSIS, WebView2 and OS UIAutomation gates added | Owner's actual workstation keyboard/screen-reader and restart acceptance remain separately required |
 | Lu/GGUF and film render | No integration or generated film claimed | Deferred G02, future G05/G06/G07/G08 |
+
+## G03-E1 new encrypted live project integration
+
+New opt-in encrypted Windows movies now use a host-owned **in-memory SQLite** project store, immutable authenticated encrypted revisions, project-bound AES-GCM original source ciphertext, SHA-256 readback, OS-level writer serialization, encrypted recovery and one-use host worker receipts. The shared public catalog gets only a title/ID and empty project placeholder. All legacy project APIs and direct native WebView2 camera/audio paths are denied for secured IDs. The director's separate Post-Production window uses the secure live route.
+
+Implementation and detailed boundaries: [NVP G03-E1 Live Encryption](NVP_G03_E1_LIVE_ENCRYPTION.md).
+
+**This is not a full migration**: existing films, active legacy workers, older caches/backups and delegated external production processes still require independent protection. Native renderer and source capture remain unavailable for encrypted movies. Same-user ciphertext rollback, Windows account/device recovery, and physical owner-operated acceptance remain open. The exact-head native and installed tests must pass before accepting even the new mode.
 
 ## Encryption design and acceptance required before a "confidential movie" claim
 

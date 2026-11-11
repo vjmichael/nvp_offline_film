@@ -107,6 +107,23 @@ try {
     throw 'Installed Windows DPAPI archive/restore verification failed'
   }
   Write-Host 'Windows current-account DPAPI and encrypted source archive smoke passed.'
+  $newFilm=Start-Process -FilePath $InstalledExe -ArgumentList '--smoke-live-create' -PassThru
+  if(-not $newFilm.WaitForExit(90000)){
+    & taskkill.exe /PID $newFilm.Id /T /F 2>$null | Out-Null
+    throw 'Encrypted live film creation exceeded 90 seconds'
+  }
+  if($newFilm.ExitCode -ne 0){
+    throw 'Installed DPAPI live film creation/original source validation failed'
+  }
+  $reloadFilm=Start-Process -FilePath $InstalledExe -ArgumentList '--smoke-live-reopen' -PassThru
+  if(-not $reloadFilm.WaitForExit(90000)){
+    & taskkill.exe /PID $reloadFilm.Id /T /F 2>$null | Out-Null
+    throw 'Encrypted live film recovery exceeded 90 seconds'
+  }
+  if($reloadFilm.ExitCode -ne 0){
+    throw 'Installed encrypted live film could not reopen in a fresh process'
+  }
+  Write-Host 'G03 installed live encrypted film, OpenUSD source, revision and relock passed.'
   Write-Host "Isolated test films: $testHome"
   Write-Host "No existing NVP projects will be deleted or encrypted."
   Start-IsolatedNvp
@@ -116,6 +133,7 @@ try {
   Ask-Operator 'Create first movie' 'Using NVP, create G03 Test Film A from an idea; go to Script and save an EXT. FOREST - MORNING scene. The system must not claim a 3D scene was generated.'
   $uia+=@(Check-Uia 'Set Up Scenes' 'ControlType.Button' $true)
   Ask-Operator 'Create and switch' 'Create G03 Test Film B with a different script. Switch A to B and back via the project list. Verify the screenplay and scene list never mix.'
+  Ask-Operator 'Encrypted new movie' 'Create one additional movie using Encrypt this new movie on this Windows account. Use a TEST-ONLY passphrase, enter an idea or screenplay, save, lock, unlock and re-open it. The title remains visible but its private content should require the passphrase.'
   Ask-Operator 'Lock and unlock' 'Lock one test movie with a test-only passphrase, verify access is denied, then unlock it. The warning should say files on disk are NOT encrypted.'
   Ask-Operator 'Open editing window' 'Select Edit Film and open the separate Post-Production window. Verify Export remains unavailable and opening the editor does not modify source.'
   Ask-Operator 'Close and restart' 'Close the NVP window normally, then return here and enter PASS once it has exited.'
@@ -123,7 +141,7 @@ try {
   $script:app=$null
   Start-IsolatedNvp
   $uia+=@(Check-Uia 'New Movie' 'ControlType.Button' $true)
-  Ask-Operator 'Saved movies after restart' 'Choose Resume Working and confirm both test movies and their scripts are intact. Confirm the locked movie still requires unlocking.'
+  Ask-Operator 'Saved movies after restart' 'Choose Resume Working and confirm all test movies, including the encrypted one, retained their scripts. The encrypted movie must demand the passphrase after restart. No plaintext export/filming is allowed.'
   Ask-Operator 'Accessibility after restart' 'Try keyboard-only navigation and a screen reader in the restarted UI; verify New Movie, Resume, project switching, Lock and Edit Film are navigable.'
   $fail=@($script:checks|Where-Object {$_.result -ne 'PASS'})
   $record=[ordered]@{
@@ -137,7 +155,9 @@ try {
     operator_checks=$script:checks
     all_operator_checks_passed=($fail.Count -eq 0)
     windows_user_dpapi_archive_smoke_passed=$true
-    active_project_data_encryption_accepted=$false
+    new_live_encrypted_film_restart_smoke_passed=$true
+    legacy_project_data_encryption_accepted=$false
+    protected_external_workers_accepted=$false
     lu_model_integration_deferred=$true
     physical_radeon_inference_tested=$false
   }
