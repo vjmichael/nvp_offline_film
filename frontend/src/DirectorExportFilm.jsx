@@ -23,7 +23,6 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const [busy,setBusy]=useState(false);
-  const [locked,setLocked]=useState(false);
   const task=useRef(null);
   const alive=useRef(true);
   const refresh=async ()=>{
@@ -38,7 +37,6 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
     refresh().catch(e=>{
       if(!alive.current)return;
       setError(e.message);
-      if(movie.encrypted)setLocked(true);
     });
     return()=>{alive.current=false};
   },[base,movie.revision]);
@@ -62,7 +60,7 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
   const withinProfile=length>0&&length<=30&&
     Math.abs(length*24-Math.round(length*24))<.0001;
   const ready=edit&&edit.revision>0&&edit.clips?.length>0&&
-    !edit.missing_sources?.length&&withinProfile&&!hasActive&&!busy&&!locked;
+    !edit.missing_sources?.length&&withinProfile&&!hasActive&&!busy;
   async function start(){
     if(!ready)return;
     if(!window.confirm('Finish this movie from your saved edit? '+
@@ -109,11 +107,6 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
       <div><span>Shots in film</span><strong>{edit?.clips?.length||0}</strong></div>
       <div><span>Picture and sound</span><strong>24 frames/second · Stereo</strong></div>
     </div>
-    {locked&&<p className="director-export-warning" role="alert">
-      This protected movie cannot yet be saved as a finished video on this
-      installation. Your scenes, editing choices and original recordings
-      remain safe inside your protected project.
-    </p>}
     {edit?.missing_sources?.length>0&&<div className="director-export-warning"
       role="alert">An original recording is unavailable. Your edit is safe,
       but NVP will not replace missing footage with an invented image.
