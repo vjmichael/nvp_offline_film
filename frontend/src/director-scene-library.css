@@ -1,0 +1,46 @@
+/* G04 is a creative Scene Library, not an engineering/admin console. */
+.director-library-grid{display:grid;grid-template-columns:minmax(195px,270px) minmax(0,1fr);gap:22px;margin-top:22px}
+.director-library-sidebar{min-width:0;display:flex;flex-direction:column;gap:12px}
+.director-library-sidebar>h3{font-size:17px;margin:0 0 5px}
+.director-scene-buttons{display:flex;flex-direction:column;gap:8px;max-height:520px;overflow:auto}
+.director-scene-buttons button{background:#2a2c36;color:#f1e8df;border:1px solid #484650;border-radius:11px;padding:13px;text-align:left;display:flex;flex-direction:column;gap:5px}
+.director-scene-buttons button.selected{border-color:#e8bc8c;background:#443936}
+.director-scene-buttons button small{font-size:10px;letter-spacing:.1em;color:#e8bc8c}
+.director-scene-buttons button span{font-size:12px;color:#b7b7c3}
+.director-add-scene{width:100%}
+.director-bible{border:1px solid #514b51;background:#292b36;padding:13px;border-radius:11px}
+.director-bible summary,.director-script-source summary,.director-dialogue summary{cursor:pointer;color:#edc69d;font-weight:700}
+.director-bible-group{padding-top:11px}
+.director-bible-group h4,.director-approved-details h4{margin:5px 0;font-size:13px}
+.director-bible-group ul,.director-approved-details ul{padding-left:21px;margin:7px 0}
+.director-bible-group li,.director-approved-details li{line-height:1.6;font-size:13px}
+.director-scene-workspace{min-width:0}
+.director-stage-preview{min-height:200px;padding:25px;border-radius:13px;border:1px dashed #5b5b64;background:#1c2129;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#c9c8d1;text-align:center}
+.director-stage-preview span{font-weight:800;font-size:20px}
+.director-stage-preview p{max-width:300px;line-height:1.5;font-size:12px;color:#aeb2bd}
+.director-scene-workspace h3{margin:20px 0 6px;font-size:20px}
+.director-scene-chips{display:flex;gap:7px;flex-wrap:wrap;margin:17px 0}
+.director-scene-chips span{font-size:12px;padding:7px 11px;background:#372c33;border:1px solid #604b4a;border-radius:19px}
+.director-script-source,.director-dialogue{margin:12px 0;border:1px solid #45434e;padding:13px;border-radius:9px}
+.director-script-source pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;max-height:260px;overflow:auto}
+.director-dialogue blockquote{margin:13px 0;border-left:2px solid #ca9c70;padding:5px 12px;line-height:1.55}
+.director-dialogue small{display:block;color:#aeb2bd}
+.director-scene-form,.director-assistant,.director-approved-details{padding:18px;margin:19px 0;background:#282a34;border:1px solid #494651;border-radius:13px}
+.director-scene-form h4,.director-assistant h4{margin:0 0 6px;font-size:17px}
+.director-note-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.director-note-fields label{display:flex;flex-direction:column;gap:6px;color:#ebded4;font-size:12px;min-width:0}
+.director-note-fields input,.director-note-fields textarea,.director-adjust-label input{background:#161a22;border:1px solid #58535c;border-radius:8px;color:#f5ebe0;min-width:0;padding:11px;font:inherit}
+.director-note-fields label:has(textarea){grid-column:1/-1}
+.director-assistant-question{background:#342e35;border-left:3px solid #e0b37b;padding:12px;border-radius:6px}
+.director-proposal{padding:15px 0;border-top:1px solid #504d55;margin-top:15px}
+.director-proposal-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.director-proposal-head span{font-size:11px;color:#d4b99e}
+.director-proposal p{line-height:1.55;font-size:14px}
+.director-proposal-source{font-size:12px!important;color:#c9c3cb}
+.director-adjust-label{display:flex;flex-direction:column;gap:7px;font-size:12px}
+.director-review-alert,.director-message,.director-error{border-radius:9px;padding:13px;margin:12px 0;font-size:13px;line-height:1.6}
+.director-review-alert{background:#382c29;border:1px solid #9d7950}
+.director-message{background:#27372e;border:1px solid #588362}
+.director-error{background:#4a2c34;border:1px solid #a35d6c}
+@media(max-width:1000px){.director-library-grid{grid-template-columns:1fr}.director-scene-buttons{max-height:220px}}
+@media(max-width:550px){.director-note-fields{grid-template-columns:1fr}.director-scene-form,.director-assistant{padding:13px}}
