@@ -77,3 +77,11 @@
 .director-film-clip input[type=number]{max-width:120px}
 .director-film-clip .film-secondary{min-height:34px;padding:6px 11px}
 .director-film-audio-player{width:100%;max-width:100%;margin-top:13px}
+
+.director-film-history{border-top:1px solid #554c58;padding:13px 0;margin-top:15px}
+.director-film-history summary{cursor:pointer;font-size:13px;font-weight:700;color:#ecc392}
+.director-film-history-row{padding:9px 0;border-top:1px solid #4c4a58;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}
+.director-film-history-row button{min-height:33px;padding:7px 12px}
+.director-film-takes-head{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap}
+.director-film-takes-head h3{margin:0}
+.director-film-audio-mark{position:absolute;top:2px;bottom:2px;border-radius:3px;background:#77bfa8;opacity:.9}
