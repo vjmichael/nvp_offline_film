@@ -1,4 +1,5 @@
 """DA-03 host launch/custody composition contracts; not kernel acceptance."""
+import subprocess
 from unittest.mock import Mock, patch
 
 import pytest
@@ -234,3 +235,40 @@ def test_worker_wait_exact_deadline_is_not_an_overrun():
                side_effect=[100.0, 101.0, 103.0]):
         result = LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     assert result["worker_exit_verified"] is True
+
+
+def test_reap_timeout_retries_without_reissuing_one_use_kernel_kill():
+    """A verified empty cgroup remains verified when child wait times out."""
+    child = Mock(returncode=None)
+    child.wait.side_effect = [subprocess.TimeoutExpired("worker", 1), 0]
+    custody = Mock()
+    custody.stop_and_verify.return_value = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    session = LinuxFilmingSession("/group", child, custody)
+    with pytest.raises(RuntimeError, match="worker exit unverified"):
+        session.stop_and_verify(timeout=1)
+    child.returncode = -9
+    receipt = session.stop_and_verify(timeout=1)
+    assert receipt["worker_exit_verified"] is True
+    assert receipt["worker_returncode"] == -9
+    custody.stop_and_verify.assert_called_once()
+
+
+def test_unverified_kernel_receipt_never_cached_for_recovery():
+    child = Mock(returncode=-9)
+    custody = Mock()
+    custody.stop_and_verify.side_effect = [
+        {"process_tree_custody_verified": True, "empty_group_verified": False,
+         "scope": "linux-cgroup-v2"},
+        {"process_tree_custody_verified": True, "empty_group_verified": True,
+         "scope": "linux-cgroup-v2"},
+    ]
+    session = LinuxFilmingSession("/group", child, custody)
+    with pytest.raises(RuntimeError, match="affirmative Linux"):
+        session.stop_and_verify()
+    assert session._verified_tree_receipt is None
+    session.stop_and_verify()
+    assert custody.stop_and_verify.call_count == 2
