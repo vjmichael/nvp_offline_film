@@ -6,6 +6,7 @@ It does not grant publication authority or reconstruct custody after restart.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import subprocess
 import time
@@ -39,6 +40,8 @@ class LinuxFilmingSession:
         """Kill the entire cgroup before waiting on the direct child."""
         # One deadline covers kernel termination AND worker reaping.
         # Never grant a second full timeout after the kernel phase.
+        if type(timeout) not in (float, int) or not math.isfinite(timeout) or not 0 < timeout <= 60:
+            raise ValueError("Bounded positive filming shutdown deadline required")
         started = time.monotonic()
         receipt = self.custody.stop_and_verify(timeout=timeout)
         if (not isinstance(receipt, dict)
