@@ -265,6 +265,7 @@ class ProtectedCyclesSupervisor:
                     raise ProtectedCyclesError("Blender output length changed")
                 _verify_png(png)
                 if cancel is not None and cancel.is_set():
+                    cancelled=True
                     raise ProtectedCyclesError("Creator cancelled render before encryption")
                 grant=self.store.worker_grant(
                     pid,token,output_name,"write_original",human_approved=True)
