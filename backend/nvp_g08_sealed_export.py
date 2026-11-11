@@ -141,21 +141,29 @@ class G08SealedDelivery:
         return self._change(pid,token,update)
 
     def _reconcile(self,pid,token):
-        # A previous process has no live thread in this host. Its incomplete
-        # record is not proof that a finished movie was ever delivered.
+        # Read-only polling must NOT publish a fresh encrypted SQLite HEAD.
+        # The orphan check is a read; only genuine interrupted work creates
+        # a new durable protected revision after unlock/restart.
         with self._guard:
             active={job for job,(owner,thread) in self._jobs.items()
                     if owner==pid and thread.is_alive()}
+        def stale(db,tables):
+            if "g08_sealed_export_jobs" not in tables:return []
+            return [row["id"] for row in db.execute(
+                """SELECT id FROM g08_sealed_export_jobs
+                   WHERE status IN ('queued','rendering','verifying')""")
+                   if row["id"] not in active]
+        missing=self._read(pid,token,stale)
+        if not missing:return
         def fix(db,key,folder):
-            rows=db.execute("""SELECT id FROM g08_sealed_export_jobs
-                WHERE status IN ('queued','rendering','verifying')""").fetchall()
-            for row in rows:
-                if row["id"] not in active:
-                    db.execute("""UPDATE g08_sealed_export_jobs
-                      SET status='interrupted',
-                          issue='An earlier film export was interrupted.',
-                          updated_at=? WHERE id=?""",(_now(),row["id"]))
-        return self._change(pid,token,fix)
+            for job in missing:
+                db.execute("""UPDATE g08_sealed_export_jobs
+                  SET status='interrupted',
+                      issue='An earlier film export was interrupted.',
+                      updated_at=?
+                  WHERE id=? AND status IN ('queued','rendering','verifying')""",
+                  (_now(),job))
+        self._change(pid,token,fix)
 
     def start(self,pid,expected_revision,token):
         self._check(pid,token)
