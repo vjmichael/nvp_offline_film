@@ -74,6 +74,10 @@ export default function FilmmakerHome() {
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const [serviceAvailable,setServiceAvailable]=useState(false);
+  const [canEncrypt,setCanEncrypt]=useState(false);
+  const [encryptMovie,setEncryptMovie]=useState(false);
+  const [moviePassphrase,setMoviePassphrase]=useState('');
+  const [moviePassphraseAgain,setMoviePassphraseAgain]=useState('');
   const dialogFocus=useDialogFocus(flow==='welcome');
   const lockFocus=useDialogFocus(!!lockTarget);
 
@@ -88,6 +92,7 @@ export default function FilmmakerHome() {
       .then(([status,list])=>{
         if (!mounted) return;
         setServiceAvailable(status.status==='ready');
+        setCanEncrypt(status.capabilities?.project_file_encryption==='new_windows_movies_only');
         setProjects(list);
       }).catch(()=>{if(mounted)setError('NVP is not connected. Your saved movie remains on this computer.');});
     return ()=>{mounted=false};
@@ -113,7 +118,7 @@ export default function FilmmakerHome() {
       request('/projects').then(list=>setProjects(list)).catch(()=>{});
     };
     const verify=()=>{
-      request('/projects/'+id).catch(error=>{
+      request('/projects/'+id+(project.encrypted?'/live':'')).catch(error=>{
         if(active&&(error.status===423||error.status===404))revoke();
       });
     };
@@ -129,7 +134,7 @@ export default function FilmmakerHome() {
       window.removeEventListener('focus',verify);
       window.clearInterval(poll);
     };
-  },[project?.id]);
+  },[project?.id,project?.encrypted]);
   async function perform(fn) {
     if(busy)return;
     setBusy(true);setError('');setNotice('');
@@ -143,6 +148,7 @@ export default function FilmmakerHome() {
   function beginMovie() {
     if(!confirmLeavingUnsaved())return;
     setProject(null);setFlow('new');setAskMode(true);setError('');setNotice('');
+    setEncryptMovie(false);setMoviePassphrase('');setMoviePassphraseAgain('');
   }
   function goPhase(next, movieId=project?.id) {
     setPhase(next);
@@ -166,7 +172,8 @@ export default function FilmmakerHome() {
       setLockTarget(record);setLockAction('unlock');setPassphrase('');setConfirmPhrase('');
       return;
     }
-    await perform(async()=>{attachMovie(await request('/projects/'+id))});
+    await perform(async()=>{attachMovie(await request(
+      '/projects/'+id+(record?.encrypted?'/live':'')))});
   }
   async function unlockMovie(event) {
     event.preventDefault();
@@ -175,7 +182,8 @@ export default function FilmmakerHome() {
       const id=lockTarget.id;
       setLockTarget(null);setPassphrase('');
       await refreshProjects();
-      attachMovie(await request('/projects/'+id));
+      attachMovie(await request(
+        '/projects/'+id+(lockTarget.encrypted?'/live':'')));
     });
   }
   async function protectOrRelock(event) {
@@ -198,9 +206,15 @@ export default function FilmmakerHome() {
       const name=title.trim();
       if (!name)throw new Error('Give your movie a title.');
       if(mode==='script'&&!script.trim())throw new Error('Upload or paste your script.');
-      const movie=await request('/projects','POST',{
-        title:name,idea:idea.trim(),screenplay:mode==='script'?script:''
+      if(encryptMovie&&(!canEncrypt||moviePassphrase.length<12||
+          moviePassphrase!==moviePassphraseAgain)){
+        throw new Error('Enter and confirm a movie passphrase of at least 12 characters.');
+      }
+      const movie=await request(encryptMovie?'/projects/encrypted':'/projects','POST',{
+        title:name,idea:idea.trim(),screenplay:mode==='script'?script:'',
+        ...(encryptMovie?{passphrase:moviePassphrase}:{})
       });
+      setMoviePassphrase('');setMoviePassphraseAgain('');
       await refreshProjects();
       attachMovie(movie);
       goPhase('scenes',movie.id);
@@ -211,7 +225,8 @@ export default function FilmmakerHome() {
   }
   async function saveScript() {
     await perform(async()=>{
-      const next=await request('/projects/'+project.id+'/screenplay','PUT',{
+      const next=await request('/projects/'+project.id+
+        (project.encrypted?'/live/screenplay':'/screenplay'),'PUT',{
         screenplay:script,expected_revision:project.revision
       });
       attachMovie(next);
@@ -225,6 +240,8 @@ export default function FilmmakerHome() {
   }
   async function suggestShots(scene) {
     await perform(async()=>{
+      if(project.encrypted)throw new Error(
+        'Protected filming workers remain disabled until host authorization is connected.');
       const next=await request('/projects/'+project.id+'/scenes/'+scene.id+'/shot-plan','POST');
       attachMovie(next);setSelectedScene(scene.id);goPhase('film');
       setNotice('Shot suggestions saved. No performance has been filmed.');
@@ -237,11 +254,12 @@ export default function FilmmakerHome() {
   const scene=project?.scenes?.find(x=>x.id===selectedScene)||project?.scenes?.[0]||null;
   const dirty=project&&script!==project.screenplay;
   const targetProject=projects.find(p=>p.id===project?.id);
-  const postUrl=project?'/postproduction.html?project='+encodeURIComponent(project.id):'#';
+  const postUrl=project?'/postproduction.html?project='+encodeURIComponent(project.id)+
+    (project.encrypted?'&encrypted=1':''):'#';
 
   return <div className="film-shell">
     <aside className="film-sidebar" aria-label="Your movie projects">
-      <button className="film-brand" onClick={showWelcome} aria-label="NVP home">NVP <span>FILM</span></button>
+      <button className="film-brand" onClick={()=>showWelcome()} aria-label="NVP home">NVP <span>FILM</span></button>
       <button className="film-new" onClick={beginMovie} disabled={busy}>+ New Movie</button>
       <div className="film-sidebar-label">YOUR MOVIES</div>
       <div className="film-project-list">
@@ -250,7 +268,7 @@ export default function FilmmakerHome() {
           <button className={'film-project '+(project?.id===p.id?'selected':'')}
             onClick={()=>openMovie(p.id)} title={p.locked&&!p.unlocked?'Unlock to resume':'Resume movie'}
             aria-label={(p.locked&&!p.unlocked?'Locked movie: ':'Resume movie: ')+p.title}>
-            <span aria-hidden="true">{p.locked&&!p.unlocked?'🔒':p.locked?'🔓':'🎬'}</span>
+            <span aria-hidden="true">{p.encrypted?'🔐':p.locked&&!p.unlocked?'🔒':p.locked?'🔓':'🎬'}</span>
             <span>{p.title}</span>
           </button>
           {p.locked&&p.unlocked&&<button className="film-mini" title={'Lock '+p.title}
@@ -348,7 +366,27 @@ export default function FilmmakerHome() {
             <textarea id="new-film-context" rows={3} maxLength={10000} value={idea}
               onChange={e=>setIdea(e.target.value)}/>
           </>}
-          <div className="film-actions"><button className="film-secondary" onClick={showWelcome}>Back</button>
+          {canEncrypt&&<div className="film-encryption-choice">
+            <label htmlFor="new-film-encrypted" className="film-encryption-label">
+              <input type="checkbox" id="new-film-encrypted" checked={encryptMovie}
+                onChange={e=>setEncryptMovie(e.target.checked)}/>
+              Encrypt this new movie on this Windows account
+            </label>
+            <p className="film-hint">Encrypts this movie's screenplay and imported sources.
+              The movie title remains visible. Keep your passphrase and Windows account
+              credentials: both are needed for recovery.</p>
+            {encryptMovie&&<>
+              <label htmlFor="new-film-password">Movie passphrase</label>
+              <input id="new-film-password" type="password" autoComplete="new-password"
+                value={moviePassphrase} minLength={12} maxLength={256}
+                onChange={e=>setMoviePassphrase(e.target.value)}/>
+              <label htmlFor="new-film-password-confirm">Confirm movie passphrase</label>
+              <input id="new-film-password-confirm" type="password" autoComplete="new-password"
+                value={moviePassphraseAgain} minLength={12} maxLength={256}
+                onChange={e=>setMoviePassphraseAgain(e.target.value)}/>
+            </>}
+          </div>}
+          <div className="film-actions"><button className="film-secondary" onClick={()=>showWelcome()}>Back</button>
             <button className="film-primary" onClick={createMovie} disabled={busy||!title.trim()||(mode==='script'&&!script.trim())}>
               Next →</button></div>
         </div>
@@ -357,7 +395,9 @@ export default function FilmmakerHome() {
       {flow==='working'&&project&&<div className="film-page">
         <div className="film-film-head">
           <div><div className="film-eyebrow">YOUR MOVIE</div><h1>{project.title}</h1>
-            <p className="film-muted">{project.idea||'Develop your story one scene at a time.'}</p></div>
+            <p className="film-muted">{project.idea||'Develop your story one scene at a time.'}</p>
+            {project.encrypted&&<p className="film-hint" role="status">Encrypted movie.
+              Film and rendering workers are unavailable until protected production is connected.</p>}</div>
           <div>
             {targetProject?.locked?<button className="film-secondary" onClick={()=>startLock('lock',targetProject)}>Lock Movie</button>
               :<button className="film-secondary" onClick={()=>startLock('protect',{id:project.id,title:project.title})}>Lock in NVP</button>}
@@ -413,7 +453,8 @@ export default function FilmmakerHome() {
           <div className="film-coverage">{['Wide shot','Medium shot','Close-up'].map(v=><div key={v}>
             <div className="film-coverage-preview">No footage recorded</div><strong>{v}</strong>
           </div>)}</div>
-          {scene&&<div className="film-actions"><button className="film-secondary" disabled={busy}
+          {scene&&<div className="film-actions"><button className="film-secondary" disabled={busy||project.encrypted}
+            title={project.encrypted?'Protected workers not yet integrated':undefined}
             onClick={()=>suggestShots(scene)}>Save Shot Suggestions</button></div>}
           <p role="status" className="film-hint">Production capture is not connected to this filmmaker screen yet. These are suggestions, not recorded film.</p>
         </section>}
