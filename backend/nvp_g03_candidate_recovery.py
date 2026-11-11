@@ -19,8 +19,8 @@ import sys
 from backend.nvp_g03_legacy_migration import MigrationRefused
 from backend.nvp_g03_live_store import LiveFilmStore
 
-_ID = re.compile(r"[a-f0-9]{32}\\Z")
-_SHA = re.compile(r"[a-f0-9]{64}\\Z")
+_ID = re.compile(r"[a-f0-9]{32}\Z")
+_SHA = re.compile(r"[a-f0-9]{64}\Z")
 
 
 def _verified_inventory(doc, pid):
@@ -118,7 +118,7 @@ def reopen_known_originals(candidate_root, pid, passphrase, inventory):
             if total > 2*1024*1024*1024:
                 raise MigrationRefused("Recovery exceeds source archive budget")
             digest.update(name.encode("utf8"))
-            digest.update(b"\\0")
+            digest.update(b"\0")
             digest.update(bytes.fromhex(sha))
         return {
             "format":"nvp.g03.known_source_recovery.v1",
