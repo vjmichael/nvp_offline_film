@@ -50,7 +50,10 @@ def _pinned_command():
     if getattr(sys,"frozen",False):
         return [str(exe),"--g03-protected-scene-worker"]
     # Not an arbitrary imported script; one fixed versioned NVP module.
-    return [str(exe),"-B","-m","tools.nvp_g03_protected_scene_worker"]
+    trusted=Path(__file__).resolve().parents[1]/"tools"/"nvp_g03_protected_scene_worker.py"
+    if not trusted.is_file() or trusted.is_symlink():
+        raise ProtectedWorkerError("Reviewed native scene script unavailable")
+    return [str(exe),"-B",str(trusted)]
 
 
 def _stream_read(file, maximum, output, errors):

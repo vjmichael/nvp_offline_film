@@ -34,8 +34,11 @@ def _binary_stdio():
         raise RuntimeError("Binary worker pipe unavailable")
     import ctypes
     import msvcrt
+    kernel=ctypes.windll.kernel32
+    kernel.GetStdHandle.restype=ctypes.c_void_p
+    kernel.GetStdHandle.argtypes=[ctypes.c_ulong]
     def fd(standard,mode,flags):
-        handle=ctypes.windll.kernel32.GetStdHandle(standard)
+        handle=kernel.GetStdHandle(standard)
         if not handle or handle==ctypes.c_void_p(-1).value:
             raise RuntimeError("Native Windows Job standard pipe missing")
         return os.fdopen(msvcrt.open_osfhandle(handle,flags|os.O_BINARY),
