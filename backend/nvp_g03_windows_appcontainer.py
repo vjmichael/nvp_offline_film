@@ -305,8 +305,8 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
             if not kernel.CreateProcessW(str(exe),argv,None,None,True,flags,
                    C.cast(block,W.LPVOID),str(work),C.byref(si),C.byref(pi)):
                 _check("CreateProcessW AppContainer")
-            ph=pywintypes.HANDLE(pi.hProcess.value)
-            thread=pywintypes.HANDLE(pi.hThread.value)
+            ph=pywintypes.HANDLE(int(pi.hProcess))
+            thread=pywintypes.HANDLE(int(pi.hThread))
             job=win32job.CreateJobObject(None,"NVP-AC-"+secrets.token_hex(10))
             info=win32job.QueryInformationJobObject(job,win32job.JobObjectExtendedLimitInformation)
             info["BasicLimitInformation"]["LimitFlags"]|=0x2000|0x200
