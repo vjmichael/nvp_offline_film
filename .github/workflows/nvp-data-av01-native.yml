@@ -11,6 +11,9 @@ on:
       - 'frontend/src/ExactFilmTimeShotPanel.jsx'
       - 'tests/test_nvp_exact_time_shots.py'
       - 'backend/nvp_data_first_filming.py'
+      - 'backend/nvp_filming_linux_session.py'
+      - 'backend/nvp_filming_cgroup_*.py'
+      - 'tests/test_nvp_filming_*.py'
       - 'backend/nvp_imported_audio.py'
       - 'tests/test_nvp_imported_audio.py'
       - 'backend/nvp_final_2d_native.py'
@@ -90,6 +93,14 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_plan02b_native_capture.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02b_original_clock_binding.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02c_native_camera_ai.py' -v
+      - name: DA-03 Linux filming session and cgroup custody contracts (not kernel acceptance)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<10'
+          python -m compileall -q backend/nvp_filming_linux_session.py backend/nvp_filming_cgroup_custody.py backend/nvp_filming_cgroup_launch.py
+          python -m pytest -q tests/test_nvp_filming_linux_session.py
       - name: Existing frozen source/camera/provenance regressions
         shell: bash
         run: |
