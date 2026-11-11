@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from backend.nvp_studio import Studio
+from backend.nvp_g04_preproduction import G04Preproduction
 from backend.nvp_screenplay_review import ScreenplayContinuityReview
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
@@ -79,7 +80,8 @@ async def film_project_access_guard(request: Request, call_next):
             allowed=(request.method=="POST" and tail=="lock") or (
                 request.method=="GET" and tail in {"live","live/recovery"}) or (
                 request.method=="PUT" and tail=="live/screenplay") or (
-                request.method=="POST" and tail=="live/source")
+                request.method=="POST" and tail=="live/source") or (
+                tail=="live/preproduction" or tail.startswith("live/preproduction/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -324,6 +326,66 @@ def get_project(project_id: str):
 @app.put("/api/projects/{project_id}/screenplay")
 def save_screenplay(project_id: str, payload: ScreenplayUpdate):
     return run(lambda: studio.save_screenplay(project_id, payload.screenplay, payload.expected_revision))
+
+
+# G04: director's Scene Library and approved Production Bible.
+# The model only suggests; no renderer, source write, or Take permission is
+# exposed from this surface. Secured movies use sealed in-memory SQLite.
+class G04SceneNotes(BaseModel):
+    notes: dict[str,str]
+    expected_notes_revision: int = Field(ge=0)
+    expected_screenplay_revision: int = Field(ge=0)
+
+class G04SceneAdd(BaseModel):
+    expected_screenplay_revision: int = Field(ge=0)
+
+class G04SuggestionDecision(BaseModel):
+    decision: str
+    expected_screenplay_revision: int = Field(ge=0)
+    approved_value: str | None = Field(default=None,max_length=1500)
+
+def _director_preproduction(project_id: str, request: Request):
+    secured=live_films().exists(project_id)
+    return G04Preproduction(studio,
+        live=live_films() if secured else None,
+        token=request.cookies.get(COOKIE) if secured else None)
+
+@app.get("/api/projects/{project_id}/preproduction")
+@app.get("/api/projects/{project_id}/live/preproduction")
+def g04_scene_library(project_id: str,request: Request):
+    return run(lambda: _director_preproduction(project_id,request).view(project_id))
+
+@app.post("/api/projects/{project_id}/preproduction/scenes")
+@app.post("/api/projects/{project_id}/live/preproduction/scenes")
+def g04_add_scene(project_id: str,request: Request,payload: G04SceneAdd):
+    return run(lambda:_director_preproduction(project_id,request).add_scene(
+        project_id,payload.expected_screenplay_revision))
+
+@app.put("/api/projects/{project_id}/preproduction/scenes/{scene_id}")
+@app.put("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}")
+def g04_edit_scene(project_id:str,scene_id:str,request:Request,
+                   payload:G04SceneNotes):
+    return run(lambda:_director_preproduction(project_id,request).save_scene(
+        project_id,scene_id,payload.notes,payload.expected_notes_revision,
+        payload.expected_screenplay_revision))
+
+@app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/suggestions")
+@app.post("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}/suggestions")
+def g04_ask_ai(project_id:str,scene_id:str,request:Request):
+    try:
+        return run(lambda:_director_preproduction(project_id,request).generate(
+            project_id,scene_id))
+    except LocalModelUnavailable:
+        raise HTTPException(status_code=503,
+            detail="AI assistance is unavailable. You can still develop your scene.")
+
+@app.post("/api/projects/{project_id}/preproduction/suggestions/{proposal_id}/decision")
+@app.post("/api/projects/{project_id}/live/preproduction/suggestions/{proposal_id}/decision")
+def g04_review_ai(project_id:str,proposal_id:str,request:Request,
+                  payload:G04SuggestionDecision):
+    return run(lambda:_director_preproduction(project_id,request).decide(
+        project_id,proposal_id,payload.decision,
+        payload.expected_screenplay_revision,payload.approved_value))
 
 
 @app.post("/api/projects/{project_id}/scenes/{scene_id}/shot-plan")
