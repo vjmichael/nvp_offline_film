@@ -305,6 +305,7 @@ def create_archive(project_id: str, source_root, destination,
     try:
         key, meta = _key_create(passphrase, project_id)
         entries = []
+        source_witnesses = []
         for name, path, initial in _source_files(root):
             opaque = _token(name, key)
             ciphertext = stage / (opaque + ".nvpsealed")
@@ -323,6 +324,7 @@ def create_archive(project_id: str, source_root, destination,
             if verify != witness:
                 raise VaultError("Encrypted asset failed independent readback")
             entries.append({"name":name, "token":opaque, **witness})
+            source_witnesses.append((name, path, witness))
         manifest = {"format":FORMAT,"project_id":project_id,
                     "entries":entries,"source_files":len(entries)}
         raw = json.dumps(manifest, sort_keys=True,
@@ -337,6 +339,23 @@ def create_archive(project_id: str, source_root, destination,
         # Check the complete manifest and every authenticated original
         # without relying on plaintext names being visible in the vault.
         verify_archive(project_id, stage, passphrase)
+        # Recheck *every* original at the moment of archive promotion, not
+        # merely just after its initial individual encryption. A concurrent
+        # filmmaker edit later in a long archive must invalidate the package.
+        for name, original, expected in source_witnesses:
+            if not stat.S_ISREG(_no_link(original).st_mode):
+                raise VaultError("Original source changed while archiving")
+            checksum = hashlib.sha256()
+            with original.open("rb") as check:
+                size = 0
+                while True:
+                    piece = check.read(READ_SIZE)
+                    if not piece: break
+                    checksum.update(piece)
+                    size += len(piece)
+            if (size != expected["size_bytes"] or
+                    checksum.hexdigest() != expected["sha256"]):
+                raise VaultError("Original source changed while archiving")
         if dest.exists():
             raise VaultError("Archive destination was created concurrently")
         os.replace(stage, dest)
