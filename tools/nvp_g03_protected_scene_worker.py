@@ -8,6 +8,8 @@ written to a working plaintext file by this worker.
 It does not run arbitrary Blender scripts or claim full film rendering.
 """
 from __future__ import annotations
+import io
+import os
 import re
 import struct
 import sys
@@ -16,6 +18,30 @@ MAX_SOURCE=4*1024*1024
 MAX_OUTPUT=8*1024*1024
 MAGIC_IN=b"NVPUSDIN1"
 MAGIC_OUT=b"NVPUSDOUT1"
+
+
+def _binary_stdio():
+    """Recover the real inherited OS pipes in a --windowed PyInstaller EXE.
+
+    Windows PyInstaller deliberately replaces sys.stdin/sys.stdout with None.
+    The host has already created suspended child std handles inside its native
+    Job Object; use those verified Win32 handles, not a plaintext file.
+    """
+    if sys.stdin is not None and sys.stdout is not None:
+        return sys.stdin.buffer,sys.stdout.buffer,(
+            sys.stderr.buffer if sys.stderr is not None else None)
+    if sys.platform != "win32":
+        raise RuntimeError("Binary worker pipe unavailable")
+    import ctypes
+    import msvcrt
+    def fd(standard,mode,flags):
+        handle=ctypes.windll.kernel32.GetStdHandle(standard)
+        if not handle or handle==ctypes.c_void_p(-1).value:
+            raise RuntimeError("Native Windows Job standard pipe missing")
+        return os.fdopen(msvcrt.open_osfhandle(handle,flags|os.O_BINARY),
+                         mode,buffering=0)
+    return (fd(-10,"rb",os.O_RDONLY),fd(-11,"wb",os.O_WRONLY),
+            fd(-12,"wb",os.O_WRONLY))
 
 
 def read_exact(file, n):
@@ -72,7 +98,7 @@ def process(source):
 
 
 def run():
-    inp=sys.stdin.buffer
+    inp,out,err=_binary_stdio()
     header=read_exact(inp,len(MAGIC_IN)+8)
     if header[:len(MAGIC_IN)]!=MAGIC_IN:
         raise ValueError("Unrecognized host worker protocol")
@@ -83,8 +109,8 @@ def run():
     if inp.read(1):
         raise ValueError("Trailing worker input rejected")
     rendered=process(raw)
-    sys.stdout.buffer.write(MAGIC_OUT+struct.pack("!Q",len(rendered))+rendered)
-    sys.stdout.buffer.flush()
+    out.write(MAGIC_OUT+struct.pack("!Q",len(rendered))+rendered)
+    out.flush()
     return 0
 
 
@@ -93,8 +119,13 @@ def worker_entry():
         return run()
     except Exception:
         # Don't echo source text, paths, Python traceback or project data.
-        sys.stderr.buffer.write(b"NVP_PROTECTED_SCENE_WORKER_REFUSED\n")
-        sys.stderr.buffer.flush()
+        try:
+            _in,_out,err=_binary_stdio()
+            if err is not None:
+                err.write(b"NVP_PROTECTED_SCENE_WORKER_REFUSED\n")
+                err.flush()
+        except Exception:
+            pass
         return 3
 
 
