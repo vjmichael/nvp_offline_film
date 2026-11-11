@@ -147,7 +147,9 @@ export default function DirectorAVMonitor({movie,editRevision,onPositionChange})
         'The audio device could not establish the source sound rate.');
       await context.resume();
       const initial=Math.floor(positionRef.current*RATE);
-      const startSample=Math.floor(initial/AUDIO_CHUNK)*AUDIO_CHUNK;
+      // Seek from the director's exact source sample, not the previous
+      // half-second chunk: otherwise sound and picture would jump backwards.
+      const startSample=initial;
       const startFrame=Math.floor(startSample/RATE*FPS);
       const gain=context.createGain();
       gain.gain.value=muted?0:1;gain.connect(context.destination);
@@ -164,6 +166,10 @@ export default function DirectorAVMonitor({movie,editRevision,onPositionChange})
           FRAMES_CHUNK,epoch)
       ]);
       if(epoch!==session.current)return;
+      // Source-picture prebuffering can be expensive. Establish the
+      // audio master clock only AFTER the first source images are ready.
+      p.nextAt=p.ctx.currentTime+.75;
+      p.clockAt=p.nextAt;
       await querySound(p,epoch);
       if(epoch!==session.current)return;
       if(p.nextSample<timeline.audio_samples)await querySound(p,epoch);
