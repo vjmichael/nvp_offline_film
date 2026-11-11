@@ -155,6 +155,60 @@ def _background(look):
     return background
 
 
+def _actor_proxy_faces(out,world,original,actor,evaluator,tick,basis,light,
+                       light_color,power,fill,fog):
+    """Actual articulated human proxy, not the G05 cylinder stand-in.
+
+    Joint positions/pose are shared with the native derived USD skeleton.
+    Hair/wardrobe have stable ActorID-specific material decisions. Facial
+    movement is waveform-driven mouth motion, not phoneme recognition.
+    """
+    from pxr import Usd,UsdGeom,Gf
+    root=world.stage.GetPrimAtPath("/World/Objects/"+original["id"])
+    if not root:
+        raise RuntimeError("The original ActorID geometry is absent")
+    transform=UsdGeom.Xformable(root).ComputeLocalToWorldTransform(
+        Usd.TimeCode(float(tick)))
+    positions,pose=evaluator.sample(actor["actor_id"],tick)
+    z=actor["height_scale"];shoulder=actor["shoulder_width"]
+    standard={
+      "Torso":("cylinder",(.27*shoulder,.26*shoulder,.77*z),"wardrobe_color",0),
+      "Head":("sphere",(.29*z,.29*z,.29*z),"skin_color",0),
+      "LeftArm":("cylinder",(.10*shoulder,.10*shoulder,.50*z),"wardrobe_color",6),
+      "RightArm":("cylinder",(.10*shoulder,.10*shoulder,.50*z),"wardrobe_color",8),
+      "LeftLeg":("cylinder",(.12*shoulder,.12*shoulder,.58*z),"wardrobe_color",10),
+      "RightLeg":("cylinder",(.12*shoulder,.12*shoulder,.58*z),"wardrobe_color",12),
+      "LeftHand":("sphere",(.11,.11,.11),"skin_color",0),
+      "RightHand":("sphere",(.11,.11,.11),"skin_color",0),
+      "Jaw":("sphere",(.16,.14,.085*(1+pose["jaw"]*1.5)),"skin_color",5),
+      "LeftEye":("sphere",(.06,.06,.06*(1-pose["blink"]*.9)),"eye_color",0),
+      "RightEye":("sphere",(.06,.06,.06*(1-pose["blink"]*.9)),"eye_color",0)}
+    if actor["hair"]!="bald":
+        height={"short":.19,"medium":.25,"long":.38}[actor["hair"]]
+        standard["Hair"]=("sphere",(.31,.31,height),"hair_color",0)
+    focal=world._camera_focal
+    for name,(shape,scale,color_key,joint_index) in standard.items():
+        center=positions.get(name)
+        if center is None:continue
+        angle=pose["rotations"][joint_index][0]
+        vertices,polygons=MESH[shape]
+        world_points=[]
+        for vertex in vertices:
+            p=tuple(vertex[i]*scale[i] for i in range(3))
+            p=_rotate_local(p,(math.degrees(angle),0.,0.))
+            p=tuple(p[i]+center[i] for i in range(3))
+            world_points.append(transform.Transform(Gf.Vec3d(*p)))
+        material=_default_material(actor[color_key])
+        # Human skin and original clothing have separate reflectance
+        # even before a protected Blender/Cycles renderer is admitted.
+        material["kind"]="fabric" if color_key=="wardrobe_color" else "plaster"
+        material["roughness"]=.85 if color_key=="wardrobe_color" else .55
+        distance=math.dist(tuple(transform.Transform(Gf.Vec3d(*center))),
+                           tuple(basis[0]))
+        _append_faces(out,world_points,polygons,material,basis,
+                      focal,light,light_color,power,fill,fog,distance,0)
+
+
 def _one_shot(seg,world,tick,approved):
     look=approved["look"]
     if (approved["sha256"]!=_sha(_json(look).encode("utf8")) or
@@ -169,8 +223,16 @@ def _one_shot(seg,world,tick,approved):
     faces=[]
     from pxr import Usd,UsdGeom,Gf
     clock=Usd.TimeCode(float(tick))
+    performance=getattr(world,"actor_frame_evaluator",None)
     source_by_id={x["id"]:x for x in world.record["stage_objects"]}
+    world._camera_focal=seg["camera"]["focal_mm"]
     for item,prim in world.objects:
+        if performance and item["actor_id"] in performance.cast:
+            _actor_proxy_faces(
+                faces,world,item,performance.cast[item["actor_id"]],
+                performance,tick,basis,light,light_color,
+                sun_power,fill,look["atmosphere"])
+            continue
         if item["shape"] not in MESH:continue
         mat=UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(clock)
         center=mat.ExtractTranslation()
@@ -242,12 +304,24 @@ def render_production_picture(assembly,worlds,tick):
     if not entries:raise RuntimeError("No picture exists at the selected Film Time")
     image=None
     approved_map=assembly.get("production_looks",{})
+    actor_map=assembly.get("actor_performances",{})
     for seg,weight in entries:
         src_tick=seg["source_in_tick"]+tick-seg["start_tick"]
         if not seg["source_in_tick"]<=src_tick<seg["source_out_tick"]:
             raise RuntimeError("An edit tried to leave the original Take")
         world=worlds[seg["take_id"]]
         approved=approved_map.get(seg["take_id"])
+        if approved is None and seg["take_id"] in actor_map:
+            # Actors can be directed independently of set dressing. A
+            # neutral built-in look is a render default, NOT an invented
+            # director-approved environment revision.
+            from backend.nvp_g09_environment import _default
+            from backend.nvp_g09_environment import _json,_sha
+            fallback=_default(seg["take_id"],seg["take_sha256"],
+                              world.record)
+            approved={"revision":0,
+                      "sha256":_sha(_json(fallback).encode("utf8")),
+                      "look":fallback}
         if approved is None:
             # Build a one-shot self-contained subset instead of asking the
             # original G08 renderer to re-evaluate a whole dissolve.
