@@ -230,6 +230,14 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
             ].filter(Boolean).join(' · ')||'Not specified'}</>}/>
           <BibleGroup title="Continuity notes" items={data.bible.continuity||[]}
             render={x=><>{x.origin==='review_suggestion'?'To review: ':''}{x.note}</>}/>
+          <BibleGroup title="Earlier approved story details"
+            items={data.bible.approved_story||[]}
+            render={x=><><strong>{x.name}</strong> · {x.kind}
+              {x.facts?.length>0&&<div className="director-bible-facts">
+                {x.facts.map((fact,index)=><span key={index}>
+                  {fact.name.replaceAll('_',' ')}: {fact.value}
+                </span>)}
+              </div>}</>}/>
         </details>
       </div>
       {selected&&<div className="director-scene-workspace">
