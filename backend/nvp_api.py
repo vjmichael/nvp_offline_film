@@ -11,13 +11,31 @@ from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_render_preflight import preflight_scene
 import uuid
 import re
+import sys
+import base64
+import binascii
 from backend.nvp_project_access import ProjectAccess, COOKIE, SESSION_SECONDS
+from backend.nvp_g03_live_store import LiveFilmStore, LiveFilmError
+from backend.nvp_g03_windows_vault import VaultError
 
 app = FastAPI(title="NVP — Your movie, your way", version="0.3.0-creative-foundation")
 studio = Studio()
 resource_activity = TaskLedger()
 _film_access = None
 _film_access_db = None
+_live_films = None
+_live_films_db = None
+
+def live_films():
+    """One trusted per-Studio encrypted live store, no keys in JavaScript."""
+    global _live_films, _live_films_db
+    source=str(studio.db_path.resolve())
+    if _live_films is None or _live_films_db != source:
+        _live_films=LiveFilmStore(
+            studio.db_path.parent/"nvp_g03_encrypted_live",
+            grant_checker=lambda pid,token: film_access().permitted(pid,token))
+        _live_films_db=source
+    return _live_films
 
 
 def film_access():
@@ -54,6 +72,18 @@ async def film_project_access_guard(request: Request, call_next):
         if not authorized:
             return JSONResponse({"detail": "This movie is locked. Unlock it to continue."},
                                 status_code=423)
+        if live_films().exists(project_id):
+            # Only host-backed encrypted routes may touch a secured movie.
+            # All 55 legacy source/UI/worker project API handlers are denied.
+            tail="/".join(parts[4:])
+            allowed=(request.method=="POST" and tail=="lock") or (
+                request.method=="GET" and tail in {"live","live/recovery"}) or (
+                request.method=="PUT" and tail=="live/screenplay") or (
+                request.method=="POST" and tail=="live/source")
+            if not allowed:
+                return JSONResponse(
+                    {"detail":"Encrypted movie requires its protected director workspace"},
+                    status_code=403)
         if (protected and request.method not in {"GET", "HEAD", "OPTIONS"} and
                 request.headers.get("x-nvp-director") != "1"):
             return JSONResponse({"detail": "Film action requires the local director UI"},
@@ -91,6 +121,16 @@ class NewProject(BaseModel):
     screenplay: str = Field(default="", max_length=1_000_000)
 
 
+class NewEncryptedProject(NewProject):
+    passphrase: str = Field(min_length=12, max_length=256)
+
+
+class NewEncryptedSource(BaseModel):
+    name: str = Field(min_length=1, max_length=240)
+    media_type: str = Field(default="application/octet-stream", max_length=120)
+    base64_data: str = Field(min_length=1, max_length=22_000_000)
+
+
 class ScreenplayUpdate(BaseModel):
     screenplay: str = Field(max_length=1_000_000)
     expected_revision: int = Field(ge=0)
@@ -121,14 +161,17 @@ def status():
             "capabilities": {"project_storage": "ready", "script_breakdown": "basic_fountain",
                              "editable_shots": "ready", "local_llm": "not_connected",
                              "3d_renderer": "not_connected", "voice": "not_connected",
-                             "project_file_encryption": "not_available",
+                             "project_file_encryption": "new_windows_movies_only" if sys.platform=="win32" else "not_available",
                              "3d_stage_planning": "deterministic_proxies_ready",
                              "blender_export": "bpy_script_only_not_executed"}}
 
 
 @app.get("/api/projects")
 def projects(request: Request):
-    return film_access().public_projects(studio.list_projects(), request.cookies.get(COOKIE))
+    rows=film_access().public_projects(studio.list_projects(),request.cookies.get(COOKIE))
+    for row in rows:
+        row["encrypted"]=live_films().exists(row["id"])
+    return rows
 
 
 class FilmPassphrase(BaseModel):
@@ -149,11 +192,18 @@ def protect_movie(project_id: str, payload: FilmPassphrase):
 def unlock_movie(project_id: str, payload: FilmPassphrase, request: Request):
     try:
         token = film_access().unlock(project_id, payload.passphrase)
+        try:
+            if live_films().exists(project_id):
+                live_films().authorize(project_id, payload.passphrase, token)
+        except Exception:
+            film_access().lock(project_id, token)
+            raise
     except KeyError:
         raise HTTPException(status_code=404, detail="Movie not found")
-    except PermissionError:
+    except (PermissionError, VaultError, LiveFilmError):
         raise HTTPException(status_code=403, detail="Unable to unlock movie")
-    response = JSONResponse({"locked": False, "access": "unlocked"})
+    response = JSONResponse({"locked": False, "access": "unlocked",
+                             "encrypted": live_films().exists(project_id)})
     response.set_cookie(COOKIE, token, httponly=True, samesite="strict",
                         secure=request.url.scheme == "https",
                         max_age=SESSION_SECONDS, path="/api")
@@ -164,6 +214,7 @@ def unlock_movie(project_id: str, payload: FilmPassphrase, request: Request):
 def lock_movie(project_id: str, request: Request):
     try:
         result = film_access().lock(project_id, request.cookies.get(COOKIE))
+        live_films().revoke(project_id)
     except (PermissionError, KeyError):
         raise HTTPException(status_code=403, detail="Unable to lock movie")
     response = JSONResponse(result)
@@ -175,6 +226,86 @@ def lock_movie(project_id: str, request: Request):
 @app.post("/api/projects", status_code=201)
 def create_project(payload: NewProject):
     return run(lambda: studio.create_project(payload.title, payload.idea, payload.screenplay))
+
+
+@app.post("/api/projects/encrypted", status_code=201)
+def create_encrypted_movie(payload: NewEncryptedProject, request: Request):
+    """All sensitive fields go straight to encrypted in-memory SQLite.
+
+    The legacy Studio receives only a public title and an empty shell. No
+    media or screenplay is ever first copied into plaintext shared SQLite.
+    """
+    if request.headers.get("x-nvp-director")!="1":
+        raise HTTPException(status_code=403,detail="Director confirmation required")
+    if sys.platform!="win32":
+        raise HTTPException(status_code=501,detail="Windows account encryption unavailable here")
+    # The legacy catalog has only public title metadata; orphan shells on
+    # failure can be removed without losing any private content.
+    shell=studio.create_project(payload.title,"","")
+    pid=shell["id"]
+    try:
+        live_films().create(pid,payload.title,payload.idea,payload.screenplay,
+                            payload.passphrase)
+    except Exception:
+        if not live_films().exists(pid):
+            with studio._connection() as db:
+                db.execute("DELETE FROM projects WHERE id=? AND idea='' AND screenplay=''",
+                           (pid,))
+        raise HTTPException(status_code=503,
+                            detail="Encrypted movie could not be created")
+    # The encrypted payload is durable and readable before granting access.
+    film_access().protect(pid,payload.passphrase)
+    token=film_access().unlock(pid,payload.passphrase)
+    live_films().authorize(pid,payload.passphrase,token)
+    output=live_films().read(pid,token)
+    response=JSONResponse(output,status_code=201)
+    response.set_cookie(COOKIE,token,httponly=True,samesite="strict",
+                        secure=request.url.scheme=="https",
+                        max_age=SESSION_SECONDS,path="/api")
+    return response
+
+
+@app.get("/api/projects/{project_id}/live")
+def encrypted_live_movie(project_id: str, request: Request):
+    try:
+        return live_films().read(project_id,request.cookies.get(COOKIE))
+    except (LiveFilmError, VaultError):
+        raise HTTPException(status_code=423,detail="Encrypted movie unavailable or locked")
+
+
+@app.put("/api/projects/{project_id}/live/screenplay")
+def save_encrypted_screenplay(project_id: str, payload: ScreenplayUpdate,
+                             request: Request):
+    try:
+        return live_films().save_screenplay(
+            project_id,request.cookies.get(COOKIE),
+            payload.screenplay,payload.expected_revision)
+    except (LiveFilmError, VaultError) as exc:
+        raise HTTPException(status_code=409,detail=str(exc))
+
+
+@app.post("/api/projects/{project_id}/live/source")
+def upload_encrypted_original(project_id: str, payload: NewEncryptedSource,
+                              request: Request):
+    try:
+        binary=base64.b64decode(payload.base64_data,validate=True)
+        if len(binary)>16*1024*1024:
+            raise ValueError("WebView source transfer too large; use native supervised capture")
+        return live_films().put_original(
+            project_id,request.cookies.get(COOKIE),
+            payload.name,binary,payload.media_type)
+    except (binascii.Error,ValueError):
+        raise HTTPException(status_code=422,detail="Invalid source content")
+    except (LiveFilmError,VaultError) as exc:
+        raise HTTPException(status_code=409,detail=str(exc))
+
+
+@app.get("/api/projects/{project_id}/live/recovery")
+def encrypted_recovery_receipts(project_id: str,request: Request):
+    try:
+        return live_films().recovery_candidates(project_id,request.cookies.get(COOKIE))
+    except (LiveFilmError,VaultError):
+        raise HTTPException(status_code=423,detail="Encrypted movie unavailable or locked")
 
 
 @app.get("/api/projects/{project_id}")
