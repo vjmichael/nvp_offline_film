@@ -44,3 +44,10 @@
 .director-error{background:#4a2c34;border:1px solid #a35d6c}
 @media(max-width:1000px){.director-library-grid{grid-template-columns:1fr}.director-scene-buttons{max-height:220px}}
 @media(max-width:550px){.director-note-fields{grid-template-columns:1fr}.director-scene-form,.director-assistant{padding:13px}}
+
+.director-speaker-review{padding:16px;margin:16px 0;border:1px solid #83694b;background:#342e30;border-radius:11px}
+.director-speaker-review h4{font-size:16px;margin:0 0 5px}
+.director-speaker-choice{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;border-top:1px solid #5d4d4d;padding:13px 0}
+.director-speaker-choice>strong{min-width:80px}
+.director-speaker-choice label{display:flex;flex-direction:column;gap:5px;flex:1;min-width:170px;font-size:12px}
+.director-speaker-choice select,.director-speaker-choice input{padding:11px;color:#f5eee7;background:#161b24;border:1px solid #6c5a5c;border-radius:8px;font:inherit}
