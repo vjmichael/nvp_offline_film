@@ -11,10 +11,42 @@ be replaced by simulated CI samples or an available microphone name.
 """
 from __future__ import annotations
 import json
+import os
 import struct
 import sys
 
-from tools.nvp_g03_protected_scene_worker import _binary_stdio, read_exact
+
+def _binary_stdio():
+    if sys.stdin is not None and sys.stdout is not None:
+        return sys.stdin.buffer,sys.stdout.buffer,(
+            sys.stderr.buffer if sys.stderr is not None else None)
+    if sys.platform!="win32":
+        raise RuntimeError("Native binary capture pipes unavailable")
+    import ctypes
+    import msvcrt
+    kernel=ctypes.windll.kernel32
+    kernel.GetStdHandle.restype=ctypes.c_void_p
+    kernel.GetStdHandle.argtypes=[ctypes.c_ulong]
+    def inherited(handle_number,mode,flags):
+        handle=kernel.GetStdHandle(handle_number)
+        if not handle or handle==ctypes.c_void_p(-1).value:
+            raise RuntimeError("Native capture pipe missing")
+        return os.fdopen(msvcrt.open_osfhandle(handle,flags|os.O_BINARY),
+                         mode,buffering=0)
+    return (inherited(-10,"rb",os.O_RDONLY),
+            inherited(-11,"wb",os.O_WRONLY),
+            inherited(-12,"wb",os.O_WRONLY))
+
+
+def read_exact(stream,length):
+    result=bytearray()
+    while length:
+        data=stream.read(length)
+        if not data:
+            raise ValueError("Incomplete native capture input")
+        result.extend(data)
+        length-=len(data)
+    return bytes(result)
 
 CAP_IN=b"NVPCAPIN1"
 CAP_OUT=b"NVPCAPOUT1"
