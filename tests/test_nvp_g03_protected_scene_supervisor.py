@@ -48,6 +48,30 @@ class ProtectedSceneTests(unittest.TestCase):
             return True
         self.supervisor=ProtectedSceneSupervisor(self.store,review_authority=check)
 
+    @unittest.skipUnless(os.environ.get("NVP_G03_NATIVE_SANDBOX_PROBE"),
+                         "Native MSVC kernel sandbox probe required")
+    def test_real_appcontainer_native_scene_reopens_encrypted_output(self):
+        native=ProtectedSceneSupervisor(
+            self.store,review_authority=self.supervisor.review_authority,
+            os_isolation_attestor=lambda pid,source,target:True)
+        result=native.run(
+            PID,self.token,"original/scene.usda",
+            "review/camera-coverage.usda","approved-native-"+("1"*32))
+        self.assertEqual(result["state"],"SUCCEEDED")
+        self.assertEqual(result["frames_rendered"],0)
+        self.assertTrue(result["encrypted_output"])
+        self.assertTrue(result["native_job_tree_exited"])
+        scene=self.store.get_original(PID,self.token,"review/camera-coverage.usda")
+        from pxr import Sdf,Usd
+        stage_layer=Sdf.Layer.CreateAnonymous("kernel-verified-scene.usda")
+        self.assertTrue(stage_layer.ImportFromString(scene.decode("utf8")))
+        stage=Usd.Stage.Open(stage_layer)
+        for view in ("Wide","Medium","CloseUp"):
+            self.assertTrue(stage.GetPrimAtPath("/NVP_Coverage/"+view))
+        self.assertEqual(self.store.get_original(PID,self.token,"original/scene.usda"),SOURCE)
+        self.assertEqual(self.store.protected_worker_runs(PID,self.token)[0]["state"],
+                         "SUCCEEDED")
+
     def test_private_scene_refused_before_worker_and_source_grants(self):
         self.assertEqual(SOURCE, SYNTHETIC_SCENE_CI_USDA)
         with patch("backend.nvp_g03_protected_scene_supervisor.launch_contained",
