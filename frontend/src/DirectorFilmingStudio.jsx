@@ -8,7 +8,8 @@ const EVENTS={
   actor:[
     ['walk','Walk'],['jog','Jog'],['run','Run'],['crawl','Crawl'],
     ['gesture','Gesture'],['look','Look toward something'],
-    ['expression','Expression'],['dialogue','Speak a line']],
+    ['expression','Expression'],['dialogue','Speak a line'],
+    ['wardrobe','Change wardrobe or appearance']],
   object:[['prop_move','Move object'],['prop_turn','Turn object'],
           ['prop_action','Interact with object']],
   ambience:[
@@ -65,10 +66,12 @@ function activeEvents(events,seconds){
   return events.filter(x=>x.start_seconds<=seconds&&
     x.end_seconds>=seconds);
 }
-function LookPreview({objects,events,second,views,weather,daylight}){
+function LookPreview({objects,events,second,views,weather,daylight,onContext}){
   const nodeRef=useRef(null);
   const [failed,setFailed]=useState(false);
   const engine=useRef(null);
+  const callback=useRef(onContext);
+  callback.current=onContext;
   useEffect(()=>{
     if(!nodeRef.current)return;
     const root=nodeRef.current;
@@ -123,7 +126,31 @@ function LookPreview({objects,events,second,views,weather,daylight}){
         }
         renderer.setScissorTest(false);
       };
-      engine.current={meshes,scene,renderer,views,events,second,render,sun};
+      engine.current={meshes,scene,renderer,views,events,second,
+        render,sun,cameras,root};
+      const rightClick=(e)=>{
+        e.preventDefault();
+        const state=engine.current;
+        if(!state)return;
+        const bounds=renderer.domElement.getBoundingClientRect();
+        const panel=bounds.width/3;
+        const local=e.clientX-bounds.left;
+        const index=Math.max(0,Math.min(2,Math.floor(local/panel)));
+        const pointer=new THREE.Vector2(
+          (local-index*panel)/panel*2-1,
+          -(e.clientY-bounds.top)/bounds.height*2+1);
+        const ray=new THREE.Raycaster();
+        ray.setFromCamera(pointer,cameras[index]);
+        const found=ray.intersectObjects([...meshes.values()],true);
+        let objectId=null;
+        for(const hit of found){
+          let node=hit.object;
+          while(node&&!node.userData.id)node=node.parent;
+          if(node?.userData.id){objectId=node.userData.id;break;}
+        }
+        callback.current?.(objectId,e.clientX,e.clientY);
+      };
+      renderer.domElement.addEventListener('contextmenu',rightClick);
       if(typeof ResizeObserver!=='undefined'){
         resize=new ResizeObserver(render);resize.observe(root);
       }
@@ -131,6 +158,7 @@ function LookPreview({objects,events,second,views,weather,daylight}){
       setFailed(false);
       return()=>{
         resize?.disconnect();
+        renderer.domElement.removeEventListener('contextmenu',rightClick);
         for(const group of meshes.values()){
           group.traverse(node=>{
             node.geometry?.dispose();node.material?.dispose();
@@ -221,6 +249,13 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   const sessionRef=useRef(null);
   const [micActor,setMicActor]=useState('');
   const [selectedClips,setSelectedClips]=useState([]);
+  const [clipStarts,setClipStarts]=useState({});
+  const [listenUrl,setListenUrl]=useState('');
+  const [aiReady,setAiReady]=useState(false);
+  const [notePopup,setNotePopup]=useState(null);
+  const [noteInstruction,setNoteInstruction]=useState('');
+  const [noteEdits,setNoteEdits]=useState({});
+  const reelRef=useRef(null);
   const [take,setTake]=useState(null);
   const [views,setViews]=useState(standardFrames);
   const [activeView,setActiveView]=useState(0);
@@ -229,6 +264,17 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   const [busy,setBusy]=useState(false);
   const [reload,setReload]=useState(0);
   const busyRef=useRef(false);
+
+  useEffect(()=>{
+    let alive=true;
+    call('/api/creative/models').then(out=>{
+      if(alive)setAiReady(out.state==='available');
+    }).catch(()=>{if(alive)setAiReady(false)});
+    return()=>{alive=false};
+  },[]);
+  useEffect(()=>()=>{
+    if(listenUrl)URL.revokeObjectURL(listenUrl);
+  },[listenUrl]);
 
   useEffect(()=>{
     let active=true;
@@ -246,6 +292,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
     if(!endpoint)return;
     let mounted=true;
     setFilm(null);setStage(null);setTake(null);setError('');
+    setListenUrl('');setNotePopup(null);
     Promise.all([
       call(endpoint),
       call('/api/projects/'+encodeURIComponent(movie.id)+
@@ -255,7 +302,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
       setFilm(f);setStage(s);setDuration(String(f.duration_seconds));
       setSelectedObject(f.stage_objects.find(o=>o.role==='actor')?.id||
         f.stage_objects.find(o=>o.role==='prop')?.id||'');
-      setTime(0);setSelectedClips([]);
+      setTime(0);setSelectedClips([]);setClipStarts({});
     }).catch(err=>{if(mounted)setError(err.message)});
     return()=>{mounted=false};
   },[endpoint,reload,movie.revision]);
@@ -287,7 +334,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
     return()=>cancelAnimationFrame(frame);
   },[playing,film?.duration_seconds]);
 
-  const objects=film?.stage_objects||[];
+  const objects=take?.stage_objects||film?.stage_objects||[];
   const options=useMemo(()=>{
     const target=objects.find(o=>o.id===selectedObject);
     if(target?.role==='actor')return EVENTS.actor;
@@ -332,6 +379,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   }
   function retake(){
     if(!film||!window.confirm('Start a new performance draft? Frozen Takes and earlier directions remain preserved.'))return;
+    setTake(null);setViews(standardFrames);
     perform(()=>call(endpoint+'/retake','POST',{
       expected_revision:film.work_revision,reason:'director_retakes_scene'
     }),'A fresh performance draft is ready. Earlier Takes remain safe.');
@@ -380,7 +428,9 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
     if(!window.confirm('Freeze this performance as an original Digital Take? '+
         'You will still be able to make another Take and change the camera framing later.'))return;
     const result=await perform(()=>call(endpoint+'/takes','POST',{
-      expected_revision:film.work_revision,clip_ids:selectedClips
+      expected_revision:film.work_revision,clip_ids:selectedClips,
+      clip_starts:Object.fromEntries(selectedClips.map(id=>[
+        id,String(clipStarts[id]||'0')]))
     }),'Original performance frozen. The film source will not be changed by later framing.');
     if(result?.take_id){
       setTake(await call(endpoint+'/takes/'+result.take_id));
@@ -458,7 +508,8 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
         <LookPreview objects={objects} events={filmEvents} second={time}
           views={take?views:standardFrames}
           weather={stage?.setting?.weather||'clear'}
-          daylight={stage?.setting?.daylight||'day'}/>
+          daylight={stage?.setting?.daylight||'day'}
+          onContext={contextAt}/>
         <TimeLine duration={film.duration_seconds} events={filmEvents}
           position={time} onChange={t=>{setTime(t);setPlaying(false)}}
           playing={playing} onPlay={()=>setPlaying(x=>!x)}/>
