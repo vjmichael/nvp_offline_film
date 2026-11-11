@@ -27,6 +27,7 @@ def test_stop_requires_tree_receipt_before_wait():
     child = Mock()
     custody = Mock()
     custody.stop_and_verify.side_effect = RuntimeError("group still populated")
+    custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
     session = LinuxFilmingSession("/group", child, custody)
     with pytest.raises(RuntimeError, match="populated"):
         session.stop_and_verify()
@@ -38,6 +39,7 @@ def test_stop_returns_tree_and_worker_receipts():
     custody = Mock()
     custody.stop_and_verify.return_value = {
         "process_tree_custody_verified": True, "empty_group_verified": True, "scope": "linux-cgroup-v2"}
+    custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
     session = LinuxFilmingSession("/group", child, custody)
     result = session.stop_and_verify(timeout=2)
     assert result["process_tree_custody_verified"]
@@ -67,6 +69,7 @@ def test_incomplete_kernel_receipt_cannot_claim_worker_shutdown(receipt):
     custody = Mock()
     custody.stop_and_verify.return_value = receipt
     with pytest.raises(RuntimeError, match="affirmative Linux"):
+        custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
         LinuxFilmingSession("/group", child, custody).stop_and_verify()
     child.wait.assert_not_called()
 
@@ -80,6 +83,7 @@ def test_worker_exit_status_must_be_observed():
         "scope": "linux-cgroup-v2",
     }
     with pytest.raises(RuntimeError, match="exit status"):
+        custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
         LinuxFilmingSession("/group", child, custody).stop_and_verify()
     child.wait.assert_called_once()
 
@@ -111,7 +115,8 @@ def test_kernel_phase_consumes_worker_reap_budget():
         "scope": "linux-cgroup-v2",
     }
     with patch("backend.nvp_filming_linux_session.time.monotonic",
-               side_effect=[100.0, 102.5, 102.6]):
+               side_effect=[100.0, 102.5, 102.6, 102.7]):
+        custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
         LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     custody.stop_and_verify.assert_called_once_with(timeout=3)
     child.wait.assert_called_once_with(timeout=0.5)
@@ -128,7 +133,8 @@ def test_exhausted_kernel_budget_cannot_claim_bounded_shutdown():
     with patch("backend.nvp_filming_linux_session.time.monotonic",
                side_effect=[100.0, 105.0]):
         with pytest.raises(RuntimeError, match="exceeded filming shutdown deadline"):
-            LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
+            custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
+        LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     child.wait.assert_not_called()
 
 
@@ -137,6 +143,7 @@ def test_invalid_deadline_refused_before_kernel_custody(timeout):
     child = Mock()
     custody = Mock()
     with pytest.raises(ValueError, match="Bounded positive"):
+        custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
         LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=timeout)
     custody.stop_and_verify.assert_not_called()
     child.wait.assert_not_called()
@@ -201,7 +208,7 @@ def test_exactly_exhausted_kernel_budget_only_allows_nonblocking_reap():
         "scope": "linux-cgroup-v2",
     }
     with patch("backend.nvp_filming_linux_session.time.monotonic",
-               side_effect=[100.0, 103.0, 103.0]):
+               side_effect=[100.0, 103.0, 103.0, 103.0]):
         result = LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     child.wait.assert_called_once_with(timeout=0.0)
     assert result["worker_exit_verified"] is True
@@ -219,7 +226,8 @@ def test_worker_wait_overrun_refuses_bounded_shutdown_receipt():
     with patch("backend.nvp_filming_linux_session.time.monotonic",
                side_effect=[100.0, 101.0, 103.01]):
         with pytest.raises(RuntimeError, match="Worker reaping exceeded"):
-            LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
+            custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
+        LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     child.wait.assert_called_once_with(timeout=2.0)
 
 
@@ -232,7 +240,7 @@ def test_worker_wait_exact_deadline_is_not_an_overrun():
         "scope": "linux-cgroup-v2",
     }
     with patch("backend.nvp_filming_linux_session.time.monotonic",
-               side_effect=[100.0, 101.0, 103.0]):
+               side_effect=[100.0, 101.0, 103.0, 103.0]):
         result = LinuxFilmingSession("/group", child, custody).stop_and_verify(timeout=3)
     assert result["worker_exit_verified"] is True
 
@@ -247,6 +255,7 @@ def test_reap_timeout_retries_without_reissuing_one_use_kernel_kill():
         "empty_group_verified": True,
         "scope": "linux-cgroup-v2",
     }
+    custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
     custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
     session = LinuxFilmingSession("/group", child, custody)
     with pytest.raises(RuntimeError, match="worker exit unverified"):
@@ -267,6 +276,7 @@ def test_unverified_kernel_receipt_never_cached_for_recovery():
         {"process_tree_custody_verified": True, "empty_group_verified": True,
          "scope": "linux-cgroup-v2"},
     ]
+    custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
     session = LinuxFilmingSession("/group", child, custody)
     with pytest.raises(RuntimeError, match="affirmative Linux"):
         session.stop_and_verify()
@@ -283,6 +293,7 @@ def test_reap_retry_refuses_repopulated_group_without_second_kill():
         "process_tree_custody_verified": True,
         "empty_group_verified": True, "scope": "linux-cgroup-v2",
     }
+    custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
     session = LinuxFilmingSession("/group", child, custody)
     with pytest.raises(RuntimeError, match="worker exit unverified"):
         session.stop_and_verify(timeout=1)
@@ -301,6 +312,7 @@ def test_reap_retry_rejects_incomplete_fresh_kernel_observation():
         "process_tree_custody_verified": True,
         "empty_group_verified": True, "scope": "linux-cgroup-v2",
     }
+    custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
     session = LinuxFilmingSession("/group", child, custody)
     with pytest.raises(RuntimeError, match="worker exit unverified"):
         session.stop_and_verify(timeout=1)
