@@ -49,6 +49,9 @@ class LinuxFilmingSession:
     group: Path
     child: subprocess.Popen
     custody: LinuxFilmingCgroup
+    # Kernel custody is one-use. Retain an affirmative receipt if child reaping
+    # fails, so recovery never attempts a second cgroup.kill.
+    _verified_tree_receipt: dict | None = None
 
     def stop_and_verify(self, *, timeout: float = 5.0) -> dict:
         """Kill the entire cgroup before waiting on the direct child."""
@@ -57,12 +60,16 @@ class LinuxFilmingSession:
         if type(timeout) not in (float, int) or not math.isfinite(timeout) or not 0 < timeout <= 60:
             raise ValueError("Bounded positive filming shutdown deadline required")
         started = time.monotonic()
-        receipt = self.custody.stop_and_verify(timeout=timeout)
+        receipt = self._verified_tree_receipt
+        if receipt is None:
+            receipt = self.custody.stop_and_verify(timeout=timeout)
         if (not isinstance(receipt, dict)
                 or receipt.get("process_tree_custody_verified") is not True
                 or receipt.get("empty_group_verified") is not True
                 or receipt.get("scope") != "linux-cgroup-v2"):
             raise RuntimeError("Kernel custody did not return an affirmative Linux empty-tree receipt")
+        # Cache only a fully validated kernel receipt, not a partial claim.
+        self._verified_tree_receipt = dict(receipt)
         remaining = timeout - (time.monotonic() - started)
         if remaining < 0:
             raise RuntimeError("Kernel custody exceeded filming shutdown deadline; worker exit unverified")
