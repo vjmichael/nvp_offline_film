@@ -120,6 +120,17 @@ print(json.dumps(result,sort_keys=True))
         with self.assertRaisesRegex(MigrationRefused,"inventory changed"):
             reopen_known_originals(root,self.pid,password,altered)
 
+    def test_recovery_verifier_refuses_edited_review_evidence(self):
+        from backend.nvp_g03_candidate_recovery import _verified_inventory
+        review=self.migration.inspect(self.pid)
+        self.assertEqual(_verified_inventory(review,self.pid),
+                         review["inventory_sha256"])
+        edited=dict(review, legacy_sql_bytes=review["legacy_sql_bytes"]+1)
+        with self.assertRaisesRegex(MigrationRefused,"inventory changed"):
+            _verified_inventory(edited,self.pid)
+        with self.assertRaisesRegex(MigrationRefused,"another film"):
+            _verified_inventory(review,"f"*32)
+
     def test_missing_or_changed_filmindex_blob_denies_migration(self):
         self.path.write_bytes(b"modified source")
         with self.assertRaisesRegex(MigrationRefused,"corrupt"):
