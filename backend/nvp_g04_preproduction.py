@@ -110,8 +110,9 @@ def _script_cast(pid, scene, full_script, bindings=None):
                 spoken.endswith(":") or len(spoken)>1200):
             continue
         generic=canonical.upper() in GENERIC_CUES
-        mapped=bindings.get(canonical.casefold()) if generic else None
-        actor_id=(mapped["actor_id"] if mapped else None) if generic else _actor_id(pid,canonical)
+        mapped=bindings.get(canonical.casefold())
+        actor_id=(mapped["actor_id"] if mapped else None) if generic else (
+            mapped["actor_id"] if mapped else _actor_id(pid,canonical))
         label=mapped["display_name"] if mapped else canonical
         cast[canonical.casefold()]={"actor_id":actor_id,"name":label,
             "source_cue":canonical,"needs_review":generic and mapped is None,
@@ -233,7 +234,7 @@ class G04Preproduction:
         scenes=[]
         if parsed:
             if len(parsed)>MAX_SCENES:raise ValueError("Movie has too many scenes")
-            for script_scene in parsed:
+            for position,script_scene in enumerate(parsed,start=1):
                 sid=script_scene["id"]
                 heading=_heading(script_scene["heading"])
                 bindings={
@@ -250,7 +251,7 @@ class G04Preproduction:
                 # changes to either surface.
                 source_sha=_sha(script_scene["text"]+"\x00"+_json(notes))
                 scenes.append({
-                    "id":sid,"number":script_scene["number"],
+                    "id":sid,"number":position,
                     "heading":script_scene["heading"],"origin":"script_derived",
                     "script_lines":{"start":script_scene["start_line"],
                                     "end":script_scene["end_line"]},
@@ -340,6 +341,7 @@ class G04Preproduction:
         props={}
         continuity=[]
         approved_facts=[]
+        setting_facts=[]
         unresolved_speakers=[]
         for scene in scenes:
             scene["proposals"]=self._proposal_rows(db,pid,scene)
@@ -352,6 +354,17 @@ class G04Preproduction:
                         "scene_id":scene["id"],
                         "source_cue":person.get("source_cue",person["name"])})
             place=scene["notes"]["location"] or scene["location"]
+            present={
+                "scene_id":scene["id"],"scene_name":scene["heading"],
+                "location":place,"time_of_day":
+                    scene["notes"]["time_of_day"] or scene["time_of_day"],
+                "era":scene["notes"]["era"],"season":scene["notes"]["season"],
+                "weather":scene["notes"]["weather"],
+                "source":"creator_specified" if any(
+                    scene["notes"][f] for f in ("location","time_of_day","era",
+                                               "season","weather"))
+                    else scene["origin"]}
+            setting_facts.append(present)
             if place:
                 locations.setdefault(place.casefold(),{
                     "name":place,"origin":"creator_specified" if scene["notes"]["location"]
@@ -390,6 +403,7 @@ class G04Preproduction:
                          "locations":list(locations.values()),
                          "props":list(props.values()),
                          "continuity":continuity,"facts":approved_facts,
+                         "scene_settings":setting_facts,
                          "speakers_to_review":unresolved_speakers},
                 "screenplay_drafts":[{
                     "id":record["id"],"content":record["content"],
@@ -429,8 +443,8 @@ class G04Preproduction:
             if scene is None:raise KeyError("Scene not in this movie")
             cue=source_cue.strip().casefold()
             if not any(p.get("source_cue","").casefold()==cue
-                and p.get("needs_review") for p in scene["cast"]):
-                raise RuntimeError("That speaker is already assigned or does not need review")
+                for p in scene["cast"]):
+                raise RuntimeError("That speaker is no longer in the current script")
             if actor_id is not None:
                 existing=next((person for person in library["bible"]["cast"]
                                if person["actor_id"]==actor_id),None)
