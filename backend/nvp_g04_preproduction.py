@@ -34,6 +34,12 @@ CUE = re.compile(r"^[A-Z][A-Z0-9 .,'()\-]{0,39}$")
 HEADING = re.compile(r"^(INT\.?/EXT\.?|EXT\.?/INT\.?|INT\.?|EXT\.?|I/E\.?)\s+(.+)$", re.I)
 TIME = re.compile(r"^(DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|AFTERNOON|LATER|CONTINUOUS|SUNSET|SUNRISE)$", re.I)
 HEX_ID = re.compile(r"[a-f0-9]{32}\Z")
+GENERIC_CUES = frozenset({
+    "MAN","WOMAN","VOICE","VOICEOVER","PERSON","NARRATOR",
+    "GUARD","OFFICER","CHILD","STRANGER","PASSERBY","CROWD",
+    "SOLDIER","PARENT","DRIVER","CUSTOMER","ANNOUNCER"
+})
+ACTOR_ID = re.compile(r"ACT_[a-f0-9]{24}\Z")
 EMPTY_FIELDS = {key:"" for key in NOTE_FIELDS}
 
 
@@ -69,7 +75,7 @@ def _heading(heading):
             "time_of_day":time}
 
 
-def _script_cast(pid, scene, full_script):
+def _script_cast(pid, scene, full_script, bindings=None):
     """Do not count uppercase action headings as people or invent a character."""
     whole=full_script.replace("\r\n","\n").replace("\r","\n").split("\n")
     start=scene["start_line"]-1
@@ -77,6 +83,7 @@ def _script_cast(pid, scene, full_script):
     excerpt=whole[start:end]
     cast={}
     dialogue=[]
+    bindings=bindings or {}
     for index,line in enumerate(excerpt):
         raw=line.strip()
         if not CUE.fullmatch(raw) or HEADING.match(raw) or raw.endswith(":"):
@@ -102,10 +109,16 @@ def _script_cast(pid, scene, full_script):
                 (CUE.fullmatch(spoken) and spoken==spoken.upper()) or
                 spoken.endswith(":") or len(spoken)>1200):
             continue
-        actor_id=_actor_id(pid,canonical)
-        cast[canonical.casefold()]={"actor_id":actor_id,"name":canonical,
-            "origin":"script_derived","role_type":"unspecified"}
+        generic=canonical.upper() in GENERIC_CUES
+        mapped=bindings.get(canonical.casefold()) if generic else None
+        actor_id=(mapped["actor_id"] if mapped else None) if generic else _actor_id(pid,canonical)
+        label=mapped["display_name"] if mapped else canonical
+        cast[canonical.casefold()]={"actor_id":actor_id,"name":label,
+            "source_cue":canonical,"needs_review":generic and mapped is None,
+            "origin":"director_approved" if mapped else "script_derived",
+            "role_type":"unspecified"}
         dialogue.append({"actor_id":actor_id,"speaker":canonical,
+                         "performer_name":label if actor_id else None,
                          "line":spoken,"line_number":start+after+1,
                          "origin":"script_derived"})
     return list(cast.values()),dialogue
@@ -135,6 +148,11 @@ class G04Preproduction:
             CHECK(status IN ('proposed','accepted','rejected')))""")
         db.execute("""CREATE INDEX IF NOT EXISTS g04_by_scene
             ON g04_proposals(project_id,scene_id,created_at)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS g04_actor_bindings(
+            project_id TEXT NOT NULL, scene_id TEXT NOT NULL,
+            speaker_cue TEXT NOT NULL, actor_id TEXT NOT NULL,
+            display_name TEXT NOT NULL, updated_at TEXT NOT NULL,
+            PRIMARY KEY(project_id,scene_id,speaker_cue))""")
 
     def _execute(self,pid,fn,*,mutate=False):
         if not isinstance(pid,str) or not HEX_ID.fullmatch(pid):
@@ -195,7 +213,13 @@ class G04Preproduction:
             for script_scene in parsed:
                 sid=script_scene["id"]
                 heading=_heading(script_scene["heading"])
-                cast,dialogue=_script_cast(pid,script_scene,screenplay)
+                bindings={
+                    row["speaker_cue"]:{
+                        "actor_id":row["actor_id"],"display_name":row["display_name"]}
+                    for row in db.execute("""SELECT speaker_cue,actor_id,display_name
+                        FROM g04_actor_bindings WHERE project_id=? AND scene_id=?""",
+                        (pid,sid))}
+                cast,dialogue=_script_cast(pid,script_scene,screenplay,bindings)
                 note_revision,notes=self._stored_notes(db,pid,sid)
                 script_source_sha=_sha(script_scene["text"])
                 # Both creator notes and source bytes are part of the exact
@@ -229,7 +253,8 @@ class G04Preproduction:
                 notes=json.loads(record["notes_json"])
                 performers=[s.strip() for s in
                             re.split(r"[,\n]",notes.get("performers",""))
-                            if s.strip()][:24]
+                            if s.strip() and s.strip().casefold() not in
+                            {"none","no actors","no one","nobody","no performers"}][:24]
                 cast=[{"actor_id":_actor_id(pid,name),"name":name,
                        "origin":"creator_specified","role_type":"unspecified"}
                       for name in dict.fromkeys(performers)]
@@ -292,11 +317,17 @@ class G04Preproduction:
         props={}
         continuity=[]
         approved_facts=[]
+        unresolved_speakers=[]
         for scene in scenes:
             scene["proposals"]=self._proposal_rows(db,pid,scene)
             scene["questions"]=self._questions(scene)
             for person in scene["cast"]:
-                actors[person["actor_id"]]=person
+                if person["actor_id"]:
+                    actors[person["actor_id"]]=person
+                else:
+                    unresolved_speakers.append({
+                        "scene_id":scene["id"],
+                        "source_cue":person.get("source_cue",person["name"])})
             place=scene["notes"]["location"] or scene["location"]
             if place:
                 locations.setdefault(place.casefold(),{
@@ -335,12 +366,57 @@ class G04Preproduction:
                 "bible":{"story":movie["idea"],"cast":list(actors.values()),
                          "locations":list(locations.values()),
                          "props":list(props.values()),
-                         "continuity":continuity,"facts":approved_facts},
+                         "continuity":continuity,"facts":approved_facts,
+                         "speakers_to_review":unresolved_speakers},
                 "ready_for_scene_generation":False,
                 "filming_authorized":False}
 
     def view(self,pid):
         return self._execute(pid,lambda db,movie:self._view(db,movie))
+
+    def bind_speaker(self,pid,scene_id,source_cue,expected_screenplay_revision,
+                     actor_id=None,new_name=None):
+        """Human-only unambiguous assignment for generic screenplay cues."""
+        if (not isinstance(scene_id,str) or not SCENE_ID.fullmatch(scene_id) or
+                type(source_cue) is not str or len(source_cue)>40 or
+                type(expected_screenplay_revision) is not int or
+                (actor_id is None)==(new_name is None)):
+            raise ValueError("Choose exactly one performer for the speaker")
+        if actor_id is not None and (not isinstance(actor_id,str) or
+                                     not ACTOR_ID.fullmatch(actor_id)):
+            raise ValueError("Invalid performer choice")
+        if new_name is not None and (type(new_name) is not str or
+                not re.fullmatch(r"[^\x00-\x1f]{1,100}",new_name.strip())):
+            raise ValueError("Enter a performer name")
+        def op(db,movie):
+            if movie["revision"]!=expected_screenplay_revision:
+                raise RuntimeError("Screenplay changed; review the speaker again")
+            library=self._view(db,movie)
+            scene=next((x for x in library["scenes"] if x["id"]==scene_id),None)
+            if scene is None:raise KeyError("Scene not in this movie")
+            cue=source_cue.strip().casefold()
+            if not any(p.get("source_cue","").casefold()==cue
+                and p.get("needs_review") for p in scene["cast"]):
+                raise RuntimeError("That speaker is already assigned or does not need review")
+            if actor_id is not None:
+                existing=next((person for person in library["bible"]["cast"]
+                               if person["actor_id"]==actor_id),None)
+                if existing is None:raise ValueError("Choose a performer from this film")
+                display=existing["name"]
+                chosen=actor_id
+            else:
+                display=new_name.strip()
+                chosen=_actor_id(pid,display)
+            db.execute("""INSERT INTO g04_actor_bindings
+                (project_id,scene_id,speaker_cue,actor_id,display_name,updated_at)
+                VALUES (?,?,?,?,?,?)
+                ON CONFLICT(project_id,scene_id,speaker_cue)
+                DO UPDATE SET actor_id=excluded.actor_id,
+                              display_name=excluded.display_name,
+                              updated_at=excluded.updated_at""",
+                (pid,scene_id,cue,chosen,display,_clock()))
+            return self._view(db,movie)
+        return self._execute(pid,op,mutate=True)
 
     def add_scene(self,pid,expected_screenplay_revision):
         def op(db,movie):
