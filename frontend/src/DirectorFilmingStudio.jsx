@@ -622,9 +622,40 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
               onChange={e=>setNote(e.target.value)}
               placeholder="Describe the timing, intention or mood…"/>
           </label>
-          <div className="film-actions"><button className="film-primary"
-            disabled={busy||!film.work_current||!!take}
-            onClick={addEvent}>Add Direction</button></div>
+          <div className="film-actions">
+            <button className="film-primary"
+              disabled={busy||!film.work_current||!!take}
+              onClick={addEvent}>Add Direction</button>
+            <button className="film-secondary" disabled={
+              busy||!aiReady||!film.work_current||!!take}
+              onClick={askAINote}>Ask AI for a Performance Idea</button>
+          </div>
+          {aiReady&&<label>Creative guidance for the AI (optional)
+            <input maxLength={750} value={noteInstruction}
+              onChange={e=>setNoteInstruction(e.target.value)}
+              placeholder="Make the moment gentler, more tense, or more natural…"/>
+          </label>}
+          {(film.note_ideas||[]).filter(x=>x.status==='proposed').map(idea=>
+            <article className="director-film-idea" key={idea.id}>
+              <strong>Suggested {idea.kind.replaceAll('_',' ')}</strong>
+              <p>{idea.note}</p>
+              <label>Adjust this direction, if you like
+                <textarea rows={2} maxLength={400}
+                  value={noteEdits[idea.id]===undefined?
+                    idea.note:noteEdits[idea.id]}
+                  onChange={e=>setNoteEdits(current=>({
+                    ...current,[idea.id]:e.target.value}))}/>
+              </label>
+              {idea.work_revision!==film.work_revision?
+                <p className="film-hint">This suggestion is from an earlier
+                  performance draft. Your newer directions are preserved.</p>:
+                <div className="film-actions">
+                  <button className="film-secondary" disabled={busy}
+                    onClick={()=>reviewNote(idea,'reject')}>Decline</button>
+                  <button className="film-primary" disabled={busy}
+                    onClick={()=>reviewNote(idea,'accept')}>Approve Note</button>
+                </div>}
+            </article>)}
           <details className="director-film-directions" open={film.events.length<7}>
             <summary>Performance directions ({film.events.length})</summary>
             {film.events.length===0?<p className="film-muted">
