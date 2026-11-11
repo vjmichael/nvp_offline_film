@@ -14,6 +14,7 @@ from typing import Protocol, Any
 
 from backend.nvp_lu_alpha_contract import LuRuntimeView
 from backend.nvp_lu_workspace import LuHostError
+from backend.nvp_creative_schema import STAGES, MAX_NOTES
 
 MODULE = "nvp.film"
 OPAQUE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_.-]{0,127}$")
@@ -41,7 +42,12 @@ class NativeLuHostPort(Protocol):
                         max_new_tokens: int): ...
     def record_generation(self, scope: object, receipt: dict[str, Any]) -> dict[str, Any]: ...
     def save_proposal(self, scope: object, *, stage: str, content: str,
-                      instructions: str, expected_revision: int) -> dict[str, Any]: ...
+                      instructions: str, expected_revision: int) -> dict[str, Any]:
+        """Host atomically consumes the matching journaled complete generation
+        and saves proposal-only content under source-revision CAS. It must
+        reject direct, stale, different-project and duplicate receipt writes.
+        Returns completed_generation_sha256 and source_mutated=False.
+        """
     def cancel_active(self, scope: object) -> bool: ...
 
 
@@ -231,14 +237,20 @@ class LuG02FilmPort:
         before = self._scope(scope, "save")
         if (type(expected_revision) is not int or expected_revision < 0 or
                 type(content) is not str or not content or
-                len(content) > MAX_GENERATED):
+                len(content) > MAX_GENERATED or
+                stage not in STAGES or
+                type(instructions) is not str or len(instructions) > MAX_NOTES):
             raise ValueError("Invalid proposed film draft")
+        generated_sha = sha256(content.encode("utf8")).hexdigest()
         result = self._host.save_proposal(
             scope, stage=stage, content=content, instructions=instructions,
             expected_revision=expected_revision)
         after = self._scope(scope, "save")
-        if before != after or type(result) is not dict or result.get("status") != "proposed":
-            raise LuHostError("Lu proposal was not durably and safely persisted")
+        if (before != after or type(result) is not dict or
+                result.get("status") != "proposed" or
+                result.get("completed_generation_sha256") != generated_sha or
+                result.get("source_mutated") is not False):
+            raise LuHostError("Lu did not atomically consume the exact completed-generation receipt")
         return result
 
     def cancel(self, scope: object):
