@@ -82,3 +82,16 @@ details.film-editor-inspector-block summary{cursor:pointer;color:#e4c5a8;font-si
 @media(max-width:1000px){.film-editor-layout,.film-editor-footer-panel{grid-template-columns:1fr}}
 @media(max-width:550px){.film-editor-panel,.film-editor-assembly,.film-editor-footer-panel>div{padding:11px}.film-editor-monitor-area{padding:8px}.film-editor-transport{gap:6px}.film-editor-monitor{min-height:205px}.film-editor-timeline{min-height:95px}}
 @media(prefers-reduced-motion:reduce){.film-editor-shell *{transition:none!important;animation:none!important}}
+
+.film-editor-assistant{margin:18px 0;padding:18px;border:1px solid #675565;background:#2c303b;border-radius:12px}
+.film-editor-assistant .film-editor-section-heading{align-items:flex-start}
+.film-editor-assistant .film-editor-section-heading>div{flex:1;min-width:210px}
+.film-editor-assistant h3{font-size:19px;margin:0 0 8px}
+.film-editor-assistant p{max-width:560px;line-height:1.5;margin:0 0 8px}
+.film-editor-assistant>label{max-width:650px}
+.film-editor-assistant>label input{width:100%}
+.film-editor-ai-ideas{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.film-editor-ai-ideas article{border:1px solid #5d5362;border-radius:9px;background:#242833;padding:13px}
+.film-editor-ai-ideas strong{display:block;color:#ecc59e;font-size:14px;margin-bottom:8px}
+.film-editor-ai-ideas p{color:#dbd4d2;font-size:13px;line-height:1.55}
+.film-editor-ai-ideas .film-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:13px}
