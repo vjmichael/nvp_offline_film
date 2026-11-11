@@ -21,6 +21,20 @@ class FilmingCustodyInitializationError(RuntimeError):
     This exception is NOT a cleanup or publication receipt. The caller must
     reconcile the retained cgroup before allowing any frozen Take publication.
     """
+    def reconcile_and_stop(self, delegated_root: Path, *, timeout: float = 5.0) -> dict:
+        """Trusted-host recovery attempt; never reconstruct authority from a PID.
+
+        Revalidates the original private cgroup against the delegated root and
+        uses kernel-wide termination before reaping the retained child. A
+        failed attempt is not an empty-group or publication receipt.
+        """
+        custody = LinuxFilmingCgroup(
+            private_group=self.group, delegated_root=delegated_root
+        )
+        return LinuxFilmingSession(self.group, self.child, custody).stop_and_verify(
+            timeout=timeout
+        )
+
     def __init__(self, group: Path, child: subprocess.Popen):
         self.group = group
         self.child = child
