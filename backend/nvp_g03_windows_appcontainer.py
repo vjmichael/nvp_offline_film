@@ -175,14 +175,16 @@ class AppContainerJobProcess:
         self._worker.terminate_tree()
     def close(self):
         if self._worker is None:return
+        worker=self._worker
+        self._worker=None
+        errors=[]
         try:
-            # A direct renderer exit is not proof that an escaped descendant
-            # has died. Query the actual kernel Job and reject publication
-            # until every associated process has left.
+            # Exact native Job accounting before publication; never treat
+            # primary child exit as proof that descendants are gone.
             import win32job
-            job=self._worker._job
+            job=worker._job
             if job is None:
-                raise AppContainerFailure("Kernel Job custody handle missing")
+                raise AppContainerFailure("Native AppContainer Job unavailable")
             info=win32job.QueryInformationJobObject(
                 job,win32job.JobObjectBasicAccountingInformation)
             if info["ActiveProcesses"]:
@@ -193,23 +195,28 @@ class AppContainerJobProcess:
                         job,win32job.JobObjectBasicAccountingInformation)
                     if info["ActiveProcesses"]==0:break
                     time.sleep(.03)
-                if info["ActiveProcesses"]!=0:
-                    raise AppContainerFailure("AppContainer descendant process still active")
-            self._worker.close()
+                if info["ActiveProcesses"]:
+                    raise AppContainerFailure("Native AppContainer descendant remains active")
+        except Exception as exc:
+            errors.append("Native process custody: "+str(exc))
         finally:
-            self._worker=None
-            errors=[]
-            try:
-                if _profile_inventory(self._profile_folder)!=self._baseline:
-                    errors.append("Native worker wrote AppContainer profile data")
-            except Exception as exc:
-                errors.append(str(exc))
-            for path,recursive in reversed(self._grants):
-                try:_acl(path,self._sid,"",recursive,remove=True)
-                except Exception as exc:errors.append(str(exc))
-            result=self._userenv.DeleteAppContainerProfile(self._profile)&0xffffffff
-            if errors or result:
-                raise AppContainerFailure("AppContainer teardown not independently established")
+            # On ANY failure to query the Job, closing its kernel handle
+            # still invokes JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
+            try:worker.close()
+            except Exception as exc:errors.append("Job close: "+str(exc))
+        try:
+            if _profile_inventory(self._profile_folder)!=self._baseline:
+                errors.append("Worker changed AppContainer profile file bytes")
+        except Exception as exc:
+            errors.append("Profile forensic audit: "+str(exc))
+        for path,recursive in reversed(self._grants):
+            try:_acl(path,self._sid,"",recursive,remove=True)
+            except Exception as exc:errors.append("ACL recovery: "+str(exc))
+        result=self._userenv.DeleteAppContainerProfile(self._profile)&0xffffffff
+        if errors or result:
+            raise AppContainerFailure(
+                "AppContainer process/profile cleanup unverified; do not publish")
+
 
 def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
                         code_roots,code_files):
