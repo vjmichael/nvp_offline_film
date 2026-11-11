@@ -568,6 +568,19 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
         <TimeLine duration={film.duration_seconds} events={filmEvents}
           position={time} onChange={t=>{setTime(t);setPlaying(false)}}
           playing={playing} onPlay={()=>setPlaying(x=>!x)}/>
+        {notePopup&&<div className="director-film-context"
+          style={{left:notePopup.x,top:notePopup.y}} role="menu"
+          aria-label={'Direct '+notePopup.name}>
+          <strong>{notePopup.name}</strong>
+          <button role="menuitem" onClick={()=>giveNote(
+            notePopup.role==='actor'?'gesture':'prop_action')}>
+            Give Note</button>
+          {notePopup.role==='actor'&&<button role="menuitem"
+            onClick={()=>giveNote('wardrobe')}>Change Wardrobe</button>}
+          {aiReady&&<button role="menuitem" onClick={askAINote}>
+            Ask AI for a suggestion</button>}
+          <button role="menuitem" onClick={()=>setNotePopup(null)}>Close</button>
+        </div>}
       </div>
       <div className="director-film-grid">
         <section className="director-film-panel">
