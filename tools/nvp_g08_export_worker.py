@@ -61,7 +61,8 @@ def _render(args):
     studio=Studio(db)
     assembly=G07Editor(studio).native_assembly(args.project,args.revision)
     if (assembly["edit_document_sha256"]!=args.edit_sha or
-            assembly["production_looks_sha256"]!=args.looks_sha):
+            assembly["production_looks_sha256"]!=args.looks_sha or
+            assembly["actor_performances_sha256"]!=args.actors_sha):
         raise RuntimeError("Source edit or approved production look changed after director approval")
     if assembly["duration_tick"]<=0:
         raise ValueError("Record and edit a film before exporting")
@@ -74,13 +75,15 @@ def _render(args):
         _write_json(args.progress,{
             "job_id":args.job,"frames_completed":done,"frames_total":total,
             "status":"rendering","edit_sha256":args.edit_sha,
-            "approved_look_sha256":args.looks_sha})
+            "approved_look_sha256":args.looks_sha,
+            "approved_actor_performances_sha256":args.actors_sha})
     with open(output,"xb") as file:
         result=render_film(assembly,file,progress=progress)
         file.flush()
         os.fsync(file.fileno())
     result.update({"job_id":args.job,"edit_sha256":args.edit_sha,
                    "approved_look_sha256":args.looks_sha,
+                   "approved_actor_performances_sha256":args.actors_sha,
                    "sha256":sha256(output.read_bytes()).hexdigest()})
     _write_json(args.receipt,result)
     return 0
@@ -106,6 +109,7 @@ def main(argv=None):
     parser.add_argument("--revision",type=int,default=0)
     parser.add_argument("--edit-sha",default="")
     parser.add_argument("--looks-sha",default="")
+    parser.add_argument("--actors-sha",default="")
     parser.add_argument("--frames",type=int,default=0)
     parser.add_argument("--output-sha",default="")
     parser.add_argument("--progress",default="")
