@@ -434,6 +434,13 @@ export default function DirectorWorldStage({movie,scene}) {
       expected_revision:old?.revision||0
     }),'A real three-dimensional scene has been created. Review and refine it.');
   }
+  function keepArrangement() {
+    const old=stageRef.current;
+    if(!old?.created)return;
+    update(()=>filmAction(endpoint+'/reconcile','POST',{
+      expected_revision:old.revision
+    }),'Your arrangement was kept and linked to the updated story. Review it before approving.');
+  }
   function choose(id) {
     setSelected(id);setContext(null);
   }
@@ -519,10 +526,16 @@ export default function DirectorWorldStage({movie,scene}) {
     </div>}
     {stage?.created&&<>
       {!stage.current&&<div className="director-world-warning">
-        Your screenplay or scene description has changed. You can keep the
-        earlier scene in your history or rebuild it using your latest choices.
-        <div className="film-actions"><button className="film-primary"
-          disabled={busy} onClick={generate}>Rebuild Visual Scene</button></div>
+        Your screenplay or scene description has changed. You can update the
+        current scene and keep your arrangement, or create a completely new
+        scene from your latest creative notes. Either choice preserves the
+        earlier version.
+        <div className="film-actions">
+          <button className="film-secondary" disabled={busy}
+            onClick={keepArrangement}>Keep My Arrangement</button>
+          <button className="film-primary" disabled={busy}
+            onClick={generate}>Build Fresh Scene</button>
+        </div>
       </div>}
       <div className="director-world-tools">
         <div className="director-world-toolgroup" aria-label="Arrange objects">
