@@ -104,20 +104,38 @@ jobs:
             throw 'No persistent original film project database'
           }
           Get-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH
-      - name: Require actual director home, Resume and separate editor in real WebView2
+      - name: Verify real installed WebView2 project navigation and Windows UIAutomation
         shell: pwsh
         run: |
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-g03-installed-smoke-stages.txt'
+          $env:NVP_G03_UIA_WELCOME_HOLD_SECONDS='18'
+          $env:NVP_G03_UIA_HOLD_SECONDS='30'
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
-          $p=Start-Process -FilePath $installed -ArgumentList '--smoke-g03-window' -PassThru
-          if (-not $p.WaitForExit(110000)) {
-            & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
-            throw 'Native G03 WebView2 acceptance timed out at 110 seconds'
-          }
-          if ($p.ExitCode -ne 0) {
-            if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
-              Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH
+          $process=Start-Process -FilePath $installed -ArgumentList '--smoke-g03-window' -PassThru
+          function Wait-Marker([string]$marker,[int]$seconds) {
+            $until=(Get-Date).AddSeconds($seconds)
+            while((Get-Date) -lt $until) {
+              if($process.HasExited) {throw "Native WebView exited before $marker (code $($process.ExitCode))"}
+              if((Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) -and
+                 ((Get-Content -Raw $env:NVP_SMOKE_DIAGNOSTIC_PATH).Contains($marker))) {return}
+              Start-Sleep -Milliseconds 400
             }
-            throw 'Real G03 WebView2 filmmaker navigation did not pass'
+            throw "Native WebView did not reach $marker"
+          }
+          try {
+            Wait-Marker 'g03_native_welcome_observed' 60
+            & 'tools/nvp_g03_uia_probe.ps1' -Phase welcome -ReceiptPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-welcome.json')
+            if($LASTEXITCODE -ne 0) {throw 'Windows welcome UIA failed'}
+            Wait-Marker 'g03_native_ui_observed' 75
+            & 'tools/nvp_g03_uia_probe.ps1' -Phase editor -ReceiptPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-editor.json')
+            if($LASTEXITCODE -ne 0) {throw 'Windows editing UIA failed'}
+            if(-not $process.WaitForExit(80000)) {throw 'G03 native WebView did not exit after UIA'}
+            if($process.ExitCode -ne 0) {throw 'G03 native director/resume/editor WebView smoke failed'}
+            Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH
+          } finally {
+            if(-not $process.HasExited) {
+              & taskkill.exe /PID $process.Id /T /F 2>$null | Out-Null
+            }
           }
       - name: Uninstall without deleting creator project data
         shell: pwsh
@@ -137,6 +155,14 @@ jobs:
           Start-Sleep -Seconds 2
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-g03-windows-uia-evidence
+          path: |
+            ${{ runner.temp }}/nvp-g03-uia-welcome.json
+            ${{ runner.temp }}/nvp-g03-uia-editor.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: always()
         with:

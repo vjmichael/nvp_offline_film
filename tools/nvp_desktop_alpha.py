@@ -547,6 +547,12 @@ def run_g03_window_smoke():
                 if not ready:
                     raise RuntimeError("New Movie / Resume Working director home missing")
                 result["phase"]="welcome"
+                _smoke_checkpoint("g03_native_welcome_observed")
+                hold_welcome=int(os.environ.get("NVP_G03_UIA_WELCOME_HOLD_SECONDS","0"))
+                if hold_welcome<0 or hold_welcome>30:
+                    raise ValueError("Invalid native welcome UIA hold")
+                if hold_welcome:
+                    time.sleep(hold_welcome)
                 # Verify that the old engineering navigation is not mounted.
                 technical=window.evaluate_js(
                     "Boolean(document.querySelector('nav.tabs') "
