@@ -458,6 +458,9 @@ class G05Change(G05Revision):
 class G05Undo(G05Revision):
     source_revision: int = Field(ge=1,le=1000000)
 
+class G05IdeaDecision(G05Revision):
+    decision: str = Field(min_length=6,max_length=6)
+
 def _director_scene_authoring(project_id: str,request: Request):
     secured=live_films().exists(project_id)
     return G05SceneAuthoring(studio,live=live_films() if secured else None,
@@ -491,6 +494,24 @@ def g05_stage_restore(project_id:str,scene_id:str,request:Request,
     return run(lambda:_director_scene_authoring(project_id,request)
         .restore(project_id,scene_id,payload.expected_revision,
                  payload.source_revision))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/ideas")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/ideas")
+def g05_stage_ai_ideas(project_id:str,scene_id:str,request:Request):
+    try:
+        return run(lambda:_director_scene_authoring(project_id,request)
+            .suggest_scene_objects(project_id,scene_id))
+    except LocalModelUnavailable:
+        raise HTTPException(status_code=503,
+            detail="Scene AI is unavailable. You can still arrange every object yourself.")
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/ideas/{idea_id}/decision")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/ideas/{idea_id}/decision")
+def g05_stage_idea_review(project_id:str,scene_id:str,idea_id:str,
+                          request:Request,payload:G05IdeaDecision):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .decide_scene_object(project_id,scene_id,idea_id,payload.decision,
+                             payload.expected_revision))
 
 @app.post("/api/projects/{project_id}/stage/{scene_id}/approve")
 @app.post("/api/projects/{project_id}/live/stage/{scene_id}/approve")
