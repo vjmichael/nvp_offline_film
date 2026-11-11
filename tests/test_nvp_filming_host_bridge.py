@@ -56,3 +56,38 @@ def test_shutdown_failure_denies_publication():
         with pytest.raises(RuntimeError, match="kernel denied"):
             finish_linux_recording_and_freeze(session, capture, "p", "t", recordings=lambda: [])
         capture.capture.assert_not_called()
+
+
+@pytest.mark.parametrize("bad_batch", [[], [None] * 33, (), None])
+def test_invalid_batch_still_stops_worker(bad_batch):
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        session.stop_and_verify.return_value = GOOD
+        with pytest.raises(ValueError, match="1..32"):
+            finish_linux_recording_and_freeze(
+                session, capture, "p", "t", recordings=lambda: bad_batch)
+        session.stop_and_verify.assert_called_once()
+        capture.capture.assert_not_called()
+
+
+def test_invalid_recorder_callback_still_stops_worker():
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        session, capture = S(), C()
+        session.stop_and_verify.return_value = GOOD
+        with pytest.raises(TypeError, match="supplier"):
+            finish_linux_recording_and_freeze(
+                session, capture, "p", "t", recordings=None)
+        session.stop_and_verify.assert_called_once()
+        capture.capture.assert_not_called()
+
+
+def test_invalid_capture_service_still_stops_worker():
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S:
+        session = S()
+        session.stop_and_verify.return_value = GOOD
+        with pytest.raises(TypeError, match="capture service"):
+            finish_linux_recording_and_freeze(
+                session, object(), "p", "t", recordings=lambda: [])
+        session.stop_and_verify.assert_called_once()
