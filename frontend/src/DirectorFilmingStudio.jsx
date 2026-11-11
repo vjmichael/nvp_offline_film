@@ -285,6 +285,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   const [time,setTime]=useState(0);
   const [playing,setPlaying]=useState(false);
   const [recordSession,setRecordSession]=useState(null);
+  const [captureHealth,setCaptureHealth]=useState(null);
   const sessionRef=useRef(null);
   const recordStartRef=useRef(0);
   const [micActor,setMicActor]=useState('');
@@ -332,14 +333,17 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
     if(!endpoint)return;
     let mounted=true;
     setFilm(null);setStage(null);setTake(null);setError('');
+    setCaptureHealth(null);
     setListenUrl('');setNotePopup(null);
     Promise.all([
       call(endpoint),
       call('/api/projects/'+encodeURIComponent(movie.id)+
-        (movie.encrypted?'/live':'')+'/stage/'+encodeURIComponent(sceneId))
-    ]).then(([f,s])=>{
+        (movie.encrypted?'/live':'')+'/stage/'+encodeURIComponent(sceneId)),
+      call(endpoint+'/microphone/health').catch(()=>null)
+    ]).then(([f,s,health])=>{
       if(!mounted)return;
-      setFilm(f);setStage(s);setDuration(String(f.duration_seconds));
+      setFilm(f);setStage(s);setCaptureHealth(health);
+      setDuration(String(f.duration_seconds));
       setSelectedObject(f.stage_objects.find(o=>o.role==='actor')?.id||
         f.stage_objects.find(o=>o.role==='prop')?.id||'');
       setTime(0);setSelectedClips([]);setClipStarts({});
@@ -456,6 +460,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
       recordStartRef.current=time;
       sessionRef.current={session_id:opened.session_id,endpoint};
       setRecordSession(opened);
+      setCaptureHealth(await call(endpoint+'/microphone/health').catch(()=>null));
       return opened;
     },'Original sound is being recorded from your microphone.');
   }
@@ -466,6 +471,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
         session_id:recordSession.session_id});
       sessionRef.current=null;setRecordSession(null);
       const updated=await call(endpoint);setFilm(updated);
+      setCaptureHealth(await call(endpoint+'/microphone/health').catch(()=>null));
       setSelectedClips(x=>[...x,result.clip_id]);
       setClipStarts(x=>({...x,[result.clip_id]:
         String(Number(recordStartRef.current.toFixed(1)))}));
@@ -478,6 +484,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
       await call(endpoint+'/microphone/cancel','POST',{
         session_id:recordSession.session_id});
       sessionRef.current=null;setRecordSession(null);
+      setCaptureHealth(await call(endpoint+'/microphone/health').catch(()=>null));
     },'Recording stopped without publishing any original sound.');
   }
   async function freeze(){
@@ -768,6 +775,32 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
           </div>
           {recordSession&&<p className="director-film-recording" role="status">
             Recording original sound… Maximum two minutes per clip.</p>}
+          <div className="director-film-capture-health">
+            <div className="film-actions">
+              <h4>Recording continuity</h4>
+              <button className="film-secondary" disabled={busy}
+                onClick={()=>call(endpoint+'/microphone/health')
+                  .then(setCaptureHealth).catch(()=>{})}>
+                Refresh Recording Status</button>
+            </div>
+            {captureHealth?.recordings?.length>0&&
+              <div className="director-film-capture-history">
+                {captureHealth.recordings.slice(0,5).map(record=>
+                  <p key={record.session_id}>
+                    {record.status==='completed'?
+                      'Original microphone recording saved':
+                      record.status==='interrupted'?
+                      'Recording interrupted; not published as a completed source':
+                      record.status==='cancelled'?
+                      'Recording cancelled':'Recording in progress'}
+                    {Number.isInteger(record.sample_count)?
+                      ' · '+(record.sample_count/48000).toFixed(2)+'s of original sound':''}
+                  </p>)}
+              </div>}
+            <p className="film-hint">NVP checks the recorded sample count
+              against its 48 kHz original sound clock. Exact camera/device
+              synchronization still needs native-device verification.</p>
+          </div>
           <h4>Original recordings</h4>
           {clips.length===0?<p className="film-muted">
             No original sound has been recorded yet. Silent scenes are allowed.</p>:
