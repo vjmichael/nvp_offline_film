@@ -8,6 +8,7 @@ Tokens never enter JavaScript: HTTP-only SameSite cookies are used by the API.
 from __future__ import annotations
 
 from hashlib import scrypt
+from contextlib import contextmanager
 import hmac
 import secrets
 import sqlite3
@@ -36,10 +37,15 @@ class ProjectAccess:
                 project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
                 salt BLOB NOT NULL, verifier BLOB NOT NULL, created_at REAL NOT NULL)""")
 
+    @contextmanager
     def _db(self):
         db = sqlite3.connect(self.db_path, timeout=15)
-        db.execute("PRAGMA foreign_keys=ON")
-        return db
+        try:
+            db.execute("PRAGMA foreign_keys=ON")
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def _check_id(self, project_id):
         if not isinstance(project_id, str) or not PROJECT.fullmatch(project_id):
