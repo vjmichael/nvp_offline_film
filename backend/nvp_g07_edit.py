@@ -666,8 +666,10 @@ class G07Editor:
                 document=json.loads(row["document_json"])
             total,segments=self._validate(db,pid,document)
             from backend.nvp_g09_environment import G09Environment
+            from backend.nvp_g09_actor import G09Actors
             sources={}
             production_looks={}
+            actor_performances={}
             for clip in document["clips"]:
                 take_id=clip["take_id"]
                 if take_id not in sources:
@@ -687,6 +689,10 @@ class G07Editor:
                         db,pid,take_id,row["take_sha256"],doc)
                     if approved is not None:
                         production_looks[take_id]=approved
+                    acting=G09Actors.approved_source(
+                        db,pid,take_id,row["take_sha256"],doc)
+                    if acting is not None:
+                        actor_performances[take_id]=acting
                     sources[take_id]={"scene_id":row["scene_id"],
                         "take_sha256":row["take_sha256"],
                         "original_usd":bytes(original["original_usd"]),
@@ -704,6 +710,11 @@ class G07Editor:
                     for key,val in sorted(production_looks.items())
                 }).encode("utf8")),
                 "production_looks":production_looks,
+                "actor_performances_sha256":_sha(_json({
+                    key:{"revision":val["revision"],"sha256":val["sha256"]}
+                    for key,val in sorted(actor_performances.items())
+                }).encode("utf8")),
+                "actor_performances":actor_performances,
                 "duration_tick":total,"segments":segments,
                 "original_takes":sources,"master_gain":document["master_gain"],
                 "source_media_modified":False,
