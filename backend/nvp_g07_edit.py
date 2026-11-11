@@ -665,7 +665,9 @@ class G07Editor:
                     raise RuntimeError("An earlier edit is unavailable")
                 document=json.loads(row["document_json"])
             total,segments=self._validate(db,pid,document)
+            from backend.nvp_g09_environment import G09Environment
             sources={}
+            production_looks={}
             for clip in document["clips"]:
                 take_id=clip["take_id"]
                 if take_id not in sources:
@@ -681,6 +683,10 @@ class G07Editor:
                         if pcm is None or _sha(pcm["pcm"])!=pcm["pcm_sha256"]:
                             raise RuntimeError("Original sound cannot be reopened")
                         sound.append({**item,"pcm16le":bytes(pcm["pcm"])})
+                    approved=G09Environment.approved_source(
+                        db,pid,take_id,row["take_sha256"],doc)
+                    if approved is not None:
+                        production_looks[take_id]=approved
                     sources[take_id]={"scene_id":row["scene_id"],
                         "take_sha256":row["take_sha256"],
                         "original_usd":bytes(original["original_usd"]),
@@ -693,6 +699,11 @@ class G07Editor:
             return {"format":FORMAT,"project_id":pid,
                 "edit_revision":source_revision,
                 "edit_document_sha256":_sha(_json(document).encode("utf8")),
+                "production_looks_sha256":_sha(_json({
+                    key:{"revision":val["revision"],"sha256":val["sha256"]}
+                    for key,val in sorted(production_looks.items())
+                }).encode("utf8")),
+                "production_looks":production_looks,
                 "duration_tick":total,"segments":segments,
                 "original_takes":sources,"master_gain":document["master_gain"],
                 "source_media_modified":False,
