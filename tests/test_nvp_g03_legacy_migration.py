@@ -142,6 +142,7 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertGreaterEqual(receipt["reconstructed_project_rows"],4)
         self.assertEqual(receipt["authenticated_original_assets"],2)
         self.assertEqual(receipt["reopened_pcm_blobs"],1)
+        self.assertEqual(receipt["reopened_native_opensud_layers"],1)
         self.assertFalse(receipt["source_cutover_authorized"])
         self.assertFalse(receipt["plaintext_restored_to_original_location"])
         self.assertEqual(receipt["reviewed_inventory_sha256"],
