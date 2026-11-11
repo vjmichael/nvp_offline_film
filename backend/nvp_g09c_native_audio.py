@@ -217,10 +217,14 @@ class SpatialFilmMixer:
             seg["_source_events"]=source["events"]
     def _cell(self,ctx,item,edit,tick):
         seg=ctx["seg"]
-        src_tick=seg["source_in_tick"]+tick-seg["start_tick"]
+        # A 10ms cell has one ABSOLUTE Film Time sample position.
+        # Sampling at the first sample of an arbitrary request would
+        # otherwise produce a different panorama after a seek/restart.
+        cell_index=tick//(CELL*TICK_SAMPLE)
+        at_tick=max(seg["start_tick"],cell_index*CELL*TICK_SAMPLE)
+        src_tick=seg["source_in_tick"]+at_tick-seg["start_tick"]
         src_tick=_clamp(src_tick,0,self.sources[seg["take_id"]]["duration_tick"])
-        # Cache by 10ms presentation cell, including the original clip id.
-        cell=(tick//(CELL*TICK_SAMPLE),item["clip_id"])
+        cell=(cell_index,item["clip_id"])
         cache=ctx["cells"]
         if cell not in cache:
             if len(cache)>650:cache.clear()
