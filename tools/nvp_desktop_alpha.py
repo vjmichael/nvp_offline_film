@@ -130,68 +130,133 @@ def run_smoke():
 
 
 def run_persistent_installed_smoke(mode):
-    """Installed-app launch, exit, reopen must retain SQLite project data."""
+    """Real installed NVP: two projects, screenplay/revision, protected restart.
+
+    Test passphrases and source text are synthetic. Diagnostic files contain
+    stage IDs only. This is Windows runner verification, not owner-operated UI.
+    """
     _smoke_checkpoint("persistent_"+mode+"_entered")
     import json
+    from hashlib import sha256
+    from http.cookiejar import CookieJar
+    from urllib.error import HTTPError
     home=os.environ.get("NVP_HOME")
     if not home:
         raise RuntimeError("Installed acceptance requires explicit NVP_HOME")
     root=Path(home)
     root.mkdir(parents=True,exist_ok=True)
     marker=root/"installed-smoke-project.json"
+    password="NVP-G03-SYNTHETIC-RUNNER-ONLY-PASSPHRASE-2026"
     app=create_app()
     _smoke_checkpoint("persistent_"+mode+"_app_ready")
     server,worker,port,sock=serve(app)
     _smoke_checkpoint("persistent_"+mode+"_server_started")
     base="http://127.0.0.1:"+str(port)
+
+    def call(path,method="GET",payload=None,*,client=None):
+        data=None if payload is None else json.dumps(payload).encode("utf8")
+        headers={} if data is None else {"Content-Type":"application/json",
+                                         "x-nvp-director":"1"}
+        request=urllib.request.Request(base+path,headers=headers,
+                                       data=data,method=method)
+        with (client or urllib.request).open(request,timeout=12) as reply:
+            return json.load(reply)
+
+    def denied(path,expected=423,*,client=None):
+        try:
+            call(path,client=client)
+        except HTTPError as error:
+            if error.code != expected:
+                raise RuntimeError(
+                    "Expected protected movie denial "+str(expected)+
+                    ", got "+str(error.code)) from error
+            return
+        raise RuntimeError("Protected movie data exposed without unlocked session")
+
     try:
         with urllib.request.urlopen(base+"/api/status",timeout=10) as reply:
             if json.load(reply).get("status")!="ready":
-                raise RuntimeError("Offline installed API isn't ready")
+                raise RuntimeError("Installed offline API is not ready")
         with urllib.request.urlopen(base+"/",timeout=10) as reply:
             if "assets/" not in reply.read().decode("utf8"):
-                raise RuntimeError("React desktop bundle unavailable after install")
-        _smoke_checkpoint("persistent_"+mode+"_html_ok")
+                raise RuntimeError("Bundled React director UI unavailable")
+        with urllib.request.urlopen(base+"/postproduction.html",timeout=10) as reply:
+            if "assets/" not in reply.read().decode("utf8"):
+                raise RuntimeError("Bundled separate editor unavailable")
+        _smoke_checkpoint("persistent_"+mode+"_both_html_ok")
         if mode=="create":
             if marker.exists():
-                raise RuntimeError("Persistent test project marker already exists")
-            payload=json.dumps({"title":"NVP Installed Restart Acceptance",
-                                "idea":"Persistent native project save and reopen"}).encode()
-            request=urllib.request.Request(
-                base+"/api/projects",data=payload,
-                headers={"Content-Type":"application/json"},method="POST")
-            with urllib.request.urlopen(request,timeout=10) as reply:
-                record=json.load(reply)
+                raise RuntimeError("Installed test already has a project marker")
+            first=call("/api/projects","POST",{
+                "title":"NVP Installed Restart Acceptance",
+                "idea":"Persistent native project save and reopen"})
             screenplay="INT. EDIT SUITE - DAY\n\nA camera rolls."
-            edit_request=urllib.request.Request(
-                base+"/api/projects/"+record["id"]+"/screenplay",
-                data=json.dumps({"screenplay":screenplay,
-                                 "expected_revision":0}).encode("utf8"),
-                headers={"Content-Type":"application/json"},method="PUT")
-            with urllib.request.urlopen(edit_request,timeout=10) as reply:
-                saved=json.load(reply)
-            if saved.get("revision")!=1:
-                raise RuntimeError("NVP installed screenplay save did not commit")
-            _smoke_checkpoint("persistent_create_screenplay_saved")
-            marker.write_text(json.dumps({"id":record["id"],
-                        "title":record["title"],"screenplay":screenplay,
-                        "revision":1}),encoding="utf8")
-        else:
+            changed=call("/api/projects/"+first["id"]+"/screenplay","PUT",{
+                "screenplay":screenplay,"expected_revision":0})
+            if changed["revision"]!=1:
+                raise RuntimeError("Installed original screenplay failed to commit")
+            second=call("/api/projects","POST",{
+                "title":"NVP Protected Second Movie",
+                "idea":"Confidential test description",
+                "screenplay":"EXT. HARBOR - SUNSET\n\nAn empty boat returns."})
+            if not second.get("scenes") or second["revision"]!=0:
+                raise RuntimeError("Atomic original screenplay was not saved")
+            call("/api/projects/"+second["id"]+"/protect","POST",{
+                "passphrase":password})
+            denied("/api/projects/"+second["id"])
+            listing=call("/api/projects")
+            hidden=next(row for row in listing if row["id"]==second["id"])
+            if not hidden.get("locked") or "idea" in hidden:
+                raise RuntimeError("Locked installed project disclosed synopsis")
+            _smoke_checkpoint("persistent_create_two_projects_and_lock_verified")
+            marker.write_text(json.dumps({
+                "first_id":first["id"],"first_title":first["title"],
+                "first_screenplay_sha256":sha256(screenplay.encode()).hexdigest(),
+                "first_revision":1,"protected_id":second["id"],
+                "protected_title":second["title"],
+                "protected_screenplay_sha256":sha256(
+                    second["screenplay"].encode()).hexdigest()
+            },sort_keys=True),encoding="utf8")
+        elif mode=="reopen":
             expected=json.loads(marker.read_text("utf8"))
-            with urllib.request.urlopen(
-                    base+"/api/projects/"+expected["id"],timeout=10) as reply:
-                reopened=json.load(reply)
-            if (reopened["title"]!=expected["title"]
-                or reopened["screenplay"]!=expected["screenplay"]
-                or reopened["revision"]!=expected["revision"]):
-                raise RuntimeError("Installed NVP lost project/edit history across restart")
+            first=call("/api/projects/"+expected["first_id"])
+            if (first["title"]!=expected["first_title"] or
+                first["revision"]!=expected["first_revision"] or
+                sha256(first["screenplay"].encode()).hexdigest()!=
+                    expected["first_screenplay_sha256"]):
+                raise RuntimeError("First movie did not survive installed restart")
+            protected="/api/projects/"+expected["protected_id"]
+            denied(protected)
+            denied(protected+"/story-bible")
+            listing=call("/api/projects")
+            redacted=next(x for x in listing if x["id"]==expected["protected_id"])
+            if redacted.get("unlocked") or "idea" in redacted:
+                raise RuntimeError("Installed restart unexpectedly unlocked movie")
+            cookies=CookieJar()
+            opener=urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(cookies))
+            unlocked=call(protected+"/unlock","POST",{
+                "passphrase":password},client=opener)
+            if unlocked.get("access")!="unlocked":
+                raise RuntimeError("Installed protected movie could not unlock")
+            second=call(protected,client=opener)
+            if (second["title"]!=expected["protected_title"] or
+                sha256(second["screenplay"].encode()).hexdigest()!=
+                    expected["protected_screenplay_sha256"]):
+                raise RuntimeError("Protected movie lost original screenplay")
+            switched=call("/api/projects/"+expected["first_id"],client=opener)
+            if switched["id"]!=expected["first_id"]:
+                raise RuntimeError("Movie switching selected foreign project")
+            call(protected+"/lock","POST",{},client=opener)
+            denied(protected,client=opener)
             from backend.nvp_studio import Studio
-            durable=Studio(root/"nvp_studio.sqlite3").get_project(expected["id"])
-            if (durable["title"]!=expected["title"]
-                or durable["screenplay"]!=expected["screenplay"]
-                or durable["revision"]!=expected["revision"]):
-                raise RuntimeError("SQLite screenplay revision changed after reopening app")
-            _smoke_checkpoint("persistent_reopen_db_verified")
+            durable=Studio(root/"nvp_studio.sqlite3").get_project(
+                expected["first_id"])
+            if durable["revision"]!=expected["first_revision"]:
+                raise RuntimeError("Durable film revision changed during reopen")
+            _smoke_checkpoint("persistent_reopen_two_movies_lock_switch_verified")
+        else:
+            raise ValueError("Unknown installed restart mode")
         _smoke_checkpoint("persistent_"+mode+"_completed")
         return 0
     finally:
@@ -200,8 +265,7 @@ def run_persistent_installed_smoke(mode):
         sock.close()
         _smoke_checkpoint("persistent_"+mode+"_server_shutdown")
         if worker.is_alive():
-            raise RuntimeError("Installed NVP failed to exit cleanly")
-
+            raise RuntimeError("Installed NVP failed clean server shutdown")
 
 def create_trusted_camera_bridge(port):
     """Desktop-only pywebview IPC; never registered as an HTTP route."""
@@ -454,6 +518,10 @@ def run_g03_window_smoke():
             "G03 Visual Movie",
             "A valley in the early morning",
             "EXT. VALLEY - MORNING\n\nMist drifts across the hillside.")
+        second_movie=studio.create_project(
+            "G03 Second Film",
+            "Waves at the coast",
+            "EXT. COAST - DAY\n\nA cloud crosses the water.")
         server,worker,port,sock=serve(app)
         loaded=Event()
         result={"passed":False,"phase":"not_started"}
@@ -516,6 +584,44 @@ def run_g03_window_smoke():
                 if not scene:
                     raise RuntimeError("Real saved actor-free scene not visible")
                 result["phase"]="scenes"
+                # A real React click must switch to a second project and
+                # back without borrowing the first movie's source scene.
+                next_movie=window.evaluate_js(
+                    "(()=>{const b=[...document.querySelectorAll('aside.film-sidebar .film-project')]"
+                    ".find(x=>x.textContent.includes('G03 Second Film'));"
+                    "if(!b)return false;b.click();return true;})()")
+                if not next_movie:
+                    raise RuntimeError("Cannot select second saved movie")
+                deadline=time.monotonic()+18
+                changed=False
+                while time.monotonic()<deadline:
+                    changed=window.evaluate_js(
+                        "Boolean(document.querySelector('main.film-main h1')"
+                        "&& document.querySelector('main.film-main h1').textContent==='G03 Second Film'"
+                        "&& document.body.textContent.includes('EXT. COAST - DAY')"
+                        "&& !document.body.textContent.includes('Mist drifts across the hillside'))")
+                    if changed:break
+                    time.sleep(.2)
+                if not changed:
+                    raise RuntimeError("Native UI failed project switch or leaked prior source")
+                first_movie=window.evaluate_js(
+                    "(()=>{const b=[...document.querySelectorAll('aside.film-sidebar .film-project')]"
+                    ".find(x=>x.textContent.includes('G03 Visual Movie'));"
+                    "if(!b)return false;b.click();return true;})()")
+                if not first_movie:
+                    raise RuntimeError("Cannot return to original saved movie")
+                deadline=time.monotonic()+18
+                returned=False
+                while time.monotonic()<deadline:
+                    returned=window.evaluate_js(
+                        "Boolean(document.querySelector('main.film-main h1')"
+                        "&& document.querySelector('main.film-main h1').textContent==='G03 Visual Movie'"
+                        "&& document.body.textContent.includes('EXT. VALLEY - MORNING'))")
+                    if returned:break
+                    time.sleep(.2)
+                if not returned:
+                    raise RuntimeError("Native UI did not restore first movie")
+                result["phase"]="two_movie_switch_verified"
                 switched=window.evaluate_js(
                     "(()=>{const b=[...document.querySelectorAll('nav.film-steps button')]"
                     ".find(x=>x.textContent.includes('Edit Film'));"
@@ -540,6 +646,14 @@ def run_g03_window_smoke():
                         raise RuntimeError("Installed editor HTML not served")
                 result["phase"]="postproduction_loaded"
                 result["passed"]=True
+                _smoke_checkpoint("g03_native_ui_observed")
+                # CI-only: preserve the actual installed window for a separate
+                # OS UIAutomation inspection, not only JavaScript DOM checks.
+                hold=int(os.environ.get("NVP_G03_UIA_HOLD_SECONDS","0"))
+                if hold < 0 or hold > 45:
+                    raise ValueError("Invalid G03 UIAutomation hold duration")
+                if hold:
+                    time.sleep(hold)
             except Exception as exc:
                 result["failure"]=str(exc)
             finally:

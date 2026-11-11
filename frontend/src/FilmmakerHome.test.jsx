@@ -75,6 +75,35 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
     .toContain('postproduction.html');
  });
 
+ it('switches between two saved movies without reusing the previous scene',async()=>{
+  const B='b'.repeat(32);
+  const second={...MOVIE,id:B,title:'Coastal Documentary',idea:'Waves by the coast',
+    screenplay:'EXT. COAST - DAY\n\nWaves move.',scenes:[{
+      id:'SC_222222222222',number:1,heading:'EXT. COAST - DAY',
+      text:'EXT. COAST - DAY\n\nWaves move.',characters:[],dialogue:[],shots:[]
+    }]};
+  const other={...snapshot,id:B,title:second.title,idea:second.idea};
+  const {handler}=server([snapshot,other]);
+  handler.mockImplementation(async url=>{
+    if(url==='/api/status')return {ok:true,json:async()=>({status:'ready'})};
+    if(url==='/api/projects')return {ok:true,json:async()=>[snapshot,other]};
+    if(url==='/api/projects/'+ID)return {ok:true,json:async()=>MOVIE};
+    if(url==='/api/projects/'+B)return {ok:true,json:async()=>second};
+    throw new Error('Unexpected URL: '+url);
+  });
+  render(<FilmmakerHome/>);
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Resume Working'}));
+  fireEvent.click(screen.getByRole('button',{name:/Forest Documentary.*Resume movie/i}));
+  await waitFor(()=>expect(screen.getByText('EXT. FOREST - MORNING')).toBeTruthy());
+  fireEvent.click(screen.getByRole('button',{name:'Resume movie: Coastal Documentary'}));
+  await waitFor(()=>expect(screen.getByRole('heading',{name:'Coastal Documentary'})).toBeTruthy());
+  expect(screen.getByText('EXT. COAST - DAY')).toBeTruthy();
+  expect(screen.queryByText('Mist moves between trees.')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Resume movie: Forest Documentary'}));
+  await waitFor(()=>expect(screen.getByRole('heading',{name:'Forest Documentary'})).toBeTruthy());
+  expect(screen.getByText('EXT. FOREST - MORNING')).toBeTruthy();
+ });
+
  it('keeps the real source-line screenplay editor editable on resume',async()=>{
   server();
   render(<FilmmakerHome/>);
