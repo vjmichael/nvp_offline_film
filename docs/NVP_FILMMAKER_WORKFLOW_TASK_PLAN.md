@@ -71,7 +71,7 @@ The filmmaker sees only **Script (optional) → Set Up Scenes → Film Scenes �
 **Exit:** real sample screenplay and idea produce correct editable creative records and revisioned provenance; dialogue links only to the right character; nature scene with zero actors passes. This group creates planning data, not a claim of visible geometry—that is G05.
 
 ### G05 — Set Up Scenes: **the core visual Scene Generator**
-**State:** OpenUSD scene primitives and donor world/asset components exist; general authorable script/idea → *visible staged OpenUSD scene* is **not accepted**. Dependency: G02–G04.
+**State:** **G05 source implementation authored** on `nvp/g05-visual-scene-authoring-20261111`: G04-driven actual OpenUSD world generation, editor interaction, proposal-only AI scene decoration, immutable versions, director approval and exact-source G06 handoff. Native installed-app and model acceptance **not yet run** under the creator's build-first policy; do not mark verified. G02 remains deferred; G04's development source is the stack base. See [G05 implementation handoff](NVP_G05_VISUAL_SCENE_IMPLEMENTATION.md).
 
 - **G05-A:** Typed, unapproved ScenePlan from scene headers/Bible/director input: setting, environment, time, weather, props, ActorIDs, actor-free environmental actions, dialogue references and known unknowns. Stale revision/source/foreign-project denial.
 - **G05-B:** Build a bounded real OpenUSD low-poly scene: ground/world, editable set assets, placeable props, actors as correctly bound placeholders *where requested*, basic sun/weather/lighting and cameras. Create data, not static images pretending to be a 3D stage.
