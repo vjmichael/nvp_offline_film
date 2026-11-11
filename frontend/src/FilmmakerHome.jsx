@@ -35,6 +35,22 @@ function useDialogFocus(isOpen) {
   useEffect(()=>{if(isOpen) ref.current?.focus();},[isOpen]);
   return ref;
 }
+function keepDialogFocus(event) {
+  if(event.key!=='Tab')return;
+  const items=[...event.currentTarget.querySelectorAll(
+    'button:not(:disabled),input:not(:disabled),a[href],textarea:not(:disabled)'
+  )].filter(element=>element.getClientRects().length||element.offsetParent!==null);
+  // Headless jsdom may not compute rectangles; the actual installed browser does.
+  const all=items.length?items:[...event.currentTarget.querySelectorAll(
+    'button:not(:disabled),input:not(:disabled),a[href],textarea:not(:disabled)'
+  )];
+  if(!all.length)return;
+  if(event.shiftKey&&document.activeElement===all[0]){
+    event.preventDefault();all[all.length-1].focus();
+  }else if(!event.shiftKey&&document.activeElement===all[all.length-1]){
+    event.preventDefault();all[0].focus();
+  }
+}
 function DisplayMessage({children,kind='assistant'}) {
   return <div className={'film-message film-message-'+kind}>{children}</div>;
 }
@@ -91,7 +107,10 @@ export default function FilmmakerHome() {
   function attachMovie(movie) {
     setProject(movie);
     setScript(movie.screenplay||'');
-    setSelectedScene(movie.scenes?.[0]?.id||'');
+    let remembered='';
+    try{remembered=window.localStorage.getItem('nvp-film-scene-'+movie.id)||''}catch{}
+    setSelectedScene(movie.scenes?.some(s=>s.id===remembered)
+      ?remembered:(movie.scenes?.[0]?.id||''));
     setPhase(restorePhase(movie.id));
     setFlow('working');
   }
@@ -122,6 +141,7 @@ export default function FilmmakerHome() {
       }else{
         await request('/projects/'+lockTarget.id+'/lock','POST');
       }
+      try{window.localStorage.setItem('nvp-film-lock-'+lockTarget.id,String(Date.now()))}catch{}
       setLockTarget(null);setPassphrase('');setConfirmPhrase('');
       await refreshProjects();showWelcome();
       setNotice('Movie locked. Its scenes and screenplay require unlocking again.');
@@ -155,6 +175,7 @@ export default function FilmmakerHome() {
   }
   async function chooseScene(id) {
     setSelectedScene(id);
+    if(project?.id)try{window.localStorage.setItem('nvp-film-scene-'+project.id,id)}catch{}
   }
   async function suggestShots(scene) {
     await perform(async()=>{
@@ -223,7 +244,7 @@ export default function FilmmakerHome() {
           </div>
           <p className="film-hint">Your idea is not sent to an AI until a model is connected. You can work manually now.</p>
         </div>
-        <div role="dialog" aria-modal="true" aria-labelledby="film-welcome-title" className="film-modal-backdrop">
+        <div role="dialog" aria-modal="true" aria-labelledby="film-welcome-title" className="film-modal-backdrop" onKeyDown={keepDialogFocus}>
           <section className="film-modal">
             <div className="film-eyebrow">WELCOME TO NVP</div>
             <h2 id="film-welcome-title">Would you like to make a new movie or resume working on a movie?</h2>
@@ -364,7 +385,7 @@ export default function FilmmakerHome() {
         </section>}
       </div>}
       {lockTarget&&<div className="film-modal-backdrop" role="dialog" aria-modal="true"
-        aria-labelledby="film-lock-title">
+        aria-labelledby="film-lock-title" onKeyDown={keepDialogFocus}>
         <form className="film-modal" onSubmit={lockAction==='unlock'?unlockMovie:protectOrRelock}>
           <h2 id="film-lock-title">{lockAction==='unlock'?'Unlock Movie':lockAction==='protect'?'Protect Movie':'Lock Movie'}</h2>
           <p className="film-muted">{lockTarget.title}</p>
@@ -380,7 +401,7 @@ export default function FilmmakerHome() {
           </>}
           <p className="film-hint">Movie locking protects access through NVP, not files on your computer. Keep your passphrase: password recovery is not yet available.</p>
           <div className="film-actions">
-            <button type="button" className="film-secondary" onClick={()=>{setLockTarget(null);setPassphrase('');setError('')}}>Cancel</button>
+            <button type="button" ref={lockAction==='lock'?lockFocus:null} className="film-secondary" onClick={()=>{setLockTarget(null);setPassphrase('');setError('')}}>Cancel</button>
             <button className="film-primary" disabled={busy} type="submit">
               {lockAction==='unlock'?'Unlock':lockAction==='protect'?'Protect':'Lock Now'}</button>
           </div>

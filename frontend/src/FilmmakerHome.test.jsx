@@ -2,6 +2,7 @@ import React from 'react';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {render,screen,fireEvent,waitFor,within,cleanup} from '@testing-library/react';
 import FilmmakerHome from './FilmmakerHome.jsx';
+import PostProduction from './PostProduction.jsx';
 
 const ID='a'.repeat(32);
 const MOVIE={
@@ -95,6 +96,17 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   fireEvent.click(screen.getByRole('button',{name:/Forest Documentary.*Locked/i}));
   expect(screen.getByRole('dialog',{name:'Unlock Movie'})).toBeTruthy();
   expect(log.some(x=>x.url==='/api/projects/'+ID)).toBe(false);
+ });
+
+ it('clears a separate Post-Production window when the film is locked elsewhere',async()=>{
+  server();
+  window.history.replaceState({},'', '/postproduction.html?project='+ID);
+  render(<PostProduction/>);
+  await waitFor(()=>expect(screen.getByText('EXT. FOREST - MORNING')).toBeTruthy());
+  fireEvent(window,new StorageEvent('storage',{key:'nvp-film-lock-'+ID,newValue:'1'}));
+  await waitFor(()=>expect(screen.queryByText('EXT. FOREST - MORNING')).toBeNull());
+  expect(screen.getByText(/This movie is locked/)).toBeTruthy();
+  window.history.replaceState({},'','/');
  });
 
  it('keeps AI unavailability explicit rather than pretending to generate film',async()=>{

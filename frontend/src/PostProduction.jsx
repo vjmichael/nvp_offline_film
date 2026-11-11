@@ -10,14 +10,35 @@ export default function PostProduction() {
     if(!id||!/^[a-f0-9]{32}$/.test(id)) {
       setStatus('Open a movie from the NVP home first.');return;
     }
-    fetch('/api/projects/'+id,{credentials:'same-origin'})
-      .then(async response=>{
-        if(!response.ok)throw new Error(response.status===423
-          ? 'This movie is locked. Unlock it from the NVP home first.'
-          : 'Unable to open this movie.');
-        return response.json();
-      }).then(data=>{setMovie(data);setStatus('')})
-      .catch(error=>setStatus(error.message));
+    let active=true,sequence=0;
+    const deny=()=>{sequence+=1;setMovie(null);
+      setStatus('This movie is locked. Unlock it from the NVP home first.');};
+    const load=()=>{
+      const observed=++sequence;
+      fetch('/api/projects/'+id,{credentials:'same-origin'})
+        .then(async response=>{
+          if(!response.ok)throw new Error(response.status===423
+            ? 'This movie is locked. Unlock it from the NVP home first.'
+            : 'Unable to open this movie.');
+          return response.json();
+        })
+        .then(data=>{if(active&&observed===sequence){setMovie(data);setStatus('')}})
+        .catch(error=>{if(active&&observed===sequence){
+          setMovie(null);setStatus(error.message);
+        }});
+    };
+    const onStorage=event=>{
+      if(event.key==='nvp-film-lock-'+id)deny();
+    };
+    window.addEventListener('storage',onStorage);
+    window.addEventListener('focus',load);
+    const check=window.setInterval(load,15000);
+    load();
+    return ()=>{active=false;sequence+=1;
+      window.clearInterval(check);
+      window.removeEventListener('storage',onStorage);
+      window.removeEventListener('focus',load);
+    };
   },[id]);
   return <div className="film-post-window">
     <header className="film-topbar"><span>NVP · POST-PRODUCTION</span>
