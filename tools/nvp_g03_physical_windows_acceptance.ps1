@@ -120,7 +120,7 @@ try {
     executed_by='local human operator'
     measured_at=(Get-Date).ToUniversalTime().ToString('o')
     installed_exe=$InstalledExe
-    installer_exe_sha256=$exeHash
+    installed_exe_sha256=$exeHash
     isolated_test_home=$testHome
     actual_windows_uia=$uia
     operator_checks=$script:checks
