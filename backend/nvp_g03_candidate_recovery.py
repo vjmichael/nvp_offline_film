@@ -98,7 +98,8 @@ def reopen_known_originals(candidate_root, pid, passphrase, inventory):
             sql = json.loads(raw_sql)
         except (ValueError, UnicodeError) as exc:
             raise MigrationRefused("Recovered SQLite row snapshot malformed") from exc
-        if (sql.get("format") != "nvp.g03.legacy.sql_snapshot.v1"
+        if (sql.get("format") not in ("nvp.g03.legacy.sql_snapshot.v1",
+                                       "nvp.g03.legacy.sql_snapshot.v2")
                 or sql.get("project_id") != pid):
             raise MigrationRefused("Recovered SQLite row source identity invalid")
         projects = sql.get("tables",{}).get("projects",[])
