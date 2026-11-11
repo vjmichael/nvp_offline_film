@@ -85,7 +85,8 @@ class WindowsJobProcess:
             self._process = None
 
 
-def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False):
+def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0,
+                     linux_cgroup_tree_required=False, stdin=None):
     """Trusted host launches pinned absolute executable with OS containment."""
     if not isinstance(command, list) or not command or not Path(command[0]).is_absolute():
         raise ValueError("Containment requires an absolute executable path")
@@ -94,22 +95,25 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
     if type(linux_cgroup_tree_required) is not bool:
         raise ValueError("Linux whole-tree containment mode must be boolean")
     if os.name == "nt":
-        return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr, memory_mb=memory_mb)
+        return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr,
+                               memory_mb=memory_mb, stdin=stdin)
     if sys.platform == "linux":
         if linux_cgroup_tree_required:
+            if stdin is not None:
+                raise RuntimeError("Protected stdin requires a separately reviewed delegated cgroup transport")
             from backend.nvp_worker_linux_cgroup import launch_cgroup_tree
             return launch_cgroup_tree(command,cwd=cwd,stdout=stdout,stderr=stderr,memory_mb=memory_mb)
         shim = Path(__file__).with_name("nvp_worker_linux_launcher.py").resolve()
         command = [sys.executable, str(shim), "--parent", str(os.getpid()),
                    "--memory-mb", str(memory_mb)] + command
-        proc = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL,
+        proc = subprocess.Popen(command, cwd=cwd, stdin=stdin or subprocess.DEVNULL,
                                 stdout=stdout, stderr=stderr, shell=False, close_fds=True,
                                 start_new_session=True)
         return LinuxContainedProcess(proc)
     raise RuntimeError("Unsupported OS containment platform")
 
 
-def _launch_windows(command, *, cwd, stdout, stderr, memory_mb):
+def _launch_windows(command, *, cwd, stdout, stderr, memory_mb, stdin=None):
     """Suspended Win32 creation: no Blender instruction runs outside the job."""
     import msvcrt
     import win32job
@@ -126,7 +130,8 @@ def _launch_windows(command, *, cwd, stdout, stderr, memory_mb):
     win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, info)
 
     nul = open("NUL", "rb", buffering=0)
-    handles = (msvcrt.get_osfhandle(nul.fileno()),
+    handles = (msvcrt.get_osfhandle(
+                   nul.fileno() if stdin is None else stdin.fileno()),
                msvcrt.get_osfhandle(stdout.fileno()),
                msvcrt.get_osfhandle(stderr.fileno()))
     previous = [os.get_handle_inheritable(h) for h in handles]
