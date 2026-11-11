@@ -140,3 +140,27 @@ class LinuxCgroupCustodyContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_fresh_empty_receipt_refuses_repopulation_and_missing_authority():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "cgroup.events").write_text("populated 0\\n")
+        worker = LinuxCgroupCustodyContractTests()._owned(root)
+        with unittest.TestCase().assertRaisesRegex(CgroupCustodyError, "No consumed"):
+            worker.verify_still_empty()
+        worker._consumed = True
+        assert worker.verify_still_empty()["empty_group_verified"] is True
+        (root / "cgroup.events").write_text("populated 1\\n")
+        with unittest.TestCase().assertRaisesRegex(CgroupCustodyError, "no longer empty"):
+            worker.verify_still_empty()
+
+
+def test_fresh_empty_receipt_rejects_ambiguous_kernel_events():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "cgroup.events").write_text("populated 0\\npopulated 1\\n")
+        worker = LinuxCgroupCustodyContractTests()._owned(root)
+        worker._consumed = True
+        with unittest.TestCase().assertRaisesRegex(CgroupCustodyError, "Malformed or duplicate"):
+            worker.verify_still_empty()
