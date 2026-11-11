@@ -336,9 +336,11 @@ class G06Filming:
         return new
 
     @staticmethod
-    def _manifest(db,pid,scene_id,source,head,stage_plan):
+    def _manifest(db,pid,scene_id,source,head,stage_plan,
+                  stage_approved=True):
         work=G06Filming._working(db,pid,scene_id,head)
-        current=(work["scene_stage_revision"]==head["revision"] and
+        current=(stage_approved and
+                 work["scene_stage_revision"]==head["revision"] and
                  work["stage_sha256"]==head["usd_sha256"])
         clips=[{"id":r["id"],"actor_id":r["actor_id"],
                 "sample_count":r["sample_count"],"seconds":round(
@@ -377,6 +379,7 @@ class G06Filming:
                     for o in stage_plan["objects"]],
                 "work_revision":work["revision"],
                 "work_current":current,
+                "stage_ready":stage_approved,
                 "duration_seconds":float(_time(work["duration_tick"])),
                 "events":[{**e,"start_seconds":float(_time(e["start_tick"])),
                            "end_seconds":float(_time(e["end_tick"]))}
@@ -389,9 +392,34 @@ class G06Filming:
 
     def view(self,pid,scene_id):
         def reader(db,movie,source):
-            head,record,plan,raw=_stage(db,source,pid,scene_id)
-            return self._manifest(db,pid,scene_id,source,
-                {"revision":head["revision"],"usd_sha256":record["usd_sha256"]},plan)
+            head,record=G05SceneAuthoring._record(db,pid,scene_id)
+            current=(head is not None and head["status"]=="approved" and
+                     head["source_sha256"]==source["scene_source_sha256"])
+            if current:
+                plan=json.loads(record["plan_json"])
+                if _sha(record["usd_layer"])!=record["usd_sha256"]:
+                    raise RuntimeError("The approved film stage was changed")
+                _reopen_usd(record["usd_layer"],plan)
+                chosen={"revision":head["revision"],
+                        "usd_sha256":record["usd_sha256"]}
+            else:
+                # The prior approved source remains readable during a new
+                # visual revision. It cannot authorize a NEW recording.
+                prior=db.execute("""SELECT * FROM g05_scene_versions
+                    WHERE project_id=? AND scene_id=? AND status='approved'
+                    ORDER BY revision DESC LIMIT 1""",(pid,scene_id)).fetchone()
+                if prior:
+                    plan=json.loads(prior["plan_json"])
+                    if _sha(prior["usd_layer"])!=prior["usd_sha256"]:
+                        raise RuntimeError("A previous scene original was changed")
+                    _reopen_usd(prior["usd_layer"],plan)
+                    chosen={"revision":prior["revision"],
+                            "usd_sha256":prior["usd_sha256"]}
+                else:
+                    plan={"objects":[]}
+                    chosen={"revision":0,"usd_sha256":""}
+            return self._manifest(db,pid,scene_id,source,chosen,plan,
+                                  stage_approved=current)
         return self._with(pid,scene_id,reader)
 
     def set_duration(self,pid,scene_id,seconds,expected_revision):
@@ -712,6 +740,7 @@ class G06Filming:
                     "rotation":o["rotation"],"scale":o["scale"],
                     "actor_id":o["actor_id"],"role":o["role"]}
                     for o in plan["objects"]],
+                "stage_setting":plan["setting"],
                 "camera_tracks_frozen":False,"immutable":True,
                 "source_is_original_openusd":True,
                 "picture_frames_rendered":False}
@@ -812,7 +841,8 @@ class G06Filming:
                         "start_seconds":float(_time(entry["start_tick"])),
                         "duration_seconds":entry["sample_count"]/RATE}
                         for entry in audio],
-                    "stage_objects":doc["stage_objects"],"camera":views,
+                    "stage_objects":doc["stage_objects"],
+                    "stage_setting":doc["stage_setting"],"camera":views,
                     "camera_changes_preserve_take":True}
         return self.g05.g04._execute(pid,lambda db,movie:(
             self._schema(db),read(db,movie,None))[1])
