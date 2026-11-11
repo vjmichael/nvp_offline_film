@@ -433,12 +433,24 @@ def render_film(assembly,output,*,cancel=None,progress=None):
         if not isinstance(item["performance_usd"],bytes):
             raise RuntimeError("Original performance is not native OpenUSD bytes")
     worlds={key:SourceWorld(value) for key,value in sources.items()}
+    production=assembly.get("production_looks",{})
+    if production:
+        from backend.nvp_g09_environment import _json,_sha
+        from backend.nvp_g09_render import render_production_picture
+        actual=_sha(_json({key:{
+            "revision":v["revision"],"sha256":v["sha256"]}
+            for key,v in sorted(production.items())}).encode("utf8"))
+        if actual!=assembly.get("production_looks_sha256"):
+            raise RuntimeError("Approved scene look digest was changed")
+        if set(production)-set(sources):
+            raise RuntimeError("An approved set is not bound to a frozen Take")
     writer=MjpegPcmAvi(output,frames)
     for frame in range(frames):
         if cancel is not None and cancel():
             raise InterruptedError("Movie export was cancelled")
         tick=frame*TICKS_FRAME
-        jpeg=render_picture(assembly,worlds,tick)
+        jpeg=(render_production_picture(assembly,worlds,tick)
+              if production else render_picture(assembly,worlds,tick))
         sound=_audio_frame(assembly,sources,frame*2000,2000)
         writer.frame(jpeg,sound)
         if progress and (frame%6==0 or frame==frames-1):
@@ -449,6 +461,8 @@ def render_film(assembly,output,*,cancel=None,progress=None):
     result["width"]=WIDTH
     result["height"]=HEIGHT
     result["profile"]=PROFILE
+    result["approved_look_sha256"]=assembly.get("production_looks_sha256")
+    result["approved_production_look_applied"]=bool(production)
     result["original_sources_changed"]=False
     return result
 
