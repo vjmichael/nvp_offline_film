@@ -1,0 +1,514 @@
+"""G07 — source-referenced, non-destructive filmmaker editing.
+
+Edits are Film Time decisions, not altered pixels, audio masters or new Takes.
+Each published revision is immutable; one head points to the current version.
+G06 verified frozen original OpenUSD/PCM is the only source authority. Source
+clips store exact Take digests, integer trims, camera, grade and sound decisions.
+G08 uses the trusted assembly, not a flattened proxy or an FFmpeg timeline.
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import math
+import uuid
+from datetime import datetime,timezone
+from decimal import Decimal,InvalidOperation
+
+from backend.nvp_g06_filming import G06Filming,TAKE_FORMAT,RATE,HEX,_sha,_json
+from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+
+FORMAT="nvp.g07.non_destructive_edit.v1"
+MAX_EDL_CLIPS=250
+MAX_EDIT_REVISIONS=15000
+MAX_SINGLE_TAKE_SECONDS=1800
+MIN_CLIP_TICKS=TICKS_PER_SECOND//100  # source authoring supports hundredths
+MAX_PROJECT_SECONDS=8*3600
+TICKS_PER_SAMPLE=TICKS_PER_SECOND//RATE
+TRANSITIONS=frozenset(("cut","dissolve"))
+MAX_PREVIEW_ACTIVE=2
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sec(value,*,limit=MAX_PROJECT_SECONDS):
+    if type(value) not in (str,int,float) or type(value) is bool:
+        raise ValueError("Enter a time in seconds")
+    try:
+        d=Decimal(str(value))
+    except InvalidOperation as exc:
+        raise ValueError("Enter a valid time") from exc
+    if not d.is_finite() or not 0<=d<=limit:
+        raise ValueError("Time is outside the film")
+    t=d*TICKS_PER_SECOND
+    if t!=t.to_integral_value():
+        raise ValueError("Choose a time represented by the original film clock")
+    return int(t)
+
+
+def _secs(tick):
+    return float(Decimal(tick)/Decimal(TICKS_PER_SECOND))
+
+
+def _vec(value):
+    if (type(value) is not list or len(value)!=3 or any(
+            type(x) not in (float,int) or not math.isfinite(x) or
+            abs(x)>150 for x in value)):
+        raise ValueError("Place the camera inside the scene")
+    return [float(v) for v in value]
+
+
+def _number(value,low,high,label):
+    if type(value) not in (int,float) or not math.isfinite(value) or (
+            not low<=value<=high):
+        raise ValueError("Invalid "+label)
+    return float(value)
+
+
+def _camera(value):
+    if type(value) is not dict or set(value)!={"name","position","look_at","focal_mm"}:
+        raise ValueError("Choose a complete camera view")
+    pos=_vec(value["position"])
+    target=_vec(value["look_at"])
+    if math.dist(pos,target)<.05:
+        raise ValueError("Point the camera away from its own position")
+    name=value["name"]
+    if type(name) is not str or not 1<=len(name)<=80:
+        raise ValueError("Name this camera view")
+    return {"name":name,"position":pos,"look_at":target,
+        "focal_mm":_number(value["focal_mm"],12,180,"lens")}
+
+
+def _grade(value):
+    if type(value) is not dict or set(value)!={"exposure","saturation","warmth","contrast"}:
+        raise ValueError("Choose picture color controls")
+    return {
+        "exposure":_number(value["exposure"],-4,4,"exposure"),
+        "saturation":_number(value["saturation"],0,2,"saturation"),
+        "warmth":_number(value["warmth"],-1,1,"warmth"),
+        "contrast":_number(value["contrast"],.25,2.5,"contrast"),
+    }
+
+
+def _sound(value):
+    if type(value) is not dict or set(value)!={
+            "clip_id","enabled","gain","pan","spatial","offset_tick"}:
+        raise ValueError("Sound decision is not part of the edit")
+    if type(value["clip_id"]) is not str or not HEX.fullmatch(value["clip_id"]):
+        raise ValueError("Choose an original sound clip")
+    if type(value["enabled"]) is not bool or type(value["spatial"]) is not bool:
+        raise ValueError("Choose a source sound mode")
+    off=value["offset_tick"]
+    if type(off) is not int or abs(off)>MAX_SINGLE_TAKE_SECONDS*TICKS_PER_SECOND:
+        raise ValueError("Sound start time is outside the original Take")
+    return {"clip_id":value["clip_id"],"enabled":value["enabled"],
+        "gain":_number(value["gain"],0,4,"sound level"),
+        "pan":_number(value["pan"],-1,1,"sound position"),
+        "spatial":value["spatial"],"offset_tick":off}
+
+
+def _default_grade():
+    return {"exposure":0.0,"saturation":1.0,"warmth":0.0,"contrast":1.0}
+
+
+def _blank():
+    return {"format":FORMAT,"clips":[],"master_gain":1.0,
+            "title":"My Film","notes":""}
+
+
+def _check_clip_shape(clip):
+    if type(clip) is not dict or set(clip)!={
+        "id","take_id","take_sha256","source_in_tick","source_out_tick",
+        "camera","grade","audio","transition","note"
+    } or any(type(clip[k]) is not str or not HEX.fullmatch(clip[k])
+             for k in ("id","take_id")) or type(clip["take_sha256"]) is not str or
+        len(clip["take_sha256"])!=64):
+        raise ValueError("An edit clip has an unrecognized source")
+    if (type(clip["source_in_tick"]) is not int or
+        type(clip["source_out_tick"]) is not int or
+        not 0<=clip["source_in_tick"]<clip["source_out_tick"] or
+        clip["source_out_tick"]-clip["source_in_tick"]<MIN_CLIP_TICKS):
+        raise ValueError("The clip trim must contain real film time")
+    _camera(clip["camera"]);_grade(clip["grade"])
+    if type(clip["note"]) is not str or len(clip["note"])>600:
+        raise ValueError("Clip note is too long")
+    trans=clip["transition"]
+    if type(trans) is not dict or set(trans)!={"kind","duration_tick"} or (
+        trans["kind"] not in TRANSITIONS) or type(trans["duration_tick"]) is not int:
+        raise ValueError("This transition is not supported")
+    if trans["kind"]=="cut" and trans["duration_tick"]!=0:
+        raise ValueError("A straight cut has no overlap duration")
+    if trans["kind"]=="dissolve" and trans["duration_tick"]<MIN_CLIP_TICKS:
+        raise ValueError("Choose a measurable dissolve duration")
+    audio=clip["audio"]
+    if type(audio) is not list or len(audio)>32:
+        raise ValueError("Too many sound sources in this clip")
+    if len({v.get("clip_id") for v in audio if type(v) is dict})!=len(audio):
+        raise ValueError("A sound source is already included")
+    for source in audio:_sound(source)
+
+
+def _project(db,pid):
+    row=db.execute("SELECT 1 FROM g07_edit_heads WHERE project_id=?",(pid,)).fetchone()
+    if row is None:return 0,_blank()
+    head=db.execute("SELECT revision,document_sha256 FROM g07_edit_heads WHERE project_id=?",
+                    (pid,)).fetchone()
+    version=db.execute("""SELECT document_json,document_sha256
+       FROM g07_edit_versions WHERE project_id=? AND revision=?""",
+       (pid,head["revision"])).fetchone()
+    if not version or version["document_sha256"]!=head["document_sha256"]:
+        raise RuntimeError("The movie edit history is incomplete")
+    raw=version["document_json"]
+    if _sha(raw.encode("utf8"))!=version["document_sha256"]:
+        raise RuntimeError("A movie edit revision was altered")
+    document=json.loads(raw)
+    if not isinstance(document,dict) or document.get("format")!=FORMAT:
+        raise RuntimeError("The saved edit has an unknown format")
+    return head["revision"],document
+
+
+def _schema(db):
+    db.execute("""CREATE TABLE IF NOT EXISTS g07_edit_heads(
+        project_id TEXT PRIMARY KEY,revision INTEGER NOT NULL,
+        document_sha256 TEXT NOT NULL,updated_at TEXT NOT NULL)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS g07_edit_versions(
+        project_id TEXT NOT NULL,revision INTEGER NOT NULL,
+        document_json TEXT NOT NULL,document_sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL,PRIMARY KEY(project_id,revision))""")
+    db.execute("""CREATE INDEX IF NOT EXISTS g07_edit_history
+        ON g07_edit_versions(project_id,revision)""")
+
+
+class G07Editor:
+    def __init__(self,studio,live=None,token=None):
+        self.filming=G06Filming(studio,live,token)
+
+    def _execute(self,pid,fn,mutate=False):
+        def work(db,movie):
+            self.filming._schema(db)
+            _schema(db)
+            return fn(db,movie)
+        return self.filming.g05.g04._execute(pid,work,mutate=mutate)
+
+    def _take(self,db,pid,take_id,cache):
+        if take_id not in cache:
+            row,doc,audio=self.filming._take(db,pid,take_id)
+            if doc["format"]!=TAKE_FORMAT:
+                raise RuntimeError("An edit references an unknown Digital Take")
+            cache[take_id]=(row,doc,audio)
+        return cache[take_id]
+
+    def _validate(self,db,pid,document):
+        if (type(document) is not dict or set(document)!={
+                "format","clips","master_gain","title","notes"} or
+                document["format"]!=FORMAT or
+                type(document["clips"]) is not list or
+                len(document["clips"])>MAX_EDL_CLIPS):
+            raise ValueError("Movie edit data is not supported")
+        if type(document["title"]) is not str or len(document["title"])>140 or (
+                type(document["notes"]) is not str or len(document["notes"])>2000):
+            raise ValueError("Movie notes are too long")
+        _number(document["master_gain"],0,4,"master sound")
+        cache={};previous=None;cursor=0;ids=set();segments=[]
+        for i,clip in enumerate(document["clips"]):
+            _check_clip_shape(clip)
+            if clip["id"] in ids:
+                raise ValueError("The edit has duplicate clip identities")
+            ids.add(clip["id"])
+            row,doc,audio=self._take(db,pid,clip["take_id"],cache)
+            if clip["take_sha256"]!=row["take_sha256"]:
+                raise RuntimeError("An original Take changed after the edit")
+            if clip["source_out_tick"]>doc["duration_tick"]:
+                raise ValueError("A clip extends beyond the original Take")
+            valid_audio={a["clip_id"] for a in audio}
+            if any(x["clip_id"] not in valid_audio for x in clip["audio"]):
+                raise RuntimeError("A sound source belongs to a different Take")
+            duration=clip["source_out_tick"]-clip["source_in_tick"]
+            overlap=clip["transition"]["duration_tick"]
+            if i==0 and overlap:
+                raise ValueError("The opening shot cannot dissolve from nothing")
+            if i>0 and overlap:
+                if (overlap*2>min(duration,previous["duration_tick"]) or
+                    overlap<MIN_CLIP_TICKS):
+                    raise ValueError("A dissolve is longer than the source shots")
+            start=cursor-overlap
+            end=start+duration
+            if start<0 or end>MAX_PROJECT_SECONDS*TICKS_PER_SECOND:
+                raise ValueError("The full film exceeds its editing duration")
+            segments.append({
+                "clip_id":clip["id"],"take_id":clip["take_id"],
+                "scene_id":row["scene_id"],"take_sha256":row["take_sha256"],
+                "source_in_tick":clip["source_in_tick"],
+                "source_out_tick":clip["source_out_tick"],
+                "start_tick":start,"end_tick":end,"duration_tick":duration,
+                "transition":copy.deepcopy(clip["transition"]),
+                "camera":copy.deepcopy(clip["camera"]),
+                "grade":copy.deepcopy(clip["grade"]),
+                "audio":copy.deepcopy(clip["audio"]),
+                "note":clip["note"],
+            })
+            cursor=end
+            previous=segments[-1]
+        if len(_json(document).encode("utf8"))>900_000:
+            raise ValueError("The edit has too many detailed decisions")
+        return cursor,segments
+
+    @staticmethod
+    def _save(db,pid,doc,revision,expected):
+        if revision!=expected:
+            raise RuntimeError("Another edit revision was saved; reopen the movie")
+        new=revision+1
+        if new>MAX_EDIT_REVISIONS:
+            raise RuntimeError("Edit version limit reached")
+        encoded=_json(doc)
+        sha=_sha(encoded.encode("utf8"))
+        db.execute("""INSERT INTO g07_edit_versions
+            (project_id,revision,document_json,document_sha256,created_at)
+            VALUES (?,?,?,?,?)""",(pid,new,encoded,sha,_now()))
+        db.execute("""INSERT INTO g07_edit_heads
+            (project_id,revision,document_sha256,updated_at)
+            VALUES (?,?,?,?)
+            ON CONFLICT(project_id) DO UPDATE SET
+            revision=excluded.revision,
+            document_sha256=excluded.document_sha256,
+            updated_at=excluded.updated_at""",(pid,new,sha,_now()))
+        return new
+
+    def _view(self,db,pid,doc,revision):
+        history=[{"revision":r["revision"],"created_at":r["created_at"]}
+            for r in db.execute("""SELECT revision,created_at
+                FROM g07_edit_versions WHERE project_id=?
+                ORDER BY revision DESC LIMIT 40""",(pid,))]
+        available=[]
+        for row in db.execute("""SELECT take_id,scene_id,source_stage_revision,
+             take_sha256,performance_json,frozen_at FROM g06_frozen_takes
+             WHERE project_id=? ORDER BY frozen_at DESC,take_id DESC LIMIT 200""",(pid,)):
+            try:
+                take=self._take(db,pid,row["take_id"],{})
+                available.append({"take_id":row["take_id"],"scene_id":row["scene_id"],
+                    "take_sha256":row["take_sha256"],
+                    "source_stage_revision":row["source_stage_revision"],
+                    "duration_seconds":_secs(take[1]["duration_tick"]),
+                    "audio_count":len(take[2]),"frozen_at":row["frozen_at"],
+                    "available":True})
+            except (RuntimeError,KeyError,ValueError):
+                available.append({"take_id":row["take_id"],"scene_id":row["scene_id"],
+                    "take_sha256":row["take_sha256"],"available":False,
+                    "reason":"An original film source needs attention"})
+        missing=[]
+        try:
+            length,segments=self._validate(db,pid,doc)
+        except (RuntimeError,KeyError,ValueError) as exc:
+            # A damaged/missing original is never silently substituted or
+            # replaced by a proxy. Keep every edit revision intact for repair.
+            length=0;segments=[]
+            missing=[str(exc)]
+        return {"format":FORMAT,"project_id":pid,"revision":revision,
+            "title":doc["title"],"notes":doc["notes"],
+            "master_gain":doc["master_gain"],
+            "clips":copy.deepcopy(doc["clips"]),
+            "timeline":[{**seg,
+                 "source_in_seconds":_secs(seg["source_in_tick"]),
+                 "source_out_seconds":_secs(seg["source_out_tick"]),
+                 "start_seconds":_secs(seg["start_tick"]),
+                 "end_seconds":_secs(seg["end_tick"]),
+                 "duration_seconds":_secs(seg["duration_tick"]),
+                 "transition_seconds":_secs(seg["transition"]["duration_tick"])}
+                 for seg in segments],
+            "duration_tick":length,"duration_seconds":_secs(length),
+            "available_takes":available,"history":history,
+            "missing_sources":missing,
+            "original_sources_unchanged":True,
+            "final_movie_exported":False}
+
+    def view(self,pid):
+        def read(db,movie):
+            revision,doc=_project(db,pid)
+            return self._view(db,pid,doc,revision)
+        return self._execute(pid,read)
+
+    def mutate(self,pid,expected_revision,operation,details):
+        if (type(expected_revision) is not int or expected_revision<0 or
+                type(operation) is not str or type(details) is not dict):
+            raise ValueError("Choose an editing operation")
+        def update(db,movie):
+            rev,doc=_project(db,pid)
+            if expected_revision!=rev:
+                raise RuntimeError("This movie edit was updated elsewhere")
+            doc=copy.deepcopy(doc)
+            clips=doc["clips"]
+            if operation=="append":
+                if set(details)!={"take_id"} or type(details["take_id"]) is not str:
+                    raise ValueError("Choose a filmed Take")
+                row,source,audio=self._take(db,pid,details["take_id"],{})
+                if len(clips)>=MAX_EDL_CLIPS:
+                    raise ValueError("Film clip limit reached")
+                views=self.filming._camera(db,pid,details["take_id"])["views"]
+                selected=_camera(views[0])
+                clips.append({
+                    "id":uuid.uuid4().hex,"take_id":details["take_id"],
+                    "take_sha256":row["take_sha256"],
+                    "source_in_tick":0,
+                    "source_out_tick":int(source["duration_tick"]),
+                    "camera":selected,"grade":_default_grade(),
+                    "transition":{"kind":"cut","duration_tick":0},
+                    "audio":[{"clip_id":item["clip_id"],"enabled":True,
+                        "gain":1.0,"pan":0.0,"spatial":True,"offset_tick":0}
+                        for item in audio],
+                    "note":""})
+            elif operation in ("trim","split","remove","move","transition",
+                               "camera","grade","audio","note"):
+                if type(details.get("clip_id")) is not str or not HEX.fullmatch(
+                        details["clip_id"]):
+                    raise ValueError("Select a clip in the movie")
+                index=next((i for i,x in enumerate(clips) if
+                    x["id"]==details["clip_id"]),None)
+                if index is None:
+                    raise KeyError("This edit clip was removed")
+                clip=clips[index]
+                if operation=="trim":
+                    if set(details)!={"clip_id","in_seconds","out_seconds"}:
+                        raise ValueError("Choose exact source In and Out points")
+                    clip["source_in_tick"]=_sec(details["in_seconds"])
+                    clip["source_out_tick"]=_sec(details["out_seconds"])
+                elif operation=="split":
+                    if set(details)!={"clip_id","at_seconds"}:
+                        raise ValueError("Choose a split inside the source Take")
+                    cut=_sec(details["at_seconds"])
+                    if not clip["source_in_tick"]+MIN_CLIP_TICKS<=cut<=(
+                            clip["source_out_tick"]-MIN_CLIP_TICKS):
+                        raise ValueError("Place the cut inside the selected clip")
+                    after=copy.deepcopy(clip)
+                    after["id"]=uuid.uuid4().hex
+                    after["source_in_tick"]=cut
+                    after["transition"]={"kind":"cut","duration_tick":0}
+                    clip["source_out_tick"]=cut
+                    clips.insert(index+1,after)
+                    if len(clips)>MAX_EDL_CLIPS:
+                        raise ValueError("Too many film cuts")
+                elif operation=="remove":
+                    clips.pop(index)
+                    if clips:
+                        clips[0]["transition"]={"kind":"cut","duration_tick":0}
+                elif operation=="move":
+                    if set(details)!={"clip_id","to_index"} or (
+                        type(details["to_index"]) is not int or not
+                        0<=details["to_index"]<len(clips)):
+                        raise ValueError("Choose a new position in the film")
+                    moved=clips.pop(index)
+                    clips.insert(details["to_index"],moved)
+                    clips[0]["transition"]={"kind":"cut","duration_tick":0}
+                elif operation=="transition":
+                    if set(details)!={"clip_id","kind","seconds"} or (
+                        details["kind"] not in TRANSITIONS):
+                        raise ValueError("Choose a supported transition")
+                    duration=_sec(details["seconds"])
+                    clip["transition"]={"kind":details["kind"],
+                        "duration_tick":duration}
+                elif operation=="camera":
+                    if set(details)!={"clip_id","camera"}:
+                        raise ValueError("Choose a new frame")
+                    clip["camera"]=_camera(details["camera"])
+                elif operation=="grade":
+                    if set(details)!={"clip_id","grade"}:
+                        raise ValueError("Choose scene color changes")
+                    clip["grade"]=_grade(details["grade"])
+                elif operation=="audio":
+                    if set(details)!={"clip_id","audio"} or (
+                            type(details["audio"]) is not list):
+                        raise ValueError("Choose source sound controls")
+                    clip["audio"]=[_sound(item) for item in details["audio"]]
+                elif operation=="note":
+                    if set(details)!={"clip_id","note"}:
+                        raise ValueError("Choose the editorial note")
+                    if type(details["note"]) is not str or len(details["note"])>600:
+                        raise ValueError("Keep the editorial note short")
+                    clip["note"]=details["note"]
+            elif operation=="mix":
+                if set(details)!={"master_gain"}:
+                    raise ValueError("Choose the overall film sound level")
+                doc["master_gain"]=_number(details["master_gain"],0,4,"master sound")
+            elif operation=="film_details":
+                if set(details)!={"title","notes"}:
+                    raise ValueError("Choose film title and notes")
+                doc["title"]=details["title"];doc["notes"]=details["notes"]
+            else:
+                raise ValueError("This editing action is unavailable")
+            self._validate(db,pid,doc)
+            new=self._save(db,pid,doc,rev,expected_revision)
+            return self._view(db,pid,doc,new)
+        return self._execute(pid,update,mutate=True)
+
+    def restore(self,pid,source_revision,expected_revision):
+        if (type(source_revision) is not int or source_revision<=0 or
+                type(expected_revision) is not int or expected_revision<0):
+            raise ValueError("Choose a previous edit version")
+        def change(db,movie):
+            rev,doc=_project(db,pid)
+            if expected_revision!=rev:
+                raise RuntimeError("The movie edit has newer changes")
+            row=db.execute("""SELECT document_json,document_sha256
+                FROM g07_edit_versions WHERE project_id=? AND revision=?""",
+                (pid,source_revision)).fetchone()
+            if row is None:
+                raise KeyError("This previous edit version is unavailable")
+            if _sha(row["document_json"].encode("utf8"))!=row["document_sha256"]:
+                raise RuntimeError("An older edit history entry is damaged")
+            older=json.loads(row["document_json"])
+            self._validate(db,pid,older)
+            new=self._save(db,pid,older,rev,expected_revision)
+            return self._view(db,pid,older,new)
+        return self._execute(pid,change,mutate=True)
+
+    def native_assembly(self,pid,revision=None):
+        """Trusted G08 readback: exact presentation→Take time/source decisions.
+
+        This returns ORIGINAL G06 USD/PCM bytes, never encodes or overwrites
+        them. External/client routes are intentionally prohibited.
+        """
+        def read(db,movie):
+            current,document=_project(db,pid)
+            source_revision=current if revision is None else revision
+            if type(source_revision) is not int or source_revision<0:
+                raise ValueError("Select an existing film edit")
+            if source_revision!=current:
+                row=db.execute("""SELECT document_json,document_sha256
+                    FROM g07_edit_versions WHERE project_id=? AND revision=?""",
+                    (pid,source_revision)).fetchone()
+                if row is None or _sha(row["document_json"].encode("utf8"))!=row["document_sha256"]:
+                    raise RuntimeError("An earlier edit is unavailable")
+                document=json.loads(row["document_json"])
+            total,segments=self._validate(db,pid,document)
+            sources={}
+            for clip in document["clips"]:
+                take_id=clip["take_id"]
+                if take_id not in sources:
+                    row,doc,audio=self._take(db,pid,take_id,{})
+                    original=db.execute("""SELECT original_usd,performance_usd
+                        FROM g06_frozen_takes WHERE project_id=? AND take_id=?""",
+                        (pid,take_id)).fetchone()
+                    sound=[]
+                    for item in audio:
+                        pcm=db.execute("""SELECT pcm,pcm_sha256 FROM g06_original_pcm
+                            WHERE project_id=? AND scene_id=? AND id=?""",
+                            (pid,row["scene_id"],item["clip_id"])).fetchone()
+                        if pcm is None or _sha(pcm["pcm"])!=pcm["pcm_sha256"]:
+                            raise RuntimeError("Original sound cannot be reopened")
+                        sound.append({**item,"pcm16le":bytes(pcm["pcm"])})
+                    sources[take_id]={"scene_id":row["scene_id"],
+                        "take_sha256":row["take_sha256"],
+                        "original_usd":bytes(original["original_usd"]),
+                        "performance_usd":bytes(original["performance_usd"]),
+                        "events":doc["events"],"stage_objects":doc["stage_objects"],
+                        "audio":sound,"duration_tick":doc["duration_tick"]}
+            return {"format":FORMAT,"project_id":pid,
+                "edit_revision":source_revision,
+                "duration_tick":total,"segments":segments,
+                "original_takes":sources,"master_gain":document["master_gain"],
+                "source_media_modified":False,
+                "derived_picture_frames":False,
+                "final_movie_exported":False}
+        return self._execute(pid,read)
