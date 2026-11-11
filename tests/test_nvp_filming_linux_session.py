@@ -247,6 +247,7 @@ def test_reap_timeout_retries_without_reissuing_one_use_kernel_kill():
         "empty_group_verified": True,
         "scope": "linux-cgroup-v2",
     }
+    custody.verify_still_empty.return_value = custody.stop_and_verify.return_value
     session = LinuxFilmingSession("/group", child, custody)
     with pytest.raises(RuntimeError, match="worker exit unverified"):
         session.stop_and_verify(timeout=1)
@@ -272,3 +273,39 @@ def test_unverified_kernel_receipt_never_cached_for_recovery():
     assert session._verified_tree_receipt is None
     session.stop_and_verify()
     assert custody.stop_and_verify.call_count == 2
+
+
+def test_reap_retry_refuses_repopulated_group_without_second_kill():
+    child = Mock(returncode=None)
+    child.wait.side_effect = subprocess.TimeoutExpired("worker", 1)
+    custody = Mock()
+    custody.stop_and_verify.return_value = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True, "scope": "linux-cgroup-v2",
+    }
+    session = LinuxFilmingSession("/group", child, custody)
+    with pytest.raises(RuntimeError, match="worker exit unverified"):
+        session.stop_and_verify(timeout=1)
+    custody.verify_still_empty.side_effect = RuntimeError("repopulated")
+    with pytest.raises(RuntimeError, match="repopulated"):
+        session.stop_and_verify(timeout=1)
+    custody.stop_and_verify.assert_called_once()
+    child.wait.assert_called_once()
+
+
+def test_reap_retry_rejects_incomplete_fresh_kernel_observation():
+    child = Mock(returncode=None)
+    child.wait.side_effect = subprocess.TimeoutExpired("worker", 1)
+    custody = Mock()
+    custody.stop_and_verify.return_value = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True, "scope": "linux-cgroup-v2",
+    }
+    session = LinuxFilmingSession("/group", child, custody)
+    with pytest.raises(RuntimeError, match="worker exit unverified"):
+        session.stop_and_verify(timeout=1)
+    custody.verify_still_empty.return_value = {"empty_group_verified": False}
+    with pytest.raises(RuntimeError, match="affirmative Linux"):
+        session.stop_and_verify(timeout=1)
+    custody.stop_and_verify.assert_called_once()
+    child.wait.assert_called_once()
