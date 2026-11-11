@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import LineNumberedTextarea from './LineNumberedTextarea.jsx';
 import DirectorSceneLibrary from './DirectorSceneLibrary.jsx';
+import DirectorScreenplayAssistant from './DirectorScreenplayAssistant.jsx';
 import './filmmaker-home.css';
 
 const PHASES = [
@@ -91,7 +92,7 @@ export default function FilmmakerHome() {
   useEffect(()=>{
     let mounted=true;
     request('/creative/models').then(result=>{
-      if(mounted)setAiStatus(result.state==='available'?'AI ready':
+      if(mounted)setAiStatus(result.state==='available'?'AI connected':
         result.state==='unavailable'?'AI unavailable':'AI not loaded');
     }).catch(()=>{if(mounted)setAiStatus('AI unavailable')});
     Promise.all([request('/status'),request('/projects')])
@@ -423,6 +424,13 @@ export default function FilmmakerHome() {
             onClick={saveScript}>Save Screenplay</button><button className="film-secondary"
               onClick={()=>goPhase('scenes')}>Set Up Scenes →</button></div>
           {dirty&&<p className="film-hint">Unsaved screenplay changes are not part of the scene inventory yet.</p>}
+          <DirectorScreenplayAssistant key={project.id+':'+project.revision}
+            movie={project} unsaved={dirty}
+            onApproved={movie=>{
+              attachMovie(movie);
+              goPhase('script',movie.id);
+              setNotice('Approved screenplay saved. Your earlier version is preserved.');
+            }}/>
         </section>}
         {phase==='scenes'&&<DirectorSceneLibrary key={project.id+':'+project.revision}
           movie={project} onScript={()=>goPhase('script')} onFilm={()=>goPhase('film')}/>}
