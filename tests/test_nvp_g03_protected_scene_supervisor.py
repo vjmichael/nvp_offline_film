@@ -72,6 +72,33 @@ class ProtectedSceneTests(unittest.TestCase):
         self.assertEqual(self.store.protected_worker_runs(PID,self.token)[0]["state"],
                          "SUCCEEDED")
 
+    @unittest.skipUnless(os.environ.get("NVP_G03_NATIVE_SANDBOX_PROBE"),
+                         "Native MSVC AppContainer sandbox required")
+    def test_actual_appcontainer_cancel_reaps_worker_and_does_not_publish(self):
+        from backend import nvp_g03_protected_scene_supervisor as module
+        actual=module.launch_contained
+        cancel=threading.Event()
+        def launch_then_cancel(*args,**kwargs):
+            process=actual(*args,**kwargs)
+            self.assertEqual(process.sandbox_identity,
+                "windows-appcontainer-with-zero-network-capabilities")
+            cancel.set()
+            return process
+        worker=ProtectedSceneSupervisor(
+            self.store,review_authority=self.supervisor.review_authority,
+            os_isolation_attestor=lambda *args:True)
+        with patch.object(module,"launch_contained",side_effect=launch_then_cancel):
+            with self.assertRaisesRegex(ProtectedWorkerError,"cancel"):
+                worker.run(PID,self.token,"original/scene.usda",
+                           "review/camera-coverage.usda",
+                           "approved-native-"+("1"*32),cancel=cancel)
+        runs=self.store.protected_worker_runs(PID,self.token)
+        self.assertEqual(len(runs),1)
+        self.assertEqual(runs[0]["state"],"CANCELLED")
+        self.assertEqual(len(self.store.read(PID,self.token)["source_assets"]),1)
+        self.assertEqual(self.store.get_original(
+            PID,self.token,"original/scene.usda"),SOURCE)
+
     def test_private_scene_refused_before_worker_and_source_grants(self):
         self.assertEqual(SOURCE, SYNTHETIC_SCENE_CI_USDA)
         with patch("backend.nvp_g03_protected_scene_supervisor.launch_contained",
