@@ -684,6 +684,113 @@ def run_g03_window_smoke():
         else:os.environ["NVP_HOME"]=previous
         shutil.rmtree(temp_home,ignore_errors=True)
 
+def run_g03_live_installed_smoke(mode):
+    """Actually installed Windows app: encrypted live SQLite/source + restart.
+
+    No user's film is used. Smoke data are synthetic; original working
+    screenplay, source PCM, encrypted revision and test key are never logged.
+    """
+    import base64
+    import hashlib
+    import http.cookiejar
+    import json
+    from urllib.error import HTTPError
+    from backend.nvp_api import live_films, studio
+    from backend.nvp_project_access import COOKIE
+    _smoke_checkpoint("live_"+mode+"_entered")
+    if sys.platform!="win32":
+        raise RuntimeError("Real Windows user DPAPI is mandatory")
+    home=Path(os.environ["NVP_HOME"])
+    marker=home/"g03-live-windows-smoke.json"
+    secret="G03-SYNTHETIC-ENCRYPTED-LIVE-ORIGINAL-DATA"
+    scene="EXT. SECRET WINDOW - NIGHT\n\n"+secret
+    payload=b"#usda 1.0\n\n# "+secret.encode("ascii")
+    password="G03 synthetic live encrypted Windows passphrase 2026"
+    app=create_app()
+    server,thread,port,sock=serve(app)
+    base="http://127.0.0.1:"+str(port)
+    jar=http.cookiejar.CookieJar()
+    opener=urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(jar))
+    def call(path,method="GET",data=None):
+        blob=None if data is None else json.dumps(data).encode("utf8")
+        req=urllib.request.Request(base+path,data=blob,method=method,
+            headers={"Content-Type":"application/json","x-nvp-director":"1"})
+        with opener.open(req,timeout=15) as response:
+            return json.load(response)
+    def denied(path,status):
+        try:
+            call(path)
+        except HTTPError as error:
+            if error.code!=status:
+                raise RuntimeError("Encrypted endpoint had unexpected denial")
+            return
+        raise RuntimeError("Encrypted movie leaked over a denied API path")
+    try:
+        if mode=="create":
+            if marker.exists():
+                raise RuntimeError("Encrypted installed smoke already exists")
+            m=call("/api/projects/encrypted","POST",{
+                "title":"G03 installed protected movie","idea":"SYNTHETIC SECRET IDEA",
+                "screenplay":scene,"passphrase":password})
+            pid=m["id"]
+            if not m["encrypted"] or m["revision"]!=0:
+                raise RuntimeError("Installed encrypted creation failed")
+            denied("/api/projects/"+pid,403)
+            recovered=call("/api/projects/"+pid+"/live")
+            if recovered["screenplay"]!=scene:
+                raise RuntimeError("Encrypted live movie did not read back")
+            uploaded=call("/api/projects/"+pid+"/live/source","POST",{
+                "name":"originals/test.usda","media_type":"model/vnd.usda",
+                "base64_data":base64.b64encode(payload).decode("ascii")})
+            if uploaded["sha256"]!=hashlib.sha256(payload).hexdigest():
+                raise RuntimeError("Encrypted original source integrity failed")
+            updated=call("/api/projects/"+pid+"/live/screenplay","PUT",{
+                "screenplay":scene+"\n\nAn owl calls.","expected_revision":0})
+            if updated["revision"]!=1:
+                raise RuntimeError("Encrypted live revision not persisted")
+            clear=b"".join(path.read_bytes() for path in
+                (home/"nvp_g03_encrypted_live"/pid).rglob("*") if path.is_file())
+            catalog=studio.db_path.read_bytes()
+            if secret.encode("ascii") in clear+catalog or b"SYNTHETIC SECRET IDEA" in clear+catalog:
+                raise RuntimeError("Encrypted source or idea leaked to plaintext disk")
+            record={"id":pid,"screenplay_sha256":hashlib.sha256(
+                updated["screenplay"].encode()).hexdigest(),
+                "original_sha256":uploaded["sha256"]}
+            marker.write_text(json.dumps(record),encoding="utf8")
+            _smoke_checkpoint("live_created_and_disk_redaction_pass")
+        elif mode=="reopen":
+            record=json.loads(marker.read_text("utf8"))
+            pid=record["id"]
+            denied("/api/projects/"+pid+"/live",423)
+            denied("/api/projects/"+pid,423)
+            unlocked=call("/api/projects/"+pid+"/unlock","POST",{
+                "passphrase":password})
+            if not unlocked["encrypted"]:
+                raise RuntimeError("Restarted encrypted movie could not unlock")
+            current=call("/api/projects/"+pid+"/live")
+            if hashlib.sha256(current["screenplay"].encode()).hexdigest()!=record["screenplay_sha256"]:
+                raise RuntimeError("Encrypted screenplay lost on fresh installed process")
+            token=next((x.value for x in jar if x.name==COOKIE),None)
+            if not token or hashlib.sha256(live_films().get_original(
+                    pid,token,"originals/test.usda")).hexdigest()!=record["original_sha256"]:
+                raise RuntimeError("Original encrypted OpenUSD did not survive restart")
+            if len(call("/api/projects/"+pid+"/live/recovery"))<2:
+                raise RuntimeError("Encrypted recovery snapshots missing")
+            call("/api/projects/"+pid+"/lock","POST",{})
+            denied("/api/projects/"+pid+"/live",423)
+            _smoke_checkpoint("live_reopen_source_recovery_relock_pass")
+        else:
+            raise ValueError("Invalid live encryption smoke mode")
+        return 0
+    finally:
+        server.should_exit=True
+        thread.join(timeout=12)
+        sock.close()
+        if thread.is_alive():
+            raise RuntimeError("Encrypted installed app did not close cleanly")
+
+
 def run_g03_vault_smoke():
     """Independent Windows-account cryptography inside packaged NVP.exe.
 
@@ -747,11 +854,16 @@ def main(argv=None):
                         help="Test director-first New/Resume, actor-free scene and edit window in native WebView2")
     parser.add_argument("--smoke-vault",action="store_true",
                         help="Verify Windows-user DPAPI/AES-GCM encrypted source archive")
+    parser.add_argument("--smoke-live-create",action="store_true",
+                        help="Create real encrypted live film/source in packaged Windows host")
+    parser.add_argument("--smoke-live-reopen",action="store_true",
+                        help="Reopen encrypted live film in fresh installed host")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_g03_window,args.smoke_vault,
+            args.smoke_live_create,args.smoke_live_reopen,
             args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
@@ -762,6 +874,9 @@ def main(argv=None):
         return run_g03_window_smoke()
     if args.smoke_vault:
         return run_g03_vault_smoke()
+    if args.smoke_live_create or args.smoke_live_reopen:
+        return run_g03_live_installed_smoke(
+            "create" if args.smoke_live_create else "reopen")
     if args.smoke_data_av:
         _smoke_checkpoint("before_native_acceptance_import")
         from tools.nvp_data_av_installed_acceptance import run_installed_data_av_smoke
