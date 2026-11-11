@@ -424,6 +424,13 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
       'Performance direction added. It is still editable.');
     if(result)setNote('');
   }
+  function restoreDirections(revision){
+    if(!film||!window.confirm('Restore these earlier scene directions? Your current version remains in the history.'))return;
+    setTake(null);setViews(standardFrames);
+    perform(()=>call(endpoint+'/restore','POST',{
+      expected_revision:film.work_revision,source_revision:revision
+    }),'Earlier performance directions restored as a new version.');
+  }
   function retake(){
     if(!film||!window.confirm('Start a new performance draft? Frozen Takes and earlier directions remain preserved.'))return;
     setTake(null);setViews(standardFrames);
@@ -723,6 +730,18 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
                   onClick={()=>removeEvent(e.id)}>Remove</button>
               </li>)}</ul>}
           </details>
+          {film.history?.length>1&&<details className="director-film-history">
+            <summary>Earlier performance directions</summary>
+            <p className="film-muted">You can reopen a previous direction set
+              without changing your frozen Takes.</p>
+            {film.history.slice(1).map(version=>
+              <div className="director-film-history-row" key={version.revision}>
+                <span>Direction version {version.revision}</span>
+                <button className="film-secondary" disabled={busy||!film.work_current||
+                  !!recordSession} onClick={()=>restoreDirections(version.revision)}>
+                  Restore</button>
+              </div>)}
+          </details>}
         </section>
         <section className="director-film-panel">
           <h3>Record original sound</h3>
@@ -798,7 +817,12 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
         </section>
       </div>
       <section className="director-film-takes">
-        <h3>Recorded Takes</h3>
+        <div className="director-film-takes-head">
+          <h3>Recorded Takes</h3>
+          {take&&<button className="film-secondary" onClick={()=>{
+            setTake(null);setViews(standardFrames);setPlaying(false);setTime(0);
+          }}>Return to current performance</button>}
+        </div>
         {(film.takes||[]).length===0?<p className="film-muted">
           No original Takes have been frozen for this scene yet.</p>:
           <div className="director-film-take-list">{film.takes.map((record,i)=>
