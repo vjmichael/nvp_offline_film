@@ -119,6 +119,23 @@ def _local_pose(actor,events,tick,voice):
     # Actor root translation remains the independently frozen G06 movement.
     scale=actor["gait_strength"]*strength
     mood=actor["emotion"]
+    emotion_strength=actor["expression_strength"]
+    cues=actor.get("expression_cues",[])
+    recent=[(i,c) for i,c in enumerate(cues) if c["at_tick"]<=tick]
+    if recent:
+        i,cue=recent[-1]
+        mood=cue["emotion"]
+        emotion_strength=cue["strength"]
+        previous_emotion=(cues[i-1]["emotion"] if i>0
+                          else actor["emotion"])
+        previous_strength=(cues[i-1]["strength"] if i>0
+                           else actor["expression_strength"])
+        eased=min(1.,max(0.,(tick-cue["at_tick"])/(
+            TICKS_PER_SECOND*.24)))
+    else:
+        previous_emotion=mood
+        previous_strength=emotion_strength
+        eased=1.
     style={"restrained":.58,"natural":1.,"neutral":.65,
            "energetic":1.45,"heavy":.85}[actor["movement"]]
     left=math.sin(phase)*scale*style
@@ -128,7 +145,7 @@ def _local_pose(actor,events,tick,voice):
     note=_active(events,tick,("gesture","look","expression"))
     gesture=any(x["kind"]=="gesture" for x in note)
     look=any(x["kind"]=="look" for x in note)
-    joy=actor["expression_strength"]
+    joy=emotion_strength
     jaw=_amplitude_at(None,tick,voice)*(.45+.55*joy)
     rate=actor["blink_rate"]
     blink=0.
@@ -137,7 +154,8 @@ def _local_pose(actor,events,tick,voice):
         mark=(tick/TICKS_PER_SECOND)%cycle
         blink=max(0.,1-abs(mark-.09)/.07)
     torso=.12 if sit else -.015*scale*math.cos(phase)
-    head=EMOTIONAL_HEAD[mood]*joy+(.13 if look else 0.)
+    head=(EMOTIONAL_HEAD[previous_emotion]*previous_strength*(1-eased)+
+          EMOTIONAL_HEAD[mood]*joy*eased)+(.13 if look else 0.)
     rot=[(0.,0.,0.) for _ in J]
     def assign(i,axis,theta):
         e=list(rot[i]);e[axis]=theta;rot[i]=tuple(e)
@@ -155,7 +173,11 @@ def _local_pose(actor,events,tick,voice):
     assign(11,0,max(0,-left)*.36+(.55 if sit else 0))
     assign(13,0,max(0,-right)*.36+(.55 if sit else 0))
     # Stylized body mesh uses the exact same joint-state source as UsdSkel.
-    return {"rotations":rot,"jaw":jaw,"blink":blink,
+    smile_modes={"joy":.75,"surprise":.15,"sadness":-.65,
+                 "anger":-.38,"fear":-.27,"focus":-.10,"neutral":0.}
+    smile=((smile_modes[previous_emotion]*previous_strength*(1-eased))+
+           smile_modes[mood]*joy*eased)
+    return {"rotations":rot,"jaw":jaw,"blink":blink,"smile":smile,
             "action":action,"gesture":gesture,
             "movement_intensity":min(1.,strength*scale),
             "source_tick":int(tick)}
@@ -187,6 +209,11 @@ def _times(duration,events,source_audio):
     for clip in source_audio:
         values.add(clip["start_tick"])
         values.add(clip["start_tick"]+clip["duration_tick"])
+    # Exact director facial cues and a modest ease-in key preserve film-time
+    # intent even when the film format is projected at a different frame rate.
+    for cue in events:
+        if cue["kind"]=="expression":
+            values.add(cue["start_tick"])
     if len(values)>MAX_SAMPLES_PER_ACTOR:
         raise ValueError("This Take requires a longer-form actor animation worker")
     return sorted(values)
@@ -243,7 +270,11 @@ def _visible(stage,path,actor):
       "Jaw":("sphere","skin",.16,.09),
       "LeftEye":("sphere","eye",.064,.06),
       "RightEye":("sphere","eye",.064,.06),
-      "Hair":("sphere","hair",.3,.18)}
+      "Hair":("sphere","hair",.3,.18),
+      "LeftBrow":("sphere","hair",.11,.045),
+      "RightBrow":("sphere","hair",.11,.045),
+      "MouthLeft":("sphere","skin",.055,.048),
+      "MouthRight":("sphere","skin",.055,.048)}
     prims={}
     for label,(kind,mat,radius,height) in shapes.items():
         path2=path+"/G09ActorRig/Visible/"+label
@@ -288,7 +319,11 @@ def _proxy_positions(actor,pose):
       "Jaw":(0.,-.26*z,1.67*z-.12*z*pose["jaw"]),
       "LeftEye":(-.105*w,-.263*z,1.94*z),
       "RightEye":(.105*w,-.263*z,1.94*z),
-      "Hair":(0.,0.,head+.29*z)}
+      "Hair":(0.,0.,head+.29*z),
+      "LeftBrow":(-.105*w,-.266*z,2.04*z+pose["smile"]*.03*z),
+      "RightBrow":(.105*w,-.266*z,2.04*z+pose["smile"]*.03*z),
+      "MouthLeft":(-.095*w,-.277*z,1.7*z+pose["smile"]*.06*z),
+      "MouthRight":(.095*w,-.277*z,1.7*z+pose["smile"]*.06*z)}
     return result
 
 
@@ -305,6 +340,9 @@ def _write_proxy_key(prims,actor,pose,tick):
     eyelid=max(.12,1.-pose["blink"]*.88)
     for eye in ("LeftEye","RightEye"):
         prims[eye].SetScale(Gf.Vec3f(1.,1.,eyelid),t)
+    for mouth in ("MouthLeft","MouthRight"):
+        prims[mouth].SetScale(Gf.Vec3f(
+            1.+max(0.,pose["smile"])*.65,1.,1.),t)
     hair=actor["hair"]
     if hair=="bald":
         prims["Hair"].SetScale(Gf.Vec3f(.001,.001,.001),t)
