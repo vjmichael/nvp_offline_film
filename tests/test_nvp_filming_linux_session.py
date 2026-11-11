@@ -309,3 +309,44 @@ def test_reap_retry_rejects_incomplete_fresh_kernel_observation():
         session.stop_and_verify(timeout=1)
     custody.stop_and_verify.assert_called_once()
     child.wait.assert_called_once()
+
+
+def test_failed_admission_recovery_retry_reuses_one_use_kernel_custody():
+    """A timed-out reap must never reconstruct custody and kill a second time."""
+    child = Mock(returncode=None)
+    child.wait.side_effect = [subprocess.TimeoutExpired("worker", 1), 0]
+    receipt = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    error = FilmingCustodyInitializationError("/owned/leaf", child)
+    with patch("backend.nvp_filming_linux_session.LinuxFilmingCgroup") as factory:
+        factory.return_value.stop_and_verify.return_value = receipt
+        factory.return_value.verify_still_empty.return_value = receipt
+        with pytest.raises(RuntimeError, match="worker exit unverified"):
+            error.reconcile_and_stop("/owned", timeout=1)
+        child.returncode = -9
+        result = error.reconcile_and_stop("/owned", timeout=1)
+        assert result["worker_exit_verified"] is True
+        factory.assert_called_once()
+        factory.return_value.stop_and_verify.assert_called_once()
+        factory.return_value.verify_still_empty.assert_called_once()
+
+
+def test_failed_admission_recovery_cannot_switch_delegated_root():
+    child = Mock(returncode=None)
+    child.wait.side_effect = subprocess.TimeoutExpired("worker", 1)
+    receipt = {
+        "process_tree_custody_verified": True,
+        "empty_group_verified": True,
+        "scope": "linux-cgroup-v2",
+    }
+    error = FilmingCustodyInitializationError("/owned/leaf", child)
+    with patch("backend.nvp_filming_linux_session.LinuxFilmingCgroup") as factory:
+        factory.return_value.stop_and_verify.return_value = receipt
+        with pytest.raises(RuntimeError, match="worker exit unverified"):
+            error.reconcile_and_stop("/owned", timeout=1)
+        with pytest.raises(RuntimeError, match="delegated root changed"):
+            error.reconcile_and_stop("/different", timeout=1)
+        factory.assert_called_once()
