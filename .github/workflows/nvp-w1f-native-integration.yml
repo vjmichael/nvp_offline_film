@@ -63,6 +63,26 @@ jobs:
             python -m unittest discover -s tests -p $test -v
             if ($LASTEXITCODE -ne 0) { throw "Native W1-F failure: $test" }
           }
+      - name: Prove REAL kernel AppContainer token, private file/TCP denial and host-crash Job custody
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $programFiles=(Get-Item 'Env:ProgramFiles(x86)').Value
+          $vswhere=Join-Path $programFiles 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw 'MSVC discovery unavailable: native isolation unproven' }
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (-not $vs) { throw 'Real Visual Studio native compiler unavailable' }
+          $vcvars=Join-Path $vs 'VC/Auxiliary/Build/vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw 'MSVC x64 launch environment missing' }
+          $compile='call "'+$vcvars+'" >nul && cl /nologo /W4 /EHsc /std:c++17 /Fe:_w1f_g03_kernel_probe.exe tests\\fixtures\\nvp_g03_appcontainer_probe.cpp /link Ws2_32.lib Advapi32.lib'
+          & cmd.exe /D /C $compile
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path '_w1f_g03_kernel_probe.exe')) {
+            throw 'Native kernel isolation probe compilation failed'
+          }
+          $env:NVP_G03_NATIVE_SANDBOX_PROBE=(Resolve-Path '_w1f_g03_kernel_probe.exe').Path
+          python -m unittest discover -s tests -p 'test_nvp_g03_appcontainer.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows AppContainer token/ACL/network/process custody failed' }
+          Write-Host 'W1F_REAL_WINDOWS_KERNEL_APPCONTAINER_ISOLATION_TESTS_PASSED_NOT_YET_A_PRIVATE_REEL_RENDER'
 
   director-ui:
     runs-on: ubuntu-24.04
