@@ -93,7 +93,8 @@ async def film_project_access_guard(request: Request, call_next):
                 tail.startswith("live/production/sound/")) or (
                 tail=="live/av" or tail.startswith("live/av/")) or (
                 tail=="live/finish" or tail.startswith("live/finish/")) or (
-                tail=="live/long-film" or tail.startswith("live/long-film/"))
+                tail=="live/long-film" or tail.startswith("live/long-film/")) or (
+                tail=="live/film-library" or tail.startswith("live/film-library/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -1928,3 +1929,11 @@ mount_g09d_interchange_routes(
 from backend.nvp_g09e_routes import mount_g09e_routes
 _g09e_controller=mount_g09e_routes(
     app,studio,film_access,live_films,COOKIE)
+
+# G09-F self-contained verified film distribution; original creative
+# data stays in the protected project store. The portable working-film
+# export/import path rejects secure encrypted original media until
+# independent AES-GCM film asset custody has passed native acceptance.
+from backend.nvp_g09f_routes import mount_g09f_routes
+_g09f_controller=mount_g09f_routes(
+    app,_g09e_controller,studio,film_access,live_films,COOKIE)
