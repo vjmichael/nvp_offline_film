@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import './director-export-film.css';
+import DirectorFinishingRoom from './DirectorFinishingRoom.jsx';
 
 const active=new Set(['queued','rendering','verifying']);
 const baseProject=id=>'/api/projects/'+encodeURIComponent(id);
@@ -126,15 +127,26 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
       <button className="film-secondary" onClick={onEditFilm}>
         Adjust the Edit</button>
     </div>}
+    {edit?.revision>0&&edit?.clips?.length>0&&
+      !edit.missing_sources?.length&&
+      <DirectorFinishingRoom
+        key={movie.id+':finish:'+edit.revision}
+        movie={movie} editRevision={edit.revision}
+        onChanged={()=>{}}/>}
     {ready&&<div className="director-export-go">
       <h3>Your movie is ready to finish</h3>
+      <p className="film-muted">Optional final color and sound choices
+        above are applied only after you approve them for this exact edit.
+        Without them NVP preserves your existing approved edit and sound.</p>
       <p>Finish the current edit with continuous picture and original-source
         sound. NVP will check the finished movie before making it available.</p>
       <button className="film-primary" onClick={start} disabled={!ready}>
         Finish and Save Movie</button>
-      <p className="film-hint">The first movie format is a playable AVI
-        with clear standard-definition picture and stereo sound.
-        This is a working film delivery, not a theatrical master.</p>
+      <p className="film-hint">The first movie format is an actual playable
+        640×360 AVI with 24fps SDR picture and 48kHz stereo PCM16 sound.
+        Finishing uses measured sound levels and your approved picture look.
+        Cinema DCP, ProRes, full-resolution ACES and true-peak certification
+        are not claimed by this working export.</p>
     </div>}
     {hasActive&&latest&&<div className="director-export-progress"
       role="status" aria-live="polite">
