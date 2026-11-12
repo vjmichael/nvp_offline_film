@@ -120,7 +120,7 @@ def _blank():
 
 
 def _check_clip_shape(clip):
-    if type(clip) is not dict or set(clip)!={
+    if (type(clip) is not dict or set(clip)!={
         "id","take_id","take_sha256","source_in_tick","source_out_tick",
         "camera","grade","audio","transition","note"
     } or any(type(clip[k]) is not str or not HEX.fullmatch(clip[k])
