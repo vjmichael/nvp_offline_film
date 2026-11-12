@@ -380,11 +380,13 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             home=Path(os.environ["NVP_HOME"])
             if home.is_symlink() or not home.is_dir():
                 raise RuntimeError("Trusted native project home unavailable")
-            # The same per-user home stores originals, but derivative output
-            # goes to a dedicated sibling directory outside the FilmIndex DB.
-            derived=home/".derived-int02"
-            if derived.is_symlink():
-                raise PermissionError("Edited film output cannot follow a symlink")
+            # A user-authorized plaintext delivery must NOT be placed
+            # inside the original project's potentially encrypted home.
+            # The source and output roots remain disjoint.
+            derived=home.parent/"Exports"
+            if (home.parent.is_symlink() or derived.is_symlink() or
+                derived==home or home in derived.parents):
+                raise PermissionError("Edited plaintext export cannot share protected original storage")
             derived.mkdir(mode=0o700,exist_ok=True)
             from backend.nvp_int02_edited_film import NativeEditedFilm30s
             from backend.nvp_native_cpu_raster import NativeSourceRaster
@@ -411,7 +413,9 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                         "Source sequence SHA-256: "+scope["segment_sha256"]+"\n"+
                         "Output: "+scope["output_directory"]+"\n"+
                         "720 native picture samples + 1,440,000 original PCM samples.\n"+
-                        "This is a PNG/WAV derivative, NOT a production cinema master.\n"+
+                        "IMPORTANT: this EXPORT is an UNENCRYPTED PNG/WAV derivative\n"+
+                        "outside the original project store; protect its files yourself.\n"+
+                        "It is NOT a production cinema master.\n"+
                         "Original USD Takes and editorial revision remain unchanged."),
                     render_png=raster.render_png,
                     cancelled=cancel.is_set,progress=update)

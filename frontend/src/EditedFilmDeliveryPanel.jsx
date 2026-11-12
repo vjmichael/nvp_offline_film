@@ -110,7 +110,9 @@ export default function EditedFilmDeliveryPanel({projectId,native}){
     <h3>Make a 30-second film from your committed edit</h3>
     <p className="fineprint">The original OpenUSD scene, performances, camera
       selection and native PCM remain frozen. Current procedural PNG/WAV
-      output is a verified derivative, not a photoreal cinema master.</p>
+      output is a verified derivative, not a photoreal cinema master.
+      Exported PNG/WAV files are unencrypted and saved outside original
+      project storage only after explicit native approval.</p>
     {!ready&&<p role="status">Requires installed NVP native filmmaker bridge.</p>}
     <label>Committed edit
       <select value={selected} onChange={e=>setSelected(e.target.value)}

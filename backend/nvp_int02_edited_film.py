@@ -135,6 +135,7 @@ class NativeEditedFilm30s:
         scope["operation"] = "nvp.int02.native_approved_edited_30s_derivative"
         scope["no_ffmpeg"] = True
         scope["original_sources_immutable"] = True
+        scope["export_is_plaintext_derivative"] = True
         if self.approve(dict(scope)) is not True:
             raise PermissionError("Native director refused exact committed 30-second edit")
         if self.preflight(project_id, edit_id, edit_revision) != plan:
@@ -249,6 +250,7 @@ class NativeEditedFilm30s:
                     "audio_bit_depth": 16, "ffmpeg_used": False,
                     "conventional_single_file_master": False,
                     "original_sources_modified": False,
+                    "export_is_plaintext_derivative": True,
                 }
                 with (staged / "manifest.json").open("x", encoding="utf8") as fd:
                     json.dump(manifest, fd, sort_keys=True, separators=(",", ":"))
@@ -306,7 +308,8 @@ def verify_edited_film(assembly: SlateSequenceAssembly, project_id: str,
         manifest.get("fps_num") != 24 or manifest.get("fps_den") != 1 or
         manifest.get("ffmpeg_used") is not False or
         manifest.get("conventional_single_file_master") is not False or
-        manifest.get("original_sources_modified") is not False):
+        manifest.get("original_sources_modified") is not False or
+        manifest.get("export_is_plaintext_derivative") is not True):
         raise RuntimeError("Edited film manifest is not bound to the committed original")
     listener_path = manifest.get("listener_path")
     if type(listener_path) is not str or not listener_path.startswith("/World/"):

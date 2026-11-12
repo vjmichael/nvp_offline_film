@@ -29,6 +29,30 @@ if [ -L "$bundle" ] || [ -L "$bundle/NVP.exe" ]; then
   exit 4
 fi
 
+# W1-G: trusted build inputs only. A missing reviewed binary roster never
+# acquires fictional worker acceptance; partial configuration fails closed.
+if [ -n "${NVP_W1G_WORKER_ROSTER:-}" ] || [ -n "${NVP_W1G_WORKER_BINARIES:-}" ]; then
+  if [ -z "${NVP_W1G_WORKER_ROSTER:-}" ] || [ -z "${NVP_W1G_WORKER_BINARIES:-}" ]; then
+    echo "Both the reviewed worker roster and genuine binary directory are required" >&2
+    exit 6
+  fi
+  python3 "$repo/tools/nvp_w1g_worker_package.py" provision \
+    --platform windows-amd64 --bundle "$bundle" \
+    --roster "$NVP_W1G_WORKER_ROSTER" \
+    --trusted-binaries "$NVP_W1G_WORKER_BINARIES"
+fi
+
+if [ -n "${NVP_W1G_WHEEL_LOCK:-}" ] || [ -n "${NVP_W1G_WHEELHOUSE:-}" ]; then
+  if [ -z "${NVP_W1G_WHEEL_LOCK:-}" ] || [ -z "${NVP_W1G_WHEELHOUSE:-}" ]; then
+    echo "Incomplete offline wheel dependency lock configuration" >&2
+    exit 7
+  fi
+  python3 "$repo/tools/nvp_w1g_native_dependencies.py" verify \
+    --platform windows-amd64 --lock "$NVP_W1G_WHEEL_LOCK" \
+    --wheelhouse "$NVP_W1G_WHEELHOUSE" \
+    > "$repo/dist/NVP-W1G-native-wheels-audit.json"
+fi
+
 python3 "$repo/tools/nvp_e2e01e_validate_installer_payload.py" \
   --bundle "$bundle" --report "$repo/dist/NVP-package-audit.json"
 # W1-G: seal every packaged Python, OpenUSD, React and native-worker byte.

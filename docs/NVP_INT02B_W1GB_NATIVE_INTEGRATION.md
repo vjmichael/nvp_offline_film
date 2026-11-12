@@ -26,6 +26,11 @@ nvp/int02-w1g-native-film-package-20261112.
   edit discovery, exact preflight, approval-bound background export, progress,
   cancellation request, and independent verification. A non-CLI React panel
   surfaces the flow in the installed data-first filmmaker interface.
+- The native export goes to a project-home SIBLING Exports directory, never
+  into potentially encrypted original-project storage. The OS dialog and
+  React UI explicitly disclose that the independently produced PNG/WAV
+  delivery is UNENCRYPTED. Original encryption/project session enforcement
+  must be reconciled with G03/INT-01 before protected-film release acceptance.
 - Source-only regression tests exercise different Takes across a cut,
   denial, unsupported shot composition, time misalignment, unauthorized
   partial-output cancellation and independent reopen tamper detection.
@@ -64,6 +69,10 @@ Intentionally blocked:
   A canonical NSIS-managed install REFUSES direct upgrade: installer-aware
   migration and signed update still need implementation. Linux runtime
   packages may use this primitive after native verification.
+- packaging/build-nvp-nsis.sh accepts an explicit reviewed worker
+  roster+binary directory and/or offline wheel lock+wheelhouse; partial
+  configuration fails closed. Validation precedes NSIS packaging and external
+  W1-G full-byte build receipt generation; these inputs are NOT yet supplied.
 - tools/nvp_w1g_worker_package.py: exact roster of reviewed, precompiled
   amd64 native PE32+/ELF64 executable workers; rejects wrong architecture,
   source-only placeholder scripts, missing/tampered native binaries and
@@ -89,3 +98,4 @@ Intentionally blocked:
 5. Physical creator approval and long-duration production acceptance.
 
 No CI, gh workflow rerun or physical installed NVP acceptance claimed.
+Absent native worker binaries and reviewed wheels are explicitly UNPROVISIONED.

@@ -91,6 +91,8 @@ class SideBySideNativeUpgrade:
             raise RuntimeError("Cannot upgrade without real runtimes and original-film baseline")
         if "NVP" not in old_files or "NVP" not in new_files:
             raise RuntimeError("Only established genuine NVP native runtime may upgrade")
+        if _fingerprint(old_files) == _fingerprint(new_files):
+            raise RuntimeError("Upgrade candidate is byte-for-byte identical to installed NVP")
         target = self.staging/"next"
         backup = self.staging/"previous"
         if any(p.exists() or p.is_symlink() for p in (target, backup)):
