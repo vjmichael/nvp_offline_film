@@ -129,7 +129,7 @@ The filmmaker sees only **Script (optional) → Set Up Scenes → Film Scenes �
 
 The separate `nvp/wave1-longfilm-runtime-pcm-20261111` branch adds the missing G09-E fixed frozen worker dispatch, Windows/Linux bundle runtime selfcheck, and a SHA-verified bounded SQLite BLOB reader for ordinary original PCM clips over 64 MiB. G08/G09-C original audio and G09-B jaw RMS now access verified source windows instead of copying the full long BLOB. Bounded source test fixtures are authored but have **not run**. See [Wave 1 implementation ledger](NVP_WAVE1_PRODUCTION_INFRASTRUCTURE.md). This is **not consolidated Windows/Linux or physical installed acceptance** and does not alter canonical DATA-AV PR #74.
 
-Still open: truly continuous chunked native capture beyond 120 seconds, encrypted long-film worker/checkpoint custody, exact installed-worker execution and sound/film performance verification, signed or unsigned installer acceptance and full 30–180-minute physical production evidence. All previous G09-A/B/C/D cinema-fidelity gaps remain open.
+W1-D source now adds explicit long native microphone recording for an ordinary G06 scene: bounded five-second SQLite chunks, 30-minute maximum, full original PCM/source manifest and contiguous segment offsets, source-bound Take freeze/reopen, and fail-closed crash/restart interruption. Protected long capture remains denied. **Still open:** physical native-device/30-minute capture acceptance, encrypted long-film worker/checkpoint custody, genuine installed-worker execution, historical migration, signed/unsigned installer evidence and full 30–180-minute feature-film rendering. G09-A/B/C/D cinema fidelity and hardware sync remain open.
 
 ## Single-group execution discipline
 
