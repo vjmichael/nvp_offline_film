@@ -122,9 +122,11 @@ def mount_g09f_routes(app,long_delivery,studio,film_access,live_films,
                     if not film_access().permitted(
                             project_id,token,renew=False):
                         raise HTTPException(423,detail="Film was locked during import")
-                    # ASGI server receives bounded async chunks. The
-                    # Python write is capped to this original source budget.
-                    sink.write(part)
+                    # ASGI chunk size is not a trusted memory bound.
+                    # Split even an oversized provided chunk into fixed 1MiB
+                    # slices and write synchronously to the owned temp file.
+                    for offset in range(0,len(part),1024*1024):
+                        sink.write(part[offset:offset+1024*1024])
                 sink.flush();os.fsync(sink.fileno())
             if copied<1024:
                 raise HTTPException(422,detail="The selected film package is incomplete")
