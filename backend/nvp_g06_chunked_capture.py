@@ -44,6 +44,7 @@ def _schema(db):
     db.execute("""CREATE TABLE IF NOT EXISTS g06_long_capture_sessions(
         session_id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,scene_id TEXT NOT NULL,actor_id TEXT,
+        stage_sha256 TEXT NOT NULL,
         status TEXT NOT NULL,committed_samples INTEGER NOT NULL DEFAULT 0,
         committed_chunks INTEGER NOT NULL DEFAULT 0,
         original_recording_id TEXT,original_sha256 TEXT,
@@ -63,6 +64,11 @@ def _schema(db):
         sample_count INTEGER NOT NULL,original_sha256 TEXT NOT NULL,
         segments_json TEXT NOT NULL,manifest_sha256 TEXT NOT NULL,
         recorded_at TEXT NOT NULL)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS g06_long_recording_members(
+        clip_id TEXT PRIMARY KEY,recording_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,scene_id TEXT NOT NULL,
+        first_sample INTEGER NOT NULL,sample_count INTEGER NOT NULL,
+        pcm_sha256 TEXT NOT NULL)""")
     db.execute("""CREATE INDEX IF NOT EXISTS g06_long_capture_scene
         ON g06_long_capture_sessions(project_id,scene_id,updated_at)""")
     db.execute("""CREATE INDEX IF NOT EXISTS g06_long_recording_scene
@@ -72,7 +78,8 @@ def _schema(db):
 class DurableOriginalChunkStore:
     """Single project-scoped source recorder. Never writes decoded PCM files."""
 
-    def __init__(self, studio, session_id, project_id, scene_id, actor_id):
+    def __init__(self, studio, session_id, project_id, scene_id, actor_id,
+                 stage_sha256):
         db_path=Path(studio.db_path)
         if not db_path.is_file() or db_path.is_symlink():
             raise RuntimeError("The ordinary project source database is unavailable")
@@ -81,6 +88,7 @@ class DurableOriginalChunkStore:
         self.project_id=project_id
         self.scene_id=scene_id
         self.actor_id=actor_id
+        self.stage_sha256=stage_sha256
         self.q=queue.Queue(maxsize=QUEUE_LIMIT)
         self.thread=None
         self.error=None
@@ -102,10 +110,11 @@ class DurableOriginalChunkStore:
             db.execute("BEGIN IMMEDIATE")
             _schema(db)
             db.execute("""INSERT INTO g06_long_capture_sessions(
-              session_id,project_id,scene_id,actor_id,status,started_at,updated_at)
-              VALUES (?,?,?,?,'recording',?,?)""",
+              session_id,project_id,scene_id,actor_id,stage_sha256,
+              status,started_at,updated_at)
+              VALUES (?,?,?,?,?,'recording',?,?)""",
               (self.session_id,self.project_id,self.scene_id,self.actor_id,
-               _now(),_now()))
+               self.stage_sha256,_now(),_now()))
         self.thread=threading.Thread(target=self._write_loop,
             daemon=True,name="nvp-native-pcm-"+self.session_id[:8])
         self.thread.start()
@@ -239,6 +248,8 @@ class DurableOriginalChunkStore:
         def commit(db,movie,source):
             _schema(db)
             head,stage,plan,_raw=_stage(db,source,pid,sid)
+            if stage["usd_sha256"]!=self.stage_sha256:
+                raise RuntimeError("Original stage was revised while recording")
             approved_actors={obj["actor_id"] for obj in plan["objects"]
                              if obj["role"]=="actor"}
             if self.actor_id is not None and self.actor_id not in approved_actors:
@@ -288,6 +299,12 @@ class DurableOriginalChunkStore:
                         VALUES(?,?,?,?,'native_microphone_pcm16le',?,?,?,?,?)""",
                         (clip_id,pid,sid,self.actor_id,pcm,digest,RATE,1,
                          len(pcm)//2,recorded))
+                    db.execute("""INSERT INTO g06_long_recording_members(
+                        clip_id,recording_id,project_id,scene_id,
+                        first_sample,sample_count,pcm_sha256)
+                        VALUES(?,?,?,?,?,?,?)""",
+                        (clip_id,group_id,pid,sid,first_sample,
+                         len(pcm)//2,digest))
                     segments.append({"clip_id":clip_id,
                         "first_sample":first_sample,"sample_count":len(pcm)//2,
                         "pcm_sha256":digest})
@@ -329,11 +346,11 @@ class DurableOriginalChunkStore:
 
 class NativeLongMicrophoneSession(NativeMicrophoneSession):
     def __init__(self,project_id,scene_id,actor_id,*,session_grant,
-                 studio,device_factory=None):
+                 studio,stage_sha256,device_factory=None):
         super().__init__(project_id,scene_id,actor_id,
                          session_grant=session_grant,device_factory=device_factory)
         self.store=DurableOriginalChunkStore(studio,self.id,project_id,
-                                              scene_id,actor_id)
+                                              scene_id,actor_id,stage_sha256)
         self.is_long=True
         self.stream_sha256=None
 
