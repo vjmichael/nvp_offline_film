@@ -35,6 +35,23 @@ SOUND=b"\x16\x00\xff\x7f"*120000  # 5 seconds, 48 kHz mono int16
 ORIGINAL_SHA=hashlib.sha256(SOUND).hexdigest()
 
 
+class EphemeralNativeFilmSmokeContract(unittest.TestCase):
+    def test_real_installed_smoke_never_auto_approves_on_source_runtime(self):
+        from tools.nvp_w1f_private_reel_smoke import run
+        with self.assertRaises(RuntimeError):
+            run()
+
+    def test_synthetic_source_is_exact_one_frame_original_window(self):
+        from tools.nvp_w1f_private_reel_smoke import _fixture,USDA
+        from backend.nvp_g08_native_avi import TICKS_FRAME
+        assembly,plan=_fixture(USDA)
+        self.assertEqual(assembly["duration_tick"],TICKS_FRAME)
+        self.assertEqual(assembly["window"],[0,TICKS_FRAME])
+        self.assertEqual(assembly["source_media_modified"],False)
+        self.assertEqual(plan["fade_in_samples"],0)
+        self.assertEqual(plan["fade_out_samples"],0)
+
+
 class NativeACLReceiptContract(unittest.TestCase):
     def test_icacls_reports_success_even_with_zero_failed_files(self):
         from unittest.mock import Mock

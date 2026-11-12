@@ -6,6 +6,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <stdio.h>
+#include <vector>
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Advapi32.lib")
 
@@ -16,6 +17,23 @@ int wmain(int argc, wchar_t **argv) {
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return 41;
     if (!GetTokenInformation(token, TokenIsAppContainer, &app, sizeof(app), &size) || app != 1) {
         CloseHandle(token); return 42;
+    }
+    DWORD required=0;
+    GetTokenInformation(token, TokenCapabilities, nullptr, 0, &required);
+    if (GetLastError()!=ERROR_INSUFFICIENT_BUFFER ||
+            required<sizeof(DWORD) || required>65536) {
+        CloseHandle(token);return 53;
+    }
+    std::vector<unsigned char> capabilities(required);
+    if (!GetTokenInformation(token, TokenCapabilities,
+            capabilities.data(),required,&required)) {
+        CloseHandle(token);return 54;
+    }
+    auto* groups=reinterpret_cast<const TOKEN_GROUPS*>(capabilities.data());
+    if (groups->GroupCount!=0) {
+        CloseHandle(token);
+        fputs("G03_UNREVIEWED_NATIVE_NETWORK_CAPABILITY\n",stderr);
+        return 55;
     }
     CloseHandle(token);
     puts("G03_NATIVE_KERNEL_APPCONTAINER_TOKEN_PASS");
@@ -51,18 +69,52 @@ int wmain(int argc, wchar_t **argv) {
     unsigned long port = wcstoul(argv[2], nullptr, 10);
     if (!port || port > 65535) { closesocket(sock);WSACleanup(); return 47; }
     address.sin_port = htons(static_cast<u_short>(port));
-    int connected = connect(sock, reinterpret_cast<sockaddr*>(&address), sizeof(address));
-    int error = WSAGetLastError();
+    // Never let Winsock's default blocking connect hide the OS security
+    // result behind an unbounded 20-75 second TCP retry. The real host
+    // listener was proven reachable before this zero-capability child ran.
+    u_long nonblocking=1;
+    if (ioctlsocket(sock,FIONBIO,&nonblocking)!=0) {
+        closesocket(sock);WSACleanup();return 56;
+    }
+    int connected=connect(sock,reinterpret_cast<sockaddr*>(&address),
+                          sizeof(address));
+    int error=connected==0?0:WSAGetLastError();
+    if (connected!=0 && error==WSAEWOULDBLOCK) {
+        fd_set writable,excepted;
+        FD_ZERO(&writable);FD_ZERO(&excepted);
+        FD_SET(sock,&writable);FD_SET(sock,&excepted);
+        timeval deadline{};
+        deadline.tv_sec=4;
+        int ready=select(0,nullptr,&writable,&excepted,&deadline);
+        if (ready==SOCKET_ERROR) error=WSAGetLastError();
+        else if (ready==0) error=WSAETIMEDOUT;
+        else {
+            int socket_error=0;
+            int error_size=sizeof(socket_error);
+            if (getsockopt(sock,SOL_SOCKET,SO_ERROR,
+                    reinterpret_cast<char*>(&socket_error),&error_size)==0)
+                error=socket_error;
+            else error=WSAGetLastError();
+        }
+    }
     closesocket(sock);
     WSACleanup();
-    if (connected == 0) {
-        fputs("G03_UNAUTHORIZED_LOOPBACK_CONNECTED\n", stderr);
+    if (connected==0 || error==0) {
+        fputs("G03_UNAUTHORIZED_LOOPBACK_CONNECTED\n",stderr);
         return 48;
     }
-    if (error == WSAECONNREFUSED) {
-        fputs("G03_LOOPBACK_LISTENER_NOT_PROVED_REACHABLE\n", stderr);
+    if (error==WSAECONNREFUSED) {
+        fputs("G03_LOOPBACK_LISTENER_NOT_PROVED_REACHABLE\n",stderr);
         return 49;
     }
-    printf("G03_NATIVE_UNGRANTED_NETWORK_DENIED_PASS WSA=%d\n", error);
+    // A policy refusal (WSAEACCES) or bounded connection timeout, together
+    // with TokenCapabilities GroupCount==0 and the proven live host socket,
+    // is the required kernel-backed negative acceptance. Other unexpected
+    // network errors are inconclusive, never silently treated as denial.
+    if (error!=WSAEACCES && error!=WSAETIMEDOUT) {
+        fprintf(stderr,"G03_UNEXPECTED_NATIVE_NETWORK_ERROR=%d\n",error);
+        return 57;
+    }
+    printf("G03_NATIVE_UNGRANTED_NETWORK_DENIED_PASS WSA=%d\n",error);
     return 0;
 }

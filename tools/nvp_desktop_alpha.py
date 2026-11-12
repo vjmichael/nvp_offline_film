@@ -1136,6 +1136,12 @@ def main(argv=None):
         # Never launch a desktop, backend server or model for a child worker.
         from tools.nvp_g09e_worker import main as g09e_worker
         return g09e_worker(args[1:])
+    if args==["--w1f-private-reel-smoke"]:
+        # Explicit ephemeral Windows CI only. A real one-frame native
+        # AppContainer movie is rendered and sealed; this role never
+        # reads an owner's film or simulates human OS approval.
+        from tools.nvp_w1f_private_reel_smoke import run as w1f
+        return w1f()
     if args==["--w1e-runtime-selfcheck"]:
         # Dependency/import probe only. It conveys no project, source,
         # approval, process-custody or rendering authority. The installed

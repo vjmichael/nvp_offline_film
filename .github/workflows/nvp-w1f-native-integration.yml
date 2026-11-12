@@ -137,7 +137,7 @@ jobs:
       - name: Freeze real installed fixed workers
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all sounddevice --collect-all numpy --collect-all scipy --collect-submodules backend --hidden-import tools.nvp_g08_export_worker --hidden-import tools.nvp_g09e_worker --hidden-import tools.nvp_w1e_sealed_reel_worker --hidden-import tools.nvp_g03_protected_scene_worker tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all sounddevice --collect-all numpy --collect-all scipy --collect-submodules backend --hidden-import tools.nvp_g08_export_worker --hidden-import tools.nvp_g09e_worker --hidden-import tools.nvp_w1e_sealed_reel_worker --hidden-import tools.nvp_g03_protected_scene_worker --hidden-import tools.nvp_w1f_private_reel_smoke tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Frozen worker build failed' }
           & 'dist/NVP/NVP.exe' --g09e-worker --selfcheck
           if ($LASTEXITCODE -ne 0) { throw 'Frozen G09-E worker not importable' }
@@ -177,4 +177,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installed G09-E worker unavailable' }
           & $installed '--w1e-runtime-selfcheck'
           if ($LASTEXITCODE -ne 0) { throw 'Installed protected worker unavailable' }
-          Write-Host 'W1F_INSTALLED_IMPORTS_ONLY_NOT_AN_ACTUAL_PROTECTED_FILM_RENDER'
+          # Genuine installed NVP.exe, actual Windows AppContainer/Job,
+          # deterministic synthetic OpenUSD + 2000 PCM samples, encrypted
+          # original/derived reel, verified restart. Not human OS approval.
+          $env:NVP_W1F_TEST_APPROVAL='CI_SOURCE_ONLY'
+          try {
+            & $installed '--w1f-private-reel-smoke'
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Real protected one-frame AppContainer reel failed native acceptance'
+            }
+          } finally {
+            Remove-Item Env:\NVP_W1F_TEST_APPROVAL -ErrorAction SilentlyContinue
+          }
+          Write-Host 'W1F_INSTALLED_FIXED_WORKER_NATIVE_APPCONTAINER_SYNTHETIC_REEL_ACCEPTED'
