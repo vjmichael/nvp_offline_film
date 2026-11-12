@@ -232,6 +232,11 @@ class NativeSceneSoundCapture:
                     digests.append(hashlib.sha256(chunk).digest())
                     original_digest.update(chunk)
                     samples+=len(chunk)//2
+                    # Reject excess samples during ingestion, not after a potentially
+                    # multi-gigabyte spool. Clock-attested sources retain their
+                    # independent exact sample-count verification below.
+                    if "source_sync" not in entry and samples>(end-start+SAMPLE_TICK-1)//SAMPLE_TICK:
+                        raise ValueError("Captured PCM sample count does not match its Film Time event")
                     count+=1
                 clock=(verified_original_clock(
                     self.index,project_id,sid,start,end,
