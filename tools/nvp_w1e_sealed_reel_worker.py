@@ -20,6 +20,15 @@ import os
 import struct
 import sys
 
+# Source-development role: invoked by the host using this exact reviewed
+# script path from a disposable, empty AppContainer cwd. Import the fixed
+# repository package root derived from this file, not a client-supplied
+# path, PYTHONPATH or inherited working directory. Frozen role imports as
+# a normal tools package and does not alter sys.path.
+if not __package__:
+    from pathlib import Path
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+
 from backend.nvp_g09e_chunk import (
     render_reel,check_assembly,source_digests,
     FRAMES_PER_CHUNK,MAX_CHUNK_BYTES)
