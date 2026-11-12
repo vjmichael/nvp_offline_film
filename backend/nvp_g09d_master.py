@@ -216,3 +216,66 @@ def finish_picture(jpeg,color_settings):
     return sink.getvalue(),{"color_edited":True,
         "input_color":"sRGB_8bit","output_color":"sRGB_8bit",
         "aces_transform_applied":False}
+
+
+
+def verify_completed_movie_sound(movie_bytes,finished=None):
+    """Measure ACTUAL delivered AVI PCM; never trust a render-worker claim.
+
+    Caller must first run the existing fully independent G08 movie verifier,
+    which decodes every MJPEG frame and validates the RIFF index. This
+    extracts only the audio chunks of that already-verified exact byte stream.
+    """
+    from backend.nvp_g08_native_avi import MAX_OUTPUT_BYTES
+    if (type(movie_bytes) is not bytes or
+        not 0<len(movie_bytes)<=MAX_OUTPUT_BYTES):
+        raise ValueError("Finished source movie is invalid")
+    start=movie_bytes.find(b"movi")
+    end=movie_bytes.rfind(b"idx1")
+    if start<0 or end<=start:
+        raise RuntimeError("The final movie contains no audio-bearing film media")
+    at=start+4
+    result=bytearray()
+    count=0
+    while at<end:
+        if at+8>end:raise RuntimeError("A sound chunk was truncated")
+        kind=movie_bytes[at:at+4]
+        size=struct.unpack_from("<I",movie_bytes,at+4)[0]
+        stop=at+8+size
+        if stop>end:raise RuntimeError("AVI sound chunk extends beyond the verified movie")
+        if kind==b"01wb":
+            if size!=8000:
+                raise RuntimeError("Finished source sound lost its 24fps/48k alignment")
+            result.extend(movie_bytes[at+8:stop]);count+=1
+        elif kind!=b"00dc":
+            raise RuntimeError("Unexpected native movie stream")
+        at=stop+(size&1)
+    if at!=end or not count or len(result)!=count*8000:
+        raise RuntimeError("The verified movie sound is not contiguous")
+    raw=bytes(result)
+    measured=analyze_pcm(raw)
+    ceiling=None;deviation=None;accepted=None
+    if finished is not None:
+        settings=finished["finishing"]["audio"]
+        intent=finished["finishing"]["finishing_intent"]
+        ceiling=settings["peak_ceiling_dbfs"]
+        measured_peak=measured["sample_peak_dbfs"]
+        if measured_peak is not None and measured_peak>ceiling+.01:
+            raise RuntimeError("The completed sound exceeded its selected peak ceiling")
+        observed=measured["integrated_lufs"]
+        deviation=(abs(observed-settings["target_lufs"])
+                   if observed is not None else None)
+        accepted=deviation is not None and deviation<=1.
+        if intent!="working" and not accepted:
+            raise RuntimeError("This finished movie does not meet its reviewed loudness target")
+    return {
+        "format":"nvp.g09d.independent_sound_readback.v1",
+        "rendered_pcm_sha256":sha256(raw).hexdigest(),
+        "sample_count":measured["sample_count"],
+        "integrated_lufs":measured["integrated_lufs"],
+        "sample_peak_dbfs":measured["sample_peak_dbfs"],
+        "approved_peak_ceiling_dbfs":ceiling,
+        "approved_review_loudness_met":accepted,
+        "original_recordings_preserved":True,
+        "verified_pcm_in_real_avi":True,
+        "true_peak_or_cinema_audio_certified":False}
