@@ -131,12 +131,12 @@ class G09CCaptureJournal:
                       (_now(),pid,scene_id,sid))
             self._execute(pid,mark,mutate=True)
             records=self._execute(pid,read)
-        long_recordings=[]
-        if self.filming.g05.g04.live is None:
-            from backend.nvp_g06_chunked_capture import long_capture_health
-            long_recordings=self._execute(pid,
-                lambda db,movie:long_capture_health(db,pid,scene_id,active),
-                mutate=True)
+        # Both ordinary and G03 sealed long sessions are metadata-only in
+        # this view. Protected audio stays in authenticated source assets.
+        from backend.nvp_g06_chunked_capture import long_capture_health
+        long_recordings=self._execute(pid,
+            lambda db,movie:long_capture_health(db,pid,scene_id,active),
+            mutate=True)
         return {"format":FORMAT,"scene_id":scene_id,
             "recordings":[{
                 "session_id":r["session_id"],"actor_id":r["actor_id"],
