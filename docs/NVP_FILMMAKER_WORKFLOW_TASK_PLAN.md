@@ -125,6 +125,12 @@ The filmmaker sees only **Script (optional) → Set Up Scenes → Film Scenes �
 
 **Exit:** independent output/quality gates **per subtask**; do not infer feature-length readiness from a 30-second test.
 
+## Wave 1 production infrastructure source update (November 11, 2026)
+
+The separate `nvp/wave1-longfilm-runtime-pcm-20261111` branch adds the missing G09-E fixed frozen worker dispatch, Windows/Linux bundle runtime selfcheck, and a SHA-verified bounded SQLite BLOB reader for ordinary original PCM clips over 64 MiB. G08/G09-C original audio and G09-B jaw RMS now access verified source windows instead of copying the full long BLOB. Bounded source test fixtures are authored but have **not run**. See [Wave 1 implementation ledger](NVP_WAVE1_PRODUCTION_INFRASTRUCTURE.md). This is **not consolidated Windows/Linux or physical installed acceptance** and does not alter canonical DATA-AV PR #74.
+
+Still open: truly continuous chunked native capture beyond 120 seconds, encrypted long-film worker/checkpoint custody, exact installed-worker execution and sound/film performance verification, signed or unsigned installer acceptance and full 30–180-minute physical production evidence. All previous G09-A/B/C/D cinema-fidelity gaps remain open.
+
 ## Single-group execution discipline
 
 1. **Start with G01.** Do not start G02 simply because G01's CI is green; G01 physical/user-machine evidence and reconciliation are distinct obligations. If local physical access cannot be obtained, report it as **blocked**, with a real installer/evidence procedure rather than a false pass.
