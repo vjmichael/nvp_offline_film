@@ -286,3 +286,20 @@ def test_shutdown_spool_tampering_denies_publication_before_capture():
         session.stop_and_verify.assert_called_once()
         capture.capture.assert_not_called()
         assert opened[0].closed
+
+
+def test_aggregate_pcm_budget_denies_publication_and_reaps_worker():
+    # Two individually valid sources must not bypass the aggregate spool quota.
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C, patch(
+        "backend.nvp_filming_host_bridge.MAX_CHUNK_BYTES", 4), patch(
+        "backend.nvp_filming_host_bridge.MAX_CHUNKS", 1):
+        session, capture = S(), C()
+        session.stop_and_verify.return_value = GOOD
+        batch = [{"pcm_chunks": iter((b"\\x00\\x00\\x00\\x00",))},
+                 {"pcm_chunks": iter((b"\\x01\\x00",))}]
+        with pytest.raises(ValueError, match="batch exceeds spool budget"):
+            finish_linux_recording_and_freeze(
+                session, capture, "p", "t", recordings=lambda: batch)
+        session.stop_and_verify.assert_called_once()
+        capture.capture.assert_not_called()
