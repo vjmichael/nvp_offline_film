@@ -151,9 +151,7 @@ class SealedFilmDelivery:
             raise ValueError("Private working film requires exact whole frames")
         return {"project_id":pid,"edit_revision":expected_revision,
             "source_sha256":sha256(_canonical(source_digests(first))).hexdigest(),
-            "total_frames":frames,
-            "native_human_approval_required":True,
-            "no_implicit_worker_authorization":True}
+            "total_frames":frames}
 
     def start(self,pid,token,expected_revision,approval_id):
         """External native human review must consume one exact-film ticket."""
