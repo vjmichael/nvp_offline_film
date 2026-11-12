@@ -708,7 +708,37 @@ class G07Editor:
                         "performance_sha256":row["performance_usd_sha256"],
                         "original_sha256":row["original_usd_sha256"],
                         "audio":sound,"duration_tick":doc["duration_tick"]}
+            # G09-D final-picture/audio decisions are an independent human
+            # approval pinned to this exact edit and all approved derived
+            # scene, performer and acoustic sources.
+            from backend.nvp_g09d_finishing import G09DFinishing
+            source_bindings={
+                "edit_revision":source_revision,
+                "edit_sha256":_sha(_json(document).encode("utf8")),
+                "production_looks_sha256":_sha(_json({
+                    key:{"revision":val["revision"],"sha256":val["sha256"]}
+                    for key,val in sorted(production_looks.items())
+                }).encode("utf8")),
+                "actor_performances_sha256":_sha(_json({
+                    key:{"revision":val["revision"],"sha256":val["sha256"]}
+                    for key,val in sorted(actor_performances.items())
+                }).encode("utf8")),
+                "acoustic_looks_sha256":_sha(_json({
+                    key:{"revision":val["revision"],"sha256":val["sha256"]}
+                    for key,val in sorted(acoustic_looks.items())
+                }).encode("utf8")),
+                "original_takes_sha256":_sha(_json([
+                    [tid,sources[tid]["take_sha256"]] for tid in sorted(sources)
+                ]).encode("utf8"))
+            }
+            finishing=G09DFinishing.approved_source(db,pid,source_bindings)
+            finishing_sha=_sha(_json(
+                {"revision":finishing["revision"],
+                 "sha256":finishing["sha256"]} if finishing else {}
+            ).encode("utf8"))
             return {"format":FORMAT,"project_id":pid,
+                "finishing_sha256":finishing_sha,
+                "approved_finishing":finishing,
                 "edit_revision":source_revision,
                 "edit_document_sha256":_sha(_json(document).encode("utf8")),
                 "production_looks_sha256":_sha(_json({
