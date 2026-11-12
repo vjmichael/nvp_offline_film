@@ -53,6 +53,7 @@ class Freeze(Version):
 
 class MicrophoneStart(BaseModel):
     actor_id:str|None=Field(default=None,max_length=40)
+    long_recording:bool=False  # ordinary film only; sealed W1-E still blocked
 
 
 class MicrophoneSession(BaseModel):
@@ -169,7 +170,8 @@ def mount_g06_routes(app,studio,live_films,cookie_name):
         creator=service(project_id,request)
         return _safe(lambda:RECORDER.begin(
             project_id,scene_id,payload.actor_id,request.cookies.get(cookie_name),
-            audit=G09CCaptureJournal(creator)))
+            audit=G09CCaptureJournal(creator),
+            long_recording=payload.long_recording))
     routes("POST","scene/{scene_id}/microphone/start",mic_start)
 
     def mic_finish(project_id:str,scene_id:str,request:Request,
