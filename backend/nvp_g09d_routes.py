@@ -120,3 +120,44 @@ def mount_g09d_routes(app,studio,live_films,cookie_name):
         _safe(lambda:service(project_id,request).view(project_id))
         return _dcp_gate()
     route("GET","/cinema-readiness",dcp)
+
+
+def mount_g09d_interchange_routes(app,controller,live_films,cookie_name):
+    from hashlib import sha256
+    from fastapi.responses import Response
+    from backend.nvp_g09d_interchange import make_interchange
+    def acquire(project_id,job_id,request):
+        if request.headers.get("sec-fetch-site") not in (
+                None,"same-origin","none"):
+            raise HTTPException(403,detail="Open the finished film in NVP")
+        token=request.cookies.get(cookie_name)
+        if live_films().exists(project_id):
+            original=controller["sealed"].movie_bytes(
+                project_id,job_id,token)
+        else:
+            source=controller["ordinary"].movie_path(project_id,job_id,token)
+            if source.is_symlink() or source.stat().st_size>96*1024*1024:
+                raise RuntimeError("This working-film handoff exceeds the review budget")
+            original=source.read_bytes()
+        if len(original)>96*1024*1024:
+            raise RuntimeError("The first source interchange package is too large")
+        return original
+
+    def interchange(project_id:str,job_id:str,request:Request):
+        original=_safe(lambda:acquire(project_id,job_id,request))
+        archive,receipt=_safe(lambda:make_interchange(
+            original,source_sha256=sha256(original).hexdigest()))
+        return Response(content=archive,media_type="application/zip",
+            headers={"Cache-Control":"private, no-store, max-age=0",
+                "X-Content-Type-Options":"nosniff",
+                "X-NVP-Interchange-SHA256":receipt["package_sha256"],
+                "Content-Disposition":(
+                    'attachment; filename="NVP-Interchange-'+job_id[:8]+'.zip"')})
+    for protected in (False,True):
+        app.add_api_route(
+            "/api/projects/{project_id}"+(
+                "/live" if protected else "")+
+            "/export/{job_id}/interchange",
+            interchange,methods=["GET"],
+            name="g09d_interchange_"+
+                ("protected" if protected else "ordinary"))
