@@ -434,13 +434,21 @@ def run_visible_window_smoke():
                 result.get("failure","unknown"))
         return 0
     finally:
+        # Native window close is an OS-owned cancellation boundary. This is
+        # a REQUEST for AppContainer Job termination, not a forged success
+        # receipt; uncertain runs remain interrupted until human review.
         try:
-            if bridge is not None:
-                bridge._close()
+            stop_private=getattr(app.state,"nvp_w1e_cancel_all",None)
+            if callable(stop_private):
+                stop_private()
         finally:
-            server.should_exit=True
-            worker.join(timeout=12)
-            sock.close()
+            try:
+                if bridge is not None:
+                    bridge._close()
+            finally:
+                server.should_exit=True
+                worker.join(timeout=12)
+                sock.close()
             if old_home is None: os.environ.pop("NVP_HOME",None)
             else: os.environ["NVP_HOME"]=old_home
             shutil.rmtree(test_home,ignore_errors=True)
