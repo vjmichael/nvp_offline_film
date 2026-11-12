@@ -537,7 +537,7 @@ export default function DirectorFilmEditor({movie}){
               e.preventDefault();
               if(!dragId||dragId===seg.clip_id)return;
               commit('move',{clip_id:dragId,to_index:index},
-                'The film's shot order was updated.');
+                "The film's shot order was updated.");
               setDragId(null);
             }}
             className={'film-editor-strip '+(selectedId===seg.clip_id?
@@ -785,7 +785,7 @@ export default function DirectorFilmEditor({movie}){
             value={filmNotes} onChange={e=>setFilmNotes(e.target.value)}/></label>
           <button className="film-secondary" disabled={busy}
             onClick={()=>commit('film_details',{title,notes:filmNotes},
-              'Your film's editorial notes were saved.')}>Save Film Notes</button>
+              "Your film's editorial notes were saved.")}>Save Film Notes</button>
         </div>
       </section>
       <section className="film-editor-history">
