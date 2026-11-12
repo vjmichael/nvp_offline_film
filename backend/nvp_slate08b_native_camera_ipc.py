@@ -17,6 +17,7 @@ from hashlib import sha256
 from pathlib import Path
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -130,6 +131,7 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         self.window = None
         self._lock = threading.RLock()
         self._grants = {}
+        self._private_film_grants = {}
         self._tickets = {}
         self._futures = {}
         self._host = None
@@ -197,6 +199,73 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             if self._host is None:
                 self._host=self._host_factory(self._approve)
             return self._host
+
+    def _private_film_window(self):
+        """G03 native OS approval, not legacy unprotected camera authority.
+
+        A protected project must remain locked to the director's HTTP session;
+        the separate API checks that session when consuming this exact ticket.
+        """
+        if self._closing or self.window is None:
+            raise PermissionError("Native director approval window is unavailable")
+        url=self.window.get_current_url()
+        if type(url) is not str:
+            raise PermissionError("Native source origin cannot be verified")
+        parsed=urlsplit(url)
+        if (parsed.scheme!="http" or
+            parsed.netloc!=self.origin.removeprefix("http://") or
+            parsed.path not in ("/","/postproduction.html") or
+            parsed.query or parsed.fragment):
+            raise PermissionError("Private film authorization requires the original NVP window")
+        return self.window
+
+    def native_private_film_review(self,request):
+        """A real OS confirmation creates a short-lived ONE-USE exact-film ticket.
+
+        Never return raw project keys, grant the browser execution authority,
+        or accept an arbitrary executable, path, resource or codec.
+        """
+        if type(request) is not dict or set(request)!={
+            "project_id","edit_revision","source_sha256","total_frames"}:
+            raise ValueError("Only exact reviewed film identity is permitted")
+        pid=request["project_id"];revision=request["edit_revision"]
+        digest=request["source_sha256"];frames=request["total_frames"]
+        if (type(pid) is not str or not re.fullmatch(r"[a-f0-9]{32}",pid) or
+            type(digest) is not str or
+            not re.fullmatch(r"[a-f0-9]{64}",digest) or
+            type(revision) is not int or not 1<=revision<=15000 or
+            type(frames) is not int or not 720<frames<=259200):
+            raise ValueError("Invalid protected film scope")
+        native=self._private_film_window()
+        duration=frames/24
+        message=("Authorize this EXACT encrypted NVP movie to run confined "
+            "native picture/audio workers?\n"
+            f"Project: {pid}\n"
+            f"Saved edit revision: {revision}\n"
+            f"Duration: {duration:.2f} seconds\n"
+            f"Source and approved decisions SHA-256: {digest}\n\n"
+            "The director can stop execution; originals remain AES-GCM "
+            "encrypted and derived reels are sealed. "
+            "This is working-film AVI, not a mastered DCP.")
+        if native.create_confirmation_dialog(
+                "NVP — Approve Protected Film Rendering",message) is not True:
+            return {"approved":False}
+        ticket=secrets.token_urlsafe(32)
+        with self._lock:
+            self._private_film_grants[ticket]=(
+                pid,revision,digest,frames,time.monotonic()+60)
+        return {"approved":True,"native_approval_id":ticket}
+
+    def consume_private_film_review(self,pid,revision,digest,frames,ticket):
+        """Called from trusted host service, never from an HTTP request body."""
+        if not isinstance(ticket,str):
+            return False
+        with self._lock:
+            grant=self._private_film_grants.pop(ticket,None)
+            if grant is None or self._closing:
+                return False
+            return (grant[:4]==(pid,revision,digest,frames) and
+                time.monotonic()<grant[4])
 
     def camera_render_capabilities(self):
         # DA-06: external Blender still capture was part of the retired
@@ -385,6 +454,7 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             if self._closing:
                 return
             self._closing=True
+            self._private_film_grants.clear()
             if self._data_av_controller is not None:
                 self._data_av_controller.close()
             if self._original_capture_controller is not None:
