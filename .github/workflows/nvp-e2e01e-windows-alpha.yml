@@ -53,6 +53,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
           python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
+          python tools/nvp_w1g_native_package.py build --bundle dist/NVP --output "$env:RUNNER_TEMP/nvp-w1g-native-build.json"
           if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }
           & 'dist/NVP/NVP.exe' --smoke
           if ($LASTEXITCODE -ne 0) { throw 'Uninstalled native alpha smoke failed' }
@@ -77,6 +78,8 @@ jobs:
           $builtHash=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash
           $installedHash=(Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
           if ($installedHash -ne $builtHash) { throw 'Installed NVP.exe does not match verified build payload' }
+          python tools/nvp_w1g_native_package.py verify-install --installed (Join-Path $env:LOCALAPPDATA 'Programs/NVP') --receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --output "$env:RUNNER_TEMP/nvp-w1g-installed.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed native worker and runtime byte audit failed' }
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
           $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru -Wait
           if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed' }
@@ -102,16 +105,25 @@ jobs:
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) {
             throw 'Missing creator SQLite film database before uninstall'
           }
+          python tools/nvp_w1g_native_package.py snapshot-films --projects "$owned" --output "$env:RUNNER_TEMP/nvp-w1g-original-films.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not snapshot creator film preservation baseline' }
           $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
           if ($result.ExitCode -ne 0) { throw 'Uninstall failed' }
           Start-Sleep -Seconds 2
           if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
+          python tools/nvp_w1g_native_package.py verify-films --projects "$owned" --receipt "$env:RUNNER_TEMP/nvp-w1g-original-films.json" --output "$env:RUNNER_TEMP/nvp-w1g-film-preservation.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Original creator film files changed across uninstall' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: nvp-alpha-windows-bundle-audit
-          path: ${{ runner.temp }}/nvp-alpha-bundle-audit.json
+          path: |
+            ${{ runner.temp }}/nvp-alpha-bundle-audit.json
+            ${{ runner.temp }}/nvp-w1g-native-build.json
+            ${{ runner.temp }}/nvp-w1g-installed.json
+            ${{ runner.temp }}/nvp-w1g-original-films.json
+            ${{ runner.temp }}/nvp-w1g-film-preservation.json
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: always()

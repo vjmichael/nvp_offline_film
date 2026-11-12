@@ -31,6 +31,10 @@ fi
 
 python3 "$repo/tools/nvp_e2e01e_validate_installer_payload.py" \
   --bundle "$bundle" --report "$repo/dist/NVP-package-audit.json"
+# W1-G: seal every packaged Python, OpenUSD, React and native-worker byte.
+# Keep the external receipt OUTSIDE NSIS payload for post-install comparison.
+python3 "$repo/tools/nvp_w1g_native_package.py" build \
+  --bundle "$bundle" --output "$repo/dist/NVP-W1G-native-build.json"
 
 mkdir -p "$repo/dist"
 (
