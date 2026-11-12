@@ -131,6 +131,30 @@ class SealedFilmDelivery:
         with self.guard:
             return self._change(pid,token,reconcile)
 
+    def preview(self,pid,token,expected_revision):
+        """Host-authenticated source scope for a real native OS review.
+
+        Computes from actual frozen film and decisions, not browser-supplied
+        model claims. Does NOT create a render or mint an execution ticket.
+        """
+        self._auth(pid,token)
+        if type(expected_revision) is not int or expected_revision<1:
+            raise ValueError("Review and save the current film edit")
+        editor=G07Editor(self.studio,self.live,token)
+        current=editor.view(pid)
+        if current["revision"]!=expected_revision or current["missing_sources"]:
+            raise RuntimeError("Review the actual saved original before private rendering")
+        first=editor.native_assembly(pid,expected_revision,
+            window=(0,min(240,round(current["duration_seconds"]*FPS))*TICKS_FRAME))
+        frames=first["duration_tick"]//TICKS_FRAME
+        if not 720<frames<=MAX_FRAMES or first["duration_tick"]!=frames*TICKS_FRAME:
+            raise ValueError("Private working film requires exact whole frames")
+        return {"project_id":pid,"edit_revision":expected_revision,
+            "source_sha256":sha256(_canonical(source_digests(first))).hexdigest(),
+            "total_frames":frames,
+            "native_human_approval_required":True,
+            "no_implicit_worker_authorization":True}
+
     def start(self,pid,token,expected_revision,approval_id):
         """External native human review must consume one exact-film ticket."""
         self._auth(pid,token)
@@ -432,10 +456,17 @@ class SealedFilmDelivery:
 
     def status(self,pid,token,job):
         row=self._job(pid,token,job)
-        return {"format":FORMAT,"job_id":job,"status":row["status"],
+        return {"format":FORMAT,"id":job,"job_id":job,"status":row["status"],
             "completed_chunks":row["completed_chunks"],
             "total_chunks":row["total_chunks"],
+            "reels_total":row["total_chunks"],
+            "reels_verified":row["completed_chunks"],
+            "progress_percent":round(100*row["completed_chunks"]/
+                max(1,row["total_chunks"]),2),
             "total_frames":row["total_frames"],
+            "duration_seconds":row["total_frames"]/24,
+            "resumable":row["status"] in ("interrupted","cancelled","failed"),
+            "completed":row["status"]=="completed",
             "working_film_encrypted":True,
             "source_sha256":row["source_sha256"],
             "issue":row["issue"],
