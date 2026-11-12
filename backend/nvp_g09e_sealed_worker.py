@@ -153,11 +153,17 @@ class ProtectedSealedReelWorker:
         threads=[]
         try:
             with tempfile.TemporaryDirectory(prefix="nvp-w1e-private-reel-") as cwd:
+                code_roots=[Path(command[0]).parent]
+                if not getattr(sys,"frozen",False):
+                    # Source mode must also admit reviewed read-only backend
+                    # modules; do not extend DACLs to the NVP film home.
+                    package=Path(__file__).resolve().parents[1]
+                    code_roots.extend([package/"backend",package/"tools"])
                 proc=launch_contained(command,cwd=cwd,
                     stdin=source,stdout=out,stderr=err,
                     env=_sanitized_worker_env(),memory_mb=4096,
                     windows_appcontainer_required=True,
-                    appcontainer_code_roots=[Path(command[0]).parent],
+                    appcontainer_code_roots=code_roots,
                     appcontainer_code_files=code_files)
                 source.close();out.close();err.close()
                 for fn,args in (
