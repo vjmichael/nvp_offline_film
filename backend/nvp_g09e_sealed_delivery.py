@@ -73,6 +73,7 @@ class SealedFilmDelivery:
             os_isolation_attestor=os_isolation_attestor)
         self.guard=threading.RLock()
         self.active={}
+        self._job_projects={}
         self.tickets={}
 
     def _auth(self,pid,token):
@@ -213,6 +214,7 @@ class SealedFilmDelivery:
                 args=(pid,token,job,stop),daemon=True,
                 name="nvp-w1e-sealed-film-"+job[:8])
             self.active[job]=(thread,stop)
+            self._job_projects[job]=pid
             thread.start()
 
     def _set(self,pid,token,job,status,*,issue=None,plan=None,manifest=None):
@@ -416,6 +418,7 @@ class SealedFilmDelivery:
         finally:
             with self.guard:
                 self.active.pop(job,None)
+                self._job_projects.pop(job,None)
                 for ticket,value in list(self.tickets.items()):
                     if value[1]==job:self.tickets.pop(ticket,None)
 
@@ -439,6 +442,28 @@ class SealedFilmDelivery:
         self._change(pid,token,reopen)
         self._launch(pid,token,job)
         return self.status(pid,token,job)
+
+    def cancel_project(self,pid):
+        """Host lock/revocation signal: never claims process-tree exit here.
+
+        The private worker loop notices the event, revokes further source
+        access and must independently close its AppContainer/Job before any
+        later output can be published. Cold restart reconciles uncertain jobs.
+        """
+        with self.guard:
+            affected=[]
+            for job,(thread,stop) in self.active.items():
+                if self._job_projects.get(job)==pid:
+                    stop.set()
+                    affected.append(job)
+            return affected
+
+    def cancel_all(self):
+        """Native application shutdown requests cancellation for all jobs."""
+        with self.guard:
+            for thread,stop in self.active.values():
+                stop.set()
+            return len(self.active)
 
     def cancel(self,pid,token,job):
         self._auth(pid,token)
