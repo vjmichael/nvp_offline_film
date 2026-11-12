@@ -1,7 +1,7 @@
 # NVP — Revised filmmaker-workflow engineering task plan
 
-**Plan date:** November 10, 2026 (America/Phoenix)  
-**Status:** Planning/documentation; **no task-group implementation is completed by publishing this plan**.  
+**Plan date:** November 10, 2026; engineering ledger updated November 12, 2026 (America/Phoenix)  
+**Status:** G04–G09/Wave 1 and INT-01A–E implementation work is source-authored across development branches; **W1-F scoped automated native acceptance passed at its original exact source head**, but one integrated production-ready filmmaker application, physical owner approval, real shared Lu Workspace inference, 30–180-minute production and final release acceptance **remain open**. This plan records actual source status; a ledger change alone never closes an acceptance gate.  
 **Product contract:** [NVP_FILMMAKER_WORKFLOW_PRODUCT_SPEC.md](NVP_FILMMAKER_WORKFLOW_PRODUCT_SPEC.md) and [issue #150](https://github.com/vjmichael/nvp_offline_film/issues/150).  
 **Lu integration issue:** [#152](https://github.com/vjmichael/nvp_offline_film/issues/152).  
 **Current PLAN-04 review PR:** [#151](https://github.com/vjmichael/nvp_offline_film/pull/151).  
