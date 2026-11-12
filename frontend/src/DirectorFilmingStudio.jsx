@@ -483,6 +483,15 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
       return result;
     },'Original sound recorded and saved. You can include it in a Take.');
   }
+  function discardInterrupted(id){
+    if(!window.confirm('Discard this interrupted recording’s staged audio? ' +
+        'It was never published as an original Take and cannot be recovered afterwards.'))return;
+    perform(async()=>{
+      await call(endpoint+'/microphone/interrupted/'+encodeURIComponent(id)+
+        '/discard','POST',{});
+      setCaptureHealth(await call(endpoint+'/microphone/health'));
+    },'Only interrupted, unpublished microphone chunks were discarded.');
+  }
   function cancelMicrophone(){
     if(!recordSession)return;
     perform(async()=>{
@@ -806,6 +815,11 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
                      record.status==='cancelled'?'Recording cancelled':
                      'Recording chunks in progress'}
                     {' · '+record.durable_chunks+' durably stored chunks'}
+                    {record.status==='interrupted'&&<button
+                      type="button" className="film-secondary"
+                      disabled={busy}
+                      onClick={()=>discardInterrupted(record.session_id)}>
+                      Discard Interrupted Chunks</button>}
                   </p>)}
               </div>}
             {captureHealth?.recordings?.length>0&&
