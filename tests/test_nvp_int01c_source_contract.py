@@ -185,6 +185,8 @@ def test_edit_window_cannot_substitute_foreign_take_or_time():
         lambda seg:seg.update(scene_id=FOREIGN),
         lambda seg:seg.update(source_out_tick=TICKS_PER_SECOND*3),
         lambda seg:seg.update(take_sha256="0"*64),
+        lambda seg:seg.update(start_tick="0"),
+        lambda seg:seg.update(end_tick=-1),
     ):
         assembly=bound_assembly()
         mutate(assembly["segments"][0])
