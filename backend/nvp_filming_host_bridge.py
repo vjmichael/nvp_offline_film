@@ -6,6 +6,7 @@ The caller owns the native worker and supplies its original PCM event batch.
 from __future__ import annotations
 
 from copy import deepcopy
+from hashlib import sha256
 from contextlib import ExitStack
 import struct
 import tempfile
@@ -63,6 +64,7 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
                 spool = streams.enter_context(tempfile.SpooledTemporaryFile(
                     max_size=MAX_CHUNK_BYTES, mode="w+b"))
                 count = 0
+                digest = sha256()
                 for chunk in event["pcm_chunks"]:
                     if (type(chunk) is not bytes or not 0 < len(chunk) <= MAX_CHUNK_BYTES
                             or len(chunk) % 2 or count >= MAX_CHUNKS):
@@ -70,12 +72,26 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
                     header = struct.pack("<I", len(chunk))
                     if spool.write(header) != 4 or spool.write(chunk) != len(chunk):
                         raise OSError("Incomplete original PCM spool write")
+                    digest.update(header)
+                    digest.update(chunk)
                     count += 1
                 if not count:
                     raise ValueError("Empty original PCM stream")
                 spool.flush()
                 spool.seek(0)
-                def replay(source=spool):
+                expected_digest = digest.digest()
+                def replay(source=spool, expected=expected_digest):
+                    # The spool survives worker shutdown callbacks. Verify its
+                    # original bytes before handing any PCM to Take publication.
+                    source.seek(0)
+                    actual = sha256()
+                    while True:
+                        block = source.read(1024 * 1024)
+                        if not block:
+                            break
+                        actual.update(block)
+                    if actual.digest() != expected:
+                        raise RuntimeError("Original PCM spool integrity verification failed")
                     source.seek(0)
                     while True:
                         header = source.read(4)
