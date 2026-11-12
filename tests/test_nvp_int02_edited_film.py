@@ -45,7 +45,7 @@ class CommittedEditedThirtySecondFilm(TestCase):
         self.root = TemporaryDirectory()
         self.addCleanup(self.root.cleanup)
         self.parent = Path(self.root.name)
-        self.pid = "OriginalProject"
+        self.pid = "a"*32
         self.assembly = object.__new__(SlateSequenceAssembly)
         self.assembly.index = Mock()
         self.takes = {

@@ -138,11 +138,14 @@ class ProtectedNativeWorker:
                     raise RuntimeError("Native worker returned failure exit code")
                 # Kernel custody and no descendants must be verified before
                 # arbitrary worker receipt bytes may ever be accepted.
-                proc.close()
-                kernel=self.kernel_custody(dict(scope),proc)
-                if (type(kernel) is not dict or
+                # A caller-injected receipt alone is never OS authority.
+                # The original containment object must produce independently
+                # checked actual Windows Job / delegated Linux cgroup evidence.
+                from backend.nvp_w1g_kernel_custody import verified_native_worker_exit
+                kernel=verified_native_worker_exit(proc)
+                witness=self.kernel_custody(dict(scope),dict(kernel))
+                if (witness is not True or
                     kernel.get("process_tree_custody_verified") is not True or
-                    kernel.get("os_provenance") not in ("windows-job-object","linux-cgroup-v2") or
                     kernel.get("worker_pid")!=proc.pid):
                     raise RuntimeError("Independent OS process-tree custody remains unverified")
                 if _digest(binary)!=binary_sha or _digest(sealed)!=digest:
@@ -156,6 +159,8 @@ class ProtectedNativeWorker:
                     result.get("project_id")!=project_id or
                     result.get("plan_sha256")!=digest):
                     raise RuntimeError("Native result was not tied to exact authorized task")
+                # A domain verifier is advisory to this sealed output and
+                # receives only immutable hashes plus an already reaped job.
                 accepted=self.verify(dict(scope),dict(result),directory)
                 if accepted is not True:
                     raise RuntimeError("Independent domain verification did not accept result")

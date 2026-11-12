@@ -111,29 +111,25 @@ Section "NVP Alpha" SEC_MAIN
         IfErrors package_failed
         FileWrite $0 "NVP-ALPHA-INSTALL-v1"
         FileClose $0
-        StrCmp $1 "upgrade" park_old promote_new
-    park_old:
-        ClearErrors
-        Rename "$INSTDIR" "${PREVIOUS_DIR}"
+        FileOpen $0 "${STAGE_DIR}\nvp-alpha-version.txt" w
         IfErrors package_failed
+        FileWrite $0 "${APP_VERSION}"
+        FileClose $0
+        ; The staged bundle has its own matching uninstaller.
+        WriteUninstaller "${STAGE_DIR}\Uninstall NVP.exe"
+        IfErrors package_failed
+        StrCmp $1 "upgrade" needs_native_activation promote_new
+    needs_native_activation:
+        ; No installer direct promotion of an active NVP runtime.
+        ; The original Job Object/host custody and fresh human approval
+        ; are enforced by the W1-G native upgrade coordinator.
+        Abort "NVP update staged in NVP.pending; protected native activation required"
     promote_new:
         ClearErrors
         Rename "${STAGE_DIR}" "$INSTDIR"
-        IfErrors restore_old
+        IfErrors package_failed
         Goto promoted
-    restore_old:
-        StrCmp $1 "upgrade" 0 package_failed
-        IfFileExists "$INSTDIR" restore_failed
-        ClearErrors
-        Rename "${PREVIOUS_DIR}" "$INSTDIR"
-        IfErrors restore_failed
-        Abort "NVP upgrade promotion failed; original program restored"
-    restore_failed:
-        Abort "NVP upgrade interrupted; original runtime retained in NVP.previous"
     promoted:
-        ; Preserve old program until independent installed acceptance.
-        WriteUninstaller "$INSTDIR\Uninstall NVP.exe"
-        IfErrors promotion_uncertain
         CreateDirectory "$SMPROGRAMS\NVP"
         CreateShortcut "$SMPROGRAMS\NVP\NVP.lnk" "$INSTDIR\NVP.exe"
         CreateShortcut "$SMPROGRAMS\NVP\Uninstall NVP.lnk" "$INSTDIR\Uninstall NVP.exe"

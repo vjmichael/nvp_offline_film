@@ -107,6 +107,37 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
             self.assertEqual((films/"immutable.scene").read_bytes(),b"original film")
 
 
+    def test_native_nsis_activation_refuses_stale_or_busy_worker_evidence(self):
+        import time
+        from tools.nvp_w1g_nsis_activation import NativeNSISActivation
+        with TemporaryDirectory() as temp:
+            programs, films, journal=self.roots(Path(temp))
+            owner=OwnedNSISRecovery(
+                programs,films,journal,native_approve=lambda scope:True,
+                os_workers_stopped=lambda:True)
+            def invalid_kernel(sha):
+                return {"os_provenance":"windows-job-object",
+                        "original_runtime_sha256":sha,
+                        "process_tree_custody_verified":True,
+                        "active_windows_jobs":1,
+                        "unresolved_worker_jobs":0,
+                        "measured_at_unix":time.time()-120}
+            activation=NativeNSISActivation(
+                owner,native_authorize=lambda scope:True,
+                os_worker_tree_evidence=invalid_kernel)
+            with self.assertRaisesRegex(PermissionError,"kernel stop receipt"):
+                activation._kernel_empty("a"*64)
+
+class ActualKernelCustodyContractTests(unittest.TestCase):
+    def test_unowned_child_cannot_masquerade_as_os_contained_worker(self):
+        from backend.nvp_w1g_kernel_custody import verified_native_worker_exit
+        class UnownedPid:
+            pid=7031
+            def poll(self):return 0
+            def close(self):return None
+        with self.assertRaises(RuntimeError):
+            verified_native_worker_exit(UnownedPid())
+
 class ProtectedBinaryExecutionContracts(unittest.TestCase):
     def setup_roster(self,base):
         bundle=base/"bundle"
@@ -147,13 +178,10 @@ class ProtectedBinaryExecutionContracts(unittest.TestCase):
                 bundle,runtime,platform="windows-amd64",
                 native_approve=lambda scope:True,
                 independent_verify=lambda scope,result,directory:True,
-                independent_os_custody=lambda scope,child: {
-                    "process_tree_custody_verified":False,
-                    "os_provenance":"windows-job-object",
-                    "worker_pid":child.pid})
+                independent_os_custody=lambda scope,receipt: True)
             with patch("backend.nvp_w1g_protected_native_worker.launch_contained",
                        side_effect=fake_launch):
-                with self.assertRaisesRegex(RuntimeError,"custody"):
+                with self.assertRaises(RuntimeError):
                     process.run("scene_render","Project01",
                                 {"role":"scene_render","project_id":"Project01"})
             journals=list(runtime.glob("*/journal.json"))

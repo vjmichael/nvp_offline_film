@@ -124,3 +124,31 @@ acceptance and original DA-03 filming/custody gates remain outstanding.
   recovery of a stranded previous program at startup. Silent mode refuses
   uncertain recovery. These transitions still require a genuine compiler
   and OS installation run before acceptance.
+
+
+## 12 Nov native-acceptance correction: staged-only NSIS activation
+
+The previously described direct installer parking/promotion and unattended
+.onInit recovery were NOT safe enough to establish OS worker custody.
+The installer now only stages upgrades under NVP.pending, including the
+version-specific uninstaller. The original NVP stays running or installed
+unchanged until a separate first-party W1-G native coordinator, genuine
+Windows Job evidence, and new human authorization permit activation.
+The W1-G native coordinator is SOURCE-IMPLEMENTED but neither actual NSIS
+compilation nor kernel acceptance has been performed.
+
+The new kernel custody verifier does not accept caller-generated receipt
+fields: it must hold the actual Windows Job Object, query process accounting,
+terminate remaining descendants and prove ActiveProcesses == 0, or observe
+real Linux cgroup-v2 guardian removal. A callback then separately validates
+application-domain worker evidence.
+
+A read-only INT-02C acceptance tool now reopens a real edited-film original
+and all delivered frames/PCM, then rechecks each nonblank 1920x1080 picture
+against the source-time Cycles worker SHA-pinned output. The manual-only
+Windows package workflow now has real installed Job Object smoke and
+cross-step original NVP_HOME preservation.
+
+Automated native acceptance and W1-F human/sustained physical acceptance
+remain OPEN. Previous older claims about automatic NSIS upgrade are
+superseded by this safer fail-closed protocol.

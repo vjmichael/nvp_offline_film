@@ -19,7 +19,7 @@ except ImportError:  # Direct invocation from the tools/ directory.
 
 FORMAT = "nvp.w1g.native_payload.v1"
 PRESERVE_FORMAT = "nvp.w1g.original_film_snapshot.v1"
-INSTALLER_OWNED = frozenset(("nvp-alpha-install.marker", "Uninstall NVP.exe"))
+INSTALLER_OWNED = frozenset(("nvp-alpha-install.marker", "nvp-alpha-version.txt", "Uninstall NVP.exe"))
 
 
 def _digest(path: Path) -> str:
