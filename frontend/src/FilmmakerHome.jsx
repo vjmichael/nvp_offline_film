@@ -449,7 +449,7 @@ export default function FilmmakerHome() {
           key={project.id+':'+project.revision}
           movie={project}
           onEditFilm={()=>goPhase('edit')}
-          onFilmScenes={()=>goPhase('film')}/>
+          onFilmScenes={()=>goPhase('film')}/>}
       </div>}
       {lockTarget&&<div className="film-modal-backdrop" role="dialog" aria-modal="true"
         aria-labelledby="film-lock-title" onKeyDown={keepDialogFocus}>
