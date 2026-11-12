@@ -79,7 +79,15 @@ def _acl(path,sid,permission,recursive=False,remove=False):
     if recursive:
         args.append("/T")
     r=subprocess.run(args,capture_output=True,text=True,timeout=120,check=False)
-    if r.returncode or "Failed processing" in r.stdout:
+    # icacls prints "Successfully processed N files; Failed processing 0
+    # files" for SUCCESS. Checking for the words "Failed processing"
+    # alone falsely refused every successful ACL operation on Windows.
+    # Only an actual positive failed-file count, or a nonzero native
+    # process exit, can reject the requested scoped DACL change.
+    reported=re.search(r"Failed processing\s+(\d+)\s+files?\b",
+                       r.stdout,re.IGNORECASE)
+    failed_files=int(reported.group(1)) if reported else 0
+    if r.returncode or failed_files:
         # Do not log private paths, owner names or complete filesystem ACLs;
         # classify the genuine OS reason so a native integration failure is
         # diagnosable without weakening the security requirement.
