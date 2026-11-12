@@ -349,6 +349,10 @@ class G08MovieExporter:
             if (not verified.get("verified") or
                 verified.get("sha256")!=actual_sha or
                 verified.get("frames")!=record["expected_frames"] or
+                verified.get("approved_finishing_sha256")!=record["finishing_sha256"] or
+                verified.get("finishing_sound_independently_verified") is not True or
+                verified.get("native_sound_readback",{}).get(
+                    "sample_count")!=record["expected_frames"]*2000 or
                 verified.get("audio_samples_per_channel")!=
                     record["expected_frames"]*2000):
                 raise RuntimeError("Rendered movie failed independent readback")
