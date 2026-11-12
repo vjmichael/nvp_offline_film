@@ -46,6 +46,27 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             }]
         )
 
+    def test_impossible_unclocked_duration_refused_before_pcm_iteration(self):
+        from unittest.mock import patch
+        import backend.nvp_data_first_filming as filming
+        req=self.payload()
+        visited=[]
+        def one_shot():
+            visited.append("consumed")
+            yield self.original
+        req["recordings"][0]["pcm_chunks"]=one_shot()
+        # The one-second event requires 96,000 PCM bytes; refuse at
+        # metadata preflight with a smaller source quota, not mid-recording.
+        with patch.object(filming,"MAX_CHUNK_BYTES",1024), patch.object(
+                filming,"MAX_CHUNKS",1):
+            with self.assertRaisesRegex(ValueError,"duration exceeds source spool budget"):
+                self.capture.capture(**req)
+        self.assertEqual(visited,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_direct_capture_enforces_aggregate_pcm_budget_before_publication(self):
         from unittest.mock import patch
         import backend.nvp_data_first_filming as filming
