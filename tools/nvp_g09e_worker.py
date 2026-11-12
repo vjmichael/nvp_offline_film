@@ -27,6 +27,7 @@ from backend.nvp_g08_native_avi import TICKS_FRAME,verify_movie
 from backend.nvp_g09d_interchange import _parse_verified
 
 MAX_RECEIPT=128*1024
+MAX_MANIFEST=2*1024*1024
 MAX_ALL_BYTES=32*1024*1024*1024
 TICKS_PER_SAMPLE=TICKS_FRAME//2000
 
@@ -74,7 +75,8 @@ def _read_json(path,limit=MAX_RECEIPT):
 
 def _write_owned(directory,name,value):
     raw=_canonical(value)
-    if len(raw)>MAX_RECEIPT:
+    limit=MAX_MANIFEST if name=="candidate-manifest.json" else MAX_RECEIPT
+    if len(raw)>limit:
         raise ValueError("The native worker result is too large")
     final=directory/name
     if final.is_symlink():
@@ -276,8 +278,8 @@ def _finalize(args,dbpath,directory,record,source):
         "not_a_single_gapless_media_file":True,
         "not_a_professional_master_or_DCP":True,
         "physical_windows_installed_acceptance":False}
-    if len(_canonical(manifest))>MAX_RECEIPT:
-        raise ValueError("The final film index exceeds a bounded manifest")
+    if len(_canonical(manifest))>MAX_MANIFEST:
+        raise ValueError("The final film index exceeds its 2 MiB budget")
     _write_owned(directory,"candidate-manifest.json",manifest)
 
 def main(argv=None):
