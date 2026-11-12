@@ -81,6 +81,28 @@ class LinuxFilmingCgroup:
             stream.write(b"1")
             stream.flush()
 
+    def verify_still_empty(self) -> dict:
+        """Fresh kernel observation before reusing a one-use empty-tree receipt.
+
+        A previous populated=0 observation is not permanent: an external
+        actor could repopulate the group before worker reaping is retried.
+        Never issue a second cgroup.kill to address that possibility.
+        """
+        if not self._consumed:
+            raise CgroupCustodyError("No consumed kernel custody receipt to revalidate")
+        self._verify_group_identity()
+        fields = {}
+        for line in self._read_events().splitlines():
+            parts = line.split()
+            if len(parts) != 2 or parts[0] in fields:
+                raise CgroupCustodyError("Malformed or duplicate cgroup.events field")
+            fields[parts[0]] = parts[1]
+        if fields.get("populated") != "0":
+            raise CgroupCustodyError("Previously emptied filming cgroup is no longer empty")
+        self._verify_group_identity()
+        return {"process_tree_custody_verified": True,
+                "scope": "linux-cgroup-v2", "empty_group_verified": True}
+
     def stop_and_verify(self, *, timeout: float = 5.0) -> dict:
         if self._consumed:
             raise CgroupCustodyError("Cgroup custody receipt already consumed")

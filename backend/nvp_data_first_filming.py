@@ -48,6 +48,37 @@ class NativeSceneSoundCapture:
         self.scene=OpenUSDSceneBridge(index)
         self.publications=FilmingPublicationJournal(index)
 
+    def capture_supervised_linux(self, session, project_id, take_id, *,
+                                 recordings, timeout=5.0, **source_options):
+        """Host-only canonical DA-03 Take, independent of G06 microphone.
+
+        The host must own the Linux session. PCM is drained and snapshotted
+        before the process tree is stopped and reverified by the kernel.
+        This path is NOT private-film filesystem/network confinement.
+        """
+        from backend.nvp_filming_host_bridge import (
+            finish_linux_recording_and_freeze)
+        return finish_linux_recording_and_freeze(
+            session, self, project_id, take_id,
+            recordings=recordings, timeout=timeout, **source_options)
+
+    def launch_and_capture_supervised_linux(self, delegated_root,
+                                             executable, argv,
+                                             project_id, take_id, *,
+                                             recordings, timeout=5.0,
+                                             **source_options):
+        """Trusted host launches attached worker then verifies before Take.
+
+        G06 Windows native microphones and W1-D/E encrypted five-second
+        chunk stores remain distinct source producers; their in-process
+        callbacks never inherit this cgroup receipt by assumption.
+        """
+        from backend.nvp_filming_host_bridge import (
+            launch_and_finish_linux_recording)
+        return launch_and_finish_linux_recording(
+            delegated_root, executable, argv, self, project_id, take_id,
+            recordings=recordings, timeout=timeout, **source_options)
+
     def capture(self,project_id,take_id,*,scene_id,scene_revision,
                 camera_timeline_id,camera_timeline_revision,
                 sound_timeline_id,recordings):
