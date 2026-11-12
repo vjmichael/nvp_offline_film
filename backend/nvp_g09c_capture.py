@@ -36,10 +36,16 @@ def _schema(db):
 def _receipt(session,pcm):
     import time
     from backend.nvp_g06_filming import RATE
-    raw_hash=hashlib.sha256(pcm).hexdigest()
+    if isinstance(pcm,dict):
+        # W1-D streams source bytes durably; no giant in-memory PCM join.
+        raw_hash=pcm["original_pcm_sha256"]
+        verified_bytes=pcm["sample_count"]*2
+    else:
+        raw_hash=hashlib.sha256(pcm).hexdigest()
+        verified_bytes=len(pcm)
     with session.lock:
         if session.status!="stopped" or session.error is not None or (
-                session.bytes!=len(pcm) or session.frames*2!=len(pcm) or
+                session.bytes!=verified_bytes or session.frames*2!=verified_bytes or
                 session.frames<1):
             raise RuntimeError("Native microphone recording was not completed")
         first=session.first_callback_ns
@@ -62,7 +68,7 @@ def _receipt(session,pcm):
         "project_id":session.project_id,"scene_id":session.scene_id,
         "actor_id":session.actor_id,"sample_rate":RATE,
         "source_kind":"native_os_microphone_pcm16le",
-        "sample_count":frames,"sample_bytes":len(pcm),
+        "sample_count":frames,"sample_bytes":verified_bytes,
         "callback_count":chunks,"peak_pcm_abs":peak,
         "original_pcm_sha256":raw_hash,
         "host_started_monotonic_ns":started,
@@ -125,6 +131,12 @@ class G09CCaptureJournal:
                       (_now(),pid,scene_id,sid))
             self._execute(pid,mark,mutate=True)
             records=self._execute(pid,read)
+        long_recordings=[]
+        if self.filming.g05.g04.live is None:
+            from backend.nvp_g06_chunked_capture import long_capture_health
+            long_recordings=self._execute(pid,
+                lambda db,movie:long_capture_health(db,pid,scene_id,active),
+                mutate=True)
         return {"format":FORMAT,"scene_id":scene_id,
             "recordings":[{
                 "session_id":r["session_id"],"actor_id":r["actor_id"],
@@ -136,6 +148,7 @@ class G09CCaptureJournal:
                 "hardware_sync_proven":False}
                 for r in records],
             "interrupted_sessions":len(stale),
+            "durable_long_recordings":long_recordings,
             "original_sound_replaced":False}
 
     @staticmethod
