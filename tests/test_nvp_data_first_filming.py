@@ -396,7 +396,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         second.update(event_id="Speech002",source_id="SecondSpeech",
                       pcm_chunks=[b"\x00\x00"])
         req["recordings"].append(second)
-        with self.assertRaisesRegex(ValueError,"shorter than"):
+        with self.assertRaisesRegex(ValueError,"sample count does not match"):
             self.capture.capture(**req)
         for identity in ("NewRecordedSpeech","SecondSpeech","FilmingSoundTimeline"):
             with self.assertRaises(KeyError):
@@ -456,7 +456,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         second.update(event_id="Speech002",source_id="SecondSpeech",
                       pcm_chunks=iter([b"\x00\x00"]))
         req["recordings"].append(second)
-        with self.assertRaisesRegex(ValueError,"shorter than"):
+        with self.assertRaisesRegex(ValueError,"sample count does not match"):
             self.capture.capture(**req)
         for identity in ("NewRecordedSpeech","SecondSpeech","FilmingSoundTimeline"):
             with self.assertRaises(KeyError):
