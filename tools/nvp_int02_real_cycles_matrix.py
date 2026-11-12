@@ -112,6 +112,13 @@ def run_matrix(out:Path,blender:Path):
     scriptbytes=script.read_bytes()
     source=out/"scene.usda"
     scene_sha=prepare_real_usd(source)
+    from pxr import Usd
+    from backend.nvp_int02_usd_materials import source_preview_materials
+    reopened=Usd.Stage.Open(str(source))
+    original_materials=source_preview_materials(reopened,0)
+    if (len(original_materials)!=2 or
+        not any(x["prim_path"]=="/World/Actor" for x in original_materials)):
+        raise RuntimeError("Native actor/ground original material bindings not available")
     job_id="int02_real_native_cycles_001"
     jobdir=workspace/job_id
     jobdir.mkdir()
@@ -133,6 +140,7 @@ def run_matrix(out:Path,blender:Path):
         "camera_focal_length_mm":50.0,
         "camera_sensor_width_mm":36.0,
         "camera_sensor_height_mm":20.25,
+        "material_bindings":original_materials,
         "actor_paths":["/World/Actor"],
         "light_paths":["/World/Light"],
     }
@@ -165,6 +173,12 @@ def run_matrix(out:Path,blender:Path):
         raise RuntimeError(
             "Real Cycles image lacks visible original USD actor material "+
             f"(only {red_visible} red actor pixels); SHA alone is insufficient")
+    if (audit.get("source_material_bindings_verified") is not True or
+        audit.get("source_material_count")!=2 or
+        audit.get("source_material_bindings_sha256")!=sha256(
+            json.dumps(original_materials,sort_keys=True,
+                       separators=(",",":")).encode("ascii")).hexdigest()):
+        raise RuntimeError("Blender Cycles original material conversion is not source-verified")
     if (audit.get("source_camera_unit_conversion_verified") is not True or
         audit.get("camera_focal_length_mm")!=50.0 or
         audit.get("camera_sensor_width_mm")!=36.0 or

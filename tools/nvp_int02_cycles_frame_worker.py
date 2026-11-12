@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from hashlib import sha256
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -37,7 +38,7 @@ def main(argv=None):
               "source_tick","width","height","samples","renderer",
               "actor_paths","light_paths",
               "camera_focal_length_mm","camera_sensor_width_mm",
-              "camera_sensor_height_mm"}
+              "camera_sensor_height_mm","material_bindings"}
     if type(plan) is not dict or set(plan)!=required or (
             plan.get("format")!="nvp.int02.cycles.frame_plan.v1" or
             plan.get("renderer")!="CYCLES" or
@@ -58,6 +59,28 @@ def main(argv=None):
                           "camera_sensor_width_mm",
                           "camera_sensor_height_mm"))):
         raise RuntimeError("Untrusted or unsupported exact Cycles frame plan")
+    materials=plan.get("material_bindings")
+    if (type(materials) is not list or
+        not 1<=len(materials)<=128):
+        raise RuntimeError("Real USD geometry must have bounded source material bindings")
+    used=set()
+    for item in materials:
+        if (type(item) is not dict or set(item)!={
+                "prim_path","material_path","shader_path",
+                "linear_diffuse_rgb","roughness"} or
+            any(type(item.get(k)) is not str or
+                not item[k].startswith("/World/") or len(item[k])>240
+                for k in ("prim_path","material_path","shader_path")) or
+            type(item.get("linear_diffuse_rgb")) is not list or
+            len(item["linear_diffuse_rgb"])!=3 or
+            any(type(v) not in (int,float) or not math.isfinite(v) or
+                not 0<=v<=1 for v in item["linear_diffuse_rgb"]) or
+            type(item.get("roughness")) not in (int,float) or
+            not math.isfinite(item["roughness"]) or
+            not 0<=item["roughness"]<=1 or
+            item["prim_path"] in used):
+            raise RuntimeError("Native material plan is not a pinned USD PreviewSurface binding")
+        used.add(item["prim_path"])
     usd=args.plan.parent/plan["usd_file"]
     if (usd.parent!=args.plan.parent or usd.is_symlink() or
         not usd.is_file() or digest(usd)!=plan["usd_sha256"]):
@@ -111,6 +134,33 @@ def main(argv=None):
                               ("sensor_width","camera_sensor_width_mm"),
                               ("sensor_height","camera_sensor_height_mm"))):
         raise RuntimeError("Blender lens/aperture does not match frozen USD camera")
+    # Blender's native USD importer can expose the original geometry while
+    # dropping a bound UsdPreviewSurface shader. Do not accept its white
+    # placeholder as the filmmaker's approved look. The trusted native host
+    # extracted these constant values from the SAME SHA-pinned USD stage.
+    # Apply the real original material graph's supported PBR parameters
+    # in Blender before Cycles; unsupported graphs fail upstream.
+    for index,item in enumerate(materials):
+        name=item["prim_path"].rsplit("/",1)[-1]
+        objects=[o for o in bpy.data.objects if o.name==name]
+        if len(objects)!=1:
+            raise RuntimeError("Imported USD material target ambiguous/missing: "+item["prim_path"])
+        root=objects[0]
+        meshes=[o for o in [root,*list(root.children_recursive)] if o.type=="MESH"]
+        if not meshes:
+            raise RuntimeError("Original USD material prim imported without actual mesh")
+        mat=bpy.data.materials.new("NVP_SourceUSD_"+str(index))
+        mat.use_nodes=True
+        nodes=mat.node_tree.nodes
+        bsdf=next((n for n in nodes if n.type=="BSDF_PRINCIPLED"),None)
+        if bsdf is None:
+            raise RuntimeError("Blender native Cycles PBR shader unavailable")
+        rgb=item["linear_diffuse_rgb"]
+        bsdf.inputs["Base Color"].default_value=(*rgb,1.0)
+        bsdf.inputs["Roughness"].default_value=float(item["roughness"])
+        for obj in meshes:
+            obj.data.materials.clear()
+            obj.data.materials.append(mat)
     scene=bpy.context.scene
     def imported_descendant(path, accepted):
         name=path.rsplit("/",1)[-1]
@@ -158,6 +208,10 @@ def main(argv=None):
         "camera_sensor_width_mm":float(camera.data.sensor_width),
         "camera_sensor_height_mm":float(camera.data.sensor_height),
         "source_camera_unit_conversion_verified":True,
+        "source_material_bindings_verified":True,
+        "source_material_bindings_sha256":sha256(json.dumps(
+            materials,sort_keys=True,separators=(",",":")).encode("ascii")).hexdigest(),
+        "source_material_count":len(materials),
         "original_actor_geometry_verified":True,
         "authored_lights_verified":True,
         "native_frame_sha256":digest(args.output),

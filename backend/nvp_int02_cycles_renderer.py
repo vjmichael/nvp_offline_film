@@ -84,6 +84,8 @@ def static_composed_usd(index: FilmIndex, project_id, take_id, take_sha,
         if not math.isfinite(value) or not 1.0<=value<=300.0:
             raise RuntimeError("Original USD camera lens/aperture outside finite Blender bounds")
         params[key]=value
+    from backend.nvp_int02_usd_materials import source_preview_materials
+    material_bindings=source_preview_materials(stage,tick)
     flat=stage.Flatten()
     baked=Usd.Stage.Open(flat)
     if baked is None:
@@ -110,7 +112,7 @@ def static_composed_usd(index: FilmIndex, project_id, take_id, take_sha,
     # flattened scene cannot cause Blender to load arbitrary drive files.
     if "@" in text:
         raise RuntimeError("Cycles stage contains unresolved external USD asset reference")
-    return text.encode("utf8"), params
+    return text.encode("utf8"), params, material_bindings
 
 
 class NativeCyclesOriginalRenderer:
@@ -160,7 +162,7 @@ class NativeCyclesOriginalRenderer:
         shot_id=scope.get("source_shot_id")
         shot_rev=scope.get("source_shot_revision")
         shot_sha=scope.get("source_shot_sha256")
-        usd,optics=static_composed_usd(
+        usd,optics,material_bindings=static_composed_usd(
             self.index,self.project_id,take_id,take_sha,tick,
             camera_path=camera_path,
             shot_id=shot_id,shot_revision=shot_rev,shot_sha=shot_sha)
@@ -185,6 +187,7 @@ class NativeCyclesOriginalRenderer:
             "source_tick":tick,"width":WIDTH,"height":HEIGHT,
             "samples":SAMPLES,"renderer":"CYCLES",
             **optics,
+            "material_bindings":material_bindings,
             "actor_paths":[o["path"] for o in source_snapshot.get("objects",[])
                            if o.get("semantic_role")=="actor"],
             "light_paths":[o["path"] for o in source_snapshot.get("objects",[])
@@ -223,6 +226,10 @@ class NativeCyclesOriginalRenderer:
                 audit.get("resolution")!=[WIDTH,HEIGHT] or
                 audit.get("native_frame_sha256")!=sha256(encoded).hexdigest() or
                 audit.get("source_camera_unit_conversion_verified") is not True or
+                audit.get("source_material_bindings_verified") is not True or
+                audit.get("source_material_bindings_sha256")!=sha256(
+                    json.dumps(material_bindings,sort_keys=True,
+                               separators=(",",":")).encode("ascii")).hexdigest() or
                 any(not math.isclose(float(audit.get(k,0.0)),float(v),
                                      rel_tol=1e-5,abs_tol=1e-4)
                     for k,v in optics.items()) or
