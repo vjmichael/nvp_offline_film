@@ -158,8 +158,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Real NSIS installer build failed' }
           $setup=Join-Path (Get-Location) 'dist/NVP-Alpha-Setup.exe'
           if (-not (Test-Path $setup)) { throw 'NSIS package missing' }
-          $process=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw 'Windows NVP install failed' }
+          $process=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru
+          try {
+            if (-not $process.WaitForExit(240000)) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw 'Native NSIS install exceeded bounded 240-second acceptance window'
+            }
+            if ($process.ExitCode -ne 0) { throw 'Windows NVP install failed' }
+          } finally {
+            $process.Dispose()
+          }
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           if (-not (Test-Path $installed)) { throw 'Installed NVP.exe missing' }
           $builtHash=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash
