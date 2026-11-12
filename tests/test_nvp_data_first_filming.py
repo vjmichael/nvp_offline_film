@@ -988,6 +988,23 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+    def test_surplus_pcm_stops_stream_before_later_chunks_are_consumed(self):
+        req=self.payload()
+        consumed=[]
+        def recorder():
+            yield self.original
+            yield b"\\x00\\x00"
+            consumed.append("unexpected later chunk")
+            yield b"\\x00\\x00"
+        req["recordings"][0]["pcm_chunks"]=recorder()
+        with self.assertRaisesRegex(ValueError,"sample count does not match"):
+            self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
