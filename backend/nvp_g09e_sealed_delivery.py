@@ -26,6 +26,7 @@ from backend.nvp_g09e_audio import FilmMeter,plan_gain
 from backend.nvp_g09e_sealed_worker import ProtectedSealedReelWorker
 from backend.nvp_g09e_delivery import ACTIVE
 from backend.nvp_g03_live_store import LiveFilmError
+from backend.nvp_g08_native_avi import verify_movie
 
 FORMAT="nvp.w1e.sealed_long_film.v1"
 MANIFEST="nvp.w1e.sealed_long_film_playlist.v1"
@@ -112,24 +113,34 @@ class SealedFilmDelivery:
             job_id=? ORDER BY chunk_index""",(pid,job))])
 
     def reconcile(self,pid,token):
-        """Cold start never proves process exit or adopts orphaned output."""
-        active=set(self.active)
-        def reconcile(db):
-            rows=list(db.execute("""SELECT id FROM w1e_sealed_film_jobs
-                WHERE project_id=? AND status IN ('queued','analyzing',
-                         'rendering','finalizing')""",(pid,)))
-            changed=[]
-            for row in rows:
-                if row["id"] in active:continue
-                db.execute("""UPDATE w1e_sealed_film_jobs SET
-                    status='interrupted',updated_at=?,issue=?
-                    WHERE project_id=? AND id=?""",
-                    (_now(),"Earlier protected worker custody cannot be presumed after restart",
-                     pid,row["id"]))
-                changed.append(row["id"])
-            return changed
+        """Reconcile only orphaned runs, never rewrite a sealed DB on polls.
+
+        An unlocked project's status requests can arrive every ~1.2 seconds;
+        re-encrypting and publishing another full SQLite snapshot on every
+        healthy poll would exhaust durable revisions and wear storage.
+        """
         with self.guard:
-            return self._change(pid,token,reconcile)
+            active=set(self.active)
+            pending=self._read(pid,token,lambda db:[
+                row["id"] for row in db.execute("""SELECT id FROM
+                  w1e_sealed_film_jobs WHERE project_id=? AND status IN
+                  ('queued','analyzing','rendering','finalizing')""",(pid,))
+                if row["id"] not in active])
+            if not pending:
+                return []
+            def interrupt(db):
+                changed=[]
+                for job in pending:
+                    result=db.execute("""UPDATE w1e_sealed_film_jobs SET
+                        status='interrupted',updated_at=?,issue=? WHERE
+                        project_id=? AND id=? AND status IN
+                        ('queued','analyzing','rendering','finalizing')""",
+                        (_now(),"A prior private-film worker has no independently "
+                        "verified process-tree exit receipt",pid,job))
+                    if result.rowcount:
+                        changed.append(job)
+                return changed
+            return self._change(pid,token,interrupt)
 
     def preview(self,pid,token,expected_revision):
         """Host-authenticated source scope for a real native OS review.
@@ -314,6 +325,19 @@ class SealedFilmDelivery:
                 row["source_sha256"]!=source or
                 not row["end_frame"]>cursor):
                 raise RuntimeError("Protected reel time continuity is broken")
+            # The sealed AES-GCM original and its full 24fps/48k AVI
+            # clock are rechecked at finalization, not inferred from
+            # an earlier worker receipt or a stale SQLite row.
+            asset=self.live.get_original(pid,token,row["output_name"])
+            if (len(asset)!=row["size_bytes"] or
+                sha256(asset).hexdigest()!=row["reel_sha256"]):
+                raise RuntimeError("Protected film reel ciphertext or source digest changed")
+            checked=verify_movie(asset,row["end_frame"]-row["start_frame"],
+                                 expected_sha=row["reel_sha256"])
+            if not checked["verified"] or checked[
+                    "audio_samples_per_channel"]!=(
+                        row["end_frame"]-row["start_frame"])*2000:
+                raise RuntimeError("Protected film reel failed independent native AVI readback")
             cursor=row["end_frame"];total+=row["size_bytes"]
             entries.append({"chunk_index":i,"start_frame":row["start_frame"],
                 "end_frame":row["end_frame"],"sha256":row["reel_sha256"],
