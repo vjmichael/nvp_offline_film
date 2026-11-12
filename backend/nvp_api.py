@@ -239,6 +239,12 @@ def lock_movie(project_id: str, request: Request):
         result = film_access().lock(project_id, request.cookies.get(COOKIE))
         from backend.nvp_g06_routes import revoke_recording
         revoke_recording(project_id)
+        # W1-E host-only protected reel cancellation must run on project
+        # lock even if the user never visited the export UI. This signals
+        # the worker but does NOT invent an OS process-exit receipt.
+        stop_private=getattr(app.state,"nvp_w1e_cancel_project",None)
+        if callable(stop_private):
+            stop_private(project_id)
         if _g08_controller is not None:
             _g08_controller["ordinary"].cancel_project(project_id)
             _g08_controller["sealed"].cancel_project(project_id)
