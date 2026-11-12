@@ -87,6 +87,16 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
         return {"format":"nvp.g09e.long_film_jobs.v1","jobs":_safe(query)}
     route("GET","",jobs)
 
+    def review(project_id:str,request:Request,expected_revision:int):
+        # No native ticket minted here; this only pins trusted original data
+        # for the OS-confirmed desktop bridge. Human approval is separate.
+        def scope():
+            if not private(project_id):
+                raise PermissionError("Native encrypted film review is not applicable")
+            return sealed().preview(project_id,token(request),expected_revision)
+        return _safe(scope)
+    route("GET","/review",review)
+
     def start(project_id:str,request:Request,payload:StartLongFilm):
         if payload.director_confirmed is not True:
             raise HTTPException(422,detail="Review and choose to render the saved film yourself")
