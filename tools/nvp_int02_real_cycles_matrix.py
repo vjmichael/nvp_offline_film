@@ -26,7 +26,7 @@ FORMAT="nvp.int02.real_cycles_native_matrix.v1"
 
 
 def prepare_real_usd(path:Path):
-    from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade
     stage=Usd.Stage.CreateNew(str(path))
     stage.SetTimeCodesPerSecond(24)
     UsdGeom.SetStageUpAxis(stage,UsdGeom.Tokens.z)
@@ -35,6 +35,18 @@ def prepare_real_usd(path:Path):
     actor=UsdGeom.Cube.Define(stage,"/World/Actor")
     actor.GetSizeAttr().Set(2.0)
     actor.AddTranslateOp().Set(Gf.Vec3d(0,0,1.0))
+    # Explicit USD PreviewSurface color is essential: an unlit imported
+    # cube can produce valid-but-black PNG even when Cycles exits 0.
+    looks=UsdGeom.Scope.Define(stage,"/World/Looks")
+    material=UsdShade.Material.Define(stage,"/World/Looks/ActorMat")
+    shader=UsdShade.Shader.Define(stage,"/World/Looks/ActorMat/PBR")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
+        Gf.Vec3f(.9,.12,.04))
+    shader.CreateInput("roughness",Sdf.ValueTypeNames.Float).Set(.45)
+    material.CreateSurfaceOutput().ConnectToSource(
+        shader.ConnectableAPI(),"surface")
+    UsdShade.MaterialBindingAPI.Apply(actor.GetPrim()).Bind(material)
     camera=UsdGeom.Camera.Define(stage,"/World/Camera")
     camera.GetFocalLengthAttr().Set(.5)
     camera.GetHorizontalApertureAttr().Set(.36)
@@ -44,12 +56,25 @@ def prepare_real_usd(path:Path):
     light.GetIntensityAttr().Set(3500.0)
     light.GetRadiusAttr().Set(.5)
     light.AddTranslateOp().Set(Gf.Vec3d(-3,-4,6))
+    # Fill ensures actor and geometry remain visible without manufacturing
+    # a post-render picture. This is a genuine native lighting opinion.
+    fill=UsdLux.DomeLight.Define(stage,"/World/Fill")
+    fill.GetIntensityAttr().Set(2.5)
     ground=UsdGeom.Mesh.Define(stage,"/World/Ground")
     ground.CreatePointsAttr([
         Gf.Vec3f(-6,-6,-.04),Gf.Vec3f(6,-6,-.04),
         Gf.Vec3f(6,6,-.04),Gf.Vec3f(-6,6,-.04)])
     ground.CreateFaceVertexCountsAttr([4])
     ground.CreateFaceVertexIndicesAttr([0,1,2,3])
+    ground_mat=UsdShade.Material.Define(stage,"/World/Looks/GroundMat")
+    ground_shader=UsdShade.Shader.Define(stage,"/World/Looks/GroundMat/PBR")
+    ground_shader.CreateIdAttr("UsdPreviewSurface")
+    ground_shader.CreateInput("diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
+        Gf.Vec3f(.24,.27,.32))
+    ground_shader.CreateInput("roughness",Sdf.ValueTypeNames.Float).Set(.8)
+    ground_mat.CreateSurfaceOutput().ConnectToSource(
+        ground_shader.ConnectableAPI(),"surface")
+    UsdShade.MaterialBindingAPI.Apply(ground.GetPrim()).Bind(ground_mat)
     stage.SetDefaultPrim(stage.GetPrimAtPath("/World"))
     if not stage.GetRootLayer().Save():
         raise RuntimeError("Real OpenUSD scene could not be saved")
@@ -119,6 +144,19 @@ def run_matrix(out:Path,blender:Path):
     checked=sup.verify_completed(job_id)
     image=(jobdir/"frame.png").read_bytes()
     audit=json.loads((jobdir/"audit.json").read_text("utf8"))
+    # A renderer can return a perfectly valid SHA-pinned all-black image.
+    # This fixture's actor is specifically red/orange; require that the
+    # imported material is visibly represented in the actual pixels.
+    from PIL import Image
+    from io import BytesIO
+    with Image.open(BytesIO(image)) as displayed:
+        rgb=displayed.convert("RGB")
+        red_visible=sum(1 for red,green,blue in rgb.getdata()
+                        if red>green+20 and red>blue+20 and red>60)
+    if red_visible<2500:
+        raise RuntimeError(
+            "Real Cycles image lacks visible original USD actor material "+
+            f"(only {red_visible} red actor pixels); SHA alone is insufficient")
     if (_png_header(image)!=(1920,1080) or
         audit.get("render_engine")!="CYCLES" or
         audit.get("source_usd_sha256")!=scene_sha or

@@ -70,10 +70,9 @@ jobs:
       - name: Create NSIS single-click installer
         shell: pwsh
         run: |
-          $nsis = Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
-          if (-not (Test-Path $nsis)) {
-            $nsis = (Get-Command makensis -ErrorAction Stop).Source
-          }
+          $nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis = Join-Path $env:ProgramFiles 'NSIS/makensis.exe' }
+          if (-not (Test-Path $nsis)) { $nsis = (Get-Command makensis -ErrorAction Stop).Source }
           & $nsis '/V3' 'packaging/nvp-alpha.nsi'
           if ($LASTEXITCODE -ne 0) { throw 'NSIS failed' }
           if (-not (Test-Path 'dist/NVP-Alpha-Setup.exe')) { throw 'Missing NSIS installer' }
@@ -116,7 +115,8 @@ jobs:
       - name: Real Windows NSIS upgrade staging and filesystem activation/rollback matrix
         shell: pwsh
         run: |
-          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          $nsis=Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe' }
           if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
           & $nsis '/DAPP_VERSION=0.1.1' '/V3' 'packaging/nvp-alpha.nsi'
           if ($LASTEXITCODE -ne 0) { throw 'Real Windows NSIS candidate build failed' }
