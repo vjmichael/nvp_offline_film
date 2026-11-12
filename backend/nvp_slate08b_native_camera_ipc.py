@@ -408,11 +408,15 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                         raise InterruptedError("Creator cancelled native render")
                     if cycles_renderer[0] is None:
                         if self._ask(
-                            "NVP must stage temporary UNENCRYPTED exact-time USD for "+
-                            "the protected Blender Cycles worker. This can expose "+
-                            "original scene data on disk until securely removed. "+
-                            "Do NOT proceed with encrypted/protected films unless "+
-                            "your storage policy explicitly permits it. Continue?") is not True:
+                            "NVP must stage exact-time original USD for "+
+                            "a supervised Blender Cycles worker. NVP now REQUIRES "+
+                            "Windows EFS encryption, including verified encryption "+
+                            "of every newly created source file, before any "+
+                            "original USD is written. If EFS or key access is "+
+                            "unavailable the render is REFUSED, not downgraded "+
+                            "to plaintext. The resulting picture/PCM derivative "+
+                            "is intentionally UNENCRYPTED outside the original "+
+                            "project home. Authorize this exact staging?") is not True:
                             raise PermissionError("Native creator declined plaintext Cycles staging")
                         cycles_renderer[0]=build_native_cycles_renderer(
                             self.index,requested["project_id"],plaintext_consent=True)

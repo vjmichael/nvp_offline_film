@@ -55,6 +55,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_webview_ipc_surface.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_nvp_w1g_production_authority.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_nvp_w1g_encrypted_review.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_nvp_w1g_supply_chain_hardening.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_w1g_protected_upgrade.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile actual desktop entry and build one-directory native EXE

@@ -74,11 +74,25 @@ def _update_registration(version):
 
 class NativeNSISActivation:
     def __init__(self,owner:OwnedNSISRecovery,*,native_authorize,
-                 os_worker_tree_evidence):
+                 os_worker_tree_evidence, test_only_simulation=False,
+                 pinned_reviewer_public_key=None):
         if (not isinstance(owner,OwnedNSISRecovery) or
             not callable(native_authorize) or
             not callable(os_worker_tree_evidence)):
             raise TypeError("Original Windows installer owner, human and OS source required")
+        self.test_only_simulation=(test_only_simulation is True)
+        self.pinned_reviewer_public_key=pinned_reviewer_public_key
+        if not self.test_only_simulation:
+            from tools.nvp_w1g_production_authority import (
+                WindowsCreatorUpgradeApproval, WindowsReleaseWorkerStopEvidence,
+            )
+            if (owner.test_only_simulation or
+                type(native_authorize) is not WindowsCreatorUpgradeApproval or
+                type(os_worker_tree_evidence) is not WindowsReleaseWorkerStopEvidence or
+                type(pinned_reviewer_public_key) is not bytes or
+                len(pinned_reviewer_public_key)!=32):
+                raise PermissionError(
+                    "Production NSIS cannot accept callback/synthetic human or kernel receipts")
         self.owner=owner
         self.authorize=native_authorize
         self.os_evidence=os_worker_tree_evidence
@@ -89,6 +103,8 @@ class NativeNSISActivation:
         # supervisor. The receipt is re-fetched after human approval.
         proof=self.os_evidence(original_sha)
         if (type(proof) is not dict or
+            (proof.get("test_fixture_only_not_kernel_evidence") is True
+             and not self.test_only_simulation) or
             proof.get("os_provenance")!="windows-job-object" or
             proof.get("original_runtime_sha256")!=original_sha or
             proof.get("process_tree_custody_verified") is not True or
@@ -152,6 +168,14 @@ class NativeNSISActivation:
         return record
 
     def activate(self):
+        if self.test_only_simulation:
+            return self._activate_under_held_custody()
+        # Keep the genuine original kernel-backed worker host admission
+        # locks held across BOTH checks, creator approval and OS renames.
+        with self.os_evidence.transaction():
+            return self._activate_under_held_custody()
+
+    def _activate_under_held_custody(self):
         record=self._checked()
         if record["state"]!="PREPARED":
             raise RuntimeError("Native installer activation is consumed or interrupted")
@@ -161,6 +185,18 @@ class NativeNSISActivation:
             _registry_version()!=record["current_version"]):
             raise RuntimeError("Release changed after authorizing staged upgrade")
         verify_installed(record["reviewed_package_receipt"],self.owner.pending)
+        if not self.test_only_simulation:
+            receipt=record["reviewed_package_receipt"]
+            if receipt.get("native_worker_manifest_verified") is not True:
+                raise PermissionError(
+                    "Production upgrade lacks reviewed compiled native workers")
+            # The build receipt's own license Boolean is NOT evidence. Verify
+            # an independently signed review over every exact bundled byte
+            # with a reviewer key pinned OUTSIDE the installable payload.
+            from tools.nvp_w1g_reviewed_release import verify_signed_release_review
+            verify_signed_release_review(
+                receipt,receipt.get("signed_redistribution_review"),
+                pinned_reviewer_public_key=self.pinned_reviewer_public_key)
         self._kernel_empty(record["active_sha256"])
         consent={
             "operation":"nvp.w1g.nsis.activate_prepared_native.v1",

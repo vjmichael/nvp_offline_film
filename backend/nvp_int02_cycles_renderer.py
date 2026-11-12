@@ -23,6 +23,7 @@ from backend.nvp_final_2d_native import _png_header
 from backend.nvp_openusd_scene import OpenUSDSceneBridge, _usd
 from backend.nvp_openusd_shot_overrides import OpenUSDShotOverrides
 from backend.nvp_temporal_ledger import _int
+from backend.nvp_w1g_encrypted_source import require_efs_stage, verify_efs_inputs
 
 FORMAT="nvp.int02.cycles.frame_plan.v1"
 WIDTH=1920
@@ -117,7 +118,8 @@ def static_composed_usd(index: FilmIndex, project_id, take_id, take_sha,
 
 class NativeCyclesOriginalRenderer:
     def __init__(self,index:FilmIndex,project_id,supervisor:BlenderWorkerSupervisor,
-                 *,trusted_script:Path,allow_plaintext_staging=False):
+                 *,trusted_script:Path,allow_plaintext_staging=False,
+                 require_encrypted_scratch=True):
         if not isinstance(index,FilmIndex) or not isinstance(supervisor,BlenderWorkerSupervisor):
             raise TypeError("Trusted FilmIndex and bounded Blender worker required")
         if allow_plaintext_staging is not True:
@@ -129,6 +131,9 @@ class NativeCyclesOriginalRenderer:
         if self.trusted_script.is_symlink() or not self.trusted_script.is_file():
             raise RuntimeError("Installed first-party Cycles worker script unavailable")
         self.script_sha=sha_file(self.trusted_script)
+        if type(require_encrypted_scratch) is not bool:
+            raise TypeError("Protected native Cycles scratch policy must be explicit")
+        self.require_encrypted_scratch=require_encrypted_scratch
         self._lock=threading.RLock()
         self._active=None
 
@@ -181,6 +186,17 @@ class NativeCyclesOriginalRenderer:
         if jobdir.exists() or jobdir.is_symlink():
             raise RuntimeError("Previously submitted native Cycles sample cannot be replayed")
         jobdir.mkdir(mode=0o700)
+        if self.require_encrypted_scratch:
+            # Unlike a UI warning, this OS EFS preflight is enforced
+            # BEFORE any original authored source reaches the disk.
+            try:
+                require_efs_stage(jobdir)
+            except BaseException:
+                # EFS refusal must not poison the deterministic job ID with
+                # an empty directory. No source bytes have been written yet.
+                if jobdir.is_dir() and not jobdir.is_symlink() and not any(jobdir.iterdir()):
+                    jobdir.rmdir()
+                raise
         plan={
             "format":FORMAT,"usd_file":"source.usda",
             "usd_sha256":dig,"camera_path":camera_path,
@@ -200,6 +216,8 @@ class NativeCyclesOriginalRenderer:
             with (jobdir/name).open("xb") as fd:
                 fd.write(contents)
                 fd.flush();os.fsync(fd.fileno())
+        if self.require_encrypted_scratch:
+            verify_efs_inputs(jobdir)
         op=BlenderOperation(
             job_id=job,script="render.py",script_sha256=self.script_sha,
             inputs={"source.usda":dig,"plan.json":sha256(planbytes).hexdigest()},
@@ -211,6 +229,8 @@ class NativeCyclesOriginalRenderer:
             self._active=job
         try:
             result=self.supervisor.run(op)
+            if self.require_encrypted_scratch:
+                verify_efs_inputs(jobdir)
             if result.get("state")!="SUCCEEDED":
                 raise RuntimeError("Protected native Cycles render has no verified success")
             self.supervisor.verify_completed(job)
@@ -243,7 +263,9 @@ class NativeCyclesOriginalRenderer:
                 self._active=None
 
 
-def build_native_cycles_renderer(index:FilmIndex,project_id,*,plaintext_consent=False):
+def build_native_cycles_renderer(index:FilmIndex,project_id,*,
+                                 plaintext_consent=False,
+                                 require_encrypted_scratch=True):
     """Native installed host only; no legacy still/proxy worker is re-enabled."""
     from backend.nvp_slate08b_native_camera_ipc import discover_blender
     from backend.nvp_resource_ledger import TaskLedger
@@ -269,7 +291,8 @@ def build_native_cycles_renderer(index:FilmIndex,project_id,*,plaintext_consent=
     script=scriptroot/"tools"/"nvp_int02_cycles_frame_worker.py"
     return NativeCyclesOriginalRenderer(
         index,project_id,supervisor,trusted_script=script,
-        allow_plaintext_staging=plaintext_consent)
+        allow_plaintext_staging=plaintext_consent,
+        require_encrypted_scratch=require_encrypted_scratch)
 
 
 def _blender_version(binary):

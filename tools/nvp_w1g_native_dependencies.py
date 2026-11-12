@@ -13,8 +13,9 @@ from hashlib import sha256
 import importlib.metadata
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
+import stat
 import shutil
 import subprocess
 import sys
@@ -81,8 +82,28 @@ def validate_lock(lock: dict, wheelhouse: Path, *, platform: str) -> list:
         if not zipfile.is_zipfile(wheel):
             raise RuntimeError("Pinned dependency is not a genuine wheel archive")
         with zipfile.ZipFile(wheel) as z:
-            metadata = [x for x in z.namelist()
-                        if x.endswith(".dist-info/METADATA")]
+            members=z.infolist()
+            if not 1<=len(members)<=10000:
+                raise RuntimeError("Wheel has unsafe/unbounded archive entry count")
+            names=set()
+            expanded=0
+            for member in members:
+                path=PurePosixPath(member.filename)
+                if (not member.filename or
+                    path.is_absolute() or
+                    ".." in path.parts or
+                    "\\" in member.filename or
+                    ":" in member.filename or
+                    member.filename.casefold() in names or
+                    (member.create_system==3 and
+                     stat.S_ISLNK(member.external_attr >> 16))):
+                    raise RuntimeError("Unsafe linked/traversal/duplicate entry in native wheel")
+                names.add(member.filename.casefold())
+                expanded+=member.file_size
+                if expanded>2*1024*1024*1024 or member.file_size>1024*1024*1024:
+                    raise RuntimeError("Offline native wheel expands beyond release bound")
+            metadata = [x.filename for x in members
+                        if x.filename.endswith(".dist-info/METADATA")]
             if len(metadata) != 1:
                 raise RuntimeError("Wheel lacks one authoritative distribution METADATA")
             if z.getinfo(metadata[0]).file_size > 1024*1024:

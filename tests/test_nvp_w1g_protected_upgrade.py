@@ -46,7 +46,7 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
             programs,films,journal=self.roots(Path(temp))
             owner=OwnedNSISRecovery(programs,films,journal,
                 native_approve=lambda scope:scope["operation"]=="nvp.w1g.nsis.rollback.v1",
-                os_workers_stopped=lambda:True)
+                os_workers_stopped=lambda:True,test_only_simulation=True)
             owner.prepare()
             # Synthetic PE fixtures are NOT genuine NSIS registrations.
             # Exercise file rollback while simulating only that registry
@@ -64,7 +64,7 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
         with TemporaryDirectory() as temp:
             programs,films,journal=self.roots(Path(temp))
             owner=OwnedNSISRecovery(programs,films,journal,
-                native_approve=lambda scope:True,os_workers_stopped=lambda:False)
+                native_approve=lambda scope:True,os_workers_stopped=lambda:False,test_only_simulation=True)
             owner.prepare()
             with self.assertRaises(PermissionError):
                 owner.rollback()
@@ -81,7 +81,7 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
             programs,films,journal=self.roots(Path(temp))
             owner=OwnedNSISRecovery(
                 programs,films,journal,native_approve=lambda scope:True,
-                os_workers_stopped=lambda:True)
+                os_workers_stopped=lambda:True,test_only_simulation=True)
             with self.assertRaisesRegex(RuntimeError,"not been accepted"):
                 archive_accepted_previous(owner,lambda scope: {
                     "current_runtime_sha256":scope["current_sha256"],
@@ -106,7 +106,7 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
             (programs/"NVP.previous").rename(programs/"NVP.pending")
             owner=OwnedNSISRecovery(
                 programs,films,journal,native_approve=lambda scope:True,
-                os_workers_stopped=lambda:True)
+                os_workers_stopped=lambda:True,test_only_simulation=True)
             receipt=quarantine_failed_stage(owner)
             self.assertEqual(receipt["status"],
                              "NSIS_FAILED_CANDIDATE_PRESERVED")
@@ -122,7 +122,7 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
             programs, films, journal=self.roots(Path(temp))
             owner=OwnedNSISRecovery(
                 programs,films,journal,native_approve=lambda scope:True,
-                os_workers_stopped=lambda:True)
+                os_workers_stopped=lambda:True,test_only_simulation=True)
             def invalid_kernel(sha):
                 return {"os_provenance":"windows-job-object",
                         "original_runtime_sha256":sha,
@@ -132,7 +132,8 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
                         "measured_at_unix":time.time()-120}
             activation=NativeNSISActivation(
                 owner,native_authorize=lambda scope:True,
-                os_worker_tree_evidence=invalid_kernel)
+                os_worker_tree_evidence=invalid_kernel,
+                test_only_simulation=True)
             with self.assertRaisesRegex(PermissionError,"kernel stop receipt"):
                 activation._kernel_empty("a"*64)
 

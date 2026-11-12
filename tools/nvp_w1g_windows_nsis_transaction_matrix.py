@@ -53,7 +53,7 @@ def run(programs:Path, projects:Path, receipt:dict, journal_root:Path):
     owner=OwnedNSISRecovery(
         programs, projects, journal_root,
         native_approve=lambda scope:True,
-        os_workers_stopped=lambda:True)
+        os_workers_stopped=lambda:True,test_only_simulation=True)
     # IMPORTANT: never export this callback as a production OS proof.
     def simulated_kernel_for_test(original_sha):
         return {
@@ -67,7 +67,8 @@ def run(programs:Path, projects:Path, receipt:dict, journal_root:Path):
         }
     transaction=NativeNSISActivation(
         owner,native_authorize=lambda scope:True,
-        os_worker_tree_evidence=simulated_kernel_for_test)
+        os_worker_tree_evidence=simulated_kernel_for_test,
+        test_only_simulation=True)
     transaction.prepare(receipt)
     promoted=transaction.activate()
     if promoted["status"]!="NSIS_NATIVE_PROGRAM_ACTIVATED_UNACCEPTED":

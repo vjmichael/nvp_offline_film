@@ -11,6 +11,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import shutil
 import struct
 
@@ -69,6 +70,7 @@ def _check_roster(roster):
         not 1 <= len(roster["workers"]) <= len(ROLES)):
         raise RuntimeError("Reviewed native worker binary roster required")
     seen = set()
+    seen_files = set()
     for worker in roster["workers"]:
         if type(worker) is not dict or set(worker) != {"role","filename","sha256"}:
             raise RuntimeError("Unknown native worker manifest fields")
@@ -76,13 +78,17 @@ def _check_roster(roster):
         if (role not in ROLES or role in seen or
             type(name) is not str or name != Path(name).name or
             "/" in name or "\\" in name or not name or
-            not name.isascii() or len(name) > 120 or
+            not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}",name) or
+            name.casefold() in seen_files or
+            name.split(".")[0].casefold() in
+                {"con","prn","aux","nul","com1","lpt1"} or
             (not name.endswith(".exe") if roster["platform"] == "windows-amd64"
              else name.endswith(".exe")) or
             type(digest) is not str or len(digest) != 64 or
             any(c not in "0123456789abcdef" for c in digest)):
             raise RuntimeError("Untrusted or duplicate native worker identity")
         seen.add(role)
+        seen_files.add(name.casefold())
     _forbidden_native_binaries([w["filename"] for w in roster["workers"]])
     return roster
 
@@ -94,7 +100,10 @@ def provision_native_workers(trusted_binaries: Path, install_bundle: Path,
     if (not trusted_binaries.is_dir() or trusted_binaries.is_symlink() or
         not install_bundle.is_dir() or install_bundle.is_symlink()):
         raise RuntimeError("Trusted native worker artifact roots required")
-    target = install_bundle/"_internal"/"nvp_workers"
+    private_root=install_bundle/"_internal"
+    if private_root.is_symlink():
+        raise RuntimeError("Installed native worker parent cannot be symlinked")
+    target = private_root/"nvp_workers"
     if target.exists() or target.is_symlink():
         raise FileExistsError("Native worker bundle is already provisioned")
     checked = []

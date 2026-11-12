@@ -45,9 +45,19 @@ def _write(path,doc):
 
 class OwnedNSISRecovery:
     def __init__(self,programs:Path,original_films:Path,
-                 journal_root:Path,*,native_approve,os_workers_stopped):
+                 journal_root:Path,*,native_approve,os_workers_stopped,
+                 test_only_simulation=False):
         if not callable(native_approve) or not callable(os_workers_stopped):
             raise TypeError("Real native authorization and independent OS process custody required")
+        self.test_only_simulation=(test_only_simulation is True)
+        if not self.test_only_simulation:
+            from tools.nvp_w1g_production_authority import (
+                WindowsCreatorUpgradeApproval, WindowsReleaseWorkerStopEvidence,
+            )
+            if (type(native_approve) is not WindowsCreatorUpgradeApproval or
+                type(os_workers_stopped) is not WindowsReleaseWorkerStopEvidence):
+                raise PermissionError(
+                    "Production NSIS rollback owner cannot accept synthetic callbacks")
         self.programs=Path(programs).absolute()
         self.films=Path(original_films).absolute()
         self.journal_root=Path(journal_root).absolute()
@@ -94,6 +104,9 @@ class OwnedNSISRecovery:
         return dict(doc)
 
     def rollback(self):
+        if not self.test_only_simulation:
+            raise PermissionError(
+                "Production rollback requires kernel-held ProductionWindowsNSISRollback")
         record=self._read()
         if record["state"]!="PREPARED":
             raise RuntimeError("Interrupted/consumed NSIS recovery cannot be replayed")
@@ -150,6 +163,9 @@ class OwnedNSISRecovery:
         can leave NVP.previous and NVP.pending while NVP itself is absent.
         This recovery never deletes pending bytes or invents install success.
         """
+        if not self.test_only_simulation:
+            raise PermissionError(
+                "Production interrupted recovery requires a new kernel-held human approval")
         if self.journal.exists() or self.journal.is_symlink():
             raise RuntimeError("Existing rollback journal must reconcile first")
         if (self.active.exists() or self.active.is_symlink() or
@@ -191,6 +207,9 @@ class OwnedNSISRecovery:
                 "candidate_preserved_for_owner_review":self.pending.exists()}
 
     def reconcile(self):
+        if not self.test_only_simulation:
+            raise PermissionError(
+                "Production interrupted recovery cannot use test-only callback reconciliation")
         record=self._read()
         if record["state"]=="RESTORING_STRANDED":
             if self.active.is_dir() and not self.old.exists():
