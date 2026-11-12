@@ -242,6 +242,22 @@ class G08SealedDelivery:
             expected=assembly["duration_tick"]//TICKS_FRAME
             verified=verify_movie(data,expected,
                                   expected_sha=sha256(data).hexdigest())
+            from backend.nvp_g09d_master import verify_completed_movie_sound
+            measured=verify_completed_movie_sound(
+                data,assembly.get("approved_finishing"))
+            if (measured["sample_count"]!=expected*2000 or
+                result.get("approved_finishing_sha256")!=
+                    assembly["finishing_sha256"]):
+                raise RuntimeError("Protected finished soundtrack failed source verification")
+            if assembly.get("approved_finishing"):
+                if (measured["rendered_pcm_sha256"]!=result.get(
+                        "native_sound_mastering",{}).get(
+                            "derived_master_sha256")):
+                    raise RuntimeError("Protected film's actual PCM is not the approved sound master")
+            verified["native_sound_readback"]=measured
+            verified["approved_finishing_sha256"]=assembly["finishing_sha256"]
+            verified["finishing_sound_independently_verified"]=False
+            verified["finished_pcm_reopened_in_memory"]=True
             if stop():raise InterruptedError()
             self._publish(pid,token,job,data,verified)
         except InterruptedError:
