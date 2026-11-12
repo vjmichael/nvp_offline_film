@@ -454,6 +454,24 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
       '?expected_revision='+film.work_revision,'DELETE'),
       'Direction removed. Earlier versions remain in the film history.');
   }
+  function selectWholeRecording(first){
+    const parts=(film?.audio_clips||[]).filter(
+      clip=>clip.recording_id===first.recording_id)
+      .sort((a,b)=>a.recording_source_start_sample-b.recording_source_start_sample);
+    if(parts.length!==first.recording_part_count){
+      setError('Reopen the scene to load all parts of this original recording.');
+      return;
+    }
+    const begins=Number(clipStarts[first.id]||'0');
+    if(!Number.isFinite(begins)||begins<0){
+      setError('Choose a valid recording start time before selecting all parts.');
+      return;
+    }
+    setSelectedClips(old=>[...new Set([...old,...parts.map(part=>part.id)])]);
+    setClipStarts(old=>({...old,...Object.fromEntries(parts.map(part=>[
+      part.id,String(Number((begins+part.recording_source_start_sample/48000)
+        .toFixed(4)))]))}));
+  }
   function startMicrophone(){
     perform(async()=>{
       const opened=await call(endpoint+'/microphone/start','POST',{
@@ -850,7 +868,14 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
                   onChange={e=>setSelectedClips(old=>e.target.checked?
                     [...old,clip.id]:old.filter(id=>id!==clip.id))}/>
                   {clip.actor_id?'Performer sound':'Scene sound'} · {
-                    clip.seconds}s</label>
+                    clip.seconds}s{clip.recording_id&&
+                    ' · long recording part '+clip.recording_part_number+
+                    '/'+clip.recording_part_count}</label>
+                {clip.recording_id&&clip.recording_part_number===1&&
+                  <button type="button" className="film-secondary"
+                    disabled={busy||!!take}
+                    onClick={()=>selectWholeRecording(clip)}>
+                    Select Entire Original Recording</button>}
                 <button className="film-secondary" disabled={busy}
                   onClick={()=>listenTo(clip.id)}>Listen</button>
                 {selectedClips.includes(clip.id)&&<label>
