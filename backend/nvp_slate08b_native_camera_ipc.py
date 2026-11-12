@@ -134,6 +134,7 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         self._host = None
         self._data_av_controller = None
         self._original_capture_controller = None
+        self._edited_export = None
         self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
@@ -285,6 +286,188 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
     def data_av_stop(self,session_id):
         return self._data_av().stop(session_id)
 
+
+    # INT-02: committed non-destructive slate edit -> bounded original-film
+    # derivative, never a public HTTP route or JS-authorized filesystem path.
+    def _edited_assembly(self):
+        from backend.nvp_digital_slate_branches import DigitalSlateBranches
+        from backend.nvp_slate_edit_assembly import SlateSequenceAssembly
+        # Read-only opening of a previously human-committed edit. Neither
+        # callback can be used to publish a new edit or choose a cut.
+        slate=DigitalSlateBranches(
+            self.index,verify_editor_action=lambda event,scope:False)
+        return SlateSequenceAssembly(
+            slate,verify_editor_action=lambda event,scope:False)
+
+    def data_av_edited_30s_catalog(self,project_id):
+        self._native_window()
+        _require_pid(project_id)
+        from backend.nvp_int02_edited_film import NativeEditedFilm30s
+        adapter=NativeEditedFilm30s(
+            self._edited_assembly(),
+            native_creator_approval=lambda scope:False,
+            render_png=lambda **kw:None)
+        rows=[]
+        for obj in self.index.list_objects(project_id,kind="edit")[:128]:
+            try:
+                plan=adapter.preflight(project_id,obj["object_id"],
+                                       obj["head_revision"])
+                listener_choices=None
+                for seg in plan["segments"]:
+                    take=self.index.read_revision(project_id,seg["source_take_id"],1)
+                    data=take["data"]
+                    scene=self.index.read_revision(
+                        project_id,data["scene_id"],data["scene_revision"])
+                    if scene["document_sha256"]!=data["scene_document_sha256"]:
+                        raise RuntimeError("Frozen edited scene identity changed")
+                    possible={p for p,kind in scene["data"]["prim_roles"].items()
+                              if kind=="camera"}
+                    listener_choices=(possible if listener_choices is None
+                                      else listener_choices & possible)
+                listeners=sorted(listener_choices or set())[:32]
+                if listeners:
+                    rows.append({
+                        "edit_id":plan["edit_id"],
+                        "edit_revision":plan["edit_revision"],
+                        "edit_sha256":plan["edit_sha256"],
+                        "segment_count":len(plan["segments"]),
+                        "listeners":listeners})
+            except (KeyError,ValueError,TypeError,RuntimeError):
+                continue
+            if len(rows)>=32:
+                break
+        return {"format":"nvp.int02.native_edited_catalog.v1",
+                "project_id":project_id,"edits":rows,
+                "source_modified":False,"master_approved":False}
+
+    def data_av_edited_30s_preflight(self,project_id,edit_id,edit_revision):
+        self._native_window()
+        from backend.nvp_int02_edited_film import NativeEditedFilm30s
+        # The preview does not require a renderer or approval capability.
+        adapter=NativeEditedFilm30s(
+            self._edited_assembly(),
+            native_creator_approval=lambda scope:False,
+            render_png=lambda **kw:None)
+        return adapter.preflight(project_id,edit_id,edit_revision)
+
+    def data_av_edited_30s_begin(self,request):
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","edit_id","edit_revision",
+                "presentation_id","listener_path"}:
+            raise ValueError("Native film export requires exact committed edit identity")
+        _require_pid(request["project_id"])
+        _id(request["edit_id"],"committed film edit")
+        _id(request["presentation_id"],"unique derived film output")
+        if type(request["edit_revision"]) is not int or request["edit_revision"]<1:
+            raise ValueError("Invalid committed edit revision")
+        listener=request["listener_path"]
+        if type(listener) is not str or not listener.startswith("/World/") or len(listener)>240:
+            raise ValueError("Native film listener must be an authored USD object")
+        with self._lock:
+            if self._closing:
+                raise PermissionError("Native desktop is closing")
+            if self._edited_export is not None and not self._edited_export["future"].done():
+                raise RuntimeError("Stop or finish the previous edited film before a new export")
+            if (self._data_av_controller is not None and
+                self._data_av_controller._active is not None):
+                raise RuntimeError("Stop active source audition before edited film export")
+            if (self._original_capture_controller is not None and
+                self._original_capture_controller._active is not None):
+                raise RuntimeError("Finish original sound capture before edited film export")
+            import os
+            from pathlib import Path
+            home=Path(os.environ["NVP_HOME"])
+            if home.is_symlink() or not home.is_dir():
+                raise RuntimeError("Trusted native project home unavailable")
+            # The same per-user home stores originals, but derivative output
+            # goes to a dedicated sibling directory outside the FilmIndex DB.
+            derived=home/".derived-int02"
+            if derived.is_symlink():
+                raise PermissionError("Edited film output cannot follow a symlink")
+            derived.mkdir(mode=0o700,exist_ok=True)
+            from backend.nvp_int02_edited_film import NativeEditedFilm30s
+            from backend.nvp_native_cpu_raster import NativeSourceRaster
+            requested=dict(request)
+            assembly=self._edited_assembly()
+            raster=NativeSourceRaster(self.index,requested["project_id"])
+            cancel=threading.Event()
+            progress={"stage":"queued","count":0}
+            ticket=secrets.token_urlsafe(32)
+            # A whole-film export may take minutes, so do NOT block JS IPC.
+            # One native owner worker thread; cancellation is cooperative,
+            # staged files are removed without publishing an edited master.
+            def perform():
+                def update(stage,value):
+                    with self._lock:
+                        progress.update(stage=stage,count=value)
+                adapter=NativeEditedFilm30s(
+                    assembly,native_creator_approval=lambda scope:self._ask(
+                        "Export exact committed 30-second edited film?\n"+
+                        "Project: "+scope["project_id"]+"\n"+
+                        "Edit: "+scope["edit_id"]+" rev "+
+                            str(scope["edit_revision"])+"\n"+
+                        "Edit SHA-256: "+scope["edit_sha256"]+"\n"+
+                        "Source sequence SHA-256: "+scope["segment_sha256"]+"\n"+
+                        "Output: "+scope["output_directory"]+"\n"+
+                        "720 native picture samples + 1,440,000 original PCM samples.\n"+
+                        "This is a PNG/WAV derivative, NOT a production cinema master.\n"+
+                        "Original USD Takes and editorial revision remain unchanged."),
+                    render_png=raster.render_png,
+                    cancelled=cancel.is_set,progress=update)
+                return adapter.export(
+                    requested["project_id"],requested["edit_id"],
+                    requested["edit_revision"],requested["presentation_id"],
+                    derived,listener_path=requested["listener_path"])
+            future=self._executor.submit(perform)
+            self._edited_export={"ticket":ticket,"future":future,
+                                 "cancel":cancel,"progress":progress,
+                                 "project_id":request["project_id"]}
+            return {"format":"nvp.int02.native_edited_export_ticket.v1",
+                    "status":"QUEUED_NATIVE_APPROVAL","ticket":ticket,
+                    "original_modified":False,"master_approved":False}
+
+    def data_av_edited_30s_poll(self,ticket):
+        self._native_window()
+        with self._lock:
+            job=self._edited_export
+            if type(ticket) is not str or job is None or job["ticket"]!=ticket:
+                raise PermissionError("Unknown edited film export ticket")
+            future=job["future"]
+            progress=dict(job["progress"])
+        if not future.done():
+            return {"format":"nvp.int02.native_edited_export_ticket.v1",
+                    "status":"RUNNING_OR_AWAITING_NATIVE_APPROVAL",
+                    "progress":progress,"original_modified":False,
+                    "master_approved":False}
+        try:
+            finished=future.result()
+        except (PermissionError,InterruptedError) as error:
+            return {"format":"nvp.int02.native_edited_export_ticket.v1",
+                    "status":"REFUSED_OR_INTERRUPTED",
+                    "reason":str(error)[:250],"original_modified":False,
+                    "master_approved":False}
+        except BaseException as error:
+            return {"format":"nvp.int02.native_edited_export_ticket.v1",
+                    "status":"FAILED_UNVERIFIED",
+                    "reason":str(error)[:250],"original_modified":False,
+                    "master_approved":False}
+        return {"format":"nvp.int02.native_edited_export_ticket.v1",
+                "status":"DERIVED_VERIFIED_NOT_MASTER",
+                "receipt":finished,"original_modified":False,
+                "master_approved":False}
+
+    def data_av_edited_30s_cancel(self,ticket):
+        self._native_window()
+        with self._lock:
+            job=self._edited_export
+            if type(ticket) is not str or job is None or job["ticket"]!=ticket:
+                raise PermissionError("Unknown edited film cancellation ticket")
+            job["cancel"].set()
+        return {"format":"nvp.int02.native_edited_export_ticket.v1",
+                "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
+                "original_modified":False,"master_approved":False}
+
     # PLAN-02-B: original microphone capture (not retired camera still IPC).
     def _original_capture(self):
         if self._original_capture_controller is None:
@@ -363,6 +546,8 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             if self._closing:
                 return
             self._closing=True
+            if self._edited_export is not None:
+                self._edited_export["cancel"].set()
             if self._data_av_controller is not None:
                 self._data_av_controller.close()
             if self._original_capture_controller is not None:

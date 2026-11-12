@@ -63,13 +63,22 @@ def build_receipt(bundle: Path) -> dict:
     _forbidden_native_binaries(files)
     if "NVP.exe" not in files or "_internal/base_library.zip" not in files:
         raise RuntimeError("Incomplete native Windows runtime inventory")
+    worker_root = folder / "_internal" / "nvp_workers"
+    workers = None
+    if worker_root.exists() or worker_root.is_symlink():
+        try:
+            from tools.nvp_w1g_worker_package import verify_native_workers
+        except ModuleNotFoundError:
+            from nvp_w1g_worker_package import verify_native_workers
+        workers = verify_native_workers(folder, expected_platform="windows-amd64")
     return {
         "format": FORMAT,
         "platform": "windows-amd64",
         "source": "audited-real-pyinstaller-onedir",
         "app_sha256": evidence["exe"]["sha256"],
         "files": files,
-        "native_worker_code_pinned_by_content": True,
+        "native_worker_code_pinned_by_content": workers is not None,
+        "native_worker_manifest_verified": workers is not None,
         "native_runtime_executed": False,
         "redistribution_licenses_verified": False,
         "physical_install_verified": False,
@@ -96,10 +105,19 @@ def verify_installed(receipt: dict, installed: Path) -> dict:
     if actual["NVP.exe"]["sha256"] != receipt.get("app_sha256"):
         raise RuntimeError("Installed native host identity differs from build")
     _forbidden_native_binaries(actual)
+    if receipt.get("native_worker_manifest_verified") is True:
+        try:
+            from tools.nvp_w1g_worker_package import verify_native_workers
+        except ModuleNotFoundError:
+            from nvp_w1g_worker_package import verify_native_workers
+        verify_native_workers(installed, expected_platform="windows-amd64")
+    elif (installed / "_internal" / "nvp_workers").exists():
+        raise RuntimeError("Installed native workers lack a reviewed executable roster")
     return {
         "status": "W1G_INSTALLED_BYTES_MATCH_BUILD",
         "files_verified": len(receipt["files"]),
         "app_sha256": receipt["app_sha256"],
+        "native_worker_manifest_verified": receipt.get("native_worker_manifest_verified") is True,
         "live_worker_custody_verified": False,
         "license_compliance_verified": False,
     }
