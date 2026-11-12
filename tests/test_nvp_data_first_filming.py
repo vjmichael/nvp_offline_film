@@ -969,7 +969,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         event["pcm_chunks"]=mutating_chunks()
         self.capture.capture(**req)
         page=TemporalLedger(self.index).events_in(
-            self.pid,"FilmedSoundTimeline",1,start_tick=0,
+            self.pid,"FilmingSoundTimeline",1,start_tick=0,
             end_tick=int(req["recordings"][0]["end_tick"]),limit=100)
         sound=[e for e in page["events"] if e["event_kind"] in ("sound","dialogue")]
         self.assertEqual(len(sound),1)
