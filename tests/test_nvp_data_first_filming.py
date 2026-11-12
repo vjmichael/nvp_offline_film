@@ -1005,6 +1005,16 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+    def test_capture_preflights_pcm_stream_without_publication(self):
+        req=self.payload()
+        req["recordings"][0]["pcm_chunks"]=None
+        with self.assertRaisesRegex(ValueError,"PCM chunks must be iterable"):
+            self.capture.capture(**req)
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
