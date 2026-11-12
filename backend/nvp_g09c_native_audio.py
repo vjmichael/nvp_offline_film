@@ -188,9 +188,13 @@ class SpatialFilmMixer:
         self.sources=assembly["original_takes"]
         self.settings=assembly.get("acoustic_looks",{})
         self.context={}
-        if len(self.segments)>120:
-            raise ValueError("The first sound engine supports up to 120 shots")
+        if len(self.segments)>250:
+            raise ValueError("The edited film exceeds 250 source shots")
         for i,seg in enumerate(self.segments):
+            if seg["take_id"] not in self.sources:
+                if assembly.get("window") is None:
+                    raise RuntimeError("The original microphone Take is missing")
+                continue
             source=self.sources[seg["take_id"]]
             take_id=seg["take_id"]
             choices=self.settings.get(take_id)
@@ -251,7 +255,9 @@ class SpatialFilmMixer:
         end_tick=start_tick+count*TICK_SAMPLE
         for seg in self.segments:
             if seg["start_tick"]>=end_tick or seg["end_tick"]<=start_tick:continue
-            ctx=self.context[seg["clip_id"]]
+            ctx=self.context.get(seg["clip_id"])
+            if ctx is None:
+                raise RuntimeError("An active film segment is missing its approved source window")
             setting=ctx["setting"]
             source_audio=ctx["audio"]
             index=ctx["index"]
