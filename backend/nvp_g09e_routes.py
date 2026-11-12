@@ -43,6 +43,18 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
     # attaches its native human-review bridge AFTER create_app(). Read the
     # sealed service lazily from trusted app.state, never an HTTP field.
     sealed_controller=[None]
+    # Host-only callbacks: no HTTP route may invoke them. Lock and desktop
+    # teardown signal existing private workers before key/session revocation.
+    def cancel_sealed_project(pid):
+        if sealed_controller[0] is not None:
+            return sealed_controller[0].cancel_project(pid)
+        return []
+    def cancel_sealed_all():
+        if sealed_controller[0] is not None:
+            return sealed_controller[0].cancel_all()
+        return 0
+    app.state.nvp_w1e_cancel_project=cancel_sealed_project
+    app.state.nvp_w1e_cancel_all=cancel_sealed_all
     def private(pid):
         if not live_films().exists(pid):return False
         review=getattr(app.state,"nvp_w1e_native_review",None)
