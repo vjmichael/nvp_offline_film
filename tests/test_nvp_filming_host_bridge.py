@@ -296,8 +296,8 @@ def test_aggregate_pcm_budget_denies_publication_and_reaps_worker():
         "backend.nvp_filming_host_bridge.MAX_CHUNKS", 1):
         session, capture = S(), C()
         session.stop_and_verify.return_value = GOOD
-        batch = [{"pcm_chunks": iter((b"\\x00\\x00\\x00\\x00",))},
-                 {"pcm_chunks": iter((b"\\x01\\x00",))}]
+        batch = [{"pcm_chunks": iter((bytes((0, 0, 0, 0)),))},
+                 {"pcm_chunks": iter((bytes((1, 0)),))}]
         with pytest.raises(ValueError, match="batch exceeds spool budget"):
             finish_linux_recording_and_freeze(
                 session, capture, "p", "t", recordings=lambda: batch)
