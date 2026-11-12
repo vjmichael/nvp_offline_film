@@ -409,6 +409,11 @@ class DurableOriginalChunkStore:
                  self.final_sha256,canonical,_sha(canonical.encode("utf8")),
                  recorded))
             G09CCaptureJournal.seal(db,pid,sid,group_id,receipt)
+            # The same SQLite commit publishes the immutable originals and
+            # removes the provisional five-second staging copies. A crash
+            # cannot leave originals published without their manifest.
+            db.execute("""DELETE FROM g06_long_capture_chunks
+                WHERE project_id=? AND session_id=?""",(pid,self.session_id))
             db.execute("""UPDATE g06_long_capture_sessions SET
                 status='completed',original_recording_id=?,original_sha256=?,
                 updated_at=? WHERE project_id=? AND session_id=?
@@ -596,7 +601,9 @@ def long_capture_health(db,pid,scene_id,active_ids=()):
              "sample_count":row["committed_samples"]
                 if row["status"]=="completed" else None,
              "original_recording_id":row["original_recording_id"],
-             "durable_chunks":row["committed_chunks"],
+             "durable_chunks":0 if row["status"]=="completed"
+                 else row["committed_chunks"],
+             "recorded_chunk_count":row["committed_chunks"],
              "source_published":row["status"]=="completed",
              "requires_human_review":row["status"]=="interrupted"}
             for row in rows]
