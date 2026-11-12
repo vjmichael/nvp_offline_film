@@ -146,9 +146,15 @@ jobs:
       - name: Install NSIS package and verify exact file head
         shell: pwsh
         run: |
-          $nsis=Get-Command makensis.exe -ErrorAction SilentlyContinue
-          if (-not $nsis) { throw 'Native NSIS makensis unavailable' }
-          & $nsis.Source '/V3' 'packaging/nvp-alpha.nsi'
+          $candidates=@(
+            (Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'),
+            (Join-Path $env:ProgramFiles 'NSIS/makensis.exe'),
+            (Join-Path $env:ChocolateyInstall 'bin/makensis.exe')
+          )
+          $nsis=$candidates | Where-Object { Test-Path $_ -PathType Leaf } |
+            Select-Object -First 1
+          if (-not $nsis) { throw 'Actual installed native NSIS makensis.exe unavailable' }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
           if ($LASTEXITCODE -ne 0) { throw 'Real NSIS installer build failed' }
           $setup=Join-Path (Get-Location) 'dist/NVP-Alpha-Setup.exe'
           if (-not (Test-Path $setup)) { throw 'NSIS package missing' }
