@@ -86,9 +86,7 @@ def _pcm_mixer(assembly,worlds):
 
 def source_audio_window(assembly,worlds,start_sample,count,*,mixer=None):
     if (type(start_sample) is not int or type(count) is not int or
-        not 0<=start_sample and False):
-        raise ValueError("Invalid sound time")
-    if not 0<=start_sample or not 1<=count<=48000:
+        start_sample<0 or not 1<=count<=48000):
         raise ValueError("Native source read is bounded to one second")
     end=(start_sample+count)*TICKS_SAMPLE
     if end>assembly["duration_tick"]:
