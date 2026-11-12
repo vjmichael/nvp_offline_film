@@ -27,7 +27,8 @@ const input=(label,key,value,onChange,min,max,step)=><label key={key}>
   <small>{Number(value).toFixed(2)}</small>
 </label>;
 
-export default function DirectorFinishingRoom({movie,editRevision,onChanged}){
+export default function DirectorFinishingRoom({
+  movie,editRevision,onChanged,durationSeconds=0}){
   const base=baseProject(movie.id)+(movie.encrypted?'/live':'')+'/finish';
   const [record,setRecord]=useState(null);
   const [color,setColor]=useState(null);
@@ -120,6 +121,11 @@ export default function DirectorFinishingRoom({movie,editRevision,onChanged}){
 
   async function preview(kind){
     if(!record||record.source_changed||audition||busy)return;
+    if(durationSeconds>30){
+      setNotice('For longer films, final sound levels are measured in the '
+        +'bounded native render rather than a memory-heavy preview.');
+      return;
+    }
     abort.current?.abort();
     const controller=new AbortController();abort.current=controller;
     setAudition(true);setError('');setNotice('');
@@ -206,7 +212,13 @@ export default function DirectorFinishingRoom({movie,editRevision,onChanged}){
             the selected peak limit will not be falsely marked as met.</p>
         </section>
       </div>
-      <section className="director-finishing-audition">
+      {durationSeconds>30?<p className="film-hint">
+        A full-length preview must not load all original film media into
+        memory. You can save/approve your finishing decisions here;
+        source-windowed picture and whole-film sound auditing are built
+        into the verified reel render. Physical long-film playback acceptance
+        is still outstanding.
+      </p>:<section className="director-finishing-audition">
         <h4>Review the film</h4>
         <div className="director-finishing-preview-controls">
           <label>Choose a moment (seconds)
@@ -226,7 +238,7 @@ export default function DirectorFinishingRoom({movie,editRevision,onChanged}){
         {sound&&<audio controls autoPlay src={sound} preload="none">
           The sound preview is unavailable on this device.
         </audio>}
-      </section>
+      </section>}
       <section className="director-finishing-purpose">
         <h4>What is this finish for?</h4>
         <label>Audience and purpose
