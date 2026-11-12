@@ -243,3 +243,31 @@ def test_invalid_pcm_still_stops_worker_and_denies_publication():
                 recordings=lambda: [{"pcm_chunks": iter((b"\x00",))}])
         session.stop_and_verify.assert_called_once()
         capture.capture.assert_not_called()
+
+
+def test_shutdown_spool_tampering_denies_publication_before_capture():
+    import tempfile
+    real_spool = tempfile.SpooledTemporaryFile
+    opened = []
+    def spool_factory(**kwargs):
+        stream = real_spool(**kwargs)
+        opened.append(stream)
+        return stream
+    with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession") as S, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C, patch(
+        "backend.nvp_filming_host_bridge.tempfile.SpooledTemporaryFile",
+        side_effect=spool_factory):
+        session, capture = S(), C()
+        def shutdown(**kwargs):
+            assert len(opened) == 1
+            opened[0].seek(4)
+            opened[0].write(b"\\x01\\x01")
+            return GOOD
+        session.stop_and_verify.side_effect = shutdown
+        with pytest.raises(RuntimeError, match="spool integrity"):
+            finish_linux_recording_and_freeze(
+                session, capture, "p", "t",
+                recordings=lambda: [{"pcm_chunks": iter((b"\\x00\\x00",))}])
+        session.stop_and_verify.assert_called_once()
+        capture.capture.assert_not_called()
+        assert opened[0].closed
