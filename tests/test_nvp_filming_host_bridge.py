@@ -146,12 +146,14 @@ def test_shutdown_cannot_rewrite_nested_clock_attestation():
             event["clock_evidence"]["proof"][0] = "altered"
             return GOOD
         session.stop_and_verify.side_effect = shutdown
+        captured_pcm = []
+        capture.capture.side_effect = lambda *args, **kwargs: captured_pcm.extend(list(kwargs["recordings"][0]["pcm_chunks"]))
         finish_linux_recording_and_freeze(
             session, capture, "p", "t", recordings=lambda: [event])
         forwarded = capture.capture.call_args.kwargs["recordings"][0]
         assert forwarded["source_sync"]["anchors"][0]["tick"] == 42
         assert forwarded["clock_evidence"]["proof"] == ["original"]
-        assert list(forwarded["pcm_chunks"]) == [b'\x00\x00']
+        assert captured_pcm == [b'\x00\x00']
 
 
 def test_shutdown_cannot_rewrite_new_nested_metadata_fields():
@@ -166,12 +168,14 @@ def test_shutdown_cannot_rewrite_new_nested_metadata_fields():
             event["custom_tags"].append("altered")
             return GOOD
         session.stop_and_verify.side_effect = shutdown
+        captured_pcm = []
+        capture.capture.side_effect = lambda *args, **kwargs: captured_pcm.extend(list(kwargs["recordings"][0]["pcm_chunks"]))
         finish_linux_recording_and_freeze(
             session, capture, "p", "t", recordings=lambda: [event])
         forwarded = capture.capture.call_args.kwargs["recordings"][0]
         assert forwarded["actor_metadata"]["markers"][0]["tick"] == 17
         assert forwarded["custom_tags"] == ["original"]
-        assert list(forwarded["pcm_chunks"]) == [b'\x00\x00']
+        assert captured_pcm == [b'\x00\x00']
 
 
 def test_unsnapshotable_metadata_still_reaps_and_denies_take():
@@ -237,10 +241,11 @@ def test_pcm_is_drained_before_worker_shutdown():
             live["worker"] = False
             return GOOD
         session.stop_and_verify.side_effect = shutdown
+        captured_pcm = []
+        capture.capture.side_effect = lambda *args, **kwargs: captured_pcm.extend(list(kwargs["recordings"][0]["pcm_chunks"]))
         finish_linux_recording_and_freeze(session, capture, "p", "t",
             recordings=lambda: [{"pcm_chunks": pcm()}])
-        forwarded = capture.capture.call_args.kwargs["recordings"][0]
-        assert list(forwarded["pcm_chunks"]) == [b"\x00\x00"]
+        assert captured_pcm == [b"\x00\x00"]
 
 
 def test_invalid_pcm_still_stops_worker_and_denies_publication():
