@@ -73,12 +73,21 @@ jobs:
           python-version: '3.11'
       - name: Install genuine Blender, display, and native USD
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender xvfb xauth libgl1
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
           python -m pip install -r requirements-foundation.txt httpx
           python -m pip install --only-binary=:all: 'usd-core==26.11'
-          command -v blender
-          blender -b --version | head -n 2
+          version=5.2.3
+          base=https://download.blender.org/release/Blender5.2
+          archive="blender-${version}-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$base/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$base/blender-${version}.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p /tmp/nvp-int02c-blender
+          tar -xJf "$archive" -C /tmp/nvp-int02c-blender --strip-components=1
+          echo "/tmp/nvp-int02c-blender" >> "$GITHUB_PATH"
+          /tmp/nvp-int02c-blender/blender -b --version | head -n 2
       - name: Launch a real SHA-pinned native Cycles worker
         run: |
           mkdir -p acceptance_artifacts

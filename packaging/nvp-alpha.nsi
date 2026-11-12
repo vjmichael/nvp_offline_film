@@ -31,34 +31,17 @@ ShowUninstDetails show
 !define STAGE_DIR "$LOCALAPPDATA\Programs\NVP.pending"
 !define PREVIOUS_DIR "$LOCALAPPDATA\Programs\NVP.previous"
 !define MARKER "nvp-alpha-install.marker"
-; If Windows interrupted promotion after parking the original program,
-; the SAME installer can offer a visible, owner-confirmed restoration.
-; Silent install never authorizes an automatic ambiguous rollback.
+; Kernel-verified recovery is mandatory. NSIS cannot inspect the actual
+; host-owned worker Job Objects or authorize a previous-runtime rollback.
 Function .onInit
     IfFileExists "$LOCALAPPDATA\Programs\NVP" init_complete
-    IfFileExists "${PREVIOUS_DIR}" recover_previous init_complete
-    recover_previous:
-        IfFileExists "${PREVIOUS_DIR}\NVP.exe" +2 0
-            Abort "Stranded NVP previous executable missing; manual recovery needed"
-        IfFileExists "${PREVIOUS_DIR}\${MARKER}" +2 0
-            Abort "Stranded NVP previous ownership marker missing"
-        ClearErrors
-        FileOpen $0 "${PREVIOUS_DIR}\${MARKER}" r
-        IfErrors init_failed
-        FileRead $0 $1
-        FileClose $0
-        StrCmp $1 "NVP-ALPHA-INSTALL-v1" 0 init_failed
-        IfSilent init_failed
-        MessageBox MB_ICONEXCLAMATION|MB_YESNO \
-            "An NVP upgrade was interrupted. Restore the preserved previous program without touching your movies? (The staged candidate will remain for review.)" \
-            IDYES do_restore IDNO init_failed
-    do_restore:
-        ClearErrors
-        Rename "${PREVIOUS_DIR}" "$LOCALAPPDATA\Programs\NVP"
-        IfErrors init_failed
-        Abort "Previous NVP program restored. Review the pending candidate before another upgrade."
-    init_failed:
-        Abort "Interrupted NVP upgrade is unresolved; the prior program remains preserved"
+    IfFileExists "${PREVIOUS_DIR}" recovery_required init_complete
+    recovery_required:
+        IfSilent deny_recovery
+        MessageBox MB_ICONEXCLAMATION|MB_OK \
+            "The previous NVP installation remains preserved. Run the NVP trusted native recovery coordinator, which must verify worker Job Objects are empty before restoring any executable."
+    deny_recovery:
+        Abort "Interrupted NVP upgrade requires kernel-verified recovery; no automatic installer rename"
     init_complete:
 FunctionEnd
 

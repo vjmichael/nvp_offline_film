@@ -62,7 +62,12 @@ def main(argv=None):
     if not hasattr(bpy.ops.wm,"usd_import"):
         raise RuntimeError("Installed Blender lacks native OpenUSD scene import")
     operator=bpy.ops.wm.usd_import
-    available={p.identifier for p in operator.get_rna_type().properties}
+    try:
+        available={p.identifier for p in operator.get_rna_type().properties}
+    except (AttributeError,KeyError,RuntimeError) as exc:
+        raise RuntimeError(
+            "Installed Blender lacks compiled native OpenUSD importer; "+
+            "a genuine USD-enabled Blender executable is required") from exc
     options={"filepath":str(usd)}
     for key in ("import_cameras","import_lights","import_meshes",
                 "import_materials","import_skeletons"):

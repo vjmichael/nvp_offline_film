@@ -33,6 +33,8 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
             target.mkdir()
             make_pe(target/"NVP.exe")
             (target/"nvp-alpha-install.marker").write_bytes(b"NVP-ALPHA-INSTALL-v1")
+            (target/"nvp-alpha-version.txt").write_text(
+                "0.1.1" if name=="NVP" else "0.1.0")
         # Distinct, valid x64 PE contents for new and previous executable.
         exe=programs/"NVP"/"NVP.exe"
         with exe.open("ab") as out:
@@ -46,7 +48,13 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
                 native_approve=lambda scope:scope["operation"]=="nvp.w1g.nsis.rollback.v1",
                 os_workers_stopped=lambda:True)
             owner.prepare()
-            result=owner.rollback()
+            # Synthetic PE fixtures are NOT genuine NSIS registrations.
+            # Exercise file rollback while simulating only that registry
+            # boundary; the actual Windows NSIS matrix tests real HKCU.
+            with patch("tools.nvp_w1g_nsis_activation._update_registration"), \
+                 patch("tools.nvp_w1g_nsis_activation._registry_version",
+                       return_value="0.1.0"):
+                result=owner.rollback()
             self.assertEqual(result["status"],"NSIS_PREVIOUS_PROGRAM_RESTORED")
             self.assertTrue((programs/"NVP.failed"/"NVP.exe").exists())
             self.assertEqual((films/"immutable.scene").read_bytes(),b"original film")
