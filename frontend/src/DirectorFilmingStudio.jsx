@@ -889,7 +889,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
           {listenUrl&&<audio className="director-film-audio-player"
             controls autoPlay preload="none" src={listenUrl}>
             Your computer cannot play the original sound preview.
-          </audio>
+          </audio>}
           <div className="director-film-duration">
             <h4>Scene duration</h4>
             <div className="director-film-time-inputs">
