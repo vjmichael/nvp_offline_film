@@ -45,9 +45,10 @@ class LinuxContainedProcess:
 
 
 class WindowsJobProcess:
-    def __init__(self, job, process, pid):
+    def __init__(self, job, process, pid, release_slot=None):
         self._job = job
         self._process = process
+        self._release_slot = release_slot
         self.pid = pid
         self.returncode = None
 
@@ -75,14 +76,33 @@ class WindowsJobProcess:
         self.wait(timeout=15)
 
     def close(self):
-        # Kill-on-close applies even if the direct Blender process has exited
-        # and grandchildren still exist in the same job.
+        # A release-wide worker slot is retained until ORIGINAL kernel job
+        # accounting proves the whole process tree empty. No PID-only
+        # clearance, and no early release of the update admission fence.
         if self._job is not None:
+            import time
+            import win32job
+            info = win32job.QueryInformationJobObject(
+                self._job, win32job.JobObjectBasicAccountingInformation)
+            if info["ActiveProcesses"]:
+                win32job.TerminateJobObject(self._job, 13)
+            deadline = time.monotonic() + 12.0
+            while True:
+                info = win32job.QueryInformationJobObject(
+                    self._job, win32job.JobObjectBasicAccountingInformation)
+                if type(info["ActiveProcesses"]) is int and info["ActiveProcesses"] == 0:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Windows Job Object still owns live descendants")
+                time.sleep(.05)
             self._job.Close()
             self._job = None
         if self._process is not None:
             self._process.Close()
             self._process = None
+        if self._release_slot is not None:
+            self._release_slot.release()
+            self._release_slot = None
 
 
 def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False):
@@ -111,6 +131,24 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
 
 def _launch_windows(command, *, cwd, stdout, stderr, memory_mb):
     """Suspended Win32 creation: no Blender instruction runs outside the job."""
+    import msvcrt
+    import win32job
+    import win32process
+    import uuid
+    from backend.nvp_w1g_release_gate import WindowsWorkerLifetimeSlot
+
+    # Reserve the release-wide kernel slot BEFORE CreateProcess, so an NSIS
+    # mutation cannot pass its all-slots test while this child is starting.
+    slot = WindowsWorkerLifetimeSlot().acquire()
+    try:
+        return _launch_windows_owned(command, cwd=cwd, stdout=stdout,
+                                    stderr=stderr, memory_mb=memory_mb, slot=slot)
+    except BaseException:
+        slot.release()
+        raise
+
+
+def _launch_windows_owned(command, *, cwd, stdout, stderr, memory_mb, slot):
     import msvcrt
     import win32job
     import win32process
@@ -146,7 +184,7 @@ def _launch_windows(command, *, cwd, stdout, stderr, memory_mb):
                 raise RuntimeError("Suspended Blender process not assigned to Job Object")
             if win32process.ResumeThread(th) == 0xFFFFFFFF:
                 raise RuntimeError("Contained child could not be resumed")
-            return WindowsJobProcess(job, ph, pid)
+            return WindowsJobProcess(job, ph, pid, release_slot=slot)
         except BaseException:
             try:
                 win32job.TerminateJobObject(job, 13)

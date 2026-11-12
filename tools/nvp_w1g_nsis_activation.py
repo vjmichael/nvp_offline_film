@@ -126,6 +126,10 @@ class NativeNSISActivation:
         if type(trusted_external_receipt) is not dict:
             raise RuntimeError("Externally reviewed package build receipt required")
         verify_installed(trusted_external_receipt,self.owner.pending)
+        if not self.test_only_simulation:
+            from tools.nvp_w1g_release_build_marker import verify_build_marker
+            verify_build_marker(self.owner.active)
+            verify_build_marker(self.owner.pending)
         current_version=_version(self.owner.active)
         next_version=_version(self.owner.pending)
         registered=_registry_version()
@@ -186,6 +190,9 @@ class NativeNSISActivation:
             raise RuntimeError("Release changed after authorizing staged upgrade")
         verify_installed(record["reviewed_package_receipt"],self.owner.pending)
         if not self.test_only_simulation:
+            from tools.nvp_w1g_release_build_marker import verify_build_marker
+            verify_build_marker(self.owner.active)
+            verify_build_marker(self.owner.pending)
             receipt=record["reviewed_package_receipt"]
             if receipt.get("native_worker_manifest_verified") is not True:
                 raise PermissionError(
@@ -252,6 +259,8 @@ class NativeNSISActivation:
                       if self.owner.pending.is_dir() else None)
         previous_hash=(_digest(_program(self.owner.old))
                        if self.owner.old.is_dir() else None)
+        failed_hash=(_digest(_program(self.owner.failed))
+                     if self.owner.failed.is_dir() else None)
         state=record["state"]
         if state=="PREPARED":
             consistent=(active_hash==original and pending_hash==candidate
@@ -267,6 +276,20 @@ class NativeNSISActivation:
         elif state in ("PROMOTED_UNREGISTERED","PROMOTED_UNACCEPTED"):
             consistent=(active_hash==candidate and pending_hash is None
                         and previous_hash==original)
+        elif state=="PRODUCTION_ROLLBACK_INTENT":
+            # A crash may occur between the two rollback renames, before
+            # uninstall registration, or before the second ledger fsync.
+            # Inspection ONLY, no reuse of the old creator approval.
+            consistent=(pending_hash is None and (
+                (active_hash==candidate and previous_hash==original
+                 and failed_hash is None) or
+                (active_hash is None and previous_hash==original
+                 and failed_hash==candidate) or
+                (active_hash==original and previous_hash is None
+                 and failed_hash==candidate)))
+        elif state=="ROLLED_BACK":
+            consistent=(active_hash==original and pending_hash is None
+                        and previous_hash is None and failed_hash==candidate)
         else:
             consistent=False
         if not consistent:

@@ -57,6 +57,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_webview_ipc_surface.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_nvp_w1f_reel_audit.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_nvp_w1g_supply_candidate.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_nvp_w1g_release_gate.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_nvp_w1g_release_build_marker.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_w1g_production_authority.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_w1g_encrypted_review.py -v
@@ -72,6 +80,8 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all cryptography --hidden-import tools.nvp_w1g_reviewed_release --collect-submodules backend --add-data 'tools/nvp_int02_cycles_frame_worker.py;tools' tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
+          python -m tools.nvp_w1g_release_build_marker --bundle dist/NVP
+          if ($LASTEXITCODE -ne 0) { throw 'First-party launch-fence source marker missing from native Windows bundle' }
           python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
           python tools/nvp_w1g_native_package.py build --bundle dist/NVP --output "$env:RUNNER_TEMP/nvp-w1g-native-build.json"
           if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }

@@ -65,7 +65,11 @@ def verify_signed_release_review(receipt, signed_review, *,
             row["sha256"]!=files[row["file"]]["sha256"] or
             type(row.get("spdx_license")) is not str or
             not SPDX.fullmatch(row["spdx_license"]) or
+            row["spdx_license"].strip().upper() in
+                ("REVIEW_REQUIRED","UNKNOWN","TBD","NOASSERTION","UNLICENSED") or
             type(row.get("redistribution_reference")) is not str or
+            row["redistribution_reference"].strip().upper() in
+                ("REVIEW_REQUIRED","UNKNOWN","TBD","NOASSERTION") or
             not 8<=len(row["redistribution_reference"])<=500):
             raise PermissionError("Unreviewed native dependency, worker or distribution condition")
         seen.add(row["file"])

@@ -62,7 +62,9 @@ def validate_lock(lock: dict, wheelhouse: Path, *, platform: str) -> list:
             not filename.endswith(".whl") or type(digest) is not str or
             not HASH.fullmatch(digest) or
             type(entry["license_review"]) is not str or
-            not 5 <= len(entry["license_review"]) <= 500):
+            not 5 <= len(entry["license_review"]) <= 500 or
+            entry["license_review"].strip().upper() in
+                ("REVIEW_REQUIRED","UNKNOWN","TBD","UNAPPROVED","NOASSERTION")):
             raise RuntimeError("Invalid pinned wheel metadata or missing license-review reference")
         key = _canonical(name)
         if key in seen:

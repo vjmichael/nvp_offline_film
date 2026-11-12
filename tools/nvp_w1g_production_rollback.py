@@ -59,6 +59,14 @@ class ProductionWindowsNSISRollback:
         owner=self.owner
         record=self._validate_prepared()
         original_sha=record["active_sha256"]
+        activation_journal=owner.journal_root/"nsis-activation.json"
+        if activation_journal.is_symlink() or not activation_journal.is_file():
+            raise RuntimeError("Original production upgrade activation ledger missing")
+        activation_record=__import__("json").loads(activation_journal.read_text("utf8"))
+        if (activation_record.get("state")!="PROMOTED_UNACCEPTED" or
+            activation_record.get("active_sha256")!=record["previous_sha256"] or
+            activation_record.get("next_sha256")!=record["active_sha256"]):
+            raise RuntimeError("Production rollback is not the exact promoted candidate")
         with self.kernel.transaction():
             # The original process-tree Job Object must already be empty.
             self.kernel(original_sha)
@@ -74,6 +82,8 @@ class ProductionWindowsNSISRollback:
             self._validate_prepared()
             if _digest(_inventory(owner.films))!=record["original_films_sha256"]:
                 raise RuntimeError("Creator originals changed during native rollback approval")
+            activation_record["state"]="PRODUCTION_ROLLBACK_INTENT"
+            _write(activation_journal,activation_record)
             record["state"]="SWAP_INTENT"
             _write(owner.journal,record)
             os.replace(owner.active,owner.failed)
@@ -96,6 +106,8 @@ class ProductionWindowsNSISRollback:
                 raise RuntimeError("Windows uninstall registration failed to reconcile")
             record["state"]="ROLLED_BACK"
             _write(owner.journal,record)
+            activation_record["state"]="ROLLED_BACK"
+            _write(activation_journal,activation_record)
             return {
                 "status":"NSIS_PREVIOUS_PROGRAM_RESTORED",
                 "original_films_modified":False,

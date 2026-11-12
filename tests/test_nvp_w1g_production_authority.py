@@ -79,7 +79,8 @@ class NativeReleaseAuthorityRefusal(unittest.TestCase):
             WindowsCreatorUpgradeApproval()
         with self.assertRaises(RuntimeError):
             WindowsReleaseWorkerStopEvidence(Path("/tmp/unknown"),
-                release_job=object(),worker_workspaces=(Path("/tmp"),))
+                worker_workspaces={name:Path("/tmp")/name
+                                   for name in WindowsReleaseWorkerStopEvidence.REQUIRED_DOMAINS})
 
 
 if __name__ == "__main__":

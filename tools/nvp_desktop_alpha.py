@@ -678,29 +678,39 @@ def main(argv=None):
     if args.smoke_create or args.smoke_reopen:
         return run_persistent_installed_smoke(
             "create" if args.smoke_create else "reopen")
-    configure_home()
-    app=create_app()
-    server,worker,port,sock=serve(app)
-    bridge=None
-    try:
-        import webview
-        bridge=create_trusted_camera_bridge(port)
-        from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
-        exposed_api=NativeWebviewIPCSurface(bridge)
-        window=webview.create_window("NVP — Make Your Movie",
-            "http://127.0.0.1:"+str(port),
-            width=1280,height=800,min_size=(960,600),js_api=exposed_api)
-        bridge._attach_window(window)
-        webview.start(gui="edgechromium",debug=False)
-        return 0
-    finally:
+    # Normal installed GUI must remain an owned release participant for
+    # its complete lifetime. An external upgrade coordinator cannot switch
+    # binaries while the creator's WebView2 host is still open or launching
+    # worker domains that do not yet have their own launch slot.
+    from contextlib import ExitStack
+    with ExitStack() as lifetime:
+        if os.name=="nt":
+            from backend.nvp_w1g_release_gate import WindowsWorkerLifetimeSlot
+            slot=WindowsWorkerLifetimeSlot().acquire()
+            lifetime.callback(slot.release)
+        configure_home()
+        app=create_app()
+        server,worker,port,sock=serve(app)
+        bridge=None
         try:
-            if bridge is not None:
-                bridge._close()
+            import webview
+            bridge=create_trusted_camera_bridge(port)
+            from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
+            exposed_api=NativeWebviewIPCSurface(bridge)
+            window=webview.create_window("NVP — Make Your Movie",
+                "http://127.0.0.1:"+str(port),
+                width=1280,height=800,min_size=(960,600),js_api=exposed_api)
+            bridge._attach_window(window)
+            webview.start(gui="edgechromium",debug=False)
+            return 0
         finally:
-            server.should_exit=True
-            worker.join(timeout=12)
-            sock.close()
+            try:
+                if bridge is not None:
+                    bridge._close()
+            finally:
+                server.should_exit=True
+                worker.join(timeout=12)
+                sock.close()
 
 
 def _smoke_checkpoint(stage):

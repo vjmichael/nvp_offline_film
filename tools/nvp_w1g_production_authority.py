@@ -60,107 +60,113 @@ class WindowsCreatorUpgradeApproval:
 
 
 class WindowsReleaseWorkerStopEvidence:
-    """Windows Job accounting plus exclusive original worker-host leases.
+    """Complete native worker-domain roster plus an ALL-WORKERS kernel lock.
 
-    Genuine kernel inspection is only meaningful with COMPLETE source
-    coverage: a Windows Job handle that was retained by the original
-    release supervisor and ALL its corresponding on-disk worker journals.
-    No bare user-supplied PID/Boolean is accepted.
-
-    The caller holds transaction() across both authorization and the
-    filesystem swap, preventing launches through the worker host leases.
+    The old single WindowsJobProcess argument was not a whole-release
+    witness: each Blender/editorial/audio/capture subprocess owns a SEPARATE
+    Job Object. All NVP `launch_contained` Windows paths now acquire a
+    lifetime slot before suspended CreateProcess, and keep it until the
+    original Job's kernel accounting confirms zero remaining children.
     """
 
-    def __init__(self, installed_program: Path, *, release_job,
-                 worker_workspaces: tuple[Path, ...]):
+    REQUIRED_DOMAINS=frozenset((
+        "cycles", "filming", "editorial", "audio", "delivery"))
+
+    def __init__(self, installed_program: Path, *,
+                 worker_workspaces: dict[str, Path]):
         if os.name != "nt":
-            raise RuntimeError("Windows Job Object custody requires Windows")
-        from backend.nvp_worker_containment import WindowsJobProcess
-        if type(release_job) is not WindowsJobProcess or release_job._job is None:
-            raise TypeError("Original supervisor-owned Windows Job handle required")
-        if type(worker_workspaces) is not tuple or not worker_workspaces:
-            raise TypeError("Explicit full release worker-workspace roster required")
-        self.program = Path(installed_program)
-        self.release_job = release_job
-        self.workspaces = tuple(sorted({Path(p).resolve() for p in worker_workspaces}))
-        if len(self.workspaces) != len(worker_workspaces):
-            raise RuntimeError("Duplicate or ambiguous original worker workspace")
-        self._held = False
-        self._mutex = threading.Lock()
+            raise RuntimeError("Windows release custody requires native Windows kernel")
+        if (type(worker_workspaces) is not dict or
+            set(worker_workspaces) != self.REQUIRED_DOMAINS or
+            any(not isinstance(v,Path) for v in worker_workspaces.values())):
+            raise PermissionError("All five original worker domains must be explicitly registered")
+        self.program=Path(installed_program)
+        self.workspaces={
+            name: root.absolute() for name, root in worker_workspaces.items()
+        }
+        if len({str(p).casefold() for p in self.workspaces.values()}) != len(self.workspaces):
+            raise RuntimeError("Worker domains cannot share ambiguous release journal roots")
+        self._held=False
+        self._mutex=threading.Lock()
+        self._release_fence=None
 
     @contextmanager
     def transaction(self):
         if not self._mutex.acquire(blocking=False):
-            raise RuntimeError("Another release authorization is underway")
+            raise RuntimeError("Another native release authorization is in progress")
         try:
             from backend.nvp_worker_host_lease import WorkerHostLease
+            from backend.nvp_w1g_release_gate import WindowsReleaseMutationGate
             with ExitStack() as stack:
-                for root in self.workspaces:
+                # Critical lock ordering: individual worker launchers hold
+                # WorkerHostLease BEFORE acquiring their release lifetime slot.
+                # The updater must acquire workspace locks in the same order,
+                # and acquire the all-worker release gate LAST. Reversing this
+                # order would deadlock a worker blocked between these steps.
+                for name, root in sorted(self.workspaces.items()):
                     if not root.is_dir() or root.is_symlink():
-                        raise RuntimeError("Original worker journal workspace unavailable")
+                        raise RuntimeError("Missing original supervised worker domain: "+name)
                     stack.enter_context(WorkerHostLease(root))
-                self._held = True
+                self._release_fence=stack.enter_context(WindowsReleaseMutationGate())
+                self._held=True
                 try:
                     yield self
                 finally:
-                    self._held = False
+                    self._held=False
+                    self._release_fence=None
         finally:
             self._mutex.release()
 
     def __call__(self, original_sha):
-        if not self._held:
-            raise PermissionError("Kernel evidence requires held worker admission leases")
+        if (not self._held or self._release_fence is None or
+            self._release_fence.held is not True):
+            raise PermissionError("Release-wide exclusive Windows kernel gate is not held")
         from tools.nvp_w1g_nsis_recovery import _digest, _program
-        from backend.nvp_worker_containment import WindowsJobProcess
-        if (type(self.release_job) is not WindowsJobProcess or
-            self.release_job._job is None):
-            raise PermissionError("Original supervisor Job Object handle disappeared")
-        # Atomic NSIS renames may park the ORIGINAL executable under
-        # NVP.previous (upgrade) or NVP.failed (rollback) while the native
-        # release lease and OS-owned Job Object remain held. Refuse any
-        # unrecognized old-runtime bytes, absent source or symlink.
-        candidates=(self.program,
-                    self.program.with_name("NVP.previous"),
+        if type(original_sha) is not str or len(original_sha)!=64:
+            raise PermissionError("Original release identity missing")
+        # The original executable remains available under NVP.previous or
+        # NVP.failed during a two-rename upgrade or rollback transaction.
+        candidates=(self.program,self.program.with_name("NVP.previous"),
                     self.program.with_name("NVP.failed"))
-        observed=[]
+        original_found=False
         for candidate in candidates:
             if candidate.exists() or candidate.is_symlink():
-                observed.append(_digest(_program(candidate)))
-        if original_sha not in observed:
+                original_found |= _digest(_program(candidate)) == original_sha
+        if not original_found:
             raise PermissionError("Original installed/parked release differs from kernel scope")
-        import win32job
-        info = win32job.QueryInformationJobObject(
-            self.release_job._job, win32job.JobObjectBasicAccountingInformation)
-        if (type(info.get("ActiveProcesses")) is not int or
-            info["ActiveProcesses"] != 0):
-            raise PermissionError("Release Job Object still has live descendants")
-        for root in self.workspaces:
-            for row in root.glob("worker_jobs.sqlite3"):
-                if row.is_symlink():
-                    raise RuntimeError("Linked native worker journal is untrusted")
-                # Do not silently turn SQLite journal errors into free custody.
-                db = sqlite3.connect(f"file:{row.as_posix()}?mode=ro", uri=True)
+        # A kernel slot can be free after a host crash, but that is NOT proof
+        # that its prior journal and descendants were safely reconciled.
+        for name, root in sorted(self.workspaces.items()):
+            journals=list(root.rglob("worker_jobs.sqlite3"))
+            if len(journals)>8:
+                raise RuntimeError("Unbounded native worker journal topology: "+name)
+            for row in journals:
+                if row.is_symlink() or row.parent.is_symlink():
+                    raise RuntimeError("Linked original worker journal is untrusted")
+                db=sqlite3.connect(f"file:{row.as_posix()}?mode=ro",uri=True)
                 try:
-                    unfinished = db.execute(
-                        "SELECT COUNT(*) FROM worker_jobs WHERE state IN "
-                        "('PREPARED','RUNNING','CANCEL_REQUESTED','INTERRUPTED',"
-                        "'FAILED','TIMED_OUT')").fetchone()[0]
+                    pending=db.execute(
+                        "SELECT COUNT(*) FROM worker_jobs WHERE state != 'SUCCEEDED'"
+                    ).fetchone()[0]
                 finally:
                     db.close()
-                if unfinished:
-                    raise PermissionError("Unreconciled native workers block upgrade")
-            for journal in root.glob("*/journal.json"):
+                if pending:
+                    raise PermissionError("Unreconciled Blender/worker jobs block upgrade: "+name)
+            for journal in root.rglob("journal.json"):
                 if journal.is_symlink() or journal.parent.is_symlink():
-                    raise RuntimeError("Linked native worker journal is untrusted")
-                record = json.loads(journal.read_text("utf8"))
-                if record.get("state") != "SUCCEEDED_VERIFIED" or (
-                        record.get("process_tree_custody_verified") is not True):
-                    raise PermissionError("Unverified protected-worker recovery blocks upgrade")
+                    raise RuntimeError("Linked original protected-worker journal is untrusted")
+                record=json.loads(journal.read_text("utf8"))
+                if (record.get("state")!="SUCCEEDED_VERIFIED" or
+                    record.get("process_tree_custody_verified") is not True):
+                    raise PermissionError("Unverified protected-worker recovery blocks upgrade: "+name)
         return {
-            "os_provenance": "windows-job-object",
-            "original_runtime_sha256": original_sha,
-            "process_tree_custody_verified": True,
-            "active_windows_jobs": 0,
-            "unresolved_worker_jobs": 0,
-            "measured_at_unix": time.time(),
+            "os_provenance":"windows-job-object",
+            "kernel_release_gate":"exclusive-128-slot-locks-v1",
+            "release_wide_launch_fence_verified":True,
+            "complete_worker_domain_roster_verified":True,
+            "original_runtime_sha256":original_sha,
+            "process_tree_custody_verified":True,
+            "active_windows_jobs":0,
+            "unresolved_worker_jobs":0,
+            "measured_at_unix":time.time(),
         }
