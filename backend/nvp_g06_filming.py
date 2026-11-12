@@ -830,6 +830,55 @@ class G06Filming:
             return stream.getvalue()
         return self._with(pid,scene_id,read)
 
+    def _take_metadata(self,db,pid,take_id):
+        """Bounded immutable Take MANIFEST validation, not a media read.
+
+        Large multi-Take films cannot reopen every OpenUSD stage and PCM
+        blob for every edit/meter window. Here only the frozen signed source
+        identity and source metadata are loaded. Every participating Take's
+        actual USD/PCM bytes are independently rehashed by the *native
+        render window* before producing any derived picture or sound.
+
+        This cannot be used to certify original media integrity on its own.
+        """
+        if type(take_id) is not str or not HEX.fullmatch(take_id):
+            raise ValueError("Select an existing original Digital Take")
+        row=db.execute("""SELECT project_id,take_id,scene_id,
+            source_stage_revision,source_sha256,
+            original_usd_sha256,performance_usd_sha256,
+            take_sha256,performance_json,audio_json,frozen_at,
+            length(original_usd) AS original_usd_size,
+            length(performance_usd) AS performance_usd_size
+            FROM g06_frozen_takes WHERE project_id=? AND take_id=?""",
+            (pid,take_id)).fetchone()
+        if row is None:raise KeyError("The original Digital Take is missing")
+        if len(row["performance_json"].encode("utf8"))>2*1024*1024:
+            raise ValueError("Original Take metadata exceeds safe render limits")
+        data=json.loads(row["performance_json"])
+        if (data.get("format")!=TAKE_FORMAT or
+            _sha(_json(data).encode("utf8"))!=row["take_sha256"] or
+            data.get("scene_id")!=row["scene_id"] or
+            data.get("original_usd_sha256")!=row["original_usd_sha256"] or
+            data.get("performance_usd_sha256")!=row["performance_usd_sha256"] or
+            not row["original_usd_size"] or
+            not row["performance_usd_size"]):
+            raise RuntimeError("Frozen Take metadata lost its original source identity")
+        audio=json.loads(row["audio_json"])
+        if audio!=data["audio"] or len(audio)>64:
+            raise RuntimeError("The original sound manifest is incomplete")
+        for item in audio:
+            clip=db.execute("""SELECT actor_id,pcm_sha256,
+                sample_count,length(pcm) AS pcm_bytes
+                FROM g06_original_pcm WHERE project_id=?
+                AND scene_id=? AND id=?""",
+                (pid,row["scene_id"],item["clip_id"])).fetchone()
+            if (clip is None or clip["actor_id"]!=item["actor_id"] or
+                clip["pcm_sha256"]!=item["pcm_sha256"] or
+                clip["sample_count"]!=item["sample_count"] or
+                clip["pcm_bytes"]!=item["sample_count"]*2):
+                raise RuntimeError("The original recording's identity has changed")
+        return row,data,audio
+
     def _take(self,db,pid,take_id,with_audio=False):
         if type(take_id) is not str or not HEX.fullmatch(take_id):
             raise ValueError("Select a recorded Take")
