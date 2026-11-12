@@ -178,17 +178,18 @@ class NativeSceneSoundCapture:
                 raise ValueError("Captured PCM duration exceeds source spool budget")
             if minimum_unclocked_pcm_bytes>MAX_CHUNK_BYTES*MAX_CHUNKS:
                 raise ValueError("Captured PCM batch durations exceed aggregate spool budget")
-            # Reject malformed later recording streams before touching the first
-            # original PCM iterator. Do not advance or consume valid iterators.
+            preflight_events.add(eid)
+            preflight_sources.add(sid)
+        # Validate ALL event metadata, identities, clock evidence and quotas
+        # before invoking any caller-defined __iter__. Such a method can have
+        # irreversible device side effects even without yielding PCM samples.
+        for entry in frozen_recordings:
             try:
-                # Pin the exact iterator admitted by preflight. A custom
-                # iterable may return a different stream on a second iter()
-                # call, invalidating the stream identity we just checked.
+                # Pin the exact iterator admitted by preflight; never call
+                # __iter__ again when ingestion begins.
                 entry["pcm_chunks"] = iter(entry["pcm_chunks"])
             except TypeError as exc:
                 raise ValueError("Captured PCM chunks must be iterable") from exc
-            preflight_events.add(eid)
-            preflight_sources.add(sid)
         publication_started=False
         try:
             for entry in frozen_recordings:
