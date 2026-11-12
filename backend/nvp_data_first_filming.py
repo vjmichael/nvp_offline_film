@@ -166,7 +166,10 @@ class NativeSceneSoundCapture:
             # Reject malformed later recording streams before touching the first
             # original PCM iterator. Do not advance or consume valid iterators.
             try:
-                iter(entry["pcm_chunks"])
+                # Pin the exact iterator admitted by preflight. A custom
+                # iterable may return a different stream on a second iter()
+                # call, invalidating the stream identity we just checked.
+                entry["pcm_chunks"] = iter(entry["pcm_chunks"])
             except TypeError as exc:
                 raise ValueError("Captured PCM chunks must be iterable") from exc
             preflight_events.add(eid)
