@@ -455,5 +455,16 @@ class NativeSceneSoundCapture:
                         + repr(journal_error))
             raise
         finally:
+            # Device-backed iterators can retain microphone handles even after
+            # normal exhaustion. Release all admitted iterators on success,
+            # rejection, cancellation, or publication failure. Cleanup must
+            # never replace the original capture/journal exception.
+            for iterator in reversed(admitted_iterators):
+                close=getattr(iterator,"close",None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
             for spool in spooled:
                 spool.close()
