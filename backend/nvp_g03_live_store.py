@@ -304,6 +304,18 @@ class LiveFilmStore:
             self._keys={k:v for k,v in self._keys.items() if v[0]!=pid}
             self._leases={k:v for k,v in self._leases.items() if v["pid"]!=pid}
 
+    def local_session_live(self,pid,token):
+        """Cheap same-host revocation gate for a PCM evaluator.
+
+        This is NOT an authorization grant: cross-process generation and
+        expiry still require the full _session() check on a bounded timer,
+        every new sealed chunk and before completed-reel publication.
+        A local movie lock immediately clears _keys under this guard.
+        """
+        with self._guard:
+            entry=self._keys.get(token) if isinstance(token,str) else None
+            return entry is not None and entry[0]==pid
+
     def _session(self,pid,token):
         if not isinstance(token,str):
             raise LiveFilmError("Film must be unlocked by its director")
