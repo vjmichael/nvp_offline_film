@@ -220,6 +220,10 @@ class NativeSceneSoundCapture:
                         not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2 or
                         count>=MAX_CHUNKS):
                         raise ValueError("Invalid captured PCM16LE chunk")
+                    # Refuse unclocked surplus before writing the offending chunk.
+                    if ("source_sync" not in entry and
+                        samples+len(chunk)//2>(end-start+SAMPLE_TICK-1)//SAMPLE_TICK):
+                        raise ValueError("Captured PCM sample count does not match its Film Time event")
                     batch_pcm_bytes+=len(chunk)
                     if batch_pcm_bytes>MAX_CHUNK_BYTES*MAX_CHUNKS:
                         raise ValueError("Original PCM recording batch exceeds spool budget")
