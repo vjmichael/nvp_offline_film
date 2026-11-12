@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 import queue
 import secrets
+import shutil
 import sqlite3
 import sys
 import threading
@@ -32,6 +33,7 @@ SOURCE_SAMPLES = RATE * MAX_SECONDS   # current G06 scene limit: 30 minutes
 MAX_CALLBACK_SAMPLES = RATE           # reject unexpected >1s callback
 QUEUE_LIMIT = 32                     # never hold an unbounded recording in RAM
 MAX_PIECES = (SOURCE_SAMPLES + CHUNK_SAMPLES - 1) // CHUNK_SAMPLES
+MIN_DISK_HEADROOM=128*1024*1024
 FORMAT = "nvp.g06.chunked_microphone_original.v1"
 
 
@@ -161,6 +163,8 @@ class DurableOriginalChunkStore:
         return db
 
     def begin(self):
+        if shutil.disk_usage(self.db_path.parent).free<MIN_DISK_HEADROOM:
+            raise RuntimeError("Not enough free storage to record original sound")
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             _schema(db)
@@ -190,6 +194,8 @@ class DurableOriginalChunkStore:
         if (not 0<len(data)<=CHUNK_SAMPLES*2 or len(data)%2 or
             index>=MAX_PIECES or first+len(data)//2>SOURCE_SAMPLES):
             raise RuntimeError("Original microphone chunk exceeds admission")
+        if shutil.disk_usage(self.db_path.parent).free<MIN_DISK_HEADROOM:
+            raise RuntimeError("Original sound spool ran out of safe disk headroom")
         with db:
             record=db.execute("""SELECT status,committed_samples,committed_chunks
               FROM g06_long_capture_sessions WHERE project_id=? AND
@@ -309,11 +315,12 @@ class DurableOriginalChunkStore:
                              if obj["role"]=="actor"}
             if self.actor_id is not None and self.actor_id not in approved_actors:
                 raise RuntimeError("Original speaker is no longer in this scene")
-            session=db.execute("""SELECT status,committed_samples,committed_chunks
-                FROM g06_long_capture_sessions
+            session=db.execute("""SELECT status,committed_samples,committed_chunks,
+                stage_sha256 FROM g06_long_capture_sessions
                 WHERE project_id=? AND scene_id=? AND session_id=?""",
                 (pid,sid,self.session_id)).fetchone()
             if (session is None or session["status"]!="stopped" or
+                session["stage_sha256"]!=self.stage_sha256 or
                 session["committed_samples"]!=self.total_samples or
                 session["committed_chunks"]>MAX_PIECES):
                 raise RuntimeError("Recording was interrupted or cannot be published")
