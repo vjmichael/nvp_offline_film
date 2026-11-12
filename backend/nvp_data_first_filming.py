@@ -183,13 +183,29 @@ class NativeSceneSoundCapture:
         # Validate ALL event metadata, identities, clock evidence and quotas
         # before invoking any caller-defined __iter__. Such a method can have
         # irreversible device side effects even without yielding PCM samples.
-        for entry in frozen_recordings:
-            try:
-                # Pin the exact iterator admitted by preflight; never call
-                # __iter__ again when ingestion begins.
-                entry["pcm_chunks"] = iter(entry["pcm_chunks"])
-            except TypeError as exc:
-                raise ValueError("Captured PCM chunks must be iterable") from exc
+        # Iterator construction can open a real capture device. If a later
+        # source refuses initialization, release every earlier admitted
+        # iterator before returning; no immutable source has been published.
+        admitted_iterators=[]
+        try:
+            for entry in frozen_recordings:
+                try:
+                    # Pin the exact iterator admitted by preflight; never call
+                    # __iter__ again when ingestion begins.
+                    iterator=iter(entry["pcm_chunks"])
+                except TypeError as exc:
+                    raise ValueError("Captured PCM chunks must be iterable") from exc
+                entry["pcm_chunks"]=iterator
+                admitted_iterators.append(iterator)
+        except BaseException:
+            for iterator in reversed(admitted_iterators):
+                close=getattr(iterator,"close",None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass  # Preserve the original admission failure.
+            raise
         publication_started=False
         try:
             for entry in frozen_recordings:
