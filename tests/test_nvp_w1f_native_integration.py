@@ -35,6 +35,30 @@ SOUND=b"\x16\x00\xff\x7f"*120000  # 5 seconds, 48 kHz mono int16
 ORIGINAL_SHA=hashlib.sha256(SOUND).hexdigest()
 
 
+class NativeACLReceiptContract(unittest.TestCase):
+    def test_icacls_reports_success_even_with_zero_failed_files(self):
+        from unittest.mock import Mock
+        from backend.nvp_g03_windows_appcontainer import _acl
+        with patch("backend.nvp_g03_windows_appcontainer.subprocess.run",
+                   return_value=Mock(returncode=0,
+                       stdout="Successfully processed 1 files; Failed processing 0 files",
+                       stderr="")) as called:
+            _acl("reviewed-worker.exe",
+                 "S-1-15-2-100-200-300-400-500-600","R")
+            self.assertTrue(called.called)
+
+    def test_icacls_positive_failed_file_count_is_not_accepted(self):
+        from unittest.mock import Mock
+        from backend.nvp_g03_windows_appcontainer import _acl,AppContainerFailure
+        with patch("backend.nvp_g03_windows_appcontainer.subprocess.run",
+                   return_value=Mock(returncode=0,
+                       stdout="Successfully processed 0 files; Failed processing 1 files",
+                       stderr="")):
+            with self.assertRaises(AppContainerFailure):
+                _acl("reviewed-worker.exe",
+                     "S-1-15-2-100-200-300-400-500-600","R")
+
+
 class CrossPlatformSourceAndCustody(unittest.TestCase):
     def test_exact_reel_clock_and_nonzero_origin(self):
         self.assertEqual(chunk_bounds(MAX_FRAMES,0),(0,240))
