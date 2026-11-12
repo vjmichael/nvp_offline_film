@@ -205,6 +205,78 @@ def create_trusted_camera_bridge(port):
         FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
 
 
+def run_basic_edge_window_smoke():
+    """Real installed EdgeChromium + React DOM WITHOUT the native JS bridge.
+
+    This is an independent diagnostic comparison, NOT W1-G IPC acceptance.
+    It also must fail if a hosted runner never creates a working browser.
+    """
+    import webview
+    from threading import Event
+    with tempfile.TemporaryDirectory(prefix="nvp-w1g-basic-window-") as root:
+        old_home=os.environ.get("NVP_HOME")
+        os.environ["NVP_HOME"]=str(Path(root)/"Projects")
+        server=worker=sock=None
+        try:
+            _smoke_checkpoint("basic_before_app")
+            app=create_app()
+            server,worker,port,sock=serve(app)
+            _smoke_checkpoint("basic_after_serve")
+            url="http://127.0.0.1:"+str(port)
+            with urllib.request.urlopen(url+"/",timeout=8) as reply:
+                if "assets/" not in reply.read().decode("utf8"):
+                    raise RuntimeError("Basic browser target lacks native bundled React")
+            _smoke_checkpoint("basic_loopback_verified")
+            loaded=Event()
+            result={"passed":False}
+            window=webview.create_window(
+                "NVP Basic Edge Chromium Test",url,width=980,height=680)
+            window.events.loaded += lambda:(
+                _smoke_checkpoint("basic_loaded_event"),loaded.set())
+            window.events.before_show += lambda:_smoke_checkpoint("basic_before_show")
+            window.events.shown += lambda:_smoke_checkpoint("basic_shown")
+            window.events.before_load += lambda:_smoke_checkpoint("basic_before_load")
+            def inspector():
+                _smoke_checkpoint("basic_inspector_enter")
+                try:
+                    if not loaded.wait(25):
+                        raise RuntimeError("Basic EdgeChromium failed loaded event")
+                    _smoke_checkpoint("basic_loaded_ready")
+                    if window.evaluate_js(
+                            "Boolean(document.querySelector('#root') && "
+                            "document.querySelector('#root').children.length > 0)") is not True:
+                        raise RuntimeError("Basic installed React DOM never mounted")
+                    result["passed"]=True
+                    _smoke_checkpoint("basic_react_dom_verified")
+                except Exception as exc:
+                    result["error"]=str(exc)
+                    _smoke_checkpoint("basic_inspector_failed")
+                finally:
+                    # Do not let smoke-only teardown hang forever on a
+                    # Windows GUI host which cannot dispatch COM messages.
+                    closed=Event()
+                    def close_window():
+                        try:window.destroy()
+                        finally:closed.set()
+                    threading.Thread(target=close_window,daemon=True).start()
+                    if not closed.wait(6):
+                        _smoke_checkpoint("basic_destroy_stalled_fail_closed")
+                        os._exit(77)
+            _smoke_checkpoint("basic_before_webview_start")
+            webview.start(func=inspector,gui="edgechromium",debug=False)
+            if not result["passed"]:
+                raise RuntimeError(result.get("error","No genuine Basic WebView2 result"))
+            _smoke_checkpoint("basic_success")
+            return 0
+        finally:
+            if server is not None:
+                server.should_exit=True
+                worker.join(timeout=12)
+                sock.close()
+            if old_home is None:os.environ.pop("NVP_HOME",None)
+            else:os.environ["NVP_HOME"]=old_home
+
+
 def run_visible_window_smoke():
     """Installed real WebView2 + native OpenUSD source panel smoke.
 
@@ -523,14 +595,18 @@ def main(argv=None):
                         help="Reopen same project after fully exiting previous installed app")
     parser.add_argument("--smoke-window",action="store_true",
                         help="Launch a real native Windows WebView2 and verify page loaded")
+    parser.add_argument("--smoke-window-basic",action="store_true",
+                        help="Isolate actual installed EdgeChromium React load without native bridge")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
-            args.smoke_window,args.smoke_data_av))>1:
+            args.smoke_window,args.smoke_window_basic,args.smoke_data_av))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.smoke:
         return run_smoke()
+    if args.smoke_window_basic:
+        return run_basic_edge_window_smoke()
     if args.smoke_window:
         return run_visible_window_smoke()
     if args.smoke_data_av:
@@ -587,7 +663,19 @@ def _smoke_checkpoint(stage):
 
 def installed_smoke_entry():
     """Report packaged --windowed smoke exceptions through an opt-in CI file."""
+    stacks=None
     try:
+        if (os.environ.get("NVP_SMOKE_DIAGNOSTIC_PATH") and
+            ("--smoke-window" in sys.argv or
+             "--smoke-window-basic" in sys.argv)):
+            import faulthandler
+            target=Path(os.environ["NVP_SMOKE_DIAGNOSTIC_PATH"])
+            stack_path=target.with_name(target.stem+"-stacks.txt")
+            if stack_path.is_symlink() or stack_path.exists():
+                raise RuntimeError("Refusing existing native WebView2 thread-stack evidence")
+            stacks=stack_path.open("x",encoding="utf8")
+            faulthandler.enable(file=stacks,all_threads=True)
+            faulthandler.dump_traceback_later(30,repeat=True,file=stacks)
         _smoke_checkpoint("entry")
         return main()
     except Exception:
@@ -601,6 +689,12 @@ def installed_smoke_entry():
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(traceback.format_exc())
         raise
+    finally:
+        if stacks is not None:
+            import faulthandler
+            faulthandler.cancel_dump_traceback_later()
+            faulthandler.disable()
+            stacks.close()
 
 
 if __name__=="__main__":

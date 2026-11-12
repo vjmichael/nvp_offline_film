@@ -181,6 +181,21 @@ jobs:
         shell: pwsh
         run: |
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          # Do not confuse an EdgeChromium/React startup failure with a
+          # bug in NVP's native DesktopCameraBridge JS export.
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-basic-smoke-diagnostic.txt'
+          $basic=Start-Process -FilePath $installed -ArgumentList '--smoke-window-basic' -PassThru
+          $basicExit=124
+          if (-not $basic.WaitForExit(85000)) {
+            Write-Host 'Basic native EdgeChromium smoke exceeded its own bound'
+            $basic.Kill()
+          } else {
+            $basicExit=$basic.ExitCode
+          }
+          Write-Host "Basic EdgeChromium actual installed React smoke exit=$basicExit"
+          if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
+            Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH | Select-Object -Last 50
+          }
           $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-webview-smoke-diagnostic.txt'
           $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru
           if (-not $window.WaitForExit(180000)) {
@@ -195,11 +210,11 @@ jobs:
             $window.Kill()
             throw 'Native WebView2 visible Windows smoke timed out'
           }
-          if ($window.ExitCode -ne 0) {
+          if ($window.ExitCode -ne 0 -or $basicExit -ne 0) {
             if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
               Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH | Select-Object -Last 50
             }
-            throw 'Real desktop WebView2 window did not load; headless smoke alone cannot accept NVP alpha'
+            throw "Real installed WebView2/React/IPC acceptance failed; basic=$basicExit full=$($window.ExitCode)"
           }
       - name: Verify real installed exe under a native Windows Job Object
         shell: pwsh
@@ -239,6 +254,9 @@ jobs:
             ${{ runner.temp }}/nvp-w1g-post-rollback-smoke.txt
             ${{ runner.temp }}/nvp-w1g-webview-smoke-diagnostic.txt
             ${{ runner.temp }}/nvp-w1g-native-data-av-smoke-diagnostic.txt
+            ${{ runner.temp }}/nvp-w1g-basic-smoke-diagnostic.txt
+            ${{ runner.temp }}/nvp-w1g-basic-smoke-diagnostic-stacks.txt
+            ${{ runner.temp }}/nvp-w1g-webview-smoke-diagnostic-stacks.txt
             ${{ runner.temp }}/nvp-w1g-staged.json
             ${{ runner.temp }}/nvp-w1g-windows-nsis-matrix.json
             ${{ runner.temp }}/nvp-w1g-original-films.json
