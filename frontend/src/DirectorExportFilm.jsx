@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import './director-export-film.css';
 import DirectorFinishingRoom from './DirectorFinishingRoom.jsx';
+import DirectorLongFilmExport from './DirectorLongFilmExport.jsx';
 
 const active=new Set(['queued','rendering','verifying']);
 const baseProject=id=>'/api/projects/'+encodeURIComponent(id);
@@ -119,11 +120,13 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
       <button className="film-secondary" onClick={onEditFilm}>
         Open Film Editing</button>
     </div>}
-    {edit?.clips?.length>0&&!withinProfile&&<div className="director-export-needs">
+    {edit?.clips?.length>0&&!withinProfile&&(length<=30||length>10800)&&
+      <div className="director-export-needs">
       <h3>Finish your first short film</h3>
-      <p>This first delivery format supports up to 30 seconds. Trim the
-        edited movie to a complete picture frame in Post-Production before
-        finishing it. Longer films will be supported as production expands.</p>
+      <p>The short-film export is available for 30 seconds or less.
+        The separate long-film renderer supports up to three hours,
+        ending on a complete picture frame. Adjust the edit to match
+        either profile before exporting.</p>
       <button className="film-secondary" onClick={onEditFilm}>
         Adjust the Edit</button>
     </div>}
@@ -132,7 +135,11 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
       <DirectorFinishingRoom
         key={movie.id+':finish:'+edit.revision}
         movie={movie} editRevision={edit.revision}
-        onChanged={()=>{}}/>}
+        durationSeconds={length} onChanged={()=>{}}/>}
+    {edit?.revision>0&&edit?.clips?.length>0&&length>30&&
+      <DirectorLongFilmExport movie={movie} edit={edit}
+        disabled={busy||hasActive}/>}
+
     {ready&&<div className="director-export-go">
       <h3>Your movie is ready to finish</h3>
       <p className="film-muted">Optional final color and sound choices
