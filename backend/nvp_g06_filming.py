@@ -372,6 +372,27 @@ class G06Filming:
                         "recording_part_number":part,
                         "recording_part_count":total,
                         "recording_source_start_sample":member["first_sample"]})
+        sealed_members=db.execute("""SELECT 1 FROM sqlite_master WHERE
+            type='table' AND name='w1e_sealed_clip_members'""").fetchone()
+        if sealed_members:
+            for clip in clips:
+                member=db.execute("""SELECT recording_id,first_sample FROM
+                    w1e_sealed_clip_members WHERE project_id=? AND
+                    scene_id=? AND clip_id=?""",
+                    (pid,scene_id,clip["id"])).fetchone()
+                if member:
+                    count=db.execute("""SELECT count(*) FROM
+                        w1e_sealed_clip_members WHERE recording_id=?""",
+                        (member["recording_id"],)).fetchone()[0]
+                    part=db.execute("""SELECT count(*) FROM
+                        w1e_sealed_clip_members WHERE recording_id=?
+                        AND first_sample<=?""",
+                        (member["recording_id"],member["first_sample"])).fetchone()[0]
+                    clip.update({"recording_id":member["recording_id"],
+                        "recording_part_number":part,
+                        "recording_part_count":count,
+                        "recording_source_start_sample":member["first_sample"],
+                        "encrypted_original":True})
         takes=[{"id":r["take_id"],"digest":r["take_sha256"],
                 "created_at":r["frozen_at"]}
                 for r in db.execute("""SELECT take_id,take_sha256,frozen_at
@@ -774,10 +795,21 @@ class G06Filming:
                     WHERE project_id=? AND scene_id=? AND id=?""",
                     (pid,scene_id,clip_id)).fetchone()
                 if clip is None:raise KeyError("Original recording not in this scene")
-                if (_sha(clip["pcm"])!=clip["pcm_sha256"] or
-                    clip["sample_rate"]!=RATE or clip["channels"]!=1 or
-                    len(clip["pcm"])!=clip["sample_count"]*2):
+                from backend.nvp_g06_sealed_capture import (
+                    original_identity,VerifiedSealedPCM)
+                sealed=original_identity(db,pid,scene_id,clip_id)
+                if sealed:
+                    if self.g05.g04.live is None or len(clip["pcm"])!=0:
+                        raise RuntimeError("A protected recording cannot be opened as plaintext")
+                    source_pcm=VerifiedSealedPCM(
+                        self.g05.g04.live,self.g05.g04.token,db,pid,scene_id,clip_id)
+                    if source_pcm.verified_sha256!=clip["pcm_sha256"]:
+                        raise RuntimeError("Protected original PCM failed its SHA")
+                elif _sha(clip["pcm"])!=clip["pcm_sha256"] or (
+                        len(clip["pcm"])!=clip["sample_count"]*2):
                     raise RuntimeError("Original source audio failed its integrity check")
+                if clip["sample_rate"]!=RATE or clip["channels"]!=1:
+                    raise RuntimeError("Original microphone sample format changed")
                 start_tick=_seconds(clip_starts.get(clip_id,"0"))
                 duration_tick=clip["sample_count"]*SAMPLE_TICKS
                 if start_tick+duration_tick>working["duration_tick"]:
@@ -789,6 +821,8 @@ class G06Filming:
                     raise RuntimeError("Recorded character is no longer in the frozen stage")
                 from backend.nvp_g06_chunked_capture import recording_member
                 member=recording_member(db,pid,scene_id,clip_id)
+                if sealed and member is not None:
+                    raise RuntimeError("Original audio cannot mix encrypted and ordinary custody")
                 audio.append({"clip_id":clip_id,"actor_id":clip["actor_id"],
                     "emitter_path":"/World/Objects/"+emitter["id"]
                         if emitter else "/World",
@@ -797,7 +831,7 @@ class G06Filming:
                     "sample_rate":RATE,"channels":1,
                     "sample_count":clip["sample_count"],"start_tick":start_tick,
                     "duration_tick":duration_tick,
-                    **(member or {})})
+                    **(sealed or member or {})})
             take_id=uuid.uuid4().hex
             document={"format":TAKE_FORMAT,"project_id":pid,
                 "scene_id":scene_id,"source_stage_revision":head["revision"],
@@ -901,10 +935,17 @@ class G06Filming:
             if (clip is None or clip["actor_id"]!=item["actor_id"] or
                 clip["pcm_sha256"]!=item["pcm_sha256"] or
                 clip["sample_count"]!=item["sample_count"] or
-                clip["pcm_bytes"]!=item["sample_count"]*2):
+                (clip["pcm_bytes"]!=item["sample_count"]*2 and not (
+                    clip["pcm_bytes"]==0 and
+                    item.get("original_recording_id") is not None))):
                 raise RuntimeError("The original recording's identity has changed")
             from backend.nvp_g06_chunked_capture import recording_member
             member=recording_member(db,pid,row["scene_id"],item["clip_id"])
+            from backend.nvp_g06_sealed_capture import original_identity
+            sealed=original_identity(db,pid,row["scene_id"],item["clip_id"])
+            if sealed and member:
+                raise RuntimeError("Original source custody is ambiguous")
+            member=sealed or member
             for key in ("original_recording_id","recording_sha256",
                         "recording_manifest_sha256",
                         "recording_source_start_sample"):
@@ -943,13 +984,29 @@ class G06Filming:
                 sample_count FROM g06_original_pcm
                 WHERE project_id=? AND scene_id=? AND id=?""",
                 (pid,row["scene_id"],entry["clip_id"])).fetchone()
+            from backend.nvp_g06_sealed_capture import (
+                original_identity,VerifiedSealedPCM)
+            if clip is None:
+                raise RuntimeError("Original sound was removed")
+            sealed=original_identity(db,pid,row["scene_id"],entry["clip_id"])
+            if sealed:
+                if self.g05.g04.live is None or len(clip["pcm"])!=0:
+                    raise RuntimeError("Protected original sound cannot be unsealed here")
+                original=VerifiedSealedPCM(self.g05.g04.live,
+                    self.g05.g04.token,db,pid,row["scene_id"],entry["clip_id"])
+                if original.verified_sha256!=clip["pcm_sha256"]:
+                    raise RuntimeError("Frozen original PCM failed authentication")
+            elif _sha(clip["pcm"])!=clip["pcm_sha256"]:
+                raise RuntimeError("Take's original PCM was changed")
             if (clip is None or clip["actor_id"]!=entry["actor_id"] or
-                _sha(clip["pcm"])!=clip["pcm_sha256"] or
                 clip["pcm_sha256"]!=entry["pcm_sha256"] or
                 clip["sample_count"]!=entry["sample_count"]):
                 raise RuntimeError("Take's original recorded sound is missing")
             from backend.nvp_g06_chunked_capture import recording_member
             member=recording_member(db,pid,row["scene_id"],entry["clip_id"])
+            if sealed and member:
+                raise RuntimeError("Conflicting custody for frozen source")
+            member=sealed or member
             for key in ("original_recording_id","recording_sha256",
                         "recording_manifest_sha256",
                         "recording_source_start_sample"):
