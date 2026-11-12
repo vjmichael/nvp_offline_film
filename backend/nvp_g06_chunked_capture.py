@@ -118,6 +118,24 @@ def recording_member(db,pid,scene_id,clip_id):
             segment["sample_count"]>RATE*120):
             raise RuntimeError("Original audio segments lost their sample order")
         cursor+=segment["sample_count"]
+        origin=db.execute("""SELECT m.recording_id,m.first_sample,
+            m.sample_count,m.pcm_sha256,o.pcm_sha256 AS source_sha256,
+            o.sample_count AS original_samples,length(o.pcm) AS byte_count,
+            o.project_id,o.scene_id,o.actor_id
+            FROM g06_long_recording_members AS m
+            JOIN g06_original_pcm AS o ON o.id=m.clip_id
+            WHERE m.clip_id=? AND m.project_id=? AND m.scene_id=?""",
+            (segment["clip_id"],pid,scene_id)).fetchone()
+        if (origin is None or origin["recording_id"]!=part["recording_id"] or
+            origin["first_sample"]!=segment["first_sample"] or
+            origin["sample_count"]!=segment["sample_count"] or
+            origin["original_samples"]!=segment["sample_count"] or
+            origin["pcm_sha256"]!=segment["pcm_sha256"] or
+            origin["source_sha256"]!=segment["pcm_sha256"] or
+            origin["byte_count"]!=segment["sample_count"]*2 or
+            origin["project_id"]!=pid or origin["scene_id"]!=scene_id or
+            origin["actor_id"]!=manifest["actor_id"]):
+            raise RuntimeError("A stream segment source or mapping changed")
         if segment["clip_id"]==clip_id:
             if (found or segment["pcm_sha256"]!=part["pcm_sha256"] or
                 segment["sample_count"]!=part["sample_count"] or
