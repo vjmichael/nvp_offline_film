@@ -42,6 +42,7 @@ def _schema(db):
         look_sha256 TEXT NOT NULL DEFAULT '',
         actors_sha256 TEXT NOT NULL DEFAULT '',
         acoustics_sha256 TEXT NOT NULL DEFAULT '',
+        finishing_sha256 TEXT NOT NULL DEFAULT '',
         expected_frames INTEGER NOT NULL,
         status TEXT NOT NULL,output_sha256 TEXT,output_bytes INTEGER,
         receipt_json TEXT,issue TEXT,created_at TEXT NOT NULL,
@@ -57,6 +58,9 @@ def _schema(db):
     if "acoustics_sha256" not in {
           r["name"] for r in db.execute("PRAGMA table_info(g08_sealed_export_jobs)") }:
         db.execute("ALTER TABLE g08_sealed_export_jobs ADD COLUMN acoustics_sha256 TEXT NOT NULL DEFAULT ''")
+    if "finishing_sha256" not in {
+        r["name"] for r in db.execute("PRAGMA table_info(g08_sealed_export_jobs)") }:
+        db.execute("ALTER TABLE g08_sealed_export_jobs ADD COLUMN finishing_sha256 TEXT NOT NULL DEFAULT ''")
     db.execute("""CREATE TABLE IF NOT EXISTS g08_sealed_delivery_assets(
         job_id TEXT PRIMARY KEY,opaque_id TEXT NOT NULL,
         digest TEXT NOT NULL,size_bytes INTEGER NOT NULL,
@@ -200,12 +204,14 @@ class G08SealedDelivery:
                 raise RuntimeError("A movie is already being finished")
             db.execute("""INSERT INTO g08_sealed_export_jobs
                 (id,edit_revision,edit_sha256,look_sha256,actors_sha256,
-                 acoustics_sha256,expected_frames,status,created_at,updated_at)
-                VALUES (?,?,?,?,?, ?,?,'queued',?,?)""",
+                 acoustics_sha256,finishing_sha256,
+                 expected_frames,status,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,'queued',?,?)""",
                 (job,expected_revision,assembly["edit_document_sha256"],
                  assembly["production_looks_sha256"],
                  assembly["actor_performances_sha256"],
                  assembly["acoustic_looks_sha256"],
+                 assembly["finishing_sha256"],
                  length//TICKS_FRAME,_now(),_now()))
         self._change(pid,token,enqueue)
         runner=threading.Thread(target=self._run,
