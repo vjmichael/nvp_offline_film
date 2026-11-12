@@ -379,7 +379,8 @@ def _audio_frame(assembly,takes,start_sample,count):
             if actual_a>=actual_b:continue
             first=max(0,math.ceil((actual_a-start_tick)/TICKS_SAMPLE))
             last=min(count,math.ceil((actual_b-start_tick)/TICKS_SAMPLE))
-            pcm=memoryview(recorded["pcm16le"])
+            # Original bytes or SHA-verified on-demand SQLite PCM pages.
+            pcm=recorded["pcm16le"]
             left,right=_stereo_gain(recorded["emitter_position"],seg["camera"],
                                     edit["pan"],edit["spatial"])
             scalar=edit["gain"]*assembly["master_gain"]
