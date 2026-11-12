@@ -131,6 +131,7 @@ class NativeSceneSoundCapture:
         preflight_events=set()
         preflight_sources=set()
         minimum_unclocked_pcm_bytes=0
+        expected_samples_by_source={}
         for entry in frozen_recordings:
             eid=_id(entry["event_id"],"recorded sound event")
             sid=_id(entry["source_id"],"original audio source")
@@ -171,6 +172,7 @@ class NativeSceneSoundCapture:
             # Clock-attested sources use their separately verified sample count.
             expected_samples=(clock_map["source_sample_count"] if clock_map is not None
                               else (end-start+SAMPLE_TICK-1)//SAMPLE_TICK)
+            expected_samples_by_source[sid]=expected_samples
             minimum_unclocked_pcm_bytes+=expected_samples*2
             if expected_samples*2>MAX_CHUNK_BYTES*MAX_CHUNKS:
                 raise ValueError("Captured PCM duration exceeds source spool budget")
@@ -242,9 +244,10 @@ class NativeSceneSoundCapture:
                         not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2 or
                         count>=MAX_CHUNKS):
                         raise ValueError("Invalid captured PCM16LE chunk")
-                    # Refuse unclocked surplus before writing the offending chunk.
-                    if ("source_sync" not in entry and
-                        samples+len(chunk)//2>(end-start+SAMPLE_TICK-1)//SAMPLE_TICK):
+                    # Refuse surplus from either clock-attested or unclocked
+                    # recordings before spilling the offending chunk to disk.
+                    # The clocked bound was independently verified at preflight.
+                    if samples+len(chunk)//2>expected_samples_by_source[sid]:
                         raise ValueError("Captured PCM sample count does not match its Film Time event")
                     batch_pcm_bytes+=len(chunk)
                     if batch_pcm_bytes>MAX_CHUNK_BYTES*MAX_CHUNKS:
@@ -258,11 +261,6 @@ class NativeSceneSoundCapture:
                     digests.append(hashlib.sha256(chunk).digest())
                     original_digest.update(chunk)
                     samples+=len(chunk)//2
-                    # Reject excess samples during ingestion, not after a potentially
-                    # multi-gigabyte spool. Clock-attested sources retain their
-                    # independent exact sample-count verification below.
-                    if "source_sync" not in entry and samples>(end-start+SAMPLE_TICK-1)//SAMPLE_TICK:
-                        raise ValueError("Captured PCM sample count does not match its Film Time event")
                     count+=1
                 clock=(verified_original_clock(
                     self.index,project_id,sid,start,end,
