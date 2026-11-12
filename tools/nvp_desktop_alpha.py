@@ -269,6 +269,17 @@ def run_visible_window_smoke():
         _smoke_checkpoint("visible_after_take_freeze")
         server,worker,port,sock=serve(app)
         _smoke_checkpoint("visible_after_serve")
+        # Prove the actual installed loopback server, HTML and original
+        # project catalog BEFORE attributing a browser failure to WebView2.
+        import json
+        with urllib.request.urlopen("http://127.0.0.1:"+str(port)+"/",timeout=8) as page:
+            if "assets/" not in page.read().decode("utf8"):
+                raise RuntimeError("Installed WebView2 target lacks bundled React HTML")
+        _smoke_checkpoint("visible_loopback_html_verified")
+        with urllib.request.urlopen("http://127.0.0.1:"+str(port)+"/api/status",timeout=8) as page:
+            if json.load(page).get("status")!="ready":
+                raise RuntimeError("Installed local NVP API unavailable to WebView2")
+        _smoke_checkpoint("visible_loopback_api_verified")
     except BaseException:
         if old_home is None: os.environ.pop("NVP_HOME",None)
         else: os.environ["NVP_HOME"]=old_home
@@ -287,11 +298,46 @@ def run_visible_window_smoke():
         bridge._attach_window(window)
         _smoke_checkpoint("visible_after_create_window")
         window.events.loaded += lambda:(_smoke_checkpoint("visible_page_loaded_event"), loaded.set())
+        # WebView2 on a noninteractive Windows service runner may create
+        # a Python window object but never receive a real shown/load event.
+        # Distinguish that state from a server/React/IPC failure.
+        window.events.before_show += lambda:_smoke_checkpoint("visible_before_show_event")
+        window.events.initialized += lambda renderer:_smoke_checkpoint(
+            "visible_renderer_initialized_"+str(renderer))
+        window.events.shown += lambda:_smoke_checkpoint("visible_native_shown_event")
+        window.events.before_load += lambda:_smoke_checkpoint("visible_before_load_event")
+        window.events.closed += lambda:_smoke_checkpoint("visible_native_closed_event")
         def inspect_and_close():
             _smoke_checkpoint("visible_inspector_enter")
             try:
                 if not loaded.wait(timeout=25):
-                    raise RuntimeError("Native WebView2 did not fire page-loaded event")
+                    _smoke_checkpoint("visible_loaded_event_timeout")
+                    # Some WebView2 hosts omit loaded callback despite a
+                    # working DOM. Probe a REAL React mount, never a fake
+                    # success. Bound the COM call: a broken renderer must not
+                    # hang the smoke process for minutes.
+                    probe_done=Event()
+                    probe={"mounted":False}
+                    def inspect_loaded_dom():
+                        try:
+                            probe["mounted"]=window.evaluate_js(
+                                "Boolean(document.querySelector('#root') && "
+                                "document.querySelector('#root').children.length > 0)") is True
+                        except BaseException as exc:
+                            probe["error_type"]=type(exc).__name__
+                        finally:
+                            probe_done.set()
+                    probe_thread=threading.Thread(
+                        target=inspect_loaded_dom,daemon=True,
+                        name="NVP WebView2 bounded DOM recovery probe")
+                    probe_thread.start()
+                    if not probe_done.wait(timeout=5):
+                        raise RuntimeError(
+                            "Native WebView2 never emitted loaded and COM DOM probe stalled")
+                    if not probe["mounted"]:
+                        raise RuntimeError(
+                            "Native WebView2 neither emitted loaded nor mounted real React DOM")
+                    _smoke_checkpoint("visible_dom_recovered_without_loaded_event")
                 _smoke_checkpoint("visible_inspector_page_ready")
                 # HTML loaded is insufficient: require actual React DOM mount.
                 deadline=time.monotonic()+20
@@ -418,9 +464,31 @@ def run_visible_window_smoke():
                     raise RuntimeError("Bundled NVP React interface did not render")
             except Exception as exc:
                 result["failure"]=str(exc)
+                _smoke_checkpoint("visible_inspector_failed_"+type(exc).__name__)
             finally:
                 _smoke_checkpoint("visible_before_window_destroy")
-                window.destroy()
+                # An uninitialized EdgeChromium COM host can deadlock when
+                # destroy() is called synchronously from the pywebview
+                # inspection callback. Bound it, fail closed, and leave the
+                # surrounding OS Job/CI owner to reap the test process.
+                close_done=Event()
+                def close_native_window():
+                    try:
+                        window.destroy()
+                    except BaseException as exc:
+                        result["destroy_error"]=type(exc).__name__
+                    finally:
+                        close_done.set()
+                closer=threading.Thread(
+                    target=close_native_window,daemon=True,
+                    name="NVP WebView2 bounded smoke shutdown")
+                closer.start()
+                if not close_done.wait(timeout=6):
+                    _smoke_checkpoint("visible_destroy_stalled_fail_closed")
+                    os._exit(75)  # Test-only isolated process, never user UI.
+                if result.get("destroy_error"):
+                    _smoke_checkpoint("visible_destroy_failed")
+                    os._exit(76)
                 _smoke_checkpoint("visible_after_window_destroy")
         _smoke_checkpoint("visible_before_webview_start")
         webview.start(func=inspect_and_close,gui="edgechromium",debug=False)

@@ -184,6 +184,10 @@ jobs:
           $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-webview-smoke-diagnostic.txt'
           $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru
           if (-not $window.WaitForExit(180000)) {
+            Write-Host 'Windows native WebView2 host process/window/session on timeout:'
+            $window.Refresh()
+            Write-Host "NVP smoke pid=$($window.Id) session=$($window.SessionId) title='$($window.MainWindowTitle)' HWND=$($window.MainWindowHandle)"
+            Write-Host "CI session=$((Get-Process -Id $PID).SessionId) interactive=$([Environment]::UserInteractive)"
             Write-Host 'Native window bootstrap stages before timeout:'
             if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
               Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH | Select-Object -Last 50
