@@ -631,7 +631,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         def guarded_pcm():
             consumed.append(True)
             raise AssertionError("Overflow must not read recording PCM")
-            yield b"\\x00\\x00"
+            yield bytes(2)
         req["recordings"][0]["pcm_chunks"]=guarded_pcm()
         with patch.object(filming,"MAX_CHECKPOINTS",1):
             with self.assertRaisesRegex(ValueError,"checkpoint capacity"):
