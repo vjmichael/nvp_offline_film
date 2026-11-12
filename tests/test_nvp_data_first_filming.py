@@ -1130,6 +1130,30 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+    def test_later_invalid_metadata_does_not_invoke_earlier_pcm_iterator(self):
+        req=self.payload()
+        first=req["recordings"][0]
+        second=dict(first)
+        second.update(event_id="LaterSoundEvent",source_id="LaterOriginalSound",
+                      usd_prim_path="/World/NotThere")
+        calls=[]
+        class DeviceIterable:
+            def __iter__(self):
+                calls.append("device iterator opened")
+                return iter([self_original])
+        self_original=self.original
+        first["pcm_chunks"]=DeviceIterable()
+        second["pcm_chunks"]=[self.original]
+        req["recordings"]=[first,second]
+        with self.assertRaisesRegex(RuntimeError,"Sound emitter"):
+            self.capture.capture(**req)
+        self.assertEqual(calls,[])
+        for identity in ("NewRecordedSpeech","LaterOriginalSound",
+                         "FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
