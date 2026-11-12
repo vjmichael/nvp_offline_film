@@ -17,6 +17,7 @@ from __future__ import annotations
 import math
 import struct
 from hashlib import sha256
+from backend.nvp_g09e_pcm import verified_pcm_digest
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 from backend.nvp_g09c_acoustics import _base,_json,_sha
 
@@ -214,7 +215,7 @@ class SpatialFilmMixer:
                 if item is None:
                     raise RuntimeError("A film sound decision lost its original recording")
                 if (len(item["pcm16le"])!=item["sample_count"]*2 or
-                    sha256(item["pcm16le"]).hexdigest()!=item["pcm_sha256"]):
+                    verified_pcm_digest(item["pcm16le"])!=item["pcm_sha256"]):
                     raise RuntimeError("Original audio bytes changed after filming")
             approved_set=assembly.get("production_looks",{}).get(take_id)
             pieces=(approved_set["look"]["set_pieces"]
