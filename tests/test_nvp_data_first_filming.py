@@ -46,6 +46,27 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             }]
         )
 
+    def test_direct_capture_enforces_aggregate_pcm_budget_before_publication(self):
+        from unittest.mock import patch
+        import backend.nvp_data_first_filming as filming
+        req=self.payload()
+        first=req["recordings"][0]
+        first["pcm_chunks"]=[self.original]
+        second=dict(first)
+        second.update(event_id="Speech002",source_id="SecondOriginalSpeech")
+        req["recordings"].append(second)
+        # Each stream fits the artificial one-chunk budget, but the batch
+        # exceeds it. No source, timeline, or Take may be published.
+        with patch.object(filming,"MAX_CHUNK_BYTES",len(self.original)), patch.object(
+                filming,"MAX_CHUNKS",1):
+            with self.assertRaisesRegex(ValueError,"batch exceeds spool budget"):
+                self.capture.capture(**req)
+        for identity in ("NewRecordedSpeech","SecondOriginalSpeech",
+                         "FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_native_capture_freezes_original_sound_and_camera_in_same_take(self):
         receipt=self.capture.capture(**self.payload())
         self.assertEqual(receipt["status"],"FROZEN_ORIGINAL_SCENE_SOUND_TAKE")
