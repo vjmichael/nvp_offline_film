@@ -71,6 +71,23 @@ def _api():
     k.CloseHandle.argtypes=[W.HANDLE]
     return k,u,a
 
+def _sanitized_drive_environment(exe,work):
+    """CreateProcessW cross-drive cwd entries without leaking host paths.
+
+    On Windows a custom Unicode environment block must supply =C:=C:\\
+    and =D:=D:\\ when a pinned EXE and disposable cwd span two drives.
+    These root-only entries are not host secrets or extra capabilities.
+    """
+    import ntpath
+    roots=set()
+    for source in (str(exe),str(work)):
+        drive,_=ntpath.splitdrive(source)
+        if not re.fullmatch(r"[A-Za-z]:",drive):
+            raise AppContainerFailure("AppContainer path has no trusted local drive")
+        roots.add(drive.upper())
+    return ["="+drive+"="+drive+"\\" for drive in sorted(roots)]
+
+
 def _acl(path,sid,permission,recursive=False,remove=False):
     if not re.fullmatch(r"S-1-15-2-(?:[0-9]+-){5,9}[0-9]+",sid):
         raise AppContainerFailure("Untrusted AppContainer SID")
@@ -318,8 +335,15 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
             clean=dict(env or {})
             clean.update({"TEMP":str(work),"TMP":str(work),
                           "PYTHONDONTWRITEBYTECODE":"1"})
-            block=C.create_unicode_buffer("\0".join(
-                key+"="+value for key,value in sorted(clean.items()))+"\0\0")
+            # Drive-specific =C:/=D: entries MUST precede normal
+            # variables in a custom Unicode CreateProcessW block. An
+            # installed C: executable + D: disposable cwd otherwise fails
+            # native Windows spawning with ERROR_ENVVAR_NOT_FOUND (203).
+            # Only root paths are conveyed, never user directories.
+            roots=_sanitized_drive_environment(exe,work)
+            pairs=[key+"="+value for key,value in
+                   sorted(clean.items(),key=lambda x:x[0].casefold())]
+            block=C.create_unicode_buffer("\0".join(roots+pairs)+"\0\0")
             pi=_ProcessInfo()
             flags=0x4|0x08000000|0x400|0x80000
             if not kernel.CreateProcessW(str(exe),argv,None,None,True,flags,

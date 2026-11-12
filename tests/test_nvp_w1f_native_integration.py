@@ -59,6 +59,24 @@ class NativeACLReceiptContract(unittest.TestCase):
                      "S-1-15-2-100-200-300-400-500-600","R")
 
 
+class NativeDriveEnvironmentContract(unittest.TestCase):
+    def test_fixed_windows_drive_entries_do_not_leak_workspace(self):
+        from backend.nvp_g03_windows_appcontainer import _sanitized_drive_environment
+        self.assertEqual(_sanitized_drive_environment(
+            r"C:\hostedtoolcache\NVP.exe",r"D:\a\nvp-private-work"),
+            ["=C:=C:\\","=D:=D:\\"])
+        self.assertEqual(_sanitized_drive_environment(
+            r"C:\Program Files\NVP\NVP.exe",r"C:\Users\owned-work"),
+            ["=C:=C:\\"])
+
+    def test_unc_paths_never_enter_private_worker_environment(self):
+        from backend.nvp_g03_windows_appcontainer import (
+            _sanitized_drive_environment,AppContainerFailure)
+        with self.assertRaises(AppContainerFailure):
+            _sanitized_drive_environment(
+                r"\\other-host\unreviewed.exe",r"D:\approved-working")
+
+
 class CrossPlatformSourceAndCustody(unittest.TestCase):
     def test_exact_reel_clock_and_nonzero_origin(self):
         self.assertEqual(chunk_bounds(MAX_FRAMES,0),(0,240))
