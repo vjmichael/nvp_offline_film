@@ -241,8 +241,8 @@ class NativeSceneSoundCapture:
                     if "source_sync" in entry else None)
                 required=(clock["source_sample_count"] if clock is not None
                           else (end-start+SAMPLE_TICK-1)//SAMPLE_TICK)
-                if not count or samples<required:
-                    raise ValueError("Captured PCM is shorter than its Film Time event")
+                if not count or samples != required:
+                    raise ValueError("Captured PCM sample count does not match its Film Time event")
                 # Flush buffered data before declaring the recording validated.
                 # A delayed disk write failure must not be discovered only
                 # after an earlier immutable source has been published.
