@@ -136,6 +136,17 @@ class CommittedEditedThirtySecondFilm(TestCase):
         with self.assertRaisesRegex(RuntimeError, "shifted or retimed"):
             self.exporter().preflight(self.pid, "EditedFilm", 1)
 
+    def test_unverified_stage_never_becomes_final_movie(self):
+        with patch("backend.nvp_int02_edited_film.FrozenSceneAV", FakeOriginalTake), \
+             patch("backend.nvp_int02_edited_film.verify_edited_film",
+                   side_effect=RuntimeError("independent source verification failed")):
+            with self.assertRaisesRegex(RuntimeError, "source verification failed"):
+                self.exporter().export(
+                    self.pid, "EditedFilm", 1, "UnverifiedStage",
+                    self.parent, listener_path="/World/Camera")
+        self.assertFalse((self.parent/"NVPEdit30_UnverifiedStage").exists())
+        self.assertEqual(list(self.parent.iterdir()), [])
+
     def test_cancel_does_not_publish_partial_package(self):
         with patch("backend.nvp_int02_edited_film.FrozenSceneAV", FakeOriginalTake):
             exporter = NativeEditedFilm30s(

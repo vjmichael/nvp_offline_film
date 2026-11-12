@@ -66,6 +66,47 @@ class NativeInstallerRecoveryContracts(unittest.TestCase):
                 owner.rollback()
 
 
+
+    def test_only_independently_accepted_upgrade_may_archive_previous_program(self):
+        from tools.nvp_w1g_nsis_closeout import archive_accepted_previous
+        with TemporaryDirectory() as temp:
+            programs,films,journal=self.roots(Path(temp))
+            owner=OwnedNSISRecovery(
+                programs,films,journal,native_approve=lambda scope:True,
+                os_workers_stopped=lambda:True)
+            with self.assertRaisesRegex(RuntimeError,"not been accepted"):
+                archive_accepted_previous(owner,lambda scope: {
+                    "current_runtime_sha256":scope["current_sha256"],
+                    "installed_launch_verified":True,
+                    "restart_verified":False,
+                    "original_films_verified":True})
+            self.assertTrue((programs/"NVP.previous").is_dir())
+            done=archive_accepted_previous(owner,lambda scope: {
+                "current_runtime_sha256":scope["current_sha256"],
+                "installed_launch_verified":True,
+                "restart_verified":True,
+                "original_films_verified":True})
+            self.assertEqual(done["status"],
+                             "NSIS_PREVIOUS_VERSION_PRESERVED_IN_HISTORY")
+            self.assertFalse((programs/"NVP.previous").exists())
+            self.assertEqual((films/"immutable.scene").read_bytes(),b"original film")
+
+    def test_failed_nsis_stage_quarantined_without_deleting_originals(self):
+        from tools.nvp_w1g_nsis_closeout import quarantine_failed_stage
+        with TemporaryDirectory() as temp:
+            programs,films,journal=self.roots(Path(temp))
+            (programs/"NVP.previous").rename(programs/"NVP.pending")
+            owner=OwnedNSISRecovery(
+                programs,films,journal,native_approve=lambda scope:True,
+                os_workers_stopped=lambda:True)
+            receipt=quarantine_failed_stage(owner)
+            self.assertEqual(receipt["status"],
+                             "NSIS_FAILED_CANDIDATE_PRESERVED")
+            self.assertFalse((programs/"NVP.pending").exists())
+            self.assertTrue((programs/"NVP"/"NVP.exe").is_file())
+            self.assertEqual((films/"immutable.scene").read_bytes(),b"original film")
+
+
 class ProtectedBinaryExecutionContracts(unittest.TestCase):
     def setup_roster(self,base):
         bundle=base/"bundle"

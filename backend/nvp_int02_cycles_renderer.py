@@ -74,7 +74,10 @@ def static_composed_usd(index: FilmIndex, project_id, take_id, take_sha,
                 if value is None:
                     raise RuntimeError("Original USD timed attribute cannot be sampled")
                 for t in times:
-                    attr.ClearAtTime(t)
+                    if not attr.ClearAtTime(Usd.TimeCode(float(t))):
+                        raise RuntimeError("Could not clear original USD animation time sample")
+                if attr.GetTimeSamples():
+                    raise RuntimeError("Unbaked animation samples remain in native render source")
                 if not attr.Set(value):
                     raise RuntimeError("Could not bake exact-time USD property")
     text=baked.GetRootLayer().ExportToString()
@@ -214,7 +217,11 @@ def build_native_cycles_renderer(index:FilmIndex,project_id,*,plaintext_consent=
         blender_sha256=sha_file(blender),
         blender_version=_blender_version(blender),
         activity_ledger=ledger)
-    supervisor.recover_interrupted()
+    unresolved=supervisor.recover_interrupted()
+    if unresolved:
+        raise RuntimeError(
+            "Previous Cycles workers have unverified OS custody after restart; "+
+            "do not admit new native frames until original kernel reconciliation")
     scriptroot=Path(getattr(sys,"_MEIPASS",Path(__file__).resolve().parents[1]))
     script=scriptroot/"tools"/"nvp_int02_cycles_frame_worker.py"
     return NativeCyclesOriginalRenderer(

@@ -90,3 +90,37 @@ physical film still require genuine execution and independent results.
 
 Status: INT-02C PARTIAL/OPEN; W1-G PARTIAL/OPEN. W1-F physical/sustained
 acceptance and original DA-03 filming/custody gates remain outstanding.
+
+## Follow-on safety corrections (same development branch, SOURCE ONLY)
+
+- INT-02 now independently reopens all staged picture and original PCM
+  samples BEFORE any target-directory publication, then reopens the final
+  published derivative again. Failed stage verification leaves no final film.
+- SHOT-01 composition refuses source emitter/non-camera translation until
+  the original PCM acoustic observer is composited. The Cycles worker uses
+  explicit valid Blender USD importer controls and rejects remaining
+  animated time samples after exact-tick static USD baking. Blender API
+  compatibility was checked against published docs; real native execution
+  remains unverified.
+- NSIS requires marker CONTENT verification (not merely presence), a
+  newer declared X.Y.Z release rather than a same-version rewrite/downgrade,
+  and staged program tree promotion. Recovery includes a stranded
+  pre-promotion previous program and a separate human/OS-approved historical
+  archive or quarantine of failed program-only artifacts. No film files are
+  recursively removed.
+- The release helper allows a version specified by NVP_RELEASE_VERSION and
+  rejects malformed values. The prior installed release is not discarded
+  until independently accepted by a real installed launch/restart witness.
+- New test cases are SOURCE ONLY: staged-film denial, stranded NSIS
+  restoration, refusal of unaccepted previous-version closeout, and
+  quarantine preserving original film bytes. No real NSIS or OS kernel
+  tests were executed by these edits.
+
+
+- A Cycles restart that finds prior interrupted Blender jobs now REFUSES
+  to admit more render work until original OS custody is independently
+  reconciled. No journal-only or PID-only clearance is assumed.
+- The NSIS installer additionally offers interactive, owner-confirmed
+  recovery of a stranded previous program at startup. Silent mode refuses
+  uncertain recovery. These transitions still require a genuine compiler
+  and OS installation run before acceptance.

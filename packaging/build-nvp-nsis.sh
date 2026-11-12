@@ -60,10 +60,16 @@ python3 "$repo/tools/nvp_e2e01e_validate_installer_payload.py" \
 python3 "$repo/tools/nvp_w1g_native_package.py" build \
   --bundle "$bundle" --output "$repo/dist/NVP-W1G-native-build.json"
 
+version="${NVP_RELEASE_VERSION:-0.1.0}"
+if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Release version must be a reviewed X.Y.Z value" >&2
+  exit 8
+fi
+
 mkdir -p "$repo/dist"
 (
   cd "$repo"
-  "$compiler" -V3 "packaging/nvp-alpha.nsi"
+  "$compiler" "-DAPP_VERSION=$version" -V3 "packaging/nvp-alpha.nsi"
 )
 exe="$repo/dist/NVP-Alpha-Setup.exe"
 test -s "$exe" || { echo "NSIS did not produce an installer" >&2; exit 5; }

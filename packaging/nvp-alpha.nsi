@@ -5,8 +5,11 @@ Unicode true
 ; Invoke makensis from repository root; relative payload paths resolve from this script.
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "WordFunc.nsh"
 !define APP_NAME "NVP Alpha"
+!ifndef APP_VERSION
 !define APP_VERSION "0.1.0"
+!endif
 !define PRODUCT_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\NVPAlpha"
 !define PACKAGE_FILES "..\dist\NVP"
 Name "${APP_NAME}"
@@ -28,6 +31,37 @@ ShowUninstDetails show
 !define STAGE_DIR "$LOCALAPPDATA\Programs\NVP.pending"
 !define PREVIOUS_DIR "$LOCALAPPDATA\Programs\NVP.previous"
 !define MARKER "nvp-alpha-install.marker"
+; If Windows interrupted promotion after parking the original program,
+; the SAME installer can offer a visible, owner-confirmed restoration.
+; Silent install never authorizes an automatic ambiguous rollback.
+Function .onInit
+    IfFileExists "$LOCALAPPDATA\Programs\NVP" init_complete
+    IfFileExists "${PREVIOUS_DIR}" recover_previous init_complete
+    recover_previous:
+        IfFileExists "${PREVIOUS_DIR}\NVP.exe" +2 0
+            Abort "Stranded NVP previous executable missing; manual recovery needed"
+        IfFileExists "${PREVIOUS_DIR}\${MARKER}" +2 0
+            Abort "Stranded NVP previous ownership marker missing"
+        ClearErrors
+        FileOpen $0 "${PREVIOUS_DIR}\${MARKER}" r
+        IfErrors init_failed
+        FileRead $0 $1
+        FileClose $0
+        StrCmp $1 "NVP-ALPHA-INSTALL-v1" 0 init_failed
+        IfSilent init_failed
+        MessageBox MB_ICONEXCLAMATION|MB_YESNO \
+            "An NVP upgrade was interrupted. Restore the preserved previous program without touching your movies? (The staged candidate will remain for review.)" \
+            IDYES do_restore IDNO init_failed
+    do_restore:
+        ClearErrors
+        Rename "${PREVIOUS_DIR}" "$LOCALAPPDATA\Programs\NVP"
+        IfErrors init_failed
+        Abort "Previous NVP program restored. Review the pending candidate before another upgrade."
+    init_failed:
+        Abort "Interrupted NVP upgrade is unresolved; the prior program remains preserved"
+    init_complete:
+FunctionEnd
+
 Section "NVP Alpha" SEC_MAIN
     StrCmp "$INSTDIR" "$LOCALAPPDATA\Programs\NVP" safe_install
         Abort "Refusing non-dedicated NVP installation directory"
@@ -42,8 +76,27 @@ Section "NVP Alpha" SEC_MAIN
         IfFileExists "$INSTDIR\${MARKER}" upgrade_owned
             Abort "Existing NVP program directory lacks ownership marker"
     upgrade_owned:
+        ; Validate the actual marker bytes: mere existence does not
+        ; authorize renaming someone else's directory as NVP.
+        ClearErrors
+        FileOpen $0 "$INSTDIR\${MARKER}" r
+        IfErrors invalid_marker
+        FileRead $0 $2
+        FileClose $0
+        StrCmp $2 "NVP-ALPHA-INSTALL-v1" valid_marker invalid_marker
+    invalid_marker:
+        Abort "Existing NVP directory has invalid installer ownership marker"
+    valid_marker:
         IfFileExists "$INSTDIR\NVP.exe" +2 0
             Abort "Installed NVP executable missing; manual repair required"
+        ReadRegStr $2 HKCU "${PRODUCT_KEY}" "DisplayVersion"
+        StrCmp $2 "" missing_version
+        ${VersionCompare} "${APP_VERSION}" "$2" $3
+        StrCmp $3 "1" version_newer
+        Abort "NVP refuses same-version replacement or native runtime downgrade"
+    missing_version:
+        Abort "Existing NVP version unknown; native repair required"
+    version_newer:
         StrCpy $1 "upgrade"
     package_stage:
         ; A failed rename of a busy executable refuses the upgrade.

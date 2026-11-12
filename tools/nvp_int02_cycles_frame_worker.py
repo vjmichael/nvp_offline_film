@@ -68,6 +68,16 @@ def main(argv=None):
                 "import_materials","import_skeletons"):
         if key in available:
             options[key]=True
+    for key, value in {
+            "merge_parent_xform":False,
+            "set_frame_range":False,
+            "validate_meshes":True,
+            "import_visible_only":True,
+            "import_render":True,
+            "import_usd_preview":True,
+        }.items():
+        if key in available:
+            options[key]=value
     result=operator(**options)
     if "FINISHED" not in result:
         raise RuntimeError("Native Cycles OpenUSD scene import failed")

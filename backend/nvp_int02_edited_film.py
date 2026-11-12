@@ -287,9 +287,22 @@ class NativeEditedFilm30s:
                     json.dump(manifest, fd, sort_keys=True, separators=(",", ":"))
                     fd.flush()
                     os.fsync(fd.fileno())
+                # No final-name publication until an independent reader has
+                # reopened *every* picture and original PCM window from stage.
+                staged_proof = verify_edited_film(
+                    self.assembly, project_id, edit_id, edit_revision, staged)
+                if self.cancelled():
+                    raise InterruptedError("Creator cancelled before native film publication")
+                if target.exists() or target.is_symlink():
+                    raise FileExistsError("Another native film package took the output identity")
                 os.replace(staged, target)
+            # After publication, reopen independently a second time. A late
+            # rename/storage or source change cannot turn a partial output
+            # into a successful receipt. Uncertain output is never accepted.
             proof = verify_edited_film(self.assembly, project_id, edit_id,
                                        edit_revision, target)
+            if proof["manifest_sha256"] != staged_proof["manifest_sha256"]:
+                raise RuntimeError("Published film differs from verified staged derivative")
             self.progress("verified", OUTPUT_FRAMES)
             return {
                 "independent_reopen_status": proof["status"],

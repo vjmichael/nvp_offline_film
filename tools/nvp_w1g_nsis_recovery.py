@@ -133,8 +133,69 @@ class OwnedNSISRecovery:
         record["state"]="ROLLED_BACK"
         _write(self.journal,record)
 
+
+    def recover_stranded_previous(self):
+        """Recover NSIS's interrupted first/second rename without prior Python journal.
+
+        NSIS owns the original promotion operation, so a Windows power cut
+        can leave NVP.previous and NVP.pending while NVP itself is absent.
+        This recovery never deletes pending bytes or invents install success.
+        """
+        if self.journal.exists() or self.journal.is_symlink():
+            raise RuntimeError("Existing rollback journal must reconcile first")
+        if (self.active.exists() or self.active.is_symlink() or
+            not self.old.is_dir() or self.old.is_symlink() or
+            self.failed.exists() or self.failed.is_symlink()):
+            raise RuntimeError("Only a missing active program with intact previous NVP may be recovered")
+        old_files=_program(self.old)
+        original_files=_inventory(self.films)
+        scope={
+            "operation":"nvp.w1g.nsis.restore_stranded_previous.v1",
+            "previous_sha256":_digest(old_files),
+            "original_films_sha256":_digest(original_files),
+            "active_program_absent":True,
+        }
+        if (self.stopped() is not True or
+            self.authorize(dict(scope)) is not True or
+            self.stopped() is not True):
+            raise PermissionError("Stranded NSIS recovery requires human approval and OS custody")
+        if (_digest(_program(self.old))!=scope["previous_sha256"] or
+            _digest(_inventory(self.films))!=scope["original_films_sha256"] or
+            self.active.exists() or self.active.is_symlink()):
+            raise RuntimeError("Previous program/creator originals changed during recovery approval")
+        row={
+            "format":FORMAT,"state":"RESTORING_STRANDED",
+            "program_root":str(self.programs),"original_root":str(self.films),
+            "active_sha256":None,
+            "previous_sha256":scope["previous_sha256"],
+            "original_films_sha256":scope["original_films_sha256"],
+            "independent_os_acceptance":False,
+        }
+        _write(self.journal,row)
+        os.replace(self.old,self.active)
+        if _digest(_program(self.active))!=row["previous_sha256"]:
+            raise RuntimeError("Recovered previous NVP differs from attested executable")
+        row["state"]="ROLLED_BACK"
+        _write(self.journal,row)
+        return {"status":"NSIS_STRANDED_PREVIOUS_RESTORED",
+                "creator_films_modified":False,
+                "candidate_preserved_for_owner_review":self.pending.exists()}
+
     def reconcile(self):
         record=self._read()
+        if record["state"]=="RESTORING_STRANDED":
+            if self.active.is_dir() and not self.old.exists():
+                if _digest(_program(self.active))!=record["previous_sha256"]:
+                    raise RuntimeError("Stranded previous runtime corrupted during OS restoration")
+                record["state"]="ROLLED_BACK"
+                _write(self.journal,record)
+                return {"state":"ROLLED_BACK","recovery_executed":False}
+            if self.active.exists() or self.active.is_symlink():
+                raise RuntimeError("Stranded recovery has ambiguous installed program identity")
+            if self.stopped() is not True:
+                raise PermissionError("Kernel worker containment still unverified")
+            self._restore(record)
+            return {"state":"ROLLED_BACK","recovery_executed":True}
         if record["state"]=="ROLLED_BACK":
             if _digest(_program(self.active))!=record["previous_sha256"]:
                 raise RuntimeError("Recovered NVP runtime changed since rollback")
