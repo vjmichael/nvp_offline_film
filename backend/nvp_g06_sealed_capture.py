@@ -220,12 +220,12 @@ class SealedOriginalChunkStore:
     def _execute(self,callback,mutate=False):
         def task(db,movie,source):
             _schema(db)
-            return callback(db,movie)
+            return callback(db,movie,source)
         return self.filming._with(self.project_id,self.scene_id,
                                   task,mutate=mutate)
 
     def begin(self):
-        def initialize(db,movie):
+        def initialize(db,movie,source):
             db.execute("""INSERT INTO g06_long_capture_sessions(
                 session_id,project_id,scene_id,actor_id,stage_sha256,
                 status,started_at,updated_at)
@@ -259,7 +259,7 @@ class SealedOriginalChunkStore:
         self.live.put_original(self.project_id,self.token,name,raw,
                                media_type=MEDIA_TYPE)
         digest=_sha(raw)
-        def publish(db,movie):
+        def publish(db,movie,source):
             rec=db.execute("""SELECT status,committed_samples,committed_chunks,
                 stage_sha256 FROM g06_long_capture_sessions WHERE
                 project_id=? AND session_id=?""",
@@ -313,7 +313,7 @@ class SealedOriginalChunkStore:
         self.thread.join(timeout=60)
         if self.thread.is_alive() or self.error:
             raise RuntimeError("A sealed microphone writer could not finish")
-        def stop(db,movie):
+        def stop(db,movie,source):
             record=db.execute("""SELECT status,committed_samples,committed_chunks
                 FROM g06_long_capture_sessions WHERE project_id=? AND
                 session_id=?""",(self.project_id,self.session_id)).fetchone()
@@ -335,7 +335,7 @@ class SealedOriginalChunkStore:
             self.thread.join(timeout=60)
             if self.thread.is_alive():
                 raise RuntimeError("Sealed recording writer could not be stopped")
-        def mark(db,movie):
+        def mark(db,movie,source):
             db.execute("""UPDATE g06_long_capture_sessions SET
                 status='cancelled',updated_at=? WHERE project_id=? AND
                 session_id=? AND status IN ('recording','stopped','failed')""",
@@ -351,7 +351,7 @@ class SealedOriginalChunkStore:
             receipt["sample_count"]!=self.total_samples):
             raise RuntimeError("Sealed recording provenance changed")
         pid=self.project_id;sid=self.scene_id
-        rows=self._execute(lambda db,movie:_chunks(db,pid,self.session_id))
+        rows=self._execute(lambda db,movie,source:_chunks(db,pid,self.session_id))
         if not rows or len(rows)>MAX_PIECES:
             raise RuntimeError("Sealed source chunk sequence is absent")
         first=0;digest=hashlib.sha256()
@@ -383,9 +383,9 @@ class SealedOriginalChunkStore:
             "original_pcm_sha256":self.final_sha256,"segments":segments}
         encoded=_json(doc)
         group_sha=_sha(encoded.encode("utf8"))
-        def commit(db,movie):
+        def commit(db,movie,source):
             _schema(db)
-            head,stage,plan,raw=_stage(db,{},pid,sid)
+            head,stage,plan,raw=_stage(db,source,pid,sid)
             if stage["usd_sha256"]!=self.stage_sha256:
                 raise RuntimeError("Original scene stage changed during capture")
             approved_actors={x["actor_id"] for x in plan["objects"]
