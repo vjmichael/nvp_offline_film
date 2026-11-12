@@ -42,7 +42,6 @@ def run_installed_windows_matrix(exe: Path, installed: Path, projects: Path,
     with tempfile.TemporaryDirectory(prefix="nvp-w1g-install-") as scratch:
         home=Path(scratch)/"OriginalProjectsTest"
         home.mkdir()
-        environment["NVP_HOME"]=str(home)
         # The original contained launcher inherits this host environment.
         # Do not overwrite user NVP_HOME, project data or global PATH.
         previous=os.environ.get("NVP_HOME")
@@ -50,24 +49,48 @@ def run_installed_windows_matrix(exe: Path, installed: Path, projects: Path,
         try:
             modes=["--smoke-create","--smoke-reopen"]
             if include_webview:
-                modes.extend(["--smoke-window","--smoke-data-av"])
+                # The first-time Edge WebView2 cold-start is separately
+                # tested as a real React mount before exercising the large
+                # 23-method native camera+film JS IPC bridge.
+                modes.extend([
+                    "--smoke-window-basic",
+                    "--smoke-window",
+                    "--smoke-data-av",
+                ])
             for index,mode in enumerate(modes):
                 if verify_installed(audited_receipt,installed) != first:
                     raise RuntimeError("NVP installed executable changed before next native smoke")
                 out=Path(scratch)/f"run{index}_stdout.log"
                 err=Path(scratch)/f"run{index}_stderr.log"
+                diagnostic=Path(scratch)/f"run{index}_native_stage.txt"
+                os.environ["NVP_SMOKE_DIAGNOSTIC_PATH"]=str(diagnostic)
                 with out.open("wb") as stdout,err.open("wb") as stderr:
                     proc=launch_contained(
                         [str(exe.resolve()),mode],
                         cwd=str(installed),stdout=stdout,stderr=stderr,
                         memory_mb=4096,linux_cgroup_tree_required=False)
                     try:
-                        result=proc.wait(timeout=180)
+                        deadline=(
+                            120 if mode in ("--smoke-window-basic","--smoke-window")
+                            else 180)
+                        result=proc.wait(timeout=deadline)
                         if result!=0:
-                            raise RuntimeError("Installed NVP.exe "+mode+
-                                               " returned "+str(result))
+                            stages=(diagnostic.read_text("utf8")[-3000:]
+                                    if diagnostic.is_file() else "no native stage receipts")
+                            raise RuntimeError(
+                                "Real Windows Job-owned installed NVP.exe "+
+                                mode+" returned "+str(result)+
+                                "; last native stages: "+stages)
                         kernel=verified_native_worker_exit(proc)
-                    except BaseException:
+                    except BaseException as error:
+                        # Preserve the last deterministic native stage in
+                        # the Actions log before the test-owned scratch is
+                        # discarded. No original creator material is read.
+                        if diagnostic.is_file():
+                            print(
+                                "FAILED_JOB_NATIVE_STAGES "+
+                                mode+"\n"+diagnostic.read_text("utf8")[-3000:],
+                                flush=True)
                         try:proc.terminate_tree()
                         finally:proc.close()
                         raise
@@ -78,6 +101,7 @@ def run_installed_windows_matrix(exe: Path, installed: Path, projects: Path,
                     "stderr_sha256":sha256(err.read_bytes()).hexdigest(),
                 })
         finally:
+            os.environ.pop("NVP_SMOKE_DIAGNOSTIC_PATH",None)
             if previous is None: os.environ.pop("NVP_HOME",None)
             else:os.environ["NVP_HOME"]=previous
     if verify_installed(audited_receipt,installed)["app_sha256"]!=first["app_sha256"]:

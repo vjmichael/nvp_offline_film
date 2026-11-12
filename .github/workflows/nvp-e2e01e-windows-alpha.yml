@@ -220,7 +220,7 @@ jobs:
         shell: pwsh
         run: |
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP'
-          python tools/nvp_w1g_windows_installed_acceptance.py --installed "$installed" --projects "$env:NVP_HOME" --build-receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --output "$env:RUNNER_TEMP/nvp-w1g-real-windows-kernel.json"
+          python -m tools.nvp_w1g_windows_installed_acceptance --installed "$installed" --projects "$env:NVP_HOME" --build-receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --output "$env:RUNNER_TEMP/nvp-w1g-real-windows-kernel.json"
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP native executable, restart, WebView2, data-first A/V, or Windows Job Object evidence failed' }
       - name: Uninstall without deleting creator project data
         shell: pwsh
