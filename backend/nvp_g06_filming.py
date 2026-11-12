@@ -349,6 +349,29 @@ class G06Filming:
                     recorded_at FROM g06_original_pcm WHERE
                     project_id=? AND scene_id=?
                     ORDER BY recorded_at DESC LIMIT 30""",(pid,scene_id))]
+        # A continuous long recording remains one provenance group after
+        # restart even though its film-ready originals use <=120s clip rows.
+        has_members=db.execute("""SELECT 1 FROM sqlite_master WHERE
+            type='table' AND name='g06_long_recording_members'""").fetchone()
+        if has_members:
+            for clip in clips:
+                member=db.execute("""SELECT recording_id,first_sample FROM
+                    g06_long_recording_members WHERE project_id=? AND
+                    scene_id=? AND clip_id=?""",
+                    (pid,scene_id,clip["id"])).fetchone()
+                if member:
+                    recording_id=member["recording_id"]
+                    part=db.execute("""SELECT count(*) FROM
+                        g06_long_recording_members WHERE recording_id=?
+                        AND first_sample<=?""",
+                        (recording_id,member["first_sample"])).fetchone()[0]
+                    total=db.execute("""SELECT count(*) FROM
+                        g06_long_recording_members WHERE recording_id=?""",
+                        (recording_id,)).fetchone()[0]
+                    clip.update({"recording_id":recording_id,
+                        "recording_part_number":part,
+                        "recording_part_count":total,
+                        "recording_source_start_sample":member["first_sample"]})
         takes=[{"id":r["take_id"],"digest":r["take_sha256"],
                 "created_at":r["frozen_at"]}
                 for r in db.execute("""SELECT take_id,take_sha256,frozen_at
