@@ -201,6 +201,15 @@ def mount_g06_routes(app,studio,live_films,cookie_name):
             RECORDER.active_sessions(project_id,scene_id)))
     routes("GET","scene/{scene_id}/microphone/health",recording_health)
 
+    def discard_interrupted(project_id:str,scene_id:str,session_id:str,
+                            request:Request):
+        from backend.nvp_g06_chunked_capture import discard_interrupted_capture
+        creator=service(project_id,request)
+        return _safe(lambda:discard_interrupted_capture(
+            creator,project_id,scene_id,session_id))
+    routes("POST","scene/{scene_id}/microphone/interrupted/{session_id}/discard",
+           discard_interrupted)
+
     def listen(project_id:str,scene_id:str,clip_id:str,request:Request):
         original=_safe(lambda:service(project_id,request).original_preview(
             project_id,scene_id,clip_id))
