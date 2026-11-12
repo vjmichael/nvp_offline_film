@@ -12,6 +12,7 @@ automatically create a Take, original sound or a completed recording on reboot.
 from __future__ import annotations
 
 import array
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -183,7 +184,7 @@ class DurableOriginalChunkStore:
     def begin(self):
         if shutil.disk_usage(self.db_path.parent).free<MIN_DISK_HEADROOM:
             raise RuntimeError("Not enough free storage to record original sound")
-        with self._db() as db:
+        with closing(self._db()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             _schema(db)
             db.execute("""INSERT INTO g06_long_capture_sessions(
@@ -272,7 +273,7 @@ class DurableOriginalChunkStore:
         self.thread.join(timeout=30)
         if self.thread.is_alive() or self.error:
             raise RuntimeError("Original microphone chunks were not durably committed")
-        with self._db() as db:
+        with closing(self._db()) as db, db:
             row=db.execute("""SELECT committed_samples,committed_chunks,status
                 FROM g06_long_capture_sessions
                 WHERE project_id=? AND session_id=?""",
@@ -297,7 +298,7 @@ class DurableOriginalChunkStore:
             self.thread.join(timeout=30)
             if self.thread.is_alive():
                 raise RuntimeError("Recording writer could not be stopped safely")
-        with self._db() as db:
+        with closing(self._db()) as db, db:
             _schema(db)
             with db:
                 db.execute("""UPDATE g06_long_capture_sessions SET
