@@ -271,13 +271,13 @@ def test_shutdown_spool_tampering_denies_publication_before_capture():
         def shutdown(**kwargs):
             assert len(opened) == 1
             opened[0].seek(4)
-            opened[0].write(b"\\x01\\x01")
+            opened[0].write(bytes((1, 1)))
             return GOOD
         session.stop_and_verify.side_effect = shutdown
         with pytest.raises(RuntimeError, match="spool integrity"):
             finish_linux_recording_and_freeze(
                 session, capture, "p", "t",
-                recordings=lambda: [{"pcm_chunks": iter((b"\\x00\\x00",))}])
+                recordings=lambda: [{"pcm_chunks": iter((bytes((0, 0)),))}])
         session.stop_and_verify.assert_called_once()
         capture.capture.assert_not_called()
         assert opened[0].closed
