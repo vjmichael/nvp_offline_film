@@ -80,7 +80,18 @@ def _acl(path,sid,permission,recursive=False,remove=False):
         args.append("/T")
     r=subprocess.run(args,capture_output=True,text=True,timeout=120,check=False)
     if r.returncode or "Failed processing" in r.stdout:
-        raise AppContainerFailure("Native AppContainer DACL operation failed")
+        # Do not log private paths, owner names or complete filesystem ACLs;
+        # classify the genuine OS reason so a native integration failure is
+        # diagnosable without weakening the security requirement.
+        detail=(r.stderr+" "+r.stdout).casefold()
+        category=("access-denied" if "access is denied" in detail else
+                  "unknown-sid" if "no mapping" in detail else
+                  "file-unavailable" if "cannot find" in detail else
+                  "other-os-error")
+        action="revoke" if remove else "grant"
+        raise AppContainerFailure(
+            "Native AppContainer DACL "+action+" failed "
+            f"(exit={r.returncode},category={category})")
 
 def _paths(command,cwd,code_roots,code_files):
     if sys.platform!="win32":
@@ -96,7 +107,7 @@ def _paths(command,cwd,code_roots,code_files):
             or any(not x.is_dir() or x==x.parent for x in roots)
             or any(not x.is_file() for x in files)
             or not (exe in files or any(exe.is_relative_to(x) for x in roots))):
-        raise AppContainerFailure("Invalid reviewed code sandbox policy")
+        raise AppContainerFailure("Invalid reviewed AppContainer code sandbox policy")
     if any(work==x or work.is_relative_to(x) or x.is_relative_to(work) for x in roots):
         raise AppContainerFailure("Code ACL overlaps private workspace")
     film=os.environ.get("NVP_HOME")
@@ -253,13 +264,14 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
             _acl(root,sid,"(OI)(CI)RX",recursive=True);grants.append((root,True))
         for file in files:
             _acl(file,sid,"R");grants.append((file,False))
-        visited=set()
-        for item in [work]+[x.parent for x in roots+files]:
-            for folder in [item]+list(item.parents):
-                if folder==folder.parent or folder in visited:continue
-                visited.add(folder)
-                _acl(folder,sid,"(OI)(CI)M" if folder==work else "RX")
-                grants.append((folder,False))
+        # AppContainer tokens have the Windows traverse-check bypass for
+        # path ancestors. Do not rewrite ACLs of C:\\, Program Files, the
+        # hosted toolchain parent, or other OS-managed directories merely
+        # to open a single reviewed child. Those broad ACL mutations both
+        # fail for non-admin desktop owners and expand private-worker reach.
+        # Only the exact disposable cwd receives low-IL scoped Modify.
+        _acl(work,sid,"(OI)(CI)M")
+        grants.append((work,False))
         # Workspace is disposable and writable only for this package SID.
         # It must carry low mandatory integrity as AppContainer is Low-IL.
         integrity=subprocess.run(["icacls",str(work),"/setintegritylevel",
