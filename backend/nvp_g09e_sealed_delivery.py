@@ -281,6 +281,8 @@ class SealedFilmDelivery:
                 WHERE project_id=? AND id=?""",(pid,job)).fetchone()
             if (prior is None or prior["status"]!="rendering" or
                 prior["completed_chunks"]!=index or
+                prior["source_sha256"]!=record["source_sha256"] or
+                receipt["source_sha256"]!=record["source_sha256"] or
                 prior["completed_bytes"]+receipt["size_bytes"]>MAX_OUTPUT_BYTES):
                 raise RuntimeError("Protected reel job changed during worker execution")
             db.execute("""INSERT INTO w1e_sealed_film_reels(
@@ -327,9 +329,22 @@ class SealedFilmDelivery:
         if len(raw)>2*1024*1024:
             raise RuntimeError("Protected film playlist is too large")
         name=f"render/{job}/verified-playlist.json"
-        witness=self.live.put_original(pid,token,name,raw,"application/json")
+        indexed=self._read(pid,token,lambda db:db.execute(
+            "SELECT sha256,size_bytes FROM source_assets WHERE name=?",
+            (name,)).fetchone())
+        if indexed:
+            # Crash after durable encrypted asset publication but before
+            # the completed state: authenticate and compare EXACT bytes.
+            # Never adopt an unknown filesystem orphan or changed playlist.
+            prior=self.live.get_original(pid,token,name)
+            if prior!=raw or indexed["sha256"]!=sha256(raw).hexdigest():
+                raise RuntimeError("Protected playlist changed after interrupted publication")
+            digest=indexed["sha256"]
+        else:
+            witness=self.live.put_original(pid,token,name,raw,"application/json")
+            digest=witness["sha256"]
         self._set(pid,token,job,"completed",manifest={
-            "name":name,"sha256":witness["sha256"]})
+            "name":name,"sha256":digest})
         return manifest
 
     def _perform(self,pid,token,job,stop):
