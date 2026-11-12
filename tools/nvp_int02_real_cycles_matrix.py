@@ -50,8 +50,12 @@ def prepare_real_usd(path:Path):
     camera=UsdGeom.Camera.Define(stage,"/World/Camera")
     camera.GetFocalLengthAttr().Set(.5)
     camera.GetHorizontalApertureAttr().Set(.36)
-    camera.AddTranslateOp().Set(Gf.Vec3d(0,-7.0,2.0))
-    camera.AddRotateXYZOp().Set(Gf.Vec3f(90,0,0))
+    # The previous forward-looking fixture had an incorrect camera
+    # orientation after native USD import: real Cycles PNG contained only
+    # a tiny ground triangle and no visible original actor. An overhead
+    # USD camera points down its canonical -Z axis and unambiguously
+    # frames the actor and stage without post-import camera cheats.
+    camera.AddTranslateOp().Set(Gf.Vec3d(0,0,8.0))
     light=UsdLux.SphereLight.Define(stage,"/World/Light")
     light.GetIntensityAttr().Set(3500.0)
     light.GetRadiusAttr().Set(.5)

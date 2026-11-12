@@ -101,6 +101,11 @@ Section "NVP Alpha" SEC_MAIN
         ; The staged bundle has its own matching uninstaller.
         WriteUninstaller "${STAGE_DIR}\Uninstall NVP.exe"
         IfErrors package_failed
+        ; SetOutPath changes NSIS process current working directory. Windows
+        ; cannot rename a directory held as our own CWD. Release stage before
+        ; program-only promotion (or before returning staged-only upgrade).
+        SetOutPath "$TEMP"
+        IfErrors package_failed
         StrCmp $1 "upgrade" needs_native_activation promote_new
     needs_native_activation:
         ; No installer direct promotion of an active NVP runtime.

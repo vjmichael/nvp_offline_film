@@ -81,7 +81,16 @@ jobs:
         run: |
           $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
           $process=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw 'NSIS silent install failed' }
+          if ($process.ExitCode -ne 0) {
+            $installedRoot=Join-Path $env:LOCALAPPDATA 'Programs/NVP'
+            $pendingRoot=Join-Path $env:LOCALAPPDATA 'Programs/NVP.pending'
+            Write-Host "NSIS first-install exit=$($process.ExitCode)"
+            Write-Host "Installed tree exists: $(Test-Path $installedRoot)"
+            Write-Host "Pending tree exists: $(Test-Path $pendingRoot)"
+            Write-Host "Installed executable exists: $(Test-Path (Join-Path $installedRoot 'NVP.exe'))"
+            Write-Host "Pending executable exists: $(Test-Path (Join-Path $pendingRoot 'NVP.exe'))"
+            throw 'NSIS silent install failed; original directories preserved for diagnostic evidence'
+          }
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           if (-not (Test-Path $installed)) { throw 'Installed NVP.exe missing' }
           $builtHash=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash
