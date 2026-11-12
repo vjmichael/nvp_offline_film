@@ -350,8 +350,8 @@ class NativeSceneSoundCapture:
                     if "source_sync" in entry else None)
                 required=(clock["source_sample_count"] if clock is not None
                           else (end-start+SAMPLE_TICK-1)//SAMPLE_TICK)
-                if available<required:
-                    raise RuntimeError("Actual recorded source contains fewer samples than its event")
+                if available != required:
+                    raise RuntimeError("Published original PCM sample count differs from its exact Film Time event")
                 payload={"format":FORMAT,"usd_prim_path":path,
                          "gain":float(gain),
                          "source_sample_rate":SAMPLE_RATE,
