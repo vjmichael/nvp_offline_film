@@ -85,7 +85,11 @@ def recording_member(db,pid,scene_id,clip_id):
     Missing rows mean an ordinary legacy short microphone source. A mismatched
     group/member is always a source-integrity failure.
     """
-    _schema(db)
+    # Historic ordinary Takes must remain read-only when no long recorder
+    # has ever created its tables. Do not migrate source storage on read.
+    if not db.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
+        AND name='g06_long_recording_members'""").fetchone():
+        return None
     part=db.execute("""SELECT * FROM g06_long_recording_members
         WHERE clip_id=? AND project_id=? AND scene_id=?""",
         (clip_id,pid,scene_id)).fetchone()
