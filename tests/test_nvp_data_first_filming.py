@@ -1015,6 +1015,26 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+    def test_capture_pins_single_preflighted_pcm_iterator(self):
+        req=self.payload()
+        class ChangingIterable:
+            def __init__(self, valid):
+                self.valid=valid
+                self.iterations=0
+            def __iter__(self):
+                self.iterations+=1
+                if self.iterations==1:
+                    return iter([self.valid])
+                return iter([bytes(2)])
+        stream=ChangingIterable(self.original)
+        req["recordings"][0]["pcm_chunks"]=stream
+        self.capture.capture(**req)
+        self.assertEqual(stream.iterations,1)
+        self.assertIsNotNone(self.index.read_revision(
+            self.pid,"NewRecordedSpeech",1))
+        self.assertIsNotNone(self.index.read_revision(
+            self.pid,"FilmedTake",1))
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
