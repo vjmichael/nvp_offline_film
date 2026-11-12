@@ -76,7 +76,8 @@ def _binding(db,pid,editor):
     for seg in segments:
         tid=seg["take_id"]
         if tid in seen:continue
-        row,original,audio=editor._take(db,pid,tid,{})
+        row,original,audio=editor._take(db,pid,tid,{},
+            metadata_only=True)
         sha=row["take_sha256"]
         seen[tid]=sha
         for dest,reader in (
