@@ -1128,6 +1128,13 @@ def main(argv=None):
         # Never launch a desktop, backend server or model for a child worker.
         from tools.nvp_g09e_worker import main as g09e_worker
         return g09e_worker(args[1:])
+    if args and args[0]=="--w1e-sealed-reel-worker":
+        # One fixed private-film child: anonymous binary pipes only. No
+        # model, HTTP server, arbitrary script, project path or WebView.
+        # The host MUST launch it under an independently attested Windows
+        # AppContainer with zero network capabilities and Job custody.
+        from tools.nvp_w1e_sealed_reel_worker import main as sealed_reel
+        return sealed_reel(args[1:])
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
