@@ -202,13 +202,15 @@ class G07Editor:
             return fn(db,movie)
         return self.filming.g05.g04._execute(pid,work,mutate=mutate)
 
-    def _take(self,db,pid,take_id,cache):
-        if take_id not in cache:
-            row,doc,audio=self.filming._take(db,pid,take_id)
+    def _take(self,db,pid,take_id,cache,*,metadata_only=False):
+        identity=(take_id,"manifest" if metadata_only else "full")
+        if identity not in cache:
+            row,doc,audio=(self.filming._take_metadata(db,pid,take_id)
+                if metadata_only else self.filming._take(db,pid,take_id))
             if doc["format"]!=TAKE_FORMAT:
                 raise RuntimeError("An edit references an unknown Digital Take")
-            cache[take_id]=(row,doc,audio)
-        return cache[take_id]
+            cache[identity]=(row,doc,audio)
+        return cache[identity]
 
     def _validate(self,db,pid,document):
         if (type(document) is not dict or set(document)!={
@@ -227,7 +229,8 @@ class G07Editor:
             if clip["id"] in ids:
                 raise ValueError("The edit has duplicate clip identities")
             ids.add(clip["id"])
-            row,doc,audio=self._take(db,pid,clip["take_id"],cache)
+            row,doc,audio=self._take(db,pid,clip["take_id"],cache,
+                metadata_only=True)
             if clip["take_sha256"]!=row["take_sha256"]:
                 raise RuntimeError("An original Take changed after the edit")
             if clip["source_out_tick"]>doc["duration_tick"]:
@@ -296,7 +299,8 @@ class G07Editor:
              take_sha256,performance_json,frozen_at FROM g06_frozen_takes
              WHERE project_id=? ORDER BY frozen_at DESC,take_id DESC LIMIT 200""",(pid,)):
             try:
-                take=self._take(db,pid,row["take_id"],{})
+                take=self._take(db,pid,row["take_id"],{},
+                    metadata_only=True)
                 available.append({"take_id":row["take_id"],"scene_id":row["scene_id"],
                     "take_sha256":row["take_sha256"],
                     "source_stage_revision":row["source_stage_revision"],
@@ -364,7 +368,8 @@ class G07Editor:
             if operation=="append":
                 if set(details)!={"take_id"} or type(details["take_id"]) is not str:
                     raise ValueError("Choose a filmed Take")
-                row,source,audio=self._take(db,pid,details["take_id"],{})
+                row,source,audio=self._take(db,pid,details["take_id"],{},
+                    metadata_only=True)
                 if len(clips)>=MAX_EDL_CLIPS:
                     raise ValueError("Film clip limit reached")
                 views=self.filming._camera(db,pid,details["take_id"])["views"]
@@ -402,7 +407,8 @@ class G07Editor:
                     if set(details)!={"clip_id","take_id"} or (
                         type(details["take_id"]) is not str):
                         raise ValueError("Choose a replacement Take")
-                    newrow,newsource,newaudio=self._take(db,pid,details["take_id"],{})
+                    newrow,newsource,newaudio=self._take(db,pid,details["take_id"],{},
+                        metadata_only=True)
                     clip["take_id"]=details["take_id"]
                     clip["take_sha256"]=newrow["take_sha256"]
                     clip["source_in_tick"]=0
@@ -701,7 +707,8 @@ class G07Editor:
             for clip in document["clips"]:
                 take_id=clip["take_id"]
                 if take_id not in seen:
-                    row,doc,audio=self._take(db,pid,take_id,{})
+                    row,doc,audio=self._take(db,pid,take_id,{},
+                        metadata_only=True)
                     seen[take_id]=row["take_sha256"]
                     if participating is None or take_id in participating:
                         # Original media admission BEFORE reading PCM blobs:
@@ -719,6 +726,10 @@ class G07Editor:
                         original=db.execute("""SELECT original_usd,performance_usd
                             FROM g06_frozen_takes WHERE project_id=? AND take_id=?""",
                             (pid,take_id)).fetchone()
+                        if (original is None or
+                            _sha(original["original_usd"])!=row["original_usd_sha256"] or
+                            _sha(original["performance_usd"])!=row["performance_usd_sha256"]):
+                            raise RuntimeError("Participating original OpenUSD changed before rendering")
                         source_audio=[]
                         for item in audio:
                             if participating is not None:
@@ -739,6 +750,8 @@ class G07Editor:
                             if pcm is None or _sha(pcm["pcm"])!=pcm["pcm_sha256"]:
                                 raise RuntimeError("Original sound cannot be reopened")
                             source_audio.append({**item,"pcm16le":bytes(pcm["pcm"])})
+                    if participating is not None and source_budget>256*1024*1024:
+                        raise ValueError("A film window exceeds its original media budget")
                     approved=G09Environment.approved_source(
                         db,pid,take_id,row["take_sha256"],doc)
                     if approved is not None:
