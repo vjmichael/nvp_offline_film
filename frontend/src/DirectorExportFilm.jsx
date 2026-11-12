@@ -171,9 +171,15 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
             <p>{job.duration_seconds} seconds · Picture and sound independently
               checked · {Math.round((job.output_bytes||0)/1048576*10)/10} MB</p>
           </div>
-          <a className="film-primary" href={base+'/export/'+job.id+'/movie'}
-            download={'NVP-Film-'+job.id.slice(0,8)+'.avi'}
-            rel="noopener noreferrer">Save Movie</a>
+          <div className="film-actions">
+            <a className="film-primary" href={base+'/export/'+job.id+'/movie'}
+              download={'NVP-Film-'+job.id.slice(0,8)+'.avi'}
+              rel="noopener noreferrer">Save Playable Movie</a>
+            <a className="film-secondary"
+              href={base+'/export/'+job.id+'/interchange'}
+              download={'NVP-Interchange-'+job.id.slice(0,8)+'.zip'}
+              rel="noopener noreferrer">Save Picture & Sound Files</a>
+          </div>
         </article>)}
     </div>}
     {jobs.some(j=>['failed','interrupted','cancelled'].includes(j.status))&&
@@ -188,6 +194,13 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
             {j.issue&&<span>{j.issue}</span>}
           </div>)}
       </details>}
+    <p className="film-hint director-export-footnote">
+      Picture & Sound Files provides the checked pictures and finished
+      48 kHz soundtrack separately for interchange. It preserves the same
+      working-film picture and sound quality; it does not create a
+      high-resolution cinema master or a DCP. Large films may need the
+      expanded G09-E export service.
+    </p>
     <p className="film-hint director-export-footnote">
       Your movie can be re-edited and exported differently at any time.
       Digital Takes, scene performances and original microphone recordings
