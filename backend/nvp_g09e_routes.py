@@ -39,19 +39,27 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
     # Only a trusted native host may install BOTH private-film controls.
     # Plain HTTP form confirmation is not a one-use director grant or an
     # independent kernel AppContainer attestation.
-    review=getattr(app.state,"nvp_w1e_native_review",None)
-    isolated=getattr(app.state,"nvp_w1e_isolation_attestor",None)
-    sealed=None
-    if callable(review) and callable(isolated):
-        from backend.nvp_g09e_sealed_delivery import SealedFilmDelivery
-        sealed=SealedFilmDelivery(studio,live_films(),access=film_access,
-            review_authority=review,os_isolation_attestor=isolated)
+    # App routes are registered at import time; the genuine desktop host
+    # attaches its native human-review bridge AFTER create_app(). Read the
+    # sealed service lazily from trusted app.state, never an HTTP field.
+    sealed_controller=[None]
     def private(pid):
         if not live_films().exists(pid):return False
-        if sealed is None:
+        review=getattr(app.state,"nvp_w1e_native_review",None)
+        isolated=getattr(app.state,"nvp_w1e_isolation_attestor",None)
+        if not callable(review) or not callable(isolated):
             raise PermissionError("A private-film render requires native human "
-                "approval and independent OS sandbox admission; no plaintext fallback")
+                "approval and OS sandbox admission; no plaintext fallback")
+        if sealed_controller[0] is None:
+            from backend.nvp_g09e_sealed_delivery import SealedFilmDelivery
+            sealed_controller[0]=SealedFilmDelivery(
+                studio,live_films(),access=film_access,
+                review_authority=review,os_isolation_attestor=isolated)
         return True
+    def sealed():
+        service=sealed_controller[0]
+        if service is None:raise PermissionError("No protected film worker is configured")
+        return service
     def token(request,*,download=False):
         if download:
             if request.headers.get("sec-fetch-site") not in (
@@ -73,7 +81,7 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
 
     def jobs(project_id:str,request:Request):
         def query():
-            return (sealed.list(project_id,token(request))
+            return (sealed().list(project_id,token(request))
                 if private(project_id) else
                 handler.list(project_id,token(request)))
         return {"format":"nvp.g09e.long_film_jobs.v1","jobs":_safe(query)}
@@ -84,7 +92,7 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
             raise HTTPException(422,detail="Review and choose to render the saved film yourself")
         def begin():
             if private(project_id):
-                return sealed.start(project_id,token(request),
+                return sealed().start(project_id,token(request),
                     payload.expected_revision,payload.native_approval_id)
             return handler.start(project_id,payload.expected_revision,
                                  token(request))
@@ -93,7 +101,7 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
 
     def read(project_id:str,job_id:str,request:Request):
         def status():
-            return (sealed.status(project_id,token(request),job_id)
+            return (sealed().status(project_id,token(request),job_id)
                 if private(project_id) else
                 handler.read(project_id,job_id,token(request)))
         return _safe(status)
@@ -104,7 +112,7 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
         if payload.director_confirmed is not True:
             raise HTTPException(422,detail="Choose Resume Film Render yourself")
         def restart():
-            return (sealed.resume(project_id,token(request),job_id,
+            return (sealed().resume(project_id,token(request),job_id,
                 payload.native_approval_id) if private(project_id) else
                 handler.resume(project_id,job_id,token(request)))
         return _safe(restart)
@@ -115,7 +123,7 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
         if payload.director_confirmed is not True:
             raise HTTPException(422,detail="Choose Stop Film Render yourself")
         def stop():
-            return (sealed.cancel(project_id,token(request),job_id)
+            return (sealed().cancel(project_id,token(request),job_id)
                 if private(project_id) else
                 handler.cancel(project_id,job_id,token(request)))
         return _safe(stop)
@@ -123,7 +131,7 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
 
     def manifest(project_id:str,job_id:str,request:Request):
         def source():
-            return (sealed.manifest(project_id,token(request,download=True),job_id)
+            return (sealed().manifest(project_id,token(request,download=True),job_id)
                 if private(project_id) else
                 handler.manifest(project_id,job_id,token(request,download=True)))
         data=_safe(source)
@@ -139,7 +147,7 @@ def mount_g09e_routes(app,studio,film_access,live_films,cookie_name):
     def reel(project_id:str,job_id:str,index:int,request:Request):
         if _safe(lambda:private(project_id)):
             # Never materialize a private AVI on plaintext disk for FileResponse.
-            raw=_safe(lambda:sealed.reel(
+            raw=_safe(lambda:sealed().reel(
                 project_id,token(request,download=True),job_id,index))
             return Response(raw,media_type="video/x-msvideo",
                 headers={"Cache-Control":"private, no-store, max-age=0",
