@@ -78,6 +78,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Uninstalled native alpha smoke failed' }
           & 'dist/NVP/NVP.exe' --g09e-worker --selfcheck
           if ($LASTEXITCODE -ne 0) { throw 'Frozen long-film worker or accelerated DSP is unavailable' }
+          # Source-free G03/W1-E dependency check only: not a successful
+          # protected render, AppContainer custody proof or human approval.
+          & 'dist/NVP/NVP.exe' --w1e-runtime-selfcheck
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen private-film worker or Windows AppContainer runtime unavailable' }
       - name: Create NSIS single-click installer
         shell: pwsh
         run: |
