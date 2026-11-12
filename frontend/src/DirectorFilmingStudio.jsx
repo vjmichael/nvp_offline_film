@@ -653,7 +653,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
           Start Fresh Performance</button>:
           <button className="film-secondary" onClick={onSetUpScenes}>
             Review Visual Scene</button>}
-      </div>
+      </div>}
       <div className="director-film-reel" ref={reelRef}>
         <div className="director-film-reel-heading">
           <h3>Scene preview</h3>
