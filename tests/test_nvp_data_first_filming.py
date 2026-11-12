@@ -993,9 +993,9 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         consumed=[]
         def recorder():
             yield self.original
-            yield b"\\x00\\x00"
+            yield bytes(2)
             consumed.append("unexpected later chunk")
-            yield b"\\x00\\x00"
+            yield bytes(2)
         req["recordings"][0]["pcm_chunks"]=recorder()
         with self.assertRaisesRegex(ValueError,"sample count does not match"):
             self.capture.capture(**req)
