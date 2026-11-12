@@ -34,6 +34,19 @@ class NativeReleaseAuthorityRefusal(unittest.TestCase):
                         "measured_at_unix":__import__("time").time()})
             self.assertFalse((journal/"nsis-activation.json").exists())
 
+    def test_one_native_worker_role_never_satisfies_release_provisioning(self):
+        from unittest.mock import patch
+        from tools.nvp_w1g_nsis_activation import _require_complete_reviewed_native_roster
+        with patch("tools.nvp_w1g_worker_package.verify_native_workers",
+                   return_value={"roles":["scene_render"]}):
+            with self.assertRaisesRegex(PermissionError,"All five actual"):
+                _require_complete_reviewed_native_roster(Path("reviewed-candidate"))
+        with patch("tools.nvp_w1g_worker_package.verify_native_workers",
+                   return_value={"roles":["original_capture","scene_render",
+                                          "editorial","audio","delivery"]}):
+            self.assertEqual(_require_complete_reviewed_native_roster(
+                Path("reviewed-candidate"))["roles"][0],"original_capture")
+
     def test_legacy_rollback_owner_refuses_production_lambdas(self):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)

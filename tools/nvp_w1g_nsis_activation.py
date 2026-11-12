@@ -42,6 +42,16 @@ def _tuple(label):
     return tuple(int(n) for n in label.split("."))
 
 
+def _require_complete_reviewed_native_roster(bundle):
+    """One token/executable cannot represent all five independent roles."""
+    from tools.nvp_w1g_worker_package import ROLES, verify_native_workers
+    report=verify_native_workers(bundle,expected_platform="windows-amd64")
+    if set(report["roles"]) != set(ROLES):
+        raise PermissionError(
+            "All five actual compiled native worker roles must be reviewed and provisioned")
+    return report
+
+
 def _snapshot_root(owner):
     if any(p.exists() or p.is_symlink() for p in (
             owner.old,owner.failed,owner.journal)):
@@ -130,6 +140,7 @@ class NativeNSISActivation:
             from tools.nvp_w1g_release_build_marker import verify_build_marker
             verify_build_marker(self.owner.active)
             verify_build_marker(self.owner.pending)
+            _require_complete_reviewed_native_roster(self.owner.pending)
         current_version=_version(self.owner.active)
         next_version=_version(self.owner.pending)
         registered=_registry_version()
@@ -193,6 +204,7 @@ class NativeNSISActivation:
             from tools.nvp_w1g_release_build_marker import verify_build_marker
             verify_build_marker(self.owner.active)
             verify_build_marker(self.owner.pending)
+            _require_complete_reviewed_native_roster(self.owner.pending)
             receipt=record["reviewed_package_receipt"]
             if receipt.get("native_worker_manifest_verified") is not True:
                 raise PermissionError(
