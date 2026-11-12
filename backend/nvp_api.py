@@ -236,18 +236,23 @@ def unlock_movie(project_id: str, payload: FilmPassphrase, request: Request):
 @app.post("/api/projects/{project_id}/lock")
 def lock_movie(project_id: str, request: Request):
     try:
-        result = film_access().lock(project_id, request.cookies.get(COOKIE))
+        token=request.cookies.get(COOKIE)
+        # The OS microphone must stop and discard unpublished buffered PCM
+        # while the host still has a valid G03 sealed-writing grant.
+        # Revoking first made its durable cancellation transaction fail.
+        if not film_access().permitted(project_id,token,renew=False):
+            raise PermissionError("Only the unlocked director may lock the film")
         from backend.nvp_g06_routes import revoke_recording
         revoke_recording(project_id)
-        # W1-E host-only protected reel cancellation must run on project
-        # lock even if the user never visited the export UI. This signals
-        # the worker but does NOT invent an OS process-exit receipt.
+        # A cancellation signal is not evidence of AppContainer/Job exit;
+        # each worker still proves native custody before sealing an output.
         stop_private=getattr(app.state,"nvp_w1e_cancel_project",None)
         if callable(stop_private):
             stop_private(project_id)
         if _g08_controller is not None:
             _g08_controller["ordinary"].cancel_project(project_id)
             _g08_controller["sealed"].cancel_project(project_id)
+        result=film_access().lock(project_id,token)
         live_films().revoke(project_id)
     except (PermissionError, KeyError):
         raise HTTPException(status_code=403, detail="Unable to lock movie")
