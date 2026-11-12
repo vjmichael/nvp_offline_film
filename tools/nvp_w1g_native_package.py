@@ -63,14 +63,14 @@ def build_receipt(bundle: Path) -> dict:
     _forbidden_native_binaries(files)
     if "NVP.exe" not in files or "_internal/base_library.zip" not in files:
         raise RuntimeError("Incomplete native Windows runtime inventory")
-    worker_root = folder / "_internal" / "nvp_workers"
+    worker_root = bundle / "_internal" / "nvp_workers"
     workers = None
     if worker_root.exists() or worker_root.is_symlink():
         try:
             from tools.nvp_w1g_worker_package import verify_native_workers
         except ModuleNotFoundError:
             from nvp_w1g_worker_package import verify_native_workers
-        workers = verify_native_workers(folder, expected_platform="windows-amd64")
+        workers = verify_native_workers(bundle, expected_platform="windows-amd64")
     return {
         "format": FORMAT,
         "platform": "windows-amd64",

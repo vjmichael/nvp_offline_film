@@ -53,7 +53,8 @@ class ProtectedNativeWorker:
         self.kernel_custody=independent_os_custody
         if (self.bundle.is_symlink() or not self.bundle.is_dir() or
             self.runtime.is_symlink() or not self.runtime.is_dir() or
-            self.runtime.resolve().is_relative_to(self.bundle.resolve())):
+            self.runtime.resolve().is_relative_to(self.bundle.resolve()) or
+            self.bundle.resolve().is_relative_to(self.runtime.resolve())):
             raise RuntimeError("Worker runtime must be disjoint from installed executables")
         verify_native_workers(self.bundle, expected_platform=platform)
         self.directory=self.bundle/"_internal"/"nvp_workers"

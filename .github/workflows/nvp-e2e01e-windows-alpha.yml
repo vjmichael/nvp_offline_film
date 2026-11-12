@@ -2,6 +2,9 @@ name: NVP E2E-01E Installed Windows Desktop Alpha
 # DATA-AV-01 migration: legacy imported-video/benchmark workflow is
 # manual-only; it must not gate or relaunch native Digital Take A/V.
 on:
+  push:
+    branches:
+      - nvp/int02-w1g-native-film-package-20261112
   workflow_dispatch:
 permissions:
   contents: read
@@ -110,6 +113,30 @@ jobs:
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP'
           python tools/nvp_w1g_windows_installed_acceptance.py --installed "$installed" --projects "$env:NVP_HOME" --build-receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --output "$env:RUNNER_TEMP/nvp-w1g-real-windows-kernel.json"
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP native executable, restart, WebView2, data-first A/V, or Windows Job Object evidence failed' }
+      - name: Real Windows NSIS upgrade staging and filesystem activation/rollback matrix
+        shell: pwsh
+        run: |
+          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          & $nsis '/DAPP_VERSION=0.1.1' '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows NSIS candidate build failed' }
+          $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
+          $active=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $oldHash=(Get-FileHash -LiteralPath $active -Algorithm SHA256).Hash
+          $stageProcess=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          # Abort is expected after safe stage-only candidate creation.
+          $pending=Join-Path $env:LOCALAPPDATA 'Programs/NVP.pending'
+          if (-not (Test-Path (Join-Path $pending 'NVP.exe'))) { throw 'NSIS did not stage real candidate' }
+          $newHash=(Get-FileHash -LiteralPath $active -Algorithm SHA256).Hash
+          if ($newHash -ne $oldHash) { throw 'NSIS staging unexpectedly replaced the active executable' }
+          $version=(Get-Content -LiteralPath (Join-Path $pending 'nvp-alpha-version.txt') -Raw)
+          if ($version -ne '0.1.1') { throw 'NSIS staged candidate version missing/wrong' }
+          python tools/nvp_w1g_native_package.py verify-install --installed "$pending" --receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --output "$env:RUNNER_TEMP/nvp-w1g-staged.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Staged Windows NSIS payload does not match reviewed native build' }
+          python tools/nvp_w1g_windows_nsis_transaction_matrix.py --programs (Join-Path $env:LOCALAPPDATA 'Programs') --projects "$env:NVP_HOME" --build-receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --journal (Join-Path $env:RUNNER_TEMP 'nvp-w1g-nsis-transaction') --output "$env:RUNNER_TEMP/nvp-w1g-windows-nsis-matrix.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native NSIS staged upgrade and rollback transaction failed' }
+          & $active --smoke-reopen
+          if ($LASTEXITCODE -ne 0) { throw 'Restored original installed NVP.exe could not reopen original film data' }
       - name: Uninstall without deleting creator project data
         shell: pwsh
         run: |
@@ -137,6 +164,8 @@ jobs:
             ${{ runner.temp }}/nvp-w1g-native-build.json
             ${{ runner.temp }}/nvp-w1g-installed.json
             ${{ runner.temp }}/nvp-w1g-real-windows-kernel.json
+            ${{ runner.temp }}/nvp-w1g-staged.json
+            ${{ runner.temp }}/nvp-w1g-windows-nsis-matrix.json
             ${{ runner.temp }}/nvp-w1g-original-films.json
             ${{ runner.temp }}/nvp-w1g-film-preservation.json
           if-no-files-found: warn

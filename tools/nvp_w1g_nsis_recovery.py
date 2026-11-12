@@ -132,6 +132,15 @@ class OwnedNSISRecovery:
             raise RuntimeError("Previous program or creator films changed during rollback")
         record["state"]="ROLLED_BACK"
         _write(self.journal,record)
+        if os.name=="nt":
+            from tools.nvp_w1g_nsis_activation import (
+                _version, _registry_version, _update_registration)
+            # The restored real program's version and uninstall registration
+            # must agree. A registry failure cannot be accepted as rollback.
+            expected=_version(self.active)
+            _update_registration(expected)
+            if _registry_version()!=expected:
+                raise RuntimeError("Native Windows rollback registration did not reconcile")
 
 
     def recover_stranded_previous(self):
