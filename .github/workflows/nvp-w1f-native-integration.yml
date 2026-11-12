@@ -143,6 +143,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Frozen G09-E worker not importable' }
           & 'dist/NVP/NVP.exe' --w1e-runtime-selfcheck
           if ($LASTEXITCODE -ne 0) { throw 'Frozen private film worker not importable' }
+          & 'dist/NVP/NVP.exe' --int01e-source-selfcheck
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen INT-01E FilmIndex/G06-G09/Lu source ABI or UI assets unavailable' }
       - name: Install NSIS package and verify exact file head
         shell: pwsh
         run: |
@@ -177,6 +179,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installed G09-E worker unavailable' }
           & $installed '--w1e-runtime-selfcheck'
           if ($LASTEXITCODE -ne 0) { throw 'Installed protected worker unavailable' }
+          & $installed '--int01e-source-selfcheck'
+          if ($LASTEXITCODE -ne 0) { throw 'Installed INT-01E FilmIndex/G06-G09/Lu source ABI or director/editor asset unavailable' }
           # Genuine installed NVP.exe, actual Windows AppContainer/Job,
           # deterministic synthetic OpenUSD + 2000 PCM samples, encrypted
           # original/derived reel, verified restart. Not human OS approval.

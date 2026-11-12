@@ -636,18 +636,12 @@ class DecideCreativeDraft(BaseModel):
 
 @app.get("/api/creative/status")
 def creative_status():
-    try:
-        # NVP no longer probes an independent OpenAI-compatible provider
-        # to claim creative capability; Lu owns the sole runtime.
-        configured = False
-        detail = "lu_native_workspace_required"
-    except ValueError:
-        configured = False
-        detail = "lu_native_workspace_required"
+    # Lu owns the sole proposed model runtime. NVP never treats an
+    # independently configured endpoint as ready for this film.
     return {
         "stages": list(STAGES),
         "draft_storage": "ready",
-        "local_writer": detail,
+        "local_writer": "lu_native_workspace_required",
         "ai_model_bundled": False,
         "film_renderer_connected": False,
     }
