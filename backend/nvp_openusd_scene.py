@@ -265,11 +265,18 @@ class OpenUSDSceneBridge:
         _native_publish_checkpoint("before_compose")
         composed=_compose(base,motion,Sdf,Usd,parameter_layer,skeleton_layer)
         _native_publish_checkpoint("after_compose")
+        _native_publish_checkpoint("before_attach_assets")
         self._attach_assets(composed,bindings)
+        _native_publish_checkpoint("after_attach_assets")
         for path in paths:
+            _native_publish_checkpoint("before_evaluate_" + paths[path])
             _evaluate(composed,path,0,Sdf,Usd,UsdGeom)
+            _native_publish_checkpoint("after_evaluate_" + paths[path])
+        _native_publish_checkpoint("before_layout_export")
         base_bytes=base.ExportToString().encode("utf-8")
+        _native_publish_checkpoint("after_layout_export")
         motion_bytes=motion.ExportToString().encode("utf-8")
+        _native_publish_checkpoint("after_motion_export")
         parameter_bytes=(parameter_layer.ExportToString().encode("utf-8")
                          if parameter_layer is not None else b"")
         skeleton_bytes=(skeleton_layer.ExportToString().encode("utf-8")
@@ -280,8 +287,11 @@ class OpenUSDSceneBridge:
             len(skeleton_bytes)>MAX_USD_LAYER_BYTES):
             raise ValueError("Authored OpenUSD layer exceeded blob policy")
         # The immutable scene references the layer *bytes*, not temp paths.
+        _native_publish_checkpoint("before_layout_blob_commit")
         bsha=self.index.put_blob(project_id,base_bytes,media_type=LAYER_TYPE)
+        _native_publish_checkpoint("after_layout_blob_commit")
         msha=self.index.put_blob(project_id,motion_bytes,media_type=LAYER_TYPE)
+        _native_publish_checkpoint("after_motion_blob_commit")
         psha=(self.index.put_blob(project_id,parameter_bytes,
                                  media_type=LAYER_TYPE)
               if parameter_bytes else None)
@@ -325,7 +335,8 @@ class OpenUSDSceneBridge:
                     WHERE project_id=? AND sha256=?""",
                     (project_id,sha)).fetchone() is None:
                     raise RuntimeError("Composed OpenUSD source layer lost before commit")
-        return self.index.register_revision(
+        _native_publish_checkpoint("before_scene_revision_commit")
+        committed = self.index.register_revision(
             project_id,scene_id,"scene",manifest,
             expected_revision=expected_revision,
             # One asset may appear at many scene paths, but FilmIndex has
@@ -336,6 +347,8 @@ class OpenUSDSceneBridge:
                                e["manifest"]["asset_revision"])
                               for e in bindings})],
             precommit_guard=guard)
+        _native_publish_checkpoint("after_scene_revision_commit")
+        return committed
 
     def _resolve_assets(self, project_id, paths, asset_bindings, *,
                         verify_manifest=False):

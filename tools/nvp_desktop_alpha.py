@@ -217,12 +217,16 @@ def run_visible_window_smoke():
     old_home=os.environ.get("NVP_HOME")
     os.environ["NVP_HOME"]=str(test_home)
     try:
+        _smoke_checkpoint("visible_before_create_app")
         app=create_app()
+        _smoke_checkpoint("visible_after_create_app")
         from backend.nvp_api import studio
         from backend.nvp_film_index import FilmIndex
         from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        _smoke_checkpoint("visible_before_project_create")
         project=studio.create_project("SLATE-08B Window Acceptance",
             "One native source camera scene")
+        _smoke_checkpoint("visible_before_scene_publish")
         OpenUSDSceneBridge(FilmIndex(studio)).publish(
             project["id"],"smoke_scene",
             prims=[
@@ -231,6 +235,7 @@ def run_visible_window_smoke():
                 {"path":"/World/Camera","role":"camera",
                  "position":[0,0,8]},
             ],curves=[],native_schemas=True)
+        _smoke_checkpoint("visible_after_scene_publish")
         # Separate native A/V smoke from FFmpeg-backed imported video.
         # This is one real frozen OpenUSD Digital Take with a SHA-addressed
         # captured mono signal, for the actual installed WebView2 catalog.
@@ -239,9 +244,11 @@ def run_visible_window_smoke():
         from backend.nvp_openusd_take import OpenUSDTakeCapture
         import struct
         source_index=FilmIndex(studio)
+        _smoke_checkpoint("visible_before_original_pcm_publish")
         RecordedSoundSources(source_index).publish(
             project["id"],"smoke_signal",
             [struct.pack("<"+"h"*4800,*([6000]*4800))])
+        _smoke_checkpoint("visible_after_original_pcm_publish")
         TemporalLedger(source_index).publish(
             project["id"],"smoke_events",[{
                 "event_id":"smoke_actor_sound","event_kind":"sound",
@@ -250,6 +257,7 @@ def run_visible_window_smoke():
                 "source_id":"smoke_signal","source_revision":1,
                 "payload":{"usd_prim_path":"/World/Actor","gain":0.8},
             }],duration_tick=TICKS_PER_SECOND)
+        _smoke_checkpoint("visible_before_take_freeze")
         OpenUSDTakeCapture(
             source_index,verify_creator_action=lambda event,scope:
             event=="smoke_only" and scope["operation"]==
@@ -258,7 +266,9 @@ def run_visible_window_smoke():
                 scene_revision=1,timeline_id="smoke_events",
                 timeline_revision=1,sample_ticks=[0],
                 creator_event="smoke_only")
+        _smoke_checkpoint("visible_after_take_freeze")
         server,worker,port,sock=serve(app)
+        _smoke_checkpoint("visible_after_serve")
     except BaseException:
         if old_home is None: os.environ.pop("NVP_HOME",None)
         else: os.environ["NVP_HOME"]=old_home
@@ -268,16 +278,21 @@ def run_visible_window_smoke():
     result={"passed":False}
     bridge=None
     try:
+        _smoke_checkpoint("visible_before_bridge")
         bridge=create_trusted_camera_bridge(port)
+        _smoke_checkpoint("visible_before_create_window")
         window=webview.create_window("NVP Alpha Window Acceptance",
             "http://127.0.0.1:"+str(port),width=1000,height=700,
             js_api=bridge)
         bridge._attach_window(window)
-        window.events.loaded += lambda:loaded.set()
+        _smoke_checkpoint("visible_after_create_window")
+        window.events.loaded += lambda:(_smoke_checkpoint("visible_page_loaded_event"), loaded.set())
         def inspect_and_close():
+            _smoke_checkpoint("visible_inspector_enter")
             try:
                 if not loaded.wait(timeout=25):
                     raise RuntimeError("Native WebView2 did not fire page-loaded event")
+                _smoke_checkpoint("visible_inspector_page_ready")
                 # HTML loaded is insufficient: require actual React DOM mount.
                 deadline=time.monotonic()+20
                 while time.monotonic()<deadline:
@@ -404,11 +419,16 @@ def run_visible_window_smoke():
             except Exception as exc:
                 result["failure"]=str(exc)
             finally:
+                _smoke_checkpoint("visible_before_window_destroy")
                 window.destroy()
+                _smoke_checkpoint("visible_after_window_destroy")
+        _smoke_checkpoint("visible_before_webview_start")
         webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
+        _smoke_checkpoint("visible_after_webview_start")
         if not result["passed"]:
             raise RuntimeError(
                 "Real NVP WebView2 React UI failed: "+result.get("failure","unknown error"))
+        _smoke_checkpoint("visible_verified")
         return 0
     finally:
         try:
