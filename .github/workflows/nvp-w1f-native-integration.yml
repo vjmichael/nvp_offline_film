@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: nvp-w1f-native
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
