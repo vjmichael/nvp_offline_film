@@ -20,6 +20,8 @@ import sys
 
 from backend.nvp_g09_actor import _validate as validate_actor_doc
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+from backend.nvp_g09e_pcm import (
+    VerifiedSQLitePCM,WindowedVoiceSamples,verified_pcm_digest)
 
 SAMPLE_RATE=48000
 FILM_STEP=TICKS_PER_SECOND//24
@@ -75,12 +77,17 @@ def _voice_envelopes(source,actor,original):
         if (ref["actor_id"]!=actor["actor_id"] or
             clip["pcm_sha256"]!=ref["pcm_sha256"] or
             len(clip["pcm16le"])!=ref["sample_count"]*2 or
-            len(clip["pcm16le"])>MAX_ORIGINAL_PCM_BYTES or
-            sha256(clip["pcm16le"]).hexdigest()!=ref["pcm_sha256"]):
+            (len(clip["pcm16le"])>MAX_ORIGINAL_PCM_BYTES and
+             not isinstance(clip["pcm16le"],VerifiedSQLitePCM)) or
+            verified_pcm_digest(clip["pcm16le"])!=ref["pcm_sha256"]):
             raise RuntimeError("Actor voice was not the reviewed original recording")
-        pcm=array("h")
-        pcm.frombytes(clip["pcm16le"])
-        if sys.byteorder!="little":pcm.byteswap()
+        if isinstance(clip["pcm16le"],VerifiedSQLitePCM):
+            # The 960-sample RMS window never copies the original recording.
+            pcm=WindowedVoiceSamples(clip["pcm16le"])
+        else:
+            pcm=array("h")
+            pcm.frombytes(clip["pcm16le"])
+            if sys.byteorder!="little":pcm.byteswap()
         selected.append((ref,pcm))
     return selected
 
