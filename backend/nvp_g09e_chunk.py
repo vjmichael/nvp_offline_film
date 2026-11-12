@@ -8,8 +8,9 @@ have up to three hours of 24fps edit decisions without a 32-bit RIFF overrun.
 
 The output is a segmented WORKING film with a separately verified playlist.
 It is NOT advertised as one gapless professional codec, DCP or protected
-feature-length playback. Current G06 single-clip PCM <=64MiB admission
-still limits very long unsplit microphone sources (fail-closed).
+feature-length playback. Ordinary original PCM above 64 MiB is admitted
+through bounded SHA-verified SQLite pages. The native live-capture duration
+and protected long-film worker remain independently limited.
 """
 from __future__ import annotations
 
