@@ -30,6 +30,9 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
     frozen_options = None
     recording_error = None
     spooled_checks = []
+    # Bound the entire recording batch, not just each individual sound source.
+    # A 32-source batch must not consume 32 times the per-source spool budget.
+    batch_pcm_bytes = 0
     # The worker may own the PCM iterator. Drain it while the worker is alive;
     # publication after shutdown must never depend on a terminated producer.
     with ExitStack() as streams:
@@ -70,6 +73,9 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
                     if (type(chunk) is not bytes or not 0 < len(chunk) <= MAX_CHUNK_BYTES
                             or len(chunk) % 2 or count >= MAX_CHUNKS):
                         raise ValueError("Invalid original PCM16LE chunk")
+                    batch_pcm_bytes += len(chunk)
+                    if batch_pcm_bytes > MAX_CHUNK_BYTES * MAX_CHUNKS:
+                        raise ValueError("Original PCM recording batch exceeds spool budget")
                     header = struct.pack("<I", len(chunk))
                     if spool.write(header) != 4 or spool.write(chunk) != len(chunk):
                         raise OSError("Incomplete original PCM spool write")
