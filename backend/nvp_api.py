@@ -92,7 +92,8 @@ async def film_project_access_guard(request: Request, call_next):
                 tail.startswith("live/production/actors/")) or (
                 tail.startswith("live/production/sound/")) or (
                 tail=="live/av" or tail.startswith("live/av/")) or (
-                tail=="live/finish" or tail.startswith("live/finish/"))
+                tail=="live/finish" or tail.startswith("live/finish/")) or (
+                tail=="live/long-film" or tail.startswith("live/long-film/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -1920,3 +1921,10 @@ from backend.nvp_g09d_routes import (
 mount_g09d_routes(app,studio,live_films,COOKIE)
 mount_g09d_interchange_routes(
     app,_g08_controller,live_films,COOKIE)
+
+# G09-E durable bounded long-film reels, explicit resume and native
+# project-controlled worker custody; encrypted projects fail closed until
+# independent sealed long-render staging is integrated.
+from backend.nvp_g09e_routes import mount_g09e_routes
+_g09e_controller=mount_g09e_routes(
+    app,studio,film_access,live_films,COOKIE)
