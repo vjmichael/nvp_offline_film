@@ -363,10 +363,12 @@ def run_visible_window_smoke():
     try:
         _smoke_checkpoint("visible_before_bridge")
         bridge=create_trusted_camera_bridge(port)
+        from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
+        exposed_api=NativeWebviewIPCSurface(bridge)
         _smoke_checkpoint("visible_before_create_window")
         window=webview.create_window("NVP Alpha Window Acceptance",
             "http://127.0.0.1:"+str(port),width=1000,height=700,
-            js_api=bridge)
+            js_api=exposed_api)
         bridge._attach_window(window)
         _smoke_checkpoint("visible_after_create_window")
         window.events.loaded += lambda:(_smoke_checkpoint("visible_page_loaded_event"), loaded.set())
@@ -626,9 +628,11 @@ def main(argv=None):
     try:
         import webview
         bridge=create_trusted_camera_bridge(port)
+        from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
+        exposed_api=NativeWebviewIPCSurface(bridge)
         window=webview.create_window("NVP — Make Your Movie",
             "http://127.0.0.1:"+str(port),
-            width=1280,height=800,min_size=(960,600),js_api=bridge)
+            width=1280,height=800,min_size=(960,600),js_api=exposed_api)
         bridge._attach_window(window)
         webview.start(gui="edgechromium",debug=False)
         return 0

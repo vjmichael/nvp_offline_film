@@ -30,6 +30,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_int02_shot_composition.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_native_package.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_protected_upgrade.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_webview_ipc_surface.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_release_safety.py' -v
           python -m unittest discover -s tests -p 'test_blender_worker.py' -v
 
@@ -56,7 +57,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $files=@('test_nvp_int02_edited_film.py','test_nvp_int02_shot_composition.py',
             'test_nvp_w1g_native_package.py','test_nvp_w1g_protected_upgrade.py',
-            'test_nvp_w1g_release_safety.py','test_blender_worker.py')
+            'test_nvp_w1g_release_safety.py','test_nvp_webview_ipc_surface.py','test_blender_worker.py')
           foreach ($f in $files) {
             python -m unittest discover -s tests -p $f -v
             if ($LASTEXITCODE -ne 0) { throw "Native matrix failed: $f" }
