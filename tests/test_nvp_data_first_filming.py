@@ -67,6 +67,33 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+    def test_aggregate_duration_preflight_does_not_consume_original_pcm(self):
+        from unittest.mock import patch
+        import backend.nvp_data_first_filming as filming
+        req=self.payload()
+        consumed=[]
+        def original_stream():
+            consumed.append("original PCM advanced")
+            yield self.original
+        first=req["recordings"][0]
+        first["pcm_chunks"]=original_stream()
+        second=dict(first)
+        second.update(event_id="Speech002",source_id="SecondOriginalSpeech")
+        second["pcm_chunks"]=original_stream()
+        req["recordings"].append(second)
+        # Each one-second source individually fits the quota. Together their
+        # exact Film Time requires more disk than the batch may consume.
+        with patch.object(filming,"MAX_CHUNK_BYTES",len(self.original)), patch.object(
+                filming,"MAX_CHUNKS",1):
+            with self.assertRaisesRegex(ValueError,"batch durations exceed aggregate spool budget"):
+                self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        for identity in ("NewRecordedSpeech","SecondOriginalSpeech",
+                         "FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_direct_capture_enforces_aggregate_pcm_budget_before_publication(self):
         from unittest.mock import patch
         import backend.nvp_data_first_filming as filming
