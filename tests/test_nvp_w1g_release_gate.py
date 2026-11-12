@@ -95,9 +95,15 @@ class ReleaseWideKernelFence(unittest.TestCase):
                 self.assertTrue(proof["release_wide_launch_fence_verified"])
                 self.assertTrue(proof["complete_worker_domain_roster_verified"])
             journal=domains["filming"]/"worker_jobs.sqlite3"
-            with sqlite3.connect(journal) as db:
-                db.execute("CREATE TABLE worker_jobs (state TEXT NOT NULL)")
-                db.execute("INSERT INTO worker_jobs(state) VALUES ('INTERRUPTED')")
+            db=sqlite3.connect(journal)
+            try:
+                with db:
+                    db.execute("CREATE TABLE worker_jobs (state TEXT NOT NULL)")
+                    db.execute("INSERT INTO worker_jobs(state) VALUES ('INTERRUPTED')")
+            finally:
+                # sqlite3.Connection.__exit__ commits but does NOT close
+                # Windows DB handles. Close the real original fixture.
+                db.close()
             with witness.transaction():
                 with self.assertRaisesRegex(PermissionError,"Unreconciled"):
                     witness(original)

@@ -144,11 +144,18 @@ class WindowsReleaseWorkerStopEvidence:
                 if row.is_symlink() or row.parent.is_symlink():
                     raise RuntimeError("Linked original worker journal is untrusted")
                 db=sqlite3.connect(f"file:{row.as_posix()}?mode=ro",uri=True)
+                cursor=None
                 try:
-                    pending=db.execute(
+                    cursor=db.execute(
                         "SELECT COUNT(*) FROM worker_jobs WHERE state != 'SUCCEEDED'"
-                    ).fetchone()[0]
+                    )
+                    pending=cursor.fetchone()[0]
                 finally:
+                    # Windows keeps the original SQLite DB handle locked if
+                    # a cached prepared statement survives sqlite3_close_v2.
+                    # Close cursor BEFORE connection, including denial paths.
+                    if cursor is not None:
+                        cursor.close()
                     db.close()
                 if pending:
                     raise PermissionError("Unreconciled Blender/worker jobs block upgrade: "+name)
