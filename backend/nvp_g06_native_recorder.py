@@ -188,11 +188,13 @@ class G06NativeRecorder:
                 if audit is None or audit.filming.g05.g04.live is not None:
                     raise PermissionError("Protected long recording requires W1-E sealed custody")
                 from backend.nvp_g06_chunked_capture import NativeLongMicrophoneSession
+                current=audit.filming.view(project_id,scene_id)
+                if not current["stage_ready"] or not current["work_current"]:
+                    raise RuntimeError("Approve this scene before recording original audio")
                 session=NativeLongMicrophoneSession(project_id,scene_id,actor_id,
                     session_grant=self._token(grant),
                     studio=audit.filming.g05.g04.studio,
-                    stage_sha256=audit.filming.view(
-                        project_id,scene_id)["stage_sha256"])
+                    stage_sha256=current["stage_sha256"])
             else:
                 session=NativeMicrophoneSession(project_id,scene_id,actor_id,
                     session_grant=self._token(grant))
