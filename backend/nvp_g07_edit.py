@@ -646,12 +646,23 @@ class G07Editor:
             return self._view(db,pid,doc,next_rev)
         return self._execute(pid,review,mutate=True)
 
-    def native_assembly(self,pid,revision=None):
-        """Trusted G08 readback: exact presentation→Take time/source decisions.
+    def native_assembly(self,pid,revision=None,*,window=None):
+        """Trusted G08/G09-E readback of original Film Time and source.
 
-        This returns ORIGINAL G06 USD/PCM bytes, never encodes or overwrites
-        them. External/client routes are intentionally prohibited.
-        """
+        Optional (start_tick,end_tick) restricts ORIGINAL USD/PCM payload
+        to Takes participating in that output window while preserving the
+        full edit's SHA and all director-approved decision digests.
+
+        This is a narrow source admission boundary, not permission to edit
+        a frozen Take or pretend a long unbounded 48k PCM source is safe.
+        """ 
+        # Trusted host-only; routes cannot supply an arbitrary source range.
+        if window is not None and (
+            type(window) not in (tuple,list) or len(window)!=2 or
+            any(type(v) is not int for v in window) or
+            window[0]<0 or window[1]<=window[0]):
+            raise ValueError("Invalid immutable film render window")
+
         def read(db,movie):
             current,document=_project(db,pid)
             source_revision=current if revision is None else revision
@@ -665,6 +676,19 @@ class G07Editor:
                     raise RuntimeError("An earlier edit is unavailable")
                 document=json.loads(row["document_json"])
             total,segments=self._validate(db,pid,document)
+            if window is not None:
+                from backend.nvp_g08_native_avi import TICKS_FRAME,MAX_SECONDS
+                if (window[1]>total or
+                    window[0]%TICKS_FRAME or window[1]%TICKS_FRAME or
+                    window[1]-window[0]>10*TICKS_FRAME*24):
+                    raise ValueError("A source-render window must contain up to ten whole seconds")
+                participating={seg["take_id"] for seg in segments
+                    if seg["start_tick"]<window[1] and
+                       seg["end_tick"]>window[0]}
+                if not participating:
+                    raise RuntimeError("A film render interval contains no original Take")
+            else:
+                participating=None
             from backend.nvp_g09_environment import G09Environment
             from backend.nvp_g09_actor import G09Actors
             from backend.nvp_g09c_acoustics import G09CAcoustics
@@ -672,21 +696,49 @@ class G07Editor:
             production_looks={}
             actor_performances={}
             acoustic_looks={}
+            seen={}
+            source_budget=0
             for clip in document["clips"]:
                 take_id=clip["take_id"]
-                if take_id not in sources:
+                if take_id not in seen:
                     row,doc,audio=self._take(db,pid,take_id,{})
-                    original=db.execute("""SELECT original_usd,performance_usd
-                        FROM g06_frozen_takes WHERE project_id=? AND take_id=?""",
-                        (pid,take_id)).fetchone()
-                    sound=[]
-                    for item in audio:
-                        pcm=db.execute("""SELECT pcm,pcm_sha256 FROM g06_original_pcm
-                            WHERE project_id=? AND scene_id=? AND id=?""",
-                            (pid,row["scene_id"],item["clip_id"])).fetchone()
-                        if pcm is None or _sha(pcm["pcm"])!=pcm["pcm_sha256"]:
-                            raise RuntimeError("Original sound cannot be reopened")
-                        sound.append({**item,"pcm16le":bytes(pcm["pcm"])})
+                    seen[take_id]=row["take_sha256"]
+                    if participating is None or take_id in participating:
+                        # Original media admission BEFORE reading PCM blobs:
+                        # this prevents a single enormous Take or an unsafe
+                        # set of simultaneous tracks from exhausting RAM.
+                        if participating is not None:
+                            size_row=db.execute("""SELECT
+                                length(original_usd)+length(performance_usd)
+                                AS source_bytes FROM g06_frozen_takes
+                                WHERE project_id=? AND take_id=?""",
+                                (pid,take_id)).fetchone()
+                            if size_row is None:
+                                raise RuntimeError("Original film world was removed")
+                            source_budget+=size_row["source_bytes"]
+                        original=db.execute("""SELECT original_usd,performance_usd
+                            FROM g06_frozen_takes WHERE project_id=? AND take_id=?""",
+                            (pid,take_id)).fetchone()
+                        source_audio=[]
+                        for item in audio:
+                            if participating is not None:
+                                length=db.execute("""SELECT length(pcm)
+                                    FROM g06_original_pcm WHERE project_id=?
+                                    AND scene_id=? AND id=?""",
+                                    (pid,row["scene_id"],item["clip_id"])).fetchone()
+                                if length is None or length[0] is None:
+                                    raise RuntimeError("Original microphone clip was removed")
+                                if length[0]>64*1024*1024:
+                                    raise ValueError("This long original microphone Take needs the later incremental source-PCM reader")
+                                source_budget+=length[0]
+                                if source_budget>256*1024*1024:
+                                    raise ValueError("Simultaneous original Takes exceed the 256 MiB window budget")
+                            pcm=db.execute("""SELECT pcm,pcm_sha256 FROM g06_original_pcm
+                                WHERE project_id=? AND scene_id=? AND id=?""",
+                                (pid,row["scene_id"],item["clip_id"])).fetchone()
+                            if pcm is None or _sha(pcm["pcm"])!=pcm["pcm_sha256"]:
+                                raise RuntimeError("Original sound cannot be reopened")
+                            source_audio.append({**item,"pcm16le":bytes(pcm["pcm"])})
                     approved=G09Environment.approved_source(
                         db,pid,take_id,row["take_sha256"],doc)
                     if approved is not None:
@@ -695,10 +747,12 @@ class G07Editor:
                         db,pid,take_id,row["take_sha256"],doc)
                     if acting is not None:
                         actor_performances[take_id]=acting
-                    sound=G09CAcoustics.approved_source(
+                    sound_review=G09CAcoustics.approved_source(
                         db,pid,take_id,row["take_sha256"],doc)
-                    if sound is not None:
-                        acoustic_looks[take_id]=sound
+                    if sound_review is not None:
+                        acoustic_looks[take_id]=sound_review
+                    if participating is not None and take_id not in participating:
+                        continue
                     sources[take_id]={"scene_id":row["scene_id"],
                         "take_sha256":row["take_sha256"],
                         "original_usd":bytes(original["original_usd"]),
@@ -707,7 +761,7 @@ class G07Editor:
                         "stage_setting":doc["stage_setting"],
                         "performance_sha256":row["performance_usd_sha256"],
                         "original_sha256":row["original_usd_sha256"],
-                        "audio":sound,"duration_tick":doc["duration_tick"]}
+                        "audio":source_audio,"duration_tick":doc["duration_tick"]}
             # G09-D final-picture/audio decisions are an independent human
             # approval pinned to this exact edit and all approved derived
             # scene, performer and acoustic sources.
@@ -728,7 +782,7 @@ class G07Editor:
                     for key,val in sorted(acoustic_looks.items())
                 }).encode("utf8")),
                 "original_takes_sha256":_sha(_json([
-                    [tid,sources[tid]["take_sha256"]] for tid in sorted(sources)
+                    [tid,seen[tid]] for tid in sorted(seen)
                 ]).encode("utf8"))
             }
             finishing=G09DFinishing.approved_source(db,pid,source_bindings)
@@ -757,6 +811,10 @@ class G07Editor:
                 }).encode("utf8")),
                 "acoustic_looks":acoustic_looks,
                 "duration_tick":total,"segments":segments,
+                "window":list(window) if window is not None else None,
+                "all_source_take_count":len(seen),
+                "loaded_source_take_count":len(sources),
+                "source_payload_budget_bytes":source_budget if window is not None else None,
                 "original_takes":sources,"master_gain":document["master_gain"],
                 "source_media_modified":False,
                 "derived_picture_frames":False,
