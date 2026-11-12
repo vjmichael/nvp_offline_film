@@ -163,6 +163,12 @@ class NativeSceneSoundCapture:
                 verified_original_clock(
                     self.index,project_id,sid,start,end,
                     entry["source_sync"],entry["clock_evidence"])
+            # Reject malformed later recording streams before touching the first
+            # original PCM iterator. Do not advance or consume valid iterators.
+            try:
+                iter(entry["pcm_chunks"])
+            except TypeError as exc:
+                raise ValueError("Captured PCM chunks must be iterable") from exc
             preflight_events.add(eid)
             preflight_sources.add(sid)
         publication_started=False
