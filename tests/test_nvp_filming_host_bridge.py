@@ -20,7 +20,7 @@ GOOD = {"process_tree_custody_verified": True, "empty_group_verified": True,
 def test_host_freezes_only_after_verified_shutdown():
     order = []
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session = S()
         capture = C()
         session.stop_and_verify.side_effect = lambda **kw: (order.append("stop"), GOOD)[1]
@@ -37,7 +37,7 @@ def test_host_freezes_only_after_verified_shutdown():
 ])
 def test_host_denies_publication_without_full_custody(receipt):
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         session.stop_and_verify.return_value = receipt
         with pytest.raises(RuntimeError, match="custody unverified"):
@@ -47,7 +47,7 @@ def test_host_denies_publication_without_full_custody(receipt):
 
 def test_recorder_error_still_reaps_worker_without_publishing():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         session.stop_and_verify.return_value = GOOD
         def broken():
@@ -60,7 +60,7 @@ def test_recorder_error_still_reaps_worker_without_publishing():
 
 def test_shutdown_failure_denies_publication():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         session.stop_and_verify.side_effect = RuntimeError("kernel denied")
         with pytest.raises(RuntimeError, match="kernel denied"):
@@ -71,7 +71,7 @@ def test_shutdown_failure_denies_publication():
 @pytest.mark.parametrize("bad_batch", [[], [None] * 33, (), None])
 def test_invalid_batch_still_stops_worker(bad_batch):
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         session.stop_and_verify.return_value = GOOD
         with pytest.raises(ValueError, match="1..32"):
@@ -83,7 +83,7 @@ def test_invalid_batch_still_stops_worker(bad_batch):
 
 def test_invalid_recorder_callback_still_stops_worker():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         session.stop_and_verify.return_value = GOOD
         with pytest.raises(TypeError, match="supplier"):
@@ -105,7 +105,7 @@ def test_invalid_capture_service_still_stops_worker():
 
 def test_shutdown_callback_cannot_rewrite_recording_event_metadata():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         event = {"event_id": "original", "pcm_chunks": iter((b'\x00\x00',))}
         def shutdown(**kwargs):
@@ -124,7 +124,7 @@ def test_shutdown_callback_cannot_rewrite_recording_event_metadata():
 
 def test_malformed_recording_event_still_stops_worker():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         session.stop_and_verify.return_value = GOOD
         with pytest.raises(ValueError, match="typed dictionaries"):
@@ -136,7 +136,7 @@ def test_malformed_recording_event_still_stops_worker():
 
 def test_shutdown_cannot_rewrite_nested_clock_attestation():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         pcm = iter((b"\x00\x00",))
         event = {"pcm_chunks": pcm, "source_sync": {"anchors": [{"tick": 42}]},
@@ -156,7 +156,7 @@ def test_shutdown_cannot_rewrite_nested_clock_attestation():
 
 def test_shutdown_cannot_rewrite_new_nested_metadata_fields():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         pcm = iter((b"\x00\x00",))
         event = {"pcm_chunks": pcm, "actor_metadata": {"markers": [{"tick": 17}]},
@@ -179,7 +179,7 @@ def test_unsnapshotable_metadata_still_reaps_and_denies_take():
         def __deepcopy__(self, memo):
             raise ValueError("metadata cannot be frozen")
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         session.stop_and_verify.return_value = GOOD
         with pytest.raises(ValueError, match="cannot be frozen"):
@@ -192,7 +192,7 @@ def test_unsnapshotable_metadata_still_reaps_and_denies_take():
 
 def test_shutdown_cannot_expand_capture_source_consent_or_options():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         options = {"allowed_sources": ["microphone-A"], "consent": {"scope": ["scene-1"]}}
         def shutdown(**kwargs):
@@ -213,7 +213,7 @@ def test_unsnapshotable_capture_options_still_reap_and_deny_take():
         def __deepcopy__(self, memo):
             raise ValueError("consent snapshot failed")
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         session.stop_and_verify.return_value = GOOD
         with pytest.raises(ValueError, match="consent snapshot failed"):
@@ -227,7 +227,7 @@ def test_unsnapshotable_capture_options_still_reap_and_deny_take():
 
 def test_pcm_is_drained_before_worker_shutdown():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         live = {"worker": True}
         def pcm():
@@ -245,7 +245,7 @@ def test_pcm_is_drained_before_worker_shutdown():
 
 def test_invalid_pcm_still_stops_worker_and_denies_publication():
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C:
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C:
         session, capture = S(), C()
         session.stop_and_verify.return_value = GOOD
         with pytest.raises(ValueError, match="PCM16LE"):
@@ -264,7 +264,7 @@ def test_shutdown_spool_tampering_denies_publication_before_capture():
         opened.append(stream)
         return stream
     with patch("backend.nvp_filming_host_bridge.LinuxFilmingSession", FakeLinuxSession) as S, patch(
-        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture") as C, patch(
+        "backend.nvp_filming_host_bridge.NativeSceneSoundCapture", FakeCapture) as C, patch(
         "backend.nvp_filming_host_bridge.tempfile.SpooledTemporaryFile",
         side_effect=spool_factory):
         session, capture = S(), C()
