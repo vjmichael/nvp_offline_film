@@ -93,6 +93,9 @@ class NativeSceneSoundCapture:
         chunk_digests={}
         spooled=[]
         prepared_entries=[]
+        # Enforce the same total disk budget for direct capture callers as the
+        # supervised host bridge. A per-source bound alone permits 32x usage.
+        batch_pcm_bytes=0
         camera_events=self.timeline.events_in(
             project_id,camera_timeline_id,camera_timeline_revision,
             start_tick=0,end_tick=int(plan["duration_tick"]),limit=MAX_SHOTS+1)
@@ -210,6 +213,9 @@ class NativeSceneSoundCapture:
                         not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2 or
                         count>=MAX_CHUNKS):
                         raise ValueError("Invalid captured PCM16LE chunk")
+                    batch_pcm_bytes+=len(chunk)
+                    if batch_pcm_bytes>MAX_CHUNK_BYTES*MAX_CHUNKS:
+                        raise ValueError("Original PCM recording batch exceeds spool budget")
                     # A short write (including a full disk or interrupted
                     # temporary backing store) is not a validated recording.
                     # Refuse the entire batch before publishing source data.
