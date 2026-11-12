@@ -190,7 +190,9 @@ class G06NativeRecorder:
                 from backend.nvp_g06_chunked_capture import NativeLongMicrophoneSession
                 session=NativeLongMicrophoneSession(project_id,scene_id,actor_id,
                     session_grant=self._token(grant),
-                    studio=audit.filming.g05.g04.studio)
+                    studio=audit.filming.g05.g04.studio,
+                    stage_sha256=audit.filming.view(
+                        project_id,scene_id)["stage_sha256"])
             else:
                 session=NativeMicrophoneSession(project_id,scene_id,actor_id,
                     session_grant=self._token(grant))
