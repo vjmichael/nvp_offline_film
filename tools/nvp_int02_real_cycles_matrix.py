@@ -50,6 +50,7 @@ def prepare_real_usd(path:Path):
     camera=UsdGeom.Camera.Define(stage,"/World/Camera")
     camera.GetFocalLengthAttr().Set(.5)
     camera.GetHorizontalApertureAttr().Set(.36)
+    camera.GetVerticalApertureAttr().Set(.2025)
     # The previous forward-looking fixture had an incorrect camera
     # orientation after native USD import: real Cycles PNG contained only
     # a tiny ground triangle and no visible original actor. An overhead
@@ -129,6 +130,9 @@ def run_matrix(out:Path,blender:Path):
         "source_tick":0,
         "width":1920,"height":1080,"samples":64,
         "renderer":"CYCLES",
+        "camera_focal_length_mm":50.0,
+        "camera_sensor_width_mm":36.0,
+        "camera_sensor_height_mm":20.25,
         "actor_paths":["/World/Actor"],
         "light_paths":["/World/Light"],
     }
@@ -161,6 +165,11 @@ def run_matrix(out:Path,blender:Path):
         raise RuntimeError(
             "Real Cycles image lacks visible original USD actor material "+
             f"(only {red_visible} red actor pixels); SHA alone is insufficient")
+    if (audit.get("source_camera_unit_conversion_verified") is not True or
+        audit.get("camera_focal_length_mm")!=50.0 or
+        audit.get("camera_sensor_width_mm")!=36.0 or
+        audit.get("camera_sensor_height_mm")!=20.25):
+        raise RuntimeError("Cycles did not use the source camera's meter-aware real lens")
     if (_png_header(image)!=(1920,1080) or
         audit.get("render_engine")!="CYCLES" or
         audit.get("source_usd_sha256")!=scene_sha or

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -30,7 +31,7 @@ SAMPLES=96
 
 
 def static_composed_usd(index: FilmIndex, project_id, take_id, take_sha,
-                        tick, *, shot_id=None, shot_revision=None,
+                        tick, *, camera_path, shot_id=None, shot_revision=None,
                         shot_sha=None):
     """Read actual authored USD + approved stronger shot, freeze sampled attrs."""
     if not isinstance(index, FilmIndex):
@@ -61,6 +62,28 @@ def static_composed_usd(index: FilmIndex, project_id, take_id, take_sha,
     if scene["document_sha256"]!=data["scene_document_sha256"]:
         raise RuntimeError("Native production USD source changed after freezing")
     _,_,Usd,UsdGeom=_usd()
+    prim=stage.GetPrimAtPath(camera_path)
+    if not prim or not prim.IsA(UsdGeom.Camera):
+        raise RuntimeError("Production Cycles requires a real UsdGeom.Camera schema")
+    source_camera=UsdGeom.Camera(prim)
+    sample_tick=Usd.TimeCode(float(tick))
+    # USD camera focal and aperture attributes are authored in
+    # one-tenth of a scene unit. Convert to real Blender millimeters
+    # from the composed stage's original metersPerUnit metadata.
+    mm_per_camera_unit=100.0*float(UsdGeom.GetStageMetersPerUnit(stage))
+    params={}
+    for key,attr in (
+        ("camera_focal_length_mm",source_camera.GetFocalLengthAttr()),
+        ("camera_sensor_width_mm",source_camera.GetHorizontalApertureAttr()),
+        ("camera_sensor_height_mm",source_camera.GetVerticalApertureAttr()),
+    ):
+        raw=attr.Get(sample_tick)
+        if raw is None:
+            raise RuntimeError("Composed original USD camera lens/aperture is absent")
+        value=float(raw)*mm_per_camera_unit
+        if not math.isfinite(value) or not 1.0<=value<=300.0:
+            raise RuntimeError("Original USD camera lens/aperture outside finite Blender bounds")
+        params[key]=value
     flat=stage.Flatten()
     baked=Usd.Stage.Open(flat)
     if baked is None:
@@ -87,7 +110,7 @@ def static_composed_usd(index: FilmIndex, project_id, take_id, take_sha,
     # flattened scene cannot cause Blender to load arbitrary drive files.
     if "@" in text:
         raise RuntimeError("Cycles stage contains unresolved external USD asset reference")
-    return text.encode("utf8")
+    return text.encode("utf8"), params
 
 
 class NativeCyclesOriginalRenderer:
@@ -137,9 +160,17 @@ class NativeCyclesOriginalRenderer:
         shot_id=scope.get("source_shot_id")
         shot_rev=scope.get("source_shot_revision")
         shot_sha=scope.get("source_shot_sha256")
-        usd=static_composed_usd(
+        usd,optics=static_composed_usd(
             self.index,self.project_id,take_id,take_sha,tick,
+            camera_path=camera_path,
             shot_id=shot_id,shot_revision=shot_rev,shot_sha=shot_sha)
+        for observed in source_snapshot.get("native_scene_schemas",[]):
+            if (observed.get("prim_path")==camera_path and
+                observed.get("schema")=="UsdGeom.Camera" and
+                not math.isclose(float(observed["focal_length_mm"]),
+                                 optics["camera_focal_length_mm"],
+                                 rel_tol=2e-5,abs_tol=1e-4)):
+                raise RuntimeError("Authoritative camera lens and scene snapshot conflict")
         dig=sha256(usd).hexdigest()
         spec=(self.project_id+"|"+scope["presentation_id"]+"|"+
               take_sha+"|"+str(tick)+"|"+str(shot_sha)).encode()
@@ -153,6 +184,7 @@ class NativeCyclesOriginalRenderer:
             "usd_sha256":dig,"camera_path":camera_path,
             "source_tick":tick,"width":WIDTH,"height":HEIGHT,
             "samples":SAMPLES,"renderer":"CYCLES",
+            **optics,
             "actor_paths":[o["path"] for o in source_snapshot.get("objects",[])
                            if o.get("semantic_role")=="actor"],
             "light_paths":[o["path"] for o in source_snapshot.get("objects",[])
@@ -190,6 +222,10 @@ class NativeCyclesOriginalRenderer:
                 audit.get("cycles_samples")!=SAMPLES or
                 audit.get("resolution")!=[WIDTH,HEIGHT] or
                 audit.get("native_frame_sha256")!=sha256(encoded).hexdigest() or
+                audit.get("source_camera_unit_conversion_verified") is not True or
+                any(not math.isclose(float(audit.get(k,0.0)),float(v),
+                                     rel_tol=1e-5,abs_tol=1e-4)
+                    for k,v in optics.items()) or
                 audit.get("original_actor_geometry_verified") is not True or
                 audit.get("authored_lights_verified") is not True or
                 _png_header(encoded)!=(WIDTH,HEIGHT)):

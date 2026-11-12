@@ -35,7 +35,9 @@ def main(argv=None):
     plan=json.loads(raw)
     required={"format","usd_file","usd_sha256","camera_path",
               "source_tick","width","height","samples","renderer",
-              "actor_paths","light_paths"}
+              "actor_paths","light_paths",
+              "camera_focal_length_mm","camera_sensor_width_mm",
+              "camera_sensor_height_mm"}
     if type(plan) is not dict or set(plan)!=required or (
             plan.get("format")!="nvp.int02.cycles.frame_plan.v1" or
             plan.get("renderer")!="CYCLES" or
@@ -49,7 +51,12 @@ def main(argv=None):
             any(type(plan.get(k)) is not list or len(plan[k])>64 or
                 any(type(p) is not str or not p.startswith("/World/") or
                     len(p)>240 for p in plan[k])
-                for k in ("actor_paths","light_paths"))):
+                for k in ("actor_paths","light_paths")) or
+            any(type(plan.get(k)) not in (int,float) or
+                not 1.0<=float(plan[k])<=300.0
+                for k in ("camera_focal_length_mm",
+                          "camera_sensor_width_mm",
+                          "camera_sensor_height_mm"))):
         raise RuntimeError("Untrusted or unsupported exact Cycles frame plan")
     usd=args.plan.parent/plan["usd_file"]
     if (usd.parent!=args.plan.parent or usd.is_symlink() or
@@ -90,6 +97,20 @@ def main(argv=None):
     camera=bpy.data.objects.get(name)
     if camera is None or camera.type!="CAMERA":
         raise RuntimeError("Composed original USD camera not imported by Blender")
+    # USD lens and aperture are authored in tenths of a source stage unit.
+    # Blender's USD importer can import their RAW USD numeric value as mm
+    # when the source stage uses metersPerUnit=1, producing an ultra-wide
+    # 0.5mm lens instead of NVP's authoritative 50mm. Host-derived optics
+    # are independently read from the *same* frozen composed USD stage.
+    camera.data.lens=float(plan["camera_focal_length_mm"])
+    camera.data.sensor_fit="HORIZONTAL"
+    camera.data.sensor_width=float(plan["camera_sensor_width_mm"])
+    camera.data.sensor_height=float(plan["camera_sensor_height_mm"])
+    if any(abs(getattr(camera.data,attr)-float(plan[field]))>1e-4
+           for attr,field in (("lens","camera_focal_length_mm"),
+                              ("sensor_width","camera_sensor_width_mm"),
+                              ("sensor_height","camera_sensor_height_mm"))):
+        raise RuntimeError("Blender lens/aperture does not match frozen USD camera")
     scene=bpy.context.scene
     def imported_descendant(path, accepted):
         name=path.rsplit("/",1)[-1]
@@ -133,6 +154,10 @@ def main(argv=None):
         "cycles_samples":scene.cycles.samples,
         "resolution":[scene.render.resolution_x,scene.render.resolution_y],
         "native_usd_import":True,
+        "camera_focal_length_mm":float(camera.data.lens),
+        "camera_sensor_width_mm":float(camera.data.sensor_width),
+        "camera_sensor_height_mm":float(camera.data.sensor_height),
+        "source_camera_unit_conversion_verified":True,
         "original_actor_geometry_verified":True,
         "authored_lights_verified":True,
         "native_frame_sha256":digest(args.output),

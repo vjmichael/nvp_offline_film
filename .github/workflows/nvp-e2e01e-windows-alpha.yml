@@ -80,7 +80,13 @@ jobs:
         shell: pwsh
         run: |
           $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
-          $process=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          $process=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru
+          if (-not $process.WaitForExit(240000)) {
+            Write-Host "NSIS silent first-install timed out; installed: $(Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP'))"
+            Write-Host "NSIS candidate stage: $(Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP.pending'))"
+            $process.Kill()
+            throw 'Native Windows NSIS installer timed out; no acceptance'
+          }
           if ($process.ExitCode -ne 0) {
             $installedRoot=Join-Path $env:LOCALAPPDATA 'Programs/NVP'
             $pendingRoot=Join-Path $env:LOCALAPPDATA 'Programs/NVP.pending'
@@ -132,7 +138,11 @@ jobs:
           $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
           $active=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
           $oldHash=(Get-FileHash -LiteralPath $active -Algorithm SHA256).Hash
-          $stageProcess=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          $stageProcess=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru
+          if (-not $stageProcess.WaitForExit(240000)) {
+            $stageProcess.Kill()
+            throw 'Native Windows NSIS upgrade staging timed out; no activation performed'
+          }
           # Abort is expected after safe stage-only candidate creation.
           $pending=Join-Path $env:LOCALAPPDATA 'Programs/NVP.pending'
           if (-not (Test-Path (Join-Path $pending 'NVP.exe'))) { throw 'NSIS did not stage real candidate' }
