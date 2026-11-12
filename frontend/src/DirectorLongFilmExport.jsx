@@ -44,11 +44,9 @@ export default function DirectorLongFilmExport({movie,edit,disabled=false}){
   useEffect(()=>{
     alive.current=true;setJobs([]);setError('');setNotice('');
     const c=new AbortController();setLoading(true);
-    if(!movie.encrypted){
-      refresh(c.signal).catch(e=>{
-        if(e.name!=='AbortError'&&alive.current)setError(e.message)
-      }).finally(()=>{if(alive.current)setLoading(false)});
-    }else setLoading(false);
+    refresh(c.signal).catch(e=>{
+      if(e.name!=='AbortError'&&alive.current)setError(e.message)
+    }).finally(()=>{if(alive.current)setLoading(false)});
     return()=>{alive.current=false;c.abort()};
   },[base,movie.revision]);
   useEffect(()=>{
@@ -72,11 +70,26 @@ export default function DirectorLongFilmExport({movie,edit,disabled=false}){
     if(!window.confirm(message))return;
     setBusy(true);setError('');setNotice('');
     try{
+      let nativeApproval=null;
+      if(movie.encrypted&&kind!=='cancel'){
+        const api=window.pywebview?.api?.native_private_film_review;
+        if(typeof api!=='function')throw new Error(
+          'Protected film rendering requires the installed NVP native desktop window.');
+        const preview=await call(base+'/review?expected_revision='+
+          encodeURIComponent(edit.revision));
+        const decision=await api(preview);
+        if(!decision?.approved||!decision.native_approval_id){
+          if(alive.current)setNotice('Native private-film authorization was declined.');
+          return;
+        }
+        nativeApproval=decision.native_approval_id;
+      }
       const path=kind==='start'?base+'/start':
         base+'/'+encodeURIComponent(jobId)+'/'+kind;
       await call(path,'POST',kind==='start'?
-        {expected_revision:edit.revision,director_confirmed:true}:
-        {director_confirmed:true});
+        {expected_revision:edit.revision,director_confirmed:true,
+          native_approval_id:nativeApproval}:
+        {director_confirmed:true,native_approval_id:nativeApproval});
       await refresh();
       if(alive.current)setNotice(kind==='start'?
         'Your long-film render has a durable source-bound work journal.':
@@ -87,7 +100,7 @@ export default function DirectorLongFilmExport({movie,edit,disabled=false}){
   }
 
   if(!edit||duration<=30)return null;
-  const canStart=within&&!disabled&&!hasActive&&!busy&&!movie.encrypted&&
+  const canStart=within&&!disabled&&!hasActive&&!busy&&
     edit.revision>0&&edit.clips?.length>0&&!edit.missing_sources?.length;
   const phases={queued:'Queued for original-source rendering',
     analyzing:'Measuring the whole source soundtrack',
@@ -117,10 +130,11 @@ export default function DirectorLongFilmExport({movie,edit,disabled=false}){
       <div><small>Sound</small><strong>48kHz stereo</strong></div>
       <div><small>Original Takes</small><strong>Preserved</strong></div>
     </div>
-    {movie.encrypted&&<p className="director-long-warning" role="alert">
-      This movie is encrypted. Long-film export is held back until the
-      protected native chunk worker can keep all original media and
-      intermediate outputs encrypted. Your current film stays safe.
+    {movie.encrypted&&<p className="director-long-warning" role="status">
+      Protected original film: recording and reel outputs remain AES-GCM
+      encrypted. Starting or resuming rendering requires a one-use native OS
+      approval and a separately confined Windows AppContainer worker.
+      If those capabilities are unavailable, NVP refuses the operation.
     </p>}
     {!within&&<p className="director-long-warning">
       Long-film export supports saved films greater than 30 seconds and up
@@ -132,10 +146,11 @@ export default function DirectorLongFilmExport({movie,edit,disabled=false}){
     </p>}
     {error&&<p className="director-long-error" role="alert">{error}</p>}
     {notice&&<p className="director-long-notice" role="status">{notice}</p>}
-    {within&&!movie.encrypted&&<div className="director-long-go">
+    {within&&<div className="director-long-go">
       <button className="film-primary" disabled={!canStart}
         onClick={()=>act(null,'start')}>
-        Render Complete Film in Verified Reels
+        {movie.encrypted?'Approve Protected Film Rendering':
+          'Render Complete Film in Verified Reels'}
       </button>
       <p className="film-hint">This version uses bounded ten-second
         native AVI reels. The work can be resumed from verified checkpoints;
@@ -174,13 +189,15 @@ export default function DirectorLongFilmExport({movie,edit,disabled=false}){
           </>}
         </div>
         {job.completed&&job===latest&&<>
-          <DirectorFilmDistribution
+          {!movie.encrypted&&<DirectorFilmDistribution
             key={movie.id+':portable:'+job.id}
-            movie={movie} job={job}/>
-          <p className="film-hint">Your film is also available as individual
-            AVI reels with their original source-index receipts. A portable
-            .nvpfilm package collects them for verification and playback
-            in NVP; other players may not switch AVI reels without gaps.</p>
+            movie={movie} job={job}/>}
+          <p className="film-hint">{movie.encrypted?
+            'Original film reels stay AES-GCM sealed in the NVP project. Each
+             authorized download is decrypted only in the trusted host response;
+             no plaintext working files are saved for export workers.':
+            'Your film is also available as individual AVI reels and a portable
+             .nvpfilm package. Other players may not switch AVI reels without gaps.'}</p>
           <div className="director-long-pages">
             <label>Reels to save · page
               <select value={page} onChange={e=>setPage(Number(e.target.value))}>
