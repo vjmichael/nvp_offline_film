@@ -53,7 +53,10 @@ def _fixed_command():
     tool=Path(__file__).resolve().parents[1]/"tools"/"nvp_w1e_sealed_reel_worker.py"
     if not tool.is_file() or tool.is_symlink():
         raise ProtectedFilmReelError("Reviewed reel worker is not installed")
-    return [str(exe),"-B","-m","tools.nvp_w1e_sealed_reel_worker"],[tool]
+    # The child has a disposable cwd and a sanitized environment with
+    # no PYTHONPATH. -m tools.* would not resolve from that cwd. Execute the
+    # exact reviewed file and let its fixed bootstrap resolve backend imports.
+    return [str(exe),"-B",str(tool)],[tool]
 
 
 def _serialize_window(assembly,start,end,total_frames,plan):
