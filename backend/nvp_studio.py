@@ -9,6 +9,7 @@ import hashlib
 import os
 import re
 import sqlite3
+import sys
 from contextlib import contextmanager
 import uuid
 from datetime import datetime, timezone
@@ -99,6 +100,19 @@ class Studio:
     def __init__(self, db_path: str | Path | None = None):
         root = Path(os.environ.get("NVP_HOME", str(Path.home() / "NVP_Projects")))
         self.db_path = Path(db_path) if db_path else root / "nvp_studio.sqlite3"
+        if getattr(sys,"frozen",False):
+            # An NSIS/Debian upgrade/uninstall may replace the executable
+            # installation tree, but must NEVER own movie projects, original
+            # USD/PCM, approved creative history or imported film packages.
+            # Use the historical user NVP_Projects root unless the director
+            # explicitly selected NVP_HOME; no silent path migration.
+            executable=Path(sys.executable).resolve(strict=True).parent
+            selected=self.db_path.expanduser().resolve()
+            if selected==executable or executable in selected.parents:
+                raise RuntimeError(
+                    "NVP project storage cannot be inside the installed "
+                    "application directory. Move NVP_HOME to a user-owned "
+                    "folder before opening your original films.")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
