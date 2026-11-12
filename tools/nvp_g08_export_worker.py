@@ -63,7 +63,8 @@ def _render(args):
     if (assembly["edit_document_sha256"]!=args.edit_sha or
             assembly["production_looks_sha256"]!=args.looks_sha or
             assembly["actor_performances_sha256"]!=args.actors_sha or
-            assembly["acoustic_looks_sha256"]!=args.acoustics_sha):
+            assembly["acoustic_looks_sha256"]!=args.acoustics_sha or
+            assembly["finishing_sha256"]!=args.finishing_sha):
         raise RuntimeError("Source edit or approved production look changed after director approval")
     if assembly["duration_tick"]<=0:
         raise ValueError("Record and edit a film before exporting")
@@ -78,7 +79,8 @@ def _render(args):
             "status":"rendering","edit_sha256":args.edit_sha,
             "approved_look_sha256":args.looks_sha,
             "approved_actor_performances_sha256":args.actors_sha,
-            "approved_acoustic_looks_sha256":args.acoustics_sha})
+            "approved_acoustic_looks_sha256":args.acoustics_sha,
+            "approved_finishing_sha256":args.finishing_sha})
     with open(output,"xb") as file:
         result=render_film(assembly,file,progress=progress)
         file.flush()
@@ -87,6 +89,7 @@ def _render(args):
                    "approved_look_sha256":args.looks_sha,
                    "approved_actor_performances_sha256":args.actors_sha,
                    "approved_acoustic_looks_sha256":args.acoustics_sha,
+                   "approved_finishing_sha256":args.finishing_sha,
                    "sha256":sha256(output.read_bytes()).hexdigest()})
     _write_json(args.receipt,result)
     return 0
@@ -114,6 +117,7 @@ def main(argv=None):
     parser.add_argument("--looks-sha",default="")
     parser.add_argument("--actors-sha",default="")
     parser.add_argument("--acoustics-sha",default="")
+    parser.add_argument("--finishing-sha",default="")
     parser.add_argument("--frames",type=int,default=0)
     parser.add_argument("--output-sha",default="")
     parser.add_argument("--progress",default="")
