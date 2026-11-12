@@ -732,6 +732,7 @@ class G07Editor:
                             raise RuntimeError("Participating original OpenUSD changed before rendering")
                         source_audio=[]
                         for item in audio:
+                            pcm_bytes=None
                             if participating is not None:
                                 length=db.execute("""SELECT length(pcm)
                                     FROM g06_original_pcm WHERE project_id=?
@@ -740,16 +741,31 @@ class G07Editor:
                                 if length is None or length[0] is None:
                                     raise RuntimeError("Original microphone clip was removed")
                                 if length[0]>64*1024*1024:
-                                    raise ValueError("This long original microphone Take needs the later incremental source-PCM reader")
-                                source_budget+=length[0]
+                                    # Audit all original source bytes in bounded pages,
+                                    # then load only requested sample windows. For
+                                    # ordinary SQLite films, not G03 encrypted files.
+                                    from backend.nvp_g09e_pcm import VerifiedSQLitePCM
+                                    db_path=db.execute("PRAGMA database_list").fetchone()[2]
+                                    if not db_path:
+                                        raise RuntimeError("Private source requires protected reel custody")
+                                    pcm_bytes=VerifiedSQLitePCM(
+                                        db_path,pid,row["scene_id"],item)
+                                    source_budget+=VerifiedSQLitePCM.PAGE_BYTES
+                                else:
+                                    source_budget+=length[0]
                                 if source_budget>256*1024*1024:
-                                    raise ValueError("Simultaneous original Takes exceed the 256 MiB window budget")
-                            pcm=db.execute("""SELECT pcm,pcm_sha256 FROM g06_original_pcm
-                                WHERE project_id=? AND scene_id=? AND id=?""",
-                                (pid,row["scene_id"],item["clip_id"])).fetchone()
-                            if pcm is None or _sha(pcm["pcm"])!=pcm["pcm_sha256"]:
-                                raise RuntimeError("Original sound cannot be reopened")
-                            source_audio.append({**item,"pcm16le":bytes(pcm["pcm"])})
+                                    raise ValueError("Original audio exceeds the film window budget")
+                            if pcm_bytes is None:
+                                original_pcm=db.execute("""SELECT pcm,pcm_sha256
+                                    FROM g06_original_pcm WHERE project_id=?
+                                    AND scene_id=? AND id=?""",
+                                    (pid,row["scene_id"],item["clip_id"])).fetchone()
+                                if (original_pcm is None or
+                                    _sha(original_pcm["pcm"])!=original_pcm["pcm_sha256"] or
+                                    original_pcm["pcm_sha256"]!=item["pcm_sha256"]):
+                                    raise RuntimeError("Original microphone source failed readback")
+                                pcm_bytes=bytes(original_pcm["pcm"])
+                            source_audio.append({**item,"pcm16le":pcm_bytes})
                     if participating is not None and source_budget>256*1024*1024:
                         raise ValueError("A film window exceeds its original media budget")
                     approved=G09Environment.approved_source(
