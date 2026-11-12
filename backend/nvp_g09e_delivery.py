@@ -221,6 +221,16 @@ class G09ELongDelivery:
                 first["duration_tick"]%TICKS_FRAME or
                 first["duration_tick"]%TICKS_SAMPLE):
             raise ValueError("The source film must be at most three hours and whole-frame aligned")
+        if frames>10*60*FPS:
+            try:
+                import numpy
+                from scipy.signal import lfilter
+            except ImportError as exc:
+                raise ValueError(
+                    "Long films over ten minutes need NVP's offline "
+                    "accelerated sound-analysis runtime. It is not "
+                    "yet present in this installation; the edit and "
+                    "original Takes remain safe.") from exc
         segments=math.ceil(frames/FRAMES_PER_CHUNK)
         if segments>MAX_CHUNKS:raise ValueError("Film has too many native reels")
         source=source_digests(first)
@@ -261,6 +271,14 @@ class G09ELongDelivery:
             raise RuntimeError("This film has not been interrupted or cancelled")
         if record["total_frames"]>MAX_FRAMES:
             raise RuntimeError("Long-film source exceeds its original profile")
+        if record["total_frames"]>10*60*FPS:
+            try:
+                import numpy
+                from scipy.signal import lfilter
+            except ImportError as exc:
+                raise ValueError(
+                    "This installation does not yet contain NVP's required "
+                    "offline long-film audio runtime.") from exc
         current=G07Editor(self.studio).view(pid)
         if current["revision"]!=record["edit_revision"] or current["missing_sources"]:
             raise RuntimeError("The film edit changed; create a new reviewed export")
