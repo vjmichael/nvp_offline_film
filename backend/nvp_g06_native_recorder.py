@@ -178,12 +178,22 @@ class G06NativeRecorder:
             raise PermissionError("The recording does not belong to this movie session")
         return session
 
-    def begin(self,project_id,scene_id,actor_id,grant,audit=None):
+    def begin(self,project_id,scene_id,actor_id,grant,audit=None,
+              long_recording=False):
         with self.lock:
             if self.active:
                 raise RuntimeError("The microphone is already recording for a scene")
-            session=NativeMicrophoneSession(project_id,scene_id,actor_id,
-                session_grant=self._token(grant))
+            if long_recording:
+                # Never downgrade encrypted source to ordinary disk capture.
+                if audit is None or audit.filming.g05.g04.live is not None:
+                    raise PermissionError("Protected long recording requires W1-E sealed custody")
+                from backend.nvp_g06_chunked_capture import NativeLongMicrophoneSession
+                session=NativeLongMicrophoneSession(project_id,scene_id,actor_id,
+                    session_grant=self._token(grant),
+                    studio=audit.filming.g05.g04.studio)
+            else:
+                session=NativeMicrophoneSession(project_id,scene_id,actor_id,
+                    session_grant=self._token(grant))
             self.sessions[session.id]=session
             self.active=session.id
         try:
@@ -203,6 +213,10 @@ class G06NativeRecorder:
             session=self._get(project_id,session_id,grant)
             if session.status=="recording":
                 raw=session.stop()
+            elif session.status=="stopped" and getattr(session,"is_long",False) and session.error is None:
+                # Only a stopped, fully committed spool may retry publication.
+                raw={"sample_count":session.frames,
+                    "original_pcm_sha256":session.stream_sha256}
             elif session.status=="stopped" and session.parts and session.error is None:
                 # Retry publication after a recoverable DB error. Original
                 # bytes remain unchanged in this host until saved successfully.
@@ -214,9 +228,12 @@ class G06NativeRecorder:
         if audit is not None:
             from backend.nvp_g09c_capture import _receipt
             receipt=_receipt(session,raw)
-        result=filming.record_native_audio(
-            project_id,session.scene_id,session.actor_id,raw,
-            capture_receipt=receipt)
+        if getattr(session,"is_long",False):
+            result=session.store.publish(filming,receipt)
+        else:
+            result=filming.record_native_audio(
+                project_id,session.scene_id,session.actor_id,raw,
+                capture_receipt=receipt)
         with self.lock:
             session.status="finished"
             session.parts.clear()
