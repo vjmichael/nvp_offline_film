@@ -69,6 +69,17 @@
 6. G09-A/C/D high-fidelity final mastering and cinema DCP Bv2.1 remain separate work; W1-E AVI is a working format, not a professional delivery certification.
 
 Source fixture tests: tests/test_nvp_w1e_sealed_custody.py. They have NOT been executed; synthetic tests do not prove native OS isolation or AES-GCM physical custody.
+## W1-F — Consolidated native integration and acceptance (gate under execution)
+
+**W1-F source repair completed in this task group:**
+
+- `VerifiedSQLitePCM` cached 256 KiB ordinary source pages are re-read and SHA-verified on an enforced <=100 ms age boundary. The new regression mutates the same page *after* its first verified read, explicitly refusing a stale perpetual cache.
+- The protected final-film manifest stage now checks creator cancellation before reel verification, for each independently authenticated original reel, and again before and after sealed playlist publication. Cancelled work cannot be declared completed; a sealed orphan may remain quarantined if cancellation lands between encrypted asset commit and completion acknowledgement.
+- `tests/test_nvp_w1f_native_integration.py` adds real Windows DPAPI + AES-GCM live encrypted asset and restart acceptance, negative one-use worker-grant revocation, sealed incomplete worker journal recovery, exact Film Time reel boundaries, fixed-worker argument refusal, Linux private-sandbox refusal and finalization cancellation fixtures.
+- The intended consolidated gate runs Python compile and selected W1-D/E/F/G03 source tests on native Windows/Linux, Vite React build, and real frozen Windows NVP.exe dependency probes. Native Windows AppContainer success, actual microphone fidelity, sustained 30–180-minute output and physical installed owner acceptance must be reported **separately** and must not be inferred from passing synthetic unit tests.
+
+**Acceptance evidence state:** No passing or failing native W1-F job evidence was available at the start of this group. The new task-specific workflow is intended as a single grouped check; only original job logs and full exact-head SHA can support claims of native success. Outstanding W1-E encrypted orphan reclamation and independent Linux private sandbox remain explicitly open.
+
 ## Remaining Wave 1 engineering before claiming closure
 
 1. **W1-C:** Real native Windows/Linux PyInstaller bundle, source import graph, installed fixed worker subprocess with OS Job Object/Linux custody, logs, hard cancellation and restart. Inspect exact compiler/build results only when the owner reopens acceptance.
