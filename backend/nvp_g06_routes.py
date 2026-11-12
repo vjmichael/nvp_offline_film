@@ -135,9 +135,10 @@ def mount_g06_routes(app,studio,live_films,cookie_name):
     routes("DELETE","scene/{scene_id}/events/{event_id}",remove)
 
     def ask_note(project_id:str,scene_id:str,request:Request,payload:NoteIdea):
-        return _safe(lambda:service(project_id,request).ask_performance_note(
-            project_id,scene_id,object_id=payload.object_id,
-            at_seconds=payload.at_seconds,instructions=payload.instructions))
+        # Manual direction remains live; Lu has not yet issued a typed
+        # performance-note permission or complete source-bound receipt.
+        from backend.nvp_int01e_lu_policy import refuse_unported_lu_operation
+        refuse_unported_lu_operation("performance_notes")
     routes("POST","scene/{scene_id}/notes/suggest",ask_note)
 
     def review_note(project_id:str,scene_id:str,note_id:str,request:Request,

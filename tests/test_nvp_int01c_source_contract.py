@@ -142,6 +142,43 @@ def test_modified_original_usd_rejected_even_when_source_binding_remains():
         verify_render_assembly(assembly,require_bindings=True)
 
 
+def test_long_original_recording_custody_and_spatial_position_cannot_be_swapped():
+    assembly=bound_assembly()
+    original=assembly["original_takes"][TID]["audio"][0]
+    # A long capture might use five-second authenticated source chunks.
+    # These fields are original-source identity, not editable mixer gain.
+    markers={
+        "original_recording_id": "d"*32,
+        "recording_sha256": "1"*64,
+        "recording_manifest_sha256": "2"*64,
+        "recording_source_start_sample": 0}
+    row,doc,audio,_=source()
+    audio[0].update(markers)
+    doc["audio"]=[dict(audio[0])]
+    row["take_sha256"]=_sha(_json(doc).encode("utf8"))
+    assembly=bound_assembly()
+    binding=g06_binding(PID,TID,row,doc,audio)
+    assembly["source_provenance"]["take_binding_hashes"][TID]=binding["binding_sha256"]
+    hashes=assembly["source_provenance"]["take_binding_hashes"]
+    assembly["source_provenance"]["take_bindings_sha256"]=_sha(_json(hashes).encode("utf8"))
+    original=assembly["original_takes"][TID]
+    original["source_binding"]=binding
+    original["take_sha256"]=row["take_sha256"]
+    original["audio"]=[{**audio[0],"pcm16le":source()[3]["audio"][0]["pcm16le"]}]
+    assert verify_render_assembly(assembly,require_bindings=True)
+    for field,replacement in [
+        ("original_recording_id","f"*32),
+        ("recording_sha256","a"*64),
+        ("recording_manifest_sha256","b"*64),
+        ("recording_source_start_sample",17),
+        ("emitter_position",[1.,2.,3.]),
+    ]:
+        modified=deepcopy(assembly)
+        modified["original_takes"][TID]["audio"][0][field]=replacement
+        with pytest.raises(RuntimeError,match="PCM or ActorID"):
+            verify_render_assembly(modified,require_bindings=True)
+
+
 def test_original_pcm_byte_actor_and_emitter_replacement_rejected():
     for replacement in ({"pcm16le": b"\x00"*1920},
                         {"actor_id": "ACT_FOREIGN"},

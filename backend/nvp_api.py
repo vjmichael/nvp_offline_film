@@ -504,12 +504,11 @@ def g04_assign_speaker(project_id:str,scene_id:str,request:Request,
 @app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/suggestions")
 @app.post("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}/suggestions")
 def g04_ask_ai(project_id:str,scene_id:str,request:Request):
-    try:
-        return run(lambda:_director_preproduction(project_id,request).generate(
-            project_id,scene_id))
-    except LocalModelUnavailable:
-        raise HTTPException(status_code=503,
-            detail="AI assistance is unavailable. You can still develop your scene.")
+    # Lu proposal-only screenplay is the sole implemented native creative
+    # operation. G04 scene suggestions have not yet been ported to Lu's
+    # host-scoped receipt and source-CAS contract. No model-port fallback.
+    from backend.nvp_int01e_lu_policy import refuse_unported_lu_operation
+    refuse_unported_lu_operation("scene_ideas")
 
 @app.post("/api/projects/{project_id}/preproduction/suggestions/{proposal_id}/decision")
 @app.post("/api/projects/{project_id}/live/preproduction/suggestions/{proposal_id}/decision")
@@ -580,12 +579,10 @@ def g05_stage_restore(project_id:str,scene_id:str,request:Request,
 @app.post("/api/projects/{project_id}/stage/{scene_id}/ideas")
 @app.post("/api/projects/{project_id}/live/stage/{scene_id}/ideas")
 def g05_stage_ai_ideas(project_id:str,scene_id:str,request:Request):
-    try:
-        return run(lambda:_director_scene_authoring(project_id,request)
-            .suggest_scene_objects(project_id,scene_id))
-    except LocalModelUnavailable:
-        raise HTTPException(status_code=503,
-            detail="Scene AI is unavailable. You can still arrange every object yourself.")
+    # The manual OpenUSD stage editor, undo and explicit approval are live.
+    # No second LM Studio-compatible GGUF route is permitted.
+    from backend.nvp_int01e_lu_policy import refuse_unported_lu_operation
+    refuse_unported_lu_operation("scene_objects")
 
 @app.post("/api/projects/{project_id}/stage/{scene_id}/ideas/{idea_id}/decision")
 @app.post("/api/projects/{project_id}/live/stage/{scene_id}/ideas/{idea_id}/decision")
@@ -640,11 +637,13 @@ class DecideCreativeDraft(BaseModel):
 @app.get("/api/creative/status")
 def creative_status():
     try:
-        configured = bool(local_llm_endpoint())
-        detail = "configured_unverified" if configured else "not_configured"
+        # NVP no longer probes an independent OpenAI-compatible provider
+        # to claim creative capability; Lu owns the sole runtime.
+        configured = False
+        detail = "lu_native_workspace_required"
     except ValueError:
         configured = False
-        detail = "invalid_loopback_configuration"
+        detail = "lu_native_workspace_required"
     return {
         "stages": list(STAGES),
         "draft_storage": "ready",
@@ -656,7 +655,13 @@ def creative_status():
 
 @app.get("/api/creative/models")
 def creative_models(port: int | None = None):
-    return discover_models(port)
+    # Compatibility-only endpoint, never a Lu-native readiness signal.
+    # Arbitrary legacy port probes are not a permitted way to establish a
+    # second model runtime or inferred filmmaking authorization.
+    return {"state":"unavailable","models":[],
+            "source":"lu-native-workspace-required",
+            "project_specific":True,"deprecated":True,
+            "model_loading_authorized":False}
 
 
 @app.get("/api/projects/{project_id}/creative/bible-context")
@@ -682,26 +687,11 @@ def add_creative_draft(project_id: str, payload: NewCreativeDraft):
 
 @app.post("/api/projects/{project_id}/creative-drafts/generate", status_code=201)
 def generate_creative_draft(project_id: str, payload: GenerateCreativeDraft):
-    # The local server may be LM Studio or another OpenAI-compatible provider.
-    # NVP observes its request duration, not model ownership/load %, RAM or VRAM.
-    activity_id="ai_"+uuid.uuid4().hex
-    resource_activity.observe_external(activity_id,
-        "AI writing: "+str(payload.stage)[:65])
-    try:
-        resource_activity.update(activity_id,"processing_prompt",
-            "Sending approved writing request to the separately managed AI server")
-        result=run(lambda: IdeaPipeline(studio,
-            llm=(writer_for(payload.model_id, payload.model_port) if payload.model_id else None)).generate(
-                project_id, payload.stage, payload.instructions, payload.scene_id))
-        resource_activity.finish(activity_id,"SUCCEEDED",
-            "AI draft received; creator approval still required")
-        return result
-    except LocalModelUnavailable as error:
-        resource_activity.finish(activity_id,"FAILED","Local AI server is unavailable")
-        raise HTTPException(status_code=503, detail=str(error)) from error
-    except Exception:
-        resource_activity.finish(activity_id,"FAILED","Writing task did not complete")
-        raise
+    # Legacy multi-stage AI writing has no Lu-native receipt/CAS route yet.
+    # Keep manual /creative-drafts POST/edit/decision working, but refuse
+    # all direct arbitrary model/port inference dispatch from this API.
+    from backend.nvp_int01e_lu_policy import refuse_unported_lu_operation
+    refuse_unported_lu_operation("creative_draft")
 
 
 @app.put("/api/projects/{project_id}/creative-drafts/{draft_id}")

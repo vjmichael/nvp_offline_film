@@ -1142,6 +1142,34 @@ def main(argv=None):
         # reads an owner's film or simulates human OS approval.
         from tools.nvp_w1f_private_reel_smoke import run as w1f
         return w1f()
+    if args==["--int01e-source-selfcheck"]:
+        # Packaging/ABI smoke: IMPORTS ONLY. Does not load a Lu model,
+        # access movie source, create approval, run workers or certify a film.
+        # The installed application must contain all source boundaries
+        # before owner-operated film and native acceptance are even possible.
+        from backend.nvp_filming_host_bridge import (
+            finish_linux_recording_and_freeze)
+        from backend.nvp_int01c_source_contract import (
+            verify_render_assembly,g06_binding)
+        from backend.nvp_int01d_lu_host import (
+            NativeLuFilmService,UNCONNECTED)
+        from backend.nvp_int01e_lu_policy import (
+            refuse_unported_lu_operation)
+        from backend.nvp_g06_filming import G06Filming
+        from backend.nvp_g07_edit import G07Editor
+        from backend.nvp_g09e_chunk import check_assembly
+        if (not all(callable(x) for x in (
+                finish_linux_recording_and_freeze,verify_render_assembly,
+                g06_binding,NativeLuFilmService,refuse_unported_lu_operation,
+                G06Filming,G07Editor,check_assembly)) or
+                UNCONNECTED["state"]!="disconnected" or
+                UNCONNECTED["supported_operations"]!=[]):
+            return 2
+        if getattr(sys,"frozen",False) and (
+                not (static_root()/"index.html").is_file() or
+                not (static_root()/"postproduction.html").is_file()):
+            return 2
+        return 0
     if args==["--w1e-runtime-selfcheck"]:
         # Dependency/import probe only. It conveys no project, source,
         # approval, process-custody or rendering authority. The installed

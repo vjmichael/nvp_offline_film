@@ -77,8 +77,10 @@ def mount_g07_routes(app,studio,live_films,cookie_name):
     routes("POST","/restore",restore)
 
     def ask_ideas(project_id:str,request:Request,payload:EditingIdeaPrompt):
-        return _safe(lambda:editor(project_id,request).suggest_editing(
-            project_id,payload.direction))
+        # Edit decisions are still manually editable/undoable, but an
+        # independent local model may not publish unscoped AI edit ideas.
+        from backend.nvp_int01e_lu_policy import refuse_unported_lu_operation
+        refuse_unported_lu_operation("editorial_ideas")
     routes("POST","/ideas",ask_ideas)
 
     def decide_idea(project_id:str,idea_id:str,request:Request,

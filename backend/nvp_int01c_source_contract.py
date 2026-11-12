@@ -141,9 +141,15 @@ def g06_binding(project_id, take_id, row, document, audio):
                 length != samples * SAMPLE_TICKS or
                 start + length > duration):
             raise RuntimeError("Source PCM samples do not fit exact Film Time")
+        position = entry.get("emitter_position")
+        if (type(position) is not list or len(position) != 3 or
+                any(type(v) not in (int,float) or
+                    not -100_000 <= v <= 100_000 for v in position)):
+            raise RuntimeError("Original spatial sound emitter has an invalid position")
         source_audio.append({
             "clip_id": cid,
             "actor_id": actor,
+            "emitter_position": position,
             "pcm_sha256": entry["pcm_sha256"],
             "sample_count": samples,
             "start_tick": start,
@@ -233,6 +239,11 @@ def check_render_take(project_id, take_id, take, binding):
                 item.get("start_tick") != recorded["start_tick"] or
                 item.get("duration_tick") != recorded["duration_tick"] or
                 item.get("emitter_path") != recorded["emitter_path"] or
+                item.get("emitter_position") != recorded["emitter_position"] or
+                any(item.get(key) != recorded[key] for key in (
+                    "original_recording_id","recording_sha256",
+                    "recording_manifest_sha256",
+                    "recording_source_start_sample")) or
                 len(item["pcm16le"]) != recorded["sample_count"]*2 or
                 verified_pcm_digest(item["pcm16le"]) != recorded["pcm_sha256"]):
             raise RuntimeError("Rendered original PCM or ActorID changed")
