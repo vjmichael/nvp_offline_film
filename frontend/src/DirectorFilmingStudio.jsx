@@ -289,6 +289,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   const sessionRef=useRef(null);
   const recordStartRef=useRef(0);
   const [micActor,setMicActor]=useState('');
+  const [longMic,setLongMic]=useState(false);
   const [selectedClips,setSelectedClips]=useState([]);
   const [clipStarts,setClipStarts]=useState({});
   const [listenUrl,setListenUrl]=useState('');
@@ -456,7 +457,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
   function startMicrophone(){
     perform(async()=>{
       const opened=await call(endpoint+'/microphone/start','POST',{
-        actor_id:micActor||null});
+        actor_id:micActor||null,long_recording:longMic});
       recordStartRef.current=time;
       sessionRef.current={session_id:opened.session_id,endpoint};
       setRecordSession(opened);
@@ -472,9 +473,13 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
       sessionRef.current=null;setRecordSession(null);
       const updated=await call(endpoint);setFilm(updated);
       setCaptureHealth(await call(endpoint+'/microphone/health').catch(()=>null));
-      setSelectedClips(x=>[...x,result.clip_id]);
-      setClipStarts(x=>({...x,[result.clip_id]:
-        String(Number(recordStartRef.current.toFixed(1)))}));
+      const added=result.clip_ids||[result.clip_id];
+      setSelectedClips(x=>[...new Set([...x,...added])]);
+      setClipStarts(x=>({
+        ...x,...Object.fromEntries((result.segments||
+          [{clip_id:result.clip_id,first_sample:0}]).map(part=>[
+          part.clip_id,String(Number((recordStartRef.current+
+          part.first_sample/48000).toFixed(4)))]))}));
       return result;
     },'Original sound recorded and saved. You can include it in a Take.');
   }
@@ -762,6 +767,11 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
               {actorObjects.map(o=><option key={o.actor_id}
                 value={o.actor_id}>{o.name}</option>)}
             </select></label>
+          <label className="film-hint"><input type="checkbox"
+              checked={longMic} disabled={!!recordSession||busy}
+              onChange={e=>setLongMic(e.target.checked)}/>
+            Record a longer original scene (up to 30 minutes, with durable five-second chunks)
+          </label>
           <div className="film-actions">
             {!recordSession?<button className="film-primary"
               disabled={busy||!film.work_current}
@@ -774,7 +784,9 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
               </>}
           </div>
           {recordSession&&<p className="director-film-recording" role="status">
-            Recording original sound… Maximum two minutes per clip.</p>}
+            {recordSession.durably_chunked?
+              'Recording original sound in durable chunks (30-minute maximum).':
+              'Recording original sound… Maximum two minutes per clip.'}</p>}
           <div className="director-film-capture-health">
             <div className="film-actions">
               <h4>Recording continuity</h4>
@@ -783,6 +795,18 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
                   .then(setCaptureHealth).catch(()=>{})}>
                 Refresh Recording Status</button>
             </div>
+            {captureHealth?.durable_long_recordings?.length>0&&
+              <div className="director-film-capture-history">
+                {captureHealth.durable_long_recordings.slice(0,5).map(record=><p
+                  key={record.session_id}>
+                    {record.status==='completed'?'Durable original recording saved':
+                     record.status==='interrupted'?
+                     'Interrupted original chunks retained; not a usable Take':
+                     record.status==='cancelled'?'Recording cancelled':
+                     'Recording chunks in progress'}
+                    {' · '+record.durable_chunks+' verified-stage chunks'}
+                  </p>)}
+              </div>}
             {captureHealth?.recordings?.length>0&&
               <div className="director-film-capture-history">
                 {captureHealth.recordings.slice(0,5).map(record=>
