@@ -265,7 +265,10 @@ class SealedFilmDelivery:
         return plan
 
     def _append(self,pid,token,job,record,index,receipt):
+        start,end=chunk_bounds(record["total_frames"],index)
         if (receipt["index"]!=index or receipt["job_id"]!=job or
+            receipt["start_frame"]!=start or receipt["end_frame"]!=end or
+            receipt["size_bytes"]<=0 or
             not receipt["encrypted_output"] or
             not receipt["os_process_tree_closed"] or
             not receipt["independent_audio_picture_verified"]):
