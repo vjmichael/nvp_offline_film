@@ -1915,5 +1915,8 @@ mount_g09c_routes(app,studio,live_films,COOKIE)
 
 # G09-D native SDR/sound finishing decisions and truthful cinema-readiness.
 # Locked movies remain protected by G03 director-session middleware.
-from backend.nvp_g09d_routes import mount_g09d_routes
+from backend.nvp_g09d_routes import (
+    mount_g09d_routes,mount_g09d_interchange_routes)
 mount_g09d_routes(app,studio,live_films,COOKIE)
+mount_g09d_interchange_routes(
+    app,_g08_controller,live_films,COOKIE)
