@@ -1136,6 +1136,22 @@ def main(argv=None):
         # Never launch a desktop, backend server or model for a child worker.
         from tools.nvp_g09e_worker import main as g09e_worker
         return g09e_worker(args[1:])
+    if args==["--w1e-runtime-selfcheck"]:
+        # Dependency/import probe only. It conveys no project, source,
+        # approval, process-custody or rendering authority. The installed
+        # private-film path STILL requires a real AppContainer/Job with
+        # post-exit profile and ACL cleanup before sealing any reel.
+        if sys.platform!="win32":
+            return 2
+        from backend.nvp_g03_windows_appcontainer import _api
+        _api()
+        from backend.nvp_g06_sealed_capture import VerifiedSealedPCM
+        from backend.nvp_g09e_sealed_worker import ProtectedSealedReelWorker
+        from tools.nvp_w1e_sealed_reel_worker import run
+        if not all(callable(x) for x in (
+                VerifiedSealedPCM,ProtectedSealedReelWorker,run)):
+            return 2
+        return 0
     if args and args[0]=="--w1e-sealed-reel-worker":
         # One fixed private-film child: anonymous binary pipes only. No
         # model, HTTP server, arbitrary script, project path or WebView.
