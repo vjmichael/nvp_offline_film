@@ -731,35 +731,48 @@ class G07Editor:
                             _sha(original["performance_usd"])!=row["performance_usd_sha256"]):
                             raise RuntimeError("Participating original OpenUSD changed before rendering")
                         source_audio=[]
+                        from backend.nvp_g06_sealed_capture import (
+                            original_identity,VerifiedSealedPCM)
                         for item in audio:
+                            clip_id=item["clip_id"]
+                            sealed=original_identity(db,pid,row["scene_id"],clip_id)
                             pcm_bytes=None
-                            if participating is not None:
+                            if sealed:
+                                live=self.filming.g05.g04.live
+                                token=self.filming.g05.g04.token
+                                if live is None or token is None:
+                                    raise RuntimeError("Private original sound requires unlocked film custody")
+                                pcm_bytes=VerifiedSealedPCM(
+                                    live,token,db,pid,row["scene_id"],clip_id)
+                                if pcm_bytes.verified_sha256!=item["pcm_sha256"]:
+                                    raise RuntimeError("Protected original source authentication failed")
+                                if participating is not None:
+                                    # One AES-GCM original source chunk is held at a time.
+                                    source_budget+=48000*2*5
+                            elif participating is not None:
                                 length=db.execute("""SELECT length(pcm)
                                     FROM g06_original_pcm WHERE project_id=?
                                     AND scene_id=? AND id=?""",
-                                    (pid,row["scene_id"],item["clip_id"])).fetchone()
+                                    (pid,row["scene_id"],clip_id)).fetchone()
                                 if length is None or length[0] is None:
-                                    raise RuntimeError("Original microphone clip was removed")
+                                    raise RuntimeError("Original microphone source was removed")
                                 if length[0]>64*1024*1024:
-                                    # Audit all original source bytes in bounded pages,
-                                    # then load only requested sample windows. For
-                                    # ordinary SQLite films, not G03 encrypted files.
                                     from backend.nvp_g09e_pcm import VerifiedSQLitePCM
                                     db_path=db.execute("PRAGMA database_list").fetchone()[2]
                                     if not db_path:
-                                        raise RuntimeError("Private source requires protected reel custody")
+                                        raise RuntimeError("Ordinary PCM reader cannot access sealed source")
                                     pcm_bytes=VerifiedSQLitePCM(
                                         db_path,pid,row["scene_id"],item)
                                     source_budget+=VerifiedSQLitePCM.PAGE_BYTES
                                 else:
                                     source_budget+=length[0]
-                                if source_budget>256*1024*1024:
-                                    raise ValueError("Original audio exceeds the film window budget")
+                            if participating is not None and source_budget>256*1024*1024:
+                                raise ValueError("The original film audio window exceeds its memory budget")
                             if pcm_bytes is None:
                                 original_pcm=db.execute("""SELECT pcm,pcm_sha256
                                     FROM g06_original_pcm WHERE project_id=?
                                     AND scene_id=? AND id=?""",
-                                    (pid,row["scene_id"],item["clip_id"])).fetchone()
+                                    (pid,row["scene_id"],clip_id)).fetchone()
                                 if (original_pcm is None or
                                     _sha(original_pcm["pcm"])!=original_pcm["pcm_sha256"] or
                                     original_pcm["pcm_sha256"]!=item["pcm_sha256"]):
