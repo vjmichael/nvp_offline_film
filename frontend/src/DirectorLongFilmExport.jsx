@@ -193,9 +193,9 @@ export default function DirectorLongFilmExport({movie,edit,disabled=false}){
             key={movie.id+':portable:'+job.id}
             movie={movie} job={job}/>}
           <p className="film-hint">{movie.encrypted?
-            'Original film reels stay AES-GCM sealed in the NVP project. Each
-             authorized download is decrypted only in the trusted host response;
-             no plaintext working files are saved for export workers.':
+            'Original film reels stay AES-GCM sealed in the NVP project. Each '+
+            'authorized download is decrypted only in the trusted host response; '+
+            'no plaintext working files are saved for export workers.':
             'Your film is also available as individual AVI reels and a portable
              .nvpfilm package. Other players may not switch AVI reels without gaps.'}</p>
           <div className="director-long-pages">
