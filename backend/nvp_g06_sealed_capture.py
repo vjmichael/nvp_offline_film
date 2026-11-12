@@ -148,12 +148,11 @@ class VerifiedSealedPCM:
         self.session_id=member["recording_id"]
         self.chunks=_chunks(db,pid,self.session_id)
         self._cached_index=None;self._cached_raw=b""
-        # Source evaluators access one PCM16 sample at a time (up to 48k
-        # slices/sec). Checking the disk-backed director ACL on every
-        # 2-byte sample makes feature-length playback impractical. Recheck
-        # at most 100ms apart and ALWAYS before a new sealed asset read;
-        # the host supervisor separately rechecks authorization before
-        # every encrypted reel publication.
+        # Source evaluators access one PCM16 sample at a time. An in-memory
+        # host key check runs on EVERY sample so a local director lock takes
+        # effect immediately. The disk-backed cross-process grant check runs
+        # at most 100ms apart and ALWAYS before a new sealed chunk read.
+        # The supervisor also checks authorization before reel publication.
         self._last_grant_check_ns=0
         self._grant_recheck_ns=100_000_000
         first=0
@@ -176,6 +175,15 @@ class VerifiedSealedPCM:
         return self.expected_sha256
 
     def _chunk(self,index):
+        # Every sample checks immediate local key revocation in memory.
+        # Synthetic hosts without that fast gate retain strict per-access
+        # _session checks instead of silently skipping authorization.
+        local=getattr(self.live,"local_session_live",None)
+        if callable(local):
+            if not local(self.pid,self.token):
+                raise PermissionError("Original microphone host key was revoked")
+        else:
+            self.live._session(self.pid,self.token)
         now_ns=time.monotonic_ns()
         if (self._cached_index!=index or
             now_ns-self._last_grant_check_ns>=self._grant_recheck_ns):
