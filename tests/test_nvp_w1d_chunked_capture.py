@@ -69,9 +69,16 @@ class DurableCaptureTests(unittest.TestCase):
         store=self.make_store()
         store.begin()
         joined=b"".join(parts)
-        for i,part in enumerate(parts):
+        for part in parts:
+            # This is a synthetic 150-second PCM source, not a real device.
+            # The SQLite spool is intentionally bounded: do not blast a
+            # complete film into its 32-slot realtime callback queue.
+            deadline=time.monotonic()+25
+            while store.q.qsize()>=8:
+                if time.monotonic()>deadline:
+                    self.fail("The durable recording writer did not make progress")
+                time.sleep(.01)
             store.push(part)
-            if i%5==0: time.sleep(.02)  # Native callback cadence; no overflow
         result=store.finish_spooling(expected_samples=len(joined)//2)
         return store,joined,result
 
@@ -142,8 +149,10 @@ class DurableCaptureTests(unittest.TestCase):
         class Device:
             def start(self,callback):
                 self.callback=callback
+                time.sleep(.01)  # Distinct native sample-clock observation
                 callback.send(array("h",[1,-2]*1200))
             def stop(self):
+                time.sleep(.01)
                 self.callback.send(array("h",[3,-4]*500))
             def close(self):
                 pass
