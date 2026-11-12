@@ -322,6 +322,10 @@ def verify_render_assembly(assembly, *, require_bindings=False):
         for seg in segments:
             if type(seg) is not dict:
                 raise RuntimeError("An edit segment has no original identity")
+            if (type(seg.get("start_tick")) is not int or
+                    type(seg.get("end_tick")) is not int or
+                    not 0 <= seg["start_tick"] < seg["end_tick"]):
+                raise RuntimeError("An edit segment has invalid exact Film Time")
             tid = seg.get("take_id")
             if tid not in hashes or seg.get("take_sha256") is None:
                 raise RuntimeError("An edit references a foreign original Take")
