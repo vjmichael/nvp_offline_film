@@ -276,11 +276,16 @@ export default function DirectorFilmEditor({movie}){
 
   useEffect(()=>{
     let active=true;
-    directorCall('/api/creative/models').then(result=>{
-      if(active)setAiAvailable(result.state==='available');
+    // Post-Production belongs to the same Lu-owned film Workspace.
+    // A generic local model port must not activate an alternate AI.
+    if(!movie.encrypted)directorCall('/api/projects/'+encodeURIComponent(movie.id)+
+      '/lu/status').then(result=>{
+      if(active)setAiAvailable(result.state==='ready'&&
+        result.supported_operations?.includes('editorial_ideas')===true);
     }).catch(()=>{if(active)setAiAvailable(false)});
+    else setAiAvailable(false);
     return()=>{active=false};
-  },[]);
+  },[movie.id,movie.encrypted]);
 
   useEffect(()=>{
     let live=true;
