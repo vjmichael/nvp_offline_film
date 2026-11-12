@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import './director-long-film-export.css';
+import DirectorFilmDistribution from './DirectorFilmDistribution.jsx';
 
 const ACTIVE=new Set(['queued','analyzing','rendering','verifying','finalizing']);
 const formatSeconds=s=>{
@@ -173,11 +174,13 @@ export default function DirectorLongFilmExport({movie,edit,disabled=false}){
           </>}
         </div>
         {job.completed&&job===latest&&<>
-          <p className="film-hint">Your film has verified individual reels.
-            Save the index and the reels as one project collection.
-            G09-F will provide the complete installable and distributable
-            film-package experience; individual AVI files do not guarantee
-            gapless playback in an external player.</p>
+          <DirectorFilmDistribution
+            key={movie.id+':portable:'+job.id}
+            movie={movie} job={job}/>
+          <p className="film-hint">Your film is also available as individual
+            AVI reels with their original source-index receipts. A portable
+            .nvpfilm package collects them for verification and playback
+            in NVP; other players may not switch AVI reels without gaps.</p>
           <div className="director-long-pages">
             <label>Reels to save · page
               <select value={page} onChange={e=>setPage(Number(e.target.value))}>
