@@ -7,6 +7,8 @@ not a DCP encoder.
 """
 from __future__ import annotations
 from fastapi import HTTPException,Request
+from fastapi.responses import Response
+from backend.nvp_g07_edit import G07Editor
 from pydantic import BaseModel,Field
 
 from backend.nvp_g09d_finishing import G09DFinishing
@@ -89,6 +91,28 @@ def mount_g09d_routes(app,studio,live_films,cookie_name):
         return _safe(lambda:service(project_id,request).restore(
             project_id,payload.expected_revision,payload.source_revision))
     route("POST","/restore",restore)
+
+    def picture(project_id:str,request:Request,seconds:str="0"):
+        from backend.nvp_g09d_preview import preview_picture
+        service_instance=service(project_id,request)
+        jpeg=_safe(lambda:preview_picture(service_instance.editor,project_id,seconds))
+        return Response(jpeg,media_type="image/jpeg",headers={
+            "Cache-Control":"private, no-store, max-age=0",
+            "X-Content-Type-Options":"nosniff"})
+    route("GET","/picture",picture)
+
+    def listen(project_id:str,request:Request,at_seconds:str="0",
+               duration_seconds:str="3"):
+        from backend.nvp_g09d_preview import preview_sound
+        service_instance=service(project_id,request)
+        wav,proof=_safe(lambda:preview_sound(
+            service_instance.editor,project_id,at_seconds,duration_seconds))
+        return Response(wav,media_type="audio/wav",headers={
+            "Cache-Control":"private, no-store, max-age=0",
+            "X-Content-Type-Options":"nosniff",
+            "X-NVP-Sound-Target-Reached":str(
+                proof["target_loudness_reached"]).lower()})
+    route("GET","/listen",listen)
 
     def dcp(project_id:str,request:Request):
         # Check locked project/session before even explaining its
