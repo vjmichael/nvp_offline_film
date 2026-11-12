@@ -1,6 +1,12 @@
 ; NVP-E2E-01E — Windows per-user standalone alpha installer.
 ; Bundled output is built from React Vite + PyInstaller WebView2/FastAPI.
-; Keep author work in LOCALAPPDATA\NVP\Projects during uninstall.
+; G09-F original-project preservation contract:
+; Studio's default originals are in USERPROFILE\NVP_Projects, or a
+; user-selected NVP_HOME. Portable .nvpfilm copies and imported film library
+; live beside that project DB, never under this uninstallable $INSTDIR.
+; Never recurse/delete USERPROFILE\NVP_Projects, LOCALAPPDATA\NVP\Projects,
+; any custom NVP_HOME, original Take assets or imported portable films.
+; App code rejects installed NVP_HOME paths inside the program tree.
 Unicode true
 ; Invoke makensis from repository root; relative payload paths resolve from this script.
 !include "MUI2.nsh"
@@ -57,5 +63,9 @@ Section "Uninstall"
     RMDir "$SMPROGRAMS\NVP"
     DeleteRegKey HKCU "${PRODUCT_KEY}"
     RMDir /r "$INSTDIR"
-    ; Never remove LOCALAPPDATA\NVP\Projects: user-owned film work.
+    ; Only the fixed per-user NVP program directory is removed. Original
+    ; movie projects, frozen OpenUSD/PCM, encrypted sources, history,
+    ; G09-E checked reels and G09-F portable film libraries are
+    ; intentionally OUTSIDE $INSTDIR and must survive uninstall/reinstall.
+    ; The owner will verify this on a physical installed Windows machine.
 SectionEnd
