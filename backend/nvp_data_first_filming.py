@@ -14,6 +14,7 @@ the trusted, supervised recording host.
 from __future__ import annotations
 
 import math
+import copy
 import hashlib
 import tempfile
 import struct
@@ -114,15 +115,22 @@ class NativeSceneSoundCapture:
         # Snapshot the ENTIRE batch before advancing any PCM generator.
         # An earlier recorder callback can mutate a later caller-owned entry;
         # copying only the current entry inside the loop is too late.
+        frozen_recordings=[]
         for entry in recordings:
             if type(entry) is not dict or set(entry) not in (BASE_RECORDING_FIELDS,CLOCKED_RECORDING_FIELDS):
                 raise ValueError("Recorded sound requires typed source/evidence/Film Time")
+            # Deep-freeze metadata, but never copy/advance the one-shot PCM iterator.
+            # A recorder callback must not rewrite a later source clock or consent.
+            frozen=copy.deepcopy({key:value for key,value in entry.items()
+                                  if key!="pcm_chunks"})
+            frozen["pcm_chunks"]=entry["pcm_chunks"]
+            frozen_recordings.append(frozen)
         # Validate the entire batch before consuming even the first one-shot
         # recording iterator. A later duplicate, occupied source identity,
         # invalid emitter, or checkpoint overflow must not trigger capture.
         preflight_events=set()
         preflight_sources=set()
-        for entry in recordings:
+        for entry in frozen_recordings:
             eid=_id(entry["event_id"],"recorded sound event")
             sid=_id(entry["source_id"],"original audio source")
             if (eid==sid or eid in preflight_events or eid in preflight_sources or
@@ -157,7 +165,6 @@ class NativeSceneSoundCapture:
                     entry["source_sync"],entry["clock_evidence"])
             preflight_events.add(eid)
             preflight_sources.add(sid)
-        frozen_recordings=[dict(entry) for entry in recordings]
         publication_started=False
         try:
             for entry in frozen_recordings:
