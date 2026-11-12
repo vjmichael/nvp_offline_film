@@ -1226,6 +1226,20 @@ def main(argv=None):
     try:
         import webview
         bridge=create_trusted_camera_bridge(port)
+        # Human approval can only be minted through this real OS WebView
+        # dialog. API routes merely consume the one-use exact-film token.
+        # This callback is a capability preflight; the worker STILL MUST
+        # launch with windows_appcontainer_required=True and only becomes
+        # publishable after native Job/profile closure is independently audited.
+        app.state.nvp_w1e_native_review=bridge.consume_private_film_review
+        def appcontainer_preflight(pid,job,index,source_sha256):
+            if sys.platform!="win32":return False
+            try:
+                from backend.nvp_g03_windows_appcontainer import _api
+                _api()  # native Windows security API must be actually present
+                return True
+            except (OSError,AttributeError,RuntimeError):return False
+        app.state.nvp_w1e_isolation_attestor=appcontainer_preflight
         window=webview.create_window("NVP — Make Your Movie",
             "http://127.0.0.1:"+str(port),
             width=1280,height=800,min_size=(960,600),js_api=bridge)
