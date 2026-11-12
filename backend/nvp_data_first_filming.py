@@ -130,6 +130,7 @@ class NativeSceneSoundCapture:
         # invalid emitter, or checkpoint overflow must not trigger capture.
         preflight_events=set()
         preflight_sources=set()
+        minimum_unclocked_pcm_bytes=0
         for entry in frozen_recordings:
             eid=_id(entry["event_id"],"recorded sound event")
             sid=_id(entry["source_id"],"original audio source")
@@ -169,8 +170,11 @@ class NativeSceneSoundCapture:
             # Clock-attested sources use their separately verified sample count.
             if "source_sync" not in entry:
                 expected_samples=(end-start+SAMPLE_TICK-1)//SAMPLE_TICK
+                minimum_unclocked_pcm_bytes+=expected_samples*2
                 if expected_samples*2>MAX_CHUNK_BYTES*MAX_CHUNKS:
                     raise ValueError("Captured PCM duration exceeds source spool budget")
+                if minimum_unclocked_pcm_bytes>MAX_CHUNK_BYTES*MAX_CHUNKS:
+                    raise ValueError("Captured PCM batch durations exceed aggregate spool budget")
             # Reject malformed later recording streams before touching the first
             # original PCM iterator. Do not advance or consume valid iterators.
             try:
