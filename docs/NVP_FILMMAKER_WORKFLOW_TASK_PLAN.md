@@ -151,6 +151,8 @@ W1-D source now adds explicit long native microphone recording for an ordinary G
 | **W1-G / Installed packaging and release controls** | Windows NSIS worker/installed synthetic smoke passed at W1-F exact head | Windows/Linux pinned wheel/native ABI + licenses, Debian installer, frozen dependency audits, real upgrade/uninstall/reinstall and original-film preservation |
 | **Owner/cinema release gate** | No physical sign-off authorized | Radeon physical owner workflow, accessibility, security migration/restore, disk/CPU/GPU/VRAM and film-quality measurements, genuine cinema/legal approvals |
 
+**NVP-INT-01A static branch inventory: COMPLETE (no merge).** Exact file-SHA comparisons across canonical PR #74, Lu PR #154, G03 PR #155, G09-F and the W1-F accepted Wave 1 tree found four authoritative DA-03 Linux filming host/session files absent from Wave 1, 17 modified shared canonical files, and the Lu proposal-only G02 adapter not yet integrated in Wave 1. The source ownership, compatibility risks and ordered INT-01B–F implementation are recorded in [NVP-INT-01 branch convergence ledger](NVP_INT01_SOURCE_CONVERGENCE.md). Neither the full source graph nor a real Lu model has yet been reconciled.
+
 ### Ordered remaining implementation and integration work
 
 1. **NVP-INT-01 — Cross-branch source/ABI convergence (NEXT):** inventory and compare current PR #74 vs G02/G03 and staged G04→G09→Wave 1 heads; build one reviewed dependency map; selectively port compatible source and tests without merging unrelated PRs. Reconcile Studio/FilmIndex schema, Protobuf/host authority, Film Time, SceneID/ActorID, OpenUSD material/worker ABI, original PCM, project security, native worker CLI and installed UI. No automatic patch replay or status promotion from donor CI.

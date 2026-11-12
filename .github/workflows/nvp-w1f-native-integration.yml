@@ -1,9 +1,9 @@
 name: W1-F Exact-Head Native Integration
-# Only this unmerged Wave 1 development branch; no physical owner claims.
+# W1-F automated acceptance is closed at 8f743784 / 43170210995.
+# Subsequent project integration is build-first: trigger this scoped gate
+# manually against an explicitly reviewed consolidated source head, not on
+# every docs/ledger or W1-G intermediate development commit.
 on:
-  push:
-    branches:
-      - nvp/wave1-longfilm-runtime-pcm-20261111
   workflow_dispatch:
 
 concurrency:
