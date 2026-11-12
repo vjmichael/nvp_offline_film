@@ -975,6 +975,19 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(len(sound),1)
         self.assertEqual(sound[0]["payload"]["gain"],1.0)
 
+    def test_capture_refuses_extra_pcm_outside_exact_event_extent(self):
+        req=self.payload()
+        # The source is longer than its one-second Film Time event.
+        # Previously the surplus sample was silently admitted to the
+        # immutable original, leaving event extent and source length at odds.
+        req["recordings"][0]["pcm_chunks"]=[self.original, b"\\x00\\x00"]
+        with self.assertRaisesRegex(ValueError,"sample count does not match"):
+            self.capture.capture(**req)
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
