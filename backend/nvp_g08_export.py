@@ -49,6 +49,7 @@ def _schema(db):
       look_sha256 TEXT NOT NULL DEFAULT '',
       actors_sha256 TEXT NOT NULL DEFAULT '',
       acoustics_sha256 TEXT NOT NULL DEFAULT '',
+      finishing_sha256 TEXT NOT NULL DEFAULT '',
       expected_frames INTEGER NOT NULL,status TEXT NOT NULL,
       progress_frames INTEGER NOT NULL DEFAULT 0,
       output_sha256 TEXT,output_bytes INTEGER,receipt_json TEXT,
@@ -66,6 +67,9 @@ def _schema(db):
     if "acoustics_sha256" not in {
         r["name"] for r in db.execute("PRAGMA table_info(g08_export_jobs)") }:
         db.execute("ALTER TABLE g08_export_jobs ADD COLUMN acoustics_sha256 TEXT NOT NULL DEFAULT ''")
+    if "finishing_sha256" not in {
+        r["name"] for r in db.execute("PRAGMA table_info(g08_export_jobs)") }:
+        db.execute("ALTER TABLE g08_export_jobs ADD COLUMN finishing_sha256 TEXT NOT NULL DEFAULT ''")
 
 
 def _folder(db_path,pid):
@@ -166,7 +170,8 @@ class G08MovieExporter:
                 not SHA.fullmatch(assembly["edit_document_sha256"]) or
                 not SHA.fullmatch(assembly["production_looks_sha256"]) or
                 not SHA.fullmatch(assembly["actor_performances_sha256"]) or
-                not SHA.fullmatch(assembly["acoustic_looks_sha256"])):
+                not SHA.fullmatch(assembly["acoustic_looks_sha256"]) or
+                not SHA.fullmatch(assembly["finishing_sha256"])):
             raise RuntimeError("The saved edit is not current")
         total=assembly["duration_tick"]
         if (not 0<total<=MAX_SECONDS*TICKS_FRAME*FPS or
@@ -192,14 +197,15 @@ class G08MovieExporter:
                 raise RuntimeError("Movie export destination collision")
             db.execute("""INSERT INTO g08_export_jobs
                 (id,project_id,edit_revision,edit_sha256,look_sha256,
-                 actors_sha256,acoustics_sha256,
+                 actors_sha256,acoustics_sha256,finishing_sha256,
                  expected_frames,status,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,'queued',?,?)""",
+                VALUES (?,?,?,?,?,?,?,?,?,'queued',?,?)""",
                 (job,pid,expected_revision,
                  assembly["edit_document_sha256"],
                  assembly["production_looks_sha256"],
                  assembly["actor_performances_sha256"],
                  assembly["acoustic_looks_sha256"],
+                 assembly["finishing_sha256"],
                  total//TICKS_FRAME,_now(),_now()))
         thread=threading.Thread(target=self._perform,
              args=(pid,job,token),daemon=True,name="nvp-g08-"+job[:8])
@@ -243,6 +249,7 @@ class G08MovieExporter:
                     "--looks-sha",record["look_sha256"],
                     "--actors-sha",record["actors_sha256"],
                     "--acoustics-sha",record["acoustics_sha256"],
+                    "--finishing-sha",record["finishing_sha256"],
                     "--frames",str(record["expected_frames"]),
                     "--output-sha",record["output_sha256"] or "",
                     "--progress",str(folder/(job+".progress.json")),
@@ -260,6 +267,7 @@ class G08MovieExporter:
                 "--looks-sha",record["look_sha256"],
                 "--actors-sha",record["actors_sha256"],
                 "--acoustics-sha",record["acoustics_sha256"],
+                "--finishing-sha",record["finishing_sha256"],
                 "--frames",str(record["expected_frames"]),
                 "--output-sha",record["output_sha256"] or "",
                 "--progress",str(folder/(job+".progress.json")),
@@ -322,6 +330,7 @@ class G08MovieExporter:
                 render_receipt.get("approved_look_sha256")!=record["look_sha256"] or
                 render_receipt.get("approved_actor_performances_sha256")!=record["actors_sha256"] or
                 render_receipt.get("approved_acoustic_looks_sha256")!=record["acoustics_sha256"] or
+                render_receipt.get("approved_finishing_sha256")!=record["finishing_sha256"] or
                 render_receipt.get("frames")!=record["expected_frames"] or
                 not SHA.fullmatch(render_receipt.get("sha256","")) or
                 render_receipt.get("ffmpeg_used") is not False):
