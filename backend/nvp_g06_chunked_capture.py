@@ -587,7 +587,7 @@ def discard_interrupted_capture(filming,pid,scene_id,session_id):
     return filming._with(pid,scene_id,discard,mutate=True)
 
 
-def long_capture_health(db,pid,scene_id,active_ids=()):
+def long_capture_health(db,pid,scene_id,active_ids=(),*,mark_interrupted=True):
     """Conservative restart: past active streams become interrupted, not source."""
     _schema(db)
     active=set(active_ids)
@@ -599,12 +599,12 @@ def long_capture_health(db,pid,scene_id,active_ids=()):
     interrupted=[r["session_id"] for r in rows
                  if r["status"] in ("recording","stopped")
                  and r["session_id"] not in active]
-    for identifier in interrupted:
+    for identifier in (interrupted if mark_interrupted else ()):
         db.execute("""UPDATE g06_long_capture_sessions SET
           status='interrupted',updated_at=?
           WHERE project_id=? AND session_id=? AND status IN
           ('recording','stopped')""",(_now(),pid,identifier))
-    if interrupted:
+    if interrupted and mark_interrupted:
         rows=list(db.execute("""SELECT * FROM g06_long_capture_sessions
             WHERE project_id=? AND scene_id=?
             ORDER BY updated_at DESC LIMIT 50""",(pid,scene_id)))
