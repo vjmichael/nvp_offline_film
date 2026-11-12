@@ -154,5 +154,51 @@ class NativeScopedReviewTests(unittest.TestCase):
                 "source_sha256":"b"*64,"total_frames":1200})
 
 
+class PrivateWorkerAdmissionTests(unittest.TestCase):
+    def test_windows_kernel_isolation_cannot_downgrade_to_uncontained_worker(self):
+        from backend.nvp_g09e_sealed_worker import (
+            ProtectedFilmReelError,ProtectedSealedReelWorker)
+        class FakeLocked:
+            def _session(self,*args):
+                raise AssertionError("Never touch protected source without OS admission")
+        worker=ProtectedSealedReelWorker(
+            FakeLocked(),review_authority=lambda *x:True,
+            os_isolation_attestor=lambda *x:True)
+        with patch("backend.nvp_g09e_sealed_worker.sys.platform","linux"):
+            with self.assertRaises(ProtectedFilmReelError):
+                worker.render("a"*32,"token","b"*32,0,1200,
+                              None,None,"ticket-"+("c"*32))
+
+    def test_fixed_private_child_refuses_arbitrary_arguments(self):
+        from tools.nvp_w1e_sealed_reel_worker import main
+        self.assertEqual(main(["--script","user-project.py"]),2)
+
+    def test_native_review_preview_is_an_exact_four_field_scope(self):
+        from backend.nvp_g09e_sealed_delivery import SealedFilmDelivery
+        from backend.nvp_g08_native_avi import TICKS_FRAME
+        from backend.nvp_g09e_chunk import REQUIRED_DIGESTS
+        class FakeAccess:
+            def permitted(self,*args,**kwargs):return True
+        class FakeLive:
+            def exists(self,pid):return True
+            def _session(self,pid,token):return b"not-a-real-key"
+        store=SealedFilmDelivery(object(),FakeLive(),
+            access=lambda:FakeAccess(),
+            review_authority=lambda *args:True,
+            os_isolation_attestor=lambda *args:True)
+        assembly={"duration_tick":1200*TICKS_FRAME,
+                  **{name:"a"*64 for name in REQUIRED_DIGESTS}}
+        with patch("backend.nvp_g09e_sealed_delivery.G07Editor") as editor:
+            editor.return_value.view.return_value={
+                "revision":5,"duration_seconds":50,
+                "missing_sources":[]}
+            editor.return_value.native_assembly.return_value=assembly
+            scope=store.preview("b"*32,"cookie",5)
+        self.assertEqual(set(scope),{
+            "project_id","edit_revision","source_sha256","total_frames"})
+        self.assertEqual(scope["total_frames"],1200)
+        self.assertEqual(scope["edit_revision"],5)
+
+
 if __name__=="__main__":
     unittest.main()
