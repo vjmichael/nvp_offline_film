@@ -436,11 +436,16 @@ class DurableOriginalChunkStore:
 
 class NativeLongMicrophoneSession(NativeMicrophoneSession):
     def __init__(self,project_id,scene_id,actor_id,*,session_grant,
-                 studio,stage_sha256,device_factory=None):
+                 studio,stage_sha256,device_factory=None,filming=None):
         super().__init__(project_id,scene_id,actor_id,
                          session_grant=session_grant,device_factory=device_factory)
-        self.store=DurableOriginalChunkStore(studio,self.id,project_id,
-                                              scene_id,actor_id,stage_sha256)
+        if filming is not None and filming.g05.g04.live is not None:
+            from backend.nvp_g06_sealed_capture import SealedOriginalChunkStore
+            self.store=SealedOriginalChunkStore(
+                filming,self.id,project_id,scene_id,actor_id,stage_sha256)
+        else:
+            self.store=DurableOriginalChunkStore(
+                studio,self.id,project_id,scene_id,actor_id,stage_sha256)
         self.is_long=True
         self.stream_sha256=None
 
