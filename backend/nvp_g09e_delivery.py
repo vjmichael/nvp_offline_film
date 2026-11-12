@@ -327,6 +327,10 @@ class G09ELongDelivery:
                     self._heartbeat(pid,job)
                     time.sleep(.5)
                 if proc.wait(timeout=10)!=0:
+                    with self.guard:
+                        cancelled=job in self.revoked
+                    if cancelled:
+                        raise InterruptedError("The director stopped the native film worker")
                     raise RuntimeError("The contained film worker failed to verify its source")
             finally:
                 try:proc.close()
@@ -485,10 +489,18 @@ class G09ELongDelivery:
                 raise RuntimeError("The full movie had an invalid source/clock manifest")
             self._auth(pid,token)
             final=folder/"manifest.json"
-            if final.exists() or final.is_symlink():
-                raise RuntimeError("The movie was already finalized")
-            os.link(candidate,final,follow_symlinks=False)
-            _fsync_dir(folder)
+            if final.is_symlink():
+                raise RuntimeError("A finished film index is an unsafe symbolic link")
+            if final.exists():
+                # Process died after hard-link publication but before the
+                # SQLite completed transaction. Re-run the independent
+                # finalizer and ONLY adopt exactly identical verified bytes.
+                if sha256(final.read_bytes()).hexdigest()!=sha256(
+                        candidate.read_bytes()).hexdigest():
+                    raise RuntimeError("Orphaned finished film differs from the independently reverified manifest")
+            else:
+                os.link(candidate,final,follow_symlinks=False)
+                _fsync_dir(folder)
             sha=sha256(final.read_bytes()).hexdigest()
             self._set(pid,job,"completed",manifest=sha,expected={"finalizing"})
             candidate.unlink(missing_ok=True)
