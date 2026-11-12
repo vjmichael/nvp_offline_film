@@ -1083,6 +1083,28 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertIsNotNone(self.index.read_revision(
             self.pid,"FilmedTake",1))
 
+    def test_clock_attested_pcm_quota_refused_before_consuming_original(self):
+        from unittest.mock import patch
+        from backend.nvp_data_av_source import MAX_CHUNK_BYTES, MAX_CHUNKS
+        req=self.payload()
+        event=req["recordings"][0]
+        event["source_sync"]={"source_sample_count": MAX_CHUNK_BYTES*MAX_CHUNKS//2+1}
+        event["clock_evidence"]={"object_id":"ClockEvidence","document_sha256":"0"*64}
+        consumed=[]
+        def recorder():
+            consumed.append("advanced")
+            yield self.original
+        event["pcm_chunks"]=recorder()
+        with patch("backend.nvp_data_first_filming.verified_original_clock",
+                   return_value=event["source_sync"]):
+            with self.assertRaisesRegex(ValueError,"source spool budget"):
+                self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
