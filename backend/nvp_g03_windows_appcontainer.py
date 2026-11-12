@@ -88,6 +88,25 @@ def _sanitized_drive_environment(exe,work):
     return ["="+drive+"="+drive+"\\" for drive in sorted(roots)]
 
 
+def _native_profile_environment(clean,host_localappdata):
+    """Admit only the host's real Windows LOCALAPPDATA for AppContainer setup.
+
+    Windows CreateProcessW returns ERROR_ENVVAR_NOT_FOUND (203) when
+    AppContainer profile resolution lacks LOCALAPPDATA in a sanitized
+    environment. It is REQUIRED for native launch, not a network or source
+    grant. Never accept an override from user-controlled worker env.
+    """
+    if (type(host_localappdata) is not str or not host_localappdata or
+            "\\x00" in host_localappdata):
+        raise AppContainerFailure("Windows host LOCALAPPDATA is unavailable")
+    location=Path(host_localappdata)
+    if location.is_symlink() or not location.is_dir():
+        raise AppContainerFailure("Windows host LOCALAPPDATA cannot be verified")
+    result=dict(clean)
+    result["LOCALAPPDATA"]=str(location.resolve(strict=True))
+    return result
+
+
 def _acl(path,sid,permission,recursive=False,remove=False):
     if not re.fullmatch(r"S-1-15-2-(?:[0-9]+-){5,9}[0-9]+",sid):
         raise AppContainerFailure("Untrusted AppContainer SID")
@@ -335,6 +354,12 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
             clean=dict(env or {})
             clean.update({"TEMP":str(work),"TMP":str(work),
                           "PYTHONDONTWRITEBYTECODE":"1"})
+            # CreateProcessW resolves the AppContainer profile beneath the
+            # host LOCALAPPDATA before the child executes. NVP sanitizes
+            # inherited worker variables but MUST provide this one exact
+            # verified OS profile root. Never grant filesystem access to it.
+            clean=_native_profile_environment(
+                clean,os.environ.get("LOCALAPPDATA"))
             # Drive-specific =C:/=D: entries MUST precede normal
             # variables in a custom Unicode CreateProcessW block. An
             # installed C: executable + D: disposable cwd otherwise fails

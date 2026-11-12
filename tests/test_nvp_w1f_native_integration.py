@@ -59,6 +59,26 @@ class NativeACLReceiptContract(unittest.TestCase):
                      "S-1-15-2-100-200-300-400-500-600","R")
 
 
+class WindowsProfileEnvironmentContract(unittest.TestCase):
+    def test_only_verified_host_localappdata_is_admitted(self):
+        import tempfile
+        from backend.nvp_g03_windows_appcontainer import _native_profile_environment
+        with tempfile.TemporaryDirectory() as owned:
+            result=_native_profile_environment(
+                {"PATH":"reviewed", "LOCALAPPDATA":"ignored","TMP":"owned"},owned)
+            self.assertEqual(result["LOCALAPPDATA"],str(Path(owned).resolve()))
+            self.assertEqual(result["PATH"],"reviewed")
+            self.assertEqual(result["TMP"],"owned")
+            self.assertNotIn("NVP_HOME",result)
+
+    def test_missing_host_localappdata_refuses_native_worker(self):
+        from backend.nvp_g03_windows_appcontainer import (
+            _native_profile_environment,AppContainerFailure)
+        for missing in (None,"","missing-nvp-os-profile"):
+            with self.assertRaises(AppContainerFailure):
+                _native_profile_environment({"PATH":"reviewed"},missing)
+
+
 class NativeDriveEnvironmentContract(unittest.TestCase):
     def test_fixed_windows_drive_entries_do_not_leak_workspace(self):
         from backend.nvp_g03_windows_appcontainer import _sanitized_drive_environment
