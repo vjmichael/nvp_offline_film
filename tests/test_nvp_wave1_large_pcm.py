@@ -60,6 +60,23 @@ class BoundedOriginalPCMTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             _=source[:2]
 
+    def test_actual_over_64_mib_original_is_page_addressable(self):
+        size=64*1024*1024+2
+        zero_page=b"\x00"*PAGE_BYTES
+        check=hashlib.sha256()
+        for _ in range(size//PAGE_BYTES):
+            check.update(zero_page)
+        check.update(b"\x00"*(size%PAGE_BYTES))
+        digest=check.hexdigest()
+        with sqlite3.connect(self.path) as db:
+            db.execute("""UPDATE g06_original_pcm
+                SET pcm=zeroblob(?),pcm_sha256=?,sample_count=?
+                WHERE id='clip'""",(size,digest,size//2))
+        pcm=self.source_pcm(sample_count=size//2,pcm_sha256=digest)
+        self.assertEqual(len(pcm),size)
+        self.assertEqual(pcm[size-2:size],b"\x00\x00")
+        self.assertEqual(pcm[PAGE_BYTES-2:PAGE_BYTES+2],b"\x00"*4)
+
     def test_voice_rms_reads_only_short_verified_window(self):
         source=self.source_pcm()
         voice=WindowedVoiceSamples(source)
