@@ -315,7 +315,9 @@ class SealedFilmDelivery:
                  _now(),pid,job))
         self._change(pid,token,commit)
 
-    def _complete(self,pid,token,job,record):
+    def _complete(self,pid,token,job,record,stop):
+        if stop.is_set():
+            raise InterruptedError("Director cancelled before film manifest")
         rows=self._reels(pid,token,job)
         if len(rows)!=record["total_chunks"]:
             raise RuntimeError("A protected film is missing verified reels")
@@ -323,6 +325,8 @@ class SealedFilmDelivery:
         cursor=0;total=0
         entries=[]
         for i,row in enumerate(rows):
+            if stop.is_set():
+                raise InterruptedError("Director cancelled before final source check")
             if (row["chunk_index"]!=i or row["start_frame"]!=cursor or
                 row["source_sha256"]!=source or
                 not row["end_frame"]>cursor):
@@ -368,8 +372,12 @@ class SealedFilmDelivery:
                 raise RuntimeError("Protected playlist changed after interrupted publication")
             digest=indexed["sha256"]
         else:
+            if stop.is_set():
+                raise InterruptedError("Director stopped before sealed playlist publication")
             witness=self.live.put_original(pid,token,name,raw,"application/json")
             digest=witness["sha256"]
+        if stop.is_set():
+            raise InterruptedError("Director stopped before final completion")
         self._set(pid,token,job,"completed",manifest={
             "name":name,"sha256":digest})
         return manifest
@@ -407,7 +415,7 @@ class SealedFilmDelivery:
                     with self.guard:self.tickets.pop(ticket,None)
                 self._append(pid,token,job,record,index,receipt)
             self._set(pid,token,job,"finalizing")
-            self._complete(pid,token,job,record)
+            self._complete(pid,token,job,record,stop)
         except BaseException as error:
             state="cancelled" if stop.is_set() else (
                 "interrupted" if isinstance(error,(InterruptedError,PermissionError,
