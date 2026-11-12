@@ -257,12 +257,18 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         return {"approved":True,"native_approval_id":ticket}
 
     def consume_private_film_review(self,pid,revision,digest,frames,ticket):
-        """Called from trusted host service, never from an HTTP request body."""
+        """One-use native review: revoke on moved/closed desktop window."""
         if not isinstance(ticket,str):
             return False
         with self._lock:
+            # Consume before any validation, including origin. Refused or
+            # replayed tickets can never be reused on another WebView.
             grant=self._private_film_grants.pop(ticket,None)
             if grant is None or self._closing:
+                return False
+            try:
+                self._private_film_window()
+            except (PermissionError,RuntimeError):
                 return False
             return (grant[:4]==(pid,revision,digest,frames) and
                 time.monotonic()<grant[4])
