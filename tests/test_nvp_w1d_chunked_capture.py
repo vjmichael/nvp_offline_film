@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import sqlite3
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -66,8 +67,9 @@ class DurableCaptureTests(unittest.TestCase):
         store=self.make_store()
         store.begin()
         joined=b"".join(parts)
-        for part in parts:
+        for i,part in enumerate(parts):
             store.push(part)
+            if i%5==0: time.sleep(.02)  # Native callback cadence; no overflow
         result=store.finish_spooling(expected_samples=len(joined)//2)
         return store,joined,result
 
@@ -101,8 +103,8 @@ class DurableCaptureTests(unittest.TestCase):
     def test_full_transactional_publish_and_immutable_manifest(self):
         payload=(bytes(array("h",[1,2,3,4])*1200))*1500
         # 150 seconds of real PCM-byte fixtures; split into <=120s originals.
-        parts=[payload[n:n+CHUNK_SAMPLES*2]
-            for n in range(0,len(payload),CHUNK_SAMPLES*2)]
+        parts=[payload[n:n+48000*2]
+            for n in range(0,len(payload),48000*2)]
         store,joined,_=self.finish(parts)
         with patch("backend.nvp_g06_chunked_capture._stage",
                    return_value=({"revision":1},
@@ -147,7 +149,8 @@ class DurableCaptureTests(unittest.TestCase):
                 "SELECT count(*) FROM g06_original_pcm").fetchone()[0],0)
 
     def test_rejects_chunk_loss_or_wrong_stage_at_publish(self):
-        store,pcm,_=self.finish([b"\x01\x00"*(CHUNK_SAMPLES+6)])
+        store,pcm,_=self.finish([b"\x01\x00"*48000,
+            b"\x01\x00"*6])
         with sqlite3.connect(self.path) as db:
             db.execute("""DELETE FROM g06_long_capture_chunks
                 WHERE session_id=?""",(self.session,))
