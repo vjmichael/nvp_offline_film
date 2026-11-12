@@ -60,6 +60,19 @@ class BoundedOriginalPCMTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             _=source[:2]
 
+    def test_cached_pcm_page_rechecks_mutation_after_bounded_window(self):
+        from unittest.mock import patch
+        source=self.source_pcm()
+        self.assertEqual(source[:2],self.source[:2])
+        # A source mutation cannot become a permanent cached-page bypass.
+        with sqlite3.connect(self.path) as db:
+            db.execute("UPDATE g06_original_pcm SET pcm=? WHERE id='clip'",
+                (b"\x7f"+self.source[1:],))
+        with patch("backend.nvp_g09e_pcm.time.monotonic_ns",
+                   return_value=source._cache_checked_ns+101_000_000):
+            with self.assertRaises(RuntimeError):
+                _=source[:2]
+
     def test_actual_over_64_mib_original_is_page_addressable(self):
         size=64*1024*1024+2
         zero_page=b"\x00"*PAGE_BYTES
