@@ -104,6 +104,28 @@ class SealedSourceReadbackTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             _=pcm[1996:2004]
 
+    def test_high_rate_pcm_access_uses_local_revocation_each_sample(self):
+        class FastHost(FakeSealedHost):
+            def __init__(self,pid,assets):
+                super().__init__(pid,assets)
+                self.full_checks=0
+            def local_session_live(self,pid,token):
+                return self.enabled and pid==self.pid and token=="trusted-session"
+            def _session(self,pid,token):
+                self.full_checks+=1
+                return super()._session(pid,token)
+        self.host=FastHost(self.pid,self.host.assets)
+        pcm=VerifiedSealedPCM(self.host,"trusted-session",self.db,
+                               self.pid,self.scene,self.clip)
+        for i in range(800):
+            self.assertEqual(len(pcm[:2]),2)
+        self.assertLess(self.host.full_checks,100)
+        # A local movie lock must invalidate the very next two-byte read
+        # even if the 100ms cross-process generation interval has not elapsed.
+        self.host.enabled=False
+        with self.assertRaises(PermissionError):
+            _=pcm[:2]
+
     def test_missing_group_member_refused(self):
         self.db.execute("""DELETE FROM w1e_sealed_clip_members
             WHERE clip_id=?""",(self.clip,))
@@ -145,6 +167,18 @@ class NativeScopedReviewTests(unittest.TestCase):
         self.assertFalse(bridge.consume_private_film_review(
             scope["project_id"],4,"b"*64,1200,receipt["native_approval_id"]))
 
+    def test_native_approval_revoked_on_window_navigation(self):
+        bridge=self.make_bridge()
+        scope={"project_id":"a"*32,"edit_revision":5,
+               "source_sha256":"b"*64,"total_frames":1200}
+        ticket=bridge.native_private_film_review(scope)["native_approval_id"]
+        bridge.window.url="https://other.invalid/"
+        self.assertFalse(bridge.consume_private_film_review(
+            scope["project_id"],5,scope["source_sha256"],1200,ticket))
+        bridge.window.url="http://127.0.0.1:54211/"
+        self.assertFalse(bridge.consume_private_film_review(
+            scope["project_id"],5,scope["source_sha256"],1200,ticket))
+
     def test_cross_origin_approval_refused(self):
         bridge=self.make_bridge()
         bridge.window.url="https://example.invalid/"
@@ -168,6 +202,41 @@ class PrivateWorkerAdmissionTests(unittest.TestCase):
             with self.assertRaises(ProtectedFilmReelError):
                 worker.render("a"*32,"token","b"*32,0,1200,
                               None,None,"ticket-"+("c"*32))
+
+    def test_project_lock_only_signals_its_own_active_private_worker(self):
+        from backend.nvp_g09e_sealed_delivery import SealedFilmDelivery
+        private=SealedFilmDelivery.__new__(SealedFilmDelivery)
+        private.guard=threading.RLock()
+        a,b=threading.Event(),threading.Event()
+        private.active={"1"*32:(None,a),"2"*32:(None,b)}
+        private._job_projects={"1"*32:"a"*32,"2"*32:"b"*32}
+        self.assertEqual(private.cancel_project("a"*32),["1"*32])
+        self.assertTrue(a.is_set())
+        self.assertFalse(b.is_set())
+        self.assertEqual(private.cancel_all(),2)
+        self.assertTrue(b.is_set())
+
+    def test_healthy_private_job_poll_never_seals_new_snapshot(self):
+        from backend.nvp_g09e_sealed_delivery import SealedFilmDelivery
+        private=SealedFilmDelivery.__new__(SealedFilmDelivery)
+        private.guard=threading.RLock()
+        private.active={}
+        class Empty:
+            def execute(self,*args,**kwargs):
+                return []
+        private._read=lambda pid,token,action:action(Empty())
+        def no_write(*args):
+            raise AssertionError("Healthy status poll must not publish SQLite HEAD")
+        private._change=no_write
+        self.assertEqual(private.reconcile("a"*32,"trusted-session"),[])
+
+    def test_source_worker_uses_pinned_script_not_module_cwd(self):
+        from backend.nvp_g09e_sealed_worker import _fixed_command
+        with patch("backend.nvp_g09e_sealed_worker.sys.platform","win32"):
+            command,extra=_fixed_command()
+        self.assertEqual(command[1],"-B")
+        self.assertTrue(command[2].endswith("nvp_w1e_sealed_reel_worker.py"))
+        self.assertEqual(len(extra),1)
 
     def test_fixed_private_child_refuses_arbitrary_arguments(self):
         from tools.nvp_w1e_sealed_reel_worker import main
