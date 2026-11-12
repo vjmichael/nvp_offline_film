@@ -47,7 +47,8 @@ export default function DirectorScreenplayAssistant({movie,unsaved,onApproved}) 
           if(!active)return;
           setLuState(result.state);
           setLuMessage(result.message||'Lu Workspace is unavailable.');
-          setAvailable(result.state==='ready');
+          setAvailable(result.state==='ready'&&
+            result.supported_operations?.includes('screenplay_proposal')===true);
         }).catch(()=>{
           if(!active)return;
           setAvailable(false);setLuState('disconnected');

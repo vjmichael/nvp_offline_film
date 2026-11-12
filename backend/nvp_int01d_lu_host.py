@@ -28,6 +28,7 @@ UNCONNECTED={
     "inference_authorized_by_status":False,
     "external_lu_runtime_required":True,
     "nvp_owns_model":False,
+    "supported_operations":[],
 }
 
 
@@ -81,7 +82,9 @@ class NativeLuFilmService:
         result=self.port.status(scope)
         self._check(pid,token,scope,claim,"status")
         return {**result,"external_lu_runtime_required":True,
-                "nvp_owns_model":False}
+                "nvp_owns_model":False,
+                "supported_operations":
+                    ["screenplay_proposal"] if result["state"]=="ready" else []}
 
     def propose_screenplay(self,pid,token,direction,*,expected_revision=None):
         if type(direction) is not str or len(direction)>1200:

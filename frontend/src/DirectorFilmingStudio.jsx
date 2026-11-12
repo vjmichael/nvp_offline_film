@@ -309,11 +309,17 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
 
   useEffect(()=>{
     let alive=true;
-    call('/api/creative/models').then(out=>{
-      if(alive)setAiReady(out.state==='available');
+    // Original performance direction is an authority-bearing creative
+    // action. Only the Lu host's exact project-scoped typed capability can
+    // activate AI suggestions; manual directing remains fully available.
+    if(!movie.encrypted)call('/api/projects/'+encodeURIComponent(movie.id)+
+      '/lu/status').then(out=>{
+      if(alive)setAiReady(out.state==='ready'&&
+        out.supported_operations?.includes('performance_notes')===true);
     }).catch(()=>{if(alive)setAiReady(false)});
+    else setAiReady(false);
     return()=>{alive=false};
-  },[]);
+  },[movie.id,movie.encrypted]);
   useEffect(()=>()=>{
     if(listenUrl)URL.revokeObjectURL(listenUrl);
   },[listenUrl]);

@@ -383,11 +383,16 @@ export default function DirectorWorldStage({movie,scene}) {
 
   useEffect(()=>{
     let alive=true;
-    filmAction('/api/creative/models').then(result=>{
-      if(alive)setAiAvailable(result.state==='available');
+    // Lu ownership is checked for this exact film; do not treat a
+    // separately managed OpenAI-compatible port as model readiness.
+    if(!movie.encrypted)filmAction('/api/projects/'+encodeURIComponent(movie.id)+
+      '/lu/status').then(result=>{
+      if(alive)setAiAvailable(result.state==='ready'&&
+        result.supported_operations?.includes('scene_objects')===true);
     }).catch(()=>{if(alive)setAiAvailable(false)});
+    else setAiAvailable(false);
     return ()=>{alive=false};
-  },[]);
+  },[movie.id,movie.encrypted]);
 
   useEffect(()=>{
     let active=true;

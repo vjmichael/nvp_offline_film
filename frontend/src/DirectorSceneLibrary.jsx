@@ -78,11 +78,15 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
     action(base).then(value=>{
       if(alive)setData(value);
     }).catch(err=>{if(alive)setError(err.message)});
-    // NVP selects the existing local model internally. The filmmaker never
-    // needs to choose an endpoint, model file or generation backend.
-    action('/api/creative/models').then(result=>{
-      if(alive)setAiReady(result.state==='available');
+    // A generic local AI server is not the Lu-owned model serving this
+    // filmmaker's project. Scene-idea generation remains disabled until
+    // Lu's native host grants this typed operation explicitly.
+    if(!movie.encrypted)action('/api/projects/'+encodeURIComponent(movie.id)+
+      '/lu/status').then(result=>{
+      if(alive)setAiReady(result.state==='ready'&&
+        result.supported_operations?.includes('scene_ideas')===true);
     }).catch(()=>{if(alive)setAiReady(false)});
+    else setAiReady(false);
     return ()=>{alive=false;controller.abort()};
   },[base,movie.revision]);
 
@@ -377,8 +381,8 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
             and notes. You choose what belongs in your movie.</p>
           <button className="film-secondary" onClick={askAI} disabled={busy||!aiReady}>
             {busy?'Working on your scene…':'Ask AI for ideas'}</button>
-          {!aiReady&&<p className="film-hint">AI assistance is unavailable right now.
-            Your scenes can still be edited manually.</p>}
+          {!aiReady&&<p className="film-hint">Lu scene suggestions are not yet
+            connected to this project. Your scenes can still be edited manually.</p>}
           {selected.proposals?.filter(p=>!p.stale).map(p=>
             <article className="director-proposal" key={p.id}>
               <div className="director-proposal-head">

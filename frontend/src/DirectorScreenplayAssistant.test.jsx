@@ -17,7 +17,8 @@ function server({state='disconnected',message='Lu Workspace is not connected.'}=
     let data={};
     if(url===base)data={screenplay_drafts:[]};
     else if(url==='/api/projects/'+PID+'/lu/status')
-      data={state,message};
+      data={state,message,supported_operations:
+        state==='ready'?['screenplay_proposal']:[]};
     else if(url===base+'/screenplay/suggestions'&&options.method==='POST')
       data={screenplay_drafts:[{
         id:'b'.repeat(32),content:'INT. CABIN - MORNING\n\nLight rises.',

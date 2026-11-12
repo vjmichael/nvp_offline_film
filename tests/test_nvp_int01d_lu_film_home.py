@@ -141,6 +141,7 @@ def film(tmp_path):
 def test_no_lu_bridge_does_not_claim_a_loaded_model():
     assert UNCONNECTED["state"]=="disconnected"
     assert UNCONNECTED["nvp_owns_model"] is False
+    assert UNCONNECTED["supported_operations"] == []
     assert UNCONNECTED["inference_authorized_by_status"] is False
 
 
