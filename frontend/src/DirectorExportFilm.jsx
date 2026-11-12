@@ -168,8 +168,19 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
       {jobs.filter(j=>j.status==='completed').map((job,index)=>
         <article key={job.id}>
           <div><strong>{index===0?'Your finished film':'Earlier movie version'}</strong>
-            <p>{job.duration_seconds} seconds · Picture and sound independently
-              checked · {Math.round((job.output_bytes||0)/1048576*10)/10} MB</p>
+            <p>{job.duration_seconds} seconds · Picture and sound checked ·
+              {' '}{Math.round((job.output_bytes||0)/1048576*10)/10} MB</p>
+            {job.sound_quality?.actual_pcm_verified&&
+              <p className="film-hint">Measured finished sound:
+                {job.sound_quality.integrated_lufs===null?
+                  ' silence': ' '+job.sound_quality.integrated_lufs+' LUFS'}
+                {job.sound_quality.sample_peak_dbfs!==null&&
+                  ' · Peak '+job.sound_quality.sample_peak_dbfs+' dBFS'}
+                {job.sound_quality.review_target_met===true?
+                  ' · Reviewed sound level met':
+                  job.sound_quality.review_target_met===false?
+                  ' · Sound level below requested target':''}
+              </p>}
           </div>
           <div className="film-actions">
             <a className="film-primary" href={base+'/export/'+job.id+'/movie'}
