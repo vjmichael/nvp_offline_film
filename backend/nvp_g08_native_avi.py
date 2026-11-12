@@ -511,6 +511,48 @@ def render_film(assembly,output,*,cancel=None,progress=None):
             set(acoustics)-set(sources)):
             raise RuntimeError("The approved sound environment was changed")
         spatial_mixer=SpatialFilmMixer(assembly,worlds)
+    finishing=assembly.get("approved_finishing")
+    master_pcm=None
+    mastered_receipt=None
+    finished_color=None
+    if finishing:
+        from backend.nvp_g09d_finishing import (
+            _json as _fjson,_sha as _fsha,_validate as _fvalidate)
+        from backend.nvp_g09d_master import master_sound,finish_picture
+        expected_source={
+            "edit_revision":assembly["edit_revision"],
+            "edit_sha256":assembly["edit_document_sha256"],
+            "production_looks_sha256":assembly["production_looks_sha256"],
+            "actor_performances_sha256":assembly["actor_performances_sha256"],
+            "acoustic_looks_sha256":assembly["acoustic_looks_sha256"],
+            "original_takes_sha256":_fsha(_fjson(
+                [[tid,sources[tid]["take_sha256"]] for tid in sorted(sources)]
+            ).encode("utf8"))
+        }
+        decision=finishing["finishing"]
+        if (_fsha(_fjson(decision).encode("utf8"))!=finishing["sha256"]
+            or _fvalidate(decision,expected_source) is not decision
+            or _fsha(_fjson({
+                "revision":finishing["revision"],
+                "sha256":finishing["sha256"]
+            }).encode("utf8"))!=assembly["finishing_sha256"]):
+            raise RuntimeError("The approved finishing plan was changed")
+        # Full, bounded 30-second source mix is required for actual gated
+        # integrated loudness measurement, not a guessed instantaneous
+        # volume meter or a destructive source-PCM normalizer.
+        unmastered=bytearray()
+        for frame in range(frames):
+            if cancel is not None and cancel():
+                raise InterruptedError("Sound mastering was cancelled")
+            unmastered.extend(
+                spatial_mixer.window(frame*2000,2000)[0]
+                if spatial_mixer is not None else
+                _audio_frame(assembly,sources,frame*2000,2000))
+        master_pcm,mastered_receipt=master_sound(
+            bytes(unmastered),decision["audio"],
+            intent=decision["finishing_intent"])
+        if len(master_pcm)!=frames*2000*AUDIO_BLOCK:
+            raise RuntimeError("Master sound and original source Film Time diverged")
     writer=MjpegPcmAvi(output,frames)
     for frame in range(frames):
         if cancel is not None and cancel():
@@ -518,9 +560,14 @@ def render_film(assembly,output,*,cancel=None,progress=None):
         tick=frame*TICKS_FRAME
         jpeg=(render_production_picture(assembly,worlds,tick)
               if production or acting else render_picture(assembly,worlds,tick))
-        sound=(spatial_mixer.window(frame*2000,2000)[0]
-               if spatial_mixer is not None
-               else _audio_frame(assembly,sources,frame*2000,2000))
+        if finishing:
+            jpeg,finished_color=finish_picture(jpeg,decision["color"])
+        sound=(master_pcm[frame*2000*AUDIO_BLOCK:
+                          (frame+1)*2000*AUDIO_BLOCK]
+               if master_pcm is not None else
+               spatial_mixer.window(frame*2000,2000)[0]
+               if spatial_mixer is not None else
+               _audio_frame(assembly,sources,frame*2000,2000))
         writer.frame(jpeg,sound)
         if progress and (frame%6==0 or frame==frames-1):
             progress(frame+1,frames)
@@ -536,6 +583,14 @@ def render_film(assembly,output,*,cancel=None,progress=None):
         "acoustic_looks_sha256")
     result["source_based_3d_audio_mixed"]=spatial_mixer is not None
     result["original_pcm_preserved"]=True
+    result["approved_finishing_sha256"]=assembly.get("finishing_sha256")
+    result["director_finishing_applied"]=finishing is not None
+    if mastered_receipt is not None:
+        result["native_sound_mastering"]=mastered_receipt
+    if finished_color is not None:
+        result["native_picture_finishing"]=finished_color
+    result["studio_aces_ocio_certified"]=False
+    result["cinema_dcp_compliant"]=False
     result["approved_actor_performances_sha256"]=assembly.get(
         "actor_performances_sha256")
     result["animated_actor_count"]=sum(
