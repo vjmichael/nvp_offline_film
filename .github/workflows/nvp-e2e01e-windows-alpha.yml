@@ -152,7 +152,7 @@ jobs:
           if ($version -ne '0.1.1') { throw 'NSIS staged candidate version missing/wrong' }
           python tools/nvp_w1g_native_package.py verify-install --installed "$pending" --receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --output "$env:RUNNER_TEMP/nvp-w1g-staged.json"
           if ($LASTEXITCODE -ne 0) { throw 'Staged Windows NSIS payload does not match reviewed native build' }
-          python tools/nvp_w1g_windows_nsis_transaction_matrix.py --programs (Join-Path $env:LOCALAPPDATA 'Programs') --projects "$env:NVP_HOME" --build-receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --journal (Join-Path $env:RUNNER_TEMP 'nvp-w1g-nsis-transaction') --output "$env:RUNNER_TEMP/nvp-w1g-windows-nsis-matrix.json"
+          python -m tools.nvp_w1g_windows_nsis_transaction_matrix --programs (Join-Path $env:LOCALAPPDATA 'Programs') --projects "$env:NVP_HOME" --build-receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --journal (Join-Path $env:RUNNER_TEMP 'nvp-w1g-nsis-transaction') --output "$env:RUNNER_TEMP/nvp-w1g-windows-nsis-matrix.json"
           if ($LASTEXITCODE -ne 0) { throw 'Windows native NSIS staged upgrade and rollback transaction failed' }
           $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-post-rollback-smoke.txt'
           $restored=Start-Process -FilePath $active -ArgumentList '--smoke-reopen' -PassThru
