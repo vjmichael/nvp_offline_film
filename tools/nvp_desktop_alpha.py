@@ -70,9 +70,14 @@ def serve(app):
     listening.listen(128)
     listening.set_inheritable(False)
     port=listening.getsockname()[1]
+    # PyInstaller --windowed has sys.stdout/sys.stderr=None. Uvicorn's
+    # default logging formatter calls stderr.isatty(), and exits before
+    # binding the native loopback API. The installed application owns its
+    # bounded diagnostic receipts; do not configure console logging from
+    # a nonexistent Windows GUI stream.
     config=uvicorn.Config(app,host="127.0.0.1",port=port,
                           access_log=False,log_level="warning",
-                          proxy_headers=False)
+                          log_config=None,proxy_headers=False)
     server=uvicorn.Server(config)
     server.install_signal_handlers=lambda:None
     worker=threading.Thread(target=server.run,kwargs={"sockets":[listening]},

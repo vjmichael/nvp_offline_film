@@ -127,25 +127,6 @@ jobs:
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
           }
-      - name: Require actual visible Windows WebView2 desktop page load
-        shell: pwsh
-        run: |
-          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
-          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-webview-smoke-diagnostic.txt'
-          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru
-          if (-not $window.WaitForExit(180000)) {
-            $window.Kill()
-            throw 'Native WebView2 visible Windows smoke timed out'
-          }
-          if ($window.ExitCode -ne 0) {
-            throw 'Real desktop WebView2 window did not load; headless smoke alone cannot accept NVP alpha'
-          }
-      - name: Verify real installed exe under a native Windows Job Object
-        shell: pwsh
-        run: |
-          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP'
-          python tools/nvp_w1g_windows_installed_acceptance.py --installed "$installed" --projects "$env:NVP_HOME" --build-receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --output "$env:RUNNER_TEMP/nvp-w1g-real-windows-kernel.json"
-          if ($LASTEXITCODE -ne 0) { throw 'Installed NVP native executable, restart, WebView2, data-first A/V, or Windows Job Object evidence failed' }
       - name: Real Windows NSIS upgrade staging and filesystem activation/rollback matrix
         shell: pwsh
         run: |
@@ -173,8 +154,32 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Staged Windows NSIS payload does not match reviewed native build' }
           python tools/nvp_w1g_windows_nsis_transaction_matrix.py --programs (Join-Path $env:LOCALAPPDATA 'Programs') --projects "$env:NVP_HOME" --build-receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --journal (Join-Path $env:RUNNER_TEMP 'nvp-w1g-nsis-transaction') --output "$env:RUNNER_TEMP/nvp-w1g-windows-nsis-matrix.json"
           if ($LASTEXITCODE -ne 0) { throw 'Windows native NSIS staged upgrade and rollback transaction failed' }
-          & $active --smoke-reopen
-          if ($LASTEXITCODE -ne 0) { throw 'Restored original installed NVP.exe could not reopen original film data' }
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-post-rollback-smoke.txt'
+          $restored=Start-Process -FilePath $active -ArgumentList '--smoke-reopen' -PassThru
+          if (-not $restored.WaitForExit(180000)) {
+            $restored.Kill()
+            throw 'Restored original installed NVP.exe --smoke-reopen timed out after real NSIS rollback'
+          }
+          if ($restored.ExitCode -ne 0) { throw 'Restored original installed NVP.exe could not reopen original film data' }
+      - name: Require actual visible Windows WebView2 desktop page load
+        shell: pwsh
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-webview-smoke-diagnostic.txt'
+          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru
+          if (-not $window.WaitForExit(180000)) {
+            $window.Kill()
+            throw 'Native WebView2 visible Windows smoke timed out'
+          }
+          if ($window.ExitCode -ne 0) {
+            throw 'Real desktop WebView2 window did not load; headless smoke alone cannot accept NVP alpha'
+          }
+      - name: Verify real installed exe under a native Windows Job Object
+        shell: pwsh
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP'
+          python tools/nvp_w1g_windows_installed_acceptance.py --installed "$installed" --projects "$env:NVP_HOME" --build-receipt "$env:RUNNER_TEMP/nvp-w1g-native-build.json" --output "$env:RUNNER_TEMP/nvp-w1g-real-windows-kernel.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed NVP native executable, restart, WebView2, data-first A/V, or Windows Job Object evidence failed' }
       - name: Uninstall without deleting creator project data
         shell: pwsh
         run: |
@@ -204,6 +209,7 @@ jobs:
             ${{ runner.temp }}/nvp-w1g-real-windows-kernel.json
             ${{ runner.temp }}/nvp-w1g-first-smoke-diagnostic.txt
             ${{ runner.temp }}/nvp-w1g-reopen-smoke-diagnostic.txt
+            ${{ runner.temp }}/nvp-w1g-post-rollback-smoke.txt
             ${{ runner.temp }}/nvp-w1g-webview-smoke-diagnostic.txt
             ${{ runner.temp }}/nvp-w1g-staged.json
             ${{ runner.temp }}/nvp-w1g-windows-nsis-matrix.json
