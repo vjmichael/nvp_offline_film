@@ -768,9 +768,10 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
                 value={o.actor_id}>{o.name}</option>)}
             </select></label>
           <label className="film-hint"><input type="checkbox"
-              checked={longMic} disabled={!!recordSession||busy}
+              checked={longMic} disabled={!!recordSession||busy||movie.encrypted}
               onChange={e=>setLongMic(e.target.checked)}/>
             Record a longer original scene (up to 30 minutes, with durable five-second chunks)
+            {movie.encrypted&&' — encrypted long recording awaits protected worker support'}
           </label>
           <div className="film-actions">
             {!recordSession?<button className="film-primary"
@@ -804,7 +805,7 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
                      'Interrupted original chunks retained; not a usable Take':
                      record.status==='cancelled'?'Recording cancelled':
                      'Recording chunks in progress'}
-                    {' · '+record.durable_chunks+' verified-stage chunks'}
+                    {' · '+record.durable_chunks+' durably stored chunks'}
                   </p>)}
               </div>}
             {captureHealth?.recordings?.length>0&&
