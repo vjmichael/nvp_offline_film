@@ -30,11 +30,38 @@
 
 **Remaining W1-D acceptance and duration limits:** physically verify miniaudio device callbacks, SQLite writer pressure/latency, 30-minute RAM/disk/audio continuity, interrupted device/host/power failures, Windows/Linux installation, and actual rendering from published source clips. A G06 **single scene** is intentionally limited to 30 minutes, so a three-hour feature must be assembled from multiple independent filmed scenes/Takes; there is no claim of one uninterrupted three-hour microphone take. Physical hardware audio-to-picture synchronization remains G09-C.
 
+## W1-E — Protected encrypted long-film production (source authored)
+
+**Status:** implementation sources have been committed; native Windows/Linux worker execution, actual Windows AppContainer cleanup, real microphone and long-film acceptance have NOT run. No CI or merge.
+
+### W1-E1 Sealed original microphone custody
+
+- Native G06 long capture routes ordinary films to the original SQLite spool and unlocked G03 films exclusively to the new SealedOriginalChunkStore. Native callback data is bounded in RAM and encrypted in independent five-second AES-GCM source assets; only encrypted identities, source SHA-256, sample offsets and state are written to G03 authenticated SQLite snapshots. The 64 MiB encrypted database limit remains intact; no plaintext source film files or temp originals are created.
+- Completed sealed capture authenticates the whole source stream and publishes original <=120-second clip identities and exact offsets as empty BLOB markers backed by protected source-asset references. A placeholder must NEVER be interpreted as silence. VerifiedSealedPCM authenticates original chunks in bounded windows, and G06 freeze/readback, G07 assembly, original preview, G09-B actor voice and G09-C acoustics all use the bound original, rejecting lock/tampering.
+- Restart never auto-publishes incomplete source; interrupted source chunks remain encrypted and quarantined. Explicit discard marks unfinished records cancelled. Reviewed encrypted orphan reclamation is still required to recover occupied space without destroying original films.
+
+### W1-E2 Protected native private film rendering and checkpoints
+
+- Fixed native child --w1e-sealed-reel-worker accepts bounded original OpenUSD and source PCM over anonymous pipes, verifies source digests, renders exactly one ten-second AVI with original 24fps/48k Film Time and returns data via pipe. No model token, key, source filename, arbitrary script, network URL or disk export is passed to the worker.
+- Native supervisor requires a real Windows AppContainer with zero network capabilities, Job/process-tree custody, code-only ACL and disposable working directory. Mere Job Object custody does NOT authorize private sources. After verified worker exit/profile teardown and independent AVI/frame/PCM readback, the host seals derived output via a one-use G03 worker grant and writes authenticated worker receipts.
+- SealedFilmDelivery persists reviewed source SHA, edit revision, sound plan, job state and completed reel checkpoints in encrypted G03 SQLite. Crash/restart marks uncertain work interrupted, never adopts unknown worker artifacts, and requires new human review before restart. Prior completed reels are reauthenticated; the final playlist is itself AES-GCM sealed.
+- The actual desktop bridge now mints a short-lived, one-use, exact-project/edit/source/duration authorization only after an OS confirmation dialog. The API cannot mint that ticket. Human-reviewed job grants issue scoped one-use internal reel tickets. Headless/browser-only encrypted export fails closed, as do Linux protected workers pending equivalent OS isolation.
+
+### Remaining W1-E gates
+
+1. Genuine exact-head Windows compiler, frozen module and native AppContainer runtime, OS profile/ACL cleanup, cancellation, original-source equality and independently inspected 10-second protected output.
+2. Genuine Windows physical microphone permission and continuous 30-minute encrypted capture under sustained disk/CPU pressure; callback overrun and process/power interruption/restart matrix.
+3. Native Linux private-worker confinement including independently verified filesystem/network sandbox; ordinary cgroup-only custody is not sufficient.
+4. Reviewed authenticated orphan reclamation for encrypted partial outputs, durable SQLite snapshots, and retained original film and keys.
+5. Actual 30-minute, 60-90-minute and three-hour encrypted scene+sound reel scale and playback, plus Windows installed-app UI and accessibility.
+6. G09-A/C/D high-fidelity final mastering and cinema DCP Bv2.1 remain separate work; W1-E AVI is a working format, not a professional delivery certification.
+
+Source fixture tests: tests/test_nvp_w1e_sealed_custody.py. They have NOT been executed; synthetic tests do not prove native OS isolation or AES-GCM physical custody.
 ## Remaining Wave 1 engineering before claiming closure
 
 1. **W1-C:** Real native Windows/Linux PyInstaller bundle, source import graph, installed fixed worker subprocess with OS Job Object/Linux custody, logs, hard cancellation and restart. Inspect exact compiler/build results only when the owner reopens acceptance.
 2. **W1-D:** Source implementation written: 30-minute continuous G06 scene recording using 5-second durably committed chunks, exact source manifest, and atomic <=120-second original segments. Native device, sustained disk/load, physical crash and installed acceptance **remain open**; 3-hour single Take is not supported or claimed.
-3. **W1-E:** Protected G03 movies still cannot use the ordinary disk-based G09-E worker or G09-F portable film library. Complete independently confined, encrypted chunk/checkpoint worker and safe historical source migration; no plaintext fallback.
+3. **W1-E:** Encrypted original source chunks, host verified source windows, Windows AppContainer native reel worker, one-use OS grant, sealed checkpoint and replay-safe restart are source authored. Native acceptance, encrypted orphan cleanup and independent Linux isolation remain open. G09-F portable encrypted distribution remains disabled.
 4. **W1-F:** Verify bounded page-reader speed, SQLite concurrent writer/read races, actor/audio seek parity, storage quotas, tamper and restart behavior on 30/60–90/180-minute authentic original footage. Present ten-second reels as working-film SDR MJPEG/PCM16, not cinema mastering or a completed feature.
 5. **W1-G:** Audit and pin actual Windows/Linux binary wheels, native ABI/library dependencies, PyInstaller collect paths, product licensing, original file preservation and upgrade/uninstall restoration.
 
@@ -45,4 +72,4 @@
 - Host authorization, job process custody, worker exit/recovery and source-to-export SHA receipts must be independently verified; no queued/running CI job or model UI state counts as passing.
 - Physical Radeon/Windows + native Linux installation and owner-operated long-film playback remain separate acceptance gates.
 
-**Next task:** W1-E — independently confined, encrypted long-film source capture/render/checkpoint custody. W1-D source has been authored and the deferred W1-D native/physical acceptance items remain open; W1-A/B/C are likewise unaccepted until consolidated native verification.
+**Next task:** W1-F/W1-G — native dependency provisioning, installed worker packaging and production-scale readiness. W1-D/E source is authored but not native-accepted; protected Windows security and Linux isolation acceptance remain open until the consolidated gate.
