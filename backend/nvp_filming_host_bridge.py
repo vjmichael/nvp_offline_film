@@ -56,7 +56,7 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
                           for key, value in event.items()}
                 snapshot.append(frozen)
             batch = snapshot
-            # Source scope, consent and publication options must be fixed before
+            # Reject malformed source-event contracts before opening a live PCM\n            # iterator. Invalid metadata must not trigger unnecessary device reads.\n            from backend.nvp_data_first_filming import (\n                BASE_RECORDING_FIELDS, CLOCKED_RECORDING_FIELDS)\n            for event in batch:\n                if set(event) not in (BASE_RECORDING_FIELDS, CLOCKED_RECORDING_FIELDS):\n                    raise ValueError("Recorded sound event has invalid source fields")\n            # Source scope, consent and publication options must be fixed before
             # shutdown callbacks run; never trust caller-owned nested references.
             frozen_options = deepcopy(capture_options)
             # Bound original PCM before terminating its producer. Spooled files
