@@ -29,6 +29,7 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
     batch = None
     frozen_options = None
     recording_error = None
+    spooled_checks = []
     # The worker may own the PCM iterator. Drain it while the worker is alive;
     # publication after shutdown must never depend on a terminated producer.
     with ExitStack() as streams:
@@ -80,6 +81,7 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
                 spool.flush()
                 spool.seek(0)
                 expected_digest = digest.digest()
+                spooled_checks.append((spool, expected_digest))
                 def replay(source=spool, expected=expected_digest):
                     # The spool survives worker shutdown callbacks. Verify its
                     # original bytes before handing any PCM to Take publication.
@@ -120,4 +122,17 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
             raise RuntimeError("Filming custody unverified; frozen Take publication denied")
         if recording_error is not None:
             raise recording_error
+        # Verify all spools before invoking a publication API, even if the
+        # capture service defers or never consumes its PCM iterators.
+        for source, expected in spooled_checks:
+            source.seek(0)
+            actual = sha256()
+            while True:
+                block = source.read(1024 * 1024)
+                if not block:
+                    break
+                actual.update(block)
+            if actual.digest() != expected:
+                raise RuntimeError("Original PCM spool integrity verification failed")
+            source.seek(0)
         return capture.capture(project_id, take_id, recordings=batch, **frozen_options)
