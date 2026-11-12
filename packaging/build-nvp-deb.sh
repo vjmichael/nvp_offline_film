@@ -32,6 +32,12 @@ readelf -h "$bundle/NVP" | grep -Eq 'Class:[[:space:]]+ELF64' ||
   { echo "Native ELF64 required." >&2;exit 3; }
 readelf -h "$bundle/NVP" | grep -Eq 'Machine:[[:space:]]+Advanced Micro Devices X86-64' ||
   { echo "Genuinely built x86_64 required." >&2;exit 3; }
+# Check the actual installed worker dispatcher and accelerated PCM runtime.
+# A selfcheck is NOT a successful movie render or physical acceptance.
+"$bundle/NVP" --g09e-worker --selfcheck || {
+  echo "Frozen Linux long-film worker/runtime unavailable." >&2
+  exit 4
+}
 depends="$NVP_DEBIAN_DEPENDS"
 if [ -z "$depends" ]; then
   echo "Supply vetted NVP_DEBIAN_DEPENDS from actual platform runtime." >&2

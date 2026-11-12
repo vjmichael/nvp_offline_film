@@ -69,13 +69,15 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q tools/nvp_desktop_alpha.py
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all sounddevice --collect-submodules backend tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all sounddevice --collect-all numpy --collect-all scipy --collect-submodules backend --collect-submodules tools --hidden-import tools.nvp_g09e_worker tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
           python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
           if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }
           & 'dist/NVP/NVP.exe' --smoke
           if ($LASTEXITCODE -ne 0) { throw 'Uninstalled native alpha smoke failed' }
+          & 'dist/NVP/NVP.exe' --g09e-worker --selfcheck
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen long-film worker or accelerated DSP is unavailable' }
       - name: Create NSIS single-click installer
         shell: pwsh
         run: |

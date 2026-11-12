@@ -283,13 +283,25 @@ def _finalize(args,dbpath,directory,record,source):
     _write_owned(directory,"candidate-manifest.json",manifest)
 
 def main(argv=None):
+    arguments=list(sys.argv[1:] if argv is None else argv)
+    if arguments==["--selfcheck"]:
+        # Installer-only dependency and dispatch check; no movie, project,
+        # native source, worker authority or finished-film claim.
+        from backend.nvp_g09f_runtime import runtime_report
+        from backend.nvp_g09e_audio import FilmMeter,RATE
+        report=runtime_report()
+        if not report["native_long_film_modules_available"]:
+            return 2
+        if FilmMeter(duration_samples=RATE*(10*60+1)).engine != "scipy-accelerated-biquad":
+            return 2
+        return 0
     parser=argparse.ArgumentParser(description="Fixed NVP film reel worker")
     parser.add_argument("action",choices=("analyze","render","verify","finalize"))
     parser.add_argument("--db",required=True)
     parser.add_argument("--project",required=True)
     parser.add_argument("--job",required=True)
     parser.add_argument("--index",type=int,default=-1)
-    args=parser.parse_args(argv)
+    args=parser.parse_args(arguments)
     try:
         db,directory=_owned(args)
         record,parts,source=_job(db,args.project,args.job)

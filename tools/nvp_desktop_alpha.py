@@ -1123,6 +1123,11 @@ def main(argv=None):
         # backend server, open a WebView or accept arbitrary worker scripts.
         from tools.nvp_g08_export_worker import main as g08_worker
         return g08_worker(args[1:])
+    if args and args[0]=="--g09e-worker":
+        # Fixed host-owned reel role in the same frozen NVP executable.
+        # Never launch a desktop, backend server or model for a child worker.
+        from tools.nvp_g09e_worker import main as g09e_worker
+        return g09e_worker(args[1:])
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
