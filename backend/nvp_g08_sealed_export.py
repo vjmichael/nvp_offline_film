@@ -290,7 +290,18 @@ class G08SealedDelivery:
         job=row["id"];total=row["expected_frames"]
         with self._guard:count=self._progress.get(job,0)
         count=total if row["status"]=="completed" else min(total,count)
+        receipt=(json.loads(row["receipt_json"])
+                 if row["status"]=="completed" and row["receipt_json"] else {})
+        sound=receipt.get("native_sound_readback",{})
         return {"id":job,"edit_revision":row["edit_revision"],
+            "sound_quality":{
+                "integrated_lufs":sound.get("integrated_lufs"),
+                "sample_peak_dbfs":sound.get("sample_peak_dbfs"),
+                "review_target_met":sound.get("approved_review_loudness_met"),
+                "actual_pcm_verified":bool(
+                    receipt.get("finished_pcm_reopened_in_memory")),
+                "cinema_audio_certified":False
+            } if row["status"]=="completed" else None,
             "status":row["status"],"frames_completed":count,
             "frames_total":total,"progress_percent":round(count/max(1,total)*100,1),
             "duration_seconds":total/FPS,"profile":PROFILE,
