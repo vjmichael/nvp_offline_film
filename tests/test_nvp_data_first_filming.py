@@ -1154,6 +1154,31 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+    def test_later_iterator_admission_failure_closes_earlier_device(self):
+        req=self.payload()
+        first=req["recordings"][0]
+        second=dict(first)
+        second.update(event_id="LaterSoundEvent",source_id="LaterOriginalSound")
+        closed=[]
+        class DeviceIterator:
+            def __iter__(self):
+                return self
+            def __next__(self):
+                raise AssertionError("Original PCM must not be consumed")
+            def close(self):
+                closed.append("released")
+        first["pcm_chunks"]=DeviceIterator()
+        second["pcm_chunks"]=object()
+        req["recordings"]=[first,second]
+        with self.assertRaisesRegex(ValueError,"must be iterable"):
+            self.capture.capture(**req)
+        self.assertEqual(closed,["released"])
+        for identity in ("NewRecordedSpeech","LaterOriginalSound",
+                         "FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
