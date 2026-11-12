@@ -527,6 +527,48 @@ class NativeLongMicrophoneSession(NativeMicrophoneSession):
             self.frames=0
 
 
+def discard_interrupted_capture(filming,pid,scene_id,session_id):
+    """Explicit director removal of abandoned non-source microphone chunks.
+
+    Never deletes a completed original, original clip, frozen Take or scene.
+    A human must first inspect interrupted status and explicitly choose discard.
+    """
+    from backend.nvp_g06_filming import HEX
+    if not isinstance(session_id,str) or not HEX.fullmatch(session_id):
+        raise ValueError("Choose an interrupted original microphone session")
+    if filming.g05.g04.live is not None:
+        raise PermissionError("Protected original source requires sealed custody")
+    def discard(db,movie,source):
+        _schema(db)
+        row=db.execute("""SELECT status,committed_samples FROM
+            g06_long_capture_sessions WHERE project_id=? AND scene_id=?
+            AND session_id=?""",(pid,scene_id,session_id)).fetchone()
+        if row is None:
+            raise KeyError("The recording is not in this scene")
+        if row["status"] not in ("interrupted","failed","cancelled"):
+            raise RuntimeError("Only an interrupted, non-original recording can be discarded")
+        if db.execute("""SELECT 1 FROM g06_long_recording_manifests
+            WHERE project_id=? AND scene_id=? AND session_id=?""",
+            (pid,scene_id,session_id)).fetchone():
+            raise RuntimeError("A completed original recording may never be discarded as a spool")
+        db.execute("""DELETE FROM g06_long_capture_chunks WHERE
+            project_id=? AND session_id=?""",(pid,session_id))
+        db.execute("""UPDATE g06_long_capture_sessions SET
+            status='cancelled',committed_chunks=0,updated_at=?
+            WHERE project_id=? AND session_id=? AND status IN
+            ('interrupted','failed','cancelled')""",
+            (_now(),pid,session_id))
+        db.execute("""UPDATE g09c_capture_sessions SET
+            state='cancelled',updated_at=?
+            WHERE project_id=? AND scene_id=? AND session_id=?
+            AND state IN ('interrupted','failed','cancelled')""",
+            (_now(),pid,scene_id,session_id))
+        return {"session_id":session_id,"status":"cancelled",
+                "original_published":False,
+                "only_unpublished_staged_chunks_discarded":True}
+    return filming._with(pid,scene_id,discard,mutate=True)
+
+
 def long_capture_health(db,pid,scene_id,active_ids=()):
     """Conservative restart: past active streams become interrupted, not source."""
     _schema(db)
