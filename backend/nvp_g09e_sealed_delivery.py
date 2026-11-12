@@ -383,6 +383,53 @@ class SealedFilmDelivery:
             if active:active[1].set()
         return self.status(pid,token,job)
 
+    def list(self,pid,token):
+        self._auth(pid,token)
+        self.reconcile(pid,token)
+        rows=self._read(pid,token,lambda db:[
+            row["id"] for row in db.execute("""SELECT id FROM
+            w1e_sealed_film_jobs WHERE project_id=?
+            ORDER BY created_at DESC LIMIT 25""",(pid,))])
+        return [self.status(pid,token,job) for job in rows]
+
+    def manifest(self,pid,token,job):
+        record=self._job(pid,token,job)
+        if record["status"]!="completed" or not record["manifest_name"]:
+            raise RuntimeError("Protected film playlist has not been verified")
+        original=self.live.get_original(pid,token,record["manifest_name"])
+        if sha256(original).hexdigest()!=record["manifest_sha256"]:
+            raise RuntimeError("Sealed film manifest changed after completion")
+        data=json.loads(original)
+        if (data.get("format")!=MANIFEST or
+            data.get("source_sha256")!=record["source_sha256"] or
+            data.get("total_frames")!=record["total_frames"] or
+            data.get("reel_count")!=record["total_chunks"]):
+            raise RuntimeError("Protected film playback source identity changed")
+        return data
+
+    def reel(self,pid,token,job,index):
+        import hashlib
+        from backend.nvp_g08_native_avi import verify_movie
+        from backend.nvp_g09e_chunk import MAX_CHUNK_BYTES
+        index=int(index)
+        record=self._job(pid,token,job)
+        if record["status"]!="completed" or not 0<=index<record["total_chunks"]:
+            raise RuntimeError("The protected original film reel is unavailable")
+        manifest=self.manifest(pid,token,job)
+        part=manifest["reels"][index]
+        if part["chunk_index"]!=index:
+            raise RuntimeError("A protected film playlist index changed")
+        original=self.live.get_original(pid,token,part["asset_name"])
+        if (not 0<len(original)<=MAX_CHUNK_BYTES or
+            len(original)!=part["bytes"] or
+            hashlib.sha256(original).hexdigest()!=part["sha256"]):
+            raise RuntimeError("Sealed film reel authentication failed")
+        checked=verify_movie(original,part["end_frame"]-part["start_frame"],
+                             expected_sha=part["sha256"])
+        if not checked["verified"]:
+            raise RuntimeError("Protected reel lost its original Film Time")
+        return original
+
     def status(self,pid,token,job):
         row=self._job(pid,token,job)
         return {"format":FORMAT,"job_id":job,"status":row["status"],
