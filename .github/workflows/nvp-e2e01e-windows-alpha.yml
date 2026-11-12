@@ -106,9 +106,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installed native worker and runtime byte audit failed' }
           $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
           "NVP_HOME=$env:NVP_HOME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru -Wait
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-first-smoke-diagnostic.txt'
+          Write-Host "First installed native smoke starting at $(Get-Date -Format o)"
+          $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru
+          if (-not $first.WaitForExit(180000)) {
+            $first.Kill()
+            throw 'Installed native NVP.exe --smoke-create timed out'
+          }
+          Write-Host "First installed native smoke exit code: $($first.ExitCode)"
           if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed' }
-          $second=Start-Process -FilePath $installed -ArgumentList '--smoke-reopen' -PassThru -Wait
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-reopen-smoke-diagnostic.txt'
+          Write-Host "Second installed native smoke starting at $(Get-Date -Format o)"
+          $second=Start-Process -FilePath $installed -ArgumentList '--smoke-reopen' -PassThru
+          if (-not $second.WaitForExit(180000)) {
+            $second.Kill()
+            throw 'Installed native NVP.exe --smoke-reopen timed out'
+          }
+          Write-Host "Second installed native smoke exit code: $($second.ExitCode)"
           if ($second.ExitCode -ne 0) { throw 'Second fresh native app launch lost SQLite film project' }
           if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
             throw 'No persistent original film project database'
@@ -117,7 +131,12 @@ jobs:
         shell: pwsh
         run: |
           $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
-          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru -Wait
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-webview-smoke-diagnostic.txt'
+          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru
+          if (-not $window.WaitForExit(180000)) {
+            $window.Kill()
+            throw 'Native WebView2 visible Windows smoke timed out'
+          }
           if ($window.ExitCode -ne 0) {
             throw 'Real desktop WebView2 window did not load; headless smoke alone cannot accept NVP alpha'
           }
@@ -183,6 +202,9 @@ jobs:
             ${{ runner.temp }}/nvp-w1g-native-build.json
             ${{ runner.temp }}/nvp-w1g-installed.json
             ${{ runner.temp }}/nvp-w1g-real-windows-kernel.json
+            ${{ runner.temp }}/nvp-w1g-first-smoke-diagnostic.txt
+            ${{ runner.temp }}/nvp-w1g-reopen-smoke-diagnostic.txt
+            ${{ runner.temp }}/nvp-w1g-webview-smoke-diagnostic.txt
             ${{ runner.temp }}/nvp-w1g-staged.json
             ${{ runner.temp }}/nvp-w1g-windows-nsis-matrix.json
             ${{ runner.temp }}/nvp-w1g-original-films.json
