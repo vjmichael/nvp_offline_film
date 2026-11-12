@@ -764,6 +764,8 @@ class G06Filming:
                     o["actor_id"]==clip["actor_id"]),None) if clip["actor_id"] else None
                 if clip["actor_id"] is not None and emitter is None:
                     raise RuntimeError("Recorded character is no longer in the frozen stage")
+                from backend.nvp_g06_chunked_capture import recording_member
+                member=recording_member(db,pid,scene_id,clip_id)
                 audio.append({"clip_id":clip_id,"actor_id":clip["actor_id"],
                     "emitter_path":"/World/Objects/"+emitter["id"]
                         if emitter else "/World",
@@ -771,7 +773,8 @@ class G06Filming:
                     "pcm_sha256":clip["pcm_sha256"],
                     "sample_rate":RATE,"channels":1,
                     "sample_count":clip["sample_count"],"start_tick":start_tick,
-                    "duration_tick":duration_tick})
+                    "duration_tick":duration_tick,
+                    **(member or {})})
             take_id=uuid.uuid4().hex
             document={"format":TAKE_FORMAT,"project_id":pid,
                 "scene_id":scene_id,"source_stage_revision":head["revision"],
@@ -877,6 +880,13 @@ class G06Filming:
                 clip["sample_count"]!=item["sample_count"] or
                 clip["pcm_bytes"]!=item["sample_count"]*2):
                 raise RuntimeError("The original recording's identity has changed")
+            from backend.nvp_g06_chunked_capture import recording_member
+            member=recording_member(db,pid,row["scene_id"],item["clip_id"])
+            for key in ("original_recording_id","recording_sha256",
+                        "recording_manifest_sha256",
+                        "recording_source_start_sample"):
+                if item.get(key)!=(member or {}).get(key):
+                    raise RuntimeError("Frozen recording segment provenance changed")
         return row,data,audio
 
     def _take(self,db,pid,take_id,with_audio=False):
@@ -915,6 +925,13 @@ class G06Filming:
                 clip["pcm_sha256"]!=entry["pcm_sha256"] or
                 clip["sample_count"]!=entry["sample_count"]):
                 raise RuntimeError("Take's original recorded sound is missing")
+            from backend.nvp_g06_chunked_capture import recording_member
+            member=recording_member(db,pid,row["scene_id"],entry["clip_id"])
+            for key in ("original_recording_id","recording_sha256",
+                        "recording_manifest_sha256",
+                        "recording_source_start_sample"):
+                if entry.get(key)!=(member or {}).get(key):
+                    raise RuntimeError("Original sound segment reference changed")
         return row,data,audio
 
     def read_take(self,pid,scene_id,take_id):
