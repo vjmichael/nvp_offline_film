@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import threading
+import time
 import uuid
 
 from backend.nvp_g09f_package import (
@@ -105,14 +106,24 @@ class G09FDistribution:
     def reconcile(self):
         with self.guard:
             if self._reconciled:return
+            # Multiple installed NVP windows may still be publishing.
+            # Do not take over their work until their durable heartbeat
+            # has expired. A director can then explicitly retry.
+            deadline=datetime.now(timezone.utc).timestamp()-300
             with self._db() as db:
-                # Host-owned packager is an in-process thread. Another
-                # instance cannot own a previous process's in-memory work.
-                db.execute("""UPDATE g09f_packages SET
-                    status='interrupted',issue=?,updated_at=?
-                    WHERE owner_id!=? AND status IN ('queued','packing')""",
-                    ("Portable film packaging stopped before publication.",
-                     _now(),self.owner))
+                for row in db.execute("""SELECT project_id,job_id,
+                    updated_at FROM g09f_packages WHERE owner_id!=?
+                    AND status IN ('queued','packing')""",(self.owner,)):
+                    try:
+                        last=datetime.fromisoformat(row["updated_at"]).timestamp()
+                    except (ValueError,TypeError):last=0
+                    if last>deadline:continue
+                    db.execute("""UPDATE g09f_packages SET
+                        status='interrupted',issue=?,updated_at=?
+                        WHERE project_id=? AND job_id=? AND owner_id!=?
+                        AND status IN ('queued','packing')""",
+                        ("Earlier portable-film work was interrupted; review and retry.",
+                         _now(),row["project_id"],row["job_id"],self.owner))
             self._reconciled=True
 
     def _completed_source(self,pid,job,token):
@@ -207,26 +218,33 @@ class G09FDistribution:
             record=self._row(pid,job)
             if dest.is_symlink():
                 raise RuntimeError("A prior portable film destination is an unsafe link")
+            last_heartbeat=[time.monotonic()]
+            def heartbeat():
+                with self.guard:
+                    stopped=(pid,job) in self.cancelled
+                if time.monotonic()-last_heartbeat[0]>15:
+                    self._change(pid,job,"packing")
+                    last_heartbeat[0]=time.monotonic()
+                return stopped or not self.access().permitted(
+                    pid,token,renew=False)
             if dest.exists():
                 # Crash between atomic publication and SQLite commit:
                 # independently validate exact already-published film.
-                proof=verify_portable(dest,validate_reels=True)
+                proof=verify_portable(dest,validate_reels=True,
+                    cancel=heartbeat)
                 if (proof["metadata"]["film_manifest_sha256"]!=digest or
                     proof["manifest"]["source_sha256"]!=record["source_sha256"]):
                     raise RuntimeError("A prior portable film does not belong to this exact edit")
                 receipt={"package_sha256":proof["package_sha256"],
                          "package_bytes":proof["package_bytes"]}
             else:
-                def check():
-                    with self.guard:
-                        stop=(pid,job) in self.cancelled
-                    return stop or not self.access().permitted(
-                        pid,token,renew=False)
                 def progress(n,total):
                     if n==total or n%4==0:
                         self._change(pid,job,"packing",progress=n)
                 receipt=build_portable(
-                    folder,manifest,dest,cancel=check,progress=progress)
+                    folder,manifest,dest,cancel=heartbeat,progress=progress)
+            if heartbeat():raise InterruptedError(
+                "Portable package was stopped or its movie was locked")
             self._auth(pid,token)
             self._change(pid,job,"completed",
                          sha=receipt["package_sha256"],
@@ -290,17 +308,27 @@ class G09FDistribution:
         film=uuid.uuid4().hex
         dest=folder/film
         proof=import_portable(incoming,dest)
-        manifest=json.loads((dest/"manifest.json").read_text(encoding="utf8"))
-        # No path supplied by archive metadata enters SQLite or native routes.
-        with self._db() as db:
-            db.execute("BEGIN IMMEDIATE")
-            db.execute("""INSERT INTO g09f_library(
-                project_id,film_id,package_sha256,manifest_sha256,
-                source_sha256,reel_count,duration_frames,imported_at)
-                VALUES(?,?,?,?,?,?,?,?)""",
-                (pid,film,proof["package_sha256"],
-                 proof["manifest_sha256"],proof["source_sha256"],
-                 proof["reels_imported"],manifest["total_frames"],_now()))
+        try:
+            self._auth(pid,token)
+            manifest=json.loads((dest/"manifest.json").read_text(encoding="utf8"))
+            # An imported film enters the visible library ONLY after
+            # verified media has been atomically published and the current
+            # unlocked project approves the new durable record.
+            with self._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                db.execute("""INSERT INTO g09f_library(
+                    project_id,film_id,package_sha256,manifest_sha256,
+                    source_sha256,reel_count,duration_frames,imported_at)
+                    VALUES(?,?,?,?,?,?,?,?)""",
+                    (pid,film,proof["package_sha256"],
+                     proof["manifest_sha256"],proof["source_sha256"],
+                     proof["reels_imported"],manifest["total_frames"],_now()))
+        except BaseException:
+            # Never erase another user's record: our new random id has
+            # not been exposed, and the created folder has a fixed root.
+            if dest.is_dir() and not dest.is_symlink():
+                shutil.rmtree(dest)
+            raise
         return {"format":FORMAT,"film_id":film,
             "reel_count":proof["reels_imported"],
             "duration_seconds":manifest["total_frames"]/24,
