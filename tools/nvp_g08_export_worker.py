@@ -97,11 +97,41 @@ def _render(args):
 
 def _verify(args):
     from backend.nvp_g08_native_avi import verify_movie
+    from backend.nvp_g09d_master import verify_completed_movie_sound
+    from backend.nvp_g07_edit import G07Editor
+    from backend.nvp_studio import Studio
     db,file,root=_owned(args)
     if type(args.frames) is not int or not 1<=args.frames<=720:
         raise ValueError("Expected movie length is invalid")
-    with file.open("rb") as f:
-        result=verify_movie(f,args.frames,expected_sha=args.output_sha)
+    original=file.read_bytes()
+    result=verify_movie(original,args.frames,expected_sha=args.output_sha)
+    assembly=G07Editor(Studio(db)).native_assembly(
+        args.project,args.revision)
+    if (assembly["edit_document_sha256"]!=args.edit_sha or
+        assembly["production_looks_sha256"]!=args.looks_sha or
+        assembly["actor_performances_sha256"]!=args.actors_sha or
+        assembly["acoustic_looks_sha256"]!=args.acoustics_sha or
+        assembly["finishing_sha256"]!=args.finishing_sha):
+        raise RuntimeError("Original film and finishing decisions changed during independent verification")
+    sound=verify_completed_movie_sound(
+        original,assembly.get("approved_finishing"))
+    if sound["sample_count"]!=args.frames*2000:
+        raise RuntimeError("The actual finished soundtrack lost sample alignment")
+    if assembly.get("approved_finishing"):
+        # Render receipt is independently re-read from its fixed, host-owned
+        # pathname. The final PCM bytes, NOT a claim in that receipt,
+        # must match the original finishing worker's exact result hash.
+        render_receipt=root/(args.job+".render.json")
+        if render_receipt.is_symlink() or not render_receipt.is_file():
+            raise RuntimeError("The original mastering receipt is missing")
+        claimed=json.loads(render_receipt.read_text(encoding="utf8"))
+        approved=claimed.get("native_sound_mastering")
+        if not approved or approved.get(
+            "derived_master_sha256")!=sound["rendered_pcm_sha256"]:
+            raise RuntimeError("Actual movie PCM differs from the approved mastering work")
+    result["native_sound_readback"]=sound
+    result["approved_finishing_sha256"]=args.finishing_sha
+    result["finishing_sound_independently_verified"]=True
     _write_json(args.receipt,result)
     return 0
 
