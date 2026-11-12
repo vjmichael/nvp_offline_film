@@ -134,9 +134,17 @@ class G09CCaptureJournal:
         # Both ordinary and G03 sealed long sessions are metadata-only in
         # this view. Protected audio stays in authenticated source assets.
         from backend.nvp_g06_chunked_capture import long_capture_health
+        # First read without publishing an encrypted SQLite revision.
+        # Only an actually orphaned recording needs a durable interruption
+        # transition; routine 1.2-second UI polling must not make snapshots.
         long_recordings=self._execute(pid,
-            lambda db,movie:long_capture_health(db,pid,scene_id,active),
-            mutate=True)
+            lambda db,movie:long_capture_health(
+                db,pid,scene_id,active,mark_interrupted=False))
+        if any(r["status"] in ("recording","stopped") and
+               r["session_id"] not in active for r in long_recordings):
+            long_recordings=self._execute(pid,
+                lambda db,movie:long_capture_health(db,pid,scene_id,active),
+                mutate=True)
         return {"format":FORMAT,"scene_id":scene_id,
             "recordings":[{
                 "session_id":r["session_id"],"actor_id":r["actor_id"],
