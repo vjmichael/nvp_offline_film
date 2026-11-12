@@ -46,7 +46,16 @@ forbidden binary and changed original movie file as negative cases.
 
 Open: trusted version and redistribution-license approval for all native
 dependencies; Windows protected worker provisioning/OS process-tree custody;
-Linux real package build/install/uninstall and cgroup-v2 admission;
+Linux *source-only* amd64 .deb builder in tools/nvp_w1g_linux_deb.py:
+it rejects wrong-arch/truncated ELF, symlinks, absent bundled Python/React
+runtime and FFmpeg binaries, and builds an install-only /opt/nvp payload with
+a desktop entry using the real local dpkg-deb tool. It does not write or
+uninstall files under the creator's film-data directory. Unit regressions
+cover missing UI, wrong ELF architecture, forbidden FFmpeg and untrusted
+package metadata. No actual .deb, package installation or Linux GUI was
+produced or executed at this checkpoint.
+
+Still open: Linux actual .deb build/install/uninstall and cgroup-v2 admission;
 secure signed-update/upgrade transaction and rollback; full installed
 Windows/Linux lifecycle and physical creator original-film preservation.
 A payload byte-hash match is not proof of safe runtime behavior.
@@ -57,7 +66,7 @@ A payload byte-hash match is not proof of safe runtime behavior.
    renderer; independently inspect the full verified original and derivative.
 2. Run W1-G build/installed/preservation receipts on the exact Windows NSIS
    release head; check protected native workers and license evidence.
-3. Produce a genuine Linux bundle and prove installed lifetime, original
+3. Produce a genuine Linux bundle using the new .deb builder and prove installed lifetime, original
    film preservation, rollback and worker containment under the real kernel.
 4. Perform owner-operated physical Windows filmmaker path and sustained
    production acceptance. Do not infer a pass from new source code.

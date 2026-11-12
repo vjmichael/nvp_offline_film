@@ -40,6 +40,8 @@ def verify_original_30s_derivative(index: FilmIndex, project_id: str,
     manifest_path = package / "manifest.json"
     if manifest_path.is_symlink() or not manifest_path.is_file():
         raise RuntimeError("Missing original derived-film manifest")
+    if manifest_path.stat().st_size > 4 * 1024 * 1024:
+        raise RuntimeError("Native delivery manifest exceeds bounded scope")
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
     if type(manifest) is not dict:
@@ -96,6 +98,8 @@ def verify_original_30s_derivative(index: FilmIndex, project_id: str,
         path = folder / name
         if not path.is_file() or path.is_symlink():
             raise RuntimeError("Missing or linked native picture")
+        if path.stat().st_size > 24 * 1024 * 1024:
+            raise RuntimeError("Native picture exceeds bounded raster size")
         encoded = path.read_bytes()
         if sha256(encoded).hexdigest() != item.get("sha256"):
             raise RuntimeError("Derived picture SHA mismatch")
