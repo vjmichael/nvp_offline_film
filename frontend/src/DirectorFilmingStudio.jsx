@@ -795,10 +795,10 @@ export default function DirectorFilmingStudio({movie,onSetUpScenes}){
                 value={o.actor_id}>{o.name}</option>)}
             </select></label>
           <label className="film-hint"><input type="checkbox"
-              checked={longMic} disabled={!!recordSession||busy||movie.encrypted}
+              checked={longMic} disabled={!!recordSession||busy}
               onChange={e=>setLongMic(e.target.checked)}/>
             Record a longer original scene (up to 30 minutes, with durable five-second chunks)
-            {movie.encrypted&&' — encrypted long recording awaits protected worker support'}
+            {movie.encrypted&&' — sealed original chunks; render workers require separate protected approval'}
           </label>
           <div className="film-actions">
             {!recordSession?<button className="film-primary"
