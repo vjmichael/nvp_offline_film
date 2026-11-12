@@ -15,9 +15,10 @@ import unittest
 from unittest.mock import patch
 
 from backend.nvp_g06_chunked_capture import (
-    CHUNK_SAMPLES, DurableOriginalChunkStore, FORMAT,
+    CHUNK_SAMPLES, DurableOriginalChunkStore, NativeLongMicrophoneSession,
+    FORMAT,
     _schema, long_capture_health, recording_member)
-from backend.nvp_g09c_capture import _schema as capture_schema
+from backend.nvp_g09c_capture import _schema as capture_schema, _receipt
 
 
 class FakeStudio:
@@ -120,6 +121,9 @@ class DurableCaptureTests(unittest.TestCase):
                 WHERE id=?""",(clip_id,)).fetchone()[0]
                 for clip_id in saved["clip_ids"])
             self.assertEqual(original,joined)
+            self.assertEqual(db.execute("""SELECT count(*) FROM
+                g06_long_capture_chunks WHERE session_id=?""",
+                (self.session,)).fetchone()[0],0)
             first=recording_member(db,self.pid,self.sid,saved["clip_ids"][0])
             second=recording_member(db,self.pid,self.sid,saved["clip_ids"][1])
             self.assertEqual(first["recording_source_start_sample"],0)
@@ -132,6 +136,38 @@ class DurableCaptureTests(unittest.TestCase):
                 ("0"*64,saved["recording_id"]))
             with self.assertRaises(RuntimeError):
                 recording_member(db,self.pid,self.sid,saved["clip_ids"][0])
+
+    def test_native_callback_and_stop_tail_have_exact_sample_clock(self):
+        class Device:
+            def start(self,callback):
+                self.callback=callback
+                callback.send(array("h",[1,-2]*1200))
+            def stop(self):
+                self.callback.send(array("h",[3,-4]*500))
+            def close(self):
+                pass
+        session=NativeLongMicrophoneSession(
+            self.pid,self.sid,None,session_grant="long-director-session",
+            studio=self.studio,stage_sha256="stage",
+            device_factory=Device)
+        started=session.begin()
+        self.assertTrue(started["durably_chunked"])
+        self.assertEqual(started["max_duration_seconds"],1800)
+        output=session.stop()
+        self.assertEqual(output["sample_count"],3400)
+        receipt=_receipt(session,output)
+        self.assertEqual(receipt["sample_count"],3400)
+        self.assertFalse(receipt["hardware_audio_to_picture_sync_proven"])
+        with sqlite3.connect(self.path) as db:
+            db.row_factory=sqlite3.Row
+            row=db.execute("""SELECT committed_samples,status FROM
+                g06_long_capture_sessions WHERE session_id=?""",
+                (session.id,)).fetchone()
+            self.assertEqual(row["committed_samples"],3400)
+            self.assertEqual(row["status"],"stopped")
+            self.assertEqual(db.execute("""SELECT SUM(sample_count)
+                FROM g06_long_capture_chunks WHERE session_id=?""",
+                (session.id,)).fetchone()[0],3400)
 
     def test_interrupted_staged_chunks_never_publish_themselves(self):
         with sqlite3.connect(self.path) as db:
