@@ -107,7 +107,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         # exceeds it. No source, timeline, or Take may be published.
         with patch.object(filming,"MAX_CHUNK_BYTES",len(self.original)), patch.object(
                 filming,"MAX_CHUNKS",1):
-            with self.assertRaisesRegex(ValueError,"batch exceeds spool budget"):
+            with self.assertRaisesRegex(ValueError,"batch durations exceed aggregate spool budget"):
                 self.capture.capture(**req)
         for identity in ("NewRecordedSpeech","SecondOriginalSpeech",
                          "FilmingSoundTimeline","FilmedTake"):
