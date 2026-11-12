@@ -551,8 +551,7 @@ def discard_interrupted_capture(filming,pid,scene_id,session_id):
     from backend.nvp_g06_filming import HEX
     if not isinstance(session_id,str) or not HEX.fullmatch(session_id):
         raise ValueError("Choose an interrupted original microphone session")
-    if filming.g05.g04.live is not None:
-        raise PermissionError("Protected original source requires sealed custody")
+    protected=filming.g05.g04.live is not None
     def discard(db,movie,source):
         _schema(db)
         row=db.execute("""SELECT status,committed_samples FROM
@@ -566,8 +565,12 @@ def discard_interrupted_capture(filming,pid,scene_id,session_id):
             WHERE project_id=? AND scene_id=? AND session_id=?""",
             (pid,scene_id,session_id)).fetchone():
             raise RuntimeError("A completed original recording may never be discarded as a spool")
-        db.execute("""DELETE FROM g06_long_capture_chunks WHERE
-            project_id=? AND session_id=?""",(pid,session_id))
+        if not protected:
+            db.execute("""DELETE FROM g06_long_capture_chunks WHERE
+                project_id=? AND session_id=?""",(pid,session_id))
+        # For G03 encrypted capture: existing AES-GCM staging originals are
+        # quarantined and never unsealed. No unlink of authenticated assets
+        # until independently reviewed encrypted orphan cleanup exists.
         db.execute("""UPDATE g06_long_capture_sessions SET
             status='cancelled',committed_chunks=0,updated_at=?
             WHERE project_id=? AND session_id=? AND status IN
