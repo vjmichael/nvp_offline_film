@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import './director-export-film.css';
 import DirectorFinishingRoom from './DirectorFinishingRoom.jsx';
 import DirectorLongFilmExport from './DirectorLongFilmExport.jsx';
+import DirectorFilmLibrary from './DirectorFilmLibrary.jsx';
 
 const active=new Set(['queued','rendering','verifying']);
 const baseProject=id=>'/api/projects/'+encodeURIComponent(id);
@@ -200,6 +201,8 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
           </div>
         </article>)}
     </div>}
+    <DirectorFilmLibrary key={movie.id+':film-library'}
+      movie={movie}/>
     {jobs.some(j=>['failed','interrupted','cancelled'].includes(j.status))&&
       <details className="director-export-history">
         <summary>Earlier export attempts</summary>
@@ -216,8 +219,9 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
       Picture & Sound Files provides the checked pictures and finished
       48 kHz soundtrack separately for interchange. It preserves the same
       working-film picture and sound quality; it does not create a
-      high-resolution cinema master or a DCP. Large films may need the
-      expanded G09-E export service.
+      high-resolution cinema master or a DCP. Long movies can be
+      distributed as source-verified portable .nvpfilm collections from
+      the separate long-film renderer.
     </p>
     <p className="film-hint director-export-footnote">
       Your movie can be re-edited and exported differently at any time.
