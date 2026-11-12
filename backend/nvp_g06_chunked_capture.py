@@ -75,6 +75,61 @@ def _schema(db):
         ON g06_long_recording_manifests(project_id,scene_id,recorded_at)""")
 
 
+def recording_member(db,pid,scene_id,clip_id):
+    """Verify original segment's membership in a complete frozen stream.
+
+    The manifest is the signed-by-hash source mapping, not a changeable EDL.
+    Missing rows mean an ordinary legacy short microphone source. A mismatched
+    group/member is always a source-integrity failure.
+    """
+    _schema(db)
+    part=db.execute("""SELECT * FROM g06_long_recording_members
+        WHERE clip_id=? AND project_id=? AND scene_id=?""",
+        (clip_id,pid,scene_id)).fetchone()
+    if part is None:
+        return None
+    manifest=db.execute("""SELECT * FROM g06_long_recording_manifests
+        WHERE recording_id=? AND project_id=? AND scene_id=?""",
+        (part["recording_id"],pid,scene_id)).fetchone()
+    if manifest is None:
+        raise RuntimeError("Original microphone stream manifest is missing")
+    raw=manifest["segments_json"]
+    if _sha(raw.encode("utf8"))!=manifest["manifest_sha256"]:
+        raise RuntimeError("Frozen microphone source manifest changed")
+    document=json.loads(raw)
+    if (document.get("format")!=FORMAT or
+        document.get("original_pcm_sha256")!=manifest["original_sha256"] or
+        document.get("recording_id")!=part["recording_id"] or
+        document.get("project_id")!=pid or
+        document.get("scene_id")!=scene_id or
+        document.get("sample_count")!=manifest["sample_count"]):
+        raise RuntimeError("Original microphone stream provenance changed")
+    segments=document["segments"]
+    if not isinstance(segments,list) or not 1<=len(segments)<=32:
+        raise RuntimeError("Original stream segment manifest is invalid")
+    cursor=0
+    found=False
+    for segment in segments:
+        if (segment["first_sample"]!=cursor or
+            type(segment["sample_count"]) is not int or
+            segment["sample_count"]<1 or
+            segment["sample_count"]>RATE*120):
+            raise RuntimeError("Original audio segments lost their sample order")
+        cursor+=segment["sample_count"]
+        if segment["clip_id"]==clip_id:
+            if (found or segment["pcm_sha256"]!=part["pcm_sha256"] or
+                segment["sample_count"]!=part["sample_count"] or
+                segment["first_sample"]!=part["first_sample"]):
+                raise RuntimeError("Original microphone segment identity changed")
+            found=True
+    if not found or cursor!=manifest["sample_count"]:
+        raise RuntimeError("Original audio stream is incomplete")
+    return {"original_recording_id":part["recording_id"],
+            "recording_sha256":manifest["original_sha256"],
+            "recording_manifest_sha256":manifest["manifest_sha256"],
+            "recording_source_start_sample":part["first_sample"]}
+
+
 class DurableOriginalChunkStore:
     """Single project-scoped source recorder. Never writes decoded PCM files."""
 
