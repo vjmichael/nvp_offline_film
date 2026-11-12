@@ -42,6 +42,8 @@ jobs:
           python -m pip install -r requirements-foundation.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # SLATE-08B's bundled native scene readers must have real OpenUSD.
+          python -m pip install --only-binary=:all: -r requirements-w1g-release-review.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip install --only-binary=:all: 'usd-core==26.11'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
@@ -67,7 +69,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q tools/nvp_desktop_alpha.py
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-submodules backend --add-data 'tools/nvp_int02_cycles_frame_worker.py;tools' tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all cryptography --hidden-import tools.nvp_w1g_reviewed_release --collect-submodules backend --add-data 'tools/nvp_int02_cycles_frame_worker.py;tools' tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
           python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
@@ -75,6 +77,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }
           & 'dist/NVP/NVP.exe' --smoke
           if ($LASTEXITCODE -ne 0) { throw 'Uninstalled native alpha smoke failed' }
+      - name: Require genuine packaged Ed25519 signed-review admission and tamper refusal
+        shell: pwsh
+        run: |
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-w1g-review-verifier-packaged.txt'
+          $exe=(Resolve-Path 'dist/NVP/NVP.exe').Path
+          $review=Start-Process -FilePath $exe -ArgumentList '--smoke-release-review' -PassThru
+          if (-not $review.WaitForExit(120000)) { $review.Kill(); throw 'Packaged Ed25519 verifier stalled' }
+          if ($review.ExitCode -ne 0) {
+            if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH | Select-Object -Last 45 }
+            throw 'Packaged Ed25519 verifier did not prove signature/tamper refusal'
+          }
+          $receipts=Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH -Raw
+          if ($receipts -notmatch 'review_verifier_signed_full_inventory' -or $receipts -notmatch 'review_verifier_tampered_binary_refused') {
+            throw 'Packaged verified reviewer signature and changed-file rejection absent'
+          }
       - name: Create NSIS single-click installer
         shell: pwsh
         run: |

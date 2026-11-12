@@ -587,6 +587,58 @@ def run_visible_window_smoke():
                 shutil.rmtree(test_home,ignore_errors=True)
 
 
+def run_release_review_smoke():
+    """Real packaged Ed25519 verifier test using a DISPOSABLE in-memory key.
+
+    This verifies runtime availability, reviewed full-file coverage and
+    tamper refusal, not a signed creator release or legal approval.
+    """
+    import base64
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    from tools.nvp_w1g_reviewed_release import (
+        FORMAT, _canonical, license_review_digest, verify_signed_release_review,
+    )
+    receipt={
+        "platform":"windows-amd64",
+        "app_sha256":"a"*64,
+        "files":{
+            "NVP.exe":{"bytes":123,"sha256":"a"*64},
+            "_internal/approved-worker.exe":{"bytes":456,"sha256":"b"*64},
+        },
+    }
+    review={
+        "format":FORMAT,
+        "payload_sha256":license_review_digest(receipt),
+        "platform":"windows-amd64",
+        "reviewer_reference":"ephemeral packaged-verifier smoke only",
+        "reviewed_artifacts":[
+            {"file":name,"sha256":row["sha256"],"spdx_license":"MIT",
+             "redistribution_reference":"ephemeral test reference only"}
+            for name,row in receipt["files"].items()
+        ],
+    }
+    private=Ed25519PrivateKey.generate()
+    public=private.public_key().public_bytes(Encoding.Raw,PublicFormat.Raw)
+    signed={"payload":review,"signature_base64":base64.b64encode(
+        private.sign(_canonical(review))).decode("ascii")}
+    accepted=verify_signed_release_review(
+        receipt,signed,pinned_reviewer_public_key=public)
+    if (accepted["reviewed_artifact_count"]!=2 or
+        accepted["license_review_signature_verified"] is not True):
+        raise RuntimeError("Packaged Ed25519 review did not accept exact bytes")
+    _smoke_checkpoint("review_verifier_signed_full_inventory")
+    receipt["files"]["_internal/approved-worker.exe"]["sha256"]="c"*64
+    try:
+        verify_signed_release_review(
+            receipt,signed,pinned_reviewer_public_key=public)
+    except PermissionError:
+        _smoke_checkpoint("review_verifier_tampered_binary_refused")
+    else:
+        raise RuntimeError("Packaged Ed25519 verifier accepted tampered binary")
+    return 0
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke",action="store_true",
@@ -601,10 +653,15 @@ def main(argv=None):
                         help="Isolate actual installed EdgeChromium React load without native bridge")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
+    parser.add_argument("--smoke-release-review",action="store_true",
+                        help="Verify packaged Ed25519 signature admission and tamper refusal")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
-            args.smoke_window,args.smoke_window_basic,args.smoke_data_av))>1:
+            args.smoke_window,args.smoke_window_basic,args.smoke_data_av,
+            args.smoke_release_review))>1:
         parser.error("Choose only one installed-app smoke mode")
+    if args.smoke_release_review:
+        return run_release_review_smoke()
     if args.smoke:
         return run_smoke()
     if args.smoke_window_basic:

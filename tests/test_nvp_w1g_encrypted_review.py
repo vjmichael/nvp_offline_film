@@ -57,11 +57,10 @@ class SignedNativeReleaseReviewContracts(unittest.TestCase):
                 pinned_reviewer_public_key=b"a"*32)
 
     def test_ephemeral_reviewer_signature_binds_every_bundle_byte(self):
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-            from cryptography.hazmat.primitives.serialization import Encoding,PublicFormat
-        except ImportError:
-            self.skipTest("cryptography not installed in source-test runtime")
+        # This is a REQUIRED release-verifier test. A missing verifier is
+        # a test failure, never a quietly skipped licensing security gate.
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding,PublicFormat
         key=Ed25519PrivateKey.generate()
         public=key.public_key().public_bytes(Encoding.Raw,PublicFormat.Raw)
         receipt=self.receipt()
