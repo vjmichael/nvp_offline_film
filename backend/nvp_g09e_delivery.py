@@ -203,6 +203,14 @@ class G09ELongDelivery:
     def start(self,pid,expected_revision,token):
         self._auth(pid,token)
         self.reconcile()
+        if getattr(sys,"frozen",False):
+            # Fail before registering any film job if packaging omitted
+            # the fixed supervised G09-E worker module.
+            try:
+                from tools.nvp_g09e_worker import main as _fixed_reel_worker
+            except (ImportError,OSError) as error:
+                raise RuntimeError(
+                    "This installation lacks the native long-film worker") from error
         if type(expected_revision) is not int or expected_revision<=0:
             raise ValueError("Save your film edit before long rendering")
         editor=G07Editor(self.studio)
