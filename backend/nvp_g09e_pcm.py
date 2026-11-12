@@ -11,6 +11,7 @@ from hashlib import sha256
 from pathlib import Path
 import sqlite3
 import sys
+import time
 
 PAGE_BYTES = 256 * 1024
 MAX_READ_BYTES = 1024 * 1024
@@ -34,6 +35,11 @@ class VerifiedSQLitePCM:
         self.sample_count = source["sample_count"]
         self._cached_page = -1
         self._cached_bytes = b""
+        # A cached page is a verified sample WINDOW, not perpetual proof
+        # that an ordinary SQLite BLOB has not been edited by another host.
+        # Reopen at least every 100 ms while the reader is being sampled.
+        self._cache_checked_ns = 0
+        self._cache_max_age_ns = 100_000_000
         self._page_hashes = ()
         self._size = 0
         self._rowid = None
@@ -92,7 +98,9 @@ class VerifiedSQLitePCM:
         return self.expected_sha256
 
     def _page(self, index):
-        if self._cached_page != index:
+        if (self._cached_page != index or
+                time.monotonic_ns()-self._cache_checked_ns >=
+                self._cache_max_age_ns):
             db = self._connect()
             try:
                 row = self._row(db)
@@ -112,6 +120,7 @@ class VerifiedSQLitePCM:
                 raise RuntimeError("Original PCM page changed after verification")
             self._cached_page = index
             self._cached_bytes = page
+            self._cache_checked_ns = time.monotonic_ns()
         return self._cached_bytes
 
     def __getitem__(self, key):
