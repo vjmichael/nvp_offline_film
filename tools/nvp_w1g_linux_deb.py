@@ -47,6 +47,9 @@ def check_real_linux_bundle(bundle: Path) -> dict:
     html = entry.read_text("utf8")
     if 'id="root"' not in html or "/assets/" not in html:
         raise RuntimeError("Linux packaged NVP UI entry invalid")
+    script=internal/"tools"/"nvp_int02_cycles_frame_worker.py"
+    if not script.is_file() or script.is_symlink() or script.stat().st_size<1000:
+        raise RuntimeError("Missing installed first-party Cycles worker script")
     _forbidden_native_binaries(files)
     return {"exe_sha256": _digest(exe), "files": files}
 

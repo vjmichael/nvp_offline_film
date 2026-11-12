@@ -62,8 +62,6 @@ def _read_edit(assembly, project_id, edit_id, edit_revision):
             start % FRAME_TICKS or end % FRAME_TICKS or
             si % SOURCE_SAMPLE_TICKS or so % SOURCE_SAMPLE_TICKS):
             raise RuntimeError("Editorial cut cannot be silently shifted or retimed on output")
-        if row["source_shot_id"] is not None:
-            raise RuntimeError("Native shot override composition is required before delivery")
         take = assembly.index.read_revision(project_id, row["source_take_id"], 1)
         tdata = take["data"]
         if (take["kind"] != "take" or tdata.get("frozen") is not True or
@@ -71,8 +69,26 @@ def _read_edit(assembly, project_id, edit_id, edit_revision):
             take["document_sha256"] != row["source_take_document_sha256"] or
             so > tdata["duration_tick"]):
             raise RuntimeError("Committed edit references changed/unfrozen original performance")
+        shot_id = row["source_shot_id"]
+        shot_revision = row.get("source_shot_revision")
+        shot_sha = row.get("source_shot_document_sha256")
+        if shot_id is not None:
+            if type(shot_revision) is not int or type(shot_sha) is not str:
+                raise RuntimeError("Director shot identity is incomplete")
+            from backend.nvp_int02_shot_composition import validate_source_shot
+            validate_source_shot(
+                assembly.index, project_id,
+                take_id=row["source_take_id"],
+                take_sha256=take["document_sha256"],
+                shot_id=shot_id, shot_revision=shot_revision,
+                shot_sha256=shot_sha, source_in=si, source_out=so)
+        elif shot_revision is not None or shot_sha is not None:
+            raise RuntimeError("Editorial shot SHA without a director layer")
         checked.append({
             "segment_id": row["segment_id"],
+            "source_shot_id": shot_id,
+            "source_shot_revision": shot_revision,
+            "source_shot_sha256": shot_sha,
             "source_take_id": row["source_take_id"],
             "source_take_sha256": take["document_sha256"],
             "source_in_tick": si, "source_out_tick": so,
@@ -173,6 +189,17 @@ class NativeEditedFilm30s:
                     original_tick = seg["source_in_tick"] + output_tick - seg["timeline_start_tick"]
                     take = source_cache[seg["source_take_id"]]
                     state = take.snapshot(original_tick)
+                    if seg["source_shot_id"] is not None:
+                        from backend.nvp_int02_shot_composition import compose_shot_snapshot
+                        state = compose_shot_snapshot(
+                            self.assembly.index, project_id,
+                            take_id=seg["source_take_id"],
+                            take_sha256=seg["source_take_sha256"],
+                            shot_id=seg["source_shot_id"],
+                            shot_revision=seg["source_shot_revision"],
+                            shot_sha256=seg["source_shot_sha256"],
+                            tick=original_tick, source_snapshot=state,
+                            listener_path=listener_path)
                     active = take.timeline.events_at(
                         project_id, take.data["timeline_id"],
                         take.data["timeline_revision"], tick=original_tick,
@@ -188,6 +215,9 @@ class NativeEditedFilm30s:
                     rendering_scope = {
                         **scope, "source_take_id": seg["source_take_id"],
                         "source_take_sha256": seg["source_take_sha256"],
+                        "source_shot_id": seg["source_shot_id"],
+                        "source_shot_revision": seg["source_shot_revision"],
+                        "source_shot_sha256": seg["source_shot_sha256"],
                         "scene_document_sha256": seg["scene_document_sha256"],
                         "timeline_document_sha256": seg["timeline_document_sha256"],
                     }
@@ -210,6 +240,7 @@ class NativeEditedFilm30s:
                         "source_tick": str(original_tick),
                         "segment_id": seg["segment_id"],
                         "source_take_sha256": seg["source_take_sha256"],
+                        "source_shot_sha256": seg["source_shot_sha256"],
                         "camera_path": camera,
                         "png_file": name,
                         "sha256": sha256(png).hexdigest(),
@@ -346,6 +377,7 @@ def verify_edited_film(assembly: SlateSequenceAssembly, project_id: str,
                 "source_tick": str(source_tick),
                 "segment_id": seg["segment_id"],
                 "source_take_sha256": seg["source_take_sha256"],
+                "source_shot_sha256": seg["source_shot_sha256"],
                 "png_file": f"{i+1:07d}.png",
             }
             if type(item) is not dict or any(item.get(k) != v for k, v in expected.items()):
@@ -367,6 +399,17 @@ def verify_edited_film(assembly: SlateSequenceAssembly, project_id: str,
             if len(active) > 1:
                 raise RuntimeError("Edited Film Time source camera is ambiguous")
             camera = active[0]["payload"].get("usd_prim_path") if active else None
+            if seg["source_shot_id"] is not None:
+                from backend.nvp_int02_shot_composition import compose_shot_snapshot
+                compose_shot_snapshot(
+                    assembly.index, project_id,
+                    take_id=seg["source_take_id"],
+                    take_sha256=seg["source_take_sha256"],
+                    shot_id=seg["source_shot_id"],
+                    shot_revision=seg["source_shot_revision"],
+                    shot_sha256=seg["source_shot_sha256"],tick=source_tick,
+                    source_snapshot=source.snapshot(source_tick),
+                    listener_path=listener_path)
             if item.get("camera_path") != camera:
                 raise RuntimeError("Derived edited picture changed source camera")
         wav_path = parent/"soundtrack.wav"

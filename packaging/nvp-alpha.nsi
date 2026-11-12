@@ -23,27 +23,79 @@ ShowUninstDetails show
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
+; W1-G: do not overwrite a live installation in place.
+; Original films in LOCALAPPDATA\NVP\Projects remain outside program rollback.
+!define STAGE_DIR "$LOCALAPPDATA\Programs\NVP.pending"
+!define PREVIOUS_DIR "$LOCALAPPDATA\Programs\NVP.previous"
+!define MARKER "nvp-alpha-install.marker"
 Section "NVP Alpha" SEC_MAIN
     StrCmp "$INSTDIR" "$LOCALAPPDATA\Programs\NVP" safe_install
         Abort "Refusing non-dedicated NVP installation directory"
     safe_install:
-    SetOutPath "$INSTDIR"
-    File /r "${PACKAGE_FILES}\*"
-    IfFileExists "$INSTDIR\NVP.exe" +2 0
-        Abort "Missing built NVP.exe; installer payload invalid"
-    FileOpen $0 "$INSTDIR\nvp-alpha-install.marker" w
-    FileWrite $0 "NVP-ALPHA-INSTALL-v1"
-    FileClose $0
-    WriteUninstaller "$INSTDIR\Uninstall NVP.exe"
-    CreateDirectory "$SMPROGRAMS\NVP"
-    CreateShortcut "$SMPROGRAMS\NVP\NVP.lnk" "$INSTDIR\NVP.exe"
-    CreateShortcut "$SMPROGRAMS\NVP\Uninstall NVP.lnk" "$INSTDIR\Uninstall NVP.exe"
-    WriteRegStr HKCU "${PRODUCT_KEY}" "DisplayName" "${APP_NAME}"
-    WriteRegStr HKCU "${PRODUCT_KEY}" "DisplayVersion" "${APP_VERSION}"
-    WriteRegStr HKCU "${PRODUCT_KEY}" "InstallLocation" "$INSTDIR"
-    WriteRegStr HKCU "${PRODUCT_KEY}" "UninstallString" '$\"$INSTDIR\Uninstall NVP.exe$\"'
-    WriteRegDWORD HKCU "${PRODUCT_KEY}" "NoModify" 1
-    WriteRegDWORD HKCU "${PRODUCT_KEY}" "NoRepair" 1
+    IfFileExists "${STAGE_DIR}" 0 +2
+        Abort "Pending NVP upgrade exists; recover it before installing again"
+    IfFileExists "${PREVIOUS_DIR}" 0 +2
+        Abort "Previous NVP runtime preserved; reconcile before upgrading again"
+    StrCpy $1 "new"
+    IfFileExists "$INSTDIR" upgrade_existing package_stage
+    upgrade_existing:
+        IfFileExists "$INSTDIR\${MARKER}" upgrade_owned
+            Abort "Existing NVP program directory lacks ownership marker"
+    upgrade_owned:
+        IfFileExists "$INSTDIR\NVP.exe" +2 0
+            Abort "Installed NVP executable missing; manual repair required"
+        StrCpy $1 "upgrade"
+    package_stage:
+        ; A failed rename of a busy executable refuses the upgrade.
+        CreateDirectory "${STAGE_DIR}"
+        IfErrors package_failed
+        SetOutPath "${STAGE_DIR}"
+        File /r "${PACKAGE_FILES}\*"
+        IfErrors package_failed
+        IfFileExists "${STAGE_DIR}\NVP.exe" +2 0
+            Goto package_failed
+        FileOpen $0 "${STAGE_DIR}\${MARKER}" w
+        IfErrors package_failed
+        FileWrite $0 "NVP-ALPHA-INSTALL-v1"
+        FileClose $0
+        StrCmp $1 "upgrade" park_old promote_new
+    park_old:
+        ClearErrors
+        Rename "$INSTDIR" "${PREVIOUS_DIR}"
+        IfErrors package_failed
+    promote_new:
+        ClearErrors
+        Rename "${STAGE_DIR}" "$INSTDIR"
+        IfErrors restore_old
+        Goto promoted
+    restore_old:
+        StrCmp $1 "upgrade" 0 package_failed
+        IfFileExists "$INSTDIR" restore_failed
+        ClearErrors
+        Rename "${PREVIOUS_DIR}" "$INSTDIR"
+        IfErrors restore_failed
+        Abort "NVP upgrade promotion failed; original program restored"
+    restore_failed:
+        Abort "NVP upgrade interrupted; original runtime retained in NVP.previous"
+    promoted:
+        ; Preserve old program until independent installed acceptance.
+        WriteUninstaller "$INSTDIR\Uninstall NVP.exe"
+        IfErrors promotion_uncertain
+        CreateDirectory "$SMPROGRAMS\NVP"
+        CreateShortcut "$SMPROGRAMS\NVP\NVP.lnk" "$INSTDIR\NVP.exe"
+        CreateShortcut "$SMPROGRAMS\NVP\Uninstall NVP.lnk" "$INSTDIR\Uninstall NVP.exe"
+        WriteRegStr HKCU "${PRODUCT_KEY}" "DisplayName" "${APP_NAME}"
+        WriteRegStr HKCU "${PRODUCT_KEY}" "DisplayVersion" "${APP_VERSION}"
+        WriteRegStr HKCU "${PRODUCT_KEY}" "InstallLocation" "$INSTDIR"
+        WriteRegStr HKCU "${PRODUCT_KEY}" "UninstallString" '$\"$INSTDIR\Uninstall NVP.exe$\"'
+        WriteRegDWORD HKCU "${PRODUCT_KEY}" "NoModify" 1
+        WriteRegDWORD HKCU "${PRODUCT_KEY}" "NoRepair" 1
+        Goto install_complete
+    promotion_uncertain:
+        Abort "NVP promoted, but registration failed; previous runtime preserved"
+    package_failed:
+        Abort "NVP candidate staging failed; installed program left unchanged"
+    install_complete:
 SectionEnd
 Section "Uninstall"
     StrCmp "$INSTDIR" "$LOCALAPPDATA\Programs\NVP" safe_remove
@@ -56,6 +108,7 @@ Section "Uninstall"
     Delete "$SMPROGRAMS\NVP\Uninstall NVP.lnk"
     RMDir "$SMPROGRAMS\NVP"
     DeleteRegKey HKCU "${PRODUCT_KEY}"
+    ; Never recursively remove pending/previous upgrade evidence or original films.
     RMDir /r "$INSTDIR"
     ; Never remove LOCALAPPDATA\NVP\Projects: user-owned film work.
 SectionEnd

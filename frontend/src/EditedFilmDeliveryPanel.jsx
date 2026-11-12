@@ -109,8 +109,9 @@ export default function EditedFilmDeliveryPanel({projectId,native}){
   return <section className="card" aria-label="Committed original film delivery">
     <h3>Make a 30-second film from your committed edit</h3>
     <p className="fineprint">The original OpenUSD scene, performances, camera
-      selection and native PCM remain frozen. Current procedural PNG/WAV
-      output is a verified derivative, not a photoreal cinema master.
+      selection and native PCM remain frozen. NVP now requests an OS-contained Blender Cycles USD picture render.
+      The resulting PNG/WAV remains an independently verified derivative,
+      not an accepted cinema master or color-calibrated production release.
       Exported PNG/WAV files are unencrypted and saved outside original
       project storage only after explicit native approval.</p>
     {!ready&&<p role="status">Requires installed NVP native filmmaker bridge.</p>}

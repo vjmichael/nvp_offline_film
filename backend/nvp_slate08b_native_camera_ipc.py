@@ -389,13 +389,13 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 raise PermissionError("Edited plaintext export cannot share protected original storage")
             derived.mkdir(mode=0o700,exist_ok=True)
             from backend.nvp_int02_edited_film import NativeEditedFilm30s
-            from backend.nvp_native_cpu_raster import NativeSourceRaster
+            from backend.nvp_int02_cycles_renderer import build_native_cycles_renderer
             requested=dict(request)
             assembly=self._edited_assembly()
-            raster=NativeSourceRaster(self.index,requested["project_id"])
             cancel=threading.Event()
             progress={"stage":"queued","count":0}
             ticket=secrets.token_urlsafe(32)
+            cycles_renderer=[None]
             # A whole-film export may take minutes, so do NOT block JS IPC.
             # One native owner worker thread; cancellation is cooperative,
             # staged files are removed without publishing an edited master.
@@ -403,6 +403,23 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 def update(stage,value):
                     with self._lock:
                         progress.update(stage=stage,count=value)
+                def cycles_frame(**kwargs):
+                    if cancel.is_set():
+                        raise InterruptedError("Creator cancelled native render")
+                    if cycles_renderer[0] is None:
+                        if self._ask(
+                            "NVP must stage temporary UNENCRYPTED exact-time USD for "+
+                            "the protected Blender Cycles worker. This can expose "+
+                            "original scene data on disk until securely removed. "+
+                            "Do NOT proceed with encrypted/protected films unless "+
+                            "your storage policy explicitly permits it. Continue?") is not True:
+                            raise PermissionError("Native creator declined plaintext Cycles staging")
+                        cycles_renderer[0]=build_native_cycles_renderer(
+                            self.index,requested["project_id"],plaintext_consent=True)
+                        with self._lock:
+                            if self._edited_export is not None and self._edited_export["ticket"]==ticket:
+                                self._edited_export["cycles_renderer"]=cycles_renderer[0]
+                    return cycles_renderer[0].render_png(**kwargs)
                 adapter=NativeEditedFilm30s(
                     assembly,native_creator_approval=lambda scope:self._ask(
                         "Export exact committed 30-second edited film?\n"+
@@ -415,9 +432,10 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                         "720 native picture samples + 1,440,000 original PCM samples.\n"+
                         "IMPORTANT: this EXPORT is an UNENCRYPTED PNG/WAV derivative\n"+
                         "outside the original project store; protect its files yourself.\n"+
-                        "It is NOT a production cinema master.\n"+
+                        "Picture engine: OS-CONTAINED Blender Cycles, 1920x1080.\n"+
+                        "This remains an unaccepted production render candidate, NOT a cinema master.\n"+
                         "Original USD Takes and editorial revision remain unchanged."),
-                    render_png=raster.render_png,
+                    render_png=cycles_frame,
                     cancelled=cancel.is_set,progress=update)
                 return adapter.export(
                     requested["project_id"],requested["edit_id"],
@@ -468,6 +486,9 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             if type(ticket) is not str or job is None or job["ticket"]!=ticket:
                 raise PermissionError("Unknown edited film cancellation ticket")
             job["cancel"].set()
+            renderer=job.get("cycles_renderer")
+            if renderer is not None:
+                renderer.cancel_active()
         return {"format":"nvp.int02.native_edited_export_ticket.v1",
                 "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
                 "original_modified":False,"master_approved":False}
@@ -552,6 +573,9 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             self._closing=True
             if self._edited_export is not None:
                 self._edited_export["cancel"].set()
+                renderer=self._edited_export.get("cycles_renderer")
+                if renderer is not None:
+                    renderer.cancel_active()
             if self._data_av_controller is not None:
                 self._data_av_controller.close()
             if self._original_capture_controller is not None:

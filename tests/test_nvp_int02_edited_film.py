@@ -122,7 +122,7 @@ class CommittedEditedThirtySecondFilm(TestCase):
 
     def test_no_source_shot_layer_loss_or_unauthorized_delivery(self):
         self.rows[1]["source_shot_id"] = "DirectorOverride"
-        with self.assertRaisesRegex(RuntimeError, "shot override composition"):
+        with self.assertRaisesRegex(RuntimeError, "Director shot identity is incomplete"):
             self.exporter().preflight(self.pid, "EditedFilm", 1)
         self.rows[1]["source_shot_id"] = None
         with self.assertRaises(PermissionError):

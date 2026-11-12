@@ -22,6 +22,8 @@ class LinuxPackagingTests(unittest.TestCase):
         (root/"_internal"/"frontend"/"dist"/"index.html").write_text(
             '<div id="root"></div><script src="/assets/a.js"></script>')
         (root/"_internal"/"frontend"/"dist"/"assets"/"a.js").write_text("a")
+        (root/"_internal"/"tools").mkdir()
+        (root/"_internal"/"tools"/"nvp_int02_cycles_frame_worker.py").write_text("x"*1100)
         return exe
 
     def test_real_architecture_and_offline_gui_required(self):
@@ -29,7 +31,7 @@ class LinuxPackagingTests(unittest.TestCase):
             root = Path(td)/"bundle"
             exe = self.bundle(root)
             # Test-only synthetic ELF must never be represented as executed NVP.
-            self.assertEqual(len(check_real_linux_bundle(root)["files"]), 4)
+            self.assertEqual(len(check_real_linux_bundle(root)["files"]), 5)
             data = bytearray(exe.read_bytes())
             struct.pack_into("<H", data, 18, 183)  # AArch64, not AMD64
             exe.write_bytes(data)
