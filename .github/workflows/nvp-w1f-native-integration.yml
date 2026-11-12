@@ -1,0 +1,146 @@
+name: W1-F Exact-Head Native Integration
+# Only this unmerged Wave 1 development branch; no physical owner claims.
+on:
+  push:
+    branches:
+      - nvp/wave1-longfilm-runtime-pcm-20261111
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-w1f-native
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  native-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Native source dependencies
+        run: python -m pip install -r requirements-foundation.txt httpx 'cryptography>=43,<49' 'usd-core==26.11' 'opentimelineio>=0.18.1,<0.19'
+      - name: Compile entire native source graph
+        run: python -m compileall -q backend tools tests
+      - name: Cross-platform bounded PCM, durable capture and private-film denial
+        run: |
+          python -m unittest discover -s tests -p test_nvp_wave1_large_pcm.py -v
+          python -m unittest discover -s tests -p test_nvp_w1d_chunked_capture.py -v
+          python -m unittest discover -s tests -p test_nvp_w1e_sealed_custody.py -v
+          python -m unittest discover -s tests -p test_nvp_w1f_native_integration.py -v
+          python -m unittest discover -s tests -p test_nvp_g03_live_store.py -v
+
+  native-windows:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Native Windows source dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx 'cryptography>=43,<49' 'usd-core==26.11' 'opentimelineio>=0.18.1,<0.19' 'pywin32>=306'
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native test dependency failed' }
+      - name: Compile actual native Windows files
+        run: python -m compileall -q backend tools tests
+      - name: Real Windows encrypted-film and source tests
+        shell: pwsh
+        run: |
+          $groups=@('test_nvp_wave1_large_pcm.py',
+            'test_nvp_w1d_chunked_capture.py',
+            'test_nvp_w1e_sealed_custody.py',
+            'test_nvp_w1f_native_integration.py',
+            'test_nvp_g03_live_store.py',
+            'test_nvp_g03_appcontainer.py',
+            'test_nvp_g03_protected_scene_supervisor.py')
+          foreach ($test in $groups) {
+            python -m unittest discover -s tests -p $test -v
+            if ($LASTEXITCODE -ne 0) { throw "Native W1-F failure: $test" }
+          }
+
+  director-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build real two-window React director UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd frontend
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+          test -s dist/index.html
+          test -s dist/postproduction.html
+          test -d dist/assets
+
+  installed-windows:
+    runs-on: windows-2025
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build frontend
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+      - name: Install real PyInstaller and native OS runtime
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19' 'cryptography>=43,<49' httpx
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Freeze real installed fixed workers
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all sounddevice --collect-all numpy --collect-all scipy --collect-submodules backend --hidden-import tools.nvp_g08_export_worker --hidden-import tools.nvp_g09e_worker --hidden-import tools.nvp_w1e_sealed_reel_worker --hidden-import tools.nvp_g03_protected_scene_worker tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen worker build failed' }
+          & 'dist/NVP/NVP.exe' --g09e-worker --selfcheck
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen G09-E worker not importable' }
+          & 'dist/NVP/NVP.exe' --w1e-runtime-selfcheck
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen private film worker not importable' }
+      - name: Install NSIS package and verify exact file head
+        shell: pwsh
+        run: |
+          $nsis=Get-Command makensis.exe -ErrorAction SilentlyContinue
+          if (-not $nsis) { throw 'Native NSIS makensis unavailable' }
+          & $nsis.Source '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'Real NSIS installer build failed' }
+          $setup=Join-Path (Get-Location) 'dist/NVP-Alpha-Setup.exe'
+          if (-not (Test-Path $setup)) { throw 'NSIS package missing' }
+          $process=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw 'Windows NVP install failed' }
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          if (-not (Test-Path $installed)) { throw 'Installed NVP.exe missing' }
+          $builtHash=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash
+          $installedHash=(Get-FileHash $installed -Algorithm SHA256).Hash
+          if ($builtHash -ne $installedHash) { throw 'Installed executable SHA mismatch' }
+          & $installed '--g09e-worker' '--selfcheck'
+          if ($LASTEXITCODE -ne 0) { throw 'Installed G09-E worker unavailable' }
+          & $installed '--w1e-runtime-selfcheck'
+          if ($LASTEXITCODE -ne 0) { throw 'Installed protected worker unavailable' }
+          Write-Host 'W1F_INSTALLED_IMPORTS_ONLY_NOT_AN_ACTUAL_PROTECTED_FILM_RENDER'
