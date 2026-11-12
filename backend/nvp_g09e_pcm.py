@@ -133,6 +133,9 @@ class VerifiedSQLitePCM:
 def verified_pcm_digest(pcm):
     if isinstance(pcm,VerifiedSQLitePCM):
         return pcm.verified_sha256
+    from backend.nvp_g06_sealed_capture import VerifiedSealedPCM
+    if isinstance(pcm,VerifiedSealedPCM):
+        return pcm.verified_sha256
     if not isinstance(pcm,bytes):
         raise TypeError("Unsupported original PCM representation")
     return sha256(pcm).hexdigest()
@@ -142,7 +145,8 @@ class WindowedVoiceSamples:
     """Original-source 100ms-max int16 sample windows for actor jaw RMS."""
 
     def __init__(self, pcm):
-        if not isinstance(pcm,VerifiedSQLitePCM):
+        from backend.nvp_g06_sealed_capture import VerifiedSealedPCM
+        if not isinstance(pcm,(VerifiedSQLitePCM,VerifiedSealedPCM)):
             raise TypeError("Original actor voice was not verified")
         self.pcm = pcm
 
