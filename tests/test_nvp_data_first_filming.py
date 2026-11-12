@@ -980,7 +980,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         # The source is longer than its one-second Film Time event.
         # Previously the surplus sample was silently admitted to the
         # immutable original, leaving event extent and source length at odds.
-        req["recordings"][0]["pcm_chunks"]=[self.original, b"\\x00\\x00"]
+        req["recordings"][0]["pcm_chunks"]=[self.original, bytes(2)]
         with self.assertRaisesRegex(ValueError,"sample count does not match"):
             self.capture.capture(**req)
         for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
