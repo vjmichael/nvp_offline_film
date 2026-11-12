@@ -116,8 +116,14 @@ class NvpLuWorkspace:
     Calling this constructor does not grant a new workspace or any permissions.
     """
 
-    def __init__(self, host: LuFilmHostPort):
+    def __init__(self, host: LuFilmHostPort, *,
+                 require_completed_receipt: bool = False):
         self._host = host
+        # The original development-only port has older simulated proposal
+        # receipts. The production Film Home MUST explicitly require Lu's
+        # consumed, completed generation witness. Never silently up-convert
+        # a development stub to source authority.
+        self._require_completed_receipt = require_completed_receipt
 
     def propose(self, scope: object, *, stage: str, instructions: str = "",
                 scene_id: str | None = None) -> dict[str, Any]:
@@ -136,6 +142,18 @@ class NvpLuWorkspace:
         result = self._host.save_proposal(
             scope, stage=stage, content=content,
             instructions=instructions, expected_revision=project["revision"])
-        if not isinstance(result, dict) or result.get("status") != "proposed":
+        if not isinstance(result,dict) or result.get("status")!="proposed":
             raise LuHostError("Host did not acknowledge a proposed draft")
-        return result
+        if not self._require_completed_receipt:
+            return result  # Development-only legacy harness; no native grant.
+        from hashlib import sha256
+        expected_sha=sha256(content.encode("utf8")).hexdigest()
+        if (result.get("source_mutated") is not False or
+                result.get("consumed_proposal_sha256")!=expected_sha or
+                (result.get("content") is not None and
+                 result["content"]!=content)):
+            raise LuHostError("Host did not consume this exact completed proposal")
+        # Lu need not echo potentially private film text; NVP uses only the
+        # verified generated content already matched to the Lu host's consumed
+        # SHA. The director has not approved it as screenplay or source.
+        return {**result,"content":content}

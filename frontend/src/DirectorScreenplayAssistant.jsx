@@ -23,6 +23,8 @@ export default function DirectorScreenplayAssistant({movie,unsaved,onApproved}) 
   const [edited,setEdited]=useState('');
   const [busy,setBusy]=useState(false);
   const [available,setAvailable]=useState(false);
+  const [luState,setLuState]=useState('disconnected');
+  const [luMessage,setLuMessage]=useState('Lu Workspace is not connected.');
   const [notice,setNotice]=useState('');
   const [error,setError]=useState('');
 
@@ -33,10 +35,33 @@ export default function DirectorScreenplayAssistant({movie,unsaved,onApproved}) 
       const recent=(data.screenplay_drafts||[]).find(x=>x.status==='proposed'&&!x.stale);
       if(recent){setDraft(recent);setEdited(recent.content);}
     }).catch(()=>{});
-    request('/api/creative/models').then(result=>{
-      if(active)setAvailable(result.state==='available');
-    }).catch(()=>{});
-    return ()=>{active=false};
+    const checkLu=()=>{
+      if(movie.encrypted){
+        setAvailable(false);
+        setLuState('private_unavailable');
+        setLuMessage('Private-film Lu integration is not yet authorized.');
+        return;
+      }
+      request('/api/projects/'+encodeURIComponent(movie.id)+'/lu/status')
+        .then(result=>{
+          if(!active)return;
+          setLuState(result.state);
+          setLuMessage(result.message||'Lu Workspace is unavailable.');
+          setAvailable(result.state==='ready');
+        }).catch(()=>{
+          if(!active)return;
+          setAvailable(false);setLuState('disconnected');
+          setLuMessage('Lu Workspace cannot be reached.');
+        });
+    };
+    checkLu();
+    const interval=window.setInterval(checkLu,15000);
+    window.addEventListener('focus',checkLu);
+    return ()=>{
+      active=false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus',checkLu);
+    };
   },[base,movie.revision]);
 
   async function perform(fn) {
@@ -80,6 +105,15 @@ export default function DirectorScreenplayAssistant({movie,unsaved,onApproved}) 
       writing without your approval.</p>
     {error&&<p className="director-screenplay-error" role="alert">{error}</p>}
     {notice&&<p className="director-screenplay-notice" role="status">{notice}</p>}
+    {busy&&luState==='ready'&&<button type="button" className="film-secondary"
+      onClick={async()=>{
+        try{
+          const result=await request('/api/projects/'+encodeURIComponent(movie.id)+
+            '/lu/cancel','POST');
+          if(result.state==='cancellation_requested')
+            setNotice('Cancellation requested from Lu; completion is not yet confirmed.');
+        }catch(err){setError(err.message);}
+      }}>Request Lu cancellation</button>}
     {!draft?<>
       <label htmlFor="director-writing-direction">What would you like help writing?</label>
       <textarea id="director-writing-direction" rows={3} maxLength={1200}
@@ -87,10 +121,10 @@ export default function DirectorScreenplayAssistant({movie,unsaved,onApproved}) 
         value={direction} onChange={e=>setDirection(e.target.value)}/>
       <div className="film-actions"><button className="film-secondary"
         onClick={generate} disabled={busy||!available||unsaved}>
-        {busy?'Working on your draft…':'Ask AI for a screenplay draft'}
+        {busy?'Lu is writing a draft…':'Ask Lu for a screenplay draft'}
       </button></div>
-      {!available&&<p className="film-hint">Writing assistance is unavailable right now.
-        You can continue writing and saving your screenplay yourself.</p>}
+      {!available&&<p className="film-hint" role="status">{luMessage}
+        {' '}You can continue writing and saving your screenplay yourself.</p>}
       {unsaved&&<p className="film-hint">Save your current screenplay changes before
         requesting a new draft.</p>}
     </>:<>

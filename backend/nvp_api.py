@@ -403,16 +403,64 @@ def _director_preproduction(project_id: str, request: Request):
 def g04_scene_library(project_id: str,request: Request):
     return run(lambda: _director_preproduction(project_id,request).view(project_id))
 
+# INT-01D: Lu is the only AI writer exposed by the filmmaker home.
+# HTTP does not mint Lu scope, select models, install a host or grant tools.
+# The independently installed native Lu Workspace must explicitly attach
+# a host-owned service through install_native_lu_film_service(). Until
+# then every project reports disconnected, and manual writing remains usable.
+def _film_lu_service():
+    return getattr(app.state,"nvp_lu_native_film",None)
+
+def _film_lu_execute(action):
+    from backend.nvp_lu_workspace import LuHostError
+    try:
+        return action()
+    except LuHostError as error:
+        raise HTTPException(503,detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(403,detail=str(error)) from error
+    except KeyError as error:
+        raise HTTPException(404,detail="Film or Lu Workspace unavailable") from error
+    except ValueError as error:
+        raise HTTPException(422,detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(409,detail=str(error)) from error
+
+@app.get("/api/projects/{project_id}/lu/status")
+def director_lu_workspace_status(project_id:str,request:Request):
+    from backend.nvp_int01d_lu_host import UNCONNECTED
+    service=_film_lu_service()
+    if service is None:
+        # Independently confirm project access before revealing even
+        # disconnected status. The common project middleware also applies.
+        return _film_lu_execute(lambda: (
+            studio.get_project(project_id),
+            {**UNCONNECTED})[1])
+    return _film_lu_execute(lambda:
+        service.status(project_id,request.cookies.get(COOKIE)))
+
 @app.post("/api/projects/{project_id}/preproduction/screenplay/suggestions")
 @app.post("/api/projects/{project_id}/live/preproduction/screenplay/suggestions")
 def g04_suggest_screenplay(project_id:str,request:Request,
                            payload:G04ScreenplayPrompt):
-    try:
-        return run(lambda:_director_preproduction(project_id,request)
-            .generate_screenplay(project_id,payload.direction))
-    except LocalModelUnavailable:
-        raise HTTPException(status_code=503,
-            detail="AI writing is unavailable. You can continue writing your own screenplay.")
+    if request.headers.get("x-nvp-director")!="1":
+        raise HTTPException(403,detail="Open NVP's director writing workspace")
+    service=_film_lu_service()
+    if service is None:
+        raise HTTPException(503,detail="Lu Workspace is not connected. "
+            "Keep writing manually or connect Lu from its native desktop.")
+    return _film_lu_execute(lambda: service.propose_screenplay(
+        project_id,request.cookies.get(COOKIE),payload.direction))
+
+@app.post("/api/projects/{project_id}/lu/cancel")
+def director_lu_cancel(project_id:str,request:Request):
+    if request.headers.get("x-nvp-director")!="1":
+        raise HTTPException(403,detail="Open NVP's director writing workspace")
+    service=_film_lu_service()
+    if service is None:
+        raise HTTPException(503,detail="Lu Workspace is not connected")
+    return _film_lu_execute(lambda:
+        service.cancel(project_id,request.cookies.get(COOKIE)))
 
 @app.post("/api/projects/{project_id}/preproduction/screenplay/{draft_id}/decision")
 @app.post("/api/projects/{project_id}/live/preproduction/screenplay/{draft_id}/decision")

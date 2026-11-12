@@ -791,6 +791,51 @@ class G04Preproduction:
         selected=available["models"][0]["id"]
         return selected,ProvenLocalModelWriter(writer_for(selected))
 
+    def stage_lu_screenplay(self,pid,*,content,instructions,
+                           expected_revision,expected_source_sha256,
+                           host_receipt):
+        """Journal a COMPLETED Lu host proposal for director review only.
+
+        No model may create approved screenplay, actor, scene, original Take,
+        source file or tool permission through this boundary. The Lu-owned
+        host already journaled and atomically consumed the exact generated
+        text receipt; this Studio CAS attaches it to the current film source.
+        """
+        from backend.nvp_lu_workspace import validate_draft
+        import re
+        if (self.live is not None or
+                type(expected_revision) is not int or expected_revision<0 or
+                type(instructions) is not str or len(instructions)>1200 or
+                type(expected_source_sha256) is not str or
+                not re.fullmatch(r"[0-9a-f]{64}",expected_source_sha256) or
+                type(host_receipt) is not dict or
+                host_receipt.get("format")!="nvp.int01d.lu_host_proposal.v1" or
+                host_receipt.get("creator_approved") is not False or
+                host_receipt.get("source_mutated") is not False):
+            raise PermissionError("Only reviewed Lu native host proposals are allowed")
+        source=validate_draft("screenplay",content)
+        if _sha(source)!=host_receipt.get("content_sha256"):
+            raise RuntimeError("Lu's completed proposal content was changed")
+        def commit(db,movie):
+            if (movie["revision"]!=expected_revision or
+                    _sha(movie["screenplay"]+"\x00"+movie["idea"])!=
+                        expected_source_sha256):
+                raise RuntimeError("Film changed since Lu completed the proposal")
+            stamp=_clock()
+            # A Lu completion is a DRAFT even though inference finished.
+            # Director's separate G04 decision route remains the sole
+            # authority to change the actual screenplay revision.
+            db.execute("""INSERT INTO g04_screenplay_drafts
+                (id,project_id,content,instructions,source_sha256,
+                source_revision,model_id,model_receipt_json,
+                created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",(
+                uuid.uuid4().hex,pid,source,instructions,
+                expected_source_sha256,expected_revision,
+                "lu-hosted",_json(host_receipt),stamp,stamp))
+            return self._view(db,movie)
+        return self._execute(pid,commit,mutate=True)
+
     def generate_screenplay(self,pid,instructions=""):
         """Optional FIRST screenplay draft, never a film source mutation."""
         if (type(instructions) is not str or len(instructions)>1200):

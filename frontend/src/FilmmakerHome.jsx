@@ -78,7 +78,7 @@ export default function FilmmakerHome() {
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const [serviceAvailable,setServiceAvailable]=useState(false);
-  const [aiStatus,setAiStatus]=useState('AI unavailable');
+  const [aiStatus,setAiStatus]=useState('Lu: open a movie to check');
   const [canEncrypt,setCanEncrypt]=useState(false);
   const [encryptMovie,setEncryptMovie]=useState(false);
   const [moviePassphrase,setMoviePassphrase]=useState('');
@@ -93,10 +93,6 @@ export default function FilmmakerHome() {
   }
   useEffect(()=>{
     let mounted=true;
-    request('/creative/models').then(result=>{
-      if(mounted)setAiStatus(result.state==='available'?'AI connected':
-        result.state==='unavailable'?'AI unavailable':'AI not loaded');
-    }).catch(()=>{if(mounted)setAiStatus('AI unavailable')});
     Promise.all([request('/status'),request('/projects')])
       .then(([status,list])=>{
         if (!mounted) return;
@@ -106,6 +102,37 @@ export default function FilmmakerHome() {
       }).catch(()=>{if(mounted)setError('NVP is not connected. Your saved movie remains on this computer.');});
     return ()=>{mounted=false};
   },[]);
+  // The filmmaker UI observes only Lu-owned native Workspace state for
+  // this exact movie. A generic LM Studio-compatible port is not evidence
+  // that the loaded Lu model is available or approved for this project.
+  useEffect(()=>{
+    let active=true;
+    if(!project?.id){
+      setAiStatus('Lu: open a movie to check');
+      return ()=>{active=false};
+    }
+    if(project.encrypted){
+      setAiStatus('Lu: private-film integration unavailable');
+      return ()=>{active=false};
+    }
+    const id=project.id;
+    const names={
+      ready:'Lu ready',busy:'Lu working',loading:'Lu loading',
+      unloading:'Lu unloading',available_unloaded:'Lu model not loaded',
+      no_model:'Lu has no model',failed:'Lu failed',
+      timed_out:'Lu timed out',disconnected:'Lu not connected',
+      unavailable:'Lu unavailable'};
+    const check=()=>request('/projects/'+id+'/lu/status').then(result=>{
+      if(active)setAiStatus(names[result.state]||'Lu unavailable');
+    }).catch(()=>{if(active)setAiStatus('Lu unavailable')});
+    check();
+    window.addEventListener('focus',check);
+    const interval=window.setInterval(check,20000);
+    return ()=>{
+      active=false;window.clearInterval(interval);
+      window.removeEventListener('focus',check);
+    };
+  },[project?.id,project?.encrypted]);
   // WebView2 may leave a screenplay partially edited while the director
   // selects another movie. Never discard that source silently.
   function confirmLeavingUnsaved() {
