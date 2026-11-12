@@ -426,7 +426,20 @@ class G08MovieExporter:
                             record["progress_frames"],state["frames_completed"]))
             except (OSError,ValueError,RuntimeError):
                 pass
+        verified_receipt=(
+            json.loads(record["receipt_json"])
+            if record["status"]=="completed" and record["receipt_json"] else {})
+        sound_evidence=verified_receipt.get("native_sound_readback",{})
         return {"id":job,"edit_revision":record["edit_revision"],
+            "sound_quality":{
+                "integrated_lufs":sound_evidence.get("integrated_lufs"),
+                "sample_peak_dbfs":sound_evidence.get("sample_peak_dbfs"),
+                "review_target_met":sound_evidence.get(
+                    "approved_review_loudness_met"),
+                "actual_pcm_verified":bool(
+                    verified_receipt.get("finishing_sound_independently_verified")),
+                "cinema_audio_certified":False
+            } if record["status"]=="completed" else None,
             "status":record["status"],"frames_completed":record["progress_frames"],
             "frames_total":record["expected_frames"],
             "progress_percent":round(100*record["progress_frames"]/
