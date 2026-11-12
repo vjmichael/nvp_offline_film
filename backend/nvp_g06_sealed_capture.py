@@ -444,7 +444,7 @@ class SealedOriginalChunkStore:
                 db.execute("""INSERT INTO g06_original_pcm(
                     id,project_id,scene_id,actor_id,source_kind,pcm,
                     pcm_sha256,sample_rate,channels,sample_count,recorded_at)
-                    VALUES(?,?,?,?,'native_microphone_pcm16le',?,?,?,?,?)""",
+                    VALUES(?,?,?,?,'native_microphone_pcm16le',?,?,?,?,?,?)""",
                     (part["clip_id"],pid,sid,self.actor_id,b"",
                      part["pcm_sha256"],RATE,1,part["sample_count"],timestamp))
                 db.execute("""INSERT INTO w1e_sealed_clip_members(

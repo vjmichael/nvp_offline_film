@@ -381,7 +381,7 @@ class DurableOriginalChunkStore:
                     db.execute("""INSERT INTO g06_original_pcm(
                         id,project_id,scene_id,actor_id,source_kind,pcm,
                         pcm_sha256,sample_rate,channels,sample_count,recorded_at)
-                        VALUES(?,?,?,?,'native_microphone_pcm16le',?,?,?,?,?)""",
+                        VALUES(?,?,?,?,'native_microphone_pcm16le',?,?,?,?,?,?)""",
                         (clip_id,pid,sid,self.actor_id,pcm,digest,RATE,1,
                          len(pcm)//2,recorded))
                     db.execute("""INSERT INTO g06_long_recording_members(

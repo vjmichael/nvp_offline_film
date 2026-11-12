@@ -2,6 +2,7 @@
 import hashlib
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 
@@ -19,7 +20,7 @@ class BoundedOriginalPCMTests(unittest.TestCase):
         self.digest=hashlib.sha256(self.source).hexdigest()
         self.metadata={"clip_id":"clip","actor_id":"actor",
             "sample_count":len(self.source)//2,"pcm_sha256":self.digest}
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("""CREATE TABLE g06_original_pcm(
                 id TEXT,project_id TEXT,scene_id TEXT,actor_id TEXT,
                 source_kind TEXT,pcm BLOB,pcm_sha256 TEXT,
@@ -54,7 +55,7 @@ class BoundedOriginalPCMTests(unittest.TestCase):
 
     def test_original_mutation_after_audit_refused(self):
         source=self.source_pcm()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE g06_original_pcm SET pcm=? WHERE id='clip'",
                 (b"\x7f"+self.source[1:],))
         with self.assertRaises(RuntimeError):
@@ -65,7 +66,7 @@ class BoundedOriginalPCMTests(unittest.TestCase):
         source=self.source_pcm()
         self.assertEqual(source[:2],self.source[:2])
         # A source mutation cannot become a permanent cached-page bypass.
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE g06_original_pcm SET pcm=? WHERE id='clip'",
                 (b"\x7f"+self.source[1:],))
         with patch("backend.nvp_g09e_pcm.time.monotonic_ns",
@@ -81,7 +82,7 @@ class BoundedOriginalPCMTests(unittest.TestCase):
             check.update(zero_page)
         check.update(b"\x00"*(size%PAGE_BYTES))
         digest=check.hexdigest()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("""UPDATE g06_original_pcm
                 SET pcm=zeroblob(?),pcm_sha256=?,sample_count=?
                 WHERE id='clip'""",(size,digest,size//2))

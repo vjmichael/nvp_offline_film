@@ -9,6 +9,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import time
 import unittest
@@ -30,7 +31,7 @@ class FakeFilming:
     def __init__(self,path):
         self.path=path
     def _with(self,pid,scene_id,callback,mutate=False):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.row_factory=sqlite3.Row
             db.execute("BEGIN IMMEDIATE")
             return callback(db,None,{"scene_source_sha256":"approved"})
@@ -45,7 +46,7 @@ class DurableCaptureTests(unittest.TestCase):
         self.sid="SC_"+"b"*12
         self.session="c"*32
         self.studio=FakeStudio(self.path)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.row_factory=sqlite3.Row
             db.execute("""CREATE TABLE g06_original_pcm(
                 id TEXT PRIMARY KEY,project_id TEXT,scene_id TEXT,
@@ -87,7 +88,7 @@ class DurableCaptureTests(unittest.TestCase):
         part=bytes(array("h",[100,-100,50,0])*1200)
         store,all_bytes,status=self.finish([part]*101)
         self.assertEqual(status["sample_count"],len(all_bytes)//2)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.row_factory=sqlite3.Row
             rows=list(db.execute("""SELECT * FROM g06_long_capture_chunks
                 WHERE session_id=? ORDER BY chunk_index""",(self.session,)))
@@ -115,7 +116,7 @@ class DurableCaptureTests(unittest.TestCase):
         self.assertEqual(len(saved["clip_ids"]),2)
         self.assertEqual(saved["sample_count"],len(joined)//2)
         self.assertEqual(saved["original_pcm_sha256"],sha256(joined).hexdigest())
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.row_factory=sqlite3.Row
             original=b"".join(db.execute("""SELECT pcm FROM g06_original_pcm
                 WHERE id=?""",(clip_id,)).fetchone()[0]
@@ -158,7 +159,7 @@ class DurableCaptureTests(unittest.TestCase):
         receipt=_receipt(session,output)
         self.assertEqual(receipt["sample_count"],3400)
         self.assertFalse(receipt["hardware_audio_to_picture_sync_proven"])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.row_factory=sqlite3.Row
             row=db.execute("""SELECT committed_samples,status FROM
                 g06_long_capture_sessions WHERE session_id=?""",
@@ -170,7 +171,7 @@ class DurableCaptureTests(unittest.TestCase):
                 (session.id,)).fetchone()[0],3400)
 
     def test_interrupted_staged_chunks_never_publish_themselves(self):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.row_factory=sqlite3.Row
             db.execute("""INSERT INTO g06_long_capture_sessions(
                 session_id,project_id,scene_id,actor_id,stage_sha256,
@@ -187,7 +188,7 @@ class DurableCaptureTests(unittest.TestCase):
     def test_rejects_chunk_loss_or_wrong_stage_at_publish(self):
         store,pcm,_=self.finish([b"\x01\x00"*48000,
             b"\x01\x00"*6])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("""DELETE FROM g06_long_capture_chunks
                 WHERE session_id=?""",(self.session,))
         with patch("backend.nvp_g06_chunked_capture._stage",
@@ -195,7 +196,7 @@ class DurableCaptureTests(unittest.TestCase):
                        {"usd_sha256":"stage"},{"objects":[]},b"usd")):
             with self.assertRaises(RuntimeError):
                 store.publish(FakeFilming(self.path),self.receipt(store,pcm))
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute(
                 "SELECT count(*) FROM g06_original_pcm").fetchone()[0],0)
 
