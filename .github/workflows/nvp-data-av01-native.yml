@@ -93,6 +93,13 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_plan02b_native_capture.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02b_original_clock_binding.py' -v
           python -m unittest discover -s tests -p 'test_nvp_plan02c_native_camera_ai.py' -v
+      - name: DA-03 recording host custody and original PCM publication contracts (not device acceptance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<10'
+          python -m compileall -q backend/nvp_filming_host_bridge.py tests/test_nvp_filming_host_bridge.py
+          python -m pytest -q tests/test_nvp_filming_host_bridge.py
       - name: DA-03 Linux filming session and cgroup custody contracts (not kernel acceptance)
         if: runner.os == 'Linux'
         shell: bash
