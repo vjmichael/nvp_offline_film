@@ -91,7 +91,8 @@ async def film_project_access_guard(request: Request, call_next):
                 tail.startswith("live/production/looks/")) or (
                 tail.startswith("live/production/actors/")) or (
                 tail.startswith("live/production/sound/")) or (
-                tail=="live/av" or tail.startswith("live/av/"))
+                tail=="live/av" or tail.startswith("live/av/")) or (
+                tail=="live/finish" or tail.startswith("live/finish/"))
             if not allowed:
                 return JSONResponse(
                     {"detail":"Encrypted movie requires its protected director workspace"},
@@ -1911,3 +1912,8 @@ mount_g09_actor_routes(app,studio,live_films,COOKIE)
 # guarded by the existing G03 project unlock and director-session middleware.
 from backend.nvp_g09c_routes import mount_g09c_routes
 mount_g09c_routes(app,studio,live_films,COOKIE)
+
+# G09-D native SDR/sound finishing decisions and truthful cinema-readiness.
+# Locked movies remain protected by G03 director-session middleware.
+from backend.nvp_g09d_routes import mount_g09d_routes
+mount_g09d_routes(app,studio,live_films,COOKIE)
