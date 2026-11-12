@@ -851,6 +851,16 @@ class G06Filming:
                 "source_is_original_openusd":True,
                 "picture_frames_rendered":False}
             digest=_sha(_json(document).encode("utf8"))
+            # The same read-only contract must validate an ORIGINAL Take
+            # before immutable publication, not only when G07/G09 reopen it.
+            from backend.nvp_int01c_source_contract import g06_binding
+            g06_binding(pid,take_id,{
+                "project_id":pid,"take_id":take_id,"scene_id":scene_id,
+                "source_stage_revision":head["revision"],
+                "source_sha256":head["source_sha256"],
+                "original_usd_sha256":_sha(original),
+                "performance_usd_sha256":_sha(animated),
+                "take_sha256":digest},document,audio)
             db.execute("""INSERT INTO g06_frozen_takes(
                 take_id,project_id,scene_id,source_stage_revision,
                 source_sha256,original_usd_sha256,original_usd,
@@ -942,13 +952,16 @@ class G06Filming:
             raise RuntimeError("The original sound manifest is incomplete")
         for item in audio:
             clip=db.execute("""SELECT actor_id,pcm_sha256,
-                sample_count,length(pcm) AS pcm_bytes
+                sample_count,sample_rate,channels,source_kind,
+                length(pcm) AS pcm_bytes
                 FROM g06_original_pcm WHERE project_id=?
                 AND scene_id=? AND id=?""",
                 (pid,row["scene_id"],item["clip_id"])).fetchone()
             if (clip is None or clip["actor_id"]!=item["actor_id"] or
                 clip["pcm_sha256"]!=item["pcm_sha256"] or
                 clip["sample_count"]!=item["sample_count"] or
+                clip["sample_rate"]!=RATE or clip["channels"]!=1 or
+                clip["source_kind"]!="native_microphone_pcm16le" or
                 (clip["pcm_bytes"]!=item["sample_count"]*2 and not (
                     clip["pcm_bytes"]==0 and
                     item.get("original_recording_id") is not None))):
@@ -965,6 +978,8 @@ class G06Filming:
                         "recording_source_start_sample"):
                 if item.get(key)!=(member or {}).get(key):
                     raise RuntimeError("Frozen recording segment provenance changed")
+        from backend.nvp_int01c_source_contract import g06_binding
+        g06_binding(pid,take_id,row,data,audio)
         return row,data,audio
 
     def _take(self,db,pid,take_id,with_audio=False):
@@ -995,7 +1010,8 @@ class G06Filming:
             raise RuntimeError("Original audio binding was changed")
         for entry in audio:
             clip=db.execute("""SELECT actor_id,pcm,pcm_sha256,
-                sample_count FROM g06_original_pcm
+                sample_count,sample_rate,channels,source_kind
+                FROM g06_original_pcm
                 WHERE project_id=? AND scene_id=? AND id=?""",
                 (pid,row["scene_id"],entry["clip_id"])).fetchone()
             from backend.nvp_g06_sealed_capture import (
@@ -1014,7 +1030,9 @@ class G06Filming:
                 raise RuntimeError("Take's original PCM was changed")
             if (clip is None or clip["actor_id"]!=entry["actor_id"] or
                 clip["pcm_sha256"]!=entry["pcm_sha256"] or
-                clip["sample_count"]!=entry["sample_count"]):
+                clip["sample_count"]!=entry["sample_count"] or
+                clip["sample_rate"]!=RATE or clip["channels"]!=1 or
+                clip["source_kind"]!="native_microphone_pcm16le"):
                 raise RuntimeError("Take's original recorded sound is missing")
             from backend.nvp_g06_chunked_capture import recording_member
             member=recording_member(db,pid,row["scene_id"],entry["clip_id"])
@@ -1026,7 +1044,48 @@ class G06Filming:
                         "recording_source_start_sample"):
                 if entry.get(key)!=(member or {}).get(key):
                     raise RuntimeError("Original sound segment reference changed")
+        from backend.nvp_int01c_source_contract import g06_binding
+        g06_binding(pid,take_id,row,data,audio)
         return row,data,audio
+
+    def compare_canonical_source(self,pid,take_id,canonical_take_id,index,
+                                 *,source_authority=None):
+        """Trusted host-only observation of TWO separate Digital Take domains.
+
+        This does NOT import a FilmIndex Take into G06 or proclaim that
+        matching SceneID/Film Time proves matching original USD/PCM.
+        Protected G03 films never open ordinary FilmIndex source paths.
+        """
+        from pathlib import Path
+        from backend.nvp_film_index import FilmIndex
+        from backend.nvp_int01c_source_contract import (
+            g06_binding,canonical_film_index_evidence)
+        if self.g05.g04.live is not None:
+            raise PermissionError("Protected films cannot use the ordinary source index")
+        if (not callable(source_authority) or
+            source_authority(pid,"nvp.int01c.compare_source") is not True):
+            raise PermissionError("Trusted host project authorization required")
+        if not isinstance(index,FilmIndex) or (
+            Path(index.studio.db_path).resolve(strict=True)!=
+            Path(self.g05.g04.studio.db_path).resolve(strict=True)):
+            raise PermissionError("Source index is not this movie's Studio")
+        def read(db,movie):
+            self._schema(db)
+            row,doc,audio=self._take_metadata(db,pid,take_id)
+            return g06_binding(pid,take_id,row,doc,audio)
+        original=self.g05.g04._execute(pid,read)
+        canonical=canonical_film_index_evidence(
+            index,pid,canonical_take_id)
+        return {"g06":original,"canonical":canonical,
+                "project_id":pid,
+                "same_scene_identity":
+                    original["scene_id"]==canonical["scene_id"],
+                "same_duration_tick":
+                    original["duration_tick"]==canonical["duration_tick"],
+                "same_original_source_proven":False,
+                "may_edit_as_same_take":False,
+                "reason":"Independent source namespaces; no original USD/PCM "
+                         "equivalence has been established"}
 
     def read_take(self,pid,scene_id,take_id):
         def read(db,movie,source):

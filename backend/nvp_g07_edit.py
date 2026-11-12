@@ -703,6 +703,7 @@ class G07Editor:
             actor_performances={}
             acoustic_looks={}
             seen={}
+            take_bindings={}
             source_budget=0
             for clip in document["clips"]:
                 take_id=clip["take_id"]
@@ -710,6 +711,9 @@ class G07Editor:
                     row,doc,audio=self._take(db,pid,take_id,{},
                         metadata_only=True)
                     seen[take_id]=row["take_sha256"]
+                    from backend.nvp_int01c_source_contract import g06_binding
+                    take_bindings[take_id]=g06_binding(
+                        pid,take_id,row,doc,audio)
                     if participating is None or take_id in participating:
                         # Original media admission BEFORE reading PCM blobs:
                         # this prevents a single enormous Take or an unsafe
@@ -796,6 +800,8 @@ class G07Editor:
                     if participating is not None and take_id not in participating:
                         continue
                     sources[take_id]={"scene_id":row["scene_id"],
+                        "project_id":pid,"take_id":take_id,
+                        "source_binding":take_bindings[take_id],
                         "take_sha256":row["take_sha256"],
                         "original_usd":bytes(original["original_usd"]),
                         "performance_usd":bytes(original["performance_usd"]),
@@ -832,7 +838,17 @@ class G07Editor:
                 {"revision":finishing["revision"],
                  "sha256":finishing["sha256"]} if finishing else {}
             ).encode("utf8"))
-            return {"format":FORMAT,"project_id":pid,
+            from backend.nvp_int01c_source_contract import verify_render_assembly
+            source_hashes={tid:bind["binding_sha256"]
+                           for tid,bind in sorted(take_bindings.items())}
+            source_provenance={
+                "format":"nvp.int01c.source_provenance.v1",
+                "project_id":pid,
+                "take_binding_hashes":source_hashes,
+                "take_bindings_sha256":_sha(_json(source_hashes).encode("utf8")),
+                "all_source_take_count":len(source_hashes)}
+            result={"format":FORMAT,"project_id":pid,
+                "source_provenance":source_provenance,
                 "finishing_sha256":finishing_sha,
                 "approved_finishing":finishing,
                 "edit_revision":source_revision,
@@ -861,4 +877,7 @@ class G07Editor:
                 "source_media_modified":False,
                 "derived_picture_frames":False,
                 "final_movie_exported":False}
+            if sources:
+                verify_render_assembly(result,require_bindings=True)
+            return result
         return self._execute(pid,read)

@@ -428,6 +428,8 @@ def render_film(assembly,output,*,cancel=None,progress=None):
         raise ValueError("Film exceeds the first 720-frame profile")
     if total%TICKS_SAMPLE:
         raise ValueError("Film sound is not aligned to 48-kHz sample time")
+    from backend.nvp_int01c_source_contract import verify_render_assembly
+    verify_render_assembly(assembly)
     sources=assembly["original_takes"]
     if len(sources)>60:raise ValueError("First export supports up to 60 original Takes")
     for item in sources.values():

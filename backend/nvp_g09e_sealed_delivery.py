@@ -251,6 +251,8 @@ class SealedFilmDelivery:
         start,end=chunk_bounds(record["total_frames"],index)
         assembly=G07Editor(self.studio,self.live,token).native_assembly(
             pid,record["edit_revision"],window=(start*TICKS_FRAME,end*TICKS_FRAME))
+        from backend.nvp_int01c_source_contract import verify_render_assembly
+        verify_render_assembly(assembly,require_bindings=True)
         source=source_digests(assembly)
         if sha256(_canonical(source)).hexdigest()!=record["source_sha256"]:
             raise RuntimeError("Frozen original Take or creative review changed")

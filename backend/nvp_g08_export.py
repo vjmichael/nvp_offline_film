@@ -166,6 +166,8 @@ class G08MovieExporter:
         # The trusted host reads the immutable source itself. Neither a model
         # nor the WebView can supply source media or an output path.
         assembly=G07Editor(self.studio).native_assembly(pid,expected_revision)
+        from backend.nvp_int01c_source_contract import verify_render_assembly
+        verify_render_assembly(assembly,require_bindings=True)
         if assembly["edit_revision"]!=expected_revision or (
                 not SHA.fullmatch(assembly["edit_document_sha256"]) or
                 not SHA.fullmatch(assembly["production_looks_sha256"]) or

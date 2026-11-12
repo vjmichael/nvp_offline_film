@@ -59,6 +59,8 @@ def check_assembly(assembly,total_frames,start,end,digests):
     if (type(digests) is not dict or set(digests)!=set(REQUIRED_DIGESTS) or
         any(assembly[k]!=v for k,v in digests.items())):
         raise RuntimeError("Film source or director-approved decisions changed")
+    from backend.nvp_int01c_source_contract import verify_render_assembly
+    verify_render_assembly(assembly)
     return True
 
 def source_digests(assembly):
@@ -122,6 +124,8 @@ def render_reel(assembly,start_frame,end_frame,plan,output,*,progress=None,
         raise RuntimeError("The reel is not source-bound to this Film Time")
     from backend.nvp_g09d_master import finish_picture
     from backend.nvp_g09_render import render_production_picture
+    from backend.nvp_int01c_source_contract import verify_render_assembly
+    verify_render_assembly(assembly)
     worlds=_worlds(assembly,actors=True)
     mixer=_pcm_mixer(assembly,worlds)
     decision=(assembly.get("approved_finishing") or {}).get("finishing")

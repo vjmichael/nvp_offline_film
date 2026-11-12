@@ -222,6 +222,8 @@ class G09ELongDelivery:
         first=editor.native_assembly(pid,expected_revision,
             window=(0,min(FRAMES_PER_CHUNK*TICKS_FRAME,
                  round(current["duration_seconds"]*FPS)*TICKS_FRAME)))
+        from backend.nvp_int01c_source_contract import verify_render_assembly
+        verify_render_assembly(first,require_bindings=True)
         frames=first["duration_tick"]//TICKS_FRAME
         if frames<=720:
             raise ValueError("Use ordinary short film export for the first 30 seconds")
@@ -293,6 +295,8 @@ class G09ELongDelivery:
         first=G07Editor(self.studio).native_assembly(
             pid,record["edit_revision"],
             window=(0,min(record["total_frames"],FRAMES_PER_CHUNK)*TICKS_FRAME))
+        from backend.nvp_int01c_source_contract import verify_render_assembly
+        verify_render_assembly(first,require_bindings=True)
         if sha256(_canonical(source_digests(first))).hexdigest()!=record["source_sha256"]:
             raise RuntimeError("The original film or approved finishing changed since this render")
         with self._db() as db:

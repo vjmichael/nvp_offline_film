@@ -192,6 +192,8 @@ class G08SealedDelivery:
         if current["revision"]!=expected_revision or current["missing_sources"]:
             raise RuntimeError("Review the current film edit before delivery")
         assembly=editor.native_assembly(pid,expected_revision)
+        from backend.nvp_int01c_source_contract import verify_render_assembly
+        verify_render_assembly(assembly,require_bindings=True)
         length=assembly["duration_tick"]
         if (not 0<length<=MAX_SECONDS*TICKS_PER_SECOND or
                 length%TICKS_FRAME or length%TICKS_SAMPLE):

@@ -60,6 +60,16 @@ def _fixed_command():
 
 
 def _serialize_window(assembly,start,end,total_frames,plan):
+    from backend.nvp_int01c_source_contract import verify_render_assembly
+    # A real private-film worker must receive the G07 source-bound original
+    # Take provenance. Retain only the previously explicit synthetic CI
+    # one-frame smoke exception: it is not a native human permission and
+    # still requires the independent OS kernel and host review gates.
+    if not verify_render_assembly(assembly):
+        if not (os.environ.get("GITHUB_ACTIONS")=="true" and
+                os.environ.get("NVP_W1F_TEST_APPROVAL")=="CI_SOURCE_ONLY"):
+            raise ProtectedFilmReelError(
+                "Private reel lacks authenticated original Take source identity")
     digest=source_digests(assembly)
     check_assembly(assembly,total_frames,start,end,digest)
     binding=sha256(json.dumps(digest,sort_keys=True,

@@ -100,6 +100,8 @@ def _load_window(dbpath,record,source,start,end):
         record["project_id"],record["edit_revision"],
         window=(start*TICKS_FRAME,end*TICKS_FRAME))
     check_assembly(assembly,record["total_frames"],start,end,source)
+    from backend.nvp_int01c_source_contract import verify_render_assembly
+    verify_render_assembly(assembly,require_bindings=True)
     return assembly
 
 def _analysis(args,dbpath,directory,record,source):
