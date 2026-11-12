@@ -86,6 +86,19 @@ def _member(db,pid,scene_id,clip_id):
             type(seg.get("sample_count")) is not int or
             not 1<=seg["sample_count"]<=RATE*120):
             raise RuntimeError("Sealed source segment offset changed")
+        linked=db.execute("""SELECT m.first_sample,m.sample_count,
+            m.pcm_sha256,o.pcm_sha256,o.sample_count,length(o.pcm)
+            FROM w1e_sealed_clip_members AS m
+            JOIN g06_original_pcm AS o ON o.id=m.clip_id
+            WHERE m.project_id=? AND m.scene_id=? AND
+            m.recording_id=? AND m.clip_id=?""",
+            (pid,scene_id,member["recording_id"],seg["clip_id"])).fetchone()
+        if (linked is None or linked[0]!=seg["first_sample"] or
+            linked[1]!=seg["sample_count"] or
+            linked[2]!=seg["pcm_sha256"] or
+            linked[3]!=seg["pcm_sha256"] or
+            linked[4]!=seg["sample_count"] or linked[5]!=0):
+            raise RuntimeError("A sealed recording sibling or clip marker was changed")
         if seg["clip_id"]==clip_id:
             if (found or seg["first_sample"]!=member["first_sample"] or
                 seg["sample_count"]!=member["sample_count"] or
