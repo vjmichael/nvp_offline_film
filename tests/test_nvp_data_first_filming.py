@@ -959,6 +959,22 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertIsNotNone(self.index.read_revision(self.pid,"FilmedTake",1))
         self.assertIsNotNone(self.index.read_revision(self.pid,"NewRecordedSpeech",1))
 
+    def test_pcm_callback_cannot_rewrite_preflighted_recording_gain(self):
+        req=self.payload()
+        event=req["recordings"][0]
+        original_chunks=event["pcm_chunks"]
+        def mutating_chunks():
+            event["gain"]=2.0
+            yield from original_chunks
+        event["pcm_chunks"]=mutating_chunks()
+        self.capture.capture(**req)
+        page=TemporalLedger(self.index).events_in(
+            self.pid,"FilmedSoundTimeline",1,start_tick=0,
+            end_tick=int(req["recordings"][0]["end_tick"]),limit=100)
+        sound=[e for e in page["events"] if e["event_kind"] in ("sound","dialogue")]
+        self.assertEqual(len(sound),1)
+        self.assertEqual(sound[0]["payload"]["gain"],1.0)
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
