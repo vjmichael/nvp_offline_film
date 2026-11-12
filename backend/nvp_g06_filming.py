@@ -878,15 +878,29 @@ class G06Filming:
                 WHERE project_id=? AND scene_id=? AND id=?""",
                 (pid,scene_id,clip_id)).fetchone()
             if row is None:raise KeyError("Original sound is not in this scene")
-            if (_sha(row["pcm"])!=row["pcm_sha256"] or
-                    row["sample_rate"]!=RATE or row["channels"]!=1 or
+            from backend.nvp_g06_sealed_capture import (
+                original_identity,VerifiedSealedPCM)
+            sealed=original_identity(db,pid,scene_id,clip_id)
+            if sealed:
+                if self.g05.g04.live is None or len(row["pcm"])!=0:
+                    raise RuntimeError("Encrypted microphone source is not unlocked")
+                pcm=VerifiedSealedPCM(self.g05.g04.live,self.g05.g04.token,
+                    db,pid,scene_id,clip_id)
+                if pcm.verified_sha256!=row["pcm_sha256"]:
+                    raise RuntimeError("Authenticated original microphone SHA changed")
+            elif (_sha(row["pcm"])!=row["pcm_sha256"] or
                     row["sample_count"]*2!=len(row["pcm"])):
                 raise RuntimeError("Original sound integrity check failed")
+            else:pcm=row["pcm"]
+            if row["sample_rate"]!=RATE or row["channels"]!=1:
+                raise RuntimeError("Original microphone format changed")
             import io,wave
             stream=io.BytesIO()
             with wave.open(stream,"wb") as output:
                 output.setnchannels(1);output.setsampwidth(2)
-                output.setframerate(RATE);output.writeframes(row["pcm"])
+                output.setframerate(RATE)
+                for offset in range(0,len(pcm),48000*2):
+                    output.writeframesraw(pcm[offset:min(len(pcm),offset+48000*2)])
             return stream.getvalue()
         return self._with(pid,scene_id,read)
 
@@ -1055,12 +1069,27 @@ class G06Filming:
                     FROM g06_original_pcm WHERE project_id=? AND
                     scene_id=? AND id=?""",
                     (pid,row["scene_id"],item["clip_id"])).fetchone()
-                if (source is None or
-                    _sha(source["pcm"])!=item["pcm_sha256"] or
-                    source["pcm_sha256"]!=item["pcm_sha256"]):
+                if source is None or source["pcm_sha256"]!=item["pcm_sha256"]:
                     raise RuntimeError("Frozen original audio unavailable")
+                from backend.nvp_g06_sealed_capture import (
+                    original_identity,VerifiedSealedPCM)
+                sealed=original_identity(db,pid,row["scene_id"],item["clip_id"])
+                if sealed:
+                    if self.g05.g04.live is None or len(source["pcm"])!=0:
+                        raise RuntimeError("Encrypted original requires protected host")
+                    pcm=VerifiedSealedPCM(self.g05.g04.live,
+                        self.g05.g04.token,db,pid,row["scene_id"],item["clip_id"])
+                    if pcm.verified_sha256!=item["pcm_sha256"]:
+                        raise RuntimeError("Sealed original microphone SHA changed")
+                    # Host-only trusted readback: media bytes never hit disk.
+                    raw=b"".join(pcm[i:min(i+1024*1024,len(pcm))]
+                        for i in range(0,len(pcm),1024*1024))
+                else:
+                    if _sha(source["pcm"])!=source["pcm_sha256"]:
+                        raise RuntimeError("Original microphone source changed")
+                    raw=bytes(source["pcm"])
                 clips.append({"clip_id":item["clip_id"],
-                    "pcm16le":bytes(source["pcm"]),
+                    "pcm16le":raw,
                     "start_tick":item["start_tick"],
                     "duration_tick":item["duration_tick"],
                     "emitter_path":item["emitter_path"],
