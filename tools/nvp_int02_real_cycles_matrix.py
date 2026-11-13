@@ -123,7 +123,7 @@ def run_real_imported_actor_cycles(out,supervisor,scriptbytes):
     original=CharacterAssets(studio).register(
         pid,original_rigged_glb(),"creator_owned")
     cast=[{"actor_id":"ActorLead","character_asset_id":original["asset_id"],
-           "position":[0,0,0],"motion_joint":"Bone001","travel":0.4,
+           "position":[0,0,0],"motion_joint":"Bone000/Bone001","travel":0.4,
            "face_target":"jaw_open","face_strength":0.5}]
     published=NativeActorSceneCasting(
         index,verify_director_action=lambda event,scope:
@@ -256,6 +256,19 @@ def run_real_imported_actor_cycles(out,supervisor,scriptbytes):
         frames[0]["png_sha256"]==frames[1]["png_sha256"] or
         frames[0]["usd_sha256"]==frames[1]["usd_sha256"]):
         raise RuntimeError("Actual Blender/Cycles output did not change with source actor pose")
+    # Reject a source-only pose SHA change where two genuine rendered PNGs
+    # are perceptually indistinguishable. Original native 16-bit PNGs are
+    # decoded independently; no output is mocked or re-composited.
+    from PIL import ImageChops
+    first_path=supervisor.root/"int02_real_original_glb_actor_000"/"frame.png"
+    second_path=supervisor.root/"int02_real_original_glb_actor_001"/"frame.png"
+    with Image.open(first_path) as frame0, Image.open(second_path) as frame1:
+        difference=ImageChops.difference(
+            frame0.convert("RGB"),frame1.convert("RGB"))
+        changed_pixels=sum(1 for value in difference.convert("L").getdata()
+                           if value>22)
+    if changed_pixels<500:
+        raise RuntimeError("Native Cycles actor animation did not visibly change >=500 source picture pixels")
     image=(supervisor.root/"int02_real_original_glb_actor_001"/"frame.png").read_bytes()
     visible=frames[-1]["red_actor_pixels"]
     scene_sha=frames[-1]["usd_sha256"]
@@ -273,6 +286,7 @@ def run_real_imported_actor_cycles(out,supervisor,scriptbytes):
         "cycles_frame_sha256":sha256(image).hexdigest(),
         "actual_original_actor_color_pixels":visible,
         "genuine_animated_cycles_frame_pair":frames,
+        "source_character_changed_visible_pixels":changed_pixels,
         "original_dialogue_document_sha256":dialogue["document_sha256"],
         "original_recorded_pcm_document_sha256":recorded["document_sha256"],
         "actor_voice_at_source_tick_verified":True,

@@ -294,7 +294,9 @@ class RealCharacterAndLens(unittest.TestCase):
             reason="Director selects wide lens for emotional geography")
         # Shot publication returns a narrow receipt; reopen the immutable
         # FilmIndex revision to verify the actual director-approved source.
-        self.assertEqual(shot["kind"],"shot")
+        # Typed director shot overrides live in FilmIndex presentation
+        # revisions. Reopen the actual source; do not invent a new kind.
+        self.assertEqual(shot["kind"],"presentation")
         self.assertTrue(self.index.read_revision(
             self.pid,"lens_shot",1)["data"]["director_shot_change_approved"])
         evaluated=OpenUSDShotOverrides(
