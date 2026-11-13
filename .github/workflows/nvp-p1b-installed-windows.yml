@@ -1,0 +1,116 @@
+name: NVP P1-B installed Windows ADC release-candidate verification
+on:
+  push:
+    branches:
+      - nvp/p1a-device-producer-custody-20261112
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  genuine-installed-candidate:
+    name: Windows real PyInstaller NSIS install, reopen, WebView2, uninstall
+    runs-on: windows-2025
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build actual offline React frontend
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          if (-not (Test-Path frontend/dist/index.html)) { throw 'Offline UI missing' }
+      - name: Provision native source reader, audio and installer dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile and freeze original source-only runtime and physical audio dependencies
+        shell: pwsh
+        run: |
+          python -m compileall -q backend tools
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all miniaudio --collect-all sounddevice --collect-all _sounddevice_data --collect-submodules backend --hidden-import tools.nvp_native_device_producer_worker --hidden-import tools.nvp_p1b_physical_device_acceptance tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-p1b-payload.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Native installed bundle payload invalid' }
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-p1b-uninstalled.log'
+          & 'dist/NVP/NVP.exe' --smoke-producer-bundle
+          if ($LASTEXITCODE -ne 0) {
+            if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH }
+            throw 'Frozen original ADC device-producer cannot be imported'
+          }
+          Remove-Item Env:NVP_SMOKE_DIAGNOSTIC_PATH
+      - name: Build and install genuine NSIS candidate
+        shell: pwsh
+        run: |
+          $nsis=Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) { $nsis=(Get-Command makensis -ErrorAction Stop).Source }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed' }
+          $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
+          $p=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw 'Genuine NSIS installation failed' }
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          if (-not (Test-Path $installed)) { throw 'Installed executable absent' }
+          if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne
+              (Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash) {
+              throw 'Installed application bytes differ from reviewed package'
+          }
+          Get-FileHash $setup -Algorithm SHA256 | Out-File "$env:RUNNER_TEMP/nvp-p1b-installer-sha.txt"
+      - name: Verify installed ADC worker, original FilmIndex PCM, restart and visible WebView2
+        shell: pwsh
+        run: |
+          $app=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-p1b-installed-smoke.log'
+          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-p1b-temporary-studio'
+          foreach ($argument in @('--smoke-producer-bundle','--smoke-data-av','--smoke-create','--smoke-reopen','--smoke-window')) {
+            $p=Start-Process -FilePath $app -ArgumentList $argument -PassThru -Wait
+            if ($p.ExitCode -ne 0) {
+              if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH }
+              throw "Installed NVP $argument failed with $($p.ExitCode)"
+            }
+          }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
+            throw 'No real persistent SQLite original studio'
+          }
+          Remove-Item Env:NVP_SMOKE_DIAGNOSTIC_PATH
+      - name: Genuine uninstall must preserve creator SQLite
+        shell: pwsh
+        run: |
+          $appdir=Join-Path $env:LOCALAPPDATA 'Programs/NVP'
+          $uninstaller=Join-Path $appdir 'Uninstall NVP.exe'
+          if (-not (Test-Path $uninstaller)) { throw 'NSIS uninstaller missing' }
+          $p=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw 'NSIS uninstall failed' }
+          Start-Sleep -Seconds 2
+          if (Test-Path (Join-Path $appdir 'NVP.exe')) { throw 'Installed binary survived uninstall' }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
+            throw 'Uninstall erased creator original project'
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-p1b-installed-candidate-receipts
+          path: |
+            ${{ runner.temp }}/nvp-p1b-payload.json
+            ${{ runner.temp }}/nvp-p1b-installer-sha.txt
+            ${{ runner.temp }}/nvp-p1b-*.log
+          if-no-files-found: warn
+          retention-days: 7
