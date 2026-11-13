@@ -62,6 +62,11 @@ def main(argv=None):
         expected="/"+target.relative_to(Path("/sys/fs/cgroup")).as_posix()
         if _membership()!=expected:
             raise RuntimeError("Kernel did not confirm worker cgroup admission")
+        # Delegation alone does not prevent same-UID descendants escaping
+        # into the systemd host subgroup via its writable cgroup.procs.
+        # Landlock is mandatory before READY/exec; failure is fail-closed.
+        from nvp_worker_linux_landlock import restrict_strict_worker_writes
+        restrict_strict_worker_writes(Path.cwd())
         os.write(ready_fd,b"1")
         os.close(ready_fd)
         index+=4
