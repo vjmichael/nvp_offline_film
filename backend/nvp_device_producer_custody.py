@@ -88,11 +88,20 @@ class SupervisedNativeDevice:
         self._started = True
         if callback is not None:
             self._callback = callback
-        executable = Path(__file__).resolve().parent.parent / "tools" / "nvp_native_device_producer_worker.py"
-        if executable.is_symlink() or not executable.is_file():
-            raise RuntimeError("Reviewed original device worker not provisioned")
-        command = [
-            sys.executable, str(executable), "--directory", str(self.spool),
+        # A frozen PyInstaller desktop cannot execute a .py source file by
+        # passing its path to NVP.exe. Launch the SAME verified installed PE
+        # with an internal worker role; the native host still owns its Job.
+        if getattr(sys, "frozen", False):
+            executable = Path(sys.executable)
+            if executable.is_symlink() or not executable.is_file():
+                raise RuntimeError("Installed original producer executable absent")
+            command = [str(executable), "--device-producer-worker"]
+        else:
+            executable = Path(__file__).resolve().parent.parent / "tools" / "nvp_native_device_producer_worker.py"
+            if executable.is_symlink() or not executable.is_file():
+                raise RuntimeError("Reviewed original device worker not provisioned")
+            command = [sys.executable, str(executable)]
+        command += ["--directory", str(self.spool),
             "--prefix", self.prefix, "--mode", self.mode,
             "--max-samples", str(self.max_samples), "--scope", self.scope_digest,
         ]

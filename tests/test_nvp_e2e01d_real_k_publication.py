@@ -54,6 +54,16 @@ def source_proof():
     return {"status":"VERIFIED_FINAL_AV_MASTER","final_master":True}
 
 
+def _native_child_environment():
+    # Running a test by filename adds tests/ to sys.path, not repository root.
+    # Inherit a pinned source root for actual hard-kill Python child processes,
+    # whether launched from unittest, pytest, or a Windows packaged runner.
+    env=os.environ.copy()
+    repo=str(Path(__file__).resolve().parents[1])
+    env["PYTHONPATH"]=os.pathsep.join(filter(None,(repo,env.get("PYTHONPATH",""))))
+    return env
+
+
 def subprocess_publish(root,mode="copy"):
     studio=Studio(root/"studio.sqlite3")
     project=(root/"project_id").read_text("ascii")
@@ -97,7 +107,7 @@ class NativeKCrashIO(unittest.TestCase):
                         "format":AV_FORMAT,"director_approved":True,
                         "final_master":True,"dcp_delivered":False,
                         "rendered_mov_sha256":digest,"frames":12})
-                    env=os.environ.copy()
+                    env=_native_child_environment()
                     env["NVP_AUDIO01K_FAULT_TEST"]="enabled"
                     env["NVP_AUDIO01K_CRASH_AFTER"]=point
                     child=subprocess.run([sys.executable,
@@ -160,7 +170,7 @@ class NativeKCrashIO(unittest.TestCase):
                             "rendered_mov_sha256":digest,
                             "frames":12
                         })
-                    env=os.environ.copy()
+                    env=_native_child_environment()
                     for k in ("NVP_AUDIO01K_FAULT_TEST",
                               "NVP_AUDIO01K_CRASH_AFTER"):
                         env.pop(k,None)
