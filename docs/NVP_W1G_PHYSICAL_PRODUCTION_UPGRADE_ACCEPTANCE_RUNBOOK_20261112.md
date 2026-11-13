@@ -29,6 +29,10 @@ py -m tools.nvp_w1g_supply_candidate --platform windows-amd64 --wheelhouse "D:\\
 
 The worker roster is only a SHA-bound *candidate*. Packaging/production admission still requires the reviewed full five-role worker roster, a signed exact-byte release/license inventory, and independently verified worker execution. No source-only placeholder can satisfy this gate.
 
+Native build artifacts now also include `w1g-windows-unsigned-review-intake.json` and `w1g-linux-unsigned-review-intake.json`. These are generated from the actual five executable SHA-256 values, the compiler-image hash, five role translation-unit SHA-256 values, and the native linker import audit (Windows `dumpbin /DEPENDENTS`, Linux `readelf -d`). The direct DLL/SONAME roster is **not** an audited transitive runtime closure. Resolve every dependency to the exact on-device version, origin, necessary runtime installer and independent redistribution/license signoff. Neither a Microsoft system DLL assumption nor a Python wheel lock is an independent native redistribution review. All `review_required` items remain explicit in the unsigned JSON; the generator has no signing key or production approval option.
+
+A review may sign exact source/compiler/import evidence only after an independent supply authority verifies it. A signed proof of these five **bounded capability slices** does not make those workers complete OpenUSD, ActorID, editorial, spatial-audio or DCP production implementations. Preserve `native_role_complete_film_pipeline_verified:false` until real domain workloads independently prove otherwise.
+
 The offline wheelhouse must now be independently signed **as its own exact-byte evidence set**, separate from the signature over installed NSIS bytes. The independent reviewer signs every wheel's SPDX/license and redistribution reference plus a digest of the full transitive wheel lock. A text field in the lock is not an approval.
 
 After the owner obtains a real signed wheelhouse review and supplies the public-only reviewer key, the read-only verifier is:
@@ -68,6 +72,25 @@ The cross-principal test observes a different actual Windows process-token SID a
 The `reopen` command now refuses the same Windows boot: a distinct, conservative native boot-time observation and encrypted-file reopen are both required. A changed wall clock can affect the estimate, so this is **not** independent physical-owner authentication or key recovery evidence. It does *not* prove that the owner has independently backed up and restored the EFS certificate/private key. The creator must verify that recovery separately through their OS-approved secure backup/recovery process. Never upload private EFS keys, decrypted films, or recovery secrets to GitHub, a model, or a CI artifact.
 
 Original Windows filming PCM now stays in bounded RAM by default. Long recordings must provide a dedicated `encrypted_pcm_scratch` directory admitted by `require_efs_stage` before PCM is written; an ordinary system temp spill is denied. Original FilmIndex key custody, derivatives and full-project encryption remain independent requirements.
+
+## 2A. Actual physical microphone and two independent ADCs (owner Windows only)
+
+The P1-A native capture **source**, Windows Job/cgroup kernel custody and mock producer regressions can pass on a hosted runner; they cannot show actual microphone signal, independent ADC oscillator behavior, EFS-protected Take durability or physical USB disconnect/recovery. The only new automated preparation step is read-only native device enumeration:
+
+```powershell
+# Native Windows owner PC; no microphone is opened and no film is written.
+py -m tools.nvp_p1a_physical_device_preflight
+# Choose two real, currently enumerated PortAudio device IDs from the listing:
+py -m tools.nvp_p1a_physical_device_preflight --device-id 2 --device-id 4
+```
+
+The IDs in the second command are **examples**, not a claim about the creator's hardware. Each reported descriptor receives the exact digest used by the original child-owned producer; shared name/host-API pairs flag possible aliases. Even a successful enumerated pair is `TWO_PORTAUDIO_ENDPOINTS_ENUMERATED_ONLY`, explicitly *not* an ADC test. Two listed endpoints might represent one physical ADC through multiple host APIs.
+
+**Physical positive tests:** In the genuine installed NVP authoring UI, with explicit creator permission and EFS-enabled scratch, record a real 48-kHz PCM16LE mono microphone Take through the original child-owned miniaudio producer. Check a nonempty, genuinely measured waveform, original-source SHA, one-use FilmIndex/Take ID, source sample counts, actual original Windows Job termination, restart reopening and immutable original PCM. Separately select **two independently clocked physical converters**; capture simultaneous live PortAudio buffers from each original child, retain distinct source PCM SHA and input-buffer `inputBufferAdcTime` and same-child calibration brackets, establish monotonic per-device clocks and bounded alignment/drift through the original `DeviceTimeTrack`, then freeze only under the original trusted creator approval. Preserve two original, unmixed, unresampled Takes/clock evidence, and verify after a genuine desktop restart. Record original device descriptions/clock summaries and file digests only; do **not** upload original audio or EFS keys to CI.
+
+**Physical negative tests:** Revoke OS microphone permission, disconnect either source during acquisition, induce/drop a buffer where practical, cancel while both producers are alive, and interrupt/restart after an unapproved partial original Take. Every case must fail closed without publishing a fabricated clean original, and the native Job must have no survivors. If the two devices share a physical clock, merely having different PortAudio indices is insufficient evidence of independent ADC clocks. No synthetic generator, replayed PCM, mock stream or CI-created sound device can satisfy this gate.
+
+**Disposition:** Until an owner provides these original on-machine evidence receipts and independent inspection, `physical_microphone_or_dual_adc_verified:false`. The read-only enum command does **not** authorize a Take or an NSIS change.
 
 ## 3. Non-mutating native owner preflight
 
