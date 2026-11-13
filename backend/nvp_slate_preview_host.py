@@ -347,7 +347,7 @@ class NativeSlatePreviewHost:
              adapter.preview_cache_key(ticket,quality))
         present=self.cache.lookup(project_id,key)
         if present:
-            return {"status":"CACHE_HIT",**present,
+            return {**present,"status":"CACHE_HIT",
                     "presentation":presentation,"new_task_started":False}
         # One exact source stage on a miss. Geometry has no silent fallback
         # into the less faithful SLATE-05 blocking proxy recipe.
