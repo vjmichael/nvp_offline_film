@@ -243,6 +243,42 @@ class OriginalActorOwnedStereo(unittest.TestCase):
                               first_sample=48000,count=2000)
         self.assertEqual(later["original_pcm_bytes"],bytes(2000*4))
 
+    def test_original_dialogue_after_500_indexed_cues_without_partial_source(self):
+        from backend.nvp_data_av_scene import TICKS_PER_SAMPLE
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        events=[]
+        for i in range(520):
+            start=i*160*TICKS_PER_SAMPLE
+            events.append({
+                "event_id":"Line"+str(i).zfill(4),
+                "event_kind":"dialogue","subject_id":"ActorLead",
+                "start_tick":start,
+                "end_tick":start+160*TICKS_PER_SAMPLE,
+                "source_id":"OriginalSpeech","source_revision":1,
+                "payload":{"usd_prim_path":"/World/Actor001","gain":1.0},
+            })
+        TemporalLedger(self.index).publish(
+            self.pid,"LongOriginalDialogue",events,duration_tick=2*T)
+        OpenUSDTakeCapture(
+            self.index,verify_creator_action=lambda e,s:
+            e=="yes" and s["operation"]=="nvp.freeze.usd_temporal_take.v1"
+        ).freeze(self.pid,"LongOriginalTake",
+                 scene_id="SourceHumanScene",scene_revision=1,
+                 timeline_id="LongOriginalDialogue",timeline_revision=1,
+                 sample_ticks=[0,T//2,T],creator_event="yes")
+        approval=ActorDialogueDirector(
+            self.index,verify_director_action=lambda e,s:
+            e=="yes" and s["operation"]=="nvp.p1bc.bind_original_dialogue.v1")
+        approval.bind(self.pid,"LateOriginalVoice",
+                      actor_id="ActorLead",take_id="LongOriginalTake",
+                      event_id="Line0519",creator_event="yes")
+        tick=519*160*TICKS_PER_SAMPLE+2*TICKS_PER_SAMPLE
+        state=approval.at(self.pid,"LateOriginalVoice",1,tick)
+        self.assertTrue(state["dialogue_active"])
+        self.assertEqual(state["source_event_id"],"Line0519")
+        self.assertTrue(state["native_skin_deformation_evaluated"])
+        self.assertFalse(state["voice_synthesized"])
+
     def test_audio_refusal_duplicates_and_foreign_actor_fail_closed(self):
         before=self.index.read_revision(
             self.pid,"SourceHumanTake",1)["document_sha256"]

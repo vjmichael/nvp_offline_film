@@ -144,16 +144,14 @@ class ActorDialogueDirector:
         if len(matched) != 1:
             raise RuntimeError("Original dialogue ActorID has no unique rigged scene binding")
         binding = matched[0]
-        event = TemporalLedger(self.index).events_in(
-            project_id, doc["timeline_id"], doc["timeline_revision"],
-            start_tick=0, end_tick=int(doc["duration_tick"]),
-            limit=500)
-        if event.get("next_cursor") is not None:
-            raise RuntimeError("Cannot bind dialogue from partial original timeline")
-        matches = [e for e in event["events"] if e["event_id"] == event_id]
-        if len(matches) != 1 or matches[0]["event_kind"] != "dialogue":
-            raise RuntimeError("Original dialogue event does not exist exactly once")
-        original = matches[0]
+        # The original timeline may contain thousands of speaking cues.
+        # Look up the exact immutable event primary key and verify the entire
+        # sealed source manifest; never reject a long film because a
+        # 500-item presentation cursor was intentionally bounded.
+        original = TemporalLedger(self.index).event_by_id(
+            project_id, doc["timeline_id"], doc["timeline_revision"], event_id)
+        if original["event_kind"] != "dialogue":
+            raise RuntimeError("Indexed original source event is not dialogue")
         if (original["subject_id"] != actor_id or
             original["payload"].get("usd_prim_path") != binding["path"] or
             not 0 <= original["start_tick"] < original["end_tick"] <=
