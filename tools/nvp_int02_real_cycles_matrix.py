@@ -130,20 +130,18 @@ def run_real_imported_actor_cycles(out,supervisor,scriptbytes):
         event=="test_creator_yes").publish(
         pid,"SceneRealImportedGLB",cast=cast,
         creator_event="test_creator_yes")
-    # Exact actor source must be frozen into an original Digital Take before
-    # any Blender worker receives flattened source geometry.
-    index.register_revision(pid,"MotionEvidence","performance",{
-        "format":"nvp.p1bc.original_actor_fixture.v1",
-        "original_glb_sha256":original["sha256"],
-        "creator_has_not_approved_real_world_film":True,
-    })
+    # This acceptance uses an explicit original recorded PCM *fixture*
+    # linked to the exact ActorID's dialogue event, never generated speech.
+    from backend.nvp_data_av_source import RecordedSoundSources
+    from backend.nvp_p1bc_actor_registry import ActorDialogueDirector
+    recorded=RecordedSoundSources(index).publish(
+        pid,"OriginalVoiceFixture",[struct.pack("<h",900)*48000])
     TemporalLedger(index).publish(pid,"RealActorTimeline",[{
-        "event_id":"ActingOne","event_kind":"gesture",
+        "event_id":"OriginalLine","event_kind":"dialogue",
         "subject_id":"ActorLead","start_tick":0,
         "end_tick":TICKS_PER_SECOND,
-        "source_id":"MotionEvidence","source_revision":1,
-        "payload":{"usd_prim_path":"/World/Actor001",
-                   "source":"creator_authored_bone_and_glb_morph"},
+        "source_id":"OriginalVoiceFixture","source_revision":1,
+        "payload":{"usd_prim_path":"/World/Actor001","gain":1.0},
     }],duration_tick=2*TICKS_PER_SECOND)
     take=OpenUSDTakeCapture(
         index,verify_creator_action=lambda event,scope:
@@ -152,6 +150,20 @@ def run_real_imported_actor_cycles(out,supervisor,scriptbytes):
         scene_revision=1,timeline_id="RealActorTimeline",
         timeline_revision=1,sample_ticks=[0,TICKS_PER_SECOND],
         creator_event="test_creator_yes")
+    director=ActorDialogueDirector(
+        index,verify_director_action=lambda event,scope:
+        event=="test_creator_yes")
+    dialogue=director.bind(
+        pid,"OriginalActorDialogue",actor_id="ActorLead",
+        take_id="RealActorTake",event_id="OriginalLine",
+        creator_event="test_creator_yes")
+    spoken=director.at(
+        pid,"OriginalActorDialogue",1,TICKS_PER_SECOND//2)
+    if (spoken["dialogue_active"] is not True or
+        spoken["native_facial_deformation_evaluated"] is not True or
+        spoken["native_skin_deformation_evaluated"] is not True or
+        spoken["original_glb_face_targets"][0]["name"]!="jaw_open"):
+        raise RuntimeError("True GLB face+body performance not coupled to original recorded PCM")
     original_usd,_,_=static_composed_usd(
         index,pid,"RealActorTake",take["document_sha256"],0,
         camera_path="/World/Camera")
@@ -178,59 +190,75 @@ def run_real_imported_actor_cycles(out,supervisor,scriptbytes):
         abs((mid[0][0]-orig[0][0])-.2)>1e-4 or
         abs((mid[0][2]-orig[0][2])-.05)>1e-4):
         raise RuntimeError("Real source facial/bone deformation changed after Cycles baking")
-    job_id="int02_real_original_glb_actor_001"
-    jobdir=supervisor.root/job_id
-    if jobdir.exists():
-        raise RuntimeError("Original skinned actor Cycles evidence cannot be replayed")
-    jobdir.mkdir()
-    scene_sha=sha256(middle_usd).hexdigest()
-    for name,value in (("source.usda",middle_usd),
-                       ("render.py",scriptbytes)):
-        with (jobdir/name).open("xb") as stream:
-            stream.write(value)
-            stream.flush()
-            os.fsync(stream.fileno())
-    plan={"format":"nvp.int02.cycles.frame_plan.v1",
-          "usd_file":"source.usda","usd_sha256":scene_sha,
-          "camera_path":"/World/Camera",
-          "source_tick":TICKS_PER_SECOND//2,
-          "width":1920,"height":1080,"samples":64,"renderer":"CYCLES",
-          **optics,
-          "material_bindings":original_materials,
-          "actor_paths":["/World/Actor001"],"light_paths":["/World/Key"]}
-    planbytes=json.dumps(plan,sort_keys=True,separators=(",",":")).encode("ascii")
-    (jobdir/"plan.json").write_bytes(planbytes)
-    op=BlenderOperation(
-        job_id=job_id,script="render.py",
-        script_sha256=sha256(scriptbytes).hexdigest(),
-        inputs={"source.usda":scene_sha,
-                "plan.json":sha256(planbytes).hexdigest()},
-        outputs={"frame.png":"png","audit.json":"json_audit"},
-        arguments={"--plan":"plan.json","--output":"frame.png",
-                   "--audit":"audit.json"},
-        timeout_seconds=600,memory_limit_mb=8192,
-        require_linux_cgroup_v2=False)
-    result=supervisor.run(op)
-    if result["state"]!="SUCCEEDED":
-        raise RuntimeError("Original imported skinned GLB native Cycles failed: "+
-                           str(result.get("error")))
-    checked=supervisor.verify_completed(job_id)
-    image=(jobdir/"frame.png").read_bytes()
-    audit=json.loads((jobdir/"audit.json").read_text("utf8"))
-    if (_png_header(image)!=(1920,1080) or
-        audit.get("original_actor_geometry_verified") is not True or
-        audit.get("source_material_bindings_verified") is not True or
-        audit.get("source_material_count")!=1 or
-        checked["outputs"]["frame.png"]["sha256"]!=sha256(image).hexdigest() or
-        audit.get("source_usd_sha256")!=scene_sha):
-        raise RuntimeError("Actual GLB face+bone source was not preserved by Blender")
-    with Image.open(BytesIO(image)) as rendered:
-        rgb=rendered.convert("RGB")
-        visible=sum(1 for red,green,blue in rgb.getdata()
-                    if red>green+15 and red>blue+15 and red>50)
-    if visible<100:
-        raise RuntimeError("Native Cycles image lacks original GLB colored character "+
-                           f"({visible} red source pixels)")
+    # Genuine two-moment native Cycles acceptance: independently render both
+    # the original rest pose and the changed joint/face source pose. One real
+    # PNG never proved time-varying animation, even if the USD bytes differed.
+    frames=[]
+    for index,(tick,usd_source) in enumerate((
+            (0,original_usd),(TICKS_PER_SECOND//2,middle_usd))):
+        job_id="int02_real_original_glb_actor_"+str(index).zfill(3)
+        jobdir=supervisor.root/job_id
+        if jobdir.exists() or jobdir.is_symlink():
+            raise RuntimeError("Imported GLB Cycles picture sample cannot be replayed")
+        jobdir.mkdir()
+        stage_sha=sha256(usd_source).hexdigest()
+        for name,value in (("source.usda",usd_source),
+                           ("render.py",scriptbytes)):
+            with (jobdir/name).open("xb") as stream:
+                stream.write(value)
+                stream.flush()
+                os.fsync(stream.fileno())
+        plan={"format":"nvp.int02.cycles.frame_plan.v1",
+              "usd_file":"source.usda","usd_sha256":stage_sha,
+              "camera_path":"/World/Camera","source_tick":tick,
+              "width":1920,"height":1080,"samples":64,"renderer":"CYCLES",
+              **optics,"material_bindings":original_materials,
+              "actor_paths":["/World/Actor001"],"light_paths":["/World/Key"]}
+        planbytes=json.dumps(plan,sort_keys=True,separators=(",",":")).encode("ascii")
+        (jobdir/"plan.json").write_bytes(planbytes)
+        op=BlenderOperation(
+            job_id=job_id,script="render.py",
+            script_sha256=sha256(scriptbytes).hexdigest(),
+            inputs={"source.usda":stage_sha,
+                    "plan.json":sha256(planbytes).hexdigest()},
+            outputs={"frame.png":"png","audit.json":"json_audit"},
+            arguments={"--plan":"plan.json","--output":"frame.png",
+                       "--audit":"audit.json"},
+            timeout_seconds=600,memory_limit_mb=8192,
+            require_linux_cgroup_v2=False)
+        state=supervisor.run(op)
+        if state["state"]!="SUCCEEDED":
+            raise RuntimeError(
+                "Original imported GLB native Cycles frame "+str(tick)+
+                " failed: "+str(state.get("error")))
+        checked=supervisor.verify_completed(job_id)
+        picture=(jobdir/"frame.png").read_bytes()
+        audit=json.loads((jobdir/"audit.json").read_text("utf8"))
+        if (_png_header(picture)!=(1920,1080) or
+            audit.get("original_actor_geometry_verified") is not True or
+            audit.get("source_material_bindings_verified") is not True or
+            audit.get("source_material_count")!=1 or
+            checked["outputs"]["frame.png"]["sha256"]!=sha256(picture).hexdigest() or
+            audit.get("source_usd_sha256")!=stage_sha):
+            raise RuntimeError("Actual GLB face+bone source was not preserved in Cycles")
+        with Image.open(BytesIO(picture)) as rendered:
+            rgb=rendered.convert("RGB")
+            visible=sum(1 for red,green,blue in rgb.getdata()
+                        if red>green+15 and red>blue+15 and red>50)
+        if visible<100:
+            raise RuntimeError(
+                "Native Cycles image lacks original source GLB colored actor "+
+                f"at tick {tick} ({visible} source pixels)")
+        frames.append({"tick":tick,"usd_sha256":stage_sha,
+                       "png_sha256":sha256(picture).hexdigest(),
+                       "red_actor_pixels":visible})
+    if (len(frames)!=2 or
+        frames[0]["png_sha256"]==frames[1]["png_sha256"] or
+        frames[0]["usd_sha256"]==frames[1]["usd_sha256"]):
+        raise RuntimeError("Actual Blender/Cycles output did not change with source actor pose")
+    image=(supervisor.root/"int02_real_original_glb_actor_001"/"frame.png").read_bytes()
+    visible=frames[-1]["red_actor_pixels"]
+    scene_sha=frames[-1]["usd_sha256"]
     receipt={
         "format":"nvp.p1bc.genuine_imported_glb_cycles.v1",
         "status":"ACTUAL_IMPORT_SKIN_FACE_CYCLES_VERIFIED",
@@ -244,6 +272,10 @@ def run_real_imported_actor_cycles(out,supervisor,scriptbytes):
         "flattened_source_usd_sha256":scene_sha,
         "cycles_frame_sha256":sha256(image).hexdigest(),
         "actual_original_actor_color_pixels":visible,
+        "genuine_animated_cycles_frame_pair":frames,
+        "original_dialogue_document_sha256":dialogue["document_sha256"],
+        "original_recorded_pcm_document_sha256":recorded["document_sha256"],
+        "actor_voice_at_source_tick_verified":True,
         "windows_job_supervision":os.name=="nt",
         "linux_release_cgroup_custody_accepted":False,
         "original_source_modified":False,
