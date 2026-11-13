@@ -99,6 +99,37 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                         fixture.pid,"rigged_reel_plan","public_rigged_frame")
                     self.assertEqual(result["original_picture"],
                                      result2["original_picture"])
+                    # Genuine MULTI-FRAME pipeline test: each frame is a
+                    # distinct supervised Blender/Cycles/PCM transaction.
+                    # Bounded public test geometry; not a finished film.
+                    from backend.nvp_p1f_multishot_reel import P1FDurableShotReels
+                    batch=P1FDurableShotReels(
+                        fixture.index,worker,
+                        approve_batch=lambda ev,scope:
+                            ev=="public_fixture_only" and
+                            scope["operation"]==
+                                "nvp.p1f.admit_finite_source_batch.v1" and
+                            scope["frame_count"]==2)
+                    accepted=batch.create_batch(
+                        fixture.pid,"rigged_reel_plan","public_two_frames",
+                        reel_index=0,first_frame_offset=0,frame_count=2,
+                        creator_event="public_fixture_only")
+                    self.assertEqual(accepted["frames"],2)
+                    for _ in range(2):
+                        fresh=batch.run_next(
+                            "public_two_frames",creator_event="public_fixture_only",
+                            width=320,height=180,samples=8)
+                        self.assertEqual(fresh["status"],"FRAME_ACCEPTED")
+                    verified=batch.verify("public_two_frames")
+                    self.assertTrue(verified["all_frames_verified"])
+                    self.assertEqual(verified["frames_accepted"],2)
+                    reopened_batch=P1FDurableShotReels(
+                        fixture.index,reopened,approve_batch=lambda *_:False)
+                    self.assertTrue(reopened_batch.verify(
+                        "public_two_frames")["all_frames_verified"])
+                    with self.assertRaises(RuntimeError):
+                        reopened_batch.run_next(
+                            "public_two_frames",creator_event="replayed")
                 else:
                     state=supervisor.inspect("public_rigged_frame")
                     jobdir=supervisor.root/"public_rigged_frame"
