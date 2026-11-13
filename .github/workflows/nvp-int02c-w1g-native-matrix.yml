@@ -47,6 +47,8 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_w1g_launch_surface_audit.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_legacy_blender_launch.py' -v
           python -m unittest discover -s tests -p 'test_nvp_filming_windows_release.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1a_original_capture_worker_bridge.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_plan02b_native_capture.py' -v
           python -m unittest discover -s tests -p 'test_nvp_filming_worker_custody.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_release_gate.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_production_authority.py' -v
@@ -89,6 +91,8 @@ jobs:
             'test_nvp_w1g_release_gate.py','test_nvp_w1g_owned_subprocess.py',
             'test_nvp_w1g_launch_surface_audit.py',
             'test_nvp_w1g_legacy_blender_launch.py','test_nvp_filming_windows_release.py',
+            'test_nvp_p1a_original_capture_worker_bridge.py',
+            'test_nvp_plan02b_native_capture.py',
             'test_nvp_filming_worker_custody.py','test_nvp_w1f_reel_audit.py',
             'test_nvp_w1g_supply_candidate.py','test_nvp_w1g_production_authority.py',
             'test_nvp_w1g_encrypted_review.py','test_nvp_w1g_signed_wheelhouse.py',
