@@ -88,12 +88,20 @@ class SupervisedNativeDevice:
         self._started = True
         if callback is not None:
             self._callback = callback
-        executable = Path(__file__).resolve().parent.parent / "tools" / "nvp_native_device_producer_worker.py"
-        if executable.is_symlink() or not executable.is_file():
-            raise RuntimeError("Reviewed original device worker not provisioned")
-        command = [
-            sys.executable, str(executable), "--directory", str(self.spool),
-            "--prefix", self.prefix, "--mode", self.mode,
+        # Frozen NVP.exe is not a source Python interpreter: use a reviewed
+        # internal worker role launched under the same original Job/cgroup.
+        if getattr(sys, "frozen", False):
+            executable = Path(sys.executable)
+            if executable.is_symlink() or not executable.is_file():
+                raise RuntimeError("Installed original producer executable absent")
+            command = [str(executable), "--device-producer-worker"]
+        else:
+            executable = Path(__file__).resolve().parent.parent / "tools" / "nvp_native_device_producer_worker.py"
+            if executable.is_symlink() or not executable.is_file():
+                raise RuntimeError("Reviewed original device worker not provisioned")
+            command = [sys.executable, str(executable)]
+        command += [
+            "--directory", str(self.spool), "--prefix", self.prefix, "--mode", self.mode,
             "--max-samples", str(self.max_samples), "--scope", self.scope_digest,
         ]
         if self.mode == "port":

@@ -660,11 +660,27 @@ def main(argv=None):
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     parser.add_argument("--smoke-release-review",action="store_true",
                         help="Verify packaged Ed25519 signature admission and tamper refusal")
+    parser.add_argument("--smoke-producer-bundle",action="store_true",
+                        help="Verify packaged original ADC worker/adapters without opening devices")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_window_basic,args.smoke_data_av,
-            args.smoke_release_review))>1:
+            args.smoke_release_review,args.smoke_producer_bundle))>1:
         parser.error("Choose only one installed-app smoke mode")
+    if args.smoke_producer_bundle:
+        # An installed dependency smoke is not physical microphone approval.
+        from tools.nvp_native_device_producer_worker import Recorder
+        from tools.nvp_p1b_physical_device_acceptance import inspect_original_pcm
+        from backend.nvp_device_producer_custody import SupervisedNativeDevice
+        import miniaudio
+        import sounddevice
+        if not (callable(Recorder) and callable(SupervisedNativeDevice)
+                and callable(inspect_original_pcm)
+                and hasattr(miniaudio,"CaptureDevice")
+                and hasattr(sounddevice,"RawInputStream")):
+            raise RuntimeError("Installed original ADC native adapters unavailable")
+        _smoke_checkpoint("producer_bundle_verified_no_device_opened")
+        return 0
     if args.smoke_release_review:
         return run_release_review_smoke()
     if args.smoke:
@@ -753,6 +769,11 @@ def installed_smoke_entry():
             faulthandler.enable(file=stacks,all_threads=True)
             faulthandler.dump_traceback_later(30,repeat=True,file=stacks)
         _smoke_checkpoint("entry")
+        # Only the trusted native supervisor creates this child command.
+        # Dispatch before WebView2, HTTP, and any creator project startup.
+        if len(sys.argv)>=2 and sys.argv[1]=="--device-producer-worker":
+            from tools.nvp_native_device_producer_worker import main as producer_main
+            return producer_main(sys.argv[2:])
         return main()
     except Exception:
         import traceback
