@@ -80,7 +80,7 @@ export default function FilmSourceStagesPanel({
     setChosenPlan(old=>result.longform_plans.some(x=>x.plan_id===old)
       ?old:(result.longform_plans[0]?.plan_id||''));
     setChosenActorMix(old=>result.actor_spatial_mixes.some(x=>x.mix_id===old)
-      ?old:(result.actor_spatial_mixes[0]?.mix_id||''));
+      ?old:'');
     return result;
   }
 
@@ -105,7 +105,9 @@ export default function FilmSourceStagesPanel({
       )?.continuity_id||'');
       setActorDialogue(result.original_dialogue[0]?.dialogue_id||'');
       setChosenPlan(result.longform_plans[0]?.plan_id||'');
-      setChosenActorMix(result.actor_spatial_mixes[0]?.mix_id||'');
+      // Default to the full original source mix. Actor-only filtering is
+      // always a deliberate filmmaker choice, never silently enabled.
+      setChosenActorMix('');
     }).catch(e=>{if(active)setError(e.message)});
     return ()=>{active=false};
   },[native,projectId,sourceRevision,ready]);
@@ -239,6 +241,8 @@ export default function FilmSourceStagesPanel({
     run(async()=>{
       if(!selectedPlan||!selectedReview)
         throw Error('A director-reviewed original cut is required for rendering');
+      if(selectedReview.edit_sha256!==selectedPlan.source_edit_sha256)
+        throw Error('This source reel belongs to a different approved director cut');
       if(chosenMix&&(
           chosenMix.take_sha256!==chunk.source_take_sha256||
           chosenMix.listener_path!==listener))

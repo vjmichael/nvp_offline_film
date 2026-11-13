@@ -138,6 +138,8 @@ describe('P1-D/E/F/P2 original film stages creator GUI',()=>{
     await screen.findByText(/Reviewed original SourceClip1/);
     fireEvent.click(screen.getByText('View first source reel chunks'));
     const renderButton=await screen.findByText('Authorize and film this chunk');
+    fireEvent.change(screen.getByLabelText('Original film ActorID sound bus'),
+      {target:{value:'LeadVoiceBus'}});
     fireEvent.click(renderButton);
     await waitFor(()=>expect(native.data_av_film_stage_chunk_preflight)
       .toHaveBeenCalledOnce());
@@ -153,8 +155,8 @@ describe('P1-D/E/F/P2 original film stages creator GUI',()=>{
     expect(req.output_directory).toBeUndefined();
     await waitFor(()=>expect(native.data_av_film_stage_chunk_poll)
       .toHaveBeenCalled());
-    expect((await screen.findByRole('status')).textContent)
-      .toMatch(/film|source|picture/i);
+    const visible=await screen.findAllByRole('status');
+    expect(visible.map(x=>x.textContent).join(' ')).toMatch(/film|source|picture/i);
   });
 
   it('rejects mismatched project inventory without any native write',async()=>{

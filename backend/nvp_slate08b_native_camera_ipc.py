@@ -762,9 +762,14 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         derived=home.parent/"Exports"
         if derived.is_symlink() or not derived.is_dir():
             # No creator-approved picture chunk has been published yet.
+            page=self._film_schedule().page(
+                request["project_id"],request["plan_id"],request["revision"],
+                first_index=request["first_index"],limit=request["limit"])
             return {"format":"nvp.p2.original_film_longform_source_schedule.v1",
                     "status":"NO_VERIFIED_DERIVATIVE_OUTPUT_PARENT",
-                    "verified_chunks":[],"missing_chunks":[],
+                    "plan_sha256":page["plan_sha256"],
+                    "verified_chunks":[],
+                    "missing_chunks":[x["chunk_id"] for x in page["chunks"]],
                     "full_film_master_approved":False}
         return self._film_schedule().reconcile_page(
             request["project_id"],request["plan_id"],request["revision"],
