@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from backend.nvp_w1g_first_party_result_verifier import (
-    ROLE_OPERATIONS,verify_bounded_first_party_role,
+    ROLE_OPERATIONS,verify_bounded_first_party_role,expected_native_math_picture,
 )
 
 
@@ -89,10 +89,18 @@ class FirstPartyIndependentNativeResultVerifier(unittest.TestCase):
     def test_picture_and_receipt_field_authority(self):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)
-            image=b"P6\n16 16\n255\n"+bytes((20,20,30))+bytes(range(255))*3
+            image=expected_native_math_picture(16,16)
             scope,result=self.build(root,"scene_render",
                 {"scene.txt":b"16 16\n"},image)
             self.assertTrue(verify_bounded_first_party_role(scope,result,root))
+            forged=bytearray(image)
+            forged[-1] ^= 1
+            (root/"render.ppm").write_bytes(forged)
+            result["output_sha256"]=sha256(forged).hexdigest()
+            with self.assertRaisesRegex(PermissionError,"independently computed scene"):
+                verify_bounded_first_party_role(scope,result,root)
+            (root/"render.ppm").write_bytes(image)
+            result["output_sha256"]=sha256(image).hexdigest()
             result["full_film_pipeline_accepted"]=True
             with self.assertRaisesRegex(PermissionError,"sealed authorized role"):
                 verify_bounded_first_party_role(scope,result,root)
