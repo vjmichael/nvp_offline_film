@@ -18,7 +18,9 @@ import struct
 import subprocess
 import tempfile
 
-from tools.nvp_w1g_worker_package import _verify_binary, _check_roster
+from tools.nvp_w1g_worker_package import (
+    _verify_binary,_check_roster,provision_native_workers,verify_native_workers,
+)
 
 EXPECTED={
     "original_capture":("capture.manifest","pcm16_verified_intake"),
@@ -167,12 +169,25 @@ def functional_acceptance(binary_dir:Path,*,platform:str) -> dict:
                  expect_success=False)
         assert not (bad/"result.json").exists()
         assert (bad/"source.pcm").read_bytes()==PCM
+        # Verify the EXACT tested compiled bytes survive first-party
+        # private worker packaging, without ever calling this a reviewed
+        # production install or requiring any user originals.
+        private_bundle=root/"test_only_bundle"
+        private_bundle.mkdir()
+        provision_native_workers(binary_dir,private_bundle,roster)
+        staged=verify_native_workers(private_bundle,expected_platform=platform)
+        assert set(staged["roles"])==set(EXPECTED)
+        for role,row in roles.items():
+            staged_path=private_bundle/"_internal"/"nvp_workers"/row["filename"]
+            assert _sha(staged_path.read_bytes())==row["sha256"]
     evidence={
         "format":"nvp.w1g.first_party_compiled_functional_slices.v1",
         "platform":platform,
         "five_native_executables_real_and_functionally_tested":True,
         "results":results,
         "role_count":5,
+        "test_only_private_worker_bundle_roundtrip_verified":True,
+        "exact_executable_sha256_preserved_during_staging":True,
         "full_native_filmmaking_domain_coverage_accepted":False,
         "production_reviewed_signed_redistribution":False,
         "creator_original_films_modified":False,
