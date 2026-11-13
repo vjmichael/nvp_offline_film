@@ -82,7 +82,7 @@ class OriginalMicrophoneCompiledAuditContracts(TestCase):
             text=(f"format=nvp.w1g.pcm_intake.v1\n"
                   f"samples={len(window)//2}\npeak={peak}\n"
                   f"source_sha256={checksum}\n")
-            (workspace/"capture.manifest").write_text(text,encoding="ascii")
+            (workspace/"capture.manifest").write_bytes(text.encode("ascii"))
             receipt=b"{\"fixture\":\"TEST-ONLY-NOT-OS-AUTHORITY\"}\n"
             (workspace/"result.json").write_bytes(receipt)
             return {"state":"SUCCEEDED_VERIFIED","job_id":job,
