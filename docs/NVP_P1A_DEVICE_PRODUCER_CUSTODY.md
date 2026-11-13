@@ -1,47 +1,60 @@
-# P1-A — OS-supervised original recording device producers
+# P1-A / P1-B — Native custody and physical ADC / installed candidate
 
-Source integration branch: `nvp/p1a-device-producer-custody-20261112`, based on
-DATA-AV-01 PR #74 head `3a30050a813e15f6490bc636315a41a63c9ab46f`.
+## Source and scope
 
-## Production boundary
+Draft PR #156, stacked on DATA-AV-01 PR #74. P1-A workers are OS-
+supervised independent original PCM producers. The desktop alone owns original
+scene/camera identity, creator start/freeze consent, PCM journal and FilmIndex
+publication. There is no FFmpeg intermediate or automatic Take authorization.
 
-The trusted desktop validates original scene/camera Film Time identity, displays
-the original OS creator consent and creates the private recording spool. Only
-then may `SupervisedNativeDevice` launch the pinned
-`tools/nvp_native_device_producer_worker.py`. Actual miniaudio mono microphone
-and PortAudio independent dual-ADC device opening/callbacks live in that child,
-not in the desktop host. The existing source-only FilmIndex publication remains
-host-owned; no FFmpeg, flattened soundtrack or browser-controlled worker paths.
+## P1-A native kernel gate: PASSED at exact SHA 5ae153833710a3a06ad0472c71c32f0476e63335
 
-Windows uses suspended-child assignment to the existing kill-on-close Job Object.
-Linux strictly requires a delegated cgroup v2 leaf with an independent host-death
-guardian; old process-group-only mode is forbidden. The host rejects startup
-without genuine child-ready evidence. During finish it cooperatively stops,
-waits for the original producer to exit and verifies tree shutdown before
-reading original PCM and per-buffer ADC records. The PortAudio worker brackets
-its stream clock in the same child and pins its device descriptor digest;
-host-side calibration against a stale cross-process stream reading is forbidden.
+Original run: https://github.com/vjmichael/nvp_offline_film/actions/runs/43372223674
 
-Worker `.complete`/PCM hashes/packet hashes are NOT OS custody proof. A
-clean child exit alone never authorizes the immutable Take. Any producer
-exception, missing or mismatched source scope, malformed ADC record, corrupted
-PCM, interrupted producer or uncertain kernel cleanup refuses publication.
-Cancellation performs OS-wide process tree shutdown without inventing a clean
-PCM receipt. Interrupted original source stays unapproved in the capture
-recovery journal. Explicit human freeze approval remains required.
+- Windows: 2 real Job Object tests passed, including detached descendant
+  cancellation, zero Job processes, hard host exit and new-host read-only
+  unapproved original journal.
+- Linux: 4 real delegated-cgroup tests passed. Systemd scope had a dedicated
+  host subgroup. Original guardian killed detached descendants after host loss;
+  ancestor cgroup.procs migration was attempted and denied under the child
+  Landlock policy; guardian loss failed closed; host restart did not freeze.
+- Repairs from independent logs: Job query-handle rights, occupied delegated
+  root controller EBUSY, Landlock /dev/null O_RDWR used by child subprocess.
 
-## Acceptance status (do not promote on unit tests)
+These are process custody tests, not real physical microphone tests.
 
-- Source path: implemented for mono and independent dual endpoints.
-- Isolated mock-producer and scope/PCM/cancel tests: authored; native test run
-  evidence must be collected against this exact committed head.
-- Windows Job Object: genuine native process-tree evidence **OPEN**.
-- Linux delegated-cgroup guardian/ancestor migration: genuine native evidence
-  **OPEN**.
-- Physical miniaudio, dual PortAudio ADC clocks, device unplug/overflow,
-  timed acquisition and encrypted original source: **OPEN**.
-- Restart, EFS recovery and genuine installed production upgrade/rollback:
-  **OPEN**, separate creator-authorized gates.
+## P1-B implemented / acceptance pending
 
-This change must not be treated as SEC-06, physical hardware, W1-G installed,
-or release/upgrade acceptance.
+- Fixed packaged Windows worker dispatch: frozen NVP.exe now exposes an
+  internal --device-producer-worker role before WebView2 startup, rather than
+  incorrectly invoking an absent Python script with the GUI PE as interpreter.
+- The reviewed bundle includes native miniaudio and PortAudio sounddevice data.
+  A source-only --smoke-producer-bundle verifies imports without device capture.
+- Added explicit creator-consented physical ADC acceptance harness for default
+  mono or two *distinct* real PortAudio device endpoints. It checks original
+  signal sample count, PCM SHA-256, RMS/clipping, nonmonotonic ADC buffers,
+  independent native device clocks, model residuals/drift and OS custody.
+  Output explicitly states loopback NOT independently certified and no Take
+  approved. Windows physical test data must inherit an EFS-protected root;
+  EFS key recovery remains a separate gate.
+- Repaired E2E-01D subprocess test inheritance of PYTHONPATH to reach the
+  actual backend when the test itself is executed by filename.
+- Added Windows installed *candidate* job with PyInstaller, genuine NSIS
+  installation, installed source-only USD/PCM smoke, persistent restart,
+  WebView2 startup and uninstall data retention. It does NOT authorize a
+  one-use production upgrade, rollback or signed release.
+
+## Outstanding acceptance, not to be inferred from static checks
+
+1. Actual physical Windows microphone signal/acoustic test, independently
+   clocked *two-device hardware loopback*, unplug/overflow cases and verified
+   EFS key recovery. Hosted runners do not provide that equipment.
+2. Exact-head full source and cross-platform E2E regressions. Do not credit
+   canceled, queued, older-head or fixture-only runs.
+3. Genuine installed candidate result on final SHA; inspect original
+   PyInstaller/NSIS/WebView2 log and repair demonstrated failures.
+4. Independent reviewed native worker/dependency wheelhouse and signatures;
+   physical creator-authorized installed production upgrade/rollback.
+5. Sustained filmmaking, 3D real-time A/V, HRTF, and FFmpeg-free 2D export.
+
+Any failed or unknown gate stays OPEN. Preserve immutable original sources.

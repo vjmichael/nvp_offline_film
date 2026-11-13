@@ -82,6 +82,26 @@ def verify_adc_packets(path, device_id, expected_count, *, calibrations):
     return model
 
 
+def _verify_protected_original_test_root(root):
+    """Windows physical PCM tests require verified native EFS inheritance.
+
+    Hosted CI without creator keys cannot substitute for this observation.
+    This checks an already-provisioned protected directory, not key recovery.
+    """
+    if os.name != "nt":
+        return False
+    if root is None:
+        raise PermissionError("Physical Windows sound acceptance requires an EFS-protected --temporary-root")
+    import ctypes
+    kernel=ctypes.windll.kernel32
+    kernel.GetFileAttributesW.argtypes=[ctypes.c_wchar_p]
+    kernel.GetFileAttributesW.restype=ctypes.c_uint32
+    flags=kernel.GetFileAttributesW(str(root))
+    if flags == 0xFFFFFFFF or not flags & 0x00004000:
+        raise PermissionError("Physical original PCM test refuses non-EFS source storage")
+    return True
+
+
 def explicit_original_recording(duration, ids, *, output=None):
     if not 3 <= duration <= 30:
         raise ValueError("Physical acceptance duration must be 3..30 seconds")
@@ -103,11 +123,14 @@ def explicit_original_recording(duration, ids, *, output=None):
     if base is not None:
         if not base.is_dir() or base.is_symlink():
             raise PermissionError("Physical evidence root must already exist and not be a symlink")
-    # Temporary bytes intentionally vanish after this test; no unapproved
-    # physical audio is silently imported or left in an unencrypted project.
+    protected=_verify_protected_original_test_root(base)
+    # Temporary bytes intentionally vanish after this acceptance test.
+    # Windows tests require inherited EFS before any OS device opens.
     with tempfile.TemporaryDirectory(prefix="nvp-p1b-physical-",dir=base) as root:
         source=Path(root)/"nvp-live-original-physical12345"
         source.mkdir(mode=0o700)
+        if os.name=="nt" and not _verify_protected_original_test_root(source):
+            raise PermissionError("New original PCM spool did not inherit Windows EFS")
         scope={"purpose":"P1-B creator-authorized physical ADC test only",
                "started_monotonic_ns":time.monotonic_ns(),
                "device_ids":ids, "descriptors":descriptors,
@@ -176,6 +199,8 @@ def explicit_original_recording(duration, ids, *, output=None):
                     "physical_loopback_independently_verified":False,
                     "creator_approved_frozen_take":False,
                     "original_source_modified":False,
+                    "efs_source_protection_observed":protected,
+                    "efs_key_recovery_verified":False,
                     "devices":outcomes,
                     "derived_clock_maps":aligned["sample_maps"] if aligned else None}
             print(json.dumps(report,sort_keys=True,indent=2))
