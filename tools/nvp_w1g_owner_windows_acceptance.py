@@ -33,6 +33,20 @@ def _domains(values):
     return mapping
 
 
+def _read_owner_pinned_key(path: Path, *, forbidden_roots) -> bytes:
+    """Never take the trust anchor from the candidate, films or job workspace."""
+    path=Path(path)
+    if (not path.is_absolute() or path.is_symlink() or
+        not path.is_file() or path.stat().st_size!=32):
+        raise PermissionError("Owner-pinned external reviewer Ed25519 key must be an absolute 32-byte file")
+    key_path=path.resolve(strict=True)
+    for root in forbidden_roots:
+        trusted_root=Path(root).resolve(strict=True)
+        if key_path==trusted_root or key_path.is_relative_to(trusted_root):
+            raise PermissionError("Reviewer trust anchor cannot reside in mutable NVP release or film roots")
+    return path.read_bytes()
+
+
 def main(argv=None):
     ap=argparse.ArgumentParser(
         description="Owner-only W1-G Windows upgrade, rollback and read-only inspection")
@@ -51,15 +65,17 @@ def main(argv=None):
     if (not args.programs.is_absolute() or not args.original_films.is_absolute()
         or not args.journal.is_absolute()):
         raise RuntimeError("Trusted original absolute program, film and journal paths required")
-    key=b""
+    workspaces=_domains(args.workspace)
+    key=None
     if args.pinned_reviewer_public_key is not None:
-        path=args.pinned_reviewer_public_key
-        if path.is_symlink() or not path.is_file() or path.stat().st_size!=32:
-            raise PermissionError("Owner-pinned external reviewer Ed25519 public key must be 32 bytes")
-        key=path.read_bytes()
+        key=_read_owner_pinned_key(args.pinned_reviewer_public_key,
+            forbidden_roots=(args.programs,args.original_films,args.journal,
+                             *workspaces.values()))
+    if args.action in ("prepare","activate") and key is None:
+        raise PermissionError("Production upgrade requires an external pinned reviewer key")
     real_approve=WindowsCreatorUpgradeApproval()
     kernel=WindowsReleaseWorkerStopEvidence(
-        args.programs/"NVP",worker_workspaces=_domains(args.workspace))
+        args.programs/"NVP",worker_workspaces=workspaces)
     owner=OwnedNSISRecovery(
         args.programs,args.original_films,args.journal,
         native_approve=real_approve,os_workers_stopped=kernel)
