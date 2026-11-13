@@ -64,7 +64,7 @@ def expected_native_math_picture(width:int,height:int)->bytes:
             pixels.extend((20+math.floor(205*diffuse+0.5),
                            20+math.floor(80*diffuse+0.5),
                            30+math.floor(60*diffuse+0.5)))
-    return f"P6\\n{width} {height}\\n255\\n".encode("ascii")+bytes(pixels)
+    return f"P6\n{width} {height}\n255\n".encode("ascii")+bytes(pixels)
 
 
 def verify_bounded_first_party_role(scope:dict,result:dict,directory:Path)->bool:
