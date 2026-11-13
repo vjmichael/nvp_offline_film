@@ -567,7 +567,7 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 "original_glb_sha256":registered["sha256"],
                 "license":registered["license"],
                 "attribution":registered["attribution"],
-                "source":registered["source"],
+                # The originating file path remains native-host private.
                 "vertex_count":decoded["original_vertex_count"],
                 "joint_count":len(decoded["joints"]),
                 "joints":decoded["joints"],

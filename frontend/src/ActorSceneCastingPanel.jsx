@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 
 // P1-B: creator-selected actual registered GLB to authoritative FilmIndex/USD.
 // No browser URI, local executable path, GLB bytes, or approval token crosses IPC.
@@ -18,6 +18,10 @@ export default function ActorSceneCastingPanel({
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [receipt,setReceipt]=useState(null);
+  // Reject a late creator-approved result displayed after project switch.
+  // The native host may still finish its ORIGINAL project-scoped operation.
+  const sourceScope=useRef({projectId,revision:sourceRevision});
+  sourceScope.current={projectId,revision:sourceRevision};
 
   useEffect(()=>{
     let alive=true;
@@ -82,9 +86,12 @@ export default function ActorSceneCastingPanel({
   async function publish(){
     if(!ready||busy)return;
     setError('');setReceipt(null);setBusy(true);
+    const requestScope={projectId,revision:sourceRevision};
     try{
       const request=compile();
       const response=await native.data_av_actor_scene_cast(request);
+      if (sourceScope.current.projectId!==requestScope.projectId ||
+          sourceScope.current.revision!==requestScope.revision) return;
       if(response?.format!=='nvp.p1bc.native_actor_scene_cast_receipt.v1'||
          response.status!=='AUTHORITATIVE_ACTOR_SCENE_PUBLISHED'||
          response.scene_id!==request.scene_id||
@@ -96,8 +103,11 @@ export default function ActorSceneCastingPanel({
         throw Error('Native original scene casting receipt is not authoritative');
       setReceipt(response);
       onScenePublished();
-    }catch(e){setError(e.message)}
-    finally{setBusy(false)}
+    }catch(e){
+      if (sourceScope.current.projectId===requestScope.projectId &&
+          sourceScope.current.revision===requestScope.revision)
+        setError(e.message);
+    }finally{setBusy(false)}
   }
 
   return <section className="card" aria-label="Native original GLB scene casting">
