@@ -173,8 +173,8 @@ class NativeActorSceneCasting:
         imported=[]
         parameters=[{
             "path":"/World/Key","property":"light.intensity",
-            "samples":[{"tick":0,"value":300.0},
-                       {"tick":TICKS_PER_SECOND,"value":300.0}]
+            "samples":[{"tick":0,"value":3500.0},
+                       {"tick":TICKS_PER_SECOND,"value":3500.0}]
         }]
         for source in checked:
             # Source read, hash, and extracted geometry are reverified
