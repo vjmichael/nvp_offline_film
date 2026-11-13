@@ -42,6 +42,9 @@ def imported_character(*,omit_shape=None,external=False):
     identities=Vt.Matrix4dArray([Gf.Matrix4d(1.),Gf.Matrix4d(1.)])
     skel.GetBindTransformsAttr().Set(identities)
     skel.GetRestTransformsAttr().Set(identities)
+    skel_binding=UsdSkel.BindingAPI.Apply(skel.GetPrim())
+    skel_binding.CreateAnimationSourceRel().SetTargets([
+        Sdf.Path("/Asset/Animation")])
     binding=UsdSkel.BindingAPI.Apply(mesh.GetPrim())
     binding.CreateSkeletonRel().SetTargets([Sdf.Path("/Asset/Skeleton")])
     binding.CreateJointIndicesPrimvar(False,1).Set(Vt.IntArray([0,0,1,1]))
