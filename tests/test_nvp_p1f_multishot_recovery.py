@@ -1,0 +1,125 @@
+"""P1-F bounded batch journal: one-use source approval, cancellation and restart.
+
+These tests exercise the SQLite FULL-sync host journal with a stubbed already-
+verified renderer receipt. The separate real Blender/Cycles fixture verifies
+the actual worker, PNG/WAV and native Job execution.
+"""
+import hashlib
+import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+from unittest.mock import patch
+
+from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+from backend.nvp_p1f_cycles_picture_sound import P1FOriginalPictureSound
+from backend.nvp_p1f_multishot_reel import P1FDurableShotReels
+from test_nvp_p1f_imported_actor_native import RealImportedActorTests
+
+
+class DurableOriginalShotTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture=RealImportedActorTests(
+            "test_composed_facial_actor_in_real_source_take_shot")
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.fixture.test_composed_facial_actor_in_real_source_take_shot()
+        tmp=TemporaryDirectory(prefix="nvp-p1f-multishot-journal-")
+        self.addCleanup(tmp.cleanup)
+        exe=Path(sys.executable).resolve()
+        self.supervisor=BlenderWorkerSupervisor(
+            Path(tmp.name)/"worker",blender_executable=exe,
+            blender_sha256=sha_file(exe),
+            blender_version="Blender No Native Worker Test")
+        self.renderer=P1FOriginalPictureSound(
+            self.fixture.index,self.supervisor,
+            approve_render=lambda *_:False,
+            verify_isolated_worker=lambda *_:False)
+        self.journal=P1FDurableShotReels(
+            self.fixture.index,self.renderer,
+            approve_batch=lambda event,scope:
+            event=="approved_batch" and
+            scope["operation"]=="nvp.p1f.admit_finite_source_batch.v1" and
+            scope["frame_count"]==2)
+
+    def create(self,batch="first_batch"):
+        return self.journal.create_batch(
+            self.fixture.pid,"rigged_reel_plan",batch,
+            reel_index=0,first_frame_offset=0,frame_count=2,
+            creator_event="approved_batch")
+
+    def test_two_frame_durable_acceptance_and_fresh_restart(self):
+        self.create()
+        saved={}
+        def render(pid,plan,reel,offset,job_id,**kwargs):
+            r={"format":"nvp.p1f.independent_picture_audio_receipt.v1",
+               "passed":True,"job_id":job_id,
+               "plan_document_sha256":
+                   self.journal.reels.read(pid,plan)["document_sha256"],
+               "entire_film_rendered":False,
+               "original_picture":{"source_frame":offset,"sha256":"a"*64},
+               "original_derived_audio":{"sample_count":2000,
+                                         "pcm_sha256":"b"*64}}
+            saved[job_id]=r
+            return r
+        with (patch.object(self.renderer,"render_frame",side_effect=render),
+              patch.object(self.renderer,"verify_delivered",
+                           side_effect=lambda pid,plan,job: saved[job])):
+            one=self.journal.run_next("first_batch",creator_event="frame_a")
+            two=self.journal.run_next("first_batch",creator_event="frame_b")
+            self.assertEqual(one["status"],"FRAME_ACCEPTED")
+            self.assertEqual(two["status"],"FRAME_ACCEPTED")
+            self.assertEqual(two["remaining"],0)
+            self.assertTrue(self.journal.verify("first_batch")["all_frames_verified"])
+            fresh=P1FDurableShotReels(
+                self.fixture.index,self.renderer,approve_batch=lambda *_:False)
+            self.assertEqual(fresh.verify("first_batch")["frames_accepted"],2)
+            with self.assertRaises(RuntimeError):
+                fresh.run_next("first_batch",creator_event="replay")
+            with self.assertRaises(RuntimeError):
+                fresh.create_batch(
+                    self.fixture.pid,"rigged_reel_plan","first_batch",
+                    reel_index=0,first_frame_offset=0,frame_count=2,
+                    creator_event="approved_batch")
+
+    def test_cancel_persistently_rejects_pending_execution(self):
+        self.create()
+        stopped=self.journal.cancel("first_batch")
+        self.assertEqual(stopped["status"],"CANCELLED_OR_UNTRUSTED")
+        with self.assertRaises(RuntimeError):
+            self.journal.run_next("first_batch",creator_event="not_admitted")
+        self.assertFalse(self.journal.verify("first_batch")["all_frames_verified"])
+
+    def test_native_journal_crash_state_never_becomes_complete(self):
+        self.create()
+        with self.journal._connect() as db:
+            db.execute("""UPDATE source_frames SET state='RUNNING'
+                 WHERE batch_id='first_batch' AND frame_index=0""")
+        report=self.journal.reconcile_restart("first_batch")
+        self.assertEqual(report["interrupted"],1)
+        self.assertFalse(report["safe_to_auto_replay"])
+        self.assertFalse(report["kernel_cleanup_verified"])
+        with self.assertRaises(RuntimeError):
+            self.journal.run_next("first_batch",creator_event="replay")
+        after=self.journal.verify("first_batch")
+        self.assertEqual(after["frames_accepted"],0)
+        self.assertEqual(after["status"],"BLOCKED")
+
+    def test_declined_batch_finite_range_and_original_guard(self):
+        with self.assertRaises(PermissionError):
+            self.journal.create_batch(
+                self.fixture.pid,"rigged_reel_plan","declined",
+                reel_index=0,first_frame_offset=0,frame_count=2,
+                creator_event="refused")
+        with self.assertRaises(ValueError):
+            self.journal.create_batch(
+                self.fixture.pid,"rigged_reel_plan","out_of_bounds",
+                reel_index=0,first_frame_offset=23,frame_count=2,
+                creator_event="approved_batch")
+        with self.journal._connect() as db:
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM source_batches").fetchone()[0],0)
+
+
+if __name__=="__main__":
+    unittest.main()
