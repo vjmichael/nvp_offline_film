@@ -39,6 +39,28 @@ class NativeReleaseAuthorityRefusal(unittest.TestCase):
                         "measured_at_unix":__import__("time").time()})
             self.assertFalse((journal/"nsis-activation.json").exists())
 
+    def test_production_preparation_refuses_missing_signed_offline_wheelhouse(self):
+        # No reviewer key or synthetic receipt can stand in for wheel bytes.
+        activation=object.__new__(NativeNSISActivation)
+        activation.test_only_simulation=False
+        activation.pinned_reviewer_public_key=b"w"*32
+        with self.assertRaisesRegex(PermissionError,
+                "actual signed offline wheelhouse supply"):
+            activation._require_offline_supply(None)
+        with self.assertRaisesRegex(PermissionError,
+                "actual signed offline wheelhouse supply"):
+            activation._require_offline_supply({
+                "wheel_lock":"C:/untrusted.json",
+                "wheelhouse":"C:/untrusted-wheels",
+            })
+        with self.assertRaisesRegex(PermissionError,
+                "trusted absolute paths"):
+            activation._require_offline_supply({
+                "wheel_lock":"relative.json",
+                "wheelhouse":True,
+                "signed_wheel_review":"review.json",
+            })
+
     def test_one_native_worker_role_never_satisfies_release_provisioning(self):
         from unittest.mock import patch
         from tools.nvp_w1g_nsis_activation import _require_complete_reviewed_native_roster
