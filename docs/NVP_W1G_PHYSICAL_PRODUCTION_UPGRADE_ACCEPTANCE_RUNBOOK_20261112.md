@@ -51,6 +51,18 @@ py -m tools.nvp_w1g_windows_efs_proof prepare --parent "D:\ProtectedScratch" --r
 py -m tools.nvp_w1g_windows_efs_proof reopen --receipt "D:\OwnerEvidence\w1g-efs-test.json"
 ```
 
+The `reopen` command refuses the same Windows boot and checks the original Windows token SID. For an actual **cross-principal recovery rehearsal** using only the disposable nonce, the owner may retain the original test through same-user reboot verification and then use an independently provisioned recovery Windows identity that can decrypt through the owner's legitimate, separately backed-up EFS certificate or OS-authorized recovery-agent policy:
+
+```powershell
+# In the original encrypting Windows account, AFTER a real Windows reboot:
+py -m tools.nvp_w1g_windows_efs_proof reopen --receipt "D:\\OwnerEvidence\\w1g-efs-test.json" --retain-for-recovery
+# Then sign into a genuinely different recovery Windows account with authorized EFS key access.
+# Verify the same disposable nonsecret file decrypts; this removes the test stage.
+py -m tools.nvp_w1g_windows_efs_proof recover --receipt "D:\\OwnerEvidence\\w1g-efs-test.json"
+```
+
+The cross-principal test observes a different actual Windows process-token SID and verifies successful plaintext recovery from an EFS-protected *nonsecret* file. It does **not** by itself establish the provenance of an external offline certificate backup or that a recovery agent/private key was actually imported. That independent owner review, protected key storage and real-world key-recovery procedure remain mandatory. Do not erase, rotate, export to a shared directory or invalidate any existing EFS keys as part of this rehearsal. Windows Home editions do not support EFS. Microsoft documents both [EFS limitations](https://support.microsoft.com/en-us/windows/security/encryption/how-to-encrypt-a-file-or-folder) and [EFS backup/recovery](https://learn.microsoft.com/en-us/windows/win32/fileio/backup-and-restore-of-encrypted-files).
+
 The `reopen` command now refuses the same Windows boot: a distinct, conservative native boot-time observation and encrypted-file reopen are both required. A changed wall clock can affect the estimate, so this is **not** independent physical-owner authentication or key recovery evidence. It does *not* prove that the owner has independently backed up and restored the EFS certificate/private key. The creator must verify that recovery separately through their OS-approved secure backup/recovery process. Never upload private EFS keys, decrypted films, or recovery secrets to GitHub, a model, or a CI artifact.
 
 Original Windows filming PCM now stays in bounded RAM by default. Long recordings must provide a dedicated `encrypted_pcm_scratch` directory admitted by `require_efs_stage` before PCM is written; an ordinary system temp spill is denied. Original FilmIndex key custody, derivatives and full-project encryption remain independent requirements.
