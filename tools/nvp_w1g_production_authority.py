@@ -166,6 +166,21 @@ class WindowsReleaseWorkerStopEvidence:
                 if (record.get("state")!="SUCCEEDED_VERIFIED" or
                     record.get("process_tree_custody_verified") is not True):
                     raise PermissionError("Unverified protected-worker recovery blocks upgrade: "+name)
+        # Legacy utilities are independent of the five supervised domains.
+        # A hard host death can clear kernel slots but leave external outputs
+        # uncertain. Any surviving registration blocks a production mutation,
+        # not merely an active PID or stale timestamp.
+        from backend.nvp_w1g_release_gate import release_gate_path
+        legacy=release_gate_path().parent/"legacy-jobs"
+        if legacy.exists() or legacy.is_symlink():
+            if legacy.is_symlink() or not legacy.is_dir():
+                raise PermissionError("Untrusted original legacy worker registration root")
+            entries=list(legacy.iterdir())
+            if len(entries)>2048:
+                raise PermissionError("Unbounded original legacy worker recovery topology")
+            if entries:
+                raise PermissionError(
+                    "Unreconciled original legacy worker markers block upgrade")
         return {
             "os_provenance":"windows-job-object",
             "kernel_release_gate":"exclusive-128-slot-locks-v1",

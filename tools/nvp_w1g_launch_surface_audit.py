@@ -51,6 +51,8 @@ MARKERS={
     "backend/nvp_w1g_owned_subprocess.py":(
         "if os.name != \"nt\":",
         "from backend.nvp_worker_containment import launch_contained",
+        'marker=registration/("original-"',
+        "marker.unlink()",
     ),
     "backend/nvp_native_frame_index.py":(
         'if os.name == "nt":', "run_owned_subprocess(", "stream = owned_output",

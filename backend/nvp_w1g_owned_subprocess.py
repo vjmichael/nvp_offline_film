@@ -14,10 +14,13 @@ linux_cgroup_tree_required=True) instead.
 from __future__ import annotations
 
 from contextlib import ExitStack
+from hashlib import sha256
+import json
 import math
 import os
 from pathlib import Path
 import shutil
+import secrets
 import subprocess
 import tempfile
 
@@ -77,6 +80,26 @@ def run_owned_subprocess(command, *, cwd=None, timeout=120, check=False,
     directory=Path(cwd or os.getcwd())
     if directory.is_symlink() or not directory.resolve().is_dir():
         raise RuntimeError("Original native worker cwd must be an ordinary directory")
+    # Register BEFORE the Job is created. A hard process death leaves a
+    # durable pending marker and the updater refuses upgrade until an
+    # independent source/output reconciliation has cleared it.
+    from backend.nvp_w1g_release_gate import release_gate_path
+    registration=release_gate_path().parent/"legacy-jobs"
+    if registration.is_symlink():
+        raise RuntimeError("Linked original legacy worker registration refused")
+    registration.mkdir(mode=0o700,exist_ok=True)
+    if registration.is_symlink():
+        raise RuntimeError("Original worker registration was replaced by a link")
+    marker=registration/("original-"+secrets.token_hex(16)+".pending")
+    identity=sha256("\\0".join(command).encode("utf8")).hexdigest()
+    with marker.open("xb") as ticket:
+        payload=json.dumps({"format":"nvp.w1g.legacy_release_worker.v1",
+            "identity_sha256":identity,"status":"START_PENDING",
+            "requires_original_journal_reconciliation":True},
+            sort_keys=True,separators=(",",":")).encode("utf8")
+        ticket.write(payload)
+        ticket.flush()
+        os.fsync(ticket.fileno())
     with tempfile.TemporaryDirectory(prefix="nvp-release-owned-") as workspace:
         root=Path(workspace)
         with ExitStack() as streams:
@@ -120,6 +143,17 @@ def run_owned_subprocess(command, *, cwd=None, timeout=120, check=False,
             raw_out=raw_out.decode(encoding or "utf8",errors) if raw_out is not None else None
             raw_err=raw_err.decode(encoding or "utf8",errors) if raw_err is not None else None
         result=subprocess.CompletedProcess(command,code,raw_out,raw_err)
+        if code != 0:
+            # Even after Job cleanup, an unsuccessful legacy tool may have
+            # left a partial frame, render or external derivative. Do not
+            # silently certify its interrupted artifact for a release swap.
+            if check:
+                result.check_returncode()
+            return result
+        # Tree-empty kernel proof came from proc.close() above; an original
+        # successful worker has now released the kernel slot and no future
+        # launch can race an updater holding the all-slots gate.
+        marker.unlink()
         if check:
             result.check_returncode()
         return result
