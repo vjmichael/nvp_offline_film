@@ -62,16 +62,18 @@ def _wav_pcm(pcm):
 
 class P1FOriginalPictureSound:
     def __init__(self,index:FilmIndex,supervisor:BlenderWorkerSupervisor,
-                 *,approve_render):
+                 *,approve_render, verify_isolated_worker):
         if (not isinstance(index,FilmIndex) or
                 not isinstance(supervisor,BlenderWorkerSupervisor) or
-                not callable(approve_render)):
+                not callable(approve_render) or
+                not callable(verify_isolated_worker)):
             raise TypeError("Native FilmIndex, OS-supervised Blender and creator approval required")
         if not WORKER.is_file() or WORKER.is_symlink():
             raise RuntimeError("Reviewed bundled Cycles script is unavailable")
         self.index=index
         self.supervisor=supervisor
         self.approve=approve_render
+        self.verify_isolated_worker=verify_isolated_worker
         self.plan=P1FReelPlan(index)
 
     def _original(self,pid,plan_id,reel,frame):
@@ -146,6 +148,19 @@ class P1FOriginalPictureSound:
         }
         if self.approve(creator_event,dict(approved_scope)) is not True:
             raise PermissionError("Creator did not authorize exact source-bound Cycles frame")
+        # Windows Job/delegated Linux cgroup controls resource/process custody,
+        # but neither proves a restricted filesystem namespace or no egress.
+        # The independently trusted production host MUST affirm an actual,
+        # finite OS boundary for this exact source/job. No CI bypass for real
+        # creator film content and no unsafe 'isolated=True' caller flag.
+        sandbox_scope={
+            **approved_scope,"require_no_network":True,
+            "require_private_filesystem_isolation":True,
+            "worker_executable_sha256":self.supervisor.binary_sha256,
+            "fixed_script_sha256":sha256(WORKER.read_bytes()).hexdigest(),
+        }
+        if self.verify_isolated_worker(dict(sandbox_scope)) is not True:
+            raise PermissionError("Genuine private film Cycles worker isolation not established")
         jobdir=self.supervisor.root/job_id
         jobdir.mkdir(parents=False,exist_ok=False)
         source_script=WORKER.read_bytes()
