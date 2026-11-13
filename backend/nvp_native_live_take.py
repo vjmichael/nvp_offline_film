@@ -137,7 +137,15 @@ class NativeLiveSoundSession:
                     self._total_queued>self.max_samples):
                 self._error=RuntimeError("Native microphone exceeded source bound")
                 return
-        try:self._queue.put_nowait(raw)
+        try:
+            # Real-time native callbacks must never wait on disk. After the
+            # kernel-supervised child has fully stopped, however, replay is
+            # off the audio thread: bounded backpressure preserves every
+            # original PCM packet instead of falsely reporting an overrun.
+            if self.device_factory is None and self._state=="FINALIZING":
+                self._queue.put(raw,timeout=5)
+            else:
+                self._queue.put_nowait(raw)
         except queue.Full:
             self._error=RuntimeError("Microphone queue overran disk writer")
             # Never drop samples and silently approve a discontinuous Take.

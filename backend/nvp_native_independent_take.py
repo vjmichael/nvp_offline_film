@@ -138,7 +138,13 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             if (self.enqueued[channel]>MAX_DURATION_S*RATE or
                 len(raw)>CHUNK_BYTES):
                 raise RuntimeError("Independent source exceeded bounded original capture")
-            self.queues[channel].put_nowait(raw)
+            # A supervised child is already reaped when its original packets
+            # are replayed. Block only that post-custody replay, never the
+            # actual PortAudio device callback.
+            if self.input_factory is None and self._state=="FINALIZING":
+                self.queues[channel].put(raw,timeout=5)
+            else:
+                self.queues[channel].put_nowait(raw)
         except Exception as exc:
             self.errors[channel]=exc
 
