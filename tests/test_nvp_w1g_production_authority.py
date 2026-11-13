@@ -175,6 +175,37 @@ class NativeReleaseAuthorityRefusal(unittest.TestCase):
             self.assertFalse((journal/"nsis-activation.json").exists())
             self.assertFalse((journal/"nsis-rollback.json").exists())
 
+
+    def test_all_nsis_roots_pairwise_disjoint_including_nested_journals(self):
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            programs=root/"Programs";programs.mkdir()
+            films=root/"OriginalFilms";films.mkdir()
+            journal=root/"Journal";journal.mkdir()
+            pairs=(
+                (programs,films,films),
+                (programs,films,programs),
+                (programs,programs,journal),
+                (programs,films,films/"NestedJournal"),
+                (programs,films,programs/"NestedJournal"),
+                (programs,films,root),
+            )
+            (films/"NestedJournal").mkdir()
+            (programs/"NestedJournal").mkdir()
+            for actual_programs,actual_films,actual_journal in pairs:
+                with self.subTest(roots=(actual_programs,actual_films,actual_journal)):
+                    with self.assertRaisesRegex(RuntimeError,"pairwise disjoint"):
+                        OwnedNSISRecovery(
+                            actual_programs,actual_films,actual_journal,
+                            native_approve=lambda scope:True,
+                            os_workers_stopped=lambda:True,
+                            test_only_simulation=True)
+            valid=OwnedNSISRecovery(
+                programs,films,journal,native_approve=lambda scope:True,
+                os_workers_stopped=lambda:True,test_only_simulation=True)
+            self.assertEqual(valid.films,films)
+            self.assertFalse((films/"nsis-rollback.json").exists())
+
     def test_no_production_windows_authority_on_linux(self):
         import os
         if os.name=="nt":
