@@ -58,8 +58,10 @@ The `reopen` command refuses the same Windows boot and checks the original Windo
 py -m tools.nvp_w1g_windows_efs_proof reopen --receipt "D:\\OwnerEvidence\\w1g-efs-test.json" --retain-for-recovery
 # Then sign into a genuinely different recovery Windows account with authorized EFS key access.
 # Verify the same disposable nonsecret file decrypts; this removes the test stage.
-py -m tools.nvp_w1g_windows_efs_proof recover --receipt "D:\\OwnerEvidence\\w1g-efs-test.json"
+py -m tools.nvp_w1g_windows_efs_proof recover --receipt "D:\\OwnerEvidence\\w1g-efs-test.json" --proof-output "D:\\OwnerEvidence\\w1g-cross-principal-recovery-observation.json"
 ```
+
+The `--proof-output` file contains only bounded source/recovery token SIDs, a nonsecret SHA and observed statuses; it is **not** a signed approval. An independent reviewer must verify the genuine Windows recovery procedure and separately sign an attestation with format `nvp.w1g.independent_physical_efs_recovery_review.v1`, the exact scratch-root path, both observed Windows token SIDs, the disposable nonce SHA, a post-reboot reopening check, cross-principal decryption check, independently reviewed offline key-backup provenance, review timestamp and review reference. The production coordinator now checks this external Ed25519 signature, refuses reviews older than 30 days, and independently creates a fresh encrypted nonsecret probe on the real Windows EFS scratch volume at both preparation and activation. It never creates the reviewer's signature.
 
 The cross-principal test observes a different actual Windows process-token SID and verifies successful plaintext recovery from an EFS-protected *nonsecret* file. It does **not** by itself establish the provenance of an external offline certificate backup or that a recovery agent/private key was actually imported. That independent owner review, protected key storage and real-world key-recovery procedure remain mandatory. Do not erase, rotate, export to a shared directory or invalidate any existing EFS keys as part of this rehearsal. Windows Home editions do not support EFS. Microsoft documents both [EFS limitations](https://support.microsoft.com/en-us/windows/security/encryption/how-to-encrypt-a-file-or-folder) and [EFS backup/recovery](https://learn.microsoft.com/en-us/windows/win32/fileio/backup-and-restore-of-encrypted-files).
 
@@ -87,7 +89,9 @@ $review = @(
   '--pinned-reviewer-public-key','D:\ExternalTrust\reviewer-ed25519.pub',
   '--wheel-lock','D:\OwnerEvidence\wheel-lock.json',
   '--wheelhouse','D:\OwnerEvidence\wheelhouse',
-  '--signed-wheel-review','D:\OwnerEvidence\signed-wheelhouse-review.json'
+  '--signed-wheel-review','D:\OwnerEvidence\signed-wheelhouse-review.json',
+  '--efs-scratch-root','D:\ProtectedScratch',
+  '--signed-efs-review','D:\OwnerEvidence\signed-physical-efs-recovery-review.json'
 )
 py -m tools.nvp_w1g_owner_windows_acceptance preflight @common @review
 ```
@@ -107,7 +111,7 @@ py -m tools.nvp_w1g_owner_windows_acceptance prepare @common @review
 py -m tools.nvp_w1g_owner_windows_acceptance activate @common --pinned-reviewer-public-key 'D:\ExternalTrust\reviewer-ed25519.pub'
 ```
 
-The preparation gate now checks both the independently signed release bytes and independently signed offline wheelhouse **before** writing its journal. Activation re-verifies the same exact wheelhouse files, lock and signature from the journaled owner-supplied paths, holds all five original leases plus release-wide kernel admission, prompts the owner with exact SHA/version scope (default NO), rechecks the original film identities, and preserves `NVP.previous`. An activated release remains `PROMOTED_UNACCEPTED` until physical installed, rollback/restart and filmmaker evidence are independently reviewed.
+The preparation gate now checks the independently signed installed release, wheelhouse and physical-EFS recovery review — plus a fresh native encrypted-source probe — **before** writing its journal. Activation re-verifies the same exact wheelhouse files, lock and signature from the journaled owner-supplied paths, holds all five original leases plus release-wide kernel admission, prompts the owner with exact SHA/version scope (default NO), rechecks the original film identities, and preserves `NVP.previous`. An activated release remains `PROMOTED_UNACCEPTED` until physical installed, rollback/restart and filmmaker evidence are independently reviewed.
 
 For a separately authorized rollback of this exact promoted candidate:
 
