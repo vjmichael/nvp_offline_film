@@ -78,6 +78,48 @@ class PlayableAVIContract(TestCase):
         with self.assertRaises(RuntimeError):
             _verify_avi_structure(movie,3,"0"*64,[64,48])
 
+    def test_actual_720_frame_atomic_publication_from_source_bound_package(self):
+        # Synthetic *source verifier* only: exercises every output picture,
+        # continuous 48-kHz PCM, native RIFF re-open and atomic publication,
+        # without claiming OS-renderer/camera, creator or physical evidence.
+        derivative=self.path/"NVPEdit30_ProductionOne"
+        derivative.mkdir()
+        pictures=derivative/"pictures"
+        pictures.mkdir()
+        data=self.frames[0].read_bytes()
+        digest=sha256(data).hexdigest()
+        for n in range(720):
+            (pictures/f"{n+1:07d}.png").write_bytes(data)
+        with wave.open(str(derivative/"soundtrack.wav"),"wb") as wav:
+            wav.setnchannels(2)
+            wav.setsampwidth(2)
+            wav.setframerate(48000)
+            wav.writeframes(struct.pack("<hh",100,-100)*1440000)
+        (derivative/"manifest.json").write_text(json.dumps({
+            "presentation_id":"ProductionOne",
+            "picture_dimensions":[64,48],
+            "pictures":[{"png_file":f"{n+1:07d}.png",
+                         "sha256":digest} for n in range(720)],
+        }))
+        authority=object.__new__(SlateSequenceAssembly)
+        verified={"edit_sha256":"e"*64,"manifest_sha256":"f"*64}
+        with patch("backend.nvp_int02_playable_preview.verify_edited_film",
+                   return_value=verified) as original:
+            result=export_playable_edited_avi(
+                authority,"a"*32,"EditedFilm",1,derivative,
+                approve=lambda _:True)
+        self.assertEqual(original.call_count,3)
+        self.assertEqual(result["video_frames"],720)
+        self.assertEqual(result["pcm_sample_frames"],1440000)
+        self.assertTrue(result["readback_verified"])
+        self.assertFalse(result["ffmpeg_used"])
+        self.assertFalse(result["production_master_accepted"])
+        movie=Path(result["movie_path"])
+        self.assertTrue(movie.is_file())
+        self.assertEqual(movie.parent.name,"NVPPreview30_ProductionOne")
+        self.assertEqual(sha256(movie.read_bytes()).hexdigest(),
+                         result["avi_sha256"])
+
     def test_host_refuses_without_separate_approval(self):
         derivative=self.path/"NVPEdit30_ProductionOne"
         derivative.mkdir()

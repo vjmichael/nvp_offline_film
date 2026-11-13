@@ -1,3 +1,7 @@
+### 2026-11-13 INT-02D 720-frame continuous playable preview contract
+
+Added complete 720 picture/1,440,000 source-derived PCM sample integration test for actual MJPEG+PCM AVI RIFF writer and separate native creator approval. This verifies the **technical interleaving/export format**, staging, exact digest/readback and immutable source input against a synthetically verified fixture; it does NOT claim a genuine 720-frame Blender-rendered production film. Native Windows/Linux tests at the new branch head still require original runner receipts. The independently read source-verification contract remains mandatory in production.
+
 ### 2026-11-13 implementation pivot — P1/P2 film features before repetitive install acceptance
 
 Creator prioritizes **full data-first feature completeness and integration** over rerunning Windows NSIS. Existing source SHA `0ee94b17976e28f97cf2e167646e93d128e90197` has actual Windows/Linux Gate 1 + independent SEC-06 success, genuine P1-A Job/cgroup success, four-job INT-02C W1-G/Cycles success, DATA-AV success, E2E-01D success. The hosted installed candidate at that SHA failed but installer already had previous successful acceptance; the installation gate is now DEFERRED and no longer auto-triggered on the feature branch. Record the existing failure accurately but DO NOT block P1/P2 filmmaking on it.
