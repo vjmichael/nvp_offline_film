@@ -150,12 +150,17 @@ jobs:
         run: |
           mkdir -p acceptance_artifacts
           xvfb-run -a python -m tools.nvp_int02_real_cycles_matrix --out acceptance_artifacts/int02c-linux-real-cycles --blender "$(command -v blender)"
+          # P1-B/C: independent genuine imported GLB actor, face/skin
+          # deformation and two different real supervised Cycles PNGs.
+          xvfb-run -a python -m tools.nvp_p1bc_real_cycles_matrix --out acceptance_artifacts/p1bc-linux-real-glb-cycles --blender "$(command -v blender)"
       - name: Persist genuine renderer and worker journal evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nvp-int02c-real-linux-cycles
-          path: acceptance_artifacts/int02c-linux-real-cycles/
+          path: |
+            acceptance_artifacts/int02c-linux-real-cycles/
+            acceptance_artifacts/p1bc-linux-real-glb-cycles/
           retention-days: 7
           if-no-files-found: warn
 
@@ -184,12 +189,16 @@ jobs:
           if (-not $blender) { throw 'No genuine Windows Blender binary found' }
           New-Item -ItemType Directory -Path acceptance_artifacts -Force | Out-Null
           python -m tools.nvp_int02_real_cycles_matrix --out acceptance_artifacts/int02c-windows-real-cycles --blender "$blender"
+          python -m tools.nvp_p1bc_real_cycles_matrix --out acceptance_artifacts/p1bc-windows-real-glb-cycles --blender "$blender"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows source rigged-GLB face/skin two-frame Cycles job failed' }
           if ($LASTEXITCODE -ne 0) { throw 'Windows native Blender/Cycles/USD/Job worker failed' }
       - name: Persist real Windows Cycles and kernel-supervision evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nvp-int02c-real-windows-cycles
-          path: acceptance_artifacts/int02c-windows-real-cycles/
+          path: |
+            acceptance_artifacts/int02c-windows-real-cycles/
+            acceptance_artifacts/p1bc-windows-real-glb-cycles/
           retention-days: 7
           if-no-files-found: warn
