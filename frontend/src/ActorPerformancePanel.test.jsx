@@ -40,6 +40,7 @@ function bridge(){
       result:{actor_id:'ActorLead',usd_prim_path:'/World/Lead',
         time_tick:request.tick,dialogue_active:true,
         native_scene_rig_binding_verified:true,
+        native_skin_deformation_evaluated:true,source_skin_vertex_count:4,
         voice_synthesized:false,lip_sync_generated:false},
     })),
   };
