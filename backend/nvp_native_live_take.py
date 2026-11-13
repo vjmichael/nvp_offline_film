@@ -291,7 +291,8 @@ class NativeLiveSoundSession:
                     "usd_prim_path":self.emitter_path,
                     "start_tick":0,"end_tick":end,
                     "gain":1.0,"pcm_chunks":self._chunks(),
-                }])
+                }],native_capture_audits=(
+                    [native_audit] if native_audit is not None else None))
             self._journal.update(
                 self._tmp,phase="FROZEN",recorded_samples=self._count,
                 take_sha256=receipt["take_document_sha256"])
