@@ -40,15 +40,16 @@ class P1FDurableShotReels:
     """Trusted-host only; one worker per frame and no silent resume/replay."""
 
     def __init__(self,index:FilmIndex,renderer:P1FOriginalPictureSound,
-                 *,approve_batch):
+                 *,approve_batch,verify_batch_live):
         if (not isinstance(index,FilmIndex) or
                 not isinstance(renderer,P1FOriginalPictureSound) or
-                not callable(approve_batch)):
+                not callable(approve_batch) or not callable(verify_batch_live)):
             raise TypeError("Native FilmIndex, source-authored renderer and creator gate required")
         self.index=index
         self.renderer=renderer
         self.reels=P1FReelPlan(index)
         self.approve_batch=approve_batch
+        self.verify_batch_live=verify_batch_live
         self.db=renderer.supervisor.root/"p1f_durable_shots.sqlite3"
         with self._connect() as db:
             db.executescript("""
@@ -181,6 +182,18 @@ class P1FDurableShotReels:
         doc,state=self._manifest(batch_id)
         if state!="PLANNED":
             raise RuntimeError("Batch cancelled/blocked; no further worker dispatch")
+        # Recheck current host creator policy for EACH new worker; approval
+        # of a batch does not create an indefinite or revocation-proof grant.
+        scope={
+            "operation":"nvp.p1f.verify_finite_source_batch_live.v1",
+            "project_id":doc["project_id"],"plan_id":doc["plan_id"],
+            "plan_document_sha256":doc["plan_document_sha256"],
+            "batch_id":batch_id,
+            "batch_document_sha256":_sha(doc),
+            "frame_count":len(doc["source_frames"]),
+        }
+        if self.verify_batch_live(dict(scope)) is not True:
+            raise PermissionError("Finite creator approval revoked or no longer current")
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row=db.execute("""SELECT frame_index,job_id,source_sha
