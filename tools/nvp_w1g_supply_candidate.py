@@ -59,10 +59,12 @@ def candidate_wheel_lock(wheelhouse: Path, *, platform: str) -> dict:
 
 def candidate_native_worker_roster(binary_root: Path, filenames_by_role: dict,
                                    *, platform: str) -> dict:
-    """Inventory five real compiled binaries; never mint a review or license.
+    """Inventory five supplied native-image candidates; never mint a review or license.
 
     The input is an explicit owner-supplied role -> filename mapping, not a
     discoverable or guessed assignment of one binary to five worker roles.
+    PE/ELF header checks and hashes are NOT independent functional execution
+    or a signature, license approval, provenance, or physical acceptance.
     """
     binary_root=Path(binary_root)
     if (not binary_root.is_dir() or binary_root.is_symlink() or
