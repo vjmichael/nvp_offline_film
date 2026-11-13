@@ -80,7 +80,7 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                             print(logfile+":\n"+p.read_text(
                                 "utf8",errors="replace")[-12000:])
                     raise
-                if result["status"]!="NOT_DELIVERED":
+                if result.get("status")!="NOT_DELIVERED":
                     self.assertEqual(result["format"],
                                      "nvp.p1f.independent_picture_audio_receipt.v1")
                     self.assertFalse(result["entire_film_rendered"])
