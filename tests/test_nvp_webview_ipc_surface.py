@@ -57,9 +57,11 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_capture_cancel","data_av_capture_interrupted",
             "plan02c_catalog","plan02c_preview","plan02c_publish",
             "plan02c_models","plan02c_model_candidate",
+            "data_av_actor_cast","data_av_actor_register",
+            "data_av_actor_dialogue_bind","data_av_actor_dialogue_at",
         }
         self.assertEqual(names,expected)
-        self.assertEqual(len(names),28)
+        self.assertEqual(len(names),32)
         self.assertFalse(hasattr(self.api,"__dict__"))
         for name in names:
             method=getattr(self.api,name)
@@ -96,7 +98,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         self.addCleanup(host._close)
         host._attach_window(FakeWindow())
         self.assertIs(host._original_capture().native_pcm_auditor,auditor)
-        # Exposing 28 deliberately reviewed UI methods must never traverse
+        # Exposing 32 deliberately reviewed UI methods must never traverse
         # the protected worker, runtime directory or model/grant state.
         ui=NativeWebviewIPCSurface(host)
         self.assertFalse(hasattr(ui,"native_capture_auditor"))

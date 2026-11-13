@@ -537,6 +537,137 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
                 "original_modified":False,"master_approved":False}
 
+    # P1-B/C: typed native ActorID/scene/skinned-rig/original-voice actions.
+    # These are not FastAPI routes or arbitrary scene file selectors.
+    def data_av_actor_cast(self,project_id):
+        self._native_window()
+        pid=_require_pid(project_id)
+        from backend.nvp_p1bc_actor_registry import ActorDirectory, ACTOR_FORMAT
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        from backend.nvp_temporal_ledger import TemporalLedger
+        from backend.nvp_data_av_source import RecordedSoundSources
+        actors=ActorDirectory(self.index,verify_director_action=lambda *_:False)
+        roster=[]
+        for row in self.index.list_objects(pid,kind="actor")[:64]:
+            actor=actors.open(pid,row["object_id"],1)
+            roster.append({"actor_id":actor["object_id"],
+                           "actor_sha256":actor["document_sha256"],
+                           "display_name":actor["data"]["display_name"]})
+        films=[]
+        take_reader=OpenUSDTakeCapture(
+            self.index,verify_creator_action=lambda *_:False)
+        for row in self.index.list_objects(pid,kind="take")[:32]:
+            record=self.index.read_revision(pid,row["object_id"],1)
+            doc=record["data"]
+            if (record["kind"]!="take" or
+                doc.get("format")!="nvp.digital_take.openusd_temporal.v1" or
+                doc.get("frozen") is not True or
+                not doc.get("actor_bindings")):
+                continue
+            take_reader.verify_take(pid,row["object_id"])
+            source,stage=OpenUSDSceneBridge(self.index).open(
+                pid,doc["scene_id"],doc["scene_revision"])
+            if source["document_sha256"]!=doc["scene_document_sha256"]:
+                raise RuntimeError("Actor source USD changed during cast catalog")
+            cast={a["actor_id"]:a for a in source["data"]["actor_bindings"]}
+            active=TemporalLedger(self.index).events_in(
+                pid,doc["timeline_id"],doc["timeline_revision"],
+                start_tick=0,end_tick=doc["duration_tick"],limit=500)
+            if active.get("next_cursor") is not None:
+                raise RuntimeError("Partial original dialogue source cannot become a cast catalog")
+            cues=[]
+            for event in active["events"]:
+                if event["event_kind"]!="dialogue":
+                    continue
+                actor=cast.get(event["subject_id"])
+                if actor is None or event["payload"].get("usd_prim_path")!=actor["path"]:
+                    continue
+                original=RecordedSoundSources(self.index).describe(
+                    pid,event["source_id"],event["source_revision"])
+                if original["document_sha256"]!=event["source_document_sha256"]:
+                    raise RuntimeError("Original cast PCM source changed")
+                cues.append({"event_id":event["event_id"],
+                             "actor_id":actor["actor_id"],
+                             "usd_prim_path":actor["path"],
+                             "start_tick":str(event["start_tick"]),
+                             "end_tick":str(event["end_tick"]),
+                             "original_pcm_sha256":original["document_sha256"]})
+                if len(cues)>128:
+                    raise RuntimeError("Native actor dialogue catalog too large")
+            films.append({"take_id":record["object_id"],
+                          "take_sha256":record["document_sha256"],
+                          "cast":source["data"]["actor_bindings"],
+                          "original_dialogue":cues})
+        return {"format":"nvp.p1bc.native_actor_cast.v1",
+                "project_id":pid,"actors":roster,"takes":films,
+                "sources_immutable":True,"voices_synthesized":False}
+
+    def data_av_actor_register(self,request):
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","actor_id","display_name"}:
+            raise ValueError("Only one typed original ActorID identity may be registered")
+        from backend.nvp_p1bc_actor_registry import ActorDirectory
+        directory=ActorDirectory(self.index,verify_director_action=
+            lambda event,scope:self._ask(
+                "Register one permanent project ActorID?\n"
+                "ActorID: "+scope["actor_id"]+"\n"
+                "Name: "+request["display_name"]+"\n"
+                "Profile SHA: "+scope["profile_sha256"]+"\n"
+                "Identity cannot be guessed from a glTF filename, future "
+                "voice model, or dialogue text."))
+        record=directory.register(
+            request["project_id"],request["actor_id"],
+            display_name=request["display_name"],creator_event="native_creator")
+        return {"format":"nvp.p1bc.native_actor_registration.v1",
+                "status":"ACTOR_ID_REGISTERED",
+                "actor_id":record["object_id"],
+                "actor_sha256":record["document_sha256"],
+                "source_modified":False,"voice_synthesized":False}
+
+    def data_av_actor_dialogue_bind(self,request):
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","dialogue_id","actor_id","take_id","event_id"}:
+            raise ValueError("Original ActorID dialogue requires exact source identities")
+        from backend.nvp_p1bc_actor_registry import ActorDialogueDirector
+        director=ActorDialogueDirector(self.index,verify_director_action=
+            lambda event,scope:self._ask(
+                "Bind an EXISTING recorded original dialogue event to "
+                "one authoritative ActorID?\n"
+                "ActorID: "+scope["actor_id"]+"\n"
+                "Original Take SHA: "+scope["source_take_sha256"]+"\n"
+                "Exact event/voice intent: "+scope["dialogue_intent_sha256"]+"\n"
+                "This does NOT synthesize speech, animate lips, or approve a master."))
+        record=director.bind(
+            request["project_id"],request["dialogue_id"],
+            actor_id=request["actor_id"],take_id=request["take_id"],
+            event_id=request["event_id"],creator_event="native_creator")
+        return {"format":"nvp.p1bc.native_original_dialogue.v1",
+                "status":"ORIGINAL_DIALOGUE_BOUND",
+                "dialogue_id":record["object_id"],
+                "dialogue_sha256":record["document_sha256"],
+                "take_modified":False,"voice_synthesized":False}
+
+    def data_av_actor_dialogue_at(self,request):
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","dialogue_id","revision","tick"}:
+            raise ValueError("Original actor dialogue read requires exact identity/time")
+        tick=request["tick"]
+        if (type(tick) is not str or len(tick)>19 or not tick.isascii()
+            or not tick.isdecimal()):
+            raise ValueError("Film Time must be exact nonnegative integer ticks")
+        from backend.nvp_p1bc_actor_registry import ActorDialogueDirector
+        result=ActorDialogueDirector(
+            self.index,verify_director_action=lambda *_:False).at(
+            request["project_id"],request["dialogue_id"],
+            request["revision"],int(tick))
+        return {"format":"nvp.p1bc.native_original_dialogue_tick.v1",
+                "result":result,"source_modified":False,
+                "film_master_approved":False}
+
     # PLAN-02-B: original microphone capture (not retired camera still IPC).
     def _original_capture(self):
         if self._original_capture_controller is None:

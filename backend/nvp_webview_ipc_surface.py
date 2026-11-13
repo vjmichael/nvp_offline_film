@@ -76,6 +76,19 @@ class NativeWebviewIPCSurface:
     def data_av_edited_30s_cancel(self, ticket):
         return self._delegate.data_av_edited_30s_cancel(ticket)
 
+    # P1-B/C: reviewed, narrow ActorID + original dialogue IPC.
+    def data_av_actor_cast(self, project_id):
+        return self._delegate.data_av_actor_cast(project_id)
+
+    def data_av_actor_register(self, request):
+        return self._delegate.data_av_actor_register(request)
+
+    def data_av_actor_dialogue_bind(self, request):
+        return self._delegate.data_av_actor_dialogue_bind(request)
+
+    def data_av_actor_dialogue_at(self, request):
+        return self._delegate.data_av_actor_dialogue_at(request)
+
     # Explicit original audio/scene capture and sealed Take lifecycle.
     def data_av_capture_catalog(self, project_id):
         return self._delegate.data_av_capture_catalog(project_id)
