@@ -4,6 +4,9 @@ on:
     branches:
       - nvp/sec06-gate1-independent-20261112
       - nvp/w1g-p1a-sec06-integrated-20261112
+  pull_request:
+    branches:
+      - nvp/int02-w1g-native-film-package-20261112
   workflow_dispatch:
 
 # Independent acceptance must run to completion; never cancel a kernel probe
@@ -18,6 +21,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Tests checkout the original source head even on PR events.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -72,6 +78,9 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Tests checkout the original source head even on PR events.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -120,6 +129,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Tests checkout the original source head even on PR events.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -155,6 +167,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Tests checkout the original source head even on PR events.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'

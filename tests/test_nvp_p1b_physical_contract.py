@@ -90,3 +90,13 @@ def test_frozen_internal_producer_entry_bypasses_desktop_webview():
         with patch("tools.nvp_native_device_producer_worker.main", return_value=0) as producer:
             assert nvp_desktop_alpha.installed_smoke_entry() == 0
             producer.assert_called_once_with(["--scope", "reviewed"])
+
+
+def test_installed_gui_producer_smoke_waits_for_process_and_receipt():
+    workflow = (Path(__file__).resolve().parents[1] /
+        ".github/workflows/nvp-e2e01e-windows-alpha.yml").read_text("utf8")
+    section = workflow.split("      - name: Verify actual installed device-producer bundle, without recording",1)[1].split("      - name:",1)[0]
+    assert "Start-Process -FilePath $installed" in section
+    assert "$p.WaitForExit(120000)" in section
+    assert "producer_bundle_verified_no_device_opened" in section
+    assert "$LASTEXITCODE" not in section
