@@ -34,8 +34,9 @@ jobs:
           set -euo pipefail
           # Scope is intentionally ephemeral: NEVER mutate the agent's
           # ordinary cgroup tree; systemd provisions the temporary scope.
-          sudo systemd-run --scope --collect --same-dir \
+          sudo systemd-run --wait --collect --pipe --same-dir \
             --unit=nvp-sec06-native-delegation \
+            --property=Type=exec \
             --property=Delegate=yes \
             --property=DelegateSubgroup=host \
             /usr/bin/env NVP_REQUIRE_DELEGATED_CGROUP=1 \
