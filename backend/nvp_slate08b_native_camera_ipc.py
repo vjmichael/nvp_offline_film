@@ -117,7 +117,8 @@ def build_desktop_camera_host(index, callback):
 class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
     """Per-WebView native authority. No browser can self-sign an approval."""
 
-    def __init__(self, index: FilmIndex, *, origin, host_factory=None):
+    def __init__(self, index: FilmIndex, *, origin, host_factory=None,
+                 native_capture_auditor=None):
         if not isinstance(index, FilmIndex):
             raise TypeError("Actual native FilmIndex required")
         parsed = urlsplit(origin)
@@ -134,6 +135,14 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         self._futures = {}
         self._host = None
         self._data_av_controller = None
+        if native_capture_auditor is not None:
+            from backend.nvp_p1a_original_capture_worker_bridge import (
+                OriginalMicrophoneNativeWorkerAudit)
+            if type(native_capture_auditor) is not OriginalMicrophoneNativeWorkerAudit:
+                raise TypeError("Only an original host-provisioned native capture audit may be attached")
+        # Host-only injection, never accepted as a browser-supplied capture
+        # field or an inferred developer-compiled worker release approval.
+        self._native_capture_auditor=native_capture_auditor
         self._original_capture_controller = None
         self._edited_export = None
         self._closing = False
@@ -506,7 +515,8 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 self.index,native_window=self._native_window,
                 ask_native=lambda message: (
                     self._native_window().create_confirmation_dialog(
-                        "NVP — Authorize Original Sound",message) is True))
+                        "NVP — Authorize Original Sound",message) is True),
+                native_pcm_auditor=self._native_capture_auditor)
         return self._original_capture_controller
 
     def data_av_capture_catalog(self,project_id):
