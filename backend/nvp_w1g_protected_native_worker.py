@@ -131,6 +131,13 @@ class ProtectedNativeWorker:
             # until a dedicated Job directory has genuine Windows EFS.
             from backend.nvp_w1g_encrypted_source import require_efs_stage
             require_efs_stage(directory)
+        state={"format":FORMAT, **scope,"state":"PREPARED",
+               "process_tree_custody_verified":False,
+               "output_independently_verified":False}
+        journal=directory/"journal.json"
+        # PREPARED is durable before any source bytes are written: a crash
+        # during input staging must remain an unresolved release blocker.
+        _atomic_json(journal,state)
         for name,blob in sorted(inputs.items()):
             with (directory/name).open("xb") as fd:
                 fd.write(blob);fd.flush();os.fsync(fd.fileno())
@@ -139,11 +146,8 @@ class ProtectedNativeWorker:
             fd.write(raw);fd.flush();os.fsync(fd.fileno())
         if os.name=="nt":
             from backend.nvp_w1g_encrypted_source import verify_efs_inputs
-            verify_efs_inputs(directory,(*sorted(inputs),"plan.json"))
-        state={"format":FORMAT, **scope,"state":"PREPARED",
-               "process_tree_custody_verified":False,
-               "output_independently_verified":False}
-        journal=directory/"journal.json"
+            verify_efs_inputs(directory,(*sorted(inputs),"plan.json","journal.json"))
+        state["state"]="INPUTS_STAGED"
         _atomic_json(journal,state)
         proc=None
         try:
@@ -259,7 +263,7 @@ class ProtectedNativeWorker:
             if journal.is_symlink() or not journal.is_file():
                 continue
             row=json.loads(journal.read_text("utf8"))
-            if row.get("state") in ("PREPARED","RUNNING"):
+            if row.get("state") in ("PREPARED","INPUTS_STAGED","RUNNING"):
                 row["state"]="INTERRUPTED_OS_CUSTODY_UNVERIFIED"
                 row["process_tree_custody_verified"]=False
                 row["output_independently_verified"]=False
