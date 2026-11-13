@@ -68,6 +68,22 @@ def compile_native_workers(output:Path, *, platform:str, compiler:str) -> dict:
     if (platform=="windows-amd64")!=(os.name=="nt"):
         raise RuntimeError("Cross-platform claimed native artifact rejected")
     output.mkdir()
+    # Candidate provenance: exact native compiler image, host architecture and
+    # all five role translation units. The C++ wrapper files are compiler
+    # inputs, not merely decorative role names.
+    import platform as os_platform
+    compiler_binary=shutil.which(compiler)
+    if not compiler_binary:
+        raise RuntimeError("Actual first-party native compiler missing")
+    compiler_image=Path(compiler_binary).resolve(strict=True)
+    if not compiler_image.is_file():
+        raise RuntimeError("Native compiler did not resolve to regular image")
+    source_roles={}
+    for role in sorted(ROLES):
+        unit=SOURCE_ROOT/"native"/f"{role}.cpp"
+        if unit.is_symlink() or not unit.is_file():
+            raise RuntimeError("Missing exact first-party role translation unit: "+role)
+        source_roles[role]=digest_file(unit)
     workers=[]
     for role in sorted(ROLES):
         workers.append(_compile_one(role,output,platform=platform,compiler=compiler))
@@ -78,6 +94,11 @@ def compile_native_workers(output:Path, *, platform:str, compiler:str) -> dict:
         "roster":roster,
         "source_sha256":digest_file(SOURCE),
         "compiler":compiler,
+        "compiler_image_sha256":digest_file(compiler_image),
+        "compiler_image_path":str(compiler_image),
+        "host_architecture":os_platform.machine(),
+        "host_os":os_platform.system(),
+        "role_translation_unit_sha256":source_roles,
         "role_count":len(workers),
         "native_executables_compiled":True,
         "native_executables_functionally_verified":False,
