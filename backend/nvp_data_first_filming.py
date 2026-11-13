@@ -381,6 +381,12 @@ class NativeSceneSoundCapture:
                         samples=original_pcm_samples[sid])
                     verified_audits.append(sealed)
                     audit_by_source[sid]=audit_sha256(sealed)
+                # FilmIndex JSON has a hard 1 MiB ceiling. Bound the entire
+                # original multi-device evidence before any immutable source
+                # publication, not after the last source is committed.
+                from backend.nvp_p1a_take_provenance import canonical
+                if len(canonical(verified_audits))>256*1024:
+                    raise PermissionError("Original native Take evidence exceeds finite immutable manifest budget")
             # Durable intent precedes the first immutable source publication.
             # A crash leaves PREPARING for explicit restart reconciliation.
             self.publications.begin(project_id,take_id,sound_timeline_id,
