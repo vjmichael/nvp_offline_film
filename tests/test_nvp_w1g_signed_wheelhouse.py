@@ -92,7 +92,12 @@ class SignedOfflineWheelhouseContracts(unittest.TestCase):
             signed,key=self.sign_test_only(lock,root)
             extra=root/lock["wheels"][0]["filename"].upper()
             extra.write_bytes(b"unreviewed")
-            with self.assertRaisesRegex(RuntimeError,"unreviewed extra"):
+            # Case-sensitive systems permit a separate unreviewed file.
+            # Windows case-insensitive directories instead alias the locked
+            # wheel and detect an independently forbidden SHA mismatch.
+            # Both OS outcomes MUST deny signed-wheelhouse admission.
+            with self.assertRaisesRegex(
+                    RuntimeError,"unreviewed extra|missing or differs"):
                 verify_signed_offline_wheelhouse(
                     lock,root,signed,platform="windows-amd64",
                     pinned_reviewer_public_key=key)
