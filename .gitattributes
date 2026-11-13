@@ -1,0 +1,3 @@
+# Preserve exact reviewed C++ source bytes across Windows/Linux checkout
+native/*.cpp text eol=lf
+native/*.h text eol=lf

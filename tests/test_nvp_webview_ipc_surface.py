@@ -57,9 +57,21 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_capture_cancel","data_av_capture_interrupted",
             "plan02c_catalog","plan02c_preview","plan02c_publish",
             "plan02c_models","plan02c_model_candidate",
+            "data_av_actor_cast","data_av_actor_register",
+            "data_av_actor_dialogue_bind","data_av_actor_dialogue_at",
+            "data_av_actor_asset_catalog","data_av_actor_scene_cast",
+            "data_av_film_stage_graph_catalog","data_av_film_stage_edit_draft",
+            "data_av_film_stage_edit_commit",
+            "data_av_film_stage_catalog","data_av_film_stage_director_commit",
+            "data_av_film_stage_actor_bus_commit",
+            "data_av_film_stage_longform_publish",
+            "data_av_film_stage_longform_page",
+            "data_av_film_stage_longform_audit_page",
+            "data_av_film_stage_chunk_preflight","data_av_film_stage_chunk_begin",
+            "data_av_film_stage_chunk_poll","data_av_film_stage_chunk_cancel",
         }
         self.assertEqual(names,expected)
-        self.assertEqual(len(names),28)
+        self.assertEqual(len(names),47)
         self.assertFalse(hasattr(self.api,"__dict__"))
         for name in names:
             method=getattr(self.api,name)
@@ -81,6 +93,12 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             self.api.camera_render_capabilities()
         with self.assertRaises(PermissionError):
             self.api.request_camera_still({})
+        with self.assertRaises(PermissionError):
+            self.api.data_av_film_stage_catalog("a"*32)
+        with self.assertRaises(PermissionError):
+            self.api.data_av_film_stage_chunk_begin({})
+        with self.assertRaises(PermissionError):
+            self.api.data_av_film_stage_chunk_cancel("untrusted_ticket")
         self.assertEqual(self.native_window.prompt_count,0)
 
     def test_closed_bridge_stays_closed_through_js_proxy(self):
@@ -96,7 +114,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         self.addCleanup(host._close)
         host._attach_window(FakeWindow())
         self.assertIs(host._original_capture().native_pcm_auditor,auditor)
-        # Exposing 28 deliberately reviewed UI methods must never traverse
+        # Exposing 34 deliberately reviewed UI methods must never traverse
         # the protected worker, runtime directory or model/grant state.
         ui=NativeWebviewIPCSurface(host)
         self.assertFalse(hasattr(ui,"native_capture_auditor"))

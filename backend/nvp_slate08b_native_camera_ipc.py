@@ -145,6 +145,7 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         self._native_capture_auditor=native_capture_auditor
         self._original_capture_controller = None
         self._edited_export = None
+        self._p1f_export = None
         self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
@@ -362,10 +363,13 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
 
     def data_av_edited_30s_begin(self,request):
         self._native_window()
-        if type(request) is not dict or set(request)!={
-                "project_id","edit_id","edit_revision",
-                "presentation_id","listener_path"}:
-            raise ValueError("Native film export requires exact committed edit identity")
+        required={"project_id","edit_id","edit_revision",
+                  "presentation_id","listener_path"}
+        if (type(request) is not dict or
+            set(request) not in (required,required|{"playable_preview"}) or
+            ("playable_preview" in request and
+             type(request["playable_preview"]) is not bool)):
+            raise ValueError("Native film export requires an exact typed source/preview request")
         _require_pid(request["project_id"])
         _id(request["edit_id"],"committed film edit")
         _id(request["presentation_id"],"unique derived film output")
@@ -379,6 +383,8 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 raise PermissionError("Native desktop is closing")
             if self._edited_export is not None and not self._edited_export["future"].done():
                 raise RuntimeError("Stop or finish the previous edited film before a new export")
+            if self._p1f_export is not None and not self._p1f_export["future"].done():
+                raise RuntimeError("Stop the current original film chunk before a 30-second export")
             if (self._data_av_controller is not None and
                 self._data_av_controller._active is not None):
                 raise RuntimeError("Stop active source audition before edited film export")
@@ -451,10 +457,37 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                         "Original USD Takes and editorial revision remain unchanged."),
                     render_png=cycles_frame,
                     cancelled=cancel.is_set,progress=update)
-                return adapter.export(
+                produced=adapter.export(
                     requested["project_id"],requested["edit_id"],
                     requested["edit_revision"],requested["presentation_id"],
                     derived,listener_path=requested["listener_path"])
+                if requested.get("playable_preview") is not True:
+                    return produced
+                # The source-bound PNG/WAV is independently committed
+                # before the optional, separately approved playable view.
+                # A refusal must not misreport or erase that verified film.
+                from backend.nvp_int02_playable_preview import export_playable_edited_avi
+                try:
+                    preview=export_playable_edited_avi(
+                        assembly,requested["project_id"],requested["edit_id"],
+                        requested["edit_revision"],produced["directory"],
+                        approve=lambda scope:self._ask(
+                            "Create an optional playable single-file AVI from "
+                            "the independently VERIFIED 720-frame edit?\n"
+                            "Edit SHA: "+scope["edit_sha256"]+"\n"
+                            "Source manifest SHA: "+scope["derivative_manifest_sha256"]+"\n"
+                            "Destination: "+scope["output_directory"]+"\n"
+                            "Video is LOSSY 24fps MJPEG; audio is the original-derived "
+                            "48kHz PCM16, without FFmpeg. Output is UNENCRYPTED.\n"
+                            "This is NOT an approved cinema master, Dolby mix "
+                            "or a source Take. Grant separate one-use export approval?"),
+                        cancelled=cancel.is_set,progress=update)
+                except PermissionError:
+                    return {**produced,"playable_preview_status":"DECLINED_NOT_PUBLISHED"}
+                except InterruptedError:
+                    return {**produced,"playable_preview_status":"CANCELLED_NOT_PUBLISHED"}
+                return {**produced,"playable_preview_status":"PLAYABLE_PREVIEW_VERIFIED",
+                        "playable_preview":preview}
             future=self._executor.submit(perform)
             self._edited_export={"ticket":ticket,"future":future,
                                  "cancel":cancel,"progress":progress,
@@ -506,6 +539,860 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         return {"format":"nvp.int02.native_edited_export_ticket.v1",
                 "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
                 "original_modified":False,"master_approved":False}
+
+    # P1-D true non-destructive creator source cut assembly.
+    # The UI can supply only bounded original segment IDs, source graph refs
+    # and integer Film Time cuts. Source scenes/Takes/shot layers are frozen.
+    def data_av_film_stage_graph_catalog(self,project_id):
+        self._native_window()
+        pid=_require_pid(project_id)
+        from backend.nvp_digital_slate_branches import (
+            DigitalSlateBranches,GRAPH_FORMAT)
+        directory=DigitalSlateBranches(
+            self.index,verify_editor_action=lambda *_:False)
+        graphs=[]
+        for row in self.index.list_objects(pid,kind="presentation")[:256]:
+            source=self.index.read_revision(
+                pid,row["object_id"],row["head_revision"])
+            if source["data"].get("format")!=GRAPH_FORMAT:
+                continue
+            verified=directory.open_graph(
+                pid,source["object_id"],source["revision"])
+            graphs.append({
+                "graph_id":verified["object_id"],
+                "graph_revision":verified["revision"],
+                "graph_sha256":verified["document_sha256"],
+                "scene_id":verified["data"]["scene_id"],
+                "branches":[{
+                    "branch_id":item["branch_id"],
+                    "kind":item["kind"],
+                    "take_id":item["take_id"],
+                    "shot_id":item["shot_id"],
+                    "source_start_tick":str(item["source_start_tick"]),
+                    "source_end_tick":str(item["source_end_tick"]),
+                    "group_id":item["group_id"],
+                    "original_default":item["primary"]}
+                    for item in verified["data"]["nodes"]]
+            })
+        return {"format":"nvp.p1d.native_original_source_graph_catalog.v1",
+                "project_id":pid,"graphs":graphs,
+                "original_source_modified":False,
+                "active_cut_changed":False}
+
+    def data_av_film_stage_edit_draft(self,request):
+        self._native_window()
+        required={"project_id","graph_id","graph_revision","segments"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Original source cut draft requires an exact slate")
+        verified=self._edited_assembly().preview(
+            request["project_id"],request["graph_id"],
+            request["graph_revision"],request["segments"])
+        return {
+            "format":"nvp.p1d.native_source_cut_draft.v1",
+            "project_id":request["project_id"],
+            "graph_id":verified["graph_id"],
+            "graph_sha256":verified["graph_document_sha256"],
+            "source_segment_sha256":verified["draft_sha256"],
+            "normalized_original_segments_sha256":sha256(json.dumps(
+                verified["segments"],sort_keys=True,separators=(",",":"),
+                ensure_ascii=True,allow_nan=False).encode("ascii")).hexdigest(),
+            "duration_tick":str(verified["duration_tick"]),
+            "segment_count":len(verified["segments"]),
+            "draft_uncommitted":True,
+            "original_source_modified":False,
+            "render_approved":False}
+
+    def data_av_film_stage_edit_commit(self,request):
+        self._native_window()
+        required={"project_id","graph_id","graph_revision","edit_id",
+                  "segments","expected_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Source film edit commit requires exact typed source segments")
+        from backend.nvp_slate_edit_assembly import SlateSequenceAssembly
+        from backend.nvp_digital_slate_branches import DigitalSlateBranches
+        original=DigitalSlateBranches(
+            self.index,verify_editor_action=lambda *_:False)
+        editor=SlateSequenceAssembly(original,
+            verify_editor_action=lambda event,scope:self._ask(
+                "Approve a NEW immutable non-destructive original film cut?\n"+
+                "Project: "+scope["project_id"]+"\n"+
+                "Source slate: "+scope["graph_id"]+" rev "+
+                str(scope["graph_revision"])+"\n"+
+                "Exact frozen graph SHA: "+scope["graph_document_sha256"]+"\n"+
+                "Unique edit ID: "+scope["edit_id"]+"\n"+
+                "Original source segments SHA: "+scope["ordered_segment_sha256"]+"\n"+
+                "Full Film Time ticks: "+str(scope["duration_tick"])+"\n"+
+                "No source Take is rewritten, no automatic retime, "
+                "no sound or render/master approval."))
+        rec=editor.commit(
+            request["project_id"],request["edit_id"],
+            graph_id=request["graph_id"],
+            graph_revision=request["graph_revision"],
+            segments=request["segments"],
+            expected_revision=request["expected_revision"],
+            editor_event="native_creator")
+        reopened=editor.open_edit(
+            request["project_id"],rec["object_id"],rec["revision"])
+        return {"format":"nvp.p1d.native_original_cut_commit_receipt.v1",
+                "status":"IMMUTABLE_EDIT_SOURCE_COMMITTED",
+                "edit_id":rec["object_id"],"revision":rec["revision"],
+                "edit_sha256":rec["document_sha256"],
+                "source_segments_sha256":reopened["data"]["ordered_segment_sha256"],
+                "duration_tick":str(reopened["data"]["duration_tick"]),
+                "source_modified":False,"render_approved":False}
+
+    # P1-D/E/P2: original creator-facing director's source stages.
+    # Strict, reviewed finite methods; no native filesystem path or
+    # human-approval token is accepted from the webview.
+    def _film_continuity(self):
+        from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+        return NativeEditorialContinuity(
+            self._edited_assembly(),verify_director_action=lambda *_:False)
+
+    def _film_schedule(self,approval=None):
+        from backend.nvp_p2_longform_source_plan import NativeLongformFilmPlan
+        assembly=self._edited_assembly()
+        from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+        continuity=NativeEditorialContinuity(
+            assembly,verify_director_action=lambda *_:False)
+        return NativeLongformFilmPlan(
+            assembly,continuity,
+            verify_creator_action=approval or (lambda *_:False))
+
+    def data_av_film_stage_catalog(self,project_id):
+        self._native_window()
+        pid=_require_pid(project_id)
+        assembly=self._edited_assembly()
+        edits=[]
+        for row in self.index.list_objects(pid,kind="edit")[:64]:
+            rec=assembly.open_edit(pid,row["object_id"],row["head_revision"])
+            data=rec["data"]
+            # Creator can choose only actual USD cameras/listeners shared
+            # across source Takes in this committed non-destructive edit.
+            source_roles={}
+            camera_choices=None
+            listener_choices=None
+            for segment in data["segments"]:
+                take_id=segment["source_take_id"]
+                if take_id not in source_roles:
+                    take=self.index.read_revision(pid,take_id,1)
+                    if take["document_sha256"]!=segment["source_take_document_sha256"]:
+                        raise RuntimeError("Source Take SHA changed in film source catalog")
+                    doc=take["data"]
+                    scene=self.index.read_revision(
+                        pid,doc["scene_id"],doc["scene_revision"])
+                    if scene["document_sha256"]!=doc["scene_document_sha256"]:
+                        raise RuntimeError("Authentic camera/source scene changed")
+                    source_roles[take_id]=scene["data"]["prim_roles"]
+                roles=source_roles[take_id]
+                cameras={path for path,role in roles.items() if role=="camera"}
+                listeners={path for path,role in roles.items()
+                           if role in ("camera","anchor","actor")}
+                camera_choices=(cameras if camera_choices is None
+                                else camera_choices & cameras)
+                listener_choices=(listeners if listener_choices is None
+                                  else listener_choices & listeners)
+            edits.append({
+                "edit_id":rec["object_id"],"edit_revision":rec["revision"],
+                "edit_sha256":rec["document_sha256"],
+                "duration_tick":str(data["duration_tick"]),
+                "cameras":sorted(camera_choices or set())[:32],
+                "listeners":sorted(listener_choices or set())[:32],
+                "segments":[{"segment_id":s["segment_id"],
+                             "source_take_id":s["source_take_id"],
+                             "source_take_sha256":s["source_take_document_sha256"],
+                             "source_shot_id":s["source_shot_id"]}
+                            for s in data["segments"]][:500]})
+        dialogue=[]
+        for row in self.index.list_objects(pid,kind="dialogue")[:128]:
+            rec=self.index.read_revision(pid,row["object_id"],row["head_revision"])
+            doc=rec["data"]
+            if doc.get("format")!="nvp.p1bc.actor_original_dialogue.v1":
+                continue
+            dialogue.append({
+                "dialogue_id":rec["object_id"],"revision":rec["revision"],
+                "dialogue_sha256":rec["document_sha256"],
+                "actor_id":doc["actor_id"],"take_id":doc["source_take_id"]})
+        continuity=[]
+        plans=[]
+        actor_mixes=[]
+        for row in self.index.list_objects(pid,kind="presentation")[:256]:
+            rec=self.index.read_revision(pid,row["object_id"],row["head_revision"])
+            fmt=rec["data"].get("format")
+            if fmt=="nvp.p1d.director_edit_continuity.v1":
+                self._film_continuity().open(pid,rec["object_id"],rec["revision"])
+                continuity.append({
+                    "continuity_id":rec["object_id"],"revision":rec["revision"],
+                    "continuity_sha256":rec["document_sha256"],
+                    "edit_id":rec["data"]["edit_id"],
+                    "edit_sha256":rec["data"]["edit_document_sha256"],
+                    "review_status":rec["data"]["review_status"]})
+            elif fmt=="nvp.p2.original_film_longform_source_schedule.v1":
+                self._film_schedule().open(pid,rec["object_id"],rec["revision"])
+                plans.append({"plan_id":rec["object_id"],"revision":rec["revision"],
+                              "plan_sha256":rec["document_sha256"],
+                              "source_edit_sha256":rec["data"]["edit_document_sha256"],
+                              "total_chunks":rec["data"]["total_chunks"],
+                              "total_frames":rec["data"]["total_frames"],
+                              "longform":rec["data"]["is_thirty_minute_longform"]})
+            elif fmt=="nvp.p1e.actor_owned_dry_spatial_bus.v1":
+                from backend.nvp_p1e_actor_spatial_bus import NativeActorSpatialBus
+                NativeActorSpatialBus(
+                    self.index,verify_director_action=lambda *_:False).open(
+                    pid,rec["object_id"],rec["revision"])
+                actor_mixes.append({
+                    "mix_id":rec["object_id"],"revision":rec["revision"],
+                    "mix_sha256":rec["document_sha256"],
+                    "take_id":rec["data"]["take_id"],
+                    "take_sha256":rec["data"]["take_document_sha256"],
+                    "listener_path":rec["data"]["listener_path"],
+                    "actor_ids":[r["actor_id"] for r in rec["data"]["routes"]],
+                })
+        return {"format":"nvp.p1def.p2.native_source_stage_catalog.v1",
+                "project_id":pid,"edits":edits,"original_dialogue":dialogue,
+                "continuity":continuity,"longform_plans":plans,
+                "actor_spatial_mixes":actor_mixes,
+                "source_modified":False,"export_authorized":False,
+                "film_master_approved":False}
+
+    def data_av_film_stage_director_commit(self,request):
+        self._native_window()
+        required={"project_id","continuity_id","edit_id",
+                  "edit_revision","cues","expected_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Director editing requires exact source and segment cue IDs")
+        from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+        editor=NativeEditorialContinuity(
+            self._edited_assembly(),verify_director_action=lambda event,scope:
+            self._ask(
+                "Approve one immutable, non-destructive SOURCE CUT review?\n"
+                "Project: "+scope["project_id"]+"\n"
+                "Director review: "+scope["continuity_id"]+"\n"
+                "Edit SHA: "+scope["edit_document_sha256"]+"\n"
+                "All segment cues SHA: "+scope["cues_sha256"]+"\n"
+                "Continuity: "+scope["review_status"]+"\n"
+                "This changes no frozen Take and grants NO export or film master."))
+        rec=editor.publish(
+            request["project_id"],request["continuity_id"],
+            edit_id=request["edit_id"],edit_revision=request["edit_revision"],
+            cues=request["cues"],expected_revision=request["expected_revision"],
+            creator_event="native_director")
+        return {"format":"nvp.p1d.native_director_commit_receipt.v1",
+                "status":"ORIGINAL_EDIT_REVIEW_COMMITTED",
+                "continuity_id":rec["object_id"],"revision":rec["revision"],
+                "document_sha256":rec["document_sha256"],
+                "original_source_modified":False,"export_approved":False}
+
+    def data_av_film_stage_actor_bus_commit(self,request):
+        self._native_window()
+        required={"project_id","mix_id","take_id","listener_path",
+                  "routes","expected_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Actor spatial mix needs exact source dialogue routes")
+        from backend.nvp_p1e_actor_spatial_bus import NativeActorSpatialBus
+        mixer=NativeActorSpatialBus(
+            self.index,verify_director_action=lambda event,scope:self._ask(
+                "Approve the source ActorID-owned dry stereo bus?\n"
+                "Take SHA: "+scope["take_document_sha256"]+"\n"
+                "Original dialogue route digest: "+scope["routes_sha256"]+"\n"
+                "Listener: "+scope["listener_path"]+"\n"
+                "This is NOT a generated voice, HRTF or approved sound master."))
+        rec=mixer.publish(
+            request["project_id"],request["mix_id"],
+            take_id=request["take_id"],listener_path=request["listener_path"],
+            routes=request["routes"],expected_revision=request["expected_revision"],
+            creator_event="native_director")
+        return {"format":"nvp.p1e.native_actor_bus_receipt.v1",
+                "status":"SOURCE_DIALOGUE_BUS_COMMITTED",
+                "mix_id":rec["object_id"],"revision":rec["revision"],
+                "document_sha256":rec["document_sha256"],
+                "sound_master_approved":False,"original_pcm_modified":False}
+
+    def data_av_film_stage_longform_publish(self,request):
+        self._native_window()
+        required={"project_id","plan_id","continuity_id","continuity_revision",
+                  "listener_path","camera_path","expected_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Longform source plan requires exact director intent")
+        planner=self._film_schedule(
+            approval=lambda event,scope:self._ask(
+                "Index a source-only original film schedule?\n"
+                "Continuity SHA: "+scope["continuity_sha256"]+"\n"
+                "Original edited film SHA: "+scope["edit_sha256"]+"\n"
+                "All finite source chunks digest: "+scope["chunk_manifest_sha256"]+"\n"
+                "Duration Film Time ticks: "+scope["duration_tick"]+"\n"
+                "Only a plan. No footage has been generated; no production "
+                "worker, installation or film master is authorized."))
+        rec=planner.publish(
+            request["project_id"],request["plan_id"],
+            continuity_id=request["continuity_id"],
+            continuity_revision=request["continuity_revision"],
+            listener_path=request["listener_path"],
+            camera_path=request["camera_path"],
+            expected_revision=request["expected_revision"],
+            creator_event="native_creator")
+        reopened=planner.open(request["project_id"],request["plan_id"],rec["revision"])
+        return {"format":"nvp.p2.native_longform_source_plan_receipt.v1",
+                "status":"SOURCE_ONLY_LONGFORM_PLAN_INDEXED",
+                "plan_id":rec["object_id"],"revision":rec["revision"],
+                "document_sha256":rec["document_sha256"],
+                "total_frames":reopened["data"]["total_frames"],
+                "total_chunks":reopened["data"]["total_chunks"],
+                "is_thirty_minute_longform":reopened["data"]["is_thirty_minute_longform"],
+                "rendered_frames":0,"film_master_approved":False}
+
+    def data_av_film_stage_longform_page(self,request):
+        self._native_window()
+        required={"project_id","plan_id","revision","first_index","limit"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Longform page needs exact original source cursor")
+        return self._film_schedule().page(
+            request["project_id"],request["plan_id"],request["revision"],
+            first_index=request["first_index"],limit=request["limit"])
+
+    def data_av_film_stage_longform_audit_page(self,request):
+        self._native_window()
+        required={"project_id","plan_id","revision","first_index","limit"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Longform derivative audit needs a bounded source page")
+        from pathlib import Path
+        import os
+        home=Path(os.environ["NVP_HOME"])
+        if home.is_symlink() or not home.is_dir():
+            raise RuntimeError("Native source project home not verified")
+        derived=home.parent/"Exports"
+        if derived.is_symlink() or not derived.is_dir():
+            # No creator-approved picture chunk has been published yet.
+            page=self._film_schedule().page(
+                request["project_id"],request["plan_id"],request["revision"],
+                first_index=request["first_index"],limit=request["limit"])
+            return {"format":"nvp.p2.original_film_longform_source_schedule.v1",
+                    "status":"NO_VERIFIED_DERIVATIVE_OUTPUT_PARENT",
+                    "plan_sha256":page["plan_sha256"],
+                    "verified_chunks":[],
+                    "missing_chunks":[x["chunk_id"] for x in page["chunks"]],
+                    "full_film_master_approved":False}
+        return self._film_schedule().reconcile_page(
+            request["project_id"],request["plan_id"],request["revision"],
+            output_parent=derived,first_index=request["first_index"],
+            limit=request["limit"])
+
+    # P1-F: one bounded actor/director-approved original picture+PCM chunk.
+    # This production path uses the same existing Windows Job/Linux delegated
+    # cgroup supervisor as INT-02C, never a new privileged script runner.
+    # P2: a finite reel batch reuses the existing P1-F cancellation ticket.
+    # At most eight exact source chunks per OS-confirmed grant; each child
+    # P1-F approval is consumed once, never refreshed by JS or stale journal.
+    def _native_film_reel_batch(self, *,approval=None,renderer=None,
+                                cancelled=lambda:False,progress=lambda **_:None):
+        from backend.nvp_p2_bounded_film_reel import NativeFilmReelBatch
+        return NativeFilmReelBatch(
+            self._film_schedule(),
+            native_creator_approval=approval or (lambda *_:False),
+            render_png=renderer or (lambda **_:None),
+            cancelled=cancelled,progress=progress)
+
+    def _native_film_export_root(self):
+        from pathlib import Path
+        import os
+        home=Path(os.environ["NVP_HOME"])
+        if home.is_symlink() or not home.is_dir():
+            raise RuntimeError("Native original source storage unavailable")
+        derived=home.parent/"Exports"
+        if home.parent.is_symlink() or derived.is_symlink() or (
+                derived==home or home in derived.parents):
+            raise PermissionError("Plaintext film derivatives cannot share source home")
+        derived.mkdir(mode=0o700,exist_ok=True)
+        return derived
+
+    def data_av_film_stage_reel_preflight(self,request):
+        self._native_window()
+        required={"project_id","plan_id","revision","first_index",
+                  "limit","actor_mix_id","actor_mix_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Finite source reel requires an exact P2 source page")
+        _require_pid(request["project_id"])
+        return self._native_film_reel_batch().preflight(
+            request["project_id"],request["plan_id"],request["revision"],
+            first_index=request["first_index"],limit=request["limit"],
+            output_parent=self._native_film_export_root(),
+            actor_mix_id=request["actor_mix_id"],
+            actor_mix_revision=request["actor_mix_revision"])
+
+    def data_av_film_stage_reel_begin(self,request):
+        self._native_window()
+        required={"project_id","plan_id","revision","first_index",
+                  "limit","actor_mix_id","actor_mix_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Native reel render cannot take filesystem paths or scripts")
+        # Verify all child source intents BEFORE starting a thread/approval.
+        preflight=self.data_av_film_stage_reel_preflight(request)
+        with self._lock:
+            if self._closing:
+                raise PermissionError("Native film window closing")
+            if (self._p1f_export is not None and
+                not self._p1f_export["future"].done()):
+                raise RuntimeError("The previous protected film worker is still active")
+            if (self._edited_export is not None and
+                not self._edited_export["future"].done()):
+                raise RuntimeError("Close or cancel the 30-second native render first")
+            if (self._data_av_controller is not None and
+                self._data_av_controller._active is not None):
+                raise RuntimeError("Stop original sound audition before native render")
+            if (self._original_capture_controller is not None and
+                self._original_capture_controller._active is not None):
+                raise RuntimeError("Finish original PCM recording before native render")
+            parent=self._native_film_export_root()
+            requested=dict(request)
+            cancel=threading.Event()
+            ticket=secrets.token_urlsafe(32)
+            progress={"stage":"QUEUED_CREATOR_REEL_GRANT",
+                      "completed":0,"planned":preflight["chunk_count"]}
+            cycles=[None]
+
+            def perform():
+                from backend.nvp_int02_cycles_renderer import build_native_cycles_renderer
+                def progress_update(**value):
+                    with self._lock:
+                        progress.update(value)
+                def render_frame(**kw):
+                    if cancel.is_set():
+                        raise InterruptedError("Creator cancelled source reel worker")
+                    if cycles[0] is None:
+                        if self._ask(
+                            "This finite original film reel requires genuine "
+                            "OS-contained Blender/Cycles with Windows EFS "
+                            "protection for every staged original source "
+                            "input. Unencrypted SOURCE fallback is forbidden. "
+                            "The separate PNG/PCM derivative is UNENCRYPTED "
+                            "in the exports directory. Approve this native "
+                            "protected renderer for the bounded reel?") is not True:
+                            raise PermissionError("Creator declined original USD staging")
+                        cycles[0]=build_native_cycles_renderer(
+                            self.index,requested["project_id"],
+                            plaintext_consent=True)
+                        with self._lock:
+                            if (self._p1f_export is not None and
+                                self._p1f_export["ticket"]==ticket):
+                                self._p1f_export["cycles_renderer"]=cycles[0]
+                    return cycles[0].render_png(**kw)
+
+                writer=self._native_film_reel_batch(
+                    approval=lambda scope:self._ask(
+                        "Approve exactly ONE source film reel batch?\n"+
+                        "Original plan SHA: "+scope["source_plan_sha256"]+"\n"+
+                        "All child source intents SHA: "+
+                        scope["source_chunk_intents_sha256"]+"\n"+
+                        "Original picture frames: "+str(scope["total_frames"])+"\n"+
+                        "Bounded source chunks: "+str(scope["chunk_count"])+"\n"+
+                        "Output root: "+scope["output_parent"]+"\n"+
+                        "Every child is used at most once. No auto-resume, "
+                        "film master or installation authority."),
+                    renderer=render_frame,cancelled=cancel.is_set,
+                    progress=progress_update)
+                return writer.render(
+                    requested["project_id"],requested["plan_id"],
+                    requested["revision"],
+                    first_index=requested["first_index"],
+                    limit=requested["limit"],output_parent=parent,
+                    actor_mix_id=requested["actor_mix_id"],
+                    actor_mix_revision=requested["actor_mix_revision"])
+
+            future=self._executor.submit(perform)
+            self._p1f_export={"ticket":ticket,"future":future,"cancel":cancel,
+                              "progress":progress,
+                              "project_id":request["project_id"],
+                              "reel_batch":True}
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"QUEUED_NATIVE_APPROVAL","ticket":ticket,
+                    "source_plan_sha256":preflight["source_plan_sha256"],
+                    "chunk_count":preflight["chunk_count"],
+                    "frame_count":preflight["total_frames"],
+                    "film_master_approved":False,
+                    "original_modified":False}
+
+    def data_av_film_stage_chunk_preflight(self,request):
+        self._native_window()
+        required={"project_id","continuity_id","continuity_revision",
+                  "first_frame","frame_count","listener_path","camera_path",
+                  "actor_mix_id","actor_mix_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Finite original picture chunk needs exact source metadata")
+        from backend.nvp_p1f_sustained_delivery import NativeSustainedPictureSound
+        from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+        assembly=self._edited_assembly()
+        native=NativeSustainedPictureSound(
+            assembly,NativeEditorialContinuity(
+                assembly,verify_director_action=lambda *_:False),
+            native_creator_approval=lambda *_:False,
+            render_png=lambda **_:None)
+        return native.preflight(
+            request["project_id"],request["continuity_id"],
+            request["continuity_revision"],first_frame=request["first_frame"],
+            frame_count=request["frame_count"],
+            listener_path=request["listener_path"],camera_path=request["camera_path"],
+            actor_mix_id=request["actor_mix_id"],
+            actor_mix_revision=request["actor_mix_revision"])
+
+    def data_av_film_stage_chunk_begin(self,request):
+        self._native_window()
+        required={"project_id","continuity_id","continuity_revision",
+                  "chunk_id","first_frame","frame_count","listener_path",
+                  "camera_path","actor_mix_id","actor_mix_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Original P1-F source render requires one finite typed chunk")
+        _require_pid(request["project_id"])
+        _id(request["chunk_id"],"original picture and PCM chunk identity")
+        source={k:v for k,v in request.items() if k!="chunk_id"}
+        # Even an invalid request may not consume a grant or create a worker.
+        plan=self.data_av_film_stage_chunk_preflight(source)
+        from pathlib import Path
+        import os
+        with self._lock:
+            if self._closing:
+                raise PermissionError("Creator closed the native picture/sound workspace")
+            if (self._p1f_export is not None and
+                not self._p1f_export["future"].done()):
+                raise RuntimeError("One protected picture/sound chunk at a time")
+            if (self._edited_export is not None and
+                not self._edited_export["future"].done()):
+                raise RuntimeError("Finish or cancel the active 30-second export first")
+            if (self._data_av_controller is not None and
+                self._data_av_controller._active is not None):
+                raise RuntimeError("Stop source audio audition before native film export")
+            if (self._original_capture_controller is not None and
+                self._original_capture_controller._active is not None):
+                raise RuntimeError("Finish native sound capture before authoring derivative")
+            home=Path(os.environ["NVP_HOME"])
+            if home.is_symlink() or not home.is_dir():
+                raise RuntimeError("Trusted original project home unavailable")
+            derived=home.parent/"Exports"
+            if (home.parent.is_symlink() or derived.is_symlink() or
+                derived==home or home in derived.parents):
+                raise PermissionError("Plaintext derivatives may not share encrypted source home")
+            derived.mkdir(mode=0o700,exist_ok=True)
+            if (derived/("P1F_"+request["chunk_id"])).exists():
+                raise FileExistsError("Original film chunk ID already exists")
+            cancel=threading.Event()
+            progress={"stage":"QUEUED_NATIVE_AUTHORIZATION","picture_frames":0}
+            ticket=secrets.token_urlsafe(32)
+            requested=dict(request)
+            cycles_renderer=[None]
+            def perform():
+                from backend.nvp_p1f_sustained_delivery import NativeSustainedPictureSound
+                from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+                from backend.nvp_int02_cycles_renderer import build_native_cycles_renderer
+                assembly=self._edited_assembly()
+                continuity=NativeEditorialContinuity(
+                    assembly,verify_director_action=lambda *_:False)
+
+                def cycles_frame(**kwargs):
+                    if cancel.is_set():
+                        raise InterruptedError("Creator cancelled finite picture worker")
+                    if cycles_renderer[0] is None:
+                        if self._ask(
+                            "An original OpenUSD source frame requires supervised "
+                            "Blender Cycles with Windows EFS or verified protected "
+                            "native source staging. NVP refuses any plaintext "
+                            "fallback for protected originals. The OUTPUT PNG/WAV "
+                            "derivative is intentionally UNENCRYPTED, separate "
+                            "from source project storage. Approve this single "
+                            "finite original picture worker?") is not True:
+                            raise PermissionError("Creator refused exact protected Cycles source staging")
+                        cycles_renderer[0]=build_native_cycles_renderer(
+                            self.index,requested["project_id"],
+                            plaintext_consent=True)
+                        with self._lock:
+                            if (self._p1f_export is not None and
+                                self._p1f_export["ticket"]==ticket):
+                                self._p1f_export["cycles_renderer"]=cycles_renderer[0]
+                    result=cycles_renderer[0].render_png(**kwargs)
+                    with self._lock:
+                        progress["stage"]="RENDERING_ORIGINAL_CYCLES"
+                        progress["picture_frames"]+=1
+                    return result
+                exporter=NativeSustainedPictureSound(
+                    assembly,continuity,
+                    native_creator_approval=lambda scope:self._ask(
+                        "Publish ONE source-bound picture+PCM derivative chunk?\n"+
+                        "Project: "+scope["project_id"]+"\n"+
+                        "Chunk: "+scope["chunk_id"]+"\n"+
+                        "Original source plan SHA: "+scope["plan_sha256"]+"\n"+
+                        "Output: "+scope["output_directory"]+"\n"+
+                        "Finite frames: "+str(scope["frames"])+"\n"+
+                        "Requires a new confirmation for every later chunk. "+
+                        "No source changes, film master or production install authority."),
+                    render_png=cycles_frame,cancelled=cancel.is_set)
+                with self._lock:
+                    progress["stage"]="AWAITING_CREATOR_OR_RENDER"
+                return exporter.export_chunk(
+                    requested["project_id"],requested["continuity_id"],
+                    requested["continuity_revision"],requested["chunk_id"],
+                    derived,first_frame=requested["first_frame"],
+                    frame_count=requested["frame_count"],
+                    listener_path=requested["listener_path"],
+                    camera_path=requested["camera_path"],
+                    actor_mix_id=requested["actor_mix_id"],
+                    actor_mix_revision=requested["actor_mix_revision"])
+            future=self._executor.submit(perform)
+            self._p1f_export={"ticket":ticket,"future":future,"cancel":cancel,
+                              "progress":progress,"project_id":request["project_id"]}
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"QUEUED_NATIVE_APPROVAL","ticket":ticket,
+                    "source_plan_sha256":sha256(json.dumps(
+                        plan,sort_keys=True,separators=(",",":")).encode("ascii")
+                        ).hexdigest(),"frame_count":request["frame_count"],
+                    "original_modified":False,"film_master_approved":False}
+
+    def data_av_film_stage_chunk_poll(self,ticket):
+        self._native_window()
+        with self._lock:
+            job=self._p1f_export
+            if type(ticket) is not str or job is None or job["ticket"]!=ticket:
+                raise PermissionError("Unknown native picture/sound source ticket")
+            future=job["future"]
+            progress=dict(job["progress"])
+        if not future.done():
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"RUNNING_OR_AWAITING_NATIVE_APPROVAL",
+                    "progress":progress,"original_modified":False,
+                    "film_master_approved":False}
+        try:
+            result=future.result()
+        except (PermissionError,InterruptedError) as exc:
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"REFUSED_OR_INTERRUPTED",
+                    "reason":str(exc)[:250],"original_modified":False,
+                    "film_master_approved":False}
+        except BaseException as exc:
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"FAILED_UNVERIFIED","reason":str(exc)[:250],
+                    "original_modified":False,"film_master_approved":False}
+        if job.get("reel_batch") is True:
+            if (result.get("format")!="nvp.p2.bounded_source_film_reel_grant.v1"
+                or result.get("status")!="BOUNDED_REEL_PICTURE_PCM_VERIFIED"
+                or result.get("film_master_approved") is not False):
+                return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                        "status":"FAILED_UNVERIFIED",
+                        "original_modified":False,"film_master_approved":False}
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"FINITE_REEL_CHUNKS_VERIFIED_NOT_MASTER",
+                    "receipt":result,"original_modified":False,
+                    "film_master_approved":False}
+        return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                "status":"INDEPENDENT_SOURCE_CHUNK_VERIFIED_NOT_MASTER",
+                "receipt":result,"original_modified":False,
+                "film_master_approved":False}
+
+    def data_av_film_stage_chunk_cancel(self,ticket):
+        self._native_window()
+        with self._lock:
+            job=self._p1f_export
+            if type(ticket) is not str or job is None or job["ticket"]!=ticket:
+                raise PermissionError("Unknown source render cancellation ticket")
+            job["cancel"].set()
+            worker=job.get("cycles_renderer")
+            if worker is not None:worker.cancel_active()
+        return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
+                "original_modified":False,"film_master_approved":False}
+
+    # P1-B: convert registered original GLB bytes, not browser-uploaded
+    # arbitrary USD or executable model/texture paths.
+    def data_av_actor_asset_catalog(self,project_id):
+        self._native_window()
+        pid=_require_pid(project_id)
+        from backend.nvp_character_assets import CharacterAssets
+        from backend.nvp_p1bc_glb_character import (
+            ImportedCharacterSources,extract_original_glb_skin)
+        store=CharacterAssets(self.index.studio)
+        source=ImportedCharacterSources(self.index)
+        assets=[]
+        unsupported=[]
+        for registered in store.list(pid)[:64]:
+            record,raw=source._registered(pid,registered["asset_id"])
+            if sha256(raw).hexdigest()!=registered["sha256"]:
+                raise RuntimeError("Native GLB registry source bytes changed")
+            try:
+                decoded=extract_original_glb_skin(raw)
+            except ValueError as exc:
+                # Unsupported complex GLB remains available in the old
+                # CharacterAssets workflow; no proxy mesh is substituted.
+                unsupported.append({
+                    "character_asset_id":registered["asset_id"],
+                    "reason":str(exc)[:200]})
+                continue
+            assets.append({
+                "character_asset_id":registered["asset_id"],
+                "original_glb_sha256":registered["sha256"],
+                "license":registered["license"],
+                "attribution":registered["attribution"],
+                # The originating file path remains native-host private.
+                "vertex_count":decoded["original_vertex_count"],
+                "joint_count":len(decoded["joints"]),
+                "joints":decoded["joints"],
+                "facial_targets":[v["name"] for v in
+                                  decoded["skin"].get("facial_targets",[])]})
+        return {"format":"nvp.p1bc.native_original_character_assets.v1",
+                "project_id":pid,"assets":assets,"unsupported":unsupported,
+                "source_material_approximated":False,
+                "source_bytes_modified":False,
+                "redistribution_rights_independently_verified":False}
+
+    def data_av_actor_scene_cast(self,request):
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","scene_id","cast","camera_height"}:
+            raise ValueError("Native 3D actor casting requires a bounded typed scene plan")
+        from backend.nvp_p1bc_scene_cast import NativeActorSceneCasting
+        director=NativeActorSceneCasting(
+            self.index,verify_director_action=lambda event,scope:self._ask(
+                "Create one immutable authored OpenUSD scene with real "
+                "source GLB skinned characters?\n"
+                "Project: "+scope["project_id"]+"\n"
+                "New scene: "+scope["scene_id"]+"\n"
+                "Full actor/rig/motion cast digest: "+scope["creator_cast_sha256"]+"\n"
+                "Original GLB SHAs:\n"+", ".join(scope["source_glb_shas"])+"\n"
+                "Camera height: "+str(scope["camera_height"])+" metres\n"
+                "Original source bytes remain unchanged. This is NOT an "
+                "approved movie Take or finished picture."))
+        result=director.publish(
+            request["project_id"],request["scene_id"],
+            cast=request["cast"],camera_height=request["camera_height"],
+            creator_event="native_creator")
+        return {**result,
+                "format":"nvp.p1bc.native_actor_scene_cast_receipt.v1",
+                "status":"AUTHORITATIVE_ACTOR_SCENE_PUBLISHED"}
+    # P1-B/C: typed native ActorID/scene/skinned-rig/original-voice actions.
+    # These are not FastAPI routes or arbitrary scene file selectors.
+    def data_av_actor_cast(self,project_id):
+        self._native_window()
+        pid=_require_pid(project_id)
+        from backend.nvp_p1bc_actor_registry import ActorDirectory, ACTOR_FORMAT
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        from backend.nvp_openusd_scene import OpenUSDSceneBridge
+        from backend.nvp_temporal_ledger import TemporalLedger
+        from backend.nvp_data_av_source import RecordedSoundSources
+        actors=ActorDirectory(self.index,verify_director_action=lambda *_:False)
+        roster=[]
+        for row in self.index.list_objects(pid,kind="actor")[:64]:
+            actor=actors.open(pid,row["object_id"],1)
+            roster.append({"actor_id":actor["object_id"],
+                           "actor_sha256":actor["document_sha256"],
+                           "display_name":actor["data"]["display_name"]})
+        films=[]
+        take_reader=OpenUSDTakeCapture(
+            self.index,verify_creator_action=lambda *_:False)
+        for row in self.index.list_objects(pid,kind="take")[:32]:
+            record=self.index.read_revision(pid,row["object_id"],1)
+            doc=record["data"]
+            if (record["kind"]!="take" or
+                doc.get("format")!="nvp.digital_take.openusd_temporal.v1" or
+                doc.get("frozen") is not True or
+                not doc.get("actor_bindings")):
+                continue
+            take_reader.verify_take(pid,row["object_id"])
+            source,stage=OpenUSDSceneBridge(self.index).open(
+                pid,doc["scene_id"],doc["scene_revision"])
+            if source["document_sha256"]!=doc["scene_document_sha256"]:
+                raise RuntimeError("Actor source USD changed during cast catalog")
+            cast={a["actor_id"]:a for a in source["data"]["actor_bindings"]}
+            active=TemporalLedger(self.index).events_in(
+                pid,doc["timeline_id"],doc["timeline_revision"],
+                start_tick=0,end_tick=doc["duration_tick"],limit=500)
+            if active.get("next_cursor") is not None:
+                raise RuntimeError("Partial original dialogue source cannot become a cast catalog")
+            cues=[]
+            for event in active["events"]:
+                if event["event_kind"]!="dialogue":
+                    continue
+                actor=cast.get(event["subject_id"])
+                if actor is None or event["payload"].get("usd_prim_path")!=actor["path"]:
+                    continue
+                original=RecordedSoundSources(self.index).describe(
+                    pid,event["source_id"],event["source_revision"])
+                if original["document_sha256"]!=event["source_document_sha256"]:
+                    raise RuntimeError("Original cast PCM source changed")
+                cues.append({"event_id":event["event_id"],
+                             "actor_id":actor["actor_id"],
+                             "usd_prim_path":actor["path"],
+                             "start_tick":str(event["start_tick"]),
+                             "end_tick":str(event["end_tick"]),
+                             "original_pcm_sha256":original["document_sha256"]})
+                if len(cues)>128:
+                    raise RuntimeError("Native actor dialogue catalog too large")
+            films.append({"take_id":record["object_id"],
+                          "take_sha256":record["document_sha256"],
+                          "cast":source["data"]["actor_bindings"],
+                          "original_dialogue":cues})
+        return {"format":"nvp.p1bc.native_actor_cast.v1",
+                "project_id":pid,"actors":roster,"takes":films,
+                "sources_immutable":True,"voices_synthesized":False}
+
+    def data_av_actor_register(self,request):
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","actor_id","display_name"}:
+            raise ValueError("Only one typed original ActorID identity may be registered")
+        from backend.nvp_p1bc_actor_registry import ActorDirectory
+        directory=ActorDirectory(self.index,verify_director_action=
+            lambda event,scope:self._ask(
+                "Register one permanent project ActorID?\n"
+                "ActorID: "+scope["actor_id"]+"\n"
+                "Name: "+request["display_name"]+"\n"
+                "Profile SHA: "+scope["profile_sha256"]+"\n"
+                "Identity cannot be guessed from a glTF filename, future "
+                "voice model, or dialogue text."))
+        record=directory.register(
+            request["project_id"],request["actor_id"],
+            display_name=request["display_name"],creator_event="native_creator")
+        return {"format":"nvp.p1bc.native_actor_registration.v1",
+                "status":"ACTOR_ID_REGISTERED",
+                "actor_id":record["object_id"],
+                "actor_sha256":record["document_sha256"],
+                "source_modified":False,"voice_synthesized":False}
+
+    def data_av_actor_dialogue_bind(self,request):
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","dialogue_id","actor_id","take_id","event_id"}:
+            raise ValueError("Original ActorID dialogue requires exact source identities")
+        from backend.nvp_p1bc_actor_registry import ActorDialogueDirector
+        director=ActorDialogueDirector(self.index,verify_director_action=
+            lambda event,scope:self._ask(
+                "Bind an EXISTING recorded original dialogue event to "
+                "one authoritative ActorID?\n"
+                "ActorID: "+scope["actor_id"]+"\n"
+                "Original Take SHA: "+scope["source_take_sha256"]+"\n"
+                "Exact event/voice intent: "+scope["dialogue_intent_sha256"]+"\n"
+                "This does NOT synthesize speech, animate lips, or approve a master."))
+        record=director.bind(
+            request["project_id"],request["dialogue_id"],
+            actor_id=request["actor_id"],take_id=request["take_id"],
+            event_id=request["event_id"],creator_event="native_creator")
+        return {"format":"nvp.p1bc.native_original_dialogue.v1",
+                "status":"ORIGINAL_DIALOGUE_BOUND",
+                "dialogue_id":record["object_id"],
+                "dialogue_sha256":record["document_sha256"],
+                "take_modified":False,"voice_synthesized":False}
+
+    def data_av_actor_dialogue_at(self,request):
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","dialogue_id","revision","tick"}:
+            raise ValueError("Original actor dialogue read requires exact identity/time")
+        tick=request["tick"]
+        if (type(tick) is not str or len(tick)>19 or not tick.isascii()
+            or not tick.isdecimal()):
+            raise ValueError("Film Time must be exact nonnegative integer ticks")
+        from backend.nvp_p1bc_actor_registry import ActorDialogueDirector
+        result=ActorDialogueDirector(
+            self.index,verify_director_action=lambda *_:False).at(
+            request["project_id"],request["dialogue_id"],
+            request["revision"],int(tick))
+        return {"format":"nvp.p1bc.native_original_dialogue_tick.v1",
+                "result":result,"source_modified":False,
+                "film_master_approved":False}
 
     # PLAN-02-B: original microphone capture (not retired camera still IPC).
     def _original_capture(self):
@@ -589,6 +1476,11 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             if self._edited_export is not None:
                 self._edited_export["cancel"].set()
                 renderer=self._edited_export.get("cycles_renderer")
+                if renderer is not None:
+                    renderer.cancel_active()
+            if self._p1f_export is not None:
+                self._p1f_export["cancel"].set()
+                renderer=self._p1f_export.get("cycles_renderer")
                 if renderer is not None:
                     renderer.cancel_active()
             if self._data_av_controller is not None:

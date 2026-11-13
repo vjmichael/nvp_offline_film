@@ -328,9 +328,16 @@ def required(name):
     pos=args.index(name)+1
     if pos>=len(args): raise RuntimeError("Incomplete sealed preview argument")
     value=args[pos]
-    if not value or "/" in value or chr(92) in value or value in (".",".."):
+    # Only the host supervisor can supply these exact absolute paths after
+    # source/output verification. Blender's cwd is the sealed job directory.
+    # A crafted path, foreign source, renamed output or traversal is denied.
+    expected={"--manifest":"slate_source_preview.json",
+              "--preview":"preview.png"}.get(name)
+    if (expected is None or not os.path.isabs(value) or
+        os.path.normcase(os.path.normpath(value))!=
+            os.path.normcase(os.path.join(os.getcwd(),expected))):
         raise RuntimeError("Untrusted preview output path")
-    return value
+    return expected
 manifest=required("--manifest");output=required("--preview")
 with open(os.path.join(os.getcwd(),manifest),"r",encoding="utf8") as handle:
     src=json.load(handle)
@@ -372,6 +379,16 @@ scene.render.engine="CYCLES"
 scene.cycles.device="CPU"
 scene.cycles.samples=int({"thumbnail":8,"interactive":16,
                           "inspection":24}[src["quality"]])
+# This is a short-lived source review PNG, not a movie master.
+# Linux's genuine Blender 4.0.2 package may be built without OpenImageDenoiser:
+# that build fails even after a valid render setup if denoising is enabled.
+# Disable the optional pass explicitly without changing the source mesh,
+# original USD materials, camera, worker SHA or kernel authorization.
+if hasattr(scene.cycles,"use_denoising"):
+    scene.cycles.use_denoising=False
+for layer in scene.view_layers:
+    if hasattr(layer,"cycles") and hasattr(layer.cycles,"use_denoising"):
+        layer.cycles.use_denoising=False
 scene.render.resolution_x=src["width"]
 scene.render.resolution_y=src["height"]
 scene.render.resolution_percentage=100

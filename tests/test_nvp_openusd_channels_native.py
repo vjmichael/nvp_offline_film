@@ -64,6 +64,9 @@ class PerformanceChannelNativeTests(unittest.TestCase):
         self.assertEqual(record["data"]["layer_order"],
                          ["parameters","motion","layout"])
         self.assertEqual(len(record["data"]["performance_channels"]),4)
+        for layer in stage.GetLayerStack():
+            if "parameters" in layer.identifier:
+                self.assertAlmostEqual(float(layer.timeCodesPerSecond),float(T))
         snapshot=self.state.evaluate(
             self.pid,"usd_scene",1,"timeline",1,tick=T)
         values={p["property"]:p["value"]

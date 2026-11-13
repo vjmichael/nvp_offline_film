@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nvp/slate08b-trusted-desktop-optics-20261106
+      - nvp/w1g-p1a-sec06-integrated-20261112
   pull_request:
     paths:
       - "backend/nvp_slate08b_native_camera_ipc.py"
@@ -11,6 +12,21 @@ on:
       - "frontend/src/FilmCameraSourcePanel.jsx"
       - "frontend/src/CameraLensWorkbench.jsx"
       - "frontend/src/FilmCameraNativeBridge.test.jsx"
+      - "frontend/src/ActorPerformancePanel.jsx"
+      - "frontend/src/ActorSceneCastingPanel.jsx"
+      - "frontend/src/ActorSceneCastingPanel.test.jsx"
+      - "frontend/src/FilmSourceStagesPanel.jsx"
+      - "frontend/src/FilmSourceStagesPanel.test.jsx"
+      - "backend/nvp_p1d_editorial_continuity.py"
+      - "backend/nvp_p1e_actor_spatial_bus.py"
+      - "backend/nvp_p1f_sustained_delivery.py"
+      - "backend/nvp_p2_longform_source_plan.py"
+      - "frontend/src/ActorPerformancePanel.test.jsx"
+      - "frontend/src/DataFirstAVPanel.jsx"
+      - "backend/nvp_p1bc_actor_registry.py"
+      - "backend/nvp_webview_ipc_surface.py"
+      - "tests/test_nvp_webview_ipc_surface.py"
+      - "tests/test_nvp_p1bc_actor_dialogue_native.py"
       - "tests/test_nvp_slate08b_native_camera_ipc.py"
       - ".github/workflows/nvp-slate08b-desktop-camera.yml"
   workflow_dispatch:
@@ -60,4 +76,4 @@ jobs:
           node-version: "22"
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx
+      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx src/ActorPerformancePanel.test.jsx src/ActorSceneCastingPanel.test.jsx src/FilmSourceStagesPanel.test.jsx

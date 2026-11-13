@@ -150,11 +150,24 @@ class OriginalMicrophoneNativeWorkerAudit:
                     "original_native_kernel_custody_verified":True,
                 })
                 total_samples+=window_samples
+        # The original descriptor was opened before native worker execution.
+        # An external writer can change the same-length source while a buffered
+        # read continues to produce the old PCM bytes. Windows timestamps may
+        # also have insufficient resolution to prove no such modification.
+        # Independently reopen the ORIGINAL on-disk source and hash every
+        # exact byte after all native audit windows have completed.
+        if source.is_symlink() or source.parent.is_symlink():
+            raise RuntimeError("Original microphone spool changed or truncated during native audit")
+        fresh_digest=sha256()
+        with source.open("rb") as reread:
+            while fresh_window:=reread.read(PCM_WINDOW_BYTES):
+                fresh_digest.update(fresh_window)
         after=source.stat()
         if (before.st_size!=after.st_size or
             before.st_mtime_ns!=after.st_mtime_ns or
             total_samples!=recorded_samples or
-            digest.hexdigest()!=original_pcm_sha256):
+            digest.hexdigest()!=original_pcm_sha256 or
+            fresh_digest.hexdigest()!=original_pcm_sha256):
             raise RuntimeError("Original microphone spool changed or truncated during native audit")
         return {
             "format":FORMAT,"project_id":project_id,

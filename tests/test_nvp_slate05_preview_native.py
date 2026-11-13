@@ -115,7 +115,7 @@ class Slate05NativeTests(unittest.TestCase):
             "shot_id":None,"shot_revision":None,
             "slate":{"scene":"01","setup":"A","shot":"01A",
                      "camera":"A","take_number":1,"wild":False,
-                     "script_revision":"script_01","notes":"Original"}},
+                     "script_revision":"script_01","notes":"Original"}}
         coverage={
             "branch_id":"shot_A","kind":"coverage","parent_id":"take_root",
             "fork_tick":0,"group_id":"closeup","primary":False,
@@ -124,7 +124,9 @@ class Slate05NativeTests(unittest.TestCase):
             "shot_id":"close_angle","shot_revision":1,
             "slate":{"scene":"01","setup":"A","shot":"01A",
                      "camera":"A","take_number":1,"wild":False,
-                     "script_revision":"script_01","notes":"Close camera"}},
+                     "script_revision":"script_01","notes":"Close camera"}}
+        self.assertIs(type(original),dict)
+        self.assertIs(type(coverage),dict)
         self.slate.publish_graph(self.pid,"slate",
             scene_id="scene",scene_label="01",nodes=[original,coverage])
         self.editor.commit(
@@ -359,7 +361,18 @@ class Slate05RealBlenderSmoke(Slate05NativeTests):
             self.pid,"cut",1,film_tick=0,quality="thumbnail",
             creator_event=self.trusted_event,ram_mb=3072,timeout_seconds=180)
         result=host.run_next()
-        self.assertEqual(result["state"],"SUCCEEDED")
+        if result["state"]!="SUCCEEDED":
+            # The original supervisor owns these on-disk receipts. Log tails
+            # are diagnostic only; they can never authorize a worker or PNG.
+            native_logs={}
+            for native_name in ("worker_stdout.log","worker_stderr.log"):
+                original_path=supervisor.root/request["job_id"]/native_name
+                if original_path.is_file():
+                    native_logs[native_name]=original_path.read_text(
+                        "utf8",errors="replace")[-6000:]
+            self.fail("Genuine SLATE-05 native Blender failed; receipt="+
+                      repr(result)+"; stdout/stderr="+repr(native_logs))
+        self.assertEqual(result["state"],"SUCCEEDED",result)
         png=real_cache.lookup(self.pid,request["cache_key"])
         self.assertEqual(png["status"],"READY")
         self.assertEqual((png["width"],png["height"]),(256,144))

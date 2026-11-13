@@ -73,14 +73,21 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: "usd-core==26.11"
           sudo apt-get update -qq
-          sudo apt-get install -y blender
+          # Native Blender Workbench uses EGL/OpenGL even for a CPU-bound
+          # original preview. The hosted Ubuntu runner does not preinstall
+          # libEGL.so.1; the original job exited -6 before scene render.
+          # Provision genuine OS display dependencies, not a fake PNG.
+          sudo apt-get install -y blender libegl1 libegl-mesa0 libgl1 libgl1-mesa-dri xvfb xauth
+          ldconfig -p | grep -F 'libEGL.so.1'
           /usr/bin/blender -b --version
       - name: Execute real contained Blender blocking preview through approved native dispatch
         shell: bash
         env:
           NVP_NATIVE_BLENDER_EXECUTABLE: /usr/bin/blender
         run: |
-          python -m unittest discover -s tests -p "test_nvp_slate05_preview_native.py" -v
+          # Genuine Workbench GPU-context creation requires a display;
+          # xvfb provides an OS-managed headless X server, never a mock image.
+          xvfb-run -a python -m unittest discover -s tests -p "test_nvp_slate05_preview_native.py" -v
 
   preview-pane-ui:
     name: SLATE-05 React verified-preview status/segment scope

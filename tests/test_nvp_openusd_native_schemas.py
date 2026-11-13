@@ -79,6 +79,10 @@ class NativeUsd02D(unittest.TestCase):
                          "nvp.usd.camera_sphere_light.v1")
         self.assertEqual(record["data"]["layer_order"],
                          ["skeletons","parameters","motion","layout"])
+        self.assertAlmostEqual(float(stage.GetTimeCodesPerSecond()),float(T))
+        for layer in stage.GetLayerStack():
+            if "parameters" in layer.identifier or "skeletons" in layer.identifier:
+                self.assertAlmostEqual(float(layer.timeCodesPerSecond),float(T))
         self.assertTrue(stage.GetPrimAtPath("/World/Camera").IsA(UsdGeom.Camera))
         self.assertTrue(stage.GetPrimAtPath("/World/Light").IsA(UsdLux.SphereLight))
         self.assertTrue(stage.GetPrimAtPath(

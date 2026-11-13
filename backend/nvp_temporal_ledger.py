@@ -275,6 +275,31 @@ class TemporalLedger:
                 "source_revision":rev,"source_document_sha256":sha,
                 "payload":json.loads(payload)}
 
+    def event_by_id(self,project_id,timeline_id,revision,event_id):
+        """One exact indexed original event, even after 500+ source cues.
+
+        Film Time and Audio source authority remain the original sealed
+        timeline manifest and immutable FilmIndex source revision. Never
+        interpret a truncated time-window result as the whole film.
+        """
+        _id(event_id,"source event identity")
+        self.verify(project_id,timeline_id,revision)
+        with self.index.studio._connection() as db:
+            row=db.execute("""SELECT event_id,event_kind,subject_id,
+                start_tick,end_tick,source_id,source_revision,
+                source_document_sha256,payload_json FROM nvp_temporal_events
+                WHERE project_id=? AND timeline_id=? AND revision=?
+                  AND event_id=?""",
+                (project_id,timeline_id,revision,event_id)).fetchone()
+        if row is None:
+            raise KeyError("Original timeline event does not exist")
+        event=self._display(row)
+        source=self.index.read_revision(
+            project_id,event["source_id"],event["source_revision"])
+        if source["document_sha256"]!=event["source_document_sha256"]:
+            raise RuntimeError("Original indexed event source changed")
+        return event
+
     def verify(self, project_id,timeline_id,revision):
         record=self._revision(project_id,timeline_id,revision)
         digest=hashlib.sha256()

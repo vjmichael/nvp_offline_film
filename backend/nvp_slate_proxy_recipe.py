@@ -49,9 +49,17 @@ def value(flag):
     at=arguments.index(flag)+1
     if at>=len(arguments): raise ValueError("Missing preview argument value")
     result=arguments[at]
-    if not result or "/" in result or chr(92) in result or result in (".",".."):
-        raise ValueError("Unsafe Blender preview filename")
-    return result
+    # The native supervisor converts these two sealed worker arguments into
+    # absolute paths inside the independently authenticated job directory.
+    # Do not reject a legitimate source path merely because it is absolute,
+    # and never accept any other path, basename or traversal.
+    expected={"--manifest":"slate_source_preview.json",
+              "--preview":"preview.png"}.get(flag)
+    if (expected is None or not os.path.isabs(result) or
+        os.path.normcase(os.path.normpath(result))!=
+            os.path.normcase(os.path.join(os.getcwd(),expected))):
+        raise ValueError("Preview path not the exact supervisor-owned file")
+    return expected
 
 manifest=value("--manifest")
 filename=value("--preview")

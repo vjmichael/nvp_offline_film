@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nvp/int02-w1g-native-film-package-20261112
+      - nvp/w1g-p1a-sec06-integrated-20261112
   workflow_dispatch:
 
 # Preserve only the latest candidate acceptance run per branch/workflow.
@@ -34,6 +35,10 @@ jobs:
         run: |
           python -m compileall -q backend tools tests
           python -m unittest discover -s tests -p 'test_nvp_int02_edited_film.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_int02_playable_preview.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1bc_actor_dialogue_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1bc_glb_scene_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1def_p2_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_int02_shot_composition.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_native_package.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_protected_upgrade.py' -v
@@ -83,7 +88,7 @@ jobs:
         run: |
           python -m compileall -q backend tools tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $files=@('test_nvp_int02_edited_film.py','test_nvp_int02_shot_composition.py',
+          $files=@('test_nvp_int02_edited_film.py','test_nvp_int02_playable_preview.py','test_nvp_p1bc_actor_dialogue_native.py','test_nvp_p1bc_glb_scene_native.py','test_nvp_p1def_p2_native.py','test_nvp_int02_shot_composition.py',
             'test_nvp_w1g_native_package.py','test_nvp_w1g_protected_upgrade.py',
             'test_nvp_w1g_first_party_result_verifier.py',
             'test_nvp_w1g_native_link_audit.py',
@@ -121,11 +126,22 @@ jobs:
           sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
           python -m pip install -r requirements-foundation.txt httpx
           python -m pip install --only-binary=:all: 'usd-core==26.11'
-          version=5.2.3
-          base=https://download.blender.org/release/Blender5.2
+          # The original Linux runner got HTTP 403 on the old Blender 5.2.3
+          # URL. Only accept current official 5.2 LTS artifacts and their SHA.
+          version=5.2.4
           archive="blender-${version}-linux-x64.tar.xz"
-          curl --fail --location --retry 4 --retry-delay 5 "$base/$archive" -o "$archive"
-          curl --fail --location --retry 4 --retry-delay 5 "$base/blender-${version}.sha256" -o blender.sha256
+          for name in "$archive" "blender-${version}.sha256"; do
+            if [[ "$name" == *.sha256 ]]; then target=blender.sha256
+            else target="$name"; fi
+            fetched=0
+            for base in https://download.blender.org/release/Blender5.2 https://mirror.blender.org/release/Blender5.2; do
+              if curl --fail --location --retry 2 --retry-delay 3 "$base/$name" -o "$target"; then
+                fetched=1
+                break
+              fi
+            done
+            test "$fetched" = 1 || { echo "Official Blender artifact missing: $name"; exit 1; }
+          done
           grep "  $archive$" blender.sha256 | sha256sum --check --status
           mkdir -p /tmp/nvp-int02c-blender
           tar -xJf "$archive" -C /tmp/nvp-int02c-blender --strip-components=1

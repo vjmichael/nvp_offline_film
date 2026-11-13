@@ -99,7 +99,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q tools/nvp_desktop_alpha.py
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all cryptography --hidden-import tools.nvp_w1g_reviewed_release --collect-submodules backend --add-data 'tools/nvp_int02_cycles_frame_worker.py;tools' tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all cryptography --collect-all miniaudio --collect-all sounddevice --collect-all _sounddevice_data --hidden-import tools.nvp_native_device_producer_worker --hidden-import tools.nvp_p1b_physical_device_acceptance --hidden-import tools.nvp_w1g_reviewed_release --collect-submodules backend --add-data 'tools/nvp_int02_cycles_frame_worker.py;tools' tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
           python -m tools.nvp_w1g_release_build_marker --bundle dist/NVP
@@ -107,8 +107,26 @@ jobs:
           python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
           python tools/nvp_w1g_native_package.py build --bundle dist/NVP --output "$env:RUNNER_TEMP/nvp-w1g-native-build.json"
           if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }
-          & 'dist/NVP/NVP.exe' --smoke
-          if ($LASTEXITCODE -ne 0) { throw 'Uninstalled native alpha smoke failed' }
+          # --windowed NVP.exe is a GUI executable: direct "&" is not a
+          # synchronous execution receipt in PowerShell.
+          $exe=(Resolve-Path 'dist/NVP/NVP.exe').Path
+          foreach ($mode in @('--smoke','--smoke-producer-bundle')) {
+            $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP ("nvp-uninstalled-" + $mode.TrimStart('-') + ".txt")
+            $p=Start-Process -FilePath $exe -ArgumentList $mode -PassThru
+            if (-not $p.WaitForExit(120000)) {
+              $p.Kill()
+              throw "Uninstalled candidate timed out: $mode"
+            }
+            if ($p.ExitCode -ne 0) {
+              if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH }
+              throw "Uninstalled candidate failed: $mode exit=$($p.ExitCode)"
+            }
+            if ($mode -eq '--smoke-producer-bundle') {
+              if (-not (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH)) { throw 'Uninstalled producer receipt absent' }
+              if ((Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH -Raw) -notmatch 'producer_bundle_verified_no_device_opened') { throw 'Producer adapter execution not verified' }
+            }
+          }
+          Remove-Item Env:NVP_SMOKE_DIAGNOSTIC_PATH
       - name: Require genuine packaged Ed25519 signed-review admission and tamper refusal
         shell: pwsh
         run: |
@@ -218,6 +236,24 @@ jobs:
             throw 'Restored original installed NVP.exe --smoke-reopen timed out after real NSIS rollback'
           }
           if ($restored.ExitCode -ne 0) { throw 'Restored original installed NVP.exe could not reopen original film data' }
+      - name: Verify actual installed device-producer bundle, without recording
+        shell: pwsh
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-p1b-installed-bundle.txt'
+          # Explicit exit and durable receipt, not an inherited LASTEXITCODE.
+          $p=Start-Process -FilePath $installed -ArgumentList '--smoke-producer-bundle' -PassThru
+          if (-not $p.WaitForExit(120000)) {
+            $p.Kill()
+            throw 'Installed device-producer bundle timed out'
+          }
+          if ($p.ExitCode -ne 0) {
+            if (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH }
+            throw "Installed device-producer bundle exited $($p.ExitCode)"
+          }
+          if (-not (Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH)) { throw 'Installed producer receipt absent' }
+          if ((Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH -Raw) -notmatch 'producer_bundle_verified_no_device_opened') { throw 'Installed device-producer adapter was not executed' }
+          Remove-Item Env:NVP_SMOKE_DIAGNOSTIC_PATH
       - name: Independently reopen original USD and PCM in the installed native runtime
         shell: pwsh
         run: |

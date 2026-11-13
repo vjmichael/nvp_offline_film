@@ -77,7 +77,7 @@ class NativeLiveSoundSession:
         self.subject_id=subject_id
         self.approve_start=native_approve_start
         self.approve_freeze=native_approve_freeze
-        self.device_factory=device_factory or _capture_device
+        self.device_factory=device_factory
         if native_pcm_auditor is not None:
             from backend.nvp_p1a_original_capture_worker_bridge import OriginalMicrophoneNativeWorkerAudit
             if type(native_pcm_auditor) is not OriginalMicrophoneNativeWorkerAudit:
@@ -141,7 +141,15 @@ class NativeLiveSoundSession:
                     self._total_queued>self.max_samples):
                 self._error=RuntimeError("Native microphone exceeded source bound")
                 return
-        try:self._queue.put_nowait(raw)
+        try:
+            # Real-time native callbacks must never wait on disk. After the
+            # kernel-supervised child has fully stopped, however, replay is
+            # off the audio thread: bounded backpressure preserves every
+            # original PCM packet instead of falsely reporting an overrun.
+            if self.device_factory is None and self._state=="FINALIZING":
+                self._queue.put(raw,timeout=5)
+            else:
+                self._queue.put_nowait(raw)
         except queue.Full:
             self._error=RuntimeError("Microphone queue overran disk writer")
             # Never drop samples and silently approve a discontinuous Take.
@@ -183,7 +191,7 @@ class NativeLiveSoundSession:
             prefix="nvp-live-original-",dir=str(self._journal.root)))
         self._spool=self._tmp/"recording.pcm"
         try:
-            if self.native_pcm_auditor is not None and os.name=="nt":
+            if (self.native_pcm_auditor is not None or self.device_factory is None) and os.name=="nt":
                 # Device PCM is not allowed to begin in plaintext scratch
                 # when the production compiled-worker audit is enabled.
                 from backend.nvp_w1g_encrypted_source import require_efs_stage
@@ -198,7 +206,14 @@ class NativeLiveSoundSession:
             target=self._writer,name="NVP trusted PCM spool",daemon=True)
         self._worker.start()
         try:
-            self._device=self.device_factory()
+            if self.device_factory is None:
+                from backend.nvp_device_producer_custody import (
+                    SupervisedNativeDevice, scope_sha256)
+                self._device=SupervisedNativeDevice(
+                    self._tmp, mode="mono", max_samples=self.max_samples,
+                    scope_digest=scope_sha256(scope))
+            else:
+                self._device=self.device_factory()
             generator=self._callback()
             next(generator)
             self._device.start(generator)
@@ -208,12 +223,18 @@ class NativeLiveSoundSession:
             raise
         return {**scope,"status":"RECORDING","source_modified":False}
 
-    def _stop_device(self):
+    def _stop_device(self,*,abort=False):
         dev=self._device
         self._device=None
         if dev is not None:
-            try:dev.stop()
-            finally:dev.close()
+            # Cancellation may have recorded zero samples: revoke the worker
+            # and prove the kernel tree empty without asking it to publish a
+            # clean PCM receipt. A normal freeze needs both proofs.
+            try:
+                if not abort or not getattr(dev,"uses_worker_clock",False):
+                    dev.stop()
+            finally:
+                dev.close()
 
     def _drain(self):
         # Stop device first: no callback may enqueue once writer sees sentinel.
@@ -230,7 +251,7 @@ class NativeLiveSoundSession:
             raise RuntimeError("Recorded microphone samples are incomplete")
         # The worker has closed and fsynced the source bytes. This is only
         # evidence of a durable sound signal, never Take approval.
-        if self.native_pcm_auditor is not None and os.name=="nt":
+        if (self.native_pcm_auditor is not None or self.device_factory is None) and os.name=="nt":
             from backend.nvp_w1g_encrypted_source import verify_efs_inputs
             verify_efs_inputs(self._tmp,("recording.pcm",))
         self._sealed_original_sha=self._source_checksum()
@@ -276,7 +297,7 @@ class NativeLiveSoundSession:
             recorded=NativeSceneSoundCapture(
                 self.index,approve_take=self.approve_freeze,
                 protected_spool_root=(
-                    self._tmp if native_audit is not None and os.name=="nt"
+                    self._tmp if (native_audit is not None or self.device_factory is None) and os.name=="nt"
                     else None))
             receipt=recorded.capture(
                 self.project_id,self.take_id,
@@ -300,7 +321,7 @@ class NativeLiveSoundSession:
             return {**receipt,"status":"FROZEN_ORIGINAL_LIVE_TAKE",
                     "actual_recorded_samples":self._count,
                     "actual_audio_end_tick":str(end),
-                    "device_runtime":"native_miniaudio_pcm",
+                    "device_runtime":("supervised_native_job_cgroup_pcm" if self.device_factory is None else "trusted_injected_test_device"),
                     "compiled_capture_worker_audit":native_audit,
                     "compiled_worker_is_device_recorder":False,
                     "source_modified":False}
@@ -340,7 +361,7 @@ class NativeLiveSoundSession:
             return {"status":self._state,"take_created":self._state=="FROZEN"}
         self._state="CANCELLING"
         try:
-            self._stop_device()
+            self._stop_device(abort=True)
             if self._worker is not None:
                 self._queue.put(None,timeout=10)
                 self._worker.join(timeout=15)

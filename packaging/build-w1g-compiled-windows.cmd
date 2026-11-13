@@ -23,5 +23,7 @@ python -m tools.nvp_w1g_native_worker_functional_acceptance --binary-dir accepta
 if errorlevel 1 exit /b 5
 python -m tools.nvp_w1g_native_link_audit --binary-dir acceptance_artifacts\w1g-compiled-windows --platform windows-amd64 --output acceptance_artifacts\w1g-windows-native-imports.json
 if errorlevel 1 exit /b 6
-echo Five actual compiled Windows PE64 role slices verified under original native Job Objects.
+python -m tools.nvp_w1g_compiled_supply_chain_intake --binary-dir acceptance_artifacts\w1g-compiled-windows --native-imports acceptance_artifacts\w1g-windows-native-imports.json --output acceptance_artifacts\w1g-windows-unsigned-review-intake.json
+if errorlevel 1 exit /b 7
+echo Five actual compiled Windows PE64 role slices verified under original native Job Objects; unsigned runtime review intake generated.
 exit /b 0

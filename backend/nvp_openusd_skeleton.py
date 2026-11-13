@@ -10,11 +10,25 @@ from __future__ import annotations
 import math
 import re
 from backend.nvp_openusd_scene import _usd, _vector, MAX_USD_EXACT_TICK
-from backend.nvp_temporal_ledger import _int
+from backend.nvp_temporal_ledger import _int, TICKS_PER_SECOND
 
 MAX_RIGS=8
 MAX_JOINTS=32
 MAX_KEYS=256
+
+
+def _source_matrix(value):
+    # Original GLB 4x4 source/bind transform, not a guessed pelvis offset.
+    from pxr import Gf
+    if (type(value) is not list or len(value)!=16 or any(
+        type(x) not in (float,int) or not math.isfinite(x)
+        or abs(x)>1e6 for x in value)):
+        raise ValueError("Native rig source transform must be sixteen finite numbers")
+    matrix=Gf.Matrix4d(*[float(x) for x in value])
+    if not math.isfinite(matrix.GetDeterminant()) or abs(matrix.GetDeterminant())<1e-8:
+        raise ValueError("Native rig source transform is singular")
+    return matrix
+
 JOINT = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?:/[A-Za-z][A-Za-z0-9_]*)*\Z")
 
 
@@ -34,7 +48,8 @@ def validate_rigs(roles, rigs):
     for rig in rigs:
         if (type(rig) is not dict or
             not {"path","joints","samples"}<=set(rig) or
-            not set(rig)<= {"path","joints","samples","skin"}):
+            not set(rig)<= {"path","joints","samples","skin",
+                            "rest_transforms","bind_transforms"}):
             raise ValueError("Invalid exact USD rig descriptor")
         path=rig["path"]
         if roles.get(path)!="actor" or path in seen:
@@ -49,22 +64,39 @@ def validate_rigs(roles, rigs):
         for i,j in enumerate(joints):
             if "/" in j and j.rsplit("/",1)[0] not in joints[:i]:
                 raise ValueError("Skeleton must define each parent before its children")
+        if ("rest_transforms" in rig)!=("bind_transforms" in rig):
+            raise ValueError("Original GLB rest and bind matrices must be paired")
+        if "rest_transforms" in rig:
+            for key in ("rest_transforms","bind_transforms"):
+                transforms=rig[key]
+                if type(transforms) is not list or len(transforms)!=len(joints):
+                    raise ValueError("Every imported joint requires an exact rest/bind matrix")
+                for source in transforms:
+                    _source_matrix(source)
         samples=rig["samples"]
         if type(samples) is not list or not 2<=len(samples)<=MAX_KEYS:
             raise ValueError("Native joint animation needs bounded time keys")
         previous=-1
         for entry in samples:
-            if type(entry) is not dict or set(entry)!={"tick","translations"}:
+            if type(entry) is not dict or set(entry) not in (
+                    {"tick","translations"},{"tick","joint_transforms"}):
                 raise ValueError("Unsupported joint key schema")
             tick=_int(entry["tick"],"joint sample time",maximum=MAX_USD_EXACT_TICK)
             if tick<=previous:
                 raise ValueError("Joint time keys must strictly increase")
             previous=tick
-            translations=entry["translations"]
-            if type(translations) is not list or len(translations)!=len(joints):
-                raise ValueError("Joint animation keys must cover every joint")
-            for position in translations:
-                _vector(position)
+            if "translations" in entry:
+                translations=entry["translations"]
+                if type(translations) is not list or len(translations)!=len(joints):
+                    raise ValueError("Joint animation keys must cover every joint")
+                for position in translations:
+                    _vector(position)
+            else:
+                transforms=entry["joint_transforms"]
+                if type(transforms) is not list or len(transforms)!=len(joints):
+                    raise ValueError("Imported GLB joint samples must cover every joint")
+                for matrix in transforms:
+                    _source_matrix(matrix)
         descriptor={"path":path,"joints":list(joints),
                     "sample_count":len(samples)}
         if "skin" in rig:
@@ -77,6 +109,11 @@ def validate_rigs(roles, rigs):
                 "skin_weighted":True,
                 "facial_animation_rendered":False,
             })
+            if "source_glb_sha256" in skin:
+                descriptor.update({
+                    "original_glb_sha256":skin["source_glb_sha256"],
+                    "actual_imported_glb_vertices":True,
+                })
         result.append(descriptor)
     return result
 
@@ -87,6 +124,9 @@ def author_skeleton_layer(roles, rigs):
     UsdSkel,Vt=_skel()
     layer=Sdf.Layer.CreateAnonymous("nvp_skeletons.usda")
     stage=Usd.Stage.Open(layer)
+    # Match exact native Film Time across every composited Sdf sublayer.
+    # The default 24 tps would distort genuine joint keys on composition.
+    stage.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
     for rig in rigs:
         root_path=rig["path"]+"/Rig"
         root=UsdSkel.Root.Define(stage,root_path)
@@ -100,8 +140,15 @@ def author_skeleton_layer(roles, rigs):
             raise RuntimeError("Native USD skeleton topology invalid: "+str(reason))
         skel.GetJointsAttr().Set(joints)
         identity=Vt.Matrix4dArray([Gf.Matrix4d(1.0) for _ in rig["joints"]])
-        skel.GetBindTransformsAttr().Set(identity)
-        skel.GetRestTransformsAttr().Set(identity)
+        bind_matrices=Vt.Matrix4dArray([
+            _source_matrix(mat) for mat in rig["bind_transforms"]
+        ]) if "bind_transforms" in rig else identity
+        rest_matrices=Vt.Matrix4dArray([
+            _source_matrix(mat) for mat in rig["rest_transforms"]
+        ]) if "rest_transforms" in rig else identity
+        if (not skel.GetBindTransformsAttr().Set(bind_matrices) or
+            not skel.GetRestTransformsAttr().Set(rest_matrices)):
+            raise RuntimeError("Actual imported GLB joint bind/rest transforms missing")
         animation=UsdSkel.Animation.Define(
             stage,root_path+"/Skeleton/Animation")
         animation.GetJointsAttr().Set(joints)
@@ -120,10 +167,13 @@ def author_skeleton_layer(roles, rigs):
                 raise RuntimeError("Author did not preserve canonical skeleton mesh path")
         for sample in rig["samples"]:
             matrices=[]
-            for point in sample["translations"]:
-                m=Gf.Matrix4d(1.0)
-                m.SetTranslate(Gf.Vec3d(*_vector(point)))
-                matrices.append(m)
+            if "joint_transforms" in sample:
+                matrices=[_source_matrix(x) for x in sample["joint_transforms"]]
+            else:
+                for point in sample["translations"]:
+                    m=Gf.Matrix4d(1.0)
+                    m.SetTranslate(Gf.Vec3d(*_vector(point)))
+                    matrices.append(m)
             if not animation.SetTransforms(
                 Vt.Matrix4dArray(matrices),
                 Usd.TimeCode(float(sample["tick"]))):
