@@ -31,7 +31,10 @@ class ExactNativeSupplyIntakeTests(unittest.TestCase):
         binary_dir = root / "compiled"
         binary_dir.mkdir()
         platform = "windows-amd64" if sys.platform == "win32" else "linux-amd64"
-        executable = Path(sys.executable).resolve(strict=True)
+        # Ubuntu CPython launcher can be a ~18 KiB ELF shim; use a genuine
+        # nontrivial system executable meeting native worker size bounds.
+        executable = Path(sys.executable if platform == "windows-amd64"
+                          else "/bin/bash").resolve(strict=True)
         image_sha = _sha(executable)
         workers = []
         imports = []
