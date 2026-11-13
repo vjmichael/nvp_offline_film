@@ -30,7 +30,9 @@ AUDIT_FIELDS=frozenset((
 ))
 WINDOW_FIELDS=frozenset((
     "job_id","first_sample","sample_count","window_pcm_sha256",
-    "worker_result_sha256","original_native_kernel_custody_verified"
+    "worker_result_sha256","native_worker_binary_sha256",
+    "native_worker_plan_sha256","os_custody_receipt_sha256",
+    "original_native_kernel_custody_verified"
 ))
 
 
@@ -82,7 +84,9 @@ def validate_original_audit(audit,*,project_id,take_id,scene_id,scene_sha,
             entry["original_native_kernel_custody_verified"] is not True or
             entry["job_id"] in jobs or
             any(type(entry[x]) is not str or not SHA.fullmatch(entry[x])
-                for x in ("window_pcm_sha256","worker_result_sha256"))):
+                for x in ("window_pcm_sha256","worker_result_sha256",
+                      "native_worker_binary_sha256","native_worker_plan_sha256",
+                      "os_custody_receipt_sha256"))):
             raise PermissionError("Forged, discontinuous or duplicated native worker window receipt")
         jobs.add(entry["job_id"])
         position+=entry["sample_count"]
