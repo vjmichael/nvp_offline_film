@@ -10,7 +10,8 @@ const actors=[{actor_id:'ActorLead',display_name:'Lead'},
 const glb={character_asset_id:'CHR_'+'c'.repeat(24),
   original_glb_sha256:sha,license:'creator_owned',
   source:'local',attribution:'Author',joint_count:3,
-  vertex_count:3,joints:['Bone000','Bone001','Bone002']};
+  vertex_count:3,joints:['Bone000','Bone001','Bone002'],
+  facial_targets:['jaw_open']};
 function bridge(){
   return {
     data_av_actor_asset_catalog:vi.fn(async()=>({
@@ -45,6 +46,10 @@ describe('P1-B original GLB actor casting desktop GUI',()=>{
     fireEvent.change(screen.getByLabelText(
       'Director-authored joint X travel (metres) 1'),
       {target:{value:'0.25'}});
+    fireEvent.change(screen.getByLabelText('Original GLB facial morph 1'),
+      {target:{value:'jaw_open'}});
+    fireEvent.change(screen.getByLabelText('Author facial strength 0..1 1'),
+      {target:{value:'0.6'}});
     fireEvent.click(screen.getByText('Ask native director to publish exact 3D cast'));
     await waitFor(()=>expect(native.data_av_actor_scene_cast).toHaveBeenCalledOnce());
     const request=native.data_av_actor_scene_cast.mock.calls[0][0];
@@ -52,7 +57,8 @@ describe('P1-B original GLB actor casting desktop GUI',()=>{
       project_id:pid,scene_id:'ActorSourceScene001',
       camera_height:8,
       cast:[{actor_id:'ActorLead',character_asset_id:glb.character_asset_id,
-        position:[0,0,0],motion_joint:'Bone001',travel:.25}],
+        position:[0,0,0],motion_joint:'Bone001',travel:.25,
+        face_target:'jaw_open',face_strength:.6}],
     });
     expect(request.creator_approved).toBeUndefined();
     expect(request.glb_file).toBeUndefined();

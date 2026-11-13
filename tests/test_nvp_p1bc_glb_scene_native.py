@@ -46,6 +46,8 @@ def original_rigged_glb():
     joints=source(bytes([1,0,0,0]*3),"VEC4",5121,3)
     weights=source(struct.pack("<12f",*([1.0,0.0,0.0,0.0]*3)),
                    "VEC4",5126,3)
+    jaw=source(struct.pack("<9f",0,.2,0, 0,0,0, 0,0,0),
+               "VEC3",5126,3)
     doc={"asset":{"version":"2.0"},
          "buffers":[{"byteLength":len(raw)}],
          "bufferViews":views,"accessors":accessors,
@@ -56,8 +58,9 @@ def original_rigged_glb():
          "meshes":[{"primitives":[{
              "attributes":{"POSITION":pos,"JOINTS_0":joints,
                            "WEIGHTS_0":weights},
+             "targets":[{"POSITION":jaw}],
              "material":0,"mode":4
-         }]}],
+         }],"extras":{"targetNames":["jaw_open"]}}],
          "materials":[{
              "name":"Original GLB PBR",
              "pbrMetallicRoughness":{
@@ -96,7 +99,8 @@ class OriginalImportedGLBAndActing(unittest.TestCase):
         self.cast=[{"actor_id":"ActorLead",
                     "character_asset_id":self.registered["asset_id"],
                     "position":[0.0,0.0,0.0],
-                    "motion_joint":"Bone001","travel":0.4}]
+                    "motion_joint":"Bone001","travel":0.4,
+                    "face_target":"jaw_open","face_strength":0.5}]
         self.source=self.director.publish(
             self.project,"SourceHumanScene",cast=self.cast,
             camera_height=8.0,creator_event="creator_yes")
@@ -141,6 +145,11 @@ class OriginalImportedGLBAndActing(unittest.TestCase):
         origin=evaluate_skin(stage,prim,"/World/Actor001",0)
         mid=evaluate_skin(stage,prim,"/World/Actor001",T//2)
         self.assertTrue(mid["skinning_evaluated"])
+        self.assertTrue(mid["facial_deformation_evaluated"])
+        self.assertEqual(mid["source_facial_shapes"][0]["name"],"jaw_open")
+        self.assertAlmostEqual(mid["source_facial_shapes"][0]["weight"],.25)
+        self.assertAlmostEqual(mid["deformed_points"][0][2]-
+                               origin["deformed_points"][0][2],.05,places=4)
         self.assertAlmostEqual(mid["deformed_points"][0][0]-
                                origin["deformed_points"][0][0],.2,places=4)
         source=rec["data"]["imported_characters"][0]
@@ -161,6 +170,10 @@ class OriginalImportedGLBAndActing(unittest.TestCase):
         act=attestor.at(self.project,"ActorLeadOriginalLine",1,T//2)
         self.assertTrue(act["dialogue_active"])
         self.assertTrue(act["native_skin_deformation_evaluated"])
+        self.assertTrue(act["native_facial_deformation_evaluated"])
+        self.assertEqual(act["original_glb_face_targets"][0]["name"],"jaw_open")
+        self.assertAlmostEqual(
+            act["original_glb_face_targets"][0]["weight"],.25)
         self.assertEqual(act["source_skin_vertex_count"],3)
         self.assertFalse(act["voice_synthesized"])
         self.assertEqual(OpenUSDTakeCapture(
@@ -200,6 +213,7 @@ class OriginalImportedGLBAndActing(unittest.TestCase):
         a,b=baked(source0),baked(source1)
         self.assertEqual(len(a),3)
         self.assertAlmostEqual(b[0][0]-a[0][0],.2,places=4)
+        self.assertAlmostEqual(b[0][2]-a[0][2],.05,places=4)
 
     def test_refused_duplicate_foreign_or_tampered_glb_never_cast(self):
         before=self.index.read_revision(self.project,"SourceHumanScene",1)
