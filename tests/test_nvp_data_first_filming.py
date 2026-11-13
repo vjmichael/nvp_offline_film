@@ -1219,6 +1219,32 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+    def test_spool_close_failure_does_not_mask_original_pcm_rejection(self):
+        from unittest.mock import patch
+        import tempfile
+        real_spool=tempfile.SpooledTemporaryFile
+        closed=[]
+        class FailingCloseSpool:
+            def __init__(self, *args, **kwargs):
+                self.delegate=real_spool(*args, **kwargs)
+            def __getattr__(self, name):
+                return getattr(self.delegate, name)
+            def close(self):
+                closed.append(True)
+                self.delegate.close()
+                raise OSError("simulated delayed close failure")
+        req=self.payload()
+        req["recordings"][0]["pcm_chunks"]=[self.original, bytes(2)]
+        with patch("backend.nvp_data_first_filming.tempfile.SpooledTemporaryFile",
+                   side_effect=FailingCloseSpool):
+            with self.assertRaisesRegex(ValueError,"sample count does not match"):
+                self.capture.capture(**req)
+        self.assertEqual(closed,[True])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
