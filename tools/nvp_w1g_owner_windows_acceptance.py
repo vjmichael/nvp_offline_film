@@ -68,6 +68,9 @@ def read_only_production_preflight(owner, upgrade, kernel, reviewed_receipt):
         os.name!="nt"):
         raise PermissionError("Physical production preflight requires original native Windows authorities")
     _snapshot_root(owner)
+    if upgrade.journal.exists() or upgrade.journal.is_symlink():
+        raise RuntimeError(
+            "Existing production activation journal requires owner reconciliation")
     verify_build_marker(owner.active)
     verify_build_marker(owner.pending)
     verify_installed(reviewed_receipt,owner.pending)
