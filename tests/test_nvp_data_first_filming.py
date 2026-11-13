@@ -67,6 +67,30 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+    def test_cancelled_original_pcm_closes_device_without_publication(self):
+        req=self.payload()
+        closed=[]
+        consumed=[]
+        class CancelledCapture(BaseException):
+            pass
+        def recording_device():
+            try:
+                consumed.append("device started")
+                yield self.original[:24000]
+                raise CancelledCapture("recording revoked")
+            finally:
+                closed.append("device released")
+        req["recordings"][0]["pcm_chunks"]=recording_device()
+        with self.assertRaisesRegex(CancelledCapture,"recording revoked"):
+            self.capture.capture(**req)
+        self.assertEqual(consumed,["device started"])
+        self.assertEqual(closed,["device released"])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+        self.assertEqual(self.approvals,[])
+
     def test_equal_length_substituted_publication_cannot_freeze_take(self):
         from unittest.mock import patch
         req=self.payload()
