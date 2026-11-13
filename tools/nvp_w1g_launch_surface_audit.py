@@ -26,6 +26,9 @@ ALLOWED={
     "backend/nvp_color_ocio.py":{"run"},
     "backend/nvp_w1g_legacy_blender_launch.py":{"run"},
     "backend/nvp_w1g_owned_subprocess.py":{"run"},
+    "backend/nvp_native_frame_index.py":{"Popen"},
+    "backend/nvp_audio01f_picture_sound.py":{"Popen"},
+    "backend/nvp_worker_linux_cgroup.py":{"Popen"},
 }
 MARKERS={
     "backend/nvp_worker_containment.py":(
@@ -48,6 +51,15 @@ MARKERS={
     "backend/nvp_w1g_owned_subprocess.py":(
         "if os.name != \"nt\":",
         "from backend.nvp_worker_containment import launch_contained",
+    ),
+    "backend/nvp_native_frame_index.py":(
+        'if os.name == "nt":', "run_owned_subprocess(", "stream = owned_output",
+    ),
+    "backend/nvp_audio01f_picture_sound.py":(
+        'if os.name == "nt":', "run_owned_subprocess(", "proc=subprocess.Popen(command",
+    ),
+    "backend/nvp_worker_linux_cgroup.py":(
+        'if sys.platform!="linux" or os.name!="posix":', "guardian=subprocess.Popen",
     ),
 }
 OPS=frozenset(("run","Popen","call","check_output","check_call","getoutput",
