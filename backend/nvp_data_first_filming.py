@@ -237,10 +237,14 @@ class NativeSceneSoundCapture:
                     spool=tempfile.NamedTemporaryFile(
                         mode="w+b",prefix=".nvp-take-source-",
                         dir=self.protected_spool_root,delete=True)
+                    # Register it for deterministic close/unlink even when
+                    # initial EFS inheritance verification fails.
+                    spooled.append(spool)
                     verify_efs_inputs(
                         self.protected_spool_root,
                         (Path(spool.name).name,))
-                spooled.append(spool)
+                if self.protected_spool_root is None:
+                    spooled.append(spool)
                 samples=0
                 count=0
                 digests=[]
