@@ -22,6 +22,17 @@ PID="0123456789abcdef0123456789abcdef"
 
 
 class OriginalMicrophoneCompiledAuditContracts(TestCase):
+    def setUp(self):
+        if os.name=="nt":
+            # This module deliberately uses synthetic unencrypted sample
+            # files to exercise logical binding. Real EFS inheritance is
+            # independently required by production, not attested by mocks.
+            mocked_efs=patch(
+                "backend.nvp_p1a_original_capture_worker_bridge.verify_efs_inputs",
+                return_value=True)
+            mocked_efs.start()
+            self.addCleanup(mocked_efs.stop)
+
     def fixture(self,root:Path,pcm:bytes):
         recovery=root/"native-original-capture-recovery"
         recovery.mkdir()
