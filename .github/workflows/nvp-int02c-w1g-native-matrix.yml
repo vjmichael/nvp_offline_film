@@ -44,6 +44,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_w1g_production_authority.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_encrypted_review.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_signed_wheelhouse.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_physical_efs_review.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_supply_chain_hardening.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_release_safety.py' -v
           python -m unittest discover -s tests -p 'test_blender_worker.py' -v
@@ -80,6 +81,7 @@ jobs:
             'test_nvp_filming_worker_custody.py','test_nvp_w1f_reel_audit.py',
             'test_nvp_w1g_supply_candidate.py','test_nvp_w1g_production_authority.py',
             'test_nvp_w1g_encrypted_review.py','test_nvp_w1g_signed_wheelhouse.py',
+            'test_nvp_w1g_physical_efs_review.py',
             'test_nvp_w1g_supply_chain_hardening.py',
             'test_nvp_webview_ipc_surface.py','test_blender_worker.py')
           foreach ($f in $files) {
