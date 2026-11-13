@@ -80,6 +80,21 @@ class PerformanceChannelNativeTests(unittest.TestCase):
                 self.pid,"usd_scene",1,"timeline",1,tick=T)["snapshot_sha256"],
             snapshot["snapshot_sha256"])
 
+    def test_parameter_sublayer_preserves_original_ticks_after_reopen(self):
+        self.take.freeze(self.pid,"rate_frozen",scene_id="usd_scene",
+                         scene_revision=1,timeline_id="timeline",
+                         timeline_revision=1,sample_ticks=[0,T,2*T],
+                         creator_event="director_yes")
+        for tick,expected in ((0,0.0),(T,0.5),(2*T,1.0)):
+            snapshot=OpenUSDTimeState(FilmIndex(Studio(
+                self.studio.db_path))).evaluate(
+                self.pid,"usd_scene",1,"timeline",1,tick=tick)
+            value=next(v["value"] for v in snapshot["performance_channels"]
+                       if v["property"]=="face.smile")
+            self.assertAlmostEqual(value,expected,places=6)
+        self.assertEqual(self.take.verify_take(
+            self.pid,"rate_frozen")["status"],"VERIFIED_FROZEN_DATA_TAKE")
+
     def test_take_freezes_channel_evidence_across_scene_revision(self):
         self.take.freeze(self.pid,"freeze_channels",scene_id="usd_scene",
                          scene_revision=1,timeline_id="timeline",

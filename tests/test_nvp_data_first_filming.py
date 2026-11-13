@@ -67,6 +67,53 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+    def test_cancelled_original_pcm_closes_device_without_publication(self):
+        req=self.payload()
+        closed=[]
+        consumed=[]
+        class CancelledCapture(BaseException):
+            pass
+        def recording_device():
+            try:
+                consumed.append("device started")
+                yield self.original[:24000]
+                raise CancelledCapture("recording revoked")
+            finally:
+                closed.append("device released")
+        req["recordings"][0]["pcm_chunks"]=recording_device()
+        with self.assertRaisesRegex(CancelledCapture,"recording revoked"):
+            self.capture.capture(**req)
+        self.assertEqual(consumed,["device started"])
+        self.assertEqual(closed,["device released"])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+        self.assertEqual(self.approvals,[])
+
+    def test_baseexception_during_device_teardown_does_not_mask_capture_refusal(self):
+        req=self.payload()
+        closed=[]
+        class DeviceTeardown(BaseException):
+            pass
+        class RefusingDevice:
+            def __iter__(self):
+                return self
+            def __next__(self):
+                raise ValueError("original recording failed")
+            def close(self):
+                closed.append("attempted")
+                raise DeviceTeardown("teardown failed")
+        req["recordings"][0]["pcm_chunks"]=RefusingDevice()
+        with self.assertRaisesRegex(ValueError,"original recording failed"):
+            self.capture.capture(**req)
+        self.assertEqual(closed,["attempted"])
+        self.assertEqual(self.approvals,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_equal_length_substituted_publication_cannot_freeze_take(self):
         from unittest.mock import patch
         req=self.payload()
@@ -189,6 +236,28 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(self.index.read_revision(
             self.pid,"NewRecordedSpeech",1)["data"]["sample_count"],
                          48000)
+
+    def test_native_close_descriptor_failure_does_not_mask_frozen_take(self):
+        # Native adapters may expose close through a failing descriptor during
+        # device teardown; an already verified Take must remain authoritative.
+        class CloseDescriptorFailure:
+            def __init__(self, chunks):
+                self.chunks = chunks
+            def __iter__(self):
+                return self
+            def __next__(self):
+                return next(self.chunks)
+            @property
+            def close(self):
+                raise OSError("native recorder close descriptor unavailable")
+        request=self.payload()
+        request["recordings"][0]["pcm_chunks"]=CloseDescriptorFailure(
+            iter([self.original]))
+        result=self.capture.capture(**request)
+        self.assertEqual(result["status"],"FROZEN_ORIGINAL_SCENE_SOUND_TAKE")
+        self.assertEqual(self.index.read_revision(
+            self.pid,"FilmedTake",1)["document_sha256"],
+            result["take_document_sha256"])
 
     def test_completed_publication_rejects_timeline_digest_mismatch(self):
         from unittest.mock import patch

@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import re
 
-from backend.nvp_temporal_ledger import _int
+from backend.nvp_temporal_ledger import _int, TICKS_PER_SECOND
 from backend.nvp_openusd_scene import MAX_USD_EXACT_TICK, _usd
 
 MAX_CHANNELS = 128
@@ -51,6 +51,9 @@ def author_parameter_layer(prim_roles, channels, *, native_schemas=False):
     _, Sdf, Usd, _ = _usd()
     layer = Sdf.Layer.CreateAnonymous("nvp_parameters.usda")
     stage = Usd.Stage.Open(layer)
+    # Author the same integer-tick rate as the composed OpenUSD root.
+    # Otherwise USD rescales this sublayer's default 24-fps samples.
+    stage.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
     seen = set()
     descriptors = []
     for entry in channels:

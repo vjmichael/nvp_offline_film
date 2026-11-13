@@ -206,12 +206,15 @@ class NativeSceneSoundCapture:
                 admitted_iterators.append(iterator)
         except BaseException:
             for iterator in reversed(admitted_iterators):
-                close=getattr(iterator,"close",None)
-                if callable(close):
-                    try:
+                # A native adapter may implement close as a descriptor that
+                # itself raises while the device is being torn down. Treat
+                # lookup and invocation as one best-effort cleanup operation.
+                try:
+                    close=getattr(iterator,"close",None)
+                    if callable(close):
                         close()
-                    except Exception:
-                        pass  # Preserve the original admission failure.
+                except BaseException:
+                    pass  # Preserve original admission failure, including cancellation.
             raise
         publication_started=False
         try:
@@ -477,12 +480,15 @@ class NativeSceneSoundCapture:
             # rejection, cancellation, or publication failure. Cleanup must
             # never replace the original capture/journal exception.
             for iterator in reversed(admitted_iterators):
-                close=getattr(iterator,"close",None)
-                if callable(close):
-                    try:
+                # A native adapter may implement close as a descriptor that
+                # itself raises while the device is being torn down. Treat
+                # lookup and invocation as one best-effort cleanup operation.
+                try:
+                    close=getattr(iterator,"close",None)
+                    if callable(close):
                         close()
-                    except Exception:
-                        pass
+                except BaseException:
+                    pass
             # Temporary-file close can fail due to delayed filesystem I/O.
             # Preserve the original capture outcome and cancellation receipt.
             for spool in reversed(spooled):
