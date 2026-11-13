@@ -367,6 +367,10 @@ class OpenUSDSceneBridge:
             if (record["data"].get("format")==RIGGED_ACTOR and
                     paths[path]!="actor"):
                 raise ValueError("Rigged imported USD must bind only to an actor")
+            from backend.nvp_p1f_imported_environment import FORMAT as ENVIRONMENT
+            if (record["data"].get("format")==ENVIRONMENT and
+                    paths[path]!="environment"):
+                raise ValueError("Reviewed location USD can bind only to an environment")
             manifest={"path":path,"asset_id":aid,"asset_revision":rev,
                       "asset_document_sha256":record["document_sha256"],
                       "asset_layer_sha256":record["data"]["layer_sha256"]}
