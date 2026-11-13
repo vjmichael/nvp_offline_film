@@ -292,7 +292,11 @@ class RealCharacterAndLens(unittest.TestCase):
             scene_revision=1,camera_path="/World/Camera",settings=optics,
             start_tick=0,end_tick=2*T,creator_event="director",
             reason="Director selects wide lens for emotional geography")
-        self.assertTrue(shot["data"]["director_shot_change_approved"])
+        # Shot publication returns a narrow receipt; reopen the immutable
+        # FilmIndex revision to verify the actual director-approved source.
+        self.assertEqual(shot["kind"],"shot")
+        self.assertTrue(self.index.read_revision(
+            self.pid,"lens_shot",1)["data"]["director_shot_change_approved"])
         evaluated=OpenUSDShotOverrides(
             self.index,verify_director_action=lambda *_:False).evaluate(
                 self.pid,"lens_shot",1,tick=T)

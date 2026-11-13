@@ -345,9 +345,14 @@ class ImportedCharacterSources:
         try:
             existing=self.index.read_revision(project_id,character_asset_id,1)
         except KeyError:
-            return self.index.register_revision(
+            # register_revision returns a lightweight SHA/edge receipt, not
+            # its actual source document. Never pass that receipt as an
+            # authoritative imported character with implicit 'data'.
+            self.index.register_revision(
                 project_id,character_asset_id,"asset",doc,expected_revision=0)
-        if existing["kind"]!="asset" or existing["data"]!=doc:
+            existing=self.index.read_revision(project_id,character_asset_id,1)
+        if (existing["kind"]!="asset" or existing["data"]!=doc or
+            existing["revision"]!=1):
             raise RuntimeError("Registered GLB asset conflicts with its frozen USD bridge source")
         return existing
 

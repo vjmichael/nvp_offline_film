@@ -94,6 +94,18 @@ class OriginalImportedGLBAndActing(unittest.TestCase):
                              creator_event="creator_yes")
         self.registered=CharacterAssets(self.studio).register(
             self.project,original_rigged_glb(),"creator_owned")
+        from backend.nvp_p1bc_glb_character import ImportedCharacterSources
+        pinned=ImportedCharacterSources(self.index).import_registered(
+            self.project,self.registered["asset_id"])
+        self.assertEqual(pinned["kind"],"asset")
+        self.assertEqual(pinned["data"]["original_glb_sha256"],
+                         self.registered["sha256"])
+        self.assertEqual(pinned["revision"],1)
+        # Calling the conversion again must reopen the same byte-pinned
+        # original revision, not create a new mutable imported character.
+        duplicate=ImportedCharacterSources(self.index).import_registered(
+            self.project,self.registered["asset_id"])
+        self.assertEqual(duplicate["document_sha256"],pinned["document_sha256"])
         self.director=NativeActorSceneCasting(
             self.index,verify_director_action=lambda event,scope:
             event=="creator_yes" and
