@@ -6,6 +6,12 @@ on:
     branches:
       - nvp/int02-w1g-native-film-package-20261112
   workflow_dispatch:
+# Preserve only the latest candidate acceptance run per branch/workflow.
+# Superseded source heads must not monopolize finite native runners.
+concurrency:
+  group: nvp-w1g-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 jobs:
