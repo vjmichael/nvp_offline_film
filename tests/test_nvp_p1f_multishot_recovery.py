@@ -125,5 +125,29 @@ class DurableOriginalShotTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM source_batches").fetchone()[0],0)
 
 
+    def test_revoke_batch_before_dispatch_and_hold_original_sources(self):
+        self.create()
+        with patch.object(self.journal,"verify_batch_live",return_value=False):
+            with self.assertRaises(PermissionError):
+                self.journal.run_next("first_batch",creator_event="revoked")
+        self.assertEqual(self.journal.verify("first_batch")["frames_accepted"],0)
+        with self.journal._connect() as db:
+            self.assertEqual(db.execute("""SELECT COUNT(*) FROM source_frames
+                 WHERE batch_id='first_batch' AND state='RUNNING'"""
+            ).fetchone()[0],0)
+
+    def test_unverified_private_worker_is_refused_before_staging_any_bytes(self):
+        from backend.nvp_p1f_cycles_picture_sound import P1FOriginalPictureSound
+        trusted=P1FOriginalPictureSound(
+            self.fixture.index,self.supervisor,
+            approve_render=lambda *_:True,
+            verify_isolated_worker=lambda *_:False)
+        with self.assertRaises(PermissionError):
+            trusted.render_frame(
+                self.fixture.pid,"rigged_reel_plan",0,0,"private_denied",
+                creator_event="creator_approved")
+        self.assertFalse((self.supervisor.root/"private_denied").exists())
+
+
 if __name__=="__main__":
     unittest.main()
