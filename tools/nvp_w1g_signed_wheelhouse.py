@@ -39,9 +39,10 @@ def actual_wheelhouse_receipt(lock: dict, wheelhouse: Path, *, platform: str) ->
         if binary.is_symlink() or not binary.is_file():
             raise RuntimeError("Reviewed wheel image disappeared or was linked")
         files[name]={"sha256":wheel["sha256"],"bytes":binary.stat().st_size}
-    discovered={p.name.casefold() for p in root.iterdir()
-                if p.is_file() or p.is_symlink()}
-    if discovered != names:
+    discovered=[p.name for p in root.iterdir()
+                if p.is_file() or p.is_symlink()]
+    locked={row["filename"] for row in verified}
+    if len(discovered)!=len(locked) or set(discovered)!=locked:
         raise RuntimeError("Offline wheelhouse includes unreviewed extra files or lacks locked wheels")
     return {
         "format":FORMAT,"platform":platform,
