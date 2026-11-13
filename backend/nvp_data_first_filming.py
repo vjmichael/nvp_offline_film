@@ -380,6 +380,16 @@ class NativeSceneSoundCapture:
                 source_record=self.index.read_revision(
                     project_id,audio_id,receipt["revision"])
                 available=source_record["data"]["sample_count"]
+                # The published revision must describe the exact PCM chunks
+                # admitted and SHA-verified during capture, not merely an
+                # equal-length substitute supplied by a faulty writer.
+                published_chunks=source_record["data"]["chunks"]
+                expected_digests=chunk_digests[audio_id]
+                if (len(published_chunks)!=len(expected_digests) or
+                    any(type(part) is not dict or
+                        part.get("blob_sha256")!=digest.hex()
+                        for part,digest in zip(published_chunks,expected_digests))):
+                    raise RuntimeError("Published original PCM identity differs from validated recording")
                 clock=(verified_original_clock(
                     self.index,project_id,audio_id,start,end,
                     entry.get("source_sync"),entry.get("clock_evidence"),
