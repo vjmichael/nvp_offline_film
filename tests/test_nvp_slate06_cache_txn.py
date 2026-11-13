@@ -14,7 +14,7 @@ class SQLiteOriginalPreviewReceipt(unittest.TestCase):
             source="b"*64
             recipe="c"*64
             result=first.reserve(
-                "project_durable",key,job_id="preview_first",
+                "0"*32,key,job_id="preview_first",
                 source_sha256=source,recipe_sha256=recipe,
                 width=320,height=180)
             self.assertEqual(result["status"],"PENDING")
@@ -23,14 +23,14 @@ class SQLiteOriginalPreviewReceipt(unittest.TestCase):
             self.assertEqual(row["state"],"PENDING")
             self.assertEqual(row["recipe_sha256"],recipe)
             duplicate=second.reserve(
-                "project_durable",key,job_id="unapproved_duplicate",
+                "0"*32,key,job_id="unapproved_duplicate",
                 source_sha256=source,recipe_sha256=recipe,
                 width=320,height=180)
             self.assertEqual(duplicate["status"],"ALREADY_PENDING")
             second.fail("preview_first",state="INTERRUPTED")
             self.assertEqual(first._job("preview_first")["state"],"INTERRUPTED")
             retry=first.reserve(
-                "project_durable",key,job_id="new_authorization",
+                "0"*32,key,job_id="new_authorization",
                 source_sha256=source,recipe_sha256=recipe,
                 width=320,height=180)
             self.assertEqual(retry["status"],"PENDING")
