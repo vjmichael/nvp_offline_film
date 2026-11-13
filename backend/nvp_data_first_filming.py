@@ -30,6 +30,8 @@ from backend.nvp_filming_publication_journal import FilmingPublicationJournal
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
 from backend.nvp_openusd_take import OpenUSDTakeCapture,MAX_CHECKPOINTS
 from backend.nvp_original_clock_binding import verified_original_clock
+from backend.nvp_p1a_take_provenance import (
+    validate_original_audit,audit_sha256)
 from backend.nvp_temporal_ledger import (
     TemporalLedger,TICKS_PER_SECOND,_int)
 
@@ -62,7 +64,7 @@ class NativeSceneSoundCapture:
 
     def capture(self,project_id,take_id,*,scene_id,scene_revision,
                 camera_timeline_id,camera_timeline_revision,
-                sound_timeline_id,recordings):
+                sound_timeline_id,recordings,native_capture_audits=None):
         """Create an approved source-only Take from a trusted recording host.
 
         recordings: generator-backed list of typed native host dictionaries,
@@ -105,6 +107,18 @@ class NativeSceneSoundCapture:
         chunk_digests={}
         spooled=[]
         prepared_entries=[]
+        original_pcm_digests={}
+        original_pcm_samples={}
+        # Native worker receipts are optional for historical Takes, but a
+        # configured first-party producer must pass COMPLETE verified records.
+        # Snapshot the full list before any recording iterator is consumed.
+        sealed_unverified_audits=(
+            None if native_capture_audits is None
+            else copy.deepcopy(native_capture_audits))
+        if (sealed_unverified_audits is not None and
+            (type(sealed_unverified_audits) is not list or
+             len(sealed_unverified_audits)!=len(recordings))):
+            raise PermissionError("Compiled native audits must cover every original recorded source")
         # Enforce the same total disk budget for direct capture callers as the
         # supervised host bridge. A per-source bound alone permits 32x usage.
         batch_pcm_bytes=0
@@ -302,6 +316,8 @@ class NativeSceneSoundCapture:
                 frozen=dict(entry)
                 frozen["pcm_chunks"]=prepared_chunks[sid]
                 prepared_entries.append(frozen)
+                original_pcm_digests[sid]=original_digest.hexdigest()
+                original_pcm_samples[sid]=samples
                 event_ids.add(eid)
                 source_ids.add(sid)
             def replay(spool,expected_digests):
@@ -337,6 +353,34 @@ class NativeSceneSoundCapture:
                 sid=entry["source_id"]
                 for _ in replay(prepared_chunks[sid],chunk_digests[sid]):
                     pass
+            # Lock every compiled-worker receipt to the actual original PCM
+            # bytes before publishing even the FIRST immutable source blob.
+            # Do not accept successful worker JSON or prior authorization as
+            # proof: exact event identity, every sample and native Job/cgroup
+            # window must agree with the trusted host's own spool.
+            verified_audits=None
+            audit_by_source={}
+            if sealed_unverified_audits is not None:
+                raw_by_source={}
+                for row in sealed_unverified_audits:
+                    if (type(row) is not dict or
+                        type(row.get("source_id")) is not str or
+                        row["source_id"] in raw_by_source):
+                        raise PermissionError("Native capture audit has duplicate or invalid source ID")
+                    raw_by_source[row["source_id"]]=row
+                if set(raw_by_source)!=set(original_pcm_digests):
+                    raise PermissionError("Native capture audit omitted original PCM source")
+                verified_audits=[]
+                for entry in prepared_entries:
+                    sid=entry["source_id"]
+                    sealed=validate_original_audit(
+                        raw_by_source[sid],project_id=project_id,take_id=take_id,
+                        scene_id=scene_id,scene_sha=source["document_sha256"],
+                        camera_sha=plan["document_sha256"],recording=entry,
+                        source_sha=original_pcm_digests[sid],
+                        samples=original_pcm_samples[sid])
+                    verified_audits.append(sealed)
+                    audit_by_source[sid]=audit_sha256(sealed)
             # Durable intent precedes the first immutable source publication.
             # A crash leaves PREPARING for explicit restart reconciliation.
             self.publications.begin(project_id,take_id,sound_timeline_id,
@@ -398,6 +442,8 @@ class NativeSceneSoundCapture:
                 if clock is not None:
                     payload["source_sync"]=clock
                     payload["clock_evidence"]=entry["clock_evidence"]
+                if audio_id in audit_by_source:
+                    payload["native_capture_audit_sha256"]=audit_by_source[audio_id]
                 events.append({
                     "event_id":eid,
                     "event_kind":entry["event_kind"],
@@ -414,7 +460,10 @@ class NativeSceneSoundCapture:
                     scope.get("scene_document_sha256")!=source["document_sha256"] or
                     scope.get("timeline_document_sha256")!=
                         combined["document_sha256"] or
-                    scope.get("take_id")!=take_id):
+                    scope.get("take_id")!=take_id or
+                    (verified_audits is not None and
+                     scope.get("native_original_capture_attestations_sha256")!=
+                        audit_sha256(verified_audits))):
                     return False
                 return self.approve_take(event,scope) is True
             take=OpenUSDTakeCapture(
@@ -425,7 +474,11 @@ class NativeSceneSoundCapture:
                     timeline_revision=1,sample_ticks=checkpoints,
                     creator_event={"kind":"trusted_native_filming_host",
                                    "source_scene_sha256":source["document_sha256"],
-                                   "event_manifest_sha256":combined["document_sha256"]})
+                                   "event_manifest_sha256":combined["document_sha256"]},
+                    native_capture_attestations=verified_audits,
+                    original_camera_timeline_sha256=(
+                        plan["document_sha256"] if verified_audits is not None
+                        else None))
             self.publications.finish(project_id,take_id,completed=True)
             publication_started=False
             return {
@@ -435,6 +488,11 @@ class NativeSceneSoundCapture:
                 "timeline_document_sha256":combined["document_sha256"],
                 "camera_timeline_document_sha256":plan["document_sha256"],
                 "original_sound_count":len(prepared_entries),
+                "native_capture_attestations_sha256":(
+                    audit_sha256(verified_audits)
+                    if verified_audits is not None else None),
+                "native_capture_attested_source_count":(
+                    len(verified_audits) if verified_audits is not None else 0),
                 "duration_tick":str(duration),
                 "original_scene_modified":False,
                 "original_sound_modified":False,
