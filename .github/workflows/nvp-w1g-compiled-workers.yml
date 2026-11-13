@@ -13,6 +13,8 @@ on:
       - .gitattributes
       - tools/nvp_w1g_native_worker_functional_acceptance.py
       - tools/nvp_w1g_native_link_audit.py
+      - tools/nvp_w1g_compiled_supply_chain_intake.py
+      - tests/test_nvp_w1g_compiled_supply_chain_intake.py
       - backend/nvp_w1g_protected_native_worker.py
       - backend/nvp_w1g_first_party_result_verifier.py
       - tests/test_nvp_w1g_protected_upgrade.py
@@ -48,6 +50,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends g++ libssl-dev
       - name: Verify canonical exact-head ELF compiler input bytes
         run: python -m tools.nvp_w1g_source_identity_audit
+      - name: Reject altered or mismatched first-party supply provenance
+        run: python -m unittest discover -s tests -p test_nvp_w1g_compiled_supply_chain_intake.py -v
       - name: Compile all five ELF64 binaries and run actual operations
         run: |
           set -euo pipefail
@@ -55,6 +59,7 @@ jobs:
           python -m tools.nvp_w1g_compile_first_party_workers --out acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --compiler g++
           python -m tools.nvp_w1g_native_worker_functional_acceptance --binary-dir acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --evidence acceptance_artifacts/w1g-linux-native-functional.json
           python -m tools.nvp_w1g_native_link_audit --binary-dir acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --output acceptance_artifacts/w1g-linux-native-imports.json
+          python -m tools.nvp_w1g_compiled_supply_chain_intake --binary-dir acceptance_artifacts/w1g-compiled-linux --native-imports acceptance_artifacts/w1g-linux-native-imports.json --output acceptance_artifacts/w1g-linux-unsigned-review-intake.json
       - name: Preserve exact source-head native candidates (NO LICENSE APPROVAL)
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,6 +83,11 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: pywin32
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Reject altered or mismatched first-party supply provenance
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_nvp_w1g_compiled_supply_chain_intake.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native worker supply-review negative matrix failed' }
       - name: Verify canonical exact-head PE compiler input bytes
         shell: pwsh
         run: |
