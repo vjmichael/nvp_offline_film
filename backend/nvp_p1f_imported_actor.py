@@ -70,6 +70,10 @@ def _valid_stage(source, actor_id):
                 for point in positions for v in point)):
         raise ValueError("Imported mesh topology or point coordinates are invalid")
     skel=UsdSkel.Skeleton(skel_prim)
+    rig_binding=UsdSkel.BindingAPI(skel_prim)
+    if list(rig_binding.GetAnimationSourceRel().GetTargets()) != [
+            Sdf.Path("/Asset/Animation")]:
+        raise ValueError("Original skeleton must own the timed actor facial animation")
     joints=skel.GetJointsAttr().Get()
     bind=skel.GetBindTransformsAttr().Get()
     rest=skel.GetRestTransformsAttr().Get()
