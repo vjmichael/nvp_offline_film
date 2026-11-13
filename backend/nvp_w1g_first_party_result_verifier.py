@@ -10,6 +10,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 from pathlib import Path
+import math
 import struct
 
 ROLE_OPERATIONS={
@@ -42,6 +43,28 @@ def _control(directory,name,maximum_a,maximum_b):
 
 def _sha(data:bytes)->str:
     return sha256(data).hexdigest()
+
+
+def expected_native_math_picture(width:int,height:int)->bytes:
+    """Independent exact bounded raster oracle, not compiled worker output."""
+    if (type(width) is not int or type(height) is not int or
+        not 16<=width<=128 or not 16<=height<=128):
+        raise PermissionError("Unbounded native raster dimensions")
+    pixels=bytearray()
+    radius=0.54
+    for y in range(height):
+        for x in range(width):
+            nx=(float(x)+0.5)/width*2.0-1.0
+            ny=1.0-(float(y)+0.5)/height*2.0
+            radius_squared=nx*nx+ny*ny
+            diffuse=0.0
+            if radius_squared<radius*radius:
+                nz=math.sqrt(radius*radius-radius_squared)/radius
+                diffuse=max(0.0,nx*(-0.4)+ny*0.6+nz*0.75)
+            pixels.extend((20+math.floor(205*diffuse+0.5),
+                           20+math.floor(80*diffuse+0.5),
+                           30+math.floor(60*diffuse+0.5)))
+    return f"P6\\n{width} {height}\\n255\\n".encode("ascii")+bytes(pixels)
 
 
 def verify_bounded_first_party_role(scope:dict,result:dict,directory:Path)->bool:
@@ -94,14 +117,8 @@ def verify_bounded_first_party_role(scope:dict,result:dict,directory:Path)->bool
         if (not produced.startswith(prefix) or
             len(produced)!=len(prefix)+3*width*height):
             raise PermissionError("Native raster output is not a real bounded PPM image")
-        pixels=produced[len(prefix):]
-        if len(set(pixels))<5:
-            raise PermissionError("Native scene image contains no verified lighting contrast")
-        # Independently verify a few central/corner expectations for the
-        # advertised sphere so constant or forged gradients cannot be admitted.
-        top_left=pixels[:3]
-        if top_left!=bytes((20,20,30)):
-            raise PermissionError("Native generated picture background is unexpected")
+        if produced!=expected_native_math_picture(width,height):
+            raise PermissionError("Native renderer pixels differ from independently computed scene")
     elif role=="editorial":
         original=_source(directory,"source.pcm")
         start,count=_control(directory,"edit.txt",4194304,4194304)
