@@ -49,7 +49,8 @@ class OriginalMicrophoneCompiledAuditContracts(TestCase):
 
     def fake_kernel_verified_worker(self,worker,*,failure=False,mutate=None):
         calls=[]
-        def run(role,pid,plan,*,sealed_inputs,memory_mb,timeout_s):
+        def run(owned_worker,role,pid,plan,*,sealed_inputs,memory_mb,timeout_s):
+            self.assertIs(owned_worker,worker)
             self.assertEqual(role,"original_capture")
             self.assertEqual(pid,PID)
             self.assertEqual(set(sealed_inputs),{"source.pcm"})
