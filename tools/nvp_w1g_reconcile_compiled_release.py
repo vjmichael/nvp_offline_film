@@ -44,6 +44,11 @@ def reconcile_original_native_bytes(compiled:Path, staged:Path) -> dict:
         build.get("production_native_roles_complete") is not False):
         raise PermissionError("Native compiler receipt is not an actual unapproved five-role candidate")
     roster=_check_roster(build.get("roster"))
+    source=Path(__file__).resolve().parents[1]/"native"/"w1g_first_party_worker.cpp"
+    if (not source.is_file() or source.is_symlink() or
+        type(build.get("source_sha256")) is not str or
+        _sha(source)!=build["source_sha256"]):
+        raise PermissionError("Compiled native worker source identity differs from current audited source")
     if roster["platform"]!="windows-amd64":
         raise PermissionError("Windows installed NSIS byte reconciliation needs PE64 original workers")
     installed=verify_native_workers(staged,expected_platform="windows-amd64")
@@ -51,11 +56,11 @@ def reconcile_original_native_bytes(compiled:Path, staged:Path) -> dict:
         raise PermissionError("Signed installed release lacks complete five-role roster")
     manifest=json.loads((staged/"_internal"/"nvp_workers"/"manifest.json").read_text("utf8"))
     actual={w["role"]:w for w in manifest["workers"]}
-    source={w["role"]:w for w in roster["workers"]}
-    if set(source)!=set(ROLES) or set(actual)!=set(ROLES):
+    compiled_roles={w["role"]:w for w in roster["workers"]}
+    if set(compiled_roles)!=set(ROLES) or set(actual)!=set(ROLES):
         raise PermissionError("Exact native worker role identities incomplete")
     for role in sorted(ROLES):
-        original=source[role]
+        original=compiled_roles[role]
         worker=actual[role]
         if original!=worker:
             raise PermissionError("Staged worker role/file/hash changed from original compiled candidate: "+role)
@@ -67,8 +72,9 @@ def reconcile_original_native_bytes(compiled:Path, staged:Path) -> dict:
     return {
         "status":"FIVE_ACTUAL_COMPILED_WORKER_BYTES_MATCH_STAGED_NSIS",
         "source_sha256":build.get("source_sha256"),
-        "worker_sha256_by_role":{r:source[r]["sha256"] for r in sorted(ROLES)},
-        "compiled_executable_provenance_bound_to_staged_release":True,
+        "worker_sha256_by_role":{r:compiled_roles[r]["sha256"] for r in sorted(ROLES)},
+        "candidate_executable_bytes_bound_to_staged_release":True,
+        "trusted_external_compiler_provenance_signature_verified":False,
         "full_native_film_role_completeness_proven":False,
         "independent_reviews_verified":False,
         "creator_authorization_obtained":False,
@@ -101,8 +107,8 @@ def reconcile_independently_signed_release(*, compiled:Path, staged:Path,
         if type(packaged) is not dict or packaged.get("sha256")!=digest:
             raise PermissionError("Signed release file inventory omits original compiled native worker: "+role)
     return {
-        "status":"NVP_W1G_SIGNED_RELEASE_AND_OFFLINE_BYTES_RECONCILED",
         **exact,
+        "status":"NVP_W1G_SIGNED_RELEASE_AND_OFFLINE_BYTES_RECONCILED",
         "signed_installed_file_count":signed_release["reviewed_artifact_count"],
         "signed_offline_wheel_count":signed_wheels["wheel_count"],
         "installed_host_sha256":installed_receipt["app_sha256"],
