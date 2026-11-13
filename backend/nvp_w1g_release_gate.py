@@ -148,3 +148,94 @@ class WindowsReleaseMutationGate:
     @property
     def held(self):
         return self.fd is not None
+
+
+# The kernel automatically drops process lifetime locks on host death. Durable
+# ORIGINAL launch journals are a SEPARATE release barrier: stale RUNNING or
+# PREPARED workers cannot be promoted based on an empty PID list or free lock.
+def release_process_journal_root():
+    root=release_gate_path().parent/"original-process-journals"
+    if root.is_symlink():
+        raise RuntimeError("Original Windows launch journal root cannot be linked")
+    root.mkdir(exist_ok=True)
+    return root
+
+
+class OriginalWindowsLaunchJournal:
+    """Per-worker, original source-bound durable admission state."""
+
+    def __init__(self,command):
+        if os.name!="nt":
+            raise RuntimeError("Native Windows original launch journal required")
+        import secrets
+        import hashlib
+        import json
+        self.root=release_process_journal_root()
+        self.token="nvpjob_"+secrets.token_hex(16)
+        self.path=self.root/(self.token+".json")
+        self._record={
+            "format":"nvp.w1g.original_windows_job_journal.v1",
+            "job_id":self.token,
+            "command_sha256":hashlib.sha256(json.dumps(
+                command,separators=(",",":"),ensure_ascii=True
+            ).encode("ascii")).hexdigest(),
+            "state":"PREPARED",
+            "process_tree_custody_verified":False,
+            "worker_exit_verified":False,
+        }
+        self._save()
+
+    def _save(self):
+        import json
+        temp=self.path.with_suffix(".new")
+        if (temp.exists() or temp.is_symlink() or
+            self.path.is_symlink()):
+            raise RuntimeError("Original process journal is linked or interrupted")
+        with temp.open("x",encoding="utf8") as f:
+            json.dump(self._record,f,sort_keys=True,separators=(",",":"))
+            f.flush();os.fsync(f.fileno())
+        os.replace(temp,self.path)
+
+    def started(self,pid):
+        if self._record["state"]!="PREPARED" or type(pid) is not int or pid<1:
+            raise RuntimeError("Original process start transition is invalid")
+        self._record["pid_diagnostic_only"]=pid
+        self._record["state"]="RUNNING"
+        self._save()
+
+    def verified_tree_reaped(self):
+        if self._record["state"]!="RUNNING":
+            raise RuntimeError("Original Job reaping lacks a running kernel identity")
+        self._record["state"]="TREE_REAPED_VERIFIED"
+        self._record["process_tree_custody_verified"]=True
+        self._record["worker_exit_verified"]=True
+        self._save()
+
+
+def inspect_original_process_journals():
+    """Read-only release check; NEVER auto-reconcile a crashed worker."""
+    import json
+    root=release_process_journal_root()
+    rows=sorted(root.iterdir())
+    if len(rows)>50000:
+        raise PermissionError("Unbounded original process recovery journal topology")
+    count=0
+    for path in rows:
+        if (path.is_symlink() or not path.is_file() or
+            path.suffix!=".json" or
+            not path.name.startswith("nvpjob_") or
+            path.stat().st_size>2048):
+            raise PermissionError("Untrusted original Windows process recovery entry")
+        entry=json.loads(path.read_text("utf8"))
+        if (entry.get("format")!="nvp.w1g.original_windows_job_journal.v1" or
+            entry.get("job_id")!=path.stem or
+            type(entry.get("command_sha256")) is not str or
+            len(entry["command_sha256"])!=64 or
+            entry.get("state")!="TREE_REAPED_VERIFIED" or
+            entry.get("process_tree_custody_verified") is not True or
+            entry.get("worker_exit_verified") is not True):
+            raise PermissionError(
+                "Original Windows native launch remains interrupted or unverified: "+path.stem)
+        count+=1
+    return {"original_windows_launch_journals_verified":count,
+            "unresolved_original_native_launches":0}

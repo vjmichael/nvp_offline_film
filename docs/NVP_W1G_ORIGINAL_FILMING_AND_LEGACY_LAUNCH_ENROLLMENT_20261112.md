@@ -24,3 +24,14 @@ These paths were distinct from already supervised production audio/mixing, deliv
 ## Honest remaining gates
 
 These integration changes must pass the consolidated **new head** native and installed Windows test matrices. They do not create a signed native worker package or legal redistribution approval, do not certify physical EFS key recovery, do not perform real creator-authorized upgrades, and do not generate the sustained 30-minute/three-hour film. There are independent filming journal/restart reconciliation and physical power-loss acceptance requirements. The shared launch fence protects **instrumented Windows native workers**, while the original uninstalled/unsigned runtime must never be misrepresented as OS-authenticated release-grade. No original immutable Take is rewritten by this source enrollment.
+
+
+## Reconciled native process adapter and durable post-crash admission gate
+
+Parallel source integration added `run_owned_subprocess` and connected further color, character, source-window, camera, DCP, motion and media inspection adapters to the same Windows suspended Job Object. The release implementation uses **one** shared adapter, not a competing second supervisor.
+
+A native privacy defect was identified during reconciliation: the first adapter revision staged original stdin and decoded media output to unencrypted `TemporaryDirectory` files. The reviewed replacement uses bounded in-memory Win32 inherited pipes for stdin/stdout/stderr, preserving exact PCM/bytes without creating plaintext spool files. The inherited handles remain under the original Job Object until `WindowsJobProcess.close()` proves zero descendants; a Windows release slot remains held throughout.
+
+`OriginalWindowsLaunchJournal` is attached directly to **every** `launch_contained` Windows worker, not just one native tool group. `PREPARED` is durably written before CreateProcess, `RUNNING` after original Job assignment and resume, and `TREE_REAPED_VERIFIED` only after native Job zero-descendant evidence and process-handle closure. The production upgrade authority independently scans the canonical original process journal root, refusing incomplete or unknown entries even after a hard host crash releases kernel file locks. A real Windows hard-host-death fixture proves the original `RUNNING` receipt survives after all child processes are killed and the admission lock becomes available; only that throwaway fixture may clean its own journal. Production cannot auto-clear an uncertain worker from its PID.
+
+The legacy source audit continues to reject unregistered backend launch calls. The kernel and source checks do not replace real creator authorization, signed executable/redistribution provenance, physical disk EFS recovery acceptance, or a completed filmmaker-approved film.

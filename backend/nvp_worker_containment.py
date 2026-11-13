@@ -45,10 +45,11 @@ class LinuxContainedProcess:
 
 
 class WindowsJobProcess:
-    def __init__(self, job, process, pid, release_slot=None):
+    def __init__(self, job, process, pid, release_slot=None, original_journal=None):
         self._job = job
         self._process = process
         self._release_slot = release_slot
+        self._original_journal = original_journal
         self.pid = pid
         self.returncode = None
 
@@ -100,6 +101,12 @@ class WindowsJobProcess:
         if self._process is not None:
             self._process.Close()
             self._process = None
+        if self._original_journal is not None:
+            # The actual original Job Object has been closed only after
+            # kernel accounting proved no descendants. Never clear a
+            # PREPARED/RUNNING crash journal using a stale PID observation.
+            self._original_journal.verified_tree_reaped()
+            self._original_journal = None
         if self._release_slot is not None:
             self._release_slot.release()
             self._release_slot = None
@@ -135,20 +142,22 @@ def _launch_windows(command, *, cwd, stdout, stderr, memory_mb, stdin=None):
     import win32job
     import win32process
     import uuid
-    from backend.nvp_w1g_release_gate import WindowsWorkerLifetimeSlot
+    from backend.nvp_w1g_release_gate import WindowsWorkerLifetimeSlot, OriginalWindowsLaunchJournal
 
     # Reserve the release-wide kernel slot BEFORE CreateProcess, so an NSIS
     # mutation cannot pass its all-slots test while this child is starting.
     slot = WindowsWorkerLifetimeSlot().acquire()
     try:
+        original_journal=OriginalWindowsLaunchJournal(command)
         return _launch_windows_owned(command, cwd=cwd, stdout=stdout,
-                                    stderr=stderr, memory_mb=memory_mb, slot=slot, stdin=stdin)
+                                    stderr=stderr, memory_mb=memory_mb,
+                                    slot=slot, stdin=stdin, journal=original_journal)
     except BaseException:
         slot.release()
         raise
 
 
-def _launch_windows_owned(command, *, cwd, stdout, stderr, memory_mb, slot, stdin=None):
+def _launch_windows_owned(command, *, cwd, stdout, stderr, memory_mb, slot, stdin=None, journal=None):
     import msvcrt
     import win32job
     import win32process
@@ -184,7 +193,11 @@ def _launch_windows_owned(command, *, cwd, stdout, stderr, memory_mb, slot, stdi
                 raise RuntimeError("Suspended Blender process not assigned to Job Object")
             if win32process.ResumeThread(th) == 0xFFFFFFFF:
                 raise RuntimeError("Contained child could not be resumed")
-            return WindowsJobProcess(job, ph, pid, release_slot=slot)
+            # A failure to durably mark RUNNING terminates the original Job,
+            # leaving PREPARED as an operator-visible uncertainty blocker.
+            journal.started(pid)
+            return WindowsJobProcess(job, ph, pid, release_slot=slot,
+                                     original_journal=journal)
         except BaseException:
             try:
                 win32job.TerminateJobObject(job, 13)

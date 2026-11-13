@@ -181,7 +181,10 @@ class WindowsReleaseWorkerStopEvidence:
             if entries:
                 raise PermissionError(
                     "Unreconciled original legacy worker markers block upgrade")
+        from backend.nvp_w1g_release_gate import inspect_original_process_journals
+        originals=inspect_original_process_journals()
         return {
+            **originals,
             "os_provenance":"windows-job-object",
             "kernel_release_gate":"exclusive-128-slot-locks-v1",
             "release_wide_launch_fence_verified":True,

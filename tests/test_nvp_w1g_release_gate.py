@@ -119,6 +119,7 @@ class ReleaseWideKernelFence(unittest.TestCase):
         with TemporaryDirectory() as td:
             root=Path(td)
             marker=root/"original-worker.json"
+            crash_journal=root/"original-kernel-journal-path.txt"
             child_code=(
                 "import os,json,time;from pathlib import Path;"
                 f"Path({str(marker)!r}).write_text(json.dumps({{'pid':os.getpid()}}));"
@@ -134,6 +135,7 @@ class ReleaseWideKernelFence(unittest.TestCase):
                 f"m=Path({str(marker)!r});"
                 "[(time.sleep(.05)) for i in range(200) if not m.exists()];"
                 "assert m.exists() and p.poll() is None;"
+                f"Path({str(crash_journal)!r}).write_text(str(p._original_journal.path));"
                 "os._exit(81)"
             )
             env=dict(os.environ)
@@ -156,6 +158,21 @@ class ReleaseWideKernelFence(unittest.TestCase):
                 # by the Windows kernel, not a stale PID/timestamp.
                 with WindowsReleaseMutationGate() as gate:
                     self.assertTrue(gate.held)
+                # The Job and release slot died with the host, but the
+                # original RUNNING journal survives. Production recovery
+                # must refuse upgrade despite zero live child processes.
+                from backend.nvp_w1g_release_gate import inspect_original_process_journals
+                self.assertTrue(crash_journal.is_file())
+                original_journal=Path(crash_journal.read_text())
+                try:
+                    import json
+                    self.assertEqual(json.loads(original_journal.read_text())["state"],"RUNNING")
+                    with self.assertRaisesRegex(PermissionError,"interrupted or unverified"):
+                        inspect_original_process_journals()
+                finally:
+                    # The native CI fixture owns this ONE disposable job. No
+                    # such automatic deletion is done by production recovery.
+                    original_journal.unlink(missing_ok=True)
             finally:
                 if host.poll() is None:
                     host.kill();host.wait()

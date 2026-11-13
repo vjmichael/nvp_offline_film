@@ -32,6 +32,19 @@ class OwnedLegacySubprocessTests(unittest.TestCase):
                 cwd=td,capture_output=True,text=True,check=True,timeout=20)
             self.assertIn("native inspected",t.stdout)
 
+    @unittest.skipUnless(os.name=="nt","Native Windows protected source must not hit plaintext temp")
+    def test_real_original_pcm_and_native_stdout_never_spool_to_plaintext_disk(self):
+        with TemporaryDirectory() as td:
+            with patch("tempfile.TemporaryDirectory",
+                       side_effect=AssertionError("Original media bytes were spooled to plaintext temp")):
+                result=run_owned_subprocess(
+                    [sys.executable,"-S","-c",
+                     "import sys;sys.stdout.buffer.write(sys.stdin.buffer.read())"],
+                    cwd=td,input=bytes([0,1,2,255])*256,
+                    capture_output=True,timeout=20)
+            self.assertEqual(result.stdout,bytes([0,1,2,255])*256)
+            self.assertEqual(list(Path(td).iterdir()),[])
+
     def test_no_shell_or_unbounded_or_interactive_input(self):
         for kw in ({"timeout":0},{"timeout":float("inf")},
                    {"timeout":True},{"capture_output":True,"stdout":subprocess.PIPE},
