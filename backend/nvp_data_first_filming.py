@@ -16,8 +16,12 @@ from __future__ import annotations
 import math
 import copy
 import hashlib
+import os
+from pathlib import Path
 import tempfile
 import struct
+
+from backend.nvp_w1g_encrypted_source import require_efs_stage,verify_efs_inputs
 
 from backend.nvp_data_av_source import (RecordedSoundSources,SAMPLE_RATE,MAX_CHUNK_BYTES,MAX_CHUNKS)
 from backend.nvp_exact_time_shots import ExactTimeShotSequence,MAX_SHOTS
@@ -38,11 +42,18 @@ CLOCKED_RECORDING_FIELDS=BASE_RECORDING_FIELDS|{"source_sync","clock_evidence"}
 
 
 class NativeSceneSoundCapture:
-    def __init__(self,index:FilmIndex,*,approve_take):
+    def __init__(self,index:FilmIndex,*,approve_take,protected_spool_root=None):
         if not isinstance(index,FilmIndex) or not callable(approve_take):
             raise TypeError("Trusted original film index and native approval callback required")
         self.index=index
         self.approve_take=approve_take
+        self.protected_spool_root=(
+            Path(protected_spool_root) if protected_spool_root is not None
+            else None)
+        if self.protected_spool_root is not None:
+            if os.name!="nt":
+                raise PermissionError("Native EFS Take staging must run on Windows")
+            require_efs_stage(self.protected_spool_root)
         self.sources=RecordedSoundSources(index)
         self.timeline=TemporalLedger(index)
         self.camera=ExactTimeShotSequence(index)
@@ -215,7 +226,20 @@ class NativeSceneSoundCapture:
                 # immutable source. A later truncated iterator must not leave
                 # earlier source revisions behind. Disk spill keeps RAM bounded.
                 chunks=entry["pcm_chunks"]
-                spool=tempfile.SpooledTemporaryFile(max_size=MAX_CHUNK_BYTES,mode="w+b")
+                if self.protected_spool_root is None:
+                    spool=tempfile.SpooledTemporaryFile(
+                        max_size=MAX_CHUNK_BYTES,mode="w+b")
+                else:
+                    # This is a SECOND spool stage after the original device
+                    # recording. A normal SpooledTemporaryFile silently rolls
+                    # over into PLAINTEXT OS temp, so verified native filming
+                    # must remain within original protected EFS custody.
+                    spool=tempfile.NamedTemporaryFile(
+                        mode="w+b",prefix=".nvp-take-source-",
+                        dir=self.protected_spool_root,delete=True)
+                    verify_efs_inputs(
+                        self.protected_spool_root,
+                        (Path(spool.name).name,))
                 spooled.append(spool)
                 samples=0
                 count=0
@@ -262,6 +286,10 @@ class NativeSceneSoundCapture:
                 # A delayed disk write failure must not be discovered only
                 # after an earlier immutable source has been published.
                 spool.flush()
+                if self.protected_spool_root is not None:
+                    verify_efs_inputs(
+                        self.protected_spool_root,
+                        (Path(spool.name).name,))
                 spool.seek(0)
                 prepared_chunks[sid]=spool
                 chunk_digests[sid]=tuple(digests)
