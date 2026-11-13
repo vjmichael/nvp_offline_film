@@ -91,6 +91,29 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
         self.assertEqual(self.approvals,[])
 
+    def test_baseexception_during_device_teardown_does_not_mask_capture_refusal(self):
+        req=self.payload()
+        closed=[]
+        class DeviceTeardown(BaseException):
+            pass
+        class RefusingDevice:
+            def __iter__(self):
+                return self
+            def __next__(self):
+                raise ValueError("original recording failed")
+            def close(self):
+                closed.append("attempted")
+                raise DeviceTeardown("teardown failed")
+        req["recordings"][0]["pcm_chunks"]=RefusingDevice()
+        with self.assertRaisesRegex(ValueError,"original recording failed"):
+            self.capture.capture(**req)
+        self.assertEqual(closed,["attempted"])
+        self.assertEqual(self.approvals,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_equal_length_substituted_publication_cannot_freeze_take(self):
         from unittest.mock import patch
         req=self.payload()
