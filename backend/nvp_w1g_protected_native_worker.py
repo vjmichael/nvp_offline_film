@@ -26,6 +26,14 @@ from tools.nvp_w1g_native_package import _digest
 JOB = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{5,79}$")
 ROLES = {"original_capture", "scene_render", "editorial", "audio", "delivery"}
 FORMAT = "nvp.w1g.protected_worker_execution.v1"
+SEALED_INPUTS={
+    "original_capture":frozenset(("source.pcm",)),
+    "scene_render":frozenset(("scene.txt",)),
+    "editorial":frozenset(("source.pcm","edit.txt")),
+    "audio":frozenset(("source.pcm","gain.txt")),
+    "delivery":frozenset(("render.ppm","mix.pcm")),
+}
+MAX_SEALED_INPUT_BYTES=8*1024*1024
 
 
 def _atomic_json(path, doc):
@@ -75,6 +83,7 @@ class ProtectedNativeWorker:
         return path,worker["sha256"]
 
     def run(self, role: str, project_id: str, plan: dict, *,
+            sealed_inputs: dict[str,bytes] | None = None,
             memory_mb: int = 4096, timeout_s: int = 600):
         if (type(plan) is not dict or type(project_id) is not str or
             not 1<=len(project_id)<=120 or
@@ -83,11 +92,21 @@ class ProtectedNativeWorker:
             raise ValueError("Invalid finite native worker invocation")
         # A worker receives only its sealed first-party plan; no freeform
         # shell arguments, runtime script path or user-supplied executable.
-        if plan.get("project_id")!=project_id or plan.get("role")!=role:
-            raise ValueError("Native execution plan has a foreign project/role")
+        if (plan.get("project_id")!=project_id or plan.get("role")!=role or
+            "job_id" in plan or "input_sha256" in plan):
+            raise ValueError("Native execution plan has a foreign project/role or injected authority")
+        expected=SEALED_INPUTS.get(role)
+        if (type(sealed_inputs) is not dict or expected is None or
+            set(sealed_inputs)!=expected or
+            any(type(blob) is not bytes or not 0<len(blob)<=MAX_SEALED_INPUT_BYTES
+                for blob in sealed_inputs.values()) or
+            sum(map(len,sealed_inputs.values()))>MAX_SEALED_INPUT_BYTES):
+            raise PermissionError("Original native role requires a complete finite sealed source set")
+        inputs={name:bytes(payload) for name,payload in sealed_inputs.items()}
+        input_hashes={name:sha256(blob).hexdigest() for name,blob in sorted(inputs.items())}
         binary,binary_sha=self._binary(role)
         job="w1g_"+secrets.token_hex(12)
-        sealed_plan={**plan,"job_id":job}
+        sealed_plan={**plan,"job_id":job,"input_sha256":input_hashes}
         raw=json.dumps(sealed_plan, sort_keys=True, separators=(",", ":"),allow_nan=False).encode("ascii")
         if len(raw)>1024*1024:
             raise ValueError("Unbounded native task plan")
@@ -100,16 +119,27 @@ class ProtectedNativeWorker:
             "job_id":job, "project_id":project_id,
             "role":role, "worker_sha256":binary_sha,
             "plan_sha256":digest,"memory_mb":memory_mb,
-            "timeout_seconds":timeout_s,
+            "timeout_seconds":timeout_s,"input_sha256":input_hashes,
         }
         if self.approve(dict(scope)) is not True:
             raise PermissionError("Native creator refused exact worker execution")
         if self._binary(role)!=(binary,binary_sha):
             raise RuntimeError("Reviewed native worker changed during approval")
         directory.mkdir(mode=0o700)
+        if os.name=="nt":
+            # No original PCM, USD/scene source or derivative touches disk
+            # until a dedicated Job directory has genuine Windows EFS.
+            from backend.nvp_w1g_encrypted_source import require_efs_stage
+            require_efs_stage(directory)
+        for name,blob in sorted(inputs.items()):
+            with (directory/name).open("xb") as fd:
+                fd.write(blob);fd.flush();os.fsync(fd.fileno())
         sealed=directory/"plan.json"
         with sealed.open("xb") as fd:
             fd.write(raw);fd.flush();os.fsync(fd.fileno())
+        if os.name=="nt":
+            from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+            verify_efs_inputs(directory,(*sorted(inputs),"plan.json"))
         state={"format":FORMAT, **scope,"state":"PREPARED",
                "process_tree_custody_verified":False,
                "output_independently_verified":False}
@@ -151,9 +181,18 @@ class ProtectedNativeWorker:
                     raise RuntimeError("Independent OS process-tree custody remains unverified")
                 if _digest(binary)!=binary_sha or _digest(sealed)!=digest:
                     raise RuntimeError("Pinned executable/task plan changed during execution")
+                for name,source_sha in input_hashes.items():
+                    if _digest(directory/name)!=source_sha:
+                        raise RuntimeError("Original native worker mutated a sealed source")
                 receipt=directory/"result.json"
                 if receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size>1024*1024:
                     raise RuntimeError("Native worker did not publish bounded result")
+                if os.name=="nt":
+                    from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+                    from backend.nvp_w1g_first_party_result_verifier import ROLE_OPERATIONS
+                    verify_efs_inputs(directory,(
+                        *sorted(inputs),"plan.json",receipt.name,
+                        ROLE_OPERATIONS[role][0]))
                 result=json.loads(receipt.read_text("utf8"))
                 if (type(result) is not dict or
                     result.get("job_id")!=job or
@@ -173,6 +212,9 @@ class ProtectedNativeWorker:
                 accepted=self.verify(dict(scope),dict(result),directory)
                 if accepted is not True:
                     raise RuntimeError("Independent domain verification did not accept result")
+                if any(_digest(directory/name)!=digest
+                       for name,digest in input_hashes.items()):
+                    raise RuntimeError("Independent verifier changed immutable native source")
                 state["state"]="SUCCEEDED_VERIFIED"
                 state["output_independently_verified"]=True
                 state["process_tree_custody_verified"]=True
