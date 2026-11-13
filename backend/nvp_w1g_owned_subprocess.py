@@ -66,7 +66,8 @@ def run_owned_subprocess(command, *, cwd=None, timeout=120, check=False,
             command,cwd=cwd,timeout=timeout,check=check,
             stdin=stdin,stdout=stdout,stderr=stderr,
             input=input,capture_output=False,text=text,
-            encoding=encoding,errors=errors)
+            encoding=encoding if text else None,
+            errors=errors if text else None)
 
     from backend.nvp_worker_containment import launch_contained
     binary=Path(command[0])
