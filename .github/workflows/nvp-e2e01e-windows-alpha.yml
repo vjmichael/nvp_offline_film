@@ -84,6 +84,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_w1g_protected_upgrade.py -v
           python -m unittest discover -s tests -p test_nvp_w1g_first_party_result_verifier.py -v
+          python -m unittest discover -s tests -p test_nvp_w1g_native_link_audit.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile actual desktop entry and build one-directory native EXE
         shell: pwsh
