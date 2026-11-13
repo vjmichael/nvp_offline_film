@@ -53,6 +53,36 @@ def _require_new_boot(saved: dict, observed_boot_epoch: int):
     return True
 
 
+
+def _windows_process_token_sid() -> str:
+    """Observe the real OS process token, never an environment username."""
+    if os.name!="nt":
+        raise RuntimeError("Windows token SID requires native Windows")
+    import win32api
+    import win32con
+    import win32security
+    token=win32security.OpenProcessToken(
+        win32api.GetCurrentProcess(),win32con.TOKEN_QUERY)
+    sid,_=win32security.GetTokenInformation(token,win32security.TokenUser)
+    return win32security.ConvertSidToStringSid(sid)
+
+
+def _require_efs_recovery_principal(saved: dict, current_sid: str, *,
+                                    cross_principal: bool):
+    """Different security principals are a prerequisite, not key-backup proof."""
+    recorded=saved.get("original_windows_token_sid")
+    if (type(recorded) is not str or not recorded.startswith("S-1-") or
+        type(current_sid) is not str or not current_sid.startswith("S-1-")):
+        raise PermissionError("Original/current Windows token identity missing")
+    if cross_principal and current_sid==recorded:
+        raise PermissionError(
+            "EFS recovery must be demonstrated by a different Windows token")
+    if not cross_principal and current_sid!=recorded:
+        raise PermissionError(
+            "Same-user EFS reopen must be verified by the original Windows token")
+    return True
+
+
 def prepare_disposable_efs(parent: Path) -> dict:
     if os.name!="nt":
         raise RuntimeError("Native physical encrypted-source acceptance requires Windows")
@@ -76,6 +106,7 @@ def prepare_disposable_efs(parent: Path) -> dict:
             "sha256":sha256(data).hexdigest(),
             "original_film_data_used":False,
             "windows_boot_estimate_epoch":_windows_boot_estimate_epoch(),
+            "original_windows_token_sid":_windows_process_token_sid(),
             "physical_efs_key_recovery_verified":False,
             "creator_authorization_verified":False,
         }
@@ -85,7 +116,8 @@ def prepare_disposable_efs(parent: Path) -> dict:
         raise
 
 
-def reopen_disposable_efs(saved: dict) -> dict:
+def reopen_disposable_efs(saved: dict, *, cross_principal=False,
+                          retain_for_recovery=False) -> dict:
     if os.name!="nt":
         raise RuntimeError("Native Windows EFS restart/reopen required")
     if (type(saved) is not dict or saved.get("format")!=FORMAT or
@@ -105,20 +137,29 @@ def reopen_disposable_efs(saved: dict) -> dict:
         stage.is_symlink() or not stage.is_dir()):
         raise RuntimeError("EFS original stage unavailable or not a disposable test after restart")
     _require_new_boot(saved,_windows_boot_estimate_epoch())
+    _require_efs_recovery_principal(
+        saved,_windows_process_token_sid(),cross_principal=cross_principal)
     verify_efs_inputs(stage,(saved["file"],))
     if sha256((stage/saved["file"]).read_bytes()).hexdigest()!=saved["sha256"]:
         raise RuntimeError("Native EFS re-opened encrypted bytes differ from original")
-    (stage/saved["file"]).unlink()
-    stage.rmdir()
+    if cross_principal and retain_for_recovery:
+        raise ValueError("Recovery verification must remove its disposable source")
+    if not retain_for_recovery:
+        (stage/saved["file"]).unlink()
+        stage.rmdir()
     return {
         "format":FORMAT,
-        "status":"NATIVE_WINDOWS_EFS_POST_REBOOT_REOPEN_VERIFIED",
+        "status":("NATIVE_WINDOWS_EFS_DIFFERENT_PRINCIPAL_DECRYPTED"
+                  if cross_principal else
+                  "NATIVE_WINDOWS_EFS_POST_REBOOT_REOPEN_VERIFIED"),
         "encrypted_original_input_at_rest_verified":True,
         "distinct_windows_boot_observed":True,
         "windows_boot_epoch_method":"GetTickCount64-wall-clock-estimate",
-        "key_recovery_or_physical_owner_identity_proven":False,
+        "different_windows_token_observed":bool(cross_principal),
+        "cross_principal_nonsecret_efs_decryption_verified":bool(cross_principal),
+        "key_backup_origin_independently_proven":False,
         "original_film_data_used":False,
-        "disposable_stage_removed":True,
+        "disposable_stage_removed":not retain_for_recovery,
         "owner_physical_session_proven":False,
         "efs_recovery_key_backup_verified":False,
         "production_encrypted_film_release_accepted":False,
@@ -127,9 +168,11 @@ def reopen_disposable_efs(saved: dict) -> dict:
 
 def main(argv=None):
     parser=argparse.ArgumentParser()
-    parser.add_argument("action",choices=("prepare","reopen"))
+    parser.add_argument("action",choices=("prepare","reopen","recover"))
     parser.add_argument("--parent",type=Path)
     parser.add_argument("--receipt",type=Path,required=True)
+    parser.add_argument("--retain-for-recovery",action="store_true",
+                        help="Only with reopen: preserve disposable nonce for cross-principal decryption")
     args=parser.parse_args(argv)
     if args.action=="prepare":
         if args.parent is None or args.receipt.exists() or args.receipt.is_symlink():
@@ -141,7 +184,11 @@ def main(argv=None):
         if args.receipt.is_symlink() or not args.receipt.is_file():
             raise RuntimeError("Original owner EFS stage receipt missing")
         saved=json.loads(args.receipt.read_text("utf8"))
-        result=reopen_disposable_efs(saved)
+        if args.retain_for_recovery and args.action!="reopen":
+            parser.error("Only same-user reopen may retain the disposable EFS nonce")
+        result=reopen_disposable_efs(
+            saved,cross_principal=args.action=="recover",
+            retain_for_recovery=args.retain_for_recovery)
         print(json.dumps(result,sort_keys=True,indent=2))
 
 
