@@ -566,10 +566,37 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         for row in self.index.list_objects(pid,kind="edit")[:64]:
             rec=assembly.open_edit(pid,row["object_id"],row["head_revision"])
             data=rec["data"]
+            # Creator can choose only actual USD cameras/listeners shared
+            # across source Takes in this committed non-destructive edit.
+            source_roles={}
+            camera_choices=None
+            listener_choices=None
+            for segment in data["segments"]:
+                take_id=segment["source_take_id"]
+                if take_id not in source_roles:
+                    take=self.index.read_revision(pid,take_id,1)
+                    if take["document_sha256"]!=segment["source_take_document_sha256"]:
+                        raise RuntimeError("Source Take SHA changed in film source catalog")
+                    doc=take["data"]
+                    scene=self.index.read_revision(
+                        pid,doc["scene_id"],doc["scene_revision"])
+                    if scene["document_sha256"]!=doc["scene_document_sha256"]:
+                        raise RuntimeError("Authentic camera/source scene changed")
+                    source_roles[take_id]=scene["data"]["prim_roles"]
+                roles=source_roles[take_id]
+                cameras={path for path,role in roles.items() if role=="camera"}
+                listeners={path for path,role in roles.items()
+                           if role in ("camera","anchor","actor")}
+                camera_choices=(cameras if camera_choices is None
+                                else camera_choices & cameras)
+                listener_choices=(listeners if listener_choices is None
+                                  else listener_choices & listeners)
             edits.append({
                 "edit_id":rec["object_id"],"edit_revision":rec["revision"],
                 "edit_sha256":rec["document_sha256"],
                 "duration_tick":str(data["duration_tick"]),
+                "cameras":sorted(camera_choices or set())[:32],
+                "listeners":sorted(listener_choices or set())[:32],
                 "segments":[{"segment_id":s["segment_id"],
                              "source_take_id":s["source_take_id"],
                              "source_take_sha256":s["source_take_document_sha256"],
