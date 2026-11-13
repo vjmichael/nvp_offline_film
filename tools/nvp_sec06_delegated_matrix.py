@@ -45,6 +45,13 @@ def main() -> int:
         print("SEC-06 native OS fixture:", pattern, flush=True)
         subprocess.run([sys.executable, "-m", "unittest", "discover", "-s",
                         "tests", "-p", pattern, "-v"], check=True)
+    # The integrated P1-A original ADC producer must be admitted by the
+    # SAME delegated service/guardian/kernel policy as the SEC-06 worker.
+    # Pytest-selected native Linux cases are mandatory; no skipped mock pass.
+    print("SEC-06 + P1-A native delegated kernel producer fixtures",flush=True)
+    subprocess.run([sys.executable,"-m","pytest","-vv",
+                    "tests/test_nvp_p1a_native_kernel.py","-k","linux_"],
+                   check=True)
     print("SEC-06 completed real delegated Linux matrix at", source, flush=True)
     return 0
 
