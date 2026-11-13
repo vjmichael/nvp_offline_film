@@ -379,6 +379,16 @@ scene.render.engine="CYCLES"
 scene.cycles.device="CPU"
 scene.cycles.samples=int({"thumbnail":8,"interactive":16,
                           "inspection":24}[src["quality"]])
+# This is a short-lived source review PNG, not a movie master.
+# Linux's genuine Blender 4.0.2 package may be built without OpenImageDenoiser:
+# that build fails even after a valid render setup if denoising is enabled.
+# Disable the optional pass explicitly without changing the source mesh,
+# original USD materials, camera, worker SHA or kernel authorization.
+if hasattr(scene.cycles,"use_denoising"):
+    scene.cycles.use_denoising=False
+for layer in scene.view_layers:
+    if hasattr(layer,"cycles") and hasattr(layer.cycles,"use_denoising"):
+        layer.cycles.use_denoising=False
 scene.render.resolution_x=src["width"]
 scene.render.resolution_y=src["height"]
 scene.render.resolution_percentage=100
