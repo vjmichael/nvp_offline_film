@@ -1,5 +1,7 @@
 """W1-G production stop/authorization gates are not CI witness flags."""
 from pathlib import Path
+import os
+from unittest.mock import patch
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -205,6 +207,34 @@ class NativeReleaseAuthorityRefusal(unittest.TestCase):
                 os_workers_stopped=lambda:True,test_only_simulation=True)
             self.assertEqual(valid.films,films)
             self.assertFalse((films/"nsis-rollback.json").exists())
+
+
+    def test_native_preflight_denies_stale_activation_even_without_mutation(self):
+        if os.name!="nt":
+            self.skipTest("Real Windows authority types and native host")
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            programs=root/"Programs";programs.mkdir()
+            films=root/"Films";films.mkdir()
+            journal=root/"Journal";journal.mkdir()
+            workspaces={}
+            for name in WindowsReleaseWorkerStopEvidence.REQUIRED_DOMAINS:
+                path=root/name;path.mkdir();workspaces[name]=path
+            human=WindowsCreatorUpgradeApproval()
+            kernel=WindowsReleaseWorkerStopEvidence(
+                programs/"NVP",worker_workspaces=workspaces)
+            owner=OwnedNSISRecovery(programs,films,journal,
+                native_approve=human,os_workers_stopped=kernel)
+            activation=NativeNSISActivation(owner,
+                native_authorize=human,os_worker_tree_evidence=kernel)
+            activation.journal.write_text(
+                '{"state":"INTERRUPTED_REQUIRES_OWNER_REVIEW"}',encoding="utf8")
+            with patch("tools.nvp_w1g_owner_windows_acceptance._snapshot_root"):
+                with self.assertRaisesRegex(RuntimeError,
+                        "Existing production activation journal"):
+                    read_only_production_preflight(
+                        owner,activation,kernel,{})
+            self.assertTrue(activation.journal.is_file())
 
     def test_no_production_windows_authority_on_linux(self):
         import os
