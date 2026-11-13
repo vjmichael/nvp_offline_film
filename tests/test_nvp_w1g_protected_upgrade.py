@@ -254,3 +254,35 @@ class ProtectedBinaryExecutionContracts(unittest.TestCase):
             self.assertEqual(len(journals),1)
             self.assertEqual(json.loads(journals[0].read_text())["state"],
                              "FAILED_UNVERIFIED")
+            # Sealed source bytes reached the private worker directory, and
+            # exact hashes reached the original plan and immutable journal,
+            # but no mock PID could masquerade as native OS custody.
+            task=journals[0].parent
+            self.assertEqual((task/"scene.txt").read_bytes(),b"64 48\n")
+            sealed=json.loads((task/"plan.json").read_text("utf8"))
+            self.assertEqual(sealed["input_sha256"]["scene.txt"],
+                sha256(b"64 48\n").hexdigest())
+            self.assertEqual(json.loads(journals[0].read_text())["input_sha256"],
+                sealed["input_sha256"])
+
+    def test_interrupted_input_staging_reconciles_as_uncertain(self):
+        with TemporaryDirectory() as temp:
+            bundle,runtime=self.setup_roster(Path(temp))
+            process=ProtectedNativeWorker(
+                bundle,runtime,platform="windows-amd64",
+                native_approve=lambda scope:True,
+                independent_verify=lambda scope,result,directory:True,
+                independent_os_custody=lambda scope,receipt:True)
+            partial=runtime/"w1g_abcd12345"
+            partial.mkdir()
+            (partial/"journal.json").write_text(json.dumps({
+                "format":"nvp.w1g.protected_worker_execution.v1",
+                "state":"INPUTS_STAGED","process_tree_custody_verified":False,
+                "output_independently_verified":False,
+            }),encoding="utf8")
+            state=process.reconcile()
+            self.assertEqual(state["unresolved_job_ids"],["w1g_abcd12345"])
+            recorded=json.loads((partial/"journal.json").read_text("utf8"))
+            self.assertEqual(recorded["state"],
+                             "INTERRUPTED_OS_CUSTODY_UNVERIFIED")
+            self.assertFalse(recorded["process_tree_custody_verified"])
