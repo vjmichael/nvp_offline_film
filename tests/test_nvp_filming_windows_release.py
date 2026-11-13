@@ -49,7 +49,10 @@ class WindowsOriginalFilmingCustodyTests(unittest.TestCase):
                         with WindowsReleaseMutationGate():
                             self.fail("Live original filming process must block release swap")
                     capture=FakeOriginalCapture()
-                    with patch("backend.nvp_filming_host_bridge.NativeSceneSoundCapture",FakeOriginalCapture):
+                    with patch("backend.nvp_filming_host_bridge.NativeSceneSoundCapture",FakeOriginalCapture), patch(
+                            "backend.nvp_filming_host_bridge.tempfile.SpooledTemporaryFile",
+                            side_effect=AssertionError(
+                                "Original Windows PCM must never spill into system tempfile")):
                         result=finish_windows_recording_and_freeze(
                             session,capture,"project","take",
                             recordings=lambda:[{"pcm_chunks":iter((b"\x12\x34",)),
@@ -74,6 +77,45 @@ class WindowsOriginalFilmingCustodyTests(unittest.TestCase):
                     finish_windows_recording_and_freeze(
                         session,object(),"project","take",recordings=lambda:[])
                 self.assertTrue(session._closed and session._stopped)
+                with WindowsReleaseMutationGate() as gate:
+                    self.assertTrue(gate.held)
+
+
+    def test_oversized_original_pcm_refused_without_efs_and_worker_reaped(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            with (root/"out").open("wb") as out,(root/"err").open("wb") as err:
+                session=self.launch(root,out,err)
+                capture=FakeOriginalCapture()
+                with patch("backend.nvp_filming_host_bridge.NativeSceneSoundCapture",FakeOriginalCapture), patch(
+                        "backend.nvp_filming_host_bridge.WINDOWS_RAM_PCM_BUDGET",4):
+                    with self.assertRaisesRegex(PermissionError,"provision EFS scratch"):
+                        finish_windows_recording_and_freeze(
+                            session,capture,"project","take",
+                            recordings=lambda:[{
+                                "pcm_chunks":iter((b"\\x12\\x34",)),
+                                "start_tick":0}])
+                self.assertTrue(session._stopped and session._closed)
+                self.assertEqual(capture.events,[])
+                with WindowsReleaseMutationGate() as gate:
+                    self.assertTrue(gate.held)
+
+    def test_efs_spool_must_exist_before_original_capture(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            with (root/"out").open("wb") as out,(root/"err").open("wb") as err:
+                session=self.launch(root,out,err)
+                capture=FakeOriginalCapture()
+                with patch("backend.nvp_filming_host_bridge.NativeSceneSoundCapture",FakeOriginalCapture):
+                    with self.assertRaisesRegex(PermissionError,"dedicated nonlinked"):
+                        finish_windows_recording_and_freeze(
+                            session,capture,"project","take",
+                            recordings=lambda:[{
+                                "pcm_chunks":iter((b"\\x12\\x34",)),
+                                "start_tick":0}],
+                            encrypted_pcm_scratch=root/"nonexistent-protected-job")
+                self.assertTrue(session._stopped and session._closed)
+                self.assertEqual(capture.events,[])
                 with WindowsReleaseMutationGate() as gate:
                     self.assertTrue(gate.held)
 
