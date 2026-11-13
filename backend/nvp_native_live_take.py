@@ -77,7 +77,9 @@ class NativeLiveSoundSession:
         self.subject_id=subject_id
         self.approve_start=native_approve_start
         self.approve_freeze=native_approve_freeze
-        self.device_factory=device_factory or _capture_device
+        # Native production ADC acquisition runs only in a separate contained
+        # worker. Explicit trusted Python injection remains for fixture tests.
+        self.device_factory=device_factory
         self.plan=ExactTimeShotSequence(index).read(
             project_id,camera_timeline_id,camera_timeline_revision)
         if (self.plan["scene_id"]!=scene_id or
@@ -186,7 +188,14 @@ class NativeLiveSoundSession:
             target=self._writer,name="NVP trusted PCM spool",daemon=True)
         self._worker.start()
         try:
-            self._device=self.device_factory()
+            if self.device_factory is None:
+                from backend.nvp_device_producer_custody import (
+                    SupervisedNativeDevice, scope_sha256)
+                self._device=SupervisedNativeDevice(
+                    self._tmp, mode="mono", max_samples=self.max_samples,
+                    scope_digest=scope_sha256(scope))
+            else:
+                self._device=self.device_factory()
             generator=self._callback()
             next(generator)
             self._device.start(generator)
@@ -196,12 +205,18 @@ class NativeLiveSoundSession:
             raise
         return {**scope,"status":"RECORDING","source_modified":False}
 
-    def _stop_device(self):
+    def _stop_device(self,*,abort=False):
         dev=self._device
         self._device=None
         if dev is not None:
-            try:dev.stop()
-            finally:dev.close()
+            # Cancellation may have recorded zero samples: revoke the worker
+            # and prove the kernel tree empty without asking it to publish a
+            # clean PCM receipt. A normal freeze needs both proofs.
+            try:
+                if not abort or not getattr(dev,"uses_worker_clock",False):
+                    dev.stop()
+            finally:
+                dev.close()
 
     def _drain(self):
         # Stop device first: no callback may enqueue once writer sees sentinel.
@@ -264,7 +279,9 @@ class NativeLiveSoundSession:
             return {**receipt,"status":"FROZEN_ORIGINAL_LIVE_TAKE",
                     "actual_recorded_samples":self._count,
                     "actual_audio_end_tick":str(end),
-                    "device_runtime":"native_miniaudio_pcm",
+                    "device_runtime":("supervised_native_job_cgroup_pcm"
+                                      if self.device_factory is None
+                                      else "trusted_injected_test_device"),
                     "source_modified":False}
         except Exception:
             self._state="FAILED"
@@ -302,7 +319,7 @@ class NativeLiveSoundSession:
             return {"status":self._state,"take_created":self._state=="FROZEN"}
         self._state="CANCELLING"
         try:
-            self._stop_device()
+            self._stop_device(abort=True)
             if self._worker is not None:
                 self._queue.put(None,timeout=10)
                 self._worker.join(timeout=15)
