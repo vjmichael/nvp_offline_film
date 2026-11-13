@@ -15,6 +15,10 @@ on:
       - tests/test_nvp_w1g_protected_upgrade.py
       - tests/test_nvp_w1g_first_party_result_verifier.py
       - tests/test_nvp_w1g_native_link_audit.py
+      - tools/nvp_w1g_signed_wheelhouse.py
+      - tests/test_nvp_w1g_signed_wheelhouse.py
+      - tools/nvp_w1g_reconcile_compiled_release.py
+      - tests/test_nvp_w1g_reconcile_compiled_release.py
       - packaging/build-w1g-compiled-windows.cmd
       - .github/workflows/nvp-w1g-compiled-workers.yml
   workflow_dispatch:
