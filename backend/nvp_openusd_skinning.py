@@ -11,6 +11,7 @@ rig joints; more general bind-pose authoring and facial rigging follow later.
 from __future__ import annotations
 
 import math
+import re
 
 MAX_SKIN_VERTICES=8192
 MAX_SKIN_FACES=16384
@@ -27,7 +28,7 @@ def _float(value):
 def normalize_skin(skin,joint_count):
     expected={"points","faces","joint_indices","joint_weights","display_color"}
     if (type(skin) is not dict or not expected.issubset(skin) or
-        not set(skin)<=expected|{"roughness","source_glb_sha256"}):
+        not set(skin)<=expected|{"roughness","source_glb_sha256","facial_targets"}):
         raise ValueError("Skin requires exact typed point/topology/joint influence fields")
     points=skin["points"]
     faces=skin["faces"]
@@ -89,6 +90,35 @@ def normalize_skin(skin,joint_count):
                    roughness=float(rough))
     elif "roughness" in skin:
         raise ValueError("Authored skin roughness requires imported original PBR source")
+    if "facial_targets" in skin:
+        if "source_glb_sha256" not in out:
+            raise ValueError("Facial shapes must originate in immutable imported GLB geometry")
+        faces=skin["facial_targets"]
+        if type(faces) is not list or not 1<=len(faces)<=16:
+            raise ValueError("Original GLB face shape budget exceeded")
+        names=set()
+        derived=[]
+        for shape in faces:
+            if type(shape) is not dict or set(shape)!={"name","source_name","deltas"}:
+                raise ValueError("Original GLB facial morph requires source name and deltas")
+            name=shape["name"];label=shape["source_name"]
+            if (type(name) is not str or
+                not re.fullmatch(r"[a-z][a-z0-9_]{0,39}",name)
+                or name in names or
+                type(label) is not str or not 1<=len(label)<=64 or
+                any(ord(c)<32 for c in label)):
+                raise ValueError("Duplicate, invalid or ambiguous original morph identity")
+            names.add(name)
+            values=shape["deltas"]
+            if type(values) is not list or len(values)!=len(pts):
+                raise ValueError("Original GLB facial shape must cover every skin vertex")
+            positions=[]
+            for point in values:
+                if type(point) is not list or len(point)!=3:
+                    raise ValueError("Original morph deltas require finite 3D values")
+                positions.append([_float(v) for v in point])
+            derived.append({"name":name,"source_name":label,"deltas":positions})
+        out["facial_targets"]=derived
     return out
 
 
@@ -117,6 +147,27 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         not influence_weights.Set(Vt.FloatArray(
             [w for row in bound["joint_weights"] for w in row]))):
         raise RuntimeError("Could not author native USD per-vertex joint influences")
+    if bound.get("facial_targets"):
+        # Genuine USD UsdSkel.BlendShape source offsets, from this GLB's
+        # actual POSITION morph buffers; not a generated expression mesh.
+        from pxr import UsdSkel
+        names=[]
+        paths=[]
+        for item in bound["facial_targets"]:
+            name=item["name"]
+            shape=UsdSkel.BlendShape.Define(
+                stage,actor_path+"/Rig/FaceShapes/"+name)
+            if not shape.GetOffsetsAttr().Set(
+                    Vt.Vec3fArray([Gf.Vec3f(*point) for point in item["deltas"]])):
+                raise RuntimeError("Native source GLB face morph offsets could not be authored")
+            shape.GetPrim().CreateAttribute(
+                "nvp:originalMorphName",Sdf.ValueTypeNames.String).Set(
+                    item["source_name"])
+            names.append(name)
+            paths.append(shape.GetPrim().GetPath())
+        if (not binding.CreateBlendShapesAttr().Set(Vt.TokenArray(names)) or
+            not binding.CreateBlendShapeTargetsRel().SetTargets(paths)):
+            raise RuntimeError("Original GLB facial morphs not bound to native USD skin")
     if "source_glb_sha256" in bound:
         # Native Cycles reads this true source PBR via UsdShade; it must NOT
         # silently substitute a white material for a skinned actor.
@@ -192,8 +243,36 @@ def evaluate_skin(stage,mesh_prim,actor_path,tick):
         raise RuntimeError("Missing authored source actor geometry/weights")
     if len(raw)>MAX_SKIN_VERTICES or len(ids)!=4*len(raw) or len(weights)!=4*len(raw):
         raise RuntimeError("Frozen source joint influence arrays changed")
+    # Evaluate original actor facial morphs BEFORE classic source skinning.
+    # These are explicit authored actor control channels and real GLB deltas.
+    # No speech-to-phoneme classifier or inferred voice is run.
+    face=[]
+    weighted=[Gf.Vec3d(*p) for p in raw]
+    face_attr=binding.GetBlendShapesAttr()
+    face_names=list(face_attr.Get() or []) if face_attr else []
+    if face_names:
+        targets=binding.GetBlendShapeTargetsRel().GetTargets()
+        if len(targets)!=len(face_names) or len(face_names)>16:
+            raise RuntimeError("Native facial shape binding has changed")
+        actor=stage.GetPrimAtPath(actor_path)
+        for name,target in zip(face_names,targets):
+            if (not re.fullmatch(r"[a-z][a-z0-9_]{0,39}",str(name)) or
+                str(target)!=actor_path+"/Rig/FaceShapes/"+str(name)):
+                raise RuntimeError("Native facial morph target differs from original GLB")
+            shape=UsdSkel.BlendShape(stage.GetPrimAtPath(target))
+            deltas=shape.GetOffsetsAttr().Get() if shape else None
+            if deltas is None or len(deltas)!=len(raw):
+                raise RuntimeError("Original face morph has missing native offsets")
+            control=actor.GetAttribute("nvp:performance:face:"+str(name))
+            value=control.Get(t) if control else 0.0
+            weight=float(value) if value is not None else 0.0
+            if not math.isfinite(weight) or not 0<=weight<=1:
+                raise RuntimeError("Original actor facial expression has an invalid weight")
+            for i,delta in enumerate(deltas):
+                weighted[i]+=Gf.Vec3d(*delta)*weight
+            face.append({"name":str(name),"weight":weight})
     points=[]
-    for n,p in enumerate(raw):
+    for n,p in enumerate(weighted):
         out=Gf.Vec3d(0)
         total=0.
         for influence in range(MAX_INFLUENCES):
@@ -215,5 +294,6 @@ def evaluate_skin(stage,mesh_prim,actor_path,tick):
         "skinning_evaluated":True,
         "usd_skin_binding_verified":True,
         "joint_count":len(transforms),
-        "facial_deformation_evaluated":False,
+        "facial_deformation_evaluated":bool(face),
+        "source_facial_shapes":face,
     }
