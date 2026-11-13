@@ -160,8 +160,16 @@ class ProtectedNativeWorker:
                     result.get("project_id")!=project_id or
                     result.get("plan_sha256")!=digest):
                     raise RuntimeError("Native result was not tied to exact authorized task")
-                # A domain verifier is advisory to this sealed output and
-                # receives only immutable hashes plus an already reaped job.
+                # Independently recompute actual PCM, editorial, picture,
+                # audio and delivery semantics from bounded original inputs.
+                # No caller-provided True or forged native result.json may
+                # bypass these checks, even after the OS tree was reaped.
+                from backend.nvp_w1g_first_party_result_verifier import (
+                    verify_bounded_first_party_role)
+                if verify_bounded_first_party_role(
+                        dict(scope),dict(result),directory) is not True:
+                    raise RuntimeError("Mandatory independent original native result verification failed")
+                # The domain's own external verifier remains a SECOND gate.
                 accepted=self.verify(dict(scope),dict(result),directory)
                 if accepted is not True:
                     raise RuntimeError("Independent domain verification did not accept result")
