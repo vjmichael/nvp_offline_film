@@ -113,7 +113,7 @@ def verify_published_native_attestations(index: FilmIndex,project_id,take_id,
     ledger=TemporalLedger(index)
     events=ledger.events_in(
         project_id,manifest["timeline_id"],manifest["timeline_revision"],
-        start_tick=0,end_tick=int(manifest["duration_tick"]),limit=512)
+        start_tick=0,end_tick=int(manifest["duration_tick"]),limit=500)
     if events.get("next_cursor") is not None:
         raise PermissionError("Cannot verify a partial original filming event set")
     audio_events=[e for e in events["events"] if e["event_kind"] in ("sound","dialogue")]
