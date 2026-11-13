@@ -87,11 +87,50 @@ def static_composed_usd(index: FilmIndex, project_id, take_id, take_sha,
         params[key]=value
     from backend.nvp_int02_usd_materials import source_preview_materials
     material_bindings=source_preview_materials(stage,tick)
+    # P1-B/C: render the REAL skinned character evaluated at authored Film
+    # Time. The native Blender importer must never re-skin a source mesh
+    # after it was baked for this one immutable picture sample.
+    frozen_actor_skin=[]
+    for original in scene["data"].get("imported_characters",[]):
+        from backend.nvp_openusd_skinning import evaluate_skin
+        actor=original["path"]
+        mesh_path=actor+"/Rig/CharacterMesh"
+        evaluated=evaluate_skin(
+            stage,stage.GetPrimAtPath(mesh_path),actor,tick)
+        if (evaluated["usd_skin_binding_verified"] is not True or
+            evaluated["skinning_evaluated"] is not True):
+            raise RuntimeError("Original imported character is not genuinely skin-deformed")
+        frozen_actor_skin.append({
+            "actor_id":original["actor_id"],
+            "mesh_path":mesh_path,
+            "points":evaluated["deformed_points"],
+        })
     flat=stage.Flatten()
     baked=Usd.Stage.Open(flat)
     if baked is None:
         raise RuntimeError("USD composition could not flatten into a native worker source")
     sample=Usd.TimeCode(float(tick))
+    # A static frame source contains the exact deformed world geometry,
+    # no second animation layer or accidental Blender skin reapplication.
+    if frozen_actor_skin:
+        from pxr import Gf,UsdSkel,Vt
+        for actor in frozen_actor_skin:
+            source=baked.GetPrimAtPath(actor["mesh_path"])
+            if not source or not source.IsA(UsdGeom.Mesh):
+                raise RuntimeError("Frozen native actor source mesh is missing")
+            mesh=UsdGeom.Mesh(source)
+            if not mesh.GetPointsAttr().Set(Vt.Vec3fArray([
+                Gf.Vec3f(*p) for p in actor["points"]])):
+                raise RuntimeError("Evaluated imported actor skin could not bake to USD")
+            for prop in ("skel:skeleton","skel:geomBindTransform",
+                         "primvars:skel:jointIndices",
+                         "primvars:skel:jointWeights"):
+                if source.GetProperty(prop):
+                    source.RemoveProperty(prop)
+            if source.HasAPI(UsdSkel.BindingAPI):
+                source.RemoveAPI(UsdSkel.BindingAPI)
+            if source.GetProperty("skel:skeleton"):
+                raise RuntimeError("Native frame retained an unwanted second skin binding")
     for prim in baked.Traverse():
         for attr in prim.GetAttributes():
             times=attr.GetTimeSamples()
