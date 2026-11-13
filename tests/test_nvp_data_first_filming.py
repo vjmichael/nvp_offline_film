@@ -1179,6 +1179,46 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 self.index.read_revision(self.pid,identity,1)
         self.assertEqual(self.capture.publications.unresolved(self.pid),[])
 
+
+    def test_device_iterator_closed_after_successful_frozen_take(self):
+        req=self.payload()
+        closed=[]
+        class DeviceIterator:
+            def __init__(self, chunks):
+                self.chunks=iter(chunks)
+            def __iter__(self):
+                return self
+            def __next__(self):
+                return next(self.chunks)
+            def close(self):
+                closed.append("closed")
+        req["recordings"][0]["pcm_chunks"]=DeviceIterator([self.original])
+        result=self.capture.capture(**req)
+        self.assertEqual(result["status"],"FROZEN_ORIGINAL_SCENE_SOUND_TAKE")
+        self.assertEqual(closed,["closed"])
+        self.assertIsNotNone(self.index.read_revision(self.pid,"FilmedTake",1))
+
+    def test_device_iterator_closed_after_rejected_pcm_without_publication(self):
+        req=self.payload()
+        closed=[]
+        class DeviceIterator:
+            def __init__(self, chunks):
+                self.chunks=iter(chunks)
+            def __iter__(self):
+                return self
+            def __next__(self):
+                return next(self.chunks)
+            def close(self):
+                closed.append("closed")
+        req["recordings"][0]["pcm_chunks"]=DeviceIterator([self.original,bytes(2)])
+        with self.assertRaisesRegex(ValueError,"sample count does not match"):
+            self.capture.capture(**req)
+        self.assertEqual(closed,["closed"])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_capture_rejects_unknown_world_emitter(self):
         req=self.payload()
         req["recordings"][0]["usd_prim_path"]="/World/NotThere"
