@@ -105,7 +105,8 @@ class SupervisedNativeDevice:
             # containment is not an acceptable substitute for cgroup v2.
             self._process = launch_contained(
                 command, cwd=self.spool, stdout=self._log, stderr=self._log,
-                linux_cgroup_tree_required=True)
+                memory_mb=512, linux_cgroup_tree_required=True,
+                linux_write_spool=self.spool)
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
                 if self._path(".ready").exists():

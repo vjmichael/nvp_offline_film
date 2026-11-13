@@ -166,12 +166,18 @@ class CgroupTreeProcess:
             self._worker.wait(timeout=15)
 
 
-def launch_cgroup_tree(command,*,cwd,stdout,stderr,memory_mb):
+def launch_cgroup_tree(command,*,cwd,stdout,stderr,memory_mb,linux_write_spool=None):
     """Start guardian FIRST, and only launch Blender after guardian READY."""
     if sys.platform!="linux" or os.name!="posix":
         raise RuntimeError("Linux kernel cgroup v2 mode is unavailable on this OS")
     if not command or not Path(command[0]).is_absolute():
         raise ValueError("Pinned worker executable must be absolute")
+    if linux_write_spool is not None:
+        source=Path(linux_write_spool)
+        if (not source.is_absolute() or source.is_symlink() or
+            not source.is_dir() or
+            not source.name.startswith("nvp-live-original-")):
+            raise PermissionError("Cannot authorize an arbitrary Linux worker write scope")
     target=provision_worker_cgroup(memory_mb)
     watch_r,watch_w=os.pipe()
     ready_r,ready_w=os.pipe()
@@ -194,10 +200,13 @@ def launch_cgroup_tree(command,*,cwd,stdout,stderr,memory_mb):
             raise RuntimeError("Cgroup guardian exited before worker launch")
         admitted_r,admitted_w=os.pipe()
         try:
+            write_scope=(["--landlock-spool",str(Path(linux_write_spool).resolve(strict=True))]
+                         if linux_write_spool is not None else [])
             shim=Path(__file__).with_name("nvp_worker_linux_launcher.py").resolve()
             actual=[sys.executable,"-S",str(shim),
                     "--parent",str(os.getpid()),"--memory-mb","0",
-                    "--cgroup-dir",str(target),"--ready-fd",str(admitted_w),*command]
+                    "--cgroup-dir",str(target),"--ready-fd",str(admitted_w),
+                    *write_scope,*command]
             worker=subprocess.Popen(actual,cwd=str(cwd),stdin=subprocess.DEVNULL,
                                     stdout=stdout,stderr=stderr,close_fds=True,
                                     start_new_session=True,pass_fds=(admitted_w,))

@@ -1,0 +1,90 @@
+name: NVP P1-A native OS process custody
+on:
+  push:
+    branches: [nvp/p1a-device-producer-custody-20261112]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-real-job-object:
+    name: Windows native Job - detached child and host crash
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install OS integration testing dependencies
+        shell: pwsh
+        run: |
+          python -m pip install pytest pywin32
+      - name: Run real Windows Job Object termination and hard-host-exit
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH='.'
+          python -m pytest -vv tests/test_nvp_p1a_native_kernel.py -k 'native_windows'
+          if ($LASTEXITCODE -ne 0) { throw 'Original Windows Job custody gate failed' }
+      - name: Verify exact OS identity
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Output "NVP P1-A commit $env:GITHUB_SHA"
+          [System.Environment]::OSVersion.VersionString
+          Get-FileHash -Algorithm SHA256 tools/nvp_p1a_native_custody_fixture.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-p1a-native-windows-receipts
+          path: |
+            .pytest_cache/
+          retention-days: 7
+
+  linux-real-cgroup:
+    name: Linux native delegated cgroup - guardian, migration, hard exit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install focused testing dependency
+        run: python -m pip install pytest
+      - name: Inspect actual Linux delegation capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -a
+          cat /proc/self/cgroup
+          stat -f -c 'cgroup root filesystem=%T' /sys/fs/cgroup
+          systemd --version | head -n 1 || true
+          python - <<'PY'
+          from backend.nvp_worker_linux_cgroup import current_delegated_parent
+          try:
+              print('Existing host delegation:',current_delegated_parent())
+          except Exception as exc:
+              print('Host cannot claim current delegation:',type(exc).__name__,str(exc))
+          PY
+      - name: Run actual delegated systemd scope (no simulated pass)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHON="$(command -v python)"
+          ROOT="$PWD"
+          # systemd's explicit delegation provides the private cgroup-v2
+          # subtree. If the runner refuses it, this gate FAILS/BLOCKS.
+          sudo systemd-run --scope --collect --unit="nvp-p1a-$GITHUB_RUN_ID" \
+            -p Delegate=yes -p DelegateSubgroup=nvp-host \
+            --working-directory="$ROOT" \
+            /usr/bin/env "PYTHONPATH=$ROOT" NVP_REQUIRE_DELEGATED_CGROUP=1 \
+            "$PYTHON" -m pytest -vv tests/test_nvp_p1a_native_kernel.py -k 'linux_'
+      - name: Record native kernel and exact source
+        if: always()
+        shell: bash
+        run: |
+          echo "NVP P1-A commit $GITHUB_SHA"
+          sha256sum tools/nvp_p1a_native_custody_fixture.py
+          cat /proc/self/cgroup

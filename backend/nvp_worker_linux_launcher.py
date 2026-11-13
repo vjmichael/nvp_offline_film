@@ -66,6 +66,16 @@ def main(argv=None):
         os.close(ready_fd)
         index+=4
 
+    # The device-only write fence must be applied BEFORE the recording
+    # executable starts, while the original guardian is outside this fence.
+    # A worker in the cgroup can otherwise escape by writing an ancestor
+    # cgroup.procs in a same-UID delegated scope.
+    if index < len(argv) and argv[index]=="--landlock-spool":
+        if index+2>=len(argv):
+            raise SystemExit("Missing original source spool or executable")
+        from nvp_worker_linux_landlock import restrict_native_producer_writes
+        restrict_native_producer_writes(argv[index+1])
+        index+=2
     if memory_mb:
         cap=memory_mb*1024*1024
         resource.setrlimit(resource.RLIMIT_AS,(cap,cap))
