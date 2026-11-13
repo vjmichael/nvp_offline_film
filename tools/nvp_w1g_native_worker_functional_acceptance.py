@@ -18,6 +18,7 @@ import struct
 import subprocess
 import tempfile
 
+from backend.nvp_w1g_first_party_result_verifier import verify_bounded_first_party_role
 from tools.nvp_w1g_worker_package import (
     _verify_binary,_check_roster,provision_native_workers,verify_native_workers,
 )
@@ -134,6 +135,11 @@ def functional_acceptance(binary_dir:Path,*,platform:str) -> dict:
             }, f"Unverified native worker result content: {role}"
             assert all(_sha((work/name).read_bytes())==digest
                        for name,digest in source_files.items()),"Original immutable native inputs changed"
+            # The same mandatory, separate domain verifier now used by the
+            # protected NVP host must independently recompute the real
+            # worker's output; the compiled child's JSON is not authority.
+            scope={**plan,"plan_sha256":_sha(raw)}
+            assert verify_bounded_first_party_role(scope,result,work) is True
             if role=="original_capture":
                 assert f"samples={len(ORIGINAL_SAMPLES)}\n" in produced.decode("ascii")
                 assert f"source_sha256={_sha(PCM)}" in produced.decode("ascii")
