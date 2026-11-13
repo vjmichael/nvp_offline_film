@@ -59,6 +59,9 @@ jobs:
         run: |
           python -m compileall -q backend/nvp_openusd_skinning.py backend/nvp_openusd_skeleton.py backend/nvp_slate06_geometry.py backend/nvp_camera_workbench.py backend/nvp_openusd_shot_overrides.py backend/nvp_slate_preview_host.py tests/test_nvp_slate07_skinned_camera.py
           python -c "from pxr import Usd,UsdSkel,UsdGeom; from backend.nvp_slate06_geometry import BLENDER_SCRIPT; compile(BLENDER_SCRIPT,'trusted-native-blender.py','exec'); print('NATIVE_USD',Usd.GetVersion())"
+      - name: Audit original SLATE-06/07 source-bound creator approval verifier
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_preview_approval_reconciliation.py" -v
       - name: Frozen USD mesh skin binding, animation and pre-Take director optics
         shell: bash
         run: python -m unittest discover -s tests -p "test_nvp_slate07_skinned_camera.py" -v
