@@ -1,0 +1,31 @@
+# NVP P1-A — Original microphone source → compiled native capture worker
+
+**12 November 2026 | Source implementation checkpoint | Production physical acceptance OPEN**
+
+This checkpoint follows P0's accepted head `676ade79c1d3ba1590e23a5dada6d9630e8ae4c4`: the five **bounded** native PE64/ELF64 workers, consolidated Windows/Linux source/Cycles matrix and installed Windows alpha passed at that earlier exact head. New P1-A changes require their own regression evidence. There is **no merge to main, production upgrade or actual microphone hardware test** claimed here.
+
+## Integrated source path
+
+- Original creator-approved in-process miniaudio/PortAudio device input still records **original** 48-kHz mono PCM16LE into the durable `OriginalCaptureJournal` recovery spool; camera plan and scene SHA are validated by the original FilmIndex/ExactTimeShotSequence.
+- `backend/nvp_p1a_original_capture_worker_bridge.py` introduces host-only `OriginalMicrophoneNativeWorkerAudit`. It accepts only a real `ProtectedNativeWorker`, one original spool confined to the sealed recovery directory, original FilmIndex source/scene/camera identities, a source SHA, sample count and exact Film Time.
+- The bridge reads at most 4 MiB per worker window. Each window is passed to the actual compiled `original_capture` role via `ProtectedNativeWorker.run(...,sealed_inputs={"source.pcm":...})`. That class retains one-use creator approval, exact reviewed worker SHA, original Windows Job/delegated Linux cgroup custody, job journal, EFS staging on Windows and independent result verification. The bridge reopens the original worker's `capture.manifest` and `result.json` and independently checks window sample count/peak/SHA; the complete source digest, count and mtime must match afterward.
+- `NativeLiveSoundSession.finish` performs native audit after original microphone device/writer shutdown and durable DRAINED recording, **before** calling `NativeSceneSoundCapture.capture` or publishing original PCM/Timeline/Take. Its original chunk generator now independently verifies source SHA while replaying into immutable publication, preventing a changed post-audit recording from being accepted.
+- `IndependentNativeSoundSession.finish` audits BOTH original, separately clocked microphone spools before registering their original clock-evidence FilmIndex revision or attempting Take publication. It preserves independent ADC timing/clock evidence and neither mixes nor resamples either original.
+- Native recorder `begin` on Windows requires a genuinely EFS-encrypted original spool directory and validates recorded files when compiled auditing is enabled. `NativeSceneSoundCapture` gains an EFS-protected second-stage spool in that path, rather than silently spilling original PCM to plaintext OS temp.
+- `TrustedNativeOriginalCapture`, `TrustedDesktopCameraBridge` and `create_trusted_camera_bridge` can receive an actual typed first-party auditor **only from the trusted Python host**, not a JS request. The current desktop alpha **does not fabricate or auto-enable** a reviewer-signed worker roster. The UI exposes no protected worker object, signing key or reusable approval.
+
+## Failure/cancellation/authorization boundary
+
+An absent/changed recording, forged OS/result receipt, wrong source path, omitted tail, lost native job custody, independent verifier denial, or failed Windows EFS preflight refuses Take publication. The durable original recorder journal remains an **unapproved source** for explicit recovery. No original scene/Take may be rewritten or silently authorized from a past session.
+
+Tests added/extended: `test_nvp_p1a_original_capture_worker_bridge.py`, `test_nvp_plan02b_native_capture.py`, `test_nvp_webview_ipc_surface.py`, Windows/Linux native/installed workflow contract matrices. Test-only mocked worker attestations are explicitly **not** OS or physical proof. Original Windows native contract runner first showed synthetic unencrypted-PCM EFS refusal: correct production behavior, but tests were isolating a source-hash fixture. Unit mocking was confined to the synthetic test, leaving actual Windows EFS admission mandatory. Final-head CI results must be inspected and failures repaired.
+
+## P1-A remaining functional and physical gates
+
+1. **Native device-capture process:** The compiled C++ `original_capture` worker currently audits a previously recorded PCM stream; it does not itself open, enumerate, synchronize or supervise WASAPI/PortAudio capture devices. Device callbacks remain in the first-party desktop process. Production OS custody across the **actual device producer** must be proven separately; do not claim that the capture worker alone moved hardware recording under a Job/cgroup.
+2. **Installed, independently reviewed worker provisioning:** Integrate a real reviewer-signed PE/ELF capture binary, exact offline wheel/native dependency manifest, original kernel owner approval and external public key. Current WebView alpha cannot auto-enable unsigned/CI-built candidates. Test full compiled-worker execution against original microphone recordings on physical Windows and supervised Linux.
+3. **Full FilmIndex provenance:** Persist and bind native window receipts and original source SHA to authoritative ActorID/SceneID/Film Time, original publication journal and immutable Take identity. `subject_id` is not yet independent proof of a fully reconciled ActorID registry.
+4. **EFS/source-at-rest:** Test physical Windows inherited encryption, key backup/independent recovery, source spool crash residue, native worker source/result artifacts and original FilmIndex/PCM database encryption, which is NOT proven by EFS-protecting transient spools.
+5. **Long-form native efficiency:** Verify bounded windows, per-window approval ergonomics, device disconnect, queue overflow, kill/restart recovery, two independent device clock drift, sustained real microphone latency and owner playback. No full-feature or physical-human acceptance until genuine receipts exist.
+
+**Status: P1-A SOURCE INTEGRATION PARTIAL; native/installed exact-head P1-A acceptance still OPEN.** Preserve W1-G production licensing/EFS/NSIS physical gates and P1-B–F and DATA-AV/INT-02/W1-F in the backlog. No FFmpeg path was enabled.

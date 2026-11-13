@@ -646,3 +646,10 @@ Canonical detailed plan: [NVP_DATA_ALL_TASK_LEDGER.md](NVP_DATA_ALL_TASK_LEDGER.
 **P4 W1-F:** physical creator-operated GUI and sustained 30-minute then extended feature/three-hour filmmaking, picture/audio/sync/quality/hardware/recovery acceptance. Read-only reel manifests do not prove a playable master.
 
 **Promotion boundaries:** W1-G automated visible desktop and installed alpha remain CLOSED for their previously verified bounded scopes. Consolidated native worker, production authorization/NSIS and human filmmaker/long-form acceptance remain OPEN. No release/merge into main, independent redistribution approval, physical EFS recovery or full-feature film claim was made by this ledger change.
+
+### 2026-11-12 — P1-A first-party device spool to compiled capture audit
+
+**Engineering source implemented, native acceptance pending.** Actual miniaudio/PortAudio original PCM device spools can now be independently audited through the original `ProtectedNativeWorker` compiled `original_capture` role before `NativeSceneSoundCapture` publishes source/timeline/Take revisions. Both independent ADC tracks have the same prepublication gate. Worker sees bounded SHA-scoped 4 MiB PCM segments and exact original scene/camera/take/source IDs/Film Time; host verifies every original worker manifest and replay source SHA. Windows EFS is required for the original and secondary Take spools on this configured path. WebView2 cannot inject an attestor; alpha default is unchanged until real reviewed worker provisioning.
+
+**Acceptance remains OPEN:** no separate native hardware-recorder executable, independently signed licensed distribution, physical OS source custody/EFS recovery, persistent ActorID audit-to-Take linkage or physical sustained filming proven. Synthetic OS-specific test needs scoped EFS mock; source-only evidence never supersedes actual kernel or creator approvals. Continue P1-A real-device/authority integration without blocking on GitHub runner queues, then P1-B OpenUSD/Cycles production integration.
+
