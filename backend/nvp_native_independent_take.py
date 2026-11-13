@@ -195,7 +195,16 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             prefix="nvp-live-original-",dir=str(self._journal.root)))
         self._spool=self._tmp/"independent_0.pcm"
         self.spools=[self._spool,self._tmp/"independent_1.pcm"]
-        self._journal.begin(self._tmp,scope)
+        try:
+            if self.native_pcm_auditor is not None and os.name=="nt":
+                from backend.nvp_w1g_encrypted_source import require_efs_stage
+                require_efs_stage(self._tmp)
+            self._journal.begin(self._tmp,scope)
+        except Exception:
+            shutil.rmtree(self._tmp)
+            self._tmp=None
+            self._state="FAILED"
+            raise
         self.workers=[threading.Thread(
             target=self._writer,args=(i,),daemon=True,
             name="NVP original independent PCM writer") for i in range(2)]
@@ -272,6 +281,25 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             alignment=align_devices(
                 *models,camera_duration_tick=int(self.plan["duration_tick"]))
             hashes=[self._spool_sha(path) for path in self.spools]
+            native_audits=[]
+            if self.native_pcm_auditor is not None:
+                for i,(source_id,emitter,subject) in enumerate((
+                    (self.source_id,self.emitter_path,self.subject_id),
+                    (self.second_source_id,self.second_emitter_path,
+                     self.second_subject_id))):
+                    timing=alignment["sample_maps"][i]
+                    native_audits.append(
+                        self.native_pcm_auditor.verify_original_spool(
+                            project_id=self.project_id,take_id=self.take_id,
+                            source_id=source_id,scene_id=self.scene_id,
+                            scene_document_sha256=self.plan["scene_document_sha256"],
+                            camera_timeline_document_sha256=self.plan["document_sha256"],
+                            subject_id=subject,emitter_path=emitter,
+                            source_path=self.spools[i],
+                            recorded_samples=self.written[i],
+                            original_pcm_sha256=hashes[i],
+                            start_tick=int(timing["first_tick"]),
+                            end_tick=int(timing["last_tick_exclusive"])))
             combined=sha256(
                 ("independent-v1:"+":".join(hashes)).encode("ascii")
             ).hexdigest()
@@ -334,7 +362,9 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                 }
                 return self.approve_freeze(event,evidence_scope)
             saved=NativeSceneSoundCapture(
-                self.index,approve_take=approve_clock_bound_take).capture(
+                self.index,approve_take=approve_clock_bound_take,
+                protected_spool_root=(
+                    self._tmp if native_audits and os.name=="nt" else None)).capture(
                 self.project_id,self.take_id,
                 scene_id=self.scene_id,scene_revision=self.scene_revision,
                 camera_timeline_id=self.camera_id,
@@ -357,6 +387,8 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                 "independent_device_clocks_synchronized":True,
                 "shared_capture_clock":False,"hardware_genlock":False,
                 "device_runtime":"portaudio_two_independent_monotonic_calibrated",
+                "compiled_capture_worker_audits":native_audits,
+                "compiled_worker_is_device_recorder":False,
                 "source_modified":False}
         except Exception:
             self._state="FAILED"
