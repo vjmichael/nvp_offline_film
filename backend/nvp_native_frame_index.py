@@ -14,6 +14,7 @@ import re
 import sqlite3
 import stat
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 
 SCHEMA_VERSION = 1
@@ -124,7 +125,7 @@ class NVPFrameIndex:
         cmd = [str(self.ffprobe), "-v", "error", "-select_streams", "v:0",
                "-show_entries", "stream=index,time_base,start_pts,codec_name",
                "-show_streams", "-of", "json", str(source)]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        result = run_owned_subprocess(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 timeout=60, check=False)
         if result.returncode != 0 or len(result.stdout) > MAX_STREAM_METADATA:
             raise RuntimeError("Native stream header inspection failed")

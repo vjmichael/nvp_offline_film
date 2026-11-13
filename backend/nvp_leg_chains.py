@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 from pathlib import Path
 
 from backend.nvp_blender_acceptance import blender_available
@@ -310,7 +311,7 @@ class LegChainIdentity:
             command=[probe['path'],'-b','--factory-startup','-t','2',
                      '--python-exit-code','30','--python',str(script),'--',
                      '--asset',str(source),'--sha',sha_asset,'--output',str(report)]
-            try:result=subprocess.run(command,cwd=out,capture_output=True,text=True,timeout=timeout)
+            try:result=run_owned_subprocess(command,cwd=out,capture_output=True,text=True,timeout=timeout)
             except subprocess.TimeoutExpired:
                 return {'status':'failed','reason':'Blender anatomical inspection timed out','actor':rid}
             if result.returncode or not report.is_file():

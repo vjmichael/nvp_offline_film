@@ -14,6 +14,7 @@ from fractions import Fraction
 from pathlib import Path
 import shutil
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 
 from backend.nvp_film_index import FilmIndex, _id
@@ -31,7 +32,7 @@ MAX_MEDIA_BYTES = 2 * 1024**3  # FilmIndex streaming media index limit.
 
 def _native(argv: list[str], *, timeout: int) -> bytes:
     try:
-        result = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        result = run_owned_subprocess(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError("Native media worker unavailable or timed out") from exc
