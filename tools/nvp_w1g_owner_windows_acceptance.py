@@ -53,7 +53,8 @@ def _read_owner_pinned_key(path: Path, *, forbidden_roots) -> bytes:
     return path.read_bytes()
 
 
-def read_only_production_preflight(owner, upgrade, kernel, reviewed_receipt):
+def read_only_production_preflight(owner, upgrade, kernel, reviewed_receipt, *,
+                                   offline_supply_paths=None):
     """Real-source Windows readiness check; never writes an upgrade journal.
 
     Kernel custody is acquired and released during this check. The returned
@@ -76,6 +77,7 @@ def read_only_production_preflight(owner, upgrade, kernel, reviewed_receipt):
     verify_installed(reviewed_receipt,owner.pending)
     roster=_require_complete_reviewed_native_roster(owner.pending)
     upgrade._require_signed_review(reviewed_receipt)
+    wheel_proof=upgrade._require_offline_supply(offline_supply_paths)
     current=_version(owner.active)
     candidate=_version(owner.pending)
     if (_registry_version()!=current or
@@ -97,6 +99,9 @@ def read_only_production_preflight(owner, upgrade, kernel, reviewed_receipt):
         "candidate_version":candidate,
         "native_worker_roles":sorted(roster["roles"]),
         "signed_release_review_verified":True,
+        "signed_offline_wheelhouse_review_verified":True,
+        "wheel_lock_sha256":wheel_proof["wheel_lock_sha256"],
+        "reviewed_offline_wheel_count":wheel_proof["wheel_count"],
         "original_film_file_count":len(original),
         "kernel_release_custody_checked_at_unix":proof["measured_at_unix"],
         "one_use_creator_authorization_obtained":False,
@@ -118,6 +123,9 @@ def main(argv=None):
                     help="cycles|filming|editorial|audio|delivery=absolute_path; repeat five times")
     ap.add_argument("--reviewed-receipt",type=Path)
     ap.add_argument("--pinned-reviewer-public-key",type=Path)
+    ap.add_argument("--wheel-lock",type=Path)
+    ap.add_argument("--wheelhouse",type=Path)
+    ap.add_argument("--signed-wheel-review",type=Path)
     args=ap.parse_args(argv)
     if os.name!="nt":
         raise RuntimeError("Only the creator's native Windows session can execute production upgrade")
@@ -132,6 +140,17 @@ def main(argv=None):
                              *workspaces.values()))
     if args.action in ("preflight","prepare","activate") and key is None:
         raise PermissionError("Production upgrade requires an external pinned reviewer key")
+    supply_paths=None
+    if args.action in ("preflight","prepare"):
+        if any(p is None or not p.is_absolute() for p in (
+                args.wheel_lock,args.wheelhouse,args.signed_wheel_review)):
+            raise PermissionError(
+                "Production preparation requires wheel lock, actual wheelhouse and signed review")
+        supply_paths={
+            "wheel_lock":str(args.wheel_lock),
+            "wheelhouse":str(args.wheelhouse),
+            "signed_wheel_review":str(args.signed_wheel_review),
+        }
     real_approve=WindowsCreatorUpgradeApproval()
     kernel=WindowsReleaseWorkerStopEvidence(
         args.programs/"NVP",worker_workspaces=workspaces)
@@ -149,9 +168,10 @@ def main(argv=None):
             raise PermissionError("Original reviewed release receipt file unavailable")
         receipt=json.loads(args.reviewed_receipt.read_text("utf8"))
         if args.action=="preflight":
-            result=read_only_production_preflight(owner,update,kernel,receipt)
+            result=read_only_production_preflight(
+                owner,update,kernel,receipt,offline_supply_paths=supply_paths)
         else:
-            result=update.prepare(receipt)
+            result=update.prepare(receipt,offline_supply_paths=supply_paths)
     elif args.action=="activate":
         result=update.activate()
     elif args.action=="inspect":
