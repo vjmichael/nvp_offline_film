@@ -143,43 +143,42 @@ jobs:
           }
 
   sec06-linux-delegated:
-    name: SEC-06 independent Linux guardian, ancestor migration and recovery
+    name: SEC-06 independent delegated Linux kernel guardian, migration and restart
     needs: [gate1-linux, gate1-windows]
-    # This job is deliberately NOT allowed to run on an ordinary GitHub runner.
-    # Missing genuine delegation or a queued self-hosted runner blocks approval.
-    runs-on: [self-hosted, linux, nvp-cgroup-v2]
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
-    env:
-      NVP_REQUIRE_DELEGATED_CGROUP: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Provision native host dependencies
+      - name: Provision original security fixture dependencies
         run: |
+          set -euo pipefail
           python -m pip install -r requirements-foundation.txt httpx
-      - name: Independent real delegated Linux containment and ancestor migration
+          python -m compileall -q backend tools tests
+      - name: Run all SEC-06 fixtures under genuine systemd kernel delegation
+        shell: bash
         run: |
           set -euo pipefail
           git rev-parse HEAD
-          python -m compileall -q backend tests
-          python -m unittest discover -s tests -p test_audio_linux_strict_cgroup.py -v
-          python -m unittest discover -s tests -p test_nvp_sec06_linux_ancestor_migration.py -v
-      - name: Independent cancel, revocation and restart contracts
-        run: |
-          set -euo pipefail
-          python -m unittest discover -s tests -p test_audio_native_os_termination.py -v
-          python -m unittest discover -s tests -p test_audio_admission_outbox.py -v
-          python -m unittest discover -s tests -p test_audio_admission_crash_gap.py -v
-          python -m unittest discover -s tests -p test_nvp_w1g_protected_upgrade.py -v
-          python -m unittest discover -s tests -p test_nvp_w1g_production_authority.py -v
-      - name: Print source-bound kernel delegation receipt
-        run: |
-          python - <<'PY'
-          from backend.nvp_worker_linux_cgroup import current_delegated_parent
-          print("SEC-06 original kernel delegated parent:", current_delegated_parent())
-          PY
+          test -f /sys/fs/cgroup/cgroup.controllers
+          test "$(ps -p 1 -o comm=)" = systemd
+          python_bin="$(command -v python)"
+          # A real transient systemd service with a separate host subgroup.
+          # A generic GitHub-hosted process is NOT accepted as delegated.
+          # On failure to provision or enter this scope, fail the whole gate.
+          sudo systemd-run --wait --collect --pipe --same-dir \
+            --unit="nvp-sec06-matrix-$GITHUB_RUN_ID" \
+            --property=Type=exec \
+            --property=Delegate=yes \
+            --property=DelegateSubgroup=host \
+            /usr/bin/env \
+            NVP_REQUIRE_DELEGATED_CGROUP=1 \
+            PYTHONPATH="$GITHUB_WORKSPACE" \
+            PATH="$PATH" \
+            LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
+            "$python_bin" -m tools.nvp_sec06_delegated_matrix
 
   release-gate:
     name: SEC-06 gate summary (installation still requires creator approval)
