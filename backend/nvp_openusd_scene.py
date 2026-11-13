@@ -372,7 +372,8 @@ class OpenUSDSceneBridge:
                       "asset_layer_sha256":record["data"]["layer_sha256"]}
             if verify_manifest and manifest!=item:
                 raise RuntimeError("Pinned scene asset differs from immutable source")
-            result.append({"manifest":manifest,"layer":layer})
+            result.append({"manifest":manifest,"layer":layer,
+                           "rigged_actor":record["data"].get("format")==RIGGED_ACTOR})
         return sorted(result,key=lambda x:x["manifest"]["path"])
 
     @staticmethod
@@ -390,7 +391,11 @@ class OpenUSDSceneBridge:
             for entry in entries:
                 path=entry["manifest"]["path"]
                 layer=entry["layer"]
-                prim=stage.OverridePrim(path)
+                if entry.get("rigged_actor"):
+                    from pxr import UsdSkel
+                    prim=UsdSkel.Root.Define(stage,path).GetPrim()
+                else:
+                    prim=stage.OverridePrim(path)
                 if not prim.GetReferences().AddReference(
                     layer.identifier,Sdf.Path("/Asset")):
                     raise RuntimeError("OpenUSD asset composition failed")
