@@ -540,6 +540,104 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
                 "original_modified":False,"master_approved":False}
 
+    # P1-D true non-destructive creator source cut assembly.
+    # The UI can supply only bounded original segment IDs, source graph refs
+    # and integer Film Time cuts. Source scenes/Takes/shot layers are frozen.
+    def data_av_film_stage_graph_catalog(self,project_id):
+        self._native_window()
+        pid=_require_pid(project_id)
+        from backend.nvp_digital_slate_branches import (
+            DigitalSlateBranches,GRAPH_FORMAT)
+        directory=DigitalSlateBranches(
+            self.index,verify_editor_action=lambda *_:False)
+        graphs=[]
+        for row in self.index.list_objects(pid,kind="presentation")[:256]:
+            source=self.index.read_revision(
+                pid,row["object_id"],row["head_revision"])
+            if source["data"].get("format")!=GRAPH_FORMAT:
+                continue
+            verified=directory.open_graph(
+                pid,source["object_id"],source["revision"])
+            graphs.append({
+                "graph_id":verified["object_id"],
+                "graph_revision":verified["revision"],
+                "graph_sha256":verified["document_sha256"],
+                "scene_id":verified["data"]["scene_id"],
+                "branches":[{
+                    "branch_id":item["branch_id"],
+                    "kind":item["kind"],
+                    "take_id":item["take_id"],
+                    "shot_id":item["shot_id"],
+                    "source_start_tick":str(item["source_start_tick"]),
+                    "source_end_tick":str(item["source_end_tick"]),
+                    "group_id":item["group_id"],
+                    "original_default":item["primary"]}
+                    for item in verified["data"]["nodes"]]
+            })
+        return {"format":"nvp.p1d.native_original_source_graph_catalog.v1",
+                "project_id":pid,"graphs":graphs,
+                "original_source_modified":False,
+                "active_cut_changed":False}
+
+    def data_av_film_stage_edit_draft(self,request):
+        self._native_window()
+        required={"project_id","graph_id","graph_revision","segments"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Original source cut draft requires an exact slate")
+        verified=self._edited_assembly().preview(
+            request["project_id"],request["graph_id"],
+            request["graph_revision"],request["segments"])
+        return {
+            "format":"nvp.p1d.native_source_cut_draft.v1",
+            "project_id":request["project_id"],
+            "graph_id":verified["graph_id"],
+            "graph_sha256":verified["graph_document_sha256"],
+            "source_segment_sha256":verified["draft_sha256"],
+            "duration_tick":str(verified["duration_tick"]),
+            "segment_count":len(verified["segments"]),
+            "draft_uncommitted":True,
+            "original_source_modified":False,
+            "render_approved":False}
+
+    def data_av_film_stage_edit_commit(self,request):
+        self._native_window()
+        required={"project_id","graph_id","graph_revision","edit_id",
+                  "segments","expected_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Source film edit commit requires exact typed source segments")
+        from backend.nvp_slate_edit_assembly import SlateSequenceAssembly
+        from backend.nvp_digital_slate_branches import DigitalSlateBranches
+        original=DigitalSlateBranches(
+            self.index,verify_editor_action=lambda *_:False)
+        editor=SlateSequenceAssembly(original,
+            verify_editor_action=lambda event,scope:self._ask(
+                "Approve a NEW immutable non-destructive original film cut?\n"+
+                "Project: "+scope["project_id"]+"\n"+
+                "Source slate: "+scope["graph_id"]+" rev "+
+                str(scope["graph_revision"])+"\n"+
+                "Exact frozen graph SHA: "+scope["graph_document_sha256"]+"\n"+
+                "Unique edit ID: "+scope["edit_id"]+"\n"+
+                "Original source segments SHA: "+scope["ordered_segment_sha256"]+"\n"+
+                "Full Film Time ticks: "+str(scope["duration_tick"])+"\n"+
+                "No source Take is rewritten, no automatic retime, "
+                "no sound or render/master approval."))
+        rec=editor.commit(
+            request["project_id"],request["edit_id"],
+            graph_id=request["graph_id"],
+            graph_revision=request["graph_revision"],
+            segments=request["segments"],
+            expected_revision=request["expected_revision"],
+            editor_event="native_creator")
+        reopened=editor.open_edit(
+            request["project_id"],rec["object_id"],rec["revision"])
+        return {"format":"nvp.p1d.native_original_cut_commit_receipt.v1",
+                "status":"IMMUTABLE_EDIT_SOURCE_COMMITTED",
+                "edit_id":rec["object_id"],"revision":rec["revision"],
+                "edit_sha256":rec["document_sha256"],
+                "source_segments_sha256":reopened["data"]["ordered_segment_sha256"],
+                "duration_tick":str(reopened["data"]["duration_tick"]),
+                "source_modified":False,"render_approved":False}
+
     # P1-D/E/P2: original creator-facing director's source stages.
     # Strict, reviewed finite methods; no native filesystem path or
     # human-approval token is accepted from the webview.
