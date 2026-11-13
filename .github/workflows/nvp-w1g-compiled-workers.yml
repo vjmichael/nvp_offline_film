@@ -10,6 +10,11 @@ on:
       - tools/nvp_w1g_compile_first_party_workers.py
       - tools/nvp_w1g_native_worker_functional_acceptance.py
       - tools/nvp_w1g_native_link_audit.py
+      - backend/nvp_w1g_protected_native_worker.py
+      - backend/nvp_w1g_first_party_result_verifier.py
+      - tests/test_nvp_w1g_protected_upgrade.py
+      - tests/test_nvp_w1g_first_party_result_verifier.py
+      - tests/test_nvp_w1g_native_link_audit.py
       - packaging/build-w1g-compiled-windows.cmd
       - .github/workflows/nvp-w1g-compiled-workers.yml
   workflow_dispatch:
