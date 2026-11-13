@@ -128,6 +128,30 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                     with self.assertRaises(KeyError):
                         self.index.read_revision(self.pid,name,1)
 
+    def test_reopen_recomputes_every_native_window_sha_not_just_receipt_hash(self):
+        from backend.nvp_p1a_take_provenance import audit_sha256
+        request=self.payload()
+        request["native_capture_audits"]=[self.native_audit(request)]
+        self.capture.capture(**request)
+        original_read=self.index.read_revision
+        def forged_receipt(project_id,identity,revision):
+            record=original_read(project_id,identity,revision)
+            if identity!="FilmedTake":
+                return record
+            corrupt=copy.deepcopy(record)
+            att=corrupt["data"]["native_original_capture_attestations"]
+            att[0]["native_worker_receipts"][0]["window_pcm_sha256"]="0"*64
+            # Even if an attacker recomputes the embedded attestation
+            # document hash, the actual original PCM window must be checked.
+            corrupt["data"]["native_original_capture_attestations_sha256"]=(
+                audit_sha256(att))
+            return corrupt
+        with patch.object(self.index,"read_revision",side_effect=forged_receipt):
+            with self.assertRaisesRegex(PermissionError,"window digest"):
+                OpenUSDTakeCapture(
+                    self.index,verify_creator_action=lambda event,scope:False
+                ).verify_take(self.pid,"FilmedTake")
+
     def test_attested_take_reader_refuses_corrupt_original_pcm_blob(self):
         request=self.payload()
         request["native_capture_audits"]=[self.native_audit(request)]
@@ -136,7 +160,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         def corrupt_blob(project_id,digest):
             payload=original(project_id,digest)
             if len(payload)==24000:
-                return payload[:-2]+b"\\x00\\x00"
+                return payload[:-2]+bytes((0,0))
             return payload
         with patch.object(self.index,"get_blob",side_effect=corrupt_blob):
             with self.assertRaises(PermissionError):
