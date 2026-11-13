@@ -476,6 +476,12 @@ class NativeSceneSoundCapture:
                                    "source_scene_sha256":source["document_sha256"],
                                    "event_manifest_sha256":combined["document_sha256"]},
                     native_capture_attestations=verified_audits,
+                    original_camera_timeline_id=(
+                        camera_timeline_id if verified_audits is not None
+                        else None),
+                    original_camera_timeline_revision=(
+                        camera_timeline_revision if verified_audits is not None
+                        else None),
                     original_camera_timeline_sha256=(
                         plan["document_sha256"] if verified_audits is not None
                         else None))
