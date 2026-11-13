@@ -44,10 +44,18 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
             self.original.editor,verify_director_action=lambda action,scope:
             action=="director_yes" and
             scope["operation"]=="nvp.p1d.commit_director_continuity.v1")
-        self.cue={"segment_id":"angle_part","continuity":"accepted",
+        # The previous source cut deliberately uses a director shot that
+        # translates the actor. P1-F MUST reject its uncomposed spatial audio.
+        # Positive delivery instead uses the unchanged original-source branch.
+        self.original.editor.commit(
+            self.pid,"cut_no_shot",graph_id="slate",graph_revision=1,
+            segments=[{"segment_id":"original_part","branch_id":"original",
+                       "source_in_tick":T,"source_out_tick":2*T}],
+            editor_event="commit_cut")
+        self.cue={"segment_id":"original_part","continuity":"accepted",
                   "audio_policy":"original_scene","note":"Actor movement is original"}
         self.c=self.continuity.publish(
-            self.pid,"DirectorCutProof",edit_id="cut",edit_revision=1,
+            self.pid,"DirectorCutProof",edit_id="cut_no_shot",edit_revision=1,
             cues=[self.cue],creator_event="director_yes")
         self.exporter=NativeSustainedPictureSound(
             self.original.editor,self.continuity,
@@ -68,7 +76,7 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
         before=self.index.read_revision(self.pid,"take",1)["document_sha256"]
         detail=self.continuity.at(self.pid,"DirectorCutProof",1,0)
         self.assertEqual(detail["source_tick"],T)
-        self.assertEqual(detail["source_shot_id"],"director_angle")
+        self.assertIsNone(detail["source_shot_id"])
         self.assertFalse(detail["render_approved"])
         fresh=NativeEditorialContinuity(
             SlateSequenceAssembly(DigitalSlateBranches(
@@ -81,18 +89,18 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
             "document_sha256"],before)
 
     def test_refusal_stale_cues_and_review_require_separate_export_permission(self):
-        before=self.index.read_revision(self.pid,"cut",1)["document_sha256"]
+        before=self.index.read_revision(self.pid,"cut_no_shot",1)["document_sha256"]
         with self.assertRaises(ValueError):
-            self.continuity.publish(self.pid,"BadCut",edit_id="cut",
+            self.continuity.publish(self.pid,"BadCut",edit_id="cut_no_shot",
                 edit_revision=1,cues=[{**self.cue,"segment_id":"unknown"}],
                 creator_event="director_yes")
         refused=NativeEditorialContinuity(
             self.original.editor,verify_director_action=lambda *_:False)
         with self.assertRaises(PermissionError):
-            refused.publish(self.pid,"Refused",edit_id="cut",
+            refused.publish(self.pid,"Refused",edit_id="cut_no_shot",
                 edit_revision=1,cues=[self.cue],creator_event="no")
         review=self.continuity.publish(
-            self.pid,"Unreviewed",edit_id="cut",edit_revision=1,
+            self.pid,"Unreviewed",edit_id="cut_no_shot",edit_revision=1,
             cues=[{**self.cue,"continuity":"needs_review"}],
             creator_event="director_yes")
         self.assertEqual(review["revision"],1)
@@ -100,7 +108,7 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
             self.exporter.preflight(
                 self.pid,"Unreviewed",1,first_frame=0,frame_count=2,
                 listener_path="/World/Camera",camera_path="/World/Camera")
-        self.assertEqual(self.index.read_revision(self.pid,"cut",1)[
+        self.assertEqual(self.index.read_revision(self.pid,"cut_no_shot",1)[
             "document_sha256"],before)
 
     def test_atomic_pictures_original_sound_and_independent_verification(self):
@@ -129,6 +137,18 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 reopen.verify_chunk(self.pid,folder)
             self.assertEqual(self.exporter.abandoned_stages(tmp),[])
+
+    def test_moving_shot_with_uncomposed_spatial_audio_rejected_preapproval(self):
+        self.continuity.publish(
+            self.pid,"ShotNeedsAudio",edit_id="cut",edit_revision=1,
+            cues=[{"segment_id":"angle_part","continuity":"accepted",
+                   "audio_policy":"original_scene","note":"Director has moved actor"}],
+            creator_event="director_yes")
+        with self.assertRaisesRegex(RuntimeError,"composed acoustic mixer"):
+            self.exporter.preflight(
+                self.pid,"ShotNeedsAudio",1,first_frame=0,frame_count=2,
+                listener_path="/World/Camera",camera_path="/World/Camera")
+        self.assertEqual(self.calls,[])
 
     def test_native_refusal_and_boundaries_never_publish_partial(self):
         refused=NativeSustainedPictureSound(

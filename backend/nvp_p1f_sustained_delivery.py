@@ -95,6 +95,22 @@ class NativeSustainedPictureSound:
             source["source_shot_sha256"]!=final["source_shot_sha256"] or
             final["source_tick"]-source["source_tick"]!=count*FRAME_TICKS-1):
             raise ValueError("Finite chunk crosses a cut; split at the actual edit boundary")
+        # Source shot safety applies BEFORE one-use export authorization.
+        # The original frozen-AV mixer cannot silently spatialize an actor
+        # relocated by a director's shot. Reuse the same source-shot verifier
+        # used by the established INT-02 native film renderer.
+        if source["source_shot_id"] is not None:
+            from backend.nvp_int02_shot_composition import validate_source_shot
+            validate_source_shot(
+                self.index,project_id,
+                take_id=source["source_take_id"],
+                take_sha256=source["source_take_sha256"],
+                shot_id=source["source_shot_id"],
+                shot_revision=source["source_shot_revision"],
+                shot_sha256=source["source_shot_sha256"],
+                source_in=source["source_tick"],
+                source_out=source["source_tick"]+count*FRAME_TICKS,
+                listener_path=listener_path)
         take=self.index.read_revision(project_id,source["source_take_id"],1)
         if take["document_sha256"]!=source["source_take_sha256"]:
             raise RuntimeError("Selected original Digital Take SHA changed")
