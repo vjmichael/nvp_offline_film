@@ -386,9 +386,11 @@ class OpenUSDSceneBridge:
                 [{"object_id":actor["actor_id"],
                   "revision":actor["actor_revision"],"role":"actor"}
                  for actor in cast] +
-                [{"object_id":a["character_asset_id"],
-                  "revision":a["character_asset_revision"],"role":"asset"}
-                 for a in imported]),
+                [{"object_id":aid,"revision":rev,"role":"asset"}
+                 for aid,rev in sorted({
+                     (a["character_asset_id"],a["character_asset_revision"])
+                     for a in imported
+                 })]),
             precommit_guard=guard)
         _native_publish_checkpoint("after_scene_revision_commit")
         return committed
