@@ -12,6 +12,8 @@ on:
       - "frontend/src/CameraLensWorkbench.jsx"
       - "frontend/src/FilmCameraNativeBridge.test.jsx"
       - "frontend/src/ActorPerformancePanel.jsx"
+      - "frontend/src/ActorSceneCastingPanel.jsx"
+      - "frontend/src/ActorSceneCastingPanel.test.jsx"
       - "frontend/src/ActorPerformancePanel.test.jsx"
       - "frontend/src/DataFirstAVPanel.jsx"
       - "backend/nvp_p1bc_actor_registry.py"
@@ -67,4 +69,4 @@ jobs:
           node-version: "22"
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx src/ActorPerformancePanel.test.jsx
+      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx src/ActorPerformancePanel.test.jsx src/ActorSceneCastingPanel.test.jsx

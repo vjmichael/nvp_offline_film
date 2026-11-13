@@ -1,11 +1,13 @@
 import React,{useEffect,useMemo,useState} from 'react';
+import ActorSceneCastingPanel from './ActorSceneCastingPanel.jsx';
 
 // P1-B/C: no browser ActorID authority, voice generator, raw source file path,
 // invented transcripts, or glTF executable. Native OS prompts own both writes.
 const CAST='nvp.p1bc.native_actor_cast.v1';
 const IDENT=/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/;
 
-export default function ActorPerformancePanel({projectId,native,sourceRevision=0}){
+export default function ActorPerformancePanel({
+    projectId,native,sourceRevision=0,onScenePublished=()=>{}}){
   const [cast,setCast]=useState(null);
   const [actorId,setActorId]=useState('ActorLead');
   const [displayName,setDisplayName]=useState('');
@@ -184,6 +186,9 @@ export default function ActorPerformancePanel({projectId,native,sourceRevision=0
         'original dialogue inactive'} · USD {verified.usd_prim_path}
         {' '}· {verified.source_skin_vertex_count} evaluated source skin vertices</p>}
     </>}
+    <ActorSceneCastingPanel projectId={projectId} native={native}
+      actorCatalog={cast?.actors||[]} sourceRevision={sourceRevision}
+      onScenePublished={onScenePublished}/>
     <p className="fineprint">No voice cloned or generated, no automatic
       dialogue text, lip-sync, facial performance or film master approved.
       Scene source, original sound and Digital Takes are immutable.</p>

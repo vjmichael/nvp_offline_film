@@ -598,8 +598,9 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             request["project_id"],request["scene_id"],
             cast=request["cast"],camera_height=request["camera_height"],
             creator_event="native_creator")
-        return {"format":"nvp.p1bc.native_actor_scene_cast_receipt.v1",
-                "status":"AUTHORITATIVE_ACTOR_SCENE_PUBLISHED",**result}
+        return {**result,
+                "format":"nvp.p1bc.native_actor_scene_cast_receipt.v1",
+                "status":"AUTHORITATIVE_ACTOR_SCENE_PUBLISHED"}
     # P1-B/C: typed native ActorID/scene/skinned-rig/original-voice actions.
     # These are not FastAPI routes or arbitrary scene file selectors.
     def data_av_actor_cast(self,project_id):

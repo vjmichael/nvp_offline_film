@@ -364,7 +364,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     <NativeOriginalCapturePanel projectId={projectId} native={native}
       onCompleted={()=>setCaptureRevision(n=>n+1)}/>
     <ActorPerformancePanel projectId={projectId} native={native}
-      sourceRevision={captureRevision}/>
+      sourceRevision={captureRevision}
+      onScenePublished={()=>setCaptureRevision(n=>n+1)}/>
     <EditedFilmDeliveryPanel projectId={projectId} native={native}/>
     <section className="card" aria-label="Add creator-supplied original music">
       <h3>Bring in background music or sound effects</h3>
