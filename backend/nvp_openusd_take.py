@@ -241,12 +241,22 @@ class OpenUSDTakeCapture:
                 "original_camera_timeline_revision":original_camera_timeline_revision,
                 "original_camera_timeline_sha256":original_camera_timeline_sha256,
             })
+        dependencies=[
+            {"object_id":scene_id,"revision":scene_revision,"role":"scene"},
+            {"object_id":timeline_id,"revision":timeline_revision,"role":"temporal"},
+        ]
+        if audit_digest is not None:
+            # A raw SHA in a manifest is not an authoritative film source
+            # edge. Keep the original camera plan's revision in FilmIndex's
+            # transactional dependency graph for retirement/reopen analysis.
+            dependencies.append({
+                "object_id":original_camera_timeline_id,
+                "revision":original_camera_timeline_revision,
+                "role":"camera",
+            })
         return self.index.register_revision(
             project_id,take_id,"take",manifest,expected_revision=0,
-            dependencies=[
-                {"object_id":scene_id,"revision":scene_revision,"role":"scene"},
-                {"object_id":timeline_id,"revision":timeline_revision,"role":"temporal"},
-            ])
+            dependencies=dependencies)
 
     def verify_take(self, project_id, take_id):
         # A journaled filming Take is not readable while its multi-object
