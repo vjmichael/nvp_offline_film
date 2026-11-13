@@ -46,7 +46,7 @@ MARKERS={
     ),
     "backend/nvp_w1g_legacy_blender_launch.py":(
         "if os.name!=\"nt\":",
-        "from backend.nvp_worker_containment import launch_contained",
+        "from backend.nvp_w1g_owned_subprocess import run_owned_subprocess",
     ),
     "backend/nvp_w1g_owned_subprocess.py":(
         "if os.name != \"nt\":",

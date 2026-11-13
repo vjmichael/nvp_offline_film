@@ -22,6 +22,22 @@ class ContainedLegacyBlenderLaunch(unittest.TestCase):
             self.assertIn("original Blender adapter output",result.stdout)
             self.assertEqual(result.stderr,"")
 
+    @unittest.skipUnless(os.name=="nt","Native Windows source protection")
+    def test_original_blender_diagnostics_are_not_spooled_to_plaintext(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            # The temporary directory is only the disposable test cwd.
+            # The original native adapter must never create a second
+            # plaintext spool for child stdout/stderr while inside it.
+            with patch("tempfile.TemporaryDirectory",
+                       side_effect=AssertionError("Plaintext Blender diagnostics spool refused")):
+                result=run_trusted_blender(
+                    [sys.executable,"-S","-c","print('nonsecret diagnostics')"],
+                    cwd=td,timeout=20)
+            self.assertEqual(result.returncode,0)
+            self.assertIn("nonsecret diagnostics",result.stdout)
+            self.assertEqual(list(Path(td).iterdir()),[])
+
     @unittest.skipUnless(os.name=="nt","Windows Job Object native acceptance")
     def test_release_upgrade_denied_while_legacy_worker_executes(self):
         with tempfile.TemporaryDirectory() as td:

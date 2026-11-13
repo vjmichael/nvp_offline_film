@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 
 
 def run_trusted_blender(command, *, cwd=None, timeout=120, text=True,
@@ -30,40 +30,12 @@ def run_trusted_blender(command, *, cwd=None, timeout=120, text=True,
     if os.name!="nt":
         return subprocess.run(command,cwd=cwd,timeout=timeout,
                               text=True,capture_output=True,check=False)
-    from backend.nvp_worker_containment import launch_contained
-    executable=Path(command[0])
-    if not executable.is_absolute():
-        resolved=shutil.which(command[0])
-        if not resolved:
-            raise RuntimeError("Trusted native Blender executable was not found")
-        executable=Path(resolved)
-    if executable.is_symlink() or not executable.is_file():
-        raise RuntimeError("Untrusted native Blender executable path")
-    command=[str(executable),*command[1:]]
-    root=Path(cwd or os.getcwd()).resolve()
-    if not root.is_dir() or root.is_symlink():
-        raise RuntimeError("Trusted original native Blender workspace is not an ordinary directory")
-    with tempfile.TemporaryDirectory(prefix="nvp-owned-blender-",dir=root) as temporary:
-        folder=Path(temporary)
-        stdout=folder/"stdout.log";stderr=folder/"stderr.log"
-        with stdout.open("wb") as out,stderr.open("wb") as err:
-            proc=launch_contained(command,cwd=str(root),stdout=out,stderr=err,
-                                  memory_mb=0)
-            try:
-                try:
-                    code=proc.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    proc.terminate_tree()
-                    raise subprocess.TimeoutExpired(command,timeout)
-            finally:
-                # Releasing the launch slot requires independent kernel
-                # verification that every Job descendant has exited.
-                proc.close()
-        # Legacy callers need bounded diagnostics, never unbounded process IO.
-        for file in (stdout,stderr):
-            if file.stat().st_size>2*1024*1024:
-                raise RuntimeError("Native Blender worker exceeded bounded diagnostic output")
-        return subprocess.CompletedProcess(
-            command,code,
-            stdout.read_bytes().decode("utf-8","replace"),
-            stderr.read_bytes().decode("utf-8","replace"))
+    # The canonical native process adapter supervises the original Windows
+    # Job Object AND keeps original stdout/stderr diagnostics in bounded RAM,
+    # not an unencrypted worker log in the authored Blender scene directory.
+    result=run_owned_subprocess(command,cwd=cwd,timeout=timeout,
+                                text=True,capture_output=True,check=False)
+    if (len(result.stdout.encode("utf8"))>2*1024*1024 or
+        len(result.stderr.encode("utf8"))>2*1024*1024):
+        raise RuntimeError("Original Blender native diagnostics exceeded 2 MiB bound")
+    return result
