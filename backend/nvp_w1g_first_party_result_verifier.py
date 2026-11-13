@@ -74,7 +74,7 @@ def verify_bounded_first_party_role(scope:dict,result:dict,directory:Path)->bool
     domain verifier, not a replacement for native Job/cgroup termination.
     """
     if (type(scope) is not dict or type(result) is not dict or
-        type(directory) is not Path):
+        not isinstance(directory,Path)):
         raise PermissionError("Original trusted native worker scope missing")
     role=scope.get("role")
     if role not in ROLE_OPERATIONS:
