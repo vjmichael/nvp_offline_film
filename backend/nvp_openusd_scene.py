@@ -133,7 +133,8 @@ class OpenUSDSceneBridge:
     def publish(self, project_id, scene_id, *, prims, curves,
                 expected_revision=0, asset_bindings=None,
                 performance_channels=None, native_schemas=False,
-                skeletal_rigs=None, actor_bindings=None):
+                skeletal_rigs=None, actor_bindings=None,
+                imported_character_sources=None):
         """Create immutable world+motion layer blobs and an exact scene revision.
 
         A failed FilmIndex publication may leave *orphan blobs*, not an approved
@@ -269,6 +270,10 @@ class OpenUSDSceneBridge:
         cast=resolve_scene_actor_bindings(
             self.index,project_id,paths,skeletal_rigs or [],
             actor_bindings or [])
+        from backend.nvp_p1bc_scene_cast import resolve_imported_character_sources
+        imported=resolve_imported_character_sources(
+            self.index,project_id,cast,skeletal_rigs or [],
+            imported_character_sources or [])
         for actor in cast:
             prim=layout.GetPrimAtPath(actor["path"])
             prim.CreateAttribute(
@@ -326,6 +331,7 @@ class OpenUSDSceneBridge:
                   "skeleton_layer_sha256":ssha,
                   "skeleton_rigs":rig_manifest,
                   "actor_bindings":cast,
+                  "imported_characters":imported,
                   "performance_channels":channel_manifest,
                   "native_schema_version":(
                       "nvp.usd.camera_sphere_light.v1" if native_schemas
@@ -339,6 +345,13 @@ class OpenUSDSceneBridge:
                   "rendered":False,
                   "creator_approved":False}
         def guard(db):
+            for original in imported:
+                source=self.index._read_revision(
+                    db,project_id,original["character_asset_id"],
+                    original["character_asset_revision"])
+                if (source is None or
+                    source["document_sha"]!=original["character_asset_document_sha256"]):
+                    raise RuntimeError("Original imported GLB asset changed before USD scene commit")
             for actor in cast:
                 row=self.index._read_revision(
                     db,project_id,actor["actor_id"],actor["actor_revision"])
@@ -372,7 +385,10 @@ class OpenUSDSceneBridge:
                     for e in bindings})] +
                 [{"object_id":actor["actor_id"],
                   "revision":actor["actor_revision"],"role":"actor"}
-                 for actor in cast]),
+                 for actor in cast] +
+                [{"object_id":a["character_asset_id"],
+                  "revision":a["character_asset_revision"],"role":"asset"}
+                 for a in imported]),
             precommit_guard=guard)
         _native_publish_checkpoint("after_scene_revision_commit")
         return committed
@@ -484,11 +500,16 @@ class OpenUSDSceneBridge:
         self._attach_assets(composed,bindings)
         # Validate archived ActorID against the original actor revision AND
         # the original USD prim after every fresh FilmIndex/SQLite reopen.
+        from backend.nvp_p1bc_scene_cast import resolve_imported_character_sources
         from backend.nvp_p1bc_actor_registry import resolve_scene_actor_bindings
         cast=resolve_scene_actor_bindings(
             self.index,project_id,doc["prim_roles"],
             doc.get("skeleton_rigs",[]),doc.get("actor_bindings",[]),
             verify_manifest=True)
+        resolve_imported_character_sources(
+            self.index,project_id,cast,doc.get("skeleton_rigs",[]),
+            doc.get("imported_characters",[]),verify_manifest=True,
+            composed_stage=composed)
         for actor in cast:
             prim=composed.GetPrimAtPath(actor["path"])
             if (prim.GetAttribute("nvp:actorId").Get()!=actor["actor_id"] or

@@ -231,6 +231,7 @@ class OpenUSDTakeCapture:
             "skeleton_layer_sha256":source["data"].get("skeleton_layer_sha256"),
             "skeleton_rigs":source["data"].get("skeleton_rigs",[]),
             "actor_bindings":source["data"].get("actor_bindings",[]),
+            "imported_characters":source["data"].get("imported_characters",[]),
             "host_creator_action_verified":True,
             "artist_presentation_approved":False,
             "frozen":True,"rendered_frames":False,
@@ -287,6 +288,7 @@ class OpenUSDTakeCapture:
             src["data"]["motion_layer_sha256"]!=manifest["motion_layer_sha256"] or
             src["data"].get("asset_bindings",[])!=manifest.get("asset_bindings",[]) or
             src["data"].get("actor_bindings",[])!=manifest.get("actor_bindings",[]) or
+            src["data"].get("imported_characters",[])!=manifest.get("imported_characters",[]) or
             src["data"].get("parameter_layer_sha256")!=manifest.get("parameter_layer_sha256") or
             src["data"].get("performance_channels",[])!=manifest.get("performance_channels",[]) or
             src["data"].get("native_schema_version")!=manifest.get("native_schema_version") or
