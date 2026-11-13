@@ -570,7 +570,9 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 "source":registered["source"],
                 "vertex_count":decoded["original_vertex_count"],
                 "joint_count":len(decoded["joints"]),
-                "joints":decoded["joints"]})
+                "joints":decoded["joints"],
+                "facial_targets":[v["name"] for v in
+                                  decoded["skin"].get("facial_targets",[])]})
         return {"format":"nvp.p1bc.native_original_character_assets.v1",
                 "project_id":pid,"assets":assets,"unsupported":unsupported,
                 "source_material_approximated":False,

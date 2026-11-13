@@ -277,5 +277,8 @@ class ActorDialogueDirector:
                 "native_skin_deformation_sha256": skin_digest,
                 "source_skin_vertex_count": len(skin["deformed_points"]),
                 "native_skin_deformation_evaluated": True,
+                "native_facial_deformation_evaluated":
+                    skin["facial_deformation_evaluated"],
+                "original_glb_face_targets":skin["source_facial_shapes"],
                 "native_scene_rig_binding_verified": True,
                 "voice_synthesized": False, "lip_sync_generated": False}
