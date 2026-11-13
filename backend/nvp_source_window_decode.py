@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 
 from backend.nvp_source_window_preflight import SourceWindowPreflight, FORMAT as PLAN_FORMAT
 from backend.nvp_bound_editorial import BoundEditorialPublisher
@@ -159,7 +160,7 @@ def execute_source_window(studio_path, plan, destination, *, ffmpeg_path, timeou
                "-vsync", "0", "-frames:v", str(part["frame_count"]),
                "-start_number", str(output_start), "-f", "image2",
                str(pattern)]
-        result = subprocess.run(cmd, stdin=subprocess.DEVNULL,
+        result = run_owned_subprocess(cmd, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL, timeout=timeout,
                                 check=False)

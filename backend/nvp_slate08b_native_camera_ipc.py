@@ -20,6 +20,7 @@ import os
 import secrets
 import shutil
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import sys
 import threading
 import time
@@ -86,7 +87,7 @@ def build_desktop_camera_host(index, callback):
     if blender is None:
         raise RuntimeError("Native Blender unavailable. Install a trusted Blender binary to render stills.")
     try:
-        info = subprocess.run(
+        info = run_owned_subprocess(
             [str(blender), "-b", "--version"],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             check=True, text=True, timeout=15,
