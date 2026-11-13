@@ -40,7 +40,10 @@ class DurableOriginalShotTests(unittest.TestCase):
             approve_batch=lambda event,scope:
             event=="approved_batch" and
             scope["operation"]=="nvp.p1f.admit_finite_source_batch.v1" and
-            scope["frame_count"]==2)
+            scope["frame_count"]==2,
+            verify_batch_live=lambda scope:
+                scope["operation"]=="nvp.p1f.verify_finite_source_batch_live.v1"
+                and scope["batch_id"]=="first_batch")
 
     def create(self,batch="first_batch"):
         return self.journal.create_batch(
@@ -72,7 +75,8 @@ class DurableOriginalShotTests(unittest.TestCase):
             self.assertEqual(two["remaining"],0)
             self.assertTrue(self.journal.verify("first_batch")["all_frames_verified"])
             fresh=P1FDurableShotReels(
-                self.fixture.index,self.renderer,approve_batch=lambda *_:False)
+                self.fixture.index,self.renderer,approve_batch=lambda *_:False,
+                verify_batch_live=lambda scope: scope["batch_id"]=="first_batch")
             self.assertEqual(fresh.verify("first_batch")["frames_accepted"],2)
             with self.assertRaises(RuntimeError):
                 fresh.run_next("first_batch",creator_event="replay")
