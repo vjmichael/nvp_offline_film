@@ -164,6 +164,55 @@ class ProtectedBinaryExecutionContracts(unittest.TestCase):
         provision_native_workers(trusted,bundle,roster)
         return bundle,runtime
 
+    def test_original_source_set_is_explicit_finite_and_before_approval(self):
+        with TemporaryDirectory() as temp:
+            bundle,runtime=self.setup_roster(Path(temp))
+            approvals=[]
+            process=ProtectedNativeWorker(
+                bundle,runtime,platform="windows-amd64",
+                native_approve=lambda scope:approvals.append(scope) or False,
+                independent_verify=lambda scope,result,directory:True,
+                independent_os_custody=lambda scope,receipt:True)
+            plan={"role":"scene_render","project_id":"Project01"}
+            with self.assertRaisesRegex(PermissionError,"complete finite sealed source"):
+                process.run("scene_render","Project01",plan,
+                    sealed_inputs={"source.pcm":b"forged"})
+            with self.assertRaisesRegex(PermissionError,"complete finite sealed source"):
+                process.run("scene_render","Project01",plan,
+                    sealed_inputs={"scene.txt":b""})
+            with self.assertRaisesRegex(ValueError,"injected authority"):
+                process.run("scene_render","Project01",
+                    {**plan,"input_sha256":{"scene.txt":"wrong"}},
+                    sealed_inputs={"scene.txt":b"64 48\n"})
+            self.assertEqual(approvals,[])
+            with self.assertRaisesRegex(PermissionError,"creator refused"):
+                process.run("scene_render","Project01",plan,
+                    sealed_inputs={"scene.txt":b"64 48\n"})
+            self.assertEqual(len(approvals),1)
+            self.assertEqual(approvals[0]["input_sha256"],{
+                "scene.txt":sha256(b"64 48\n").hexdigest()})
+            self.assertEqual(list(runtime.iterdir()),[])
+
+    @unittest.skipUnless(__import__("os").name=="nt",
+                         "Real Windows EFS denial path")
+    def test_real_windows_efs_failure_writes_no_original_source(self):
+        with TemporaryDirectory() as temp:
+            bundle,runtime=self.setup_roster(Path(temp))
+            process=ProtectedNativeWorker(
+                bundle,runtime,platform="windows-amd64",
+                native_approve=lambda scope:True,
+                independent_verify=lambda scope,result,directory:True,
+                independent_os_custody=lambda scope,receipt:True)
+            with patch("backend.nvp_w1g_encrypted_source.require_efs_stage",
+                       side_effect=PermissionError("EFS worker source unavailable")):
+                with self.assertRaisesRegex(PermissionError,"EFS worker source"):
+                    process.run("scene_render","Project01",
+                        {"role":"scene_render","project_id":"Project01"},
+                        sealed_inputs={"scene.txt":b"64 48\n"})
+            dirs=list(runtime.iterdir())
+            self.assertEqual(len(dirs),1)
+            self.assertEqual(list(dirs[0].iterdir()),[])
+
     def test_os_custody_required_even_when_worker_exits_successfully(self):
         class Child:
             pid=7031
@@ -192,7 +241,8 @@ class ProtectedBinaryExecutionContracts(unittest.TestCase):
                        side_effect=fake_launch):
                 with self.assertRaises(RuntimeError):
                     process.run("scene_render","Project01",
-                                {"role":"scene_render","project_id":"Project01"})
+                                {"role":"scene_render","project_id":"Project01"},
+                                sealed_inputs={"scene.txt":b"64 48\n"})
             journals=list(runtime.glob("*/journal.json"))
             self.assertEqual(len(journals),1)
             self.assertEqual(json.loads(journals[0].read_text())["state"],
