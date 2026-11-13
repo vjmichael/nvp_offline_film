@@ -21,5 +21,7 @@ python -m tools.nvp_w1g_compile_first_party_workers --out acceptance_artifacts\w
 if errorlevel 1 exit /b 4
 python -m tools.nvp_w1g_native_worker_functional_acceptance --binary-dir acceptance_artifacts\w1g-compiled-windows --platform windows-amd64 --evidence acceptance_artifacts\w1g-windows-native-functional.json
 if errorlevel 1 exit /b 5
+python -m tools.nvp_w1g_native_link_audit --binary-dir acceptance_artifacts\w1g-compiled-windows --platform windows-amd64 --output acceptance_artifacts\w1g-windows-native-imports.json
+if errorlevel 1 exit /b 6
 echo Five actual compiled Windows PE64 role slices verified under original native Job Objects.
 exit /b 0
