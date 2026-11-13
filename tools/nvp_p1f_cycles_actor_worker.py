@@ -65,14 +65,13 @@ def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     properties=bpy.ops.wm.usd_import.get_rna_type().properties.keys()
     options={"filepath":str(usd_path)}
-    for name in ("import_meshes","import_cameras","import_armatures",
-                 "import_blendshapes","import_shapekeys"):
+    for name in ("import_meshes","import_cameras","import_skeletons",
+                 "import_blendshapes"):
         if name in properties:
             options[name]=True
-    if "import_meshes" not in properties or "import_cameras" not in properties:
+    if (not {"import_meshes","import_cameras","import_skeletons",
+             "import_blendshapes"} <= set(properties)):
         raise RuntimeError("Blender lacks the required native USD importer")
-    if "import_shapekeys" not in properties and "import_blendshapes" not in properties:
-        raise RuntimeError("Blender cannot import native USD facial expressions")
     result=bpy.ops.wm.usd_import(**options)
     if "FINISHED" not in result:
         raise RuntimeError("Native USD actor import was not completed")
