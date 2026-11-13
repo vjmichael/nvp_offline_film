@@ -49,6 +49,97 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             }]
         )
 
+    def test_shared_device_iterator_refused_before_pcm_consumption(self):
+        req=self.payload()
+        consumed=[]
+        def device_stream():
+            consumed.append("read")
+            yield self.original
+        shared=device_stream()
+        first=req["recordings"][0]
+        first["pcm_chunks"]=shared
+        second=dict(first)
+        second.update(event_id="Speech002",source_id="SecondRecordedSpeech")
+        req["recordings"].append(second)
+        with self.assertRaisesRegex(ValueError,"iterator shared"):
+            self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        for identity in ("NewRecordedSpeech","SecondRecordedSpeech",
+                         "FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
+    def test_equal_length_substituted_publication_cannot_freeze_take(self):
+        from unittest.mock import patch
+        req=self.payload()
+        actual_publish=self.capture.sources.publish
+        def substitute(project_id,source_id,chunks,*,expected_revision=0):
+            admitted=list(chunks)
+            # Model a faulty storage writer substituting equally long PCM.
+            altered=[bytes([chunk[0] ^ 1])+chunk[1:] for chunk in admitted]
+            return actual_publish(project_id,source_id,altered,
+                                  expected_revision=expected_revision)
+        with patch.object(self.capture.sources,"publish",side_effect=substitute):
+            with self.assertRaisesRegex(RuntimeError,
+                                        "PCM identity differs from validated recording"):
+                self.capture.capture(**req)
+        for identity in ("FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.approvals,[])
+        rows=self.capture.publications.reconcile(self.pid)
+        self.assertTrue(any(row["take_id"]=="FilmedTake" and
+                            row["state"]=="INTERRUPTED" for row in rows))
+
+    def test_impossible_unclocked_duration_refused_before_pcm_iteration(self):
+        from unittest.mock import patch
+        import backend.nvp_data_first_filming as filming
+        req=self.payload()
+        visited=[]
+        def one_shot():
+            visited.append("consumed")
+            yield self.original
+        req["recordings"][0]["pcm_chunks"]=one_shot()
+        # The one-second event requires 96,000 PCM bytes; refuse at
+        # metadata preflight with a smaller source quota, not mid-recording.
+        with patch.object(filming,"MAX_CHUNK_BYTES",1024), patch.object(
+                filming,"MAX_CHUNKS",1):
+            with self.assertRaisesRegex(ValueError,"duration exceeds source spool budget"):
+                self.capture.capture(**req)
+        self.assertEqual(visited,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
+    def test_aggregate_duration_preflight_does_not_consume_original_pcm(self):
+        from unittest.mock import patch
+        import backend.nvp_data_first_filming as filming
+        req=self.payload()
+        consumed=[]
+        def original_stream():
+            consumed.append("original PCM advanced")
+            yield self.original
+        first=req["recordings"][0]
+        first["pcm_chunks"]=original_stream()
+        second=dict(first)
+        second.update(event_id="Speech002",source_id="SecondOriginalSpeech")
+        second["pcm_chunks"]=original_stream()
+        req["recordings"].append(second)
+        # Each one-second source individually fits the quota. Together their
+        # exact Film Time requires more disk than the batch may consume.
+        with patch.object(filming,"MAX_CHUNK_BYTES",len(self.original)), patch.object(
+                filming,"MAX_CHUNKS",1):
+            with self.assertRaisesRegex(ValueError,"batch durations exceed aggregate spool budget"):
+                self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        for identity in ("NewRecordedSpeech","SecondOriginalSpeech",
+                         "FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def native_audit(self,request):
         # Test-only native kernel receipt: not real OS custody or signing.
         entry=request["recordings"][0]
@@ -202,7 +293,7 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         # exceeds it. No source, timeline, or Take may be published.
         with patch.object(filming,"MAX_CHUNK_BYTES",len(self.original)), patch.object(
                 filming,"MAX_CHUNKS",1):
-            with self.assertRaisesRegex(ValueError,"batch exceeds spool budget"):
+            with self.assertRaisesRegex(ValueError,"batch durations exceed aggregate spool budget"):
                 self.capture.capture(**req)
         for identity in ("NewRecordedSpeech","SecondOriginalSpeech",
                          "FilmingSoundTimeline","FilmedTake"):
@@ -1153,6 +1244,188 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
         req["recordings"][0]["pcm_chunks"]=None
         with self.assertRaisesRegex(ValueError,"PCM chunks must be iterable"):
             self.capture.capture(**req)
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
+    def test_capture_pins_single_preflighted_pcm_iterator(self):
+        req=self.payload()
+        class ChangingIterable:
+            def __init__(self, valid):
+                self.valid=valid
+                self.iterations=0
+            def __iter__(self):
+                self.iterations+=1
+                if self.iterations==1:
+                    return iter([self.valid])
+                return iter([bytes(2)])
+        stream=ChangingIterable(self.original)
+        req["recordings"][0]["pcm_chunks"]=stream
+        self.capture.capture(**req)
+        self.assertEqual(stream.iterations,1)
+        self.assertIsNotNone(self.index.read_revision(
+            self.pid,"NewRecordedSpeech",1))
+        self.assertIsNotNone(self.index.read_revision(
+            self.pid,"FilmedTake",1))
+
+    def test_clock_attested_pcm_quota_refused_before_consuming_original(self):
+        from unittest.mock import patch
+        from backend.nvp_data_av_source import MAX_CHUNK_BYTES, MAX_CHUNKS
+        req=self.payload()
+        event=req["recordings"][0]
+        event["source_sync"]={"source_sample_count": MAX_CHUNK_BYTES*MAX_CHUNKS//2+1}
+        event["clock_evidence"]={"object_id":"ClockEvidence","document_sha256":"0"*64}
+        consumed=[]
+        def recorder():
+            consumed.append("advanced")
+            yield self.original
+        event["pcm_chunks"]=recorder()
+        with patch("backend.nvp_data_first_filming.verified_original_clock",
+                   return_value=event["source_sync"]):
+            with self.assertRaisesRegex(ValueError,"source spool budget"):
+                self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
+    def test_clock_attested_surplus_pcm_refused_before_spool_and_publication(self):
+        from unittest.mock import patch
+        req=self.payload()
+        event=req["recordings"][0]
+        event["source_sync"]={"source_sample_count":len(self.original)//2}
+        event["clock_evidence"]={"object_id":"ClockEvidence","document_sha256":"0"*64}
+        consumed=[]
+        def recorder():
+            yield self.original
+            yield bytes(2)
+            consumed.append("later chunk consumed")
+            yield bytes(2)
+        event["pcm_chunks"]=recorder()
+        # Clock evidence is stubbed only to isolate the early surplus guard.
+        # This does not constitute physical clock/device acceptance.
+        with patch("backend.nvp_data_first_filming.verified_original_clock",
+                   return_value=event["source_sync"]):
+            with self.assertRaisesRegex(ValueError,"sample count does not match"):
+                self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
+    def test_later_invalid_metadata_does_not_invoke_earlier_pcm_iterator(self):
+        req=self.payload()
+        first=req["recordings"][0]
+        second=dict(first)
+        second.update(event_id="LaterSoundEvent",source_id="LaterOriginalSound",
+                      usd_prim_path="/World/NotThere")
+        calls=[]
+        class DeviceIterable:
+            def __iter__(self):
+                calls.append("device iterator opened")
+                return iter([self_original])
+        self_original=self.original
+        first["pcm_chunks"]=DeviceIterable()
+        second["pcm_chunks"]=[self.original]
+        req["recordings"]=[first,second]
+        with self.assertRaisesRegex(RuntimeError,"Sound emitter"):
+            self.capture.capture(**req)
+        self.assertEqual(calls,[])
+        for identity in ("NewRecordedSpeech","LaterOriginalSound",
+                         "FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
+    def test_later_iterator_admission_failure_closes_earlier_device(self):
+        req=self.payload()
+        first=req["recordings"][0]
+        second=dict(first)
+        second.update(event_id="LaterSoundEvent",source_id="LaterOriginalSound")
+        closed=[]
+        class DeviceIterator:
+            def __iter__(self):
+                return self
+            def __next__(self):
+                raise AssertionError("Original PCM must not be consumed")
+            def close(self):
+                closed.append("released")
+        first["pcm_chunks"]=DeviceIterator()
+        second["pcm_chunks"]=object()
+        req["recordings"]=[first,second]
+        with self.assertRaisesRegex(ValueError,"must be iterable"):
+            self.capture.capture(**req)
+        self.assertEqual(closed,["released"])
+        for identity in ("NewRecordedSpeech","LaterOriginalSound",
+                         "FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
+
+    def test_device_iterator_closed_after_successful_frozen_take(self):
+        req=self.payload()
+        closed=[]
+        class DeviceIterator:
+            def __init__(self, chunks):
+                self.chunks=iter(chunks)
+            def __iter__(self):
+                return self
+            def __next__(self):
+                return next(self.chunks)
+            def close(self):
+                closed.append("closed")
+        req["recordings"][0]["pcm_chunks"]=DeviceIterator([self.original])
+        result=self.capture.capture(**req)
+        self.assertEqual(result["status"],"FROZEN_ORIGINAL_SCENE_SOUND_TAKE")
+        self.assertEqual(closed,["closed"])
+        self.assertIsNotNone(self.index.read_revision(self.pid,"FilmedTake",1))
+
+    def test_device_iterator_closed_after_rejected_pcm_without_publication(self):
+        req=self.payload()
+        closed=[]
+        class DeviceIterator:
+            def __init__(self, chunks):
+                self.chunks=iter(chunks)
+            def __iter__(self):
+                return self
+            def __next__(self):
+                return next(self.chunks)
+            def close(self):
+                closed.append("closed")
+        req["recordings"][0]["pcm_chunks"]=DeviceIterator([self.original,bytes(2)])
+        with self.assertRaisesRegex(ValueError,"sample count does not match"):
+            self.capture.capture(**req)
+        self.assertEqual(closed,["closed"])
+        for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
+    def test_spool_close_failure_does_not_mask_original_pcm_rejection(self):
+        from unittest.mock import patch
+        import tempfile
+        real_spool=tempfile.SpooledTemporaryFile
+        closed=[]
+        class FailingCloseSpool:
+            def __init__(self, *args, **kwargs):
+                self.delegate=real_spool(*args, **kwargs)
+            def __getattr__(self, name):
+                return getattr(self.delegate, name)
+            def close(self):
+                closed.append(True)
+                self.delegate.close()
+                raise OSError("simulated delayed close failure")
+        req=self.payload()
+        req["recordings"][0]["pcm_chunks"]=[self.original, bytes(2)]
+        with patch("backend.nvp_data_first_filming.tempfile.SpooledTemporaryFile",
+                   side_effect=FailingCloseSpool):
+            with self.assertRaisesRegex(ValueError,"sample count does not match"):
+                self.capture.capture(**req)
+        self.assertEqual(closed,[True])
         for identity in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
             with self.assertRaises(KeyError):
                 self.index.read_revision(self.pid,identity,1)
