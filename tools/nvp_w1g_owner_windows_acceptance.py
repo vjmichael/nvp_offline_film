@@ -18,7 +18,13 @@ from tools.nvp_w1g_production_authority import (
 )
 from tools.nvp_w1g_nsis_activation import NativeNSISActivation
 from tools.nvp_w1g_production_rollback import ProductionWindowsNSISRollback
-from tools.nvp_w1g_nsis_recovery import OwnedNSISRecovery
+from tools.nvp_w1g_nsis_recovery import OwnedNSISRecovery, _digest, _program
+from tools.nvp_w1g_nsis_activation import (
+    _snapshot_root, _require_complete_reviewed_native_roster,
+    _registry_version, _tuple, _version,
+)
+from tools.nvp_w1g_native_package import _inventory, verify_installed
+from tools.nvp_w1g_release_build_marker import verify_build_marker
 
 
 def _domains(values):
@@ -47,10 +53,60 @@ def _read_owner_pinned_key(path: Path, *, forbidden_roots) -> bytes:
     return path.read_bytes()
 
 
+def read_only_production_preflight(owner, upgrade, kernel, reviewed_receipt):
+    """Real-source Windows readiness check; never writes an upgrade journal.
+
+    Kernel custody is acquired and released during this check. The returned
+    observation is NOT an authorization or a reusable stop receipt; activate
+    must reacquire everything and obtain fresh creator consent.
+    """
+    if (type(owner) is not OwnedNSISRecovery or
+        type(upgrade) is not NativeNSISActivation or
+        type(kernel) is not WindowsReleaseWorkerStopEvidence or
+        type(reviewed_receipt) is not dict or
+        owner.test_only_simulation or upgrade.test_only_simulation or
+        os.name!="nt"):
+        raise PermissionError("Physical production preflight requires original native Windows authorities")
+    _snapshot_root(owner)
+    verify_build_marker(owner.active)
+    verify_build_marker(owner.pending)
+    verify_installed(reviewed_receipt,owner.pending)
+    roster=_require_complete_reviewed_native_roster(owner.pending)
+    upgrade._require_signed_review(reviewed_receipt)
+    current=_version(owner.active)
+    candidate=_version(owner.pending)
+    if (_registry_version()!=current or
+        _tuple(candidate)<=_tuple(current)):
+        raise RuntimeError("Staged production candidate is not a genuine later NSIS version")
+    original=_inventory(owner.films)
+    if not original:
+        raise RuntimeError("Creator original film baseline is missing")
+    original_sha=_digest(_program(owner.active))
+    with kernel.transaction():
+        proof=kernel(original_sha)
+    if (proof.get("process_tree_custody_verified") is not True or
+        proof.get("active_windows_jobs")!=0 or
+        proof.get("unresolved_worker_jobs")!=0):
+        raise PermissionError("Production preflight cannot establish empty release custody")
+    return {
+        "status":"W1G_NATIVE_PRODUCTION_PREFLIGHT_SOURCE_VERIFIED",
+        "current_version":current,
+        "candidate_version":candidate,
+        "native_worker_roles":sorted(roster["roles"]),
+        "signed_release_review_verified":True,
+        "original_film_file_count":len(original),
+        "kernel_release_custody_checked_at_unix":proof["measured_at_unix"],
+        "one_use_creator_authorization_obtained":False,
+        "physical_efs_key_recovery_accepted":False,
+        "upgrade_or_rollback_executed":False,
+        "preflight_receipt_reusable_for_activation":False,
+    }
+
+
 def main(argv=None):
     ap=argparse.ArgumentParser(
         description="Owner-only W1-G Windows upgrade, rollback and read-only inspection")
-    ap.add_argument("action",choices=("prepare","activate","inspect",
+    ap.add_argument("action",choices=("preflight","prepare","activate","inspect",
                                       "prepare-rollback","rollback","inspect-rollback"))
     ap.add_argument("--programs",type=Path,required=True)
     ap.add_argument("--original-films",type=Path,required=True)
@@ -71,7 +127,7 @@ def main(argv=None):
         key=_read_owner_pinned_key(args.pinned_reviewer_public_key,
             forbidden_roots=(args.programs,args.original_films,args.journal,
                              *workspaces.values()))
-    if args.action in ("prepare","activate") and key is None:
+    if args.action in ("preflight","prepare","activate") and key is None:
         raise PermissionError("Production upgrade requires an external pinned reviewer key")
     real_approve=WindowsCreatorUpgradeApproval()
     kernel=WindowsReleaseWorkerStopEvidence(
@@ -82,11 +138,17 @@ def main(argv=None):
     update=NativeNSISActivation(
         owner,native_authorize=real_approve,
         os_worker_tree_evidence=kernel,pinned_reviewer_public_key=key)
-    if args.action=="prepare":
+    if args.action in ("preflight","prepare"):
         if args.reviewed_receipt is None:
             raise PermissionError("Externally reviewed exact native package receipt is required")
+        if (args.reviewed_receipt.is_symlink() or
+            not args.reviewed_receipt.is_file()):
+            raise PermissionError("Original reviewed release receipt file unavailable")
         receipt=json.loads(args.reviewed_receipt.read_text("utf8"))
-        result=update.prepare(receipt)
+        if args.action=="preflight":
+            result=read_only_production_preflight(owner,update,kernel,receipt)
+        else:
+            result=update.prepare(receipt)
     elif args.action=="activate":
         result=update.activate()
     elif args.action=="inspect":
