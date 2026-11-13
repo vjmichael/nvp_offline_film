@@ -1,0 +1,58 @@
+name: NVP P1-F Real Cycles Imported Actor Windows Job Smoke (public fixture)
+
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_p1f_imported_actor.py'
+      - 'backend/nvp_p1f_cycles_source_admission.py'
+      - 'backend/nvp_p1f_cycles_picture_sound.py'
+      - 'tools/nvp_p1f_cycles_actor_worker.py'
+      - 'tests/test_nvp_p1f_imported_actor_native.py'
+      - 'tests/test_nvp_p1f_cycles_real_native.py'
+      - '.github/workflows/nvp-p1f-real-cycles-win.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-p1f-real-cycles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  genuine-blender-windows-job-public-fixture:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real OpenUSD, native foundation and Windows Job API
+        shell: pwsh
+        run: |
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install pywin32
+          if ($LASTEXITCODE -ne 0) { throw "Native Python dependency install failed" }
+      - name: Install real Blender binary from hosted Windows provisioning
+        shell: pwsh
+        run: |
+          choco install blender --no-progress -y --limit-output
+          if ($LASTEXITCODE -ne 0) { throw "Native Blender provisioning failed" }
+          $bins = Get-ChildItem 'C:\Program Files\Blender Foundation' -Filter blender.exe -File -Recurse -ErrorAction SilentlyContinue
+          if (-not $bins) { throw "No actual Blender executable installed" }
+          $bin = $bins | Sort-Object FullName -Descending | Select-Object -First 1
+          "NVP_TEST_BLENDER=$($bin.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_PUBLIC_SYNTHETIC_CI=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Original-source SHA and no-FFmpeg verification
+        shell: pwsh
+        run: |
+          python tools/nvp_no_ffmpeg_contract.py
+          if ($LASTEXITCODE -ne 0) { throw "Original no-FFmpeg requirement failed" }
+      - name: Genuine Win Job / Blender Cycles rigged-face picture and actor PCM
+        shell: pwsh
+        run: |
+          python -m compileall -q backend/nvp_p1f_imported_actor.py backend/nvp_p1f_cycles_picture_sound.py tools/nvp_p1f_cycles_actor_worker.py
+          python -m unittest discover -s tests -p 'test_nvp_p1f_cycles_real_native.py' -v
+          if ($LASTEXITCODE -ne 0) { throw "Actual Blender native picture/audio verification failed" }
