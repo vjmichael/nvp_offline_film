@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 
 from backend.nvp_native_frame_index import NVPFrameIndex, stamp, seek_seconds
@@ -47,7 +48,7 @@ def extract(index: NVPFrameIndex, *, ffmpeg, project, asset, source_sha,
            "-fps_mode", "passthrough", "-frames:v", str(count),
            "-start_number", str(first_output), "-f", "image2", pattern]
     with tempfile.TemporaryFile() as log:
-        result = subprocess.run(cmd, stdin=subprocess.DEVNULL,
+        result = run_owned_subprocess(cmd, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=log,
                                 timeout=timeout, check=False)
         end = log.seek(0, os.SEEK_END)

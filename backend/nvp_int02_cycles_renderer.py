@@ -297,7 +297,8 @@ def build_native_cycles_renderer(index:FilmIndex,project_id,*,
 
 def _blender_version(binary):
     import subprocess
-    result=subprocess.run([str(binary),"-b","--version"],
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
+    result=run_owned_subprocess([str(binary),"-b","--version"],
                           capture_output=True,text=True,timeout=15,check=True)
     first=result.stdout.splitlines()[0].strip()
     if not first.startswith("Blender "):

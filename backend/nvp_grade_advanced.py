@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 
 from backend.nvp_color_mastering import (
@@ -269,7 +270,7 @@ class AdvancedGradeWorkspace(GradeWorkspace):
                     "-f","image2pipe","-vcodec","png","pipe:1",
                 ]
                 try:
-                    result=subprocess.run(args,input=rgb48,capture_output=True,timeout=45,check=False)
+                    result=run_owned_subprocess(args,input=rgb48,capture_output=True,timeout=45,check=False)
                 except (OSError,subprocess.TimeoutExpired) as exc:
                     raise RuntimeError("Advanced source-derived preview could not finish") from exc
             if (result.returncode or

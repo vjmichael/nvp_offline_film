@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 import hashlib
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 import threading
 
@@ -196,7 +197,7 @@ class GradeWorkspace:
                 "-pix_fmt","rgb24","-f","image2pipe","-vcodec","png","pipe:1",
             ]
             try:
-                proc=subprocess.run(args,input=rgb48,capture_output=True,
+                proc=run_owned_subprocess(args,input=rgb48,capture_output=True,
                                     timeout=45,check=False)
             except (OSError,subprocess.TimeoutExpired) as exc:
                 raise RuntimeError("Real grading preview encoder failed") from exc
