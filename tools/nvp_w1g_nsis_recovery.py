@@ -65,12 +65,19 @@ class OwnedNSISRecovery:
         self.old=self.programs/"NVP.previous"
         self.failed=self.programs/"NVP.failed"
         self.pending=self.programs/"NVP.pending"
-        if (not self.programs.is_dir() or self.programs.is_symlink() or
-            not self.films.is_dir() or self.films.is_symlink() or
-            not self.journal_root.is_dir() or self.journal_root.is_symlink() or
-            self.films == self.programs or self.programs in self.films.parents or
-            self.journal_root == self.programs or self.programs in self.journal_root.parents):
-            raise RuntimeError("NSIS rollback roots must be disjoint from original films")
+        roots=(self.programs,self.films,self.journal_root)
+        if any(not p.is_dir() or p.is_symlink() for p in roots):
+            raise RuntimeError("NSIS upgrade roots must be real nonlinked directories")
+        # A journal *inside* OriginalFilms would mutate the immutable source
+        # inventory as soon as PREPARED is written. Likewise, films inside
+        # an upgrade program or a program inside the journal is unsafe.
+        # Canonicalize to reject ancestor links and Windows path aliases.
+        canonical=tuple(p.resolve(strict=True) for p in roots)
+        for i, left in enumerate(canonical):
+            for right in canonical[i+1:]:
+                if left==right or left in right.parents or right in left.parents:
+                    raise RuntimeError(
+                        "NSIS program, original films and journals must be pairwise disjoint")
         self.journal=self.journal_root/"nsis-rollback.json"
         self.authorize=native_approve
         self.stopped=os_workers_stopped
