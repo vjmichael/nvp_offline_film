@@ -63,8 +63,8 @@ class OwnedLegacySubprocessTests(unittest.TestCase):
                 try:
                     deadline=time.monotonic()+10
                     while time.monotonic()<deadline and thread.is_alive():
-                        if list((root/"legacy-jobs").glob("*.pending")) if (
-                            root/"legacy-jobs").exists() else False:
+                        registry=root/"legacy-jobs"
+                        if registry.exists() and list(registry.glob("*.pending")):
                             try:
                                 with WindowsReleaseMutationGate():
                                     pass
