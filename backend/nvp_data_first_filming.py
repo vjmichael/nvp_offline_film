@@ -213,8 +213,8 @@ class NativeSceneSoundCapture:
                     close=getattr(iterator,"close",None)
                     if callable(close):
                         close()
-                except Exception:
-                    pass  # Preserve the original admission failure.
+                except BaseException:
+                    pass  # Preserve original admission failure, including cancellation.
             raise
         publication_started=False
         try:
@@ -487,7 +487,7 @@ class NativeSceneSoundCapture:
                     close=getattr(iterator,"close",None)
                     if callable(close):
                         close()
-                except Exception:
+                except BaseException:
                     pass
             # Temporary-file close can fail due to delayed filesystem I/O.
             # Preserve the original capture outcome and cancellation receipt.
