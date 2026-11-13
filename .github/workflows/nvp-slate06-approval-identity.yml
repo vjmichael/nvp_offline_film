@@ -6,6 +6,8 @@ on:
     paths:
       - 'tests/test_nvp_slate06_approval_identity.py'
       - 'backend/nvp_slate_preview_host.py'
+      - 'backend/nvp_slate_preview_cache.py'
+      - 'tests/test_nvp_slate06_cache_txn.py'
       - '.github/workflows/nvp-slate06-approval-identity.yml'
   pull_request:
     paths:
@@ -35,4 +37,6 @@ jobs:
           python -m pip install --only-binary=:all: 'usd-core==26.11'
           python -m pip install -r requirements-foundation.txt
       - name: Exact original SLATE-06 approval identity proof
-        run: python -m unittest discover -s tests -p 'test_nvp_slate06_approval_identity.py' -v
+        run: |
+          python -m unittest discover -s tests -p 'test_nvp_slate06_approval_identity.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_slate06_cache_txn.py' -v
