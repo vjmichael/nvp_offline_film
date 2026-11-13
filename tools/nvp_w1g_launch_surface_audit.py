@@ -25,6 +25,7 @@ ALLOWED={
     "backend/nvp_stt_service.py":{"Popen"},
     "backend/nvp_color_ocio.py":{"run"},
     "backend/nvp_w1g_legacy_blender_launch.py":{"run"},
+    "backend/nvp_w1g_owned_subprocess.py":{"run"},
 }
 MARKERS={
     "backend/nvp_worker_containment.py":(
@@ -42,6 +43,10 @@ MARKERS={
     ),
     "backend/nvp_w1g_legacy_blender_launch.py":(
         "if os.name!=\"nt\":",
+        "from backend.nvp_worker_containment import launch_contained",
+    ),
+    "backend/nvp_w1g_owned_subprocess.py":(
+        "if os.name != \"nt\":",
         "from backend.nvp_worker_containment import launch_contained",
     ),
 }
