@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import math
 
-MAX_SKIN_VERTICES=512
-MAX_SKIN_FACES=1024
+MAX_SKIN_VERTICES=8192
+MAX_SKIN_FACES=16384
 MAX_INFLUENCES=4
 SKIN_MESH_SUFFIX="/Rig/CharacterMesh"
 
@@ -25,14 +25,15 @@ def _float(value):
 
 
 def normalize_skin(skin,joint_count):
-    if type(skin) is not dict or set(skin)!={"points","faces","joint_indices",
-                                            "joint_weights","display_color"}:
+    expected={"points","faces","joint_indices","joint_weights","display_color"}
+    if (type(skin) is not dict or not expected.issubset(skin) or
+        not set(skin)<=expected|{"roughness","source_glb_sha256"}):
         raise ValueError("Skin requires exact typed point/topology/joint influence fields")
     points=skin["points"]
     faces=skin["faces"]
     ids=skin["joint_indices"]
     weights=skin["joint_weights"]
-    if (type(points) is not list or not 4<=len(points)<=MAX_SKIN_VERTICES or
+    if (type(points) is not list or not 3<=len(points)<=MAX_SKIN_VERTICES or
         type(faces) is not list or not 1<=len(faces)<=MAX_SKIN_FACES or
         type(ids) is not list or len(ids)!=len(points) or
         type(weights) is not list or len(weights)!=len(points)):
@@ -76,8 +77,19 @@ def normalize_skin(skin,joint_count):
     rgb=[_float(x) for x in color]
     if any(not 0<=x<=1 for x in rgb):
         raise ValueError("Material preview color out of RGB domain")
-    return {"points":pts,"faces":polygons,"joint_indices":joints,
-            "joint_weights":normalized_weights,"display_color":rgb}
+    out={"points":pts,"faces":polygons,"joint_indices":joints,
+         "joint_weights":normalized_weights,"display_color":rgb}
+    if "source_glb_sha256" in skin:
+        from backend.nvp_film_index import _sha
+        _sha(skin["source_glb_sha256"])
+        rough=skin.get("roughness")
+        if type(rough) not in (int,float) or not math.isfinite(rough) or not 0<=rough<=1:
+            raise ValueError("Imported GLB PBR roughness must be original authored source")
+        out.update(source_glb_sha256=skin["source_glb_sha256"],
+                   roughness=float(rough))
+    elif "roughness" in skin:
+        raise ValueError("Authored skin roughness requires imported original PBR source")
+    return out
 
 
 def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
@@ -105,6 +117,28 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         not influence_weights.Set(Vt.FloatArray(
             [w for row in bound["joint_weights"] for w in row]))):
         raise RuntimeError("Could not author native USD per-vertex joint influences")
+    if "source_glb_sha256" in bound:
+        # Native Cycles reads this true source PBR via UsdShade; it must NOT
+        # silently substitute a white material for a skinned actor.
+        from pxr import UsdShade
+        material=UsdShade.Material.Define(
+            stage,actor_path+"/Rig/OriginalGLBMaterial")
+        shader=UsdShade.Shader.Define(
+            stage,actor_path+"/Rig/OriginalGLBMaterial/PreviewSurface")
+        shader.CreateIdAttr("UsdPreviewSurface")
+        shader.CreateInput("diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
+            Gf.Vec3f(*bound["display_color"]))
+        shader.CreateInput("roughness",Sdf.ValueTypeNames.Float).Set(
+            bound["roughness"])
+        shader.CreateInput("metallic",Sdf.ValueTypeNames.Float).Set(0.0)
+        if not material.CreateSurfaceOutput().ConnectToSource(
+                shader.ConnectableAPI(),"surface"):
+            raise RuntimeError("Imported original PBR material USD binding failed")
+        if not UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(material):
+            raise RuntimeError("Imported skinned mesh lacks original USD material binding")
+        mesh.GetPrim().CreateAttribute(
+            "nvp:sourceGLBSHA256",Sdf.ValueTypeNames.String).Set(
+                bound["source_glb_sha256"])
     return {
         "mesh_path":actor_path+SKIN_MESH_SUFFIX,
         "source_vertex_count":len(bound["points"]),
