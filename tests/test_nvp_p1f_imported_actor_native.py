@@ -32,8 +32,8 @@ def imported_character(*,omit_shape=None,external=False):
         "nvp:actorID",Sdf.ValueTypeNames.String).Set(ACTOR)
     mesh=UsdGeom.Mesh.Define(stage,"/Asset/Geometry")
     mesh.GetPointsAttr().Set(Vt.Vec3fArray([
-        Gf.Vec3f(-0.5,0,-0.5),Gf.Vec3f(0.5,0,-0.5),
-        Gf.Vec3f(0.5,0,0.5),Gf.Vec3f(-0.5,0,0.5)]))
+        Gf.Vec3f(-0.5,-0.5,0),Gf.Vec3f(0.5,-0.5,0),
+        Gf.Vec3f(0.5,0.5,0),Gf.Vec3f(-0.5,0.5,0)]))
     mesh.GetFaceVertexCountsAttr().Set(Vt.IntArray([4]))
     mesh.GetFaceVertexIndicesAttr().Set(Vt.IntArray([0,1,2,3]))
     mesh.GetSubdivisionSchemeAttr().Set(UsdGeom.Tokens.none)
@@ -135,8 +135,8 @@ class RealImportedActorTests(unittest.TestCase):
         scene=OpenUSDSceneBridge(self.index).publish(
             self.pid,"original_actor_scene",
             prims=[
-                {"path":"/World/Actor","role":"actor","position":[0,2,0]},
-                {"path":"/World/Camera","role":"camera","position":[0,-6,1]}
+                {"path":"/World/Actor","role":"actor","position":[0,0,0]},
+                {"path":"/World/Camera","role":"camera","position":[0,0,4]}
             ],curves=[],native_schemas=True,
             asset_bindings=[{"path":"/World/Actor",
                              "asset_id":"original_lead_asset","asset_revision":1}])
