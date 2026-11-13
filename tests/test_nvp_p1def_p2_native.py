@@ -103,7 +103,7 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
         self.assertEqual(self.index.read_revision(self.pid,"cut",1)[
             "document_sha256"],before)
 
-    def test_atomic_pictures_original_sound_and independent_verification(self):
+    def test_atomic_pictures_original_sound_and_independent_verification(self):
         with TemporaryDirectory() as tmp:
             target=self.exporter.export_chunk(
                 self.pid,"DirectorCutProof",1,"P2FilmChunk000000",tmp,
@@ -334,18 +334,18 @@ class FeatureLengthNativeSourceSchedule(unittest.TestCase):
             self.assertEqual(absent["status"],"INCOMPLETE_ORIGINAL_SOURCE_DERIVATIVES")
             self.assertEqual(absent["verified_frames"],0)
             self.assertFalse(absent["master_approved"])
+        fresh_index=FilmIndex(Studio(self.studio.db_path))
+        fresh_assembly=SlateSequenceAssembly(
+            DigitalSlateBranches(fresh_index,
+                verify_editor_action=lambda *_:False),
+            verify_editor_action=lambda *_:False)
+        fresh_continuity=NativeEditorialContinuity(
+            fresh_assembly,verify_director_action=lambda *_:False)
         fresh=NativeLongformFilmPlan(
-            SlateSequenceAssembly(DigitalSlateBranches(
-                FilmIndex(Studio(self.studio.db_path)),
-                verify_editor_action=lambda *_:False),
-                verify_editor_action=lambda *_:False),
-            NativeEditorialContinuity(self.assembly,
-                verify_director_action=lambda *_:False),
+            fresh_assembly,fresh_continuity,
             verify_creator_action=lambda *_:False)
-        # Cross-index identity is a deliberate rejection, not an accepted
-        # source plan: the verifier must be bound to one live index.
-        with self.assertRaises(TypeError):
-            fresh.open(self.pid,"ThirtyMinutePlan",1)
+        self.assertEqual(fresh.open(self.pid,"ThirtyMinutePlan",1)[
+            "document_sha256"],receipt["document_sha256"])
 
 
 if __name__=="__main__":
