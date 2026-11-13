@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_studio import Studio
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+from backend.nvp_p1a_original_capture_worker_bridge import OriginalMicrophoneNativeWorkerAudit
 from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
 
 
@@ -86,6 +87,25 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         self.trusted._close()
         with self.assertRaises(PermissionError):
             self.api.camera_render_capabilities()
+
+    def test_original_compiled_worker_auditor_is_host_only_not_js(self):
+        auditor=object.__new__(OriginalMicrophoneNativeWorkerAudit)
+        host=TrustedDesktopCameraBridge(
+            self.trusted.index,origin="http://127.0.0.1:7777",
+            native_capture_auditor=auditor)
+        self.addCleanup(host._close)
+        host._attach_window(FakeWindow())
+        self.assertIs(host._original_capture().native_pcm_auditor,auditor)
+        # Exposing 28 deliberately reviewed UI methods must never traverse
+        # the protected worker, runtime directory or model/grant state.
+        ui=NativeWebviewIPCSurface(host)
+        self.assertFalse(hasattr(ui,"native_capture_auditor"))
+        self.assertFalse(hasattr(ui,"_native_capture_auditor"))
+        self.assertFalse(hasattr(ui,"worker"))
+        with self.assertRaises(TypeError):
+            TrustedDesktopCameraBridge(
+                self.trusted.index,origin="http://127.0.0.1:7777",
+                native_capture_auditor={"creator_approved":True})
 
     def test_reject_untrusted_bridge_object(self):
         with self.assertRaises(TypeError):
