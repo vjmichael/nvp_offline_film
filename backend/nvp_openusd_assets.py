@@ -75,12 +75,24 @@ class OpenUSDAssetRegistry:
             self.index, project_id, asset_id, source, actor_id=actor_id,
             approve_import=approve_import, creator_event=creator_event)
 
+    def import_environment(self,project_id,asset_id,source,*,
+                           location_id,approve_import,creator_event):
+        """A reviewed original source, not a new procedural NVP placeholder."""
+        from backend.nvp_p1f_imported_environment import publish_environment
+        return publish_environment(
+            self.index,project_id,asset_id,source,location_id=location_id,
+            approve_import=approve_import,creator_event=creator_event)
+
     def open(self, project_id, asset_id, revision):
         record = self.index.read_revision(project_id, asset_id, revision)
         doc = record["data"]
         from backend.nvp_p1f_imported_actor import FORMAT as RIGGED_FORMAT,open_actor
+        from backend.nvp_p1f_imported_environment import (
+            FORMAT as ENV_FORMAT,open_environment)
         if doc.get("format")==RIGGED_FORMAT:
             return open_actor(self.index,project_id,asset_id,revision)
+        if doc.get("format")==ENV_FORMAT:
+            return open_environment(self.index,project_id,asset_id,revision)
         if (record["kind"] != "asset" or
             doc.get("format") != FORMAT or
             doc.get("source") != "nvp_authored_procedural_geometry" or
