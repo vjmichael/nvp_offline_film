@@ -15,6 +15,7 @@ from tools.nvp_w1g_reviewed_release import (
     FORMAT, _canonical, license_review_digest, verify_signed_release_review,
 )
 from backend.nvp_w1g_encrypted_source import require_efs_stage, verify_efs_inputs
+from tools.nvp_w1g_windows_efs_proof import _require_new_boot
 
 
 class SignedNativeReleaseReviewContracts(unittest.TestCase):
@@ -90,6 +91,24 @@ class EncryptedScratchContracts(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     verify_efs_inputs(root)
 
+
+
+class EFSDistinctBootAcceptanceContracts(unittest.TestCase):
+    def test_same_boot_and_untrusted_receipt_never_accepted(self):
+        with self.assertRaisesRegex(PermissionError,"distinct Windows boot"):
+            _require_new_boot({"windows_boot_estimate_epoch":1700000000},1700000000)
+        with self.assertRaisesRegex(PermissionError,"distinct Windows boot"):
+            _require_new_boot({"windows_boot_estimate_epoch":1700000000},1700000030)
+        with self.assertRaisesRegex(PermissionError,"boot observation"):
+            _require_new_boot({},1700003000)
+        with self.assertRaisesRegex(PermissionError,"boot observation"):
+            _require_new_boot({"windows_boot_estimate_epoch":True},1700003000)
+
+    def test_conservative_observed_new_boot_is_only_a_reopen_gate(self):
+        # This is a deterministic logic fixture, NOT a real Windows restart
+        # or a certificate backup/restore witness.
+        self.assertTrue(_require_new_boot(
+            {"windows_boot_estimate_epoch":1700000000},1700001000))
 
 if __name__=="__main__":
     unittest.main()
