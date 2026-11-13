@@ -11,6 +11,13 @@ on:
       - "frontend/src/FilmCameraSourcePanel.jsx"
       - "frontend/src/CameraLensWorkbench.jsx"
       - "frontend/src/FilmCameraNativeBridge.test.jsx"
+      - "frontend/src/ActorPerformancePanel.jsx"
+      - "frontend/src/ActorPerformancePanel.test.jsx"
+      - "frontend/src/DataFirstAVPanel.jsx"
+      - "backend/nvp_p1bc_actor_registry.py"
+      - "backend/nvp_webview_ipc_surface.py"
+      - "tests/test_nvp_webview_ipc_surface.py"
+      - "tests/test_nvp_p1bc_actor_dialogue_native.py"
       - "tests/test_nvp_slate08b_native_camera_ipc.py"
       - ".github/workflows/nvp-slate08b-desktop-camera.yml"
   workflow_dispatch:
@@ -60,4 +67,4 @@ jobs:
           node-version: "22"
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx
+      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx src/ActorPerformancePanel.test.jsx
