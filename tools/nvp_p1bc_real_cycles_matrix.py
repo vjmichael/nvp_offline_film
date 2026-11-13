@@ -125,10 +125,10 @@ def run(out:Path,blender:Path):
         usd,optics,materials=static_composed_usd(
             index,pid,"SourceTake",original_take_sha,tick,
             camera_path="/World/Camera")
-        if len(materials)!=1 or materials[0]["prim_path"]!=
-                "/World/Actor001/Rig/CharacterMesh":
+        if (len(materials)!=1 or
+            materials[0]["prim_path"]!="/World/Actor001/Rig/CharacterMesh"):
             raise RuntimeError("Original imported GLB source PBR material absent")
-        if not .84<materials[0]["linear_diffuse_rgb"][0]<.86:
+        if not (.84<materials[0]["linear_diffuse_rgb"][0]<.86):
             raise RuntimeError("Original GLB's actual red PBR source was replaced")
         layer=Sdf.Layer.CreateAnonymous("p1bc_natively_deformed.usda")
         if not layer.ImportFromString(usd.decode("utf8")):
