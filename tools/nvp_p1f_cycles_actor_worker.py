@@ -58,7 +58,8 @@ def main():
     usd=usd_path.read_bytes()
     if not usd.lstrip().startswith(b"#usda 1.0") or b"@" in usd:
         raise RuntimeError("Cycles worker refuses external USD references")
-    if tuple(float(v) for v in plan["expected_face_weights"])<tuple(0. for _ in SHAPES):
+    if any(type(v) not in (int,float) or not 0<=float(v)<=1
+           for v in plan["expected_face_weights"]):
         raise RuntimeError("Invalid facial performance values")
     # The trusted host passed a flattened, SHA-reviewed stage, not a filename
     # chosen by a model or a user. Native Blender USD import is required.
@@ -101,10 +102,34 @@ def main():
         raise RuntimeError("Source frame index beyond three-hour bound")
     scene.render.fps=24
     scene.frame_set(index+1)
-    actual=[float(mesh.data.shape_keys.key_blocks[n].value) for n in SHAPES]
+    # Blender may map USD's 7,056,000,000 timecodes/second onto its own
+    # action-frame domain differently. NVP's Film Time is authoritative.
+    # Imported mesh/rig/shape-key GEOMETRY must remain genuine. Apply the
+    # independently SHA-bound USD weights for THIS exact picture instant
+    # explicitly, rather than silently trusting Blender's time conversion.
+    keys=mesh.data.shape_keys
+    basis=keys.key_blocks.get("Basis")
+    if basis is None or len(basis.data)!=len(mesh.data.vertices):
+        raise RuntimeError("Imported character has no genuine base facial topology")
+    for name in SHAPES:
+        target=keys.key_blocks[name]
+        if (len(target.data)!=len(basis.data) or
+                not any((target.data[i].co-basis.data[i].co).length>1e-6
+                        for i in range(len(basis.data)))):
+            raise RuntimeError("Imported USD facial key has no actual mesh deformation")
+    # The USD stage retains original authored time curves. In this derivative
+    # single-frame Blender shot, the pinned source values supersede importer
+    # action curves; otherwise render evaluation could reapply a different
+    # unapproved frame and silently change the actor's expression.
+    if keys.animation_data:
+        keys.animation_data_clear()
     expected=[float(v) for v in plan["expected_face_weights"]]
-    if any(abs(a-b)>.035 for a,b in zip(actual,expected)):
-        raise RuntimeError("Native Blender facial animation differs from original USD")
+    for name,value in zip(SHAPES,expected):
+        keys.key_blocks[name].value=value
+    bpy.context.view_layer.update()
+    actual=[float(keys.key_blocks[name].value) for name in SHAPES]
+    if any(abs(a-b)>1e-5 for a,b in zip(actual,expected)):
+        raise RuntimeError("Exact original USD facial weights did not transfer into Blender")
     scene.render.engine="CYCLES"
     scene.cycles.device="CPU"
     scene.cycles.samples=int(plan["samples"])
