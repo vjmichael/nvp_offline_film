@@ -51,7 +51,7 @@ def _valid_stage(source, actor_id):
     mesh_prim=stage.GetPrimAtPath("/Asset/Geometry")
     skel_prim=stage.GetPrimAtPath("/Asset/Skeleton")
     anim_prim=stage.GetPrimAtPath("/Asset/Animation")
-    if (not root.IsA(UsdGeom.Xform) or not mesh_prim.IsA(UsdGeom.Mesh)
+    if (not root.IsA(UsdSkel.Root) or not mesh_prim.IsA(UsdGeom.Mesh)
             or not skel_prim.IsA(UsdSkel.Skeleton)
             or not anim_prim.IsA(UsdSkel.Animation)):
         raise ValueError("Imported actor requires mesh, skeleton and facial performance animation")
