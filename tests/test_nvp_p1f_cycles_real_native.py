@@ -109,7 +109,11 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                             ev=="public_fixture_only" and
                             scope["operation"]==
                                 "nvp.p1f.admit_finite_source_batch.v1" and
-                            scope["frame_count"]==2)
+                            scope["frame_count"]==2,
+                        verify_batch_live=lambda scope:
+                            scope["operation"]==
+                                "nvp.p1f.verify_finite_source_batch_live.v1" and
+                            scope["batch_id"]=="public_two_frames")
                     accepted=batch.create_batch(
                         fixture.pid,"rigged_reel_plan","public_two_frames",
                         reel_index=0,first_frame_offset=0,frame_count=2,
@@ -124,7 +128,8 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                     self.assertTrue(verified["all_frames_verified"])
                     self.assertEqual(verified["frames_accepted"],2)
                     reopened_batch=P1FDurableShotReels(
-                        fixture.index,reopened,approve_batch=lambda *_:False)
+                        fixture.index,reopened,approve_batch=lambda *_:False,
+                        verify_batch_live=lambda scope:False)
                     self.assertTrue(reopened_batch.verify(
                         "public_two_frames")["all_frames_verified"])
                     with self.assertRaises(RuntimeError):
