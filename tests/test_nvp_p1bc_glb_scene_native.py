@@ -101,7 +101,7 @@ class OriginalImportedGLBAndActing(unittest.TestCase):
         self.cast=[{"actor_id":"ActorLead",
                     "character_asset_id":self.registered["asset_id"],
                     "position":[0.0,0.0,0.0],
-                    "motion_joint":"Bone001","travel":0.4,
+                    "motion_joint":"Bone000/Bone001","travel":0.4,
                     "face_target":"jaw_open","face_strength":0.5}]
         self.source=self.director.publish(
             self.project,"SourceHumanScene",cast=self.cast,
