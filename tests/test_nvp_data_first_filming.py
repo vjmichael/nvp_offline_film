@@ -102,6 +102,24 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                              fromlist=["audit_sha256"]).audit_sha256(audit))
         self.assertFalse(native_take["rendered_frames"])
 
+    def test_native_window_provenance_survives_independent_studio_restart(self):
+        from backend.nvp_studio import Studio
+        from backend.nvp_film_index import FilmIndex
+        req=self.payload()
+        req["native_capture_audits"]=[self.native_audit(req)]
+        receipt=self.capture.capture(**req)
+        original=self.index.read_revision(self.pid,"FilmedTake",1)
+        self.assertIn({
+            "object_id":"FilmingCameraTimeline","revision":1,"role":"camera"
+        },original["dependencies"])
+        independent=FilmIndex(Studio(self.studio.db_path))
+        reopened=OpenUSDTakeCapture(
+            independent,verify_creator_action=lambda event,scope:False
+        ).verify_take(self.pid,"FilmedTake")
+        self.assertTrue(reopened["native_capture_attestations_verified"])
+        self.assertEqual(reopened["take_document_sha256"],
+                         receipt["take_document_sha256"])
+
     def test_incomplete_or_forged_native_windows_denied_before_publication(self):
         request=self.payload()
         audit=self.native_audit(request)
