@@ -1,8 +1,11 @@
 """PLAN-02-B trusted host never accepts browser approval as a Take grant."""
 import unittest
+from contextlib import ExitStack
+from unittest.mock import patch
 import test_nvp_data_av_native as fixture
 from backend.nvp_exact_time_shots import ExactTimeShotSequence
 from backend.nvp_native_capture_desktop import TrustedNativeOriginalCapture
+from backend.nvp_p1a_original_capture_worker_bridge import OriginalMicrophoneNativeWorkerAudit
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 
 
@@ -98,6 +101,89 @@ class NativeCaptureHostTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.trusted.begin(self.request)
         self.assertEqual(len(self.calls),1)
+
+    def _native_audit_controller(self,callback):
+        # Isolated host-injected audit fixture. Actual ProtectedNativeWorker
+        # compiler/job/cgroup evidence is tested separately; never invented.
+        native_auditor=object.__new__(OriginalMicrophoneNativeWorkerAudit)
+        controller=TrustedNativeOriginalCapture(
+            self.index,native_window=lambda:None,
+            ask_native=lambda message: self.calls.append(
+                "FREEZE" if message.startswith("Freeze") else "START") or True,
+            single_device_factory=lambda:self.device,
+            native_pcm_auditor=native_auditor)
+        self.addCleanup(controller.close)
+        return native_auditor,controller
+
+    def test_compiled_capture_audit_precedes_original_take_freeze(self):
+        calls=[]
+        def audit(self_auditor,**kwargs):
+            calls.append(("AUDIT",kwargs["original_pcm_sha256"],
+                          kwargs["recorded_samples"],kwargs["source_id"]))
+            return {"format":"test-only-native-capture-audit",
+                    "all_window_results_and_os_custody_verified":True,
+                    "device_capture_implemented_by_compiled_worker":False}
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                OriginalMicrophoneNativeWorkerAudit,
+                "verify_original_spool",new=audit))
+            if __import__("os").name=="nt":
+                # Only native EFS fixture; this is NOT actual physical
+                # encryption acceptance on the developer's Windows machine.
+                stack.enter_context(patch(
+                    "backend.nvp_w1g_encrypted_source.require_efs_stage"))
+                stack.enter_context(patch(
+                    "backend.nvp_w1g_encrypted_source.verify_efs_inputs"))
+                stack.enter_context(patch(
+                    "backend.nvp_data_first_filming.require_efs_stage"))
+                stack.enter_context(patch(
+                    "backend.nvp_data_first_filming.verify_efs_inputs"))
+            _,controller=self._native_audit_controller(audit)
+            controller.begin(self.request)
+            result=controller.finish()
+        self.assertEqual(len(calls),1)
+        self.assertEqual(calls[0][2],10000)
+        self.assertEqual(calls[0][3],"OriginalMicSignal")
+        self.assertEqual(result["status"],"FROZEN_ORIGINAL_LIVE_TAKE")
+        self.assertTrue(result["compiled_capture_worker_audit"][
+            "all_window_results_and_os_custody_verified"])
+        self.assertFalse(result["compiled_worker_is_device_recorder"])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"RecordedTake",1)["document_sha256"],
+            result["take_document_sha256"])
+        self.assertEqual(self.calls,["START","FREEZE"])
+
+    def test_failed_compiled_audit_keeps_original_pcm_unapproved(self):
+        def reject(self_auditor,**kwargs):
+            raise PermissionError("First-party native capture custody refused")
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                OriginalMicrophoneNativeWorkerAudit,
+                "verify_original_spool",new=reject))
+            if __import__("os").name=="nt":
+                stack.enter_context(patch(
+                    "backend.nvp_w1g_encrypted_source.require_efs_stage"))
+                stack.enter_context(patch(
+                    "backend.nvp_w1g_encrypted_source.verify_efs_inputs"))
+            _,controller=self._native_audit_controller(reject)
+            controller.begin(self.request)
+            with self.assertRaisesRegex(PermissionError,"custody refused"):
+                controller.finish()
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"OriginalMicSignal",1)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"RecordedTake",1)
+        self.assertEqual(self.calls,["START"])
+        self.assertTrue(controller.interrupted(self.pid)["items"])
+
+    def test_browser_request_cannot_inject_a_fake_native_audit(self):
+        with self.assertRaises(TypeError):
+            TrustedNativeOriginalCapture(
+                self.index,native_window=lambda:None,
+                ask_native=lambda _:True,native_pcm_auditor=object())
+        with self.assertRaises(ValueError):
+            self.trusted.begin({**self.request,
+                                "native_pcm_auditor":{"approved":True}})
 
     def test_freeze_denial_keeps_no_approved_take(self):
         self.trusted.begin(self.request)
