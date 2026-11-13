@@ -21,7 +21,7 @@ py -m tools.nvp_w1g_worker_package verify --bundle "D:\Programs\NVP.pending" --p
 py -m tools.nvp_w1g_native_dependencies verify --platform windows-amd64 --lock "D:\OwnerEvidence\wheel-lock.json" --wheelhouse "D:\OwnerEvidence\wheelhouse"
 ```
 
-An owner can prepare an **unsigned** five-role candidate from real compiled PE64 executables already on disk. Every role must have its own named file. The candidate never manufactures missing binaries, creates a signing identity or grants legal permission:
+An owner can prepare an **unsigned** five-role candidate from independently supplied native executable images on disk. Every role must have its own named file. Structural PE64/ELF checks and hashes do **not** prove the worker can execute the assigned role. The candidate never manufactures missing binaries, creates a signing identity or grants legal permission:
 
 ```powershell
 py -m tools.nvp_w1g_supply_candidate --platform windows-amd64 --wheelhouse "D:\\OwnerEvidence\\wheelhouse" --build-receipt "D:\\OwnerEvidence\\reviewed-build.json" --worker-binaries "D:\\OwnerEvidence\\CompiledWorkers" --worker-role original_capture=original_capture.exe --worker-role scene_render=scene_render.exe --worker-role editorial=editorial.exe --worker-role audio=audio.exe --worker-role delivery=delivery.exe --output "D:\\OwnerEvidence\\unsigned-review-candidate.json"
