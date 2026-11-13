@@ -1,0 +1,192 @@
+name: NVP Gate 1 replacement and independent SEC-06 (no installation authority)
+on:
+  push:
+    branches:
+      - nvp/sec06-gate1-independent-20261112
+      - nvp/w1g-p1a-sec06-integrated-20261112
+  workflow_dispatch:
+
+# Independent acceptance must run to completion; never cancel a kernel probe
+# because another revision was pushed. Each run is source-SHA isolated.
+permissions:
+  contents: read
+
+jobs:
+  gate1-linux:
+    name: Gate 1 Linux complete native regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Provision pinned native Python dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install --only-binary=:all: -r requirements-w1g-release-review.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+      - name: Exact-head source identity and compiler preflight
+        run: |
+          git rev-parse HEAD
+          python -m compileall -q backend tools tests
+      - name: Full Linux native W1-G and P1-A regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in \
+            test_nvp_int02_edited_film.py \
+            test_nvp_int02_shot_composition.py \
+            test_nvp_w1g_native_package.py \
+            test_nvp_w1g_protected_upgrade.py \
+            test_nvp_w1g_first_party_result_verifier.py \
+            test_nvp_w1g_native_link_audit.py \
+            test_nvp_w1g_release_safety.py \
+            test_nvp_w1g_release_build_marker.py \
+            test_nvp_w1g_release_gate.py \
+            test_nvp_w1g_owned_subprocess.py \
+            test_nvp_w1g_launch_surface_audit.py \
+            test_nvp_w1g_legacy_blender_launch.py \
+            test_nvp_filming_windows_release.py \
+            test_nvp_p1a_original_capture_worker_bridge.py \
+            test_nvp_plan02b_native_capture.py \
+            test_nvp_filming_worker_custody.py \
+            test_nvp_w1f_reel_audit.py \
+            test_nvp_w1g_supply_candidate.py \
+            test_nvp_w1g_production_authority.py \
+            test_nvp_w1g_encrypted_review.py \
+            test_nvp_w1g_signed_wheelhouse.py \
+            test_nvp_w1g_reconcile_compiled_release.py \
+            test_nvp_w1g_physical_efs_review.py \
+            test_nvp_w1g_supply_chain_hardening.py \
+            test_nvp_webview_ipc_surface.py \
+            test_blender_worker.py; do
+            python -m unittest discover -s tests -p "$f" -v
+          done
+
+  gate1-windows:
+    name: Gate 1 Windows complete native regression
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Provision pinned native Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx pywin32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --only-binary=:all: -r requirements-w1g-release-review.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exact-head source identity and compiler preflight
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          python -m compileall -q backend tools tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Full Windows native W1-G and P1-A regression
+        shell: pwsh
+        run: |
+          $files=@(
+            'test_nvp_int02_edited_film.py','test_nvp_int02_shot_composition.py',
+            'test_nvp_w1g_native_package.py','test_nvp_w1g_protected_upgrade.py',
+            'test_nvp_w1g_first_party_result_verifier.py','test_nvp_w1g_native_link_audit.py',
+            'test_nvp_w1g_release_safety.py','test_nvp_w1g_release_build_marker.py',
+            'test_nvp_w1g_release_gate.py','test_nvp_w1g_owned_subprocess.py',
+            'test_nvp_w1g_launch_surface_audit.py','test_nvp_w1g_legacy_blender_launch.py',
+            'test_nvp_filming_windows_release.py','test_nvp_p1a_original_capture_worker_bridge.py',
+            'test_nvp_plan02b_native_capture.py','test_nvp_filming_worker_custody.py',
+            'test_nvp_w1f_reel_audit.py','test_nvp_w1g_supply_candidate.py',
+            'test_nvp_w1g_production_authority.py','test_nvp_w1g_encrypted_review.py',
+            'test_nvp_w1g_signed_wheelhouse.py','test_nvp_w1g_reconcile_compiled_release.py',
+            'test_nvp_w1g_physical_efs_review.py','test_nvp_w1g_supply_chain_hardening.py',
+            'test_nvp_webview_ipc_surface.py','test_blender_worker.py')
+          foreach ($f in $files) {
+            python -m unittest discover -s tests -p $f -v
+            if ($LASTEXITCODE -ne 0) { throw "Gate 1 Windows regression failed: $f" }
+          }
+
+  sec06-windows:
+    name: SEC-06 independent real Windows Job, cancel, revocation and restart
+    needs: [gate1-linux, gate1-windows]
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Provision independent Windows native OS dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx pywin32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual Windows kernel Job and security restart matrix
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          $fixtures=@(
+            'test_audio_windows_job_object_descendants.py',
+            'test_audio_native_os_termination.py',
+            'test_audio_admission_outbox.py',
+            'test_audio_admission_crash_gap.py',
+            'test_nvp_w1g_release_gate.py',
+            'test_nvp_w1g_protected_upgrade.py',
+            'test_nvp_w1g_production_authority.py',
+            'test_nvp_filming_windows_release.py')
+          foreach ($f in $fixtures) {
+            python -m unittest discover -s tests -p $f -v
+            if ($LASTEXITCODE -ne 0) { throw "SEC-06 Windows independent fixture failed: $f" }
+          }
+
+  sec06-linux-delegated:
+    name: SEC-06 independent delegated Linux kernel guardian, migration and restart
+    needs: [gate1-linux, gate1-windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Provision original security fixture dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m compileall -q backend tools tests
+      - name: Run all SEC-06 fixtures under genuine systemd kernel delegation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          test -f /sys/fs/cgroup/cgroup.controllers
+          test "$(ps -p 1 -o comm=)" = systemd
+          python_bin="$(command -v python)"
+          # A real transient systemd service with a separate host subgroup.
+          # A generic GitHub-hosted process is NOT accepted as delegated.
+          # On failure to provision or enter this scope, fail the whole gate.
+          sudo systemd-run --wait --collect --pipe --same-dir \
+            --unit="nvp-sec06-matrix-$GITHUB_RUN_ID" \
+            --property=Type=exec \
+            --property=Delegate=yes \
+            --property=DelegateSubgroup=host \
+            /usr/bin/env \
+            NVP_REQUIRE_DELEGATED_CGROUP=1 \
+            PYTHONPATH="$GITHUB_WORKSPACE" \
+            PATH="$PATH" \
+            LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
+            "$python_bin" -m tools.nvp_sec06_delegated_matrix
+
+  release-gate:
+    name: SEC-06 gate summary (installation still requires creator approval)
+    needs: [sec06-windows, sec06-linux-delegated]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: No automatic installer authorization
+        run: |
+          echo "Gate 1 and SEC-06 native suites passed at this exact SHA."
+          echo "This run does not grant production installation, EFS recovery, or human upgrade authorization."

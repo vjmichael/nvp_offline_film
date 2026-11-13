@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - nvp/int02-w1g-native-film-package-20261112
+      - nvp/w1g-p1a-sec06-integrated-20261112
     paths:
       - native/**
       - tools/nvp_w1g_compile_first_party_workers.py
