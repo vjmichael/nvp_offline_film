@@ -176,6 +176,46 @@ class NativeCaptureHostTests(unittest.TestCase):
         self.assertEqual(self.calls,["START"])
         self.assertTrue(controller.interrupted(self.pid)["items"])
 
+    @unittest.skipUnless(__import__("os").name=="nt",
+                         "Windows EFS source-at-rest gate")
+    def test_windows_efs_refusal_never_opens_microphone_or_creates_take(self):
+        auditor,controller=self._native_audit_controller(None)
+        with patch("backend.nvp_w1g_encrypted_source.require_efs_stage",
+                   side_effect=PermissionError(
+                       "Original recording directory has no genuine Windows EFS")):
+            with self.assertRaisesRegex(PermissionError,"genuine Windows EFS"):
+                controller.begin(self.request)
+        self.assertIsNone(self.device.callback)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"RecordedTake",1)
+
+    @unittest.skipUnless(__import__("os").name=="nt",
+                         "Windows second-stage EFS inheritance gate")
+    def test_windows_take_spool_efs_refusal_preserves_unapproved_take(self):
+        def audit(self_auditor,**kwargs):
+            return {"format":"test-only-original-native-audit",
+                    "all_window_results_and_os_custody_verified":True}
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                OriginalMicrophoneNativeWorkerAudit,
+                "verify_original_spool",new=audit))
+            stack.enter_context(patch(
+                "backend.nvp_w1g_encrypted_source.require_efs_stage"))
+            stack.enter_context(patch(
+                "backend.nvp_w1g_encrypted_source.verify_efs_inputs"))
+            stack.enter_context(patch(
+                "backend.nvp_data_first_filming.require_efs_stage"))
+            stack.enter_context(patch(
+                "backend.nvp_data_first_filming.verify_efs_inputs",
+                side_effect=PermissionError("Take PCM spool is not EFS-encrypted")))
+            _,controller=self._native_audit_controller(audit)
+            controller.begin(self.request)
+            with self.assertRaisesRegex(PermissionError,"not EFS-encrypted"):
+                controller.finish()
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"RecordedTake",1)
+        self.assertTrue(controller.interrupted(self.pid)["items"])
+
     def test_browser_request_cannot_inject_a_fake_native_audit(self):
         with self.assertRaises(TypeError):
             TrustedNativeOriginalCapture(
