@@ -137,8 +137,9 @@ def reopen_disposable_efs(saved: dict, *, cross_principal=False,
         stage.is_symlink() or not stage.is_dir()):
         raise RuntimeError("EFS original stage unavailable or not a disposable test after restart")
     _require_new_boot(saved,_windows_boot_estimate_epoch())
+    observed_sid=_windows_process_token_sid()
     _require_efs_recovery_principal(
-        saved,_windows_process_token_sid(),cross_principal=cross_principal)
+        saved,observed_sid,cross_principal=cross_principal)
     verify_efs_inputs(stage,(saved["file"],))
     if sha256((stage/saved["file"]).read_bytes()).hexdigest()!=saved["sha256"]:
         raise RuntimeError("Native EFS re-opened encrypted bytes differ from original")
@@ -157,6 +158,10 @@ def reopen_disposable_efs(saved: dict, *, cross_principal=False,
         "windows_boot_epoch_method":"GetTickCount64-wall-clock-estimate",
         "different_windows_token_observed":bool(cross_principal),
         "cross_principal_nonsecret_efs_decryption_verified":bool(cross_principal),
+        "prepared_windows_token_sid":saved["original_windows_token_sid"],
+        "recovery_windows_token_sid":observed_sid if cross_principal else None,
+        "nonsecret_test_sha256":saved["sha256"],
+        "efs_scratch_root":str(parent.resolve(strict=True)),
         "key_backup_origin_independently_proven":False,
         "original_film_data_used":False,
         "disposable_stage_removed":not retain_for_recovery,
@@ -173,6 +178,8 @@ def main(argv=None):
     parser.add_argument("--receipt",type=Path,required=True)
     parser.add_argument("--retain-for-recovery",action="store_true",
                         help="Only with reopen: preserve disposable nonce for cross-principal decryption")
+    parser.add_argument("--proof-output",type=Path,
+                        help="Recovery only: write nonsecret observed token/nonce evidence for independent human review")
     args=parser.parse_args(argv)
     if args.action=="prepare":
         if args.parent is None or args.receipt.exists() or args.receipt.is_symlink():
@@ -186,9 +193,19 @@ def main(argv=None):
         saved=json.loads(args.receipt.read_text("utf8"))
         if args.retain_for_recovery and args.action!="reopen":
             parser.error("Only same-user reopen may retain the disposable EFS nonce")
+        if args.proof_output is not None:
+            if (args.action!="recover" or not args.proof_output.is_absolute() or
+                args.proof_output.exists() or args.proof_output.is_symlink()):
+                parser.error("Recovery proof needs a fresh absolute nonlinked output path")
         result=reopen_disposable_efs(
             saved,cross_principal=args.action=="recover",
             retain_for_recovery=args.retain_for_recovery)
+        if args.proof_output is not None:
+            with args.proof_output.open("x",encoding="utf8") as out:
+                json.dump(result,out,sort_keys=True,indent=2)
+                out.write("\n")
+                out.flush()
+                os.fsync(out.fileno())
         print(json.dumps(result,sort_keys=True,indent=2))
 
 
