@@ -11,6 +11,8 @@
 // subprocess, shell, network, dynamic input path, arbitrary script or FFmpeg.
 #include <algorithm>
 #include <array>
+#include <climits>
+#include <utility>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
