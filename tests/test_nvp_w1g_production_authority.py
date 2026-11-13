@@ -61,6 +61,25 @@ class NativeReleaseAuthorityRefusal(unittest.TestCase):
                 "signed_wheel_review":"review.json",
             })
 
+    def test_production_upgrade_denies_missing_signed_physical_efs_recovery(self):
+        activation=object.__new__(NativeNSISActivation)
+        activation.test_only_simulation=False
+        activation.pinned_reviewer_public_key=b"r"*32
+        with self.assertRaisesRegex(PermissionError,
+                "physical EFS scratch"):
+            activation._require_physical_efs_review(None)
+        with self.assertRaisesRegex(PermissionError,
+                "independently signed recovery review"):
+            activation._require_physical_efs_review({
+                "efs_scratch_root":"D:/scratch",
+            })
+        with self.assertRaisesRegex(PermissionError,
+                "physical EFS scratch"):
+            activation._require_physical_efs_review({
+                "efs_scratch_root":False,
+                "signed_efs_review":"D:/review.json",
+            })
+
     def test_one_native_worker_role_never_satisfies_release_provisioning(self):
         from unittest.mock import patch
         from tools.nvp_w1g_nsis_activation import _require_complete_reviewed_native_roster
