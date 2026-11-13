@@ -70,7 +70,17 @@ class SlatePreviewCache:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("PRAGMA synchronous=FULL")
             db.execute("PRAGMA busy_timeout=15000")
+            # An explicit BEGIN IMMEDIATE must COMMIT before releasing this
+            # connection. Merely closing a contextmanager-owned connection
+            # silently rolls back a newly reserved preview/ready/failure row,
+            # making one-use creator approval appear missing or revoked.
             yield db
+            if db.in_transaction:
+                db.commit()
+        except BaseException:
+            if db.in_transaction:
+                db.rollback()
+            raise
         finally:
             db.close()
 
