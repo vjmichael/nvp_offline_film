@@ -278,8 +278,12 @@ int main(int argc,char**argv){
         require(argc==3 && std::string(argv[1])=="--plan",
                 "Worker requires exactly --plan <original sealed plan>");
         const fs::path p(argv[2]);
+        // Windows may spell the same directory differently (case, 8.3,
+        // long path, junction traversal) even when the kernel sees one file.
+        // Compare ACTUAL directory identities rather than path strings:
+        // this preserves the no-foreign-job-directory safety boundary.
         require(p.is_absolute() && p.filename()=="plan.json" &&
-                p.parent_path()==fs::current_path(),
+                fs::equivalent(p.parent_path(),fs::current_path()),
                 "Worker plan must be in the current private supervised workspace");
         const auto plan=read_file("plan.json",1024*1024);
         const std::string raw(plan.begin(),plan.end());
