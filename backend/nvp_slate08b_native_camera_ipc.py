@@ -362,10 +362,13 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
 
     def data_av_edited_30s_begin(self,request):
         self._native_window()
-        if type(request) is not dict or set(request)!={
-                "project_id","edit_id","edit_revision",
-                "presentation_id","listener_path"}:
-            raise ValueError("Native film export requires exact committed edit identity")
+        required={"project_id","edit_id","edit_revision",
+                  "presentation_id","listener_path"}
+        if (type(request) is not dict or
+            set(request) not in (required,required|{"playable_preview"}) or
+            ("playable_preview" in request and
+             type(request["playable_preview"]) is not bool)):
+            raise ValueError("Native film export requires an exact typed source/preview request")
         _require_pid(request["project_id"])
         _id(request["edit_id"],"committed film edit")
         _id(request["presentation_id"],"unique derived film output")
@@ -451,10 +454,37 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                         "Original USD Takes and editorial revision remain unchanged."),
                     render_png=cycles_frame,
                     cancelled=cancel.is_set,progress=update)
-                return adapter.export(
+                produced=adapter.export(
                     requested["project_id"],requested["edit_id"],
                     requested["edit_revision"],requested["presentation_id"],
                     derived,listener_path=requested["listener_path"])
+                if requested.get("playable_preview") is not True:
+                    return produced
+                # The source-bound PNG/WAV is independently committed
+                # before the optional, separately approved playable view.
+                # A refusal must not misreport or erase that verified film.
+                from backend.nvp_int02_playable_preview import export_playable_edited_avi
+                try:
+                    preview=export_playable_edited_avi(
+                        assembly,requested["project_id"],requested["edit_id"],
+                        requested["edit_revision"],produced["directory"],
+                        approve=lambda scope:self._ask(
+                            "Create an optional playable single-file AVI from "
+                            "the independently VERIFIED 720-frame edit?\n"
+                            "Edit SHA: "+scope["edit_sha256"]+"\n"
+                            "Source manifest SHA: "+scope["derivative_manifest_sha256"]+"\n"
+                            "Destination: "+scope["output_directory"]+"\n"
+                            "Video is LOSSY 24fps MJPEG; audio is the original-derived "
+                            "48kHz PCM16, without FFmpeg. Output is UNENCRYPTED.\n"
+                            "This is NOT an approved cinema master, Dolby mix "
+                            "or a source Take. Grant separate one-use export approval?"),
+                        cancelled=cancel.is_set,progress=update)
+                except PermissionError:
+                    return {**produced,"playable_preview_status":"DECLINED_NOT_PUBLISHED"}
+                except InterruptedError:
+                    return {**produced,"playable_preview_status":"CANCELLED_NOT_PUBLISHED"}
+                return {**produced,"playable_preview_status":"PLAYABLE_PREVIEW_VERIFIED",
+                        "playable_preview":preview}
             future=self._executor.submit(perform)
             self._edited_export={"ticket":ticket,"future":future,
                                  "cancel":cancel,"progress":progress,

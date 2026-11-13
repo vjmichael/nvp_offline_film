@@ -12,6 +12,7 @@ export default function EditedFilmDeliveryPanel({projectId,native}){
   const [state,setState]=useState(null);
   const [error,setError]=useState('');
   const [preflight,setPreflight]=useState(null);
+  const [playable,setPlayable]=useState(false);
   const ready=Boolean(native&&[
     'data_av_edited_30s_catalog','data_av_edited_30s_preflight',
     'data_av_edited_30s_begin','data_av_edited_30s_poll',
@@ -87,7 +88,8 @@ export default function EditedFilmDeliveryPanel({projectId,native}){
       const reply=await native.data_av_edited_30s_begin({
         project_id:projectId,edit_id:choice.edit_id,
         edit_revision:choice.edit_revision,
-        presentation_id:presentation,listener_path:listener});
+        presentation_id:presentation,listener_path:listener,
+        playable_preview:playable});
       if(reply?.format!==F||reply.status!=='QUEUED_NATIVE_APPROVAL'||
          typeof reply.ticket!=='string'||reply.original_modified!==false||
          reply.master_approved!==false)
@@ -134,6 +136,15 @@ export default function EditedFilmDeliveryPanel({projectId,native}){
       <input value={presentation} onChange={e=>setPresentation(e.target.value)}
         maxLength={80} disabled={pending}/>
     </label>
+    <label>
+      <input type="checkbox" checked={playable} disabled={pending}
+        onChange={e=>setPlayable(e.target.checked)}/>
+      Also request a playable AVI technical preview (MJPEG + original PCM)
+    </label>
+    <p className="fineprint">The playable file is optional, requires a
+      <strong> second native approval</strong>, and is an unencrypted,
+      lossy 24-fps picture derivative, not a cinema master.
+      Source Takes and committed edits remain unchanged.</p>
     <div className="actions">
       <button disabled={!choice||pending} onClick={inspect}>
         Verify committed film sources</button>
@@ -150,6 +161,8 @@ export default function EditedFilmDeliveryPanel({projectId,native}){
       {state.progress&&(' · '+state.progress.stage+': '+state.progress.count)}
       {state.reason&&(' · '+state.reason)}
       {state.receipt&&(' · verified package: '+state.receipt.directory)}
+      {state.receipt?.playable_preview_status&&(' · AVI: '+state.receipt.playable_preview_status)}
+      {state.receipt?.playable_preview?.movie_path&&(' · playable file: '+state.receipt.playable_preview.movie_path)}
     </p>}
     {error&&<p role="alert">{error}</p>}
     <p className="fineprint">Native host selects the output directory and

@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - nvp/int02-w1g-native-film-package-20261112
-      - nvp/w1g-p1a-sec06-integrated-20261112
   workflow_dispatch:
 # Preserve only the latest candidate acceptance run per branch/workflow.
 # Superseded source heads must not monopolize finite native runners.
