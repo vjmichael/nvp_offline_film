@@ -208,7 +208,7 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
         self._spool=self._tmp/"independent_0.pcm"
         self.spools=[self._spool,self._tmp/"independent_1.pcm"]
         try:
-            if self.native_pcm_auditor is not None and os.name=="nt":
+            if (self.native_pcm_auditor is not None or self.input_factory is None) and os.name=="nt":
                 from backend.nvp_w1g_encrypted_source import require_efs_stage
                 require_efs_stage(self._tmp)
             self._journal.begin(self._tmp,scope)
@@ -401,7 +401,7 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             saved=NativeSceneSoundCapture(
                 self.index,approve_take=approve_clock_bound_take,
                 protected_spool_root=(
-                    self._tmp if native_audits and os.name=="nt" else None)).capture(
+                    self._tmp if (native_audits or self.input_factory is None) and os.name=="nt" else None)).capture(
                 self.project_id,self.take_id,
                 scene_id=self.scene_id,scene_revision=self.scene_revision,
                 camera_timeline_id=self.camera_id,
