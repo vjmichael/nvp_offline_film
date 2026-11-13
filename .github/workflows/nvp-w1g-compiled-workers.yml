@@ -1,0 +1,71 @@
+name: NVP W1-G five compiled native first-party worker capability slices
+# These native binary artifacts are UNSIGNED developer candidates, NOT a
+# creator-authorized, redistributable, EFS-accepted or complete NVP film release.
+on:
+  push:
+    branches:
+      - nvp/int02-w1g-native-film-package-20261112
+    paths:
+      - native/**
+      - tools/nvp_w1g_compile_first_party_workers.py
+      - tools/nvp_w1g_native_worker_functional_acceptance.py
+      - packaging/build-w1g-compiled-windows.cmd
+      - .github/workflows/nvp-w1g-compiled-workers.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiled-linux:
+    name: Native Linux ELF64 five-role compilation and independent functional fixture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real native compiler and OS crypto headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ libssl-dev
+      - name: Compile all five ELF64 binaries and run actual operations
+        run: |
+          set -euo pipefail
+          mkdir -p acceptance_artifacts
+          python -m tools.nvp_w1g_compile_first_party_workers --out acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --compiler g++
+          python -m tools.nvp_w1g_native_worker_functional_acceptance --binary-dir acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --evidence acceptance_artifacts/w1g-linux-native-functional.json
+      - name: Preserve exact source-head native candidates (NO LICENSE APPROVAL)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w1g-first-party-ELF64-unreviewed-candidates
+          path: acceptance_artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+  compiled-windows:
+    name: Native Windows PE64 MSVC five-role and real Job Object functional matrix
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original native Job Object Windows bindings
+        shell: pwsh
+        run: |
+          python -m pip install --only-binary=:all: pywin32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile all five PE64 and verify actual Windows Job-controlled outcomes
+        shell: cmd
+        run: |
+          call packaging\build-w1g-compiled-windows.cmd
+          if errorlevel 1 exit /b 1
+      - name: Preserve compiled original Windows candidate bytes and native Job receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w1g-first-party-PE64-unreviewed-candidates
+          path: acceptance_artifacts/
+          if-no-files-found: warn
+          retention-days: 7
