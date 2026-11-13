@@ -880,6 +880,137 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
     # P1-F: one bounded actor/director-approved original picture+PCM chunk.
     # This production path uses the same existing Windows Job/Linux delegated
     # cgroup supervisor as INT-02C, never a new privileged script runner.
+    # P2: a finite reel batch reuses the existing P1-F cancellation ticket.
+    # At most eight exact source chunks per OS-confirmed grant; each child
+    # P1-F approval is consumed once, never refreshed by JS or stale journal.
+    def _native_film_reel_batch(self, *,approval=None,renderer=None,
+                                cancelled=lambda:False,progress=lambda **_:None):
+        from backend.nvp_p2_bounded_film_reel import NativeFilmReelBatch
+        return NativeFilmReelBatch(
+            self._film_schedule(),
+            native_creator_approval=approval or (lambda *_:False),
+            render_png=renderer or (lambda **_:None),
+            cancelled=cancelled,progress=progress)
+
+    def _native_film_export_root(self):
+        from pathlib import Path
+        import os
+        home=Path(os.environ["NVP_HOME"])
+        if home.is_symlink() or not home.is_dir():
+            raise RuntimeError("Native original source storage unavailable")
+        derived=home.parent/"Exports"
+        if home.parent.is_symlink() or derived.is_symlink() or (
+                derived==home or home in derived.parents):
+            raise PermissionError("Plaintext film derivatives cannot share source home")
+        derived.mkdir(mode=0o700,exist_ok=True)
+        return derived
+
+    def data_av_film_stage_reel_preflight(self,request):
+        self._native_window()
+        required={"project_id","plan_id","revision","first_index",
+                  "limit","actor_mix_id","actor_mix_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Finite source reel requires an exact P2 source page")
+        _require_pid(request["project_id"])
+        return self._native_film_reel_batch().preflight(
+            request["project_id"],request["plan_id"],request["revision"],
+            first_index=request["first_index"],limit=request["limit"],
+            output_parent=self._native_film_export_root(),
+            actor_mix_id=request["actor_mix_id"],
+            actor_mix_revision=request["actor_mix_revision"])
+
+    def data_av_film_stage_reel_begin(self,request):
+        self._native_window()
+        required={"project_id","plan_id","revision","first_index",
+                  "limit","actor_mix_id","actor_mix_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Native reel render cannot take filesystem paths or scripts")
+        # Verify all child source intents BEFORE starting a thread/approval.
+        preflight=self.data_av_film_stage_reel_preflight(request)
+        with self._lock:
+            if self._closing:
+                raise PermissionError("Native film window closing")
+            if (self._p1f_export is not None and
+                not self._p1f_export["future"].done()):
+                raise RuntimeError("The previous protected film worker is still active")
+            if (self._edited_export is not None and
+                not self._edited_export["future"].done()):
+                raise RuntimeError("Close or cancel the 30-second native render first")
+            if (self._data_av_controller is not None and
+                self._data_av_controller._active is not None):
+                raise RuntimeError("Stop original sound audition before native render")
+            if (self._original_capture_controller is not None and
+                self._original_capture_controller._active is not None):
+                raise RuntimeError("Finish original PCM recording before native render")
+            parent=self._native_film_export_root()
+            requested=dict(request)
+            cancel=threading.Event()
+            ticket=secrets.token_urlsafe(32)
+            progress={"stage":"QUEUED_CREATOR_REEL_GRANT",
+                      "completed":0,"planned":preflight["chunk_count"]}
+            cycles=[None]
+
+            def perform():
+                from backend.nvp_int02_cycles_renderer import build_native_cycles_renderer
+                def progress_update(**value):
+                    with self._lock:
+                        progress.update(value)
+                def render_frame(**kw):
+                    if cancel.is_set():
+                        raise InterruptedError("Creator cancelled source reel worker")
+                    if cycles[0] is None:
+                        if self._ask(
+                            "This finite original film reel requires genuine "
+                            "OS-contained Blender/Cycles with Windows EFS "
+                            "protection for every staged original source "
+                            "input. Unencrypted SOURCE fallback is forbidden. "
+                            "The separate PNG/PCM derivative is UNENCRYPTED "
+                            "in the exports directory. Approve this native "
+                            "protected renderer for the bounded reel?") is not True:
+                            raise PermissionError("Creator declined original USD staging")
+                        cycles[0]=build_native_cycles_renderer(
+                            self.index,requested["project_id"],
+                            plaintext_consent=True)
+                        with self._lock:
+                            if (self._p1f_export is not None and
+                                self._p1f_export["ticket"]==ticket):
+                                self._p1f_export["cycles_renderer"]=cycles[0]
+                    return cycles[0].render_png(**kw)
+
+                writer=self._native_film_reel_batch(
+                    approval=lambda scope:self._ask(
+                        "Approve exactly ONE source film reel batch?\n"+
+                        "Original plan SHA: "+scope["source_plan_sha256"]+"\n"+
+                        "All child source intents SHA: "+
+                        scope["source_chunk_intents_sha256"]+"\n"+
+                        "Original picture frames: "+str(scope["total_frames"])+"\n"+
+                        "Bounded source chunks: "+str(scope["chunk_count"])+"\n"+
+                        "Output root: "+scope["output_parent"]+"\n"+
+                        "Every child is used at most once. No auto-resume, "
+                        "film master or installation authority."),
+                    renderer=render_frame,cancelled=cancel.is_set,
+                    progress=progress_update)
+                return writer.render(
+                    requested["project_id"],requested["plan_id"],
+                    requested["revision"],
+                    first_index=requested["first_index"],
+                    limit=requested["limit"],output_parent=parent,
+                    actor_mix_id=requested["actor_mix_id"],
+                    actor_mix_revision=requested["actor_mix_revision"])
+
+            future=self._executor.submit(perform)
+            self._p1f_export={"ticket":ticket,"future":future,"cancel":cancel,
+                              "progress":progress,
+                              "project_id":request["project_id"],
+                              "reel_batch":True}
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"QUEUED_NATIVE_APPROVAL","ticket":ticket,
+                    "source_plan_sha256":preflight["source_plan_sha256"],
+                    "chunk_count":preflight["chunk_count"],
+                    "frame_count":preflight["total_frames"],
+                    "film_master_approved":False,
+                    "original_modified":False}
+
     def data_av_film_stage_chunk_preflight(self,request):
         self._native_window()
         required={"project_id","continuity_id","continuity_revision",
@@ -1037,6 +1168,17 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
                     "status":"FAILED_UNVERIFIED","reason":str(exc)[:250],
                     "original_modified":False,"film_master_approved":False}
+        if job.get("reel_batch") is True:
+            if (result.get("format")!="nvp.p2.bounded_source_film_reel_grant.v1"
+                or result.get("status")!="BOUNDED_REEL_PICTURE_PCM_VERIFIED"
+                or result.get("film_master_approved") is not False):
+                return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                        "status":"FAILED_UNVERIFIED",
+                        "original_modified":False,"film_master_approved":False}
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"FINITE_REEL_CHUNKS_VERIFIED_NOT_MASTER",
+                    "receipt":result,"original_modified":False,
+                    "film_master_approved":False}
         return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
                 "status":"INDEPENDENT_SOURCE_CHUNK_VERIFIED_NOT_MASTER",
                 "receipt":result,"original_modified":False,
