@@ -26,7 +26,7 @@ def imported_character(*,omit_shape=None,external=False):
     layer=Sdf.Layer.CreateAnonymous("independently-authored-actor.usda")
     stage=Usd.Stage.Open(layer)
     stage.SetTimeCodesPerSecond(float(T))
-    root=UsdGeom.Xform.Define(stage,"/Asset")
+    root=UsdSkel.Root.Define(stage,"/Asset")
     stage.SetDefaultPrim(root.GetPrim())
     root.GetPrim().CreateAttribute(
         "nvp:actorID",Sdf.ValueTypeNames.String).Set(ACTOR)
