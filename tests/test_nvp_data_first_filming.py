@@ -46,6 +46,28 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             }]
         )
 
+    def test_equal_length_substituted_publication_cannot_freeze_take(self):
+        from unittest.mock import patch
+        req=self.payload()
+        actual_publish=self.capture.sources.publish
+        def substitute(project_id,source_id,chunks,*,expected_revision=0):
+            admitted=list(chunks)
+            # Model a faulty storage writer substituting equally long PCM.
+            altered=[bytes([chunk[0] ^ 1])+chunk[1:] for chunk in admitted]
+            return actual_publish(project_id,source_id,altered,
+                                  expected_revision=expected_revision)
+        with patch.object(self.capture.sources,"publish",side_effect=substitute):
+            with self.assertRaisesRegex(RuntimeError,
+                                        "PCM identity differs from validated recording"):
+                self.capture.capture(**req)
+        for identity in ("FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.approvals,[])
+        rows=self.capture.publications.reconcile(self.pid)
+        self.assertTrue(any(row["take_id"]=="FilmedTake" and
+                            row["state"]=="INTERRUPTED" for row in rows))
+
     def test_impossible_unclocked_duration_refused_before_pcm_iteration(self):
         from unittest.mock import patch
         import backend.nvp_data_first_filming as filming
