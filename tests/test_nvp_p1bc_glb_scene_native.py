@@ -42,7 +42,9 @@ def original_rigged_glb():
         accessors.append({"bufferView":view,"componentType":ctype,
                           "count":count,"type":kind})
         return i
-    pos=source(struct.pack("<9f",0,0,0, 1,0,0, 0,1,0),"VEC3",5126,3)
+    # Original glTF Y-up vertex positions yield a horizontal Z-up
+    # triangle in NVP for actual overhead-camera Cycles visibility.
+    pos=source(struct.pack("<9f",0,0,0, 1,0,0, 0,0,-1),"VEC3",5126,3)
     joints=source(bytes([1,0,0,0]*3),"VEC4",5121,3)
     weights=source(struct.pack("<12f",*([1.0,0.0,0.0,0.0]*3)),
                    "VEC4",5126,3)
