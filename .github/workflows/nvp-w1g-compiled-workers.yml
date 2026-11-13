@@ -15,6 +15,8 @@ on:
       - tools/nvp_w1g_native_link_audit.py
       - tools/nvp_w1g_compiled_supply_chain_intake.py
       - tests/test_nvp_w1g_compiled_supply_chain_intake.py
+      - tools/nvp_p1a_physical_device_preflight.py
+      - tests/test_nvp_p1a_physical_device_preflight.py
       - backend/nvp_w1g_protected_native_worker.py
       - backend/nvp_w1g_first_party_result_verifier.py
       - tests/test_nvp_w1g_protected_upgrade.py
@@ -52,6 +54,8 @@ jobs:
         run: python -m tools.nvp_w1g_source_identity_audit
       - name: Reject altered or mismatched first-party supply provenance
         run: python -m unittest discover -s tests -p test_nvp_w1g_compiled_supply_chain_intake.py -v
+      - name: Prove physical ADC catalog remains an unaccepted non-recording probe
+        run: python -m unittest discover -s tests -p test_nvp_p1a_physical_device_preflight.py -v
       - name: Compile all five ELF64 binaries and run actual operations
         run: |
           set -euo pipefail
@@ -88,6 +92,8 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_nvp_w1g_compiled_supply_chain_intake.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Native worker supply-review negative matrix failed' }
+          python -m unittest discover -s tests -p test_nvp_p1a_physical_device_preflight.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native physical microphone preflight refusal contract failed' }
       - name: Verify canonical exact-head PE compiler input bytes
         shell: pwsh
         run: |
