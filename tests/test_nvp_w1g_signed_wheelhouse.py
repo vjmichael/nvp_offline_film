@@ -85,6 +85,18 @@ class SignedOfflineWheelhouseContracts(unittest.TestCase):
                     lock,root,signed,platform="linux-amd64",
                     pinned_reviewer_public_key=key)
 
+    def test_case_variant_extra_wheel_never_evades_offline_file_inventory(self):
+        with TemporaryDirectory() as td:
+            root=Path(td)
+            lock,_=self.fixture(root)
+            signed,key=self.sign_test_only(lock,root)
+            extra=root/lock["wheels"][0]["filename"].upper()
+            extra.write_bytes(b"unreviewed")
+            with self.assertRaisesRegex(RuntimeError,"unreviewed extra"):
+                verify_signed_offline_wheelhouse(
+                    lock,root,signed,platform="windows-amd64",
+                    pinned_reviewer_public_key=key)
+
     def test_reviewer_signature_and_lock_binding_cannot_be_reused(self):
         with TemporaryDirectory() as td:
             root=Path(td)
