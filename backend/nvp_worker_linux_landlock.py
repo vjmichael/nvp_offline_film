@@ -94,6 +94,12 @@ def restrict_native_producer_writes(spool):
             finally:
                 os.close(fd)
         permit(source, handled)
+        # Python subprocess.DEVNULL uses O_RDWR even for a child whose
+        # streams are discarded. Native kernel regression demonstrated that
+        # omitting this exact character node blocks detached descendants.
+        # Do NOT allow the entire /dev tree, which would widen authority.
+        if Path("/dev/null").is_char_device():
+            permit(Path("/dev/null"), WRITE_FILE)
         # ALSA/Pulse backends need native OS sound device handles, not the
         # ability to mutate system configuration or any ancestor cgroup.
         sound_devices = Path("/dev/snd")
