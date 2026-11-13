@@ -130,7 +130,7 @@ class ActorDialogueDirector:
         OpenUSDTakeCapture(self.index,
             verify_creator_action=lambda *_: False).verify_take(project_id, take_id)
         from backend.nvp_openusd_scene import OpenUSDSceneBridge
-        scene, _ = OpenUSDSceneBridge(self.index).open(
+        scene, stage = OpenUSDSceneBridge(self.index).open(
             project_id, doc["scene_id"], doc["scene_revision"])
         if scene["document_sha256"] != doc["scene_document_sha256"]:
             raise RuntimeError("Dialogue source scene SHA was changed")
@@ -158,13 +158,13 @@ class ActorDialogueDirector:
             project_id, original["source_id"], original["source_revision"])
         if audio["document_sha256"] != original["source_document_sha256"]:
             raise RuntimeError("Original recorded dialogue source SHA mismatch")
-        return take, scene, binding, original, audio
+        return take, scene, binding, original, audio, stage
 
     def bind(self, project_id, dialogue_id, *, actor_id, take_id, event_id,
              creator_event):
         """One actor, one original speaker event; no invented transcript/voice."""
         _id(dialogue_id, "original dialogue attribution ID")
-        take, scene, binding, event, audio = self._original_event(
+        take, scene, binding, event, audio, stage = self._original_event(
             project_id, take_id, actor_id, event_id)
         data = {"format": DIALOGUE_FORMAT, "actor_id": actor_id,
                 "actor_revision": binding["actor_revision"],
@@ -214,7 +214,7 @@ class ActorDialogueDirector:
         doc = rec["data"]
         if rec["kind"] != "dialogue" or doc.get("format") != DIALOGUE_FORMAT:
             raise RuntimeError("Not a native original-dialogue actor binding")
-        take, scene, binding, event, audio = self._original_event(
+        take, scene, binding, event, audio, stage = self._original_event(
             project_id, doc["source_take_id"], doc["actor_id"], doc["event_id"])
         expected = {"actor_document_sha256": binding["actor_document_sha256"],
                     "scene_document_sha256": scene["document_sha256"],
@@ -228,6 +228,37 @@ class ActorDialogueDirector:
             doc.get("voice_synthesized") is not False or
             doc.get("lip_sync_generated") is not False):
             raise RuntimeError("Original actor dialogue attribution lost source identity")
+        if tick >= take["data"]["duration_tick"]:
+            raise ValueError("Actor pose/dialogue query exceeds original Take Film Time")
+        if (doc["actor_revision"]!=binding["actor_revision"] or
+            doc["rig_joints"]!=binding["rig_joints"] or
+            doc["skin_mesh_path"]!=binding["skin_mesh_path"] or
+            doc["scene_revision"]!=scene["revision"] or
+            doc["timeline_revision"]!=take["data"]["timeline_revision"] or
+            doc["original_recorded_source_revision"]!=event["source_revision"]):
+            raise RuntimeError("Actor dialogue original rig/source revisions changed")
+        # One original spoken event, actor and independently evaluated 3D
+        # skinned performance at the same integer Film Time.
+        from backend.nvp_openusd_time_state import OpenUSDTimeState
+        from backend.nvp_openusd_skinning import evaluate_skin
+        snapshot=OpenUSDTimeState(self.index).evaluate(
+            project_id,scene["object_id"],scene["revision"],
+            take["data"]["timeline_id"],take["data"]["timeline_revision"],
+            tick=tick,paths=[binding["path"]])
+        actors=snapshot["objects"]
+        poses=snapshot.get("skeletal_pose",[])
+        if (len(actors)!=1 or actors[0].get("actor_id")!=doc["actor_id"] or
+            len(poses)!=1 or poses[0].get("actor_id")!=doc["actor_id"] or
+            poses[0]["joint_count"]!=len(binding["rig_joints"])):
+            raise RuntimeError("Original voice is not tied to the evaluated USD actor rig")
+        skin=evaluate_skin(
+            stage,stage.GetPrimAtPath(binding["skin_mesh_path"]),
+            binding["path"],tick)
+        if (skin["usd_skin_binding_verified"] is not True or
+            skin["skinning_evaluated"] is not True):
+            raise RuntimeError("Actor has no independently evaluated native skinned geometry")
+        skin_digest=hashlib.sha256(_canonical(skin["deformed_points"])).hexdigest()
+        pose_digest=hashlib.sha256(_canonical(poses[0])).hexdigest()
         active = doc["start_tick"] <= tick < doc["end_tick"]
         return {"actor_id": doc["actor_id"],
                 "usd_prim_path": doc["actor_usd_prim_path"],
@@ -236,5 +267,10 @@ class ActorDialogueDirector:
                 "original_pcm_sha256": doc["original_pcm_document_sha256"],
                 "source_event_id": doc["event_id"],
                 "time_tick": tick, "dialogue_active": active,
+                "world_translation": actors[0]["world_translation"],
+                "native_rig_pose_sha256": pose_digest,
+                "native_skin_deformation_sha256": skin_digest,
+                "source_skin_vertex_count": len(skin["deformed_points"]),
+                "native_skin_deformation_evaluated": True,
                 "native_scene_rig_binding_verified": True,
                 "voice_synthesized": False, "lip_sync_generated": False}

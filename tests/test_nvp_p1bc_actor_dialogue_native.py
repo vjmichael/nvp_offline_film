@@ -121,9 +121,15 @@ class P1BCActorDialogueNative(unittest.TestCase):
         self.assertFalse(active["voice_synthesized"])
         self.assertFalse(active["lip_sync_generated"])
         self.assertEqual(active["usd_prim_path"],"/World/Lead")
+        self.assertTrue(active["native_skin_deformation_evaluated"])
+        self.assertEqual(active["source_skin_vertex_count"],4)
+        self.assertEqual(len(active["native_skin_deformation_sha256"]),64)
+        self.assertEqual(len(active["native_rig_pose_sha256"]),64)
         self.assertEqual(active["source_event_id"],"LineOne")
         self.assertFalse(self.dialogue.at(
             self.pid,"LeadLineOne",1,T)["dialogue_active"])
+        with self.assertRaises(ValueError):
+            self.dialogue.at(self.pid,"LeadLineOne",1,2*T)
         restarted=FilmIndex(Studio(self.studio.db_path))
         reopened=ActorDialogueDirector(
             restarted,verify_director_action=lambda *_:False)

@@ -42,6 +42,7 @@ export default function ActorPerformancePanel({projectId,native,sourceRevision=0
   useEffect(()=>{
     let active=true;
     setCast(null);setTakeId('');setCueId('');setVerified(null);
+    setBound(null);setRegistered(null);setError('');
     if(!ready||!projectId)return;
     Promise.resolve(native.data_av_actor_cast(projectId)).then(result=>{
       if(!active)return;
@@ -107,6 +108,7 @@ export default function ActorPerformancePanel({projectId,native,sourceRevision=0
          reply.source_modified!==false||reply.film_master_approved!==false||
          reply.result?.actor_id!==cue?.actor_id||
          reply.result?.native_scene_rig_binding_verified!==true||
+         reply.result?.native_skin_deformation_evaluated!==true||
          reply.result?.voice_synthesized!==false||
          reply.result?.lip_sync_generated!==false)
         throw Error('Native original dialogue Film Time result is unverified');
@@ -179,7 +181,8 @@ export default function ActorPerformancePanel({projectId,native,sourceRevision=0
         onClick={sample}>Verify ActorID, original voice and rig at tick</button>
       {verified&&<p role="status">Actor {verified.actor_id} at tick
         {' '}{verified.time_tick}: {verified.dialogue_active?'original dialogue active':
-        'original dialogue inactive'} · USD {verified.usd_prim_path}</p>}
+        'original dialogue inactive'} · USD {verified.usd_prim_path}
+        {' '}· {verified.source_skin_vertex_count} evaluated source skin vertices</p>
     </>}
     <p className="fineprint">No voice cloned or generated, no automatic
       dialogue text, lip-sync, facial performance or film master approved.

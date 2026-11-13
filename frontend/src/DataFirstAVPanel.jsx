@@ -353,7 +353,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         a flattened movie or inferred sound-event causes.</p>
       <ul>
         {(scene.scene?.objects||[]).slice(0,16).map(x=>
-          <li key={x.path}>{x.path}: {x.world_translation
+          <li key={x.path}>{x.actor_id?x.actor_id+' · ':''}{x.path}: {x.world_translation
             .map(v=>v.toFixed(2)).join(', ')} m</li>)}
       </ul>
       <p className="fineprint">{scene.spatial_audio?.bindings?.length||0}
