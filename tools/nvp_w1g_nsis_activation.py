@@ -99,14 +99,34 @@ class NativeNSISActivation:
             if (owner.test_only_simulation or
                 type(native_authorize) is not WindowsCreatorUpgradeApproval or
                 type(os_worker_tree_evidence) is not WindowsReleaseWorkerStopEvidence or
-                type(pinned_reviewer_public_key) is not bytes or
-                len(pinned_reviewer_public_key)!=32):
+                (pinned_reviewer_public_key is not None and
+                 (type(pinned_reviewer_public_key) is not bytes or
+                  len(pinned_reviewer_public_key)!=32))):
                 raise PermissionError(
                     "Production NSIS cannot accept callback/synthetic human or kernel receipts")
         self.owner=owner
         self.authorize=native_authorize
         self.os_evidence=os_worker_tree_evidence
         self.journal=owner.journal_root/"nsis-activation.json"
+
+    def _require_signed_review(self, receipt):
+        """A prepared production candidate is independently reviewed already.
+
+        Inspection never needs a reviewer key, but any mutation does. A
+        subsequent activation re-verifies the same release and owner-pinned key.
+        """
+        if self.test_only_simulation:
+            return
+        key=self.pinned_reviewer_public_key
+        if type(key) is not bytes or len(key)!=32:
+            raise PermissionError("External owner-pinned reviewer public key required")
+        if receipt.get("native_worker_manifest_verified") is not True:
+            raise PermissionError(
+                "Production upgrade lacks reviewed compiled native workers")
+        from tools.nvp_w1g_reviewed_release import verify_signed_release_review
+        verify_signed_release_review(
+            receipt,receipt.get("signed_redistribution_review"),
+            pinned_reviewer_public_key=key)
 
     def _kernel_empty(self,original_sha):
         # A native host must provide this from its actual Windows Job
@@ -141,6 +161,7 @@ class NativeNSISActivation:
             verify_build_marker(self.owner.active)
             verify_build_marker(self.owner.pending)
             _require_complete_reviewed_native_roster(self.owner.pending)
+            self._require_signed_review(trusted_external_receipt)
         current_version=_version(self.owner.active)
         next_version=_version(self.owner.pending)
         registered=_registry_version()
@@ -205,17 +226,7 @@ class NativeNSISActivation:
             verify_build_marker(self.owner.active)
             verify_build_marker(self.owner.pending)
             _require_complete_reviewed_native_roster(self.owner.pending)
-            receipt=record["reviewed_package_receipt"]
-            if receipt.get("native_worker_manifest_verified") is not True:
-                raise PermissionError(
-                    "Production upgrade lacks reviewed compiled native workers")
-            # The build receipt's own license Boolean is NOT evidence. Verify
-            # an independently signed review over every exact bundled byte
-            # with a reviewer key pinned OUTSIDE the installable payload.
-            from tools.nvp_w1g_reviewed_release import verify_signed_release_review
-            verify_signed_release_review(
-                receipt,receipt.get("signed_redistribution_review"),
-                pinned_reviewer_public_key=self.pinned_reviewer_public_key)
+            self._require_signed_review(record["reviewed_package_receipt"])
         self._kernel_empty(record["active_sha256"])
         consent={
             "operation":"nvp.w1g.nsis.activate_prepared_native.v1",
