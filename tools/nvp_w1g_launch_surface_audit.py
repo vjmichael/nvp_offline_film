@@ -63,6 +63,7 @@ def audit_release_launch_surface(root:Path):
         raise RuntimeError("Incomplete original production source tree")
     seen={}
     hashes=[]
+    unregistered=[]
     for file in sources:
         if file.is_symlink() or not file.is_file():
             raise RuntimeError("Linked runtime module cannot be reviewed")
@@ -100,9 +101,8 @@ def audit_release_launch_surface(root:Path):
             if not external:
                 continue
             if module!="subprocess" or action not in ALLOWED.get(key,set()):
-                raise PermissionError(
-                    "Unregistered original runtime process-launch bypass: "+
-                    key+":"+str(node.lineno)+":"+module+"."+action)
+                unregistered.append(key+":"+str(node.lineno)+":"+module+"."+action)
+                continue
             seen.setdefault(key,set()).add(action)
     # Fail if an allowed source disappeared, was renamed or lost its explicit
     # platform-level non-Windows boundary; otherwise new Popen would slip in.
@@ -113,6 +113,10 @@ def audit_release_launch_surface(root:Path):
         code=file.read_text("utf8")
         if any(marker not in code for marker in MARKERS[key]):
             raise RuntimeError("Original launch boundary markers changed: "+key)
+    if unregistered:
+        raise PermissionError(
+            "Unregistered original runtime process-launch bypasses: "+
+            "; ".join(sorted(unregistered)))
     return {
         "format":FORMAT,
         "status":"NO_UNREVIEWED_BACKEND_PROCESS_LAUNCH_SITE",
