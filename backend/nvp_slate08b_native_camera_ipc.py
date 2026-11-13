@@ -614,6 +614,7 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 "actor_id":doc["actor_id"],"take_id":doc["source_take_id"]})
         continuity=[]
         plans=[]
+        actor_mixes=[]
         for row in self.index.list_objects(pid,kind="presentation")[:256]:
             rec=self.index.read_revision(pid,row["object_id"],row["head_revision"])
             fmt=rec["data"].get("format")
@@ -633,9 +634,23 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                               "total_chunks":rec["data"]["total_chunks"],
                               "total_frames":rec["data"]["total_frames"],
                               "longform":rec["data"]["is_thirty_minute_longform"]})
+            elif fmt=="nvp.p1e.actor_owned_dry_spatial_bus.v1":
+                from backend.nvp_p1e_actor_spatial_bus import NativeActorSpatialBus
+                NativeActorSpatialBus(
+                    self.index,verify_director_action=lambda *_:False).open(
+                    pid,rec["object_id"],rec["revision"])
+                actor_mixes.append({
+                    "mix_id":rec["object_id"],"revision":rec["revision"],
+                    "mix_sha256":rec["document_sha256"],
+                    "take_id":rec["data"]["take_id"],
+                    "take_sha256":rec["data"]["take_document_sha256"],
+                    "listener_path":rec["data"]["listener_path"],
+                    "actor_ids":[r["actor_id"] for r in rec["data"]["routes"]],
+                })
         return {"format":"nvp.p1def.p2.native_source_stage_catalog.v1",
                 "project_id":pid,"edits":edits,"original_dialogue":dialogue,
                 "continuity":continuity,"longform_plans":plans,
+                "actor_spatial_mixes":actor_mixes,
                 "source_modified":False,"export_authorized":False,
                 "film_master_approved":False}
 
