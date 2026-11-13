@@ -142,6 +142,7 @@ class NativeSustainedPictureSound:
             "edit_document_sha256":doc["edit_document_sha256"],
             "source_take_id":source["source_take_id"],
             "source_take_sha256":source["source_take_sha256"],
+            "scene_document_sha256":take["data"]["scene_document_sha256"],
             "source_shot_id":source["source_shot_id"],
             "source_shot_revision":source["source_shot_revision"],
             "source_shot_sha256":source["source_shot_sha256"],
@@ -226,6 +227,9 @@ class NativeSustainedPictureSound:
                             listener_path=listener_path)
                     render_scope={**plan,"operation":intent["operation"],
                                   "chunk_id":chunk_id,
+                                  "presentation_id":chunk_id,
+                                  "no_ffmpeg":True,
+                                  "original_sources_immutable":True,
                                   "approved_plan_sha256":intent["plan_sha256"],
                                   "source_tick":source_tick}
                     raw=self.render_png(

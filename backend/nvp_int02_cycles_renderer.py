@@ -184,12 +184,26 @@ class NativeCyclesOriginalRenderer:
     def render_png(self, *, scope, tick, camera_path, source_snapshot):
         if (type(scope) is not dict or
             scope.get("project_id")!=self.project_id or
-            scope.get("operation")!="nvp.int02.native_approved_edited_30s_derivative" or
+            scope.get("operation") not in (
+                "nvp.int02.native_approved_edited_30s_derivative",
+                "nvp.p1f.authorize_original_finite_chunk.v1") or
             scope.get("no_ffmpeg") is not True or
             scope.get("original_sources_immutable") is not True or
             source_snapshot.get("time_tick")!=tick or
             source_snapshot.get("scene_document_sha256")!=scope.get("scene_document_sha256")):
             raise RuntimeError("Cycles source frame not bound to native editor authorization")
+        if scope["operation"]=="nvp.p1f.authorize_original_finite_chunk.v1":
+            # P1-F can reuse this original OS-contained SHA-pinned renderer,
+            # but never by masquerading as an approved 30-second output.
+            # The host must have granted one finite exact-source chunk.
+            from backend.nvp_film_index import _id,_sha
+            _id(scope.get("chunk_id"),"separately authorized source picture chunk")
+            _sha(scope.get("approved_plan_sha256"))
+            if (scope.get("presentation_id")!=scope["chunk_id"] or
+                scope.get("source_tick")!=tick or
+                scope.get("output_frames_generated") is not False or
+                scope.get("full_film_master_approved") is not False):
+                raise RuntimeError("P1-F exact approved native source chunk scope changed")
         if camera_path is None:
             # An authored camera gap legitimately has a black frame. No
             # invented camera or arbitrary background animation is added.
