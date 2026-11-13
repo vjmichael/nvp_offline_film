@@ -240,5 +240,31 @@ class NativeEditActorAudioTests(unittest.TestCase):
             reel_layout(T + SAMPLE_TICK)
 
 
+    def test_p1f_refuses_to_render_placeholder_actor_or_claim_finished_movie(self):
+        from backend.nvp_p1f_p2_reel_plan import P1FReelPlan
+        from backend.nvp_p1f_cycles_source_admission import (
+            admit_original_frame, RenderSourceNotReady)
+        edit = self.publish("genuine_actor_edit", [self.segment()])
+        plan = P1FReelPlan(self.index)
+        receipt = plan.publish(
+            self.pid, "genuine_actor_plan", edit_id="genuine_actor_edit",
+            edit_revision=1,
+            expected_edit_document_sha256=edit["document_sha256"])
+        old_take = self.index.read_revision(
+            self.pid, "frozen_take", 1)["document_sha256"]
+        with self.assertRaisesRegex(
+                RenderSourceNotReady, "imported actor mesh"):
+            admit_original_frame(
+                self.index, self.pid, "genuine_actor_plan", 0, 0)
+        # A synthetic source fixture must not become a claimed Cycles output.
+        reopened = plan.read(self.pid, "genuine_actor_plan")
+        self.assertEqual(reopened["document_sha256"],
+                         receipt["document_sha256"])
+        self.assertFalse(reopened["data"]["picture_rendered"])
+        self.assertEqual(reopened["data"]["published_reels"], 0)
+        self.assertEqual(self.index.read_revision(
+            self.pid, "frozen_take", 1)["document_sha256"], old_take)
+
+
 if __name__ == "__main__":
     unittest.main()
