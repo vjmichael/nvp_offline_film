@@ -363,6 +363,10 @@ class OpenUSDSceneBridge:
             if type(rev) is not int or rev<1:
                 raise ValueError("Reusable USD asset must use an exact revision")
             record,layer=registry.open(project_id,aid,rev)
+            from backend.nvp_p1f_imported_actor import FORMAT as RIGGED_ACTOR
+            if (record["data"].get("format")==RIGGED_ACTOR and
+                    paths[path]!="actor"):
+                raise ValueError("Rigged imported USD must bind only to an actor")
             manifest={"path":path,"asset_id":aid,"asset_revision":rev,
                       "asset_document_sha256":record["document_sha256"],
                       "asset_layer_sha256":record["data"]["layer_sha256"]}
