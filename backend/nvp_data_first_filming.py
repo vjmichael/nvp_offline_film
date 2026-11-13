@@ -187,6 +187,7 @@ class NativeSceneSoundCapture:
         # source refuses initialization, release every earlier admitted
         # iterator before returning; no immutable source has been published.
         admitted_iterators=[]
+        admitted_iterator_ids=set()
         try:
             for entry in frozen_recordings:
                 try:
@@ -195,6 +196,12 @@ class NativeSceneSoundCapture:
                     iterator=iter(entry["pcm_chunks"])
                 except TypeError as exc:
                     raise ValueError("Captured PCM chunks must be iterable") from exc
+                # Two independent source identities must not consume the same
+                # one-shot device stream. Reject aliasing before reading PCM.
+                # Do not close an alias twice during admission cleanup.
+                if id(iterator) in admitted_iterator_ids:
+                    raise ValueError("Original PCM iterator shared by multiple sound sources")
+                admitted_iterator_ids.add(id(iterator))
                 entry["pcm_chunks"]=iterator
                 admitted_iterators.append(iterator)
         except BaseException:
