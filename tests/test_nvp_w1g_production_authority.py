@@ -8,7 +8,9 @@ from tools.nvp_w1g_production_authority import (
     WindowsCreatorUpgradeApproval, WindowsReleaseWorkerStopEvidence,
 )
 from tools.nvp_w1g_nsis_recovery import OwnedNSISRecovery
-from tools.nvp_w1g_owner_windows_acceptance import _read_owner_pinned_key
+from tools.nvp_w1g_owner_windows_acceptance import (
+    _read_owner_pinned_key, read_only_production_preflight,
+)
 
 
 class NativeReleaseAuthorityRefusal(unittest.TestCase):
@@ -153,6 +155,25 @@ class NativeReleaseAuthorityRefusal(unittest.TestCase):
             self.assertIsNone(inspection.pinned_reviewer_public_key)
             with self.assertRaisesRegex(PermissionError,"owner-pinned"):
                 inspection._require_signed_review({})
+
+
+    def test_preflight_cannot_accept_test_only_authority_or_create_journal(self):
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            programs=root/"Programs";programs.mkdir()
+            films=root/"Films";films.mkdir()
+            journal=root/"Journal";journal.mkdir()
+            owner=OwnedNSISRecovery(
+                programs,films,journal,native_approve=lambda scope:True,
+                os_workers_stopped=lambda:True,test_only_simulation=True)
+            tool=NativeNSISActivation(
+                owner,native_authorize=lambda scope:True,
+                os_worker_tree_evidence=lambda sha:True,
+                test_only_simulation=True)
+            with self.assertRaisesRegex(PermissionError,"original native Windows"):
+                read_only_production_preflight(owner,tool,lambda _:True,{})
+            self.assertFalse((journal/"nsis-activation.json").exists())
+            self.assertFalse((journal/"nsis-rollback.json").exists())
 
     def test_no_production_windows_authority_on_linux(self):
         import os
