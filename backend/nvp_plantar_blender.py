@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+from backend.nvp_w1g_legacy_blender_launch import run_trusted_blender
 from pathlib import Path
 
 from backend.nvp_blender_acceptance import blender_available
@@ -396,7 +397,7 @@ def run_native_marker_correction(service:PlantarCorrectionPlan,pid,sid,
         return {"status":"failed","step":"before_marker_audit","details":before}
     logs=[]
     for step,cmd in enumerate(commands,1):
-        try:ret=subprocess.run(cmd,capture_output=True,text=True,cwd=out,timeout=timeout)
+        try:ret=run_trusted_blender(cmd,capture_output=True,text=True,cwd=out,timeout=timeout)
         except subprocess.TimeoutExpired:
             return {"status":"failed","step":step,"reason":"Native contact correction timed out"}
         logs.append({"step":step,"exit_code":ret.returncode,

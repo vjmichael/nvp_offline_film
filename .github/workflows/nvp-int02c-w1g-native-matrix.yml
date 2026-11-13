@@ -35,6 +35,10 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_w1g_release_build_marker.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1f_reel_audit.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_supply_candidate.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_launch_surface_audit.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_legacy_blender_launch.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_filming_windows_release.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_filming_worker_custody.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_release_gate.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_production_authority.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_encrypted_review.py' -v
@@ -68,7 +72,9 @@ jobs:
           $files=@('test_nvp_int02_edited_film.py','test_nvp_int02_shot_composition.py',
             'test_nvp_w1g_native_package.py','test_nvp_w1g_protected_upgrade.py',
             'test_nvp_w1g_release_safety.py','test_nvp_w1g_release_build_marker.py',
-            'test_nvp_w1g_release_gate.py','test_nvp_w1f_reel_audit.py',
+            'test_nvp_w1g_release_gate.py','test_nvp_w1g_launch_surface_audit.py',
+            'test_nvp_w1g_legacy_blender_launch.py','test_nvp_filming_windows_release.py',
+            'test_nvp_filming_worker_custody.py','test_nvp_w1f_reel_audit.py',
             'test_nvp_w1g_supply_candidate.py','test_nvp_w1g_production_authority.py',
             'test_nvp_w1g_encrypted_review.py','test_nvp_w1g_supply_chain_hardening.py',
             'test_nvp_webview_ipc_surface.py','test_blender_worker.py')

@@ -2,6 +2,7 @@ import asyncio
 import numpy as np
 import concurrent.futures
 import subprocess
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from faster_whisper import WhisperModel
 
@@ -22,6 +23,13 @@ def decode_webm_to_pcm(audio_bytes: bytes) -> np.ndarray:
     Decodes browser WebM/Opus chunks into 16kHz raw PCM float32 for Whisper 
     using FFmpeg in memory, bypassing disk I/O.
     """
+    # Legacy browser WebM/FFmpeg STT is NOT NVP's native original PCM
+    # capture or the production desktop's speech-recognition path.
+    # A direct Windows Popen would escape the original release-wide
+    # Job Object/launch-slot admission policy. Refuse rather than
+    # quietly permit a second unmanaged installed media runtime.
+    if os.name=="nt":
+        raise RuntimeError("Retired WebM/FFmpeg STT cannot launch a Windows worker; use native PCM capture")
     process = subprocess.Popen(
         ['ffmpeg', '-i', 'pipe:0', '-f', 'f32le', '-ac', '1', '-ar', '16000', 'pipe:1'],
         stdin=subprocess.PIPE, 

@@ -94,6 +94,12 @@ def _ffmpeg_bin(override=None):
 
 
 def _run(args, *, timeout=120, input_bytes=None, label):
+    # Retired legacy FFmpeg color decode/export is not an authorized
+    # production Windows NVP process tree. Original native picture
+    # data is rendered/processed without this fallback.
+    import os
+    if os.name=="nt":
+        raise RuntimeError("Legacy FFmpeg color subprocess is blocked in Windows production")
     try:
         p = subprocess.run(args, input=input_bytes, capture_output=True,
                            timeout=timeout, check=False)

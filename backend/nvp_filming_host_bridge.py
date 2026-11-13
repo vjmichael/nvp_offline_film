@@ -14,18 +14,25 @@ import tempfile
 from backend.nvp_data_av_source import MAX_CHUNK_BYTES, MAX_CHUNKS
 
 from backend.nvp_filming_linux_session import LinuxFilmingSession
+from backend.nvp_filming_windows_session import WindowsFilmingSession
 from backend.nvp_data_first_filming import NativeSceneSoundCapture
 
 
-def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
-                                      recordings, timeout=5.0, **capture_options):
+def _finish_recording_and_freeze(session, capture, project_id, take_id, *,
+                                recordings, timeout=5.0, expected_scope, **capture_options):
     """Finalize a recorded batch only after independently verified process custody.
 
     Always attempt process-tree shutdown, including on cancellation or recorder
     failure. A failed shutdown cannot authorize a Take, even if PCM exists.
     """
-    if not isinstance(session, LinuxFilmingSession):
-        raise TypeError("Host-owned Linux filming session required")
+    if expected_scope=="linux-cgroup-v2":
+        if not isinstance(session,LinuxFilmingSession):
+            raise TypeError("Host-owned Linux filming session required")
+    elif expected_scope=="windows-job-object":
+        if not isinstance(session,WindowsFilmingSession):
+            raise TypeError("Original Windows Job Object filming session required")
+    else:
+        raise RuntimeError("Unrecognized original kernel filming custody scope")
     batch = None
     frozen_options = None
     recording_error = None
@@ -36,6 +43,10 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
     # The worker may own the PCM iterator. Drain it while the worker is alive;
     # publication after shutdown must never depend on a terminated producer.
     with ExitStack() as streams:
+        if expected_scope=="windows-job-object":
+            # The original filming host lease survives the worker kill and
+            # protects the ENTIRE immutable Take publication or refusal.
+            streams.callback(session.close)
         try:
             # Even invalid host inputs must not leave an admitted worker running.
             # Validate them inside the protected shutdown region, not before it.
@@ -124,7 +135,7 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
             custody_receipt.get("process_tree_custody_verified") is not True or
             custody_receipt.get("empty_group_verified") is not True or
             custody_receipt.get("worker_exit_verified") is not True or
-            custody_receipt.get("scope") != "linux-cgroup-v2"):
+            custody_receipt.get("scope") != expected_scope):
             raise RuntimeError("Filming custody unverified; frozen Take publication denied")
         if recording_error is not None:
             raise recording_error
@@ -142,3 +153,19 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
                 raise RuntimeError("Original PCM spool integrity verification failed")
             source.seek(0)
         return capture.capture(project_id, take_id, recordings=batch, **frozen_options)
+
+
+def finish_linux_recording_and_freeze(session,capture,project_id,take_id,*,
+                                      recordings,timeout=5.0,**capture_options):
+    """Original Linux cgroup-v2 native film publication boundary."""
+    return _finish_recording_and_freeze(
+        session,capture,project_id,take_id,recordings=recordings,
+        timeout=timeout,expected_scope="linux-cgroup-v2",**capture_options)
+
+
+def finish_windows_recording_and_freeze(session,capture,project_id,take_id,*,
+                                        recordings,timeout=5.0,**capture_options):
+    """Original Windows Job tree + release-fence + held host lease publication."""
+    return _finish_recording_and_freeze(
+        session,capture,project_id,take_id,recordings=recordings,
+        timeout=timeout,expected_scope="windows-job-object",**capture_options)

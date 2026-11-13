@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from backend.nvp_w1g_legacy_blender_launch import run_trusted_blender
 from pathlib import Path
 
 from backend.nvp_blender_acceptance import blender_available
@@ -114,7 +115,7 @@ def inspect_imported_anatomy(service:FootAnatomyAttachment,pid,sid,
     script.write_text(ANATOMY_ATTACHMENT_NATIVE,"utf8")
     cmd=[exe["path"],"-b",str(source),"-t","2","--python-exit-code","30",
          "--python",str(script),"--","--source",str(manifest),"--result",str(report_path)]
-    try:r=subprocess.run(cmd,cwd=out,capture_output=True,text=True,timeout=timeout)
+    try:r=run_trusted_blender(cmd,cwd=out,capture_output=True,text=True,timeout=timeout)
     except subprocess.TimeoutExpired:return {"status":"failed","reason":"Native anatomy survey timed out"}
     if r.returncode or not report_path.is_file():
         return {"status":"failed","reason":"External Blender imported foot anatomy inspection refused",

@@ -1,6 +1,7 @@
 """DA-03 direct-child custody tests; no native process-tree claim."""
 import subprocess
 import math
+import os
 import sys
 import unittest
 from unittest import mock
@@ -17,6 +18,7 @@ class FakeJournal:
         return {"take_id": take_id, "state": "INTERRUPTED"}
 
 
+@unittest.skipIf(os.name=="nt","Legacy direct-child filming retired on Windows; use native Job session")
 class FilmingWorkerCustodyTests(unittest.TestCase):
     def spawn(self):
         return subprocess.Popen([sys.executable, "-c",
@@ -165,3 +167,15 @@ class FilmingWorkerCustodyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WindowsDirectChildRefusal(unittest.TestCase):
+    @unittest.skipUnless(os.name=="nt","Windows original kernel gate only")
+    def test_direct_popen_can_never_publish_original_take(self):
+        process=subprocess.Popen([sys.executable,"-c","import time; time.sleep(5)"],
+              stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:
+            with self.assertRaisesRegex(RuntimeError,"direct-child filming retired"):
+                OwnedFilmingWorker(process)
+        finally:
+            process.kill();process.wait()

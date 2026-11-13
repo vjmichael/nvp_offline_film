@@ -7,6 +7,7 @@ Windows Job Objects / Linux cgroup custody remain a separate acceptance gate.
 from __future__ import annotations
 
 import subprocess
+import os
 import math
 import time
 from dataclasses import dataclass
@@ -29,6 +30,11 @@ class OwnedFilmingWorker:
     """
 
     def __init__(self, process: subprocess.Popen):
+        # Production Windows MUST use WindowsFilmingSession, which retains
+        # the original Job Object and release-wide launch slot. Even an
+        # explicit legacy direct-child opt-in cannot bypass this gate.
+        if os.name=="nt":
+            raise RuntimeError("Windows direct-child filming retired: use native WindowsFilmingSession")
         if not isinstance(process, subprocess.Popen):
             raise TypeError("An actual host-owned Popen handle is required")
         self._process = process

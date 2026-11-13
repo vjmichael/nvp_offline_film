@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+from backend.nvp_w1g_legacy_blender_launch import run_trusted_blender
 from pathlib import Path
 
 from backend.nvp_blender_acceptance import blender_available
@@ -372,7 +373,7 @@ def run_footlock_acceptance(service:FootLockPlan,pid,sid,directory,*,
     ]
     logs=[]
     for number,cmd in enumerate(commands,1):
-        try:p=subprocess.run(cmd,cwd=out,capture_output=True,text=True,timeout=timeout)
+        try:p=run_trusted_blender(cmd,cwd=out,capture_output=True,text=True,timeout=timeout)
         except subprocess.TimeoutExpired:
             return {'status':'failed','step':number,'reason':'Blender foot lock timed out'}
         logs.append({'step':number,'exit_code':p.returncode,'stdout':p.stdout[-2500:],
