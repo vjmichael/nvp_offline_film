@@ -328,9 +328,16 @@ def required(name):
     pos=args.index(name)+1
     if pos>=len(args): raise RuntimeError("Incomplete sealed preview argument")
     value=args[pos]
-    if not value or "/" in value or chr(92) in value or value in (".",".."):
+    # Only the host supervisor can supply these exact absolute paths after
+    # source/output verification. Blender's cwd is the sealed job directory.
+    # A crafted path, foreign source, renamed output or traversal is denied.
+    expected={"--manifest":"slate_source_preview.json",
+              "--preview":"preview.png"}.get(name)
+    if (expected is None or not os.path.isabs(value) or
+        os.path.normcase(os.path.normpath(value))!=
+            os.path.normcase(os.path.join(os.getcwd(),expected))):
         raise RuntimeError("Untrusted preview output path")
-    return value
+    return expected
 manifest=required("--manifest");output=required("--preview")
 with open(os.path.join(os.getcwd(),manifest),"r",encoding="utf8") as handle:
     src=json.load(handle)
