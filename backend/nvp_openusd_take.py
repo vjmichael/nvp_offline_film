@@ -148,6 +148,8 @@ class OpenUSDTakeCapture:
                 camera["scene_id"]!=scene_id or
                 camera["scene_revision"]!=scene_revision):
                 raise PermissionError("Original camera plan changed during verified microphone Take freeze")
+            if len(canonical(native_capture_attestations))>256*1024:
+                raise PermissionError("Original native Take evidence exceeds immutable manifest budget")
             audit_digest=audit_sha256(native_capture_attestations)
         elif any(v is not None for v in (
                 original_camera_timeline_id,original_camera_timeline_revision,
