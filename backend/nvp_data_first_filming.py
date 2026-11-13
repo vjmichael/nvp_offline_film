@@ -466,5 +466,10 @@ class NativeSceneSoundCapture:
                         close()
                     except Exception:
                         pass
-            for spool in spooled:
-                spool.close()
+            # Temporary-file close can fail due to delayed filesystem I/O.
+            # Preserve the original capture outcome and cancellation receipt.
+            for spool in reversed(spooled):
+                try:
+                    spool.close()
+                except Exception:
+                    pass
