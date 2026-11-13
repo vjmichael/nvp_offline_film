@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 import struct
 
@@ -262,6 +263,37 @@ def extract_original_glb_skin(payload):
           "joint_indices":mapped,"joint_weights":norm_weights,
           "display_color":[float(v) for v in color[:3]],
           "roughness":float(rough),"source_glb_sha256":info["sha256"]}
+    # Real GLB morph POSITION deltas, never a procedural mouth substitute.
+    # Original labels are retained beside canonical USD-safe names.
+    originals=doc["meshes"][bound[0]["mesh"]].get("extras",{}).get(
+        "targetNames",[])
+    targets=prim.get("targets",[])
+    if type(targets) is not list or len(targets)>16:
+        raise ValueError("Source GLB facial morph count exceeds native bounds")
+    if originals and (type(originals) is not list or len(originals)!=len(targets)):
+        raise ValueError("Original GLB facial target labels do not match source count")
+    faces_source=[]
+    used=set()
+    for number,morph in enumerate(targets):
+        if type(morph) is not dict or set(morph)!={"POSITION"}:
+            raise ValueError("Only original GLB POSITION facial morphs are supported")
+        offsets=_accessor(doc,binary,morph["POSITION"],
+                          type_name="VEC3",types={5126})
+        if len(offsets)!=len(source_points):
+            raise ValueError("Original GLB facial morph vertex count differs from source mesh")
+        label=originals[number] if originals else "morph_"+str(number).zfill(2)
+        if type(label) is not str or not 1<=len(label)<=64:
+            raise ValueError("Invalid original GLB morph target name")
+        name=re.sub(r"[^a-z0-9_]","_",label.lower())
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,39}",name) or name in used:
+            raise ValueError("Source GLB morph name cannot uniquely map to a native USD channel")
+        used.add(name)
+        faces_source.append({
+            "name":name,"source_name":label,
+            "deltas":[[float(v[0]),-float(v[2]),float(v[1])]
+                      for v in offsets]})
+    if faces_source:
+        skin["facial_targets"]=faces_source
     normalize_skin(skin,len(order))
     return {"source_joint_names":[nodes[n]["name"] for n in order],
             "joints":[names[n] for n in order],
@@ -308,7 +340,8 @@ class ImportedCharacterSources:
              "procedural_character_substitute":False,
              "source_vertex_count":decoded["original_vertex_count"],
              "source_triangle_count":decoded["original_triangle_count"],
-             "joint_count":len(decoded["joints"])}
+             "joint_count":len(decoded["joints"]),
+             "original_facial_target_count":len(decoded["skin"].get("facial_targets",[]))}
         try:
             existing=self.index.read_revision(project_id,character_asset_id,1)
         except KeyError:
