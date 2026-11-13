@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - 'backend/nvp_p1de_edit_audio.py'
+      - 'backend/nvp_p1f_p2_reel_plan.py'
       - 'tests/test_nvp_p1de_edit_audio_native.py'
       - '.github/workflows/nvp-p1de-native-edit-audio.yml'
   workflow_dispatch:
@@ -53,6 +54,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_p1de_edit_audio.py tests/test_nvp_p1de_edit_audio_native.py
+          python -m compileall -q backend/nvp_p1de_edit_audio.py backend/nvp_p1f_p2_reel_plan.py tests/test_nvp_p1de_edit_audio_native.py
           python -m unittest discover -s tests -p 'test_nvp_p1de_edit_audio_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
