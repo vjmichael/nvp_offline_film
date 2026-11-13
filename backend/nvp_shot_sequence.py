@@ -577,7 +577,7 @@ def run_shot_acceptance(seq,project_id,scene_id,directory,*,executable='blender'
     """
     from pathlib import Path
     import subprocess
-from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
+    from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
     from backend.nvp_blender_acceptance import blender_available
     root=Path(directory).resolve();root.mkdir(parents=True,exist_ok=True)
     package=seq.export(project_id,scene_id)
