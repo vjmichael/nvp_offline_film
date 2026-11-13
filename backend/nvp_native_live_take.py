@@ -51,7 +51,7 @@ class NativeLiveSoundSession:
                  sound_timeline_id,source_id,emitter_path,
                  event_id,subject_id,
                  native_approve_start,native_approve_freeze,
-                 device_factory=None):
+                 device_factory=None,native_pcm_auditor=None):
         if not isinstance(index,FilmIndex):
             raise TypeError("Live recording requires original FilmIndex")
         if not callable(native_approve_start) or not callable(native_approve_freeze):
@@ -78,6 +78,12 @@ class NativeLiveSoundSession:
         self.approve_start=native_approve_start
         self.approve_freeze=native_approve_freeze
         self.device_factory=device_factory or _capture_device
+        if native_pcm_auditor is not None:
+            from backend.nvp_p1a_original_capture_worker_bridge import OriginalMicrophoneNativeWorkerAudit
+            if type(native_pcm_auditor) is not OriginalMicrophoneNativeWorkerAudit:
+                raise TypeError("Host-only compiled original microphone worker audit required")
+        self.native_pcm_auditor=native_pcm_auditor
+        self._sealed_original_sha=None
         self.plan=ExactTimeShotSequence(index).read(
             project_id,camera_timeline_id,camera_timeline_revision)
         if (self.plan["scene_id"]!=scene_id or
@@ -176,7 +182,13 @@ class NativeLiveSoundSession:
         self._tmp=Path(tempfile.mkdtemp(
             prefix="nvp-live-original-",dir=str(self._journal.root)))
         self._spool=self._tmp/"recording.pcm"
-        try:self._journal.begin(self._tmp,scope)
+        try:
+            if self.native_pcm_auditor is not None and os.name=="nt":
+                # Device PCM is not allowed to begin in plaintext scratch
+                # when the production compiled-worker audit is enabled.
+                from backend.nvp_w1g_encrypted_source import require_efs_stage
+                require_efs_stage(self._tmp)
+            self._journal.begin(self._tmp,scope)
         except Exception:
             shutil.rmtree(self._tmp)
             self._tmp=None
@@ -218,9 +230,13 @@ class NativeLiveSoundSession:
             raise RuntimeError("Recorded microphone samples are incomplete")
         # The worker has closed and fsynced the source bytes. This is only
         # evidence of a durable sound signal, never Take approval.
+        if self.native_pcm_auditor is not None and os.name=="nt":
+            from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+            verify_efs_inputs(self._tmp,("recording.pcm",))
+        self._sealed_original_sha=self._source_checksum()
         self._journal.update(
             self._tmp,phase="DRAINED",recorded_samples=self._count,
-            pcm_sha256=self._source_checksum())
+            pcm_sha256=self._sealed_original_sha)
 
     def _source_checksum(self):
         h=sha256()
@@ -229,10 +245,15 @@ class NativeLiveSoundSession:
         return h.hexdigest()
 
     def _chunks(self):
+        digest=sha256()
         with self._spool.open("rb") as source:
             while part:=source.read(CHUNK_BYTES):
                 if len(part)%2:raise RuntimeError("Non-PCM source spool")
+                digest.update(part)
                 yield part
+        if (self._sealed_original_sha is not None and
+            digest.hexdigest()!=self._sealed_original_sha):
+            raise RuntimeError("Original microphone PCM changed during Take publication")
 
     def finish(self):
         if self._state!="RECORDING":
@@ -241,8 +262,22 @@ class NativeLiveSoundSession:
         try:
             self._drain()
             end=self._count*SAMPLE_TICK
+            native_audit=None
+            if self.native_pcm_auditor is not None:
+                native_audit=self.native_pcm_auditor.verify_original_spool(
+                    project_id=self.project_id,take_id=self.take_id,
+                    source_id=self.source_id,scene_id=self.scene_id,
+                    scene_document_sha256=self.plan["scene_document_sha256"],
+                    camera_timeline_document_sha256=self.plan["document_sha256"],
+                    subject_id=self.subject_id,emitter_path=self.emitter_path,
+                    source_path=self._spool,recorded_samples=self._count,
+                    original_pcm_sha256=self._sealed_original_sha,
+                    start_tick=0,end_tick=end)
             recorded=NativeSceneSoundCapture(
-                self.index,approve_take=self.approve_freeze)
+                self.index,approve_take=self.approve_freeze,
+                protected_spool_root=(
+                    self._tmp if native_audit is not None and os.name=="nt"
+                    else None))
             receipt=recorded.capture(
                 self.project_id,self.take_id,
                 scene_id=self.scene_id,scene_revision=self.scene_revision,
@@ -265,6 +300,8 @@ class NativeLiveSoundSession:
                     "actual_recorded_samples":self._count,
                     "actual_audio_end_tick":str(end),
                     "device_runtime":"native_miniaudio_pcm",
+                    "compiled_capture_worker_audit":native_audit,
+                    "compiled_worker_is_device_recorder":False,
                     "source_modified":False}
         except Exception:
             self._state="FAILED"
