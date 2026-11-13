@@ -499,7 +499,7 @@ class NativeSlatePreviewHost:
             camera_path,settings,quality)
         cached=self.cache.lookup(project_id,key)
         if cached:
-            return {"status":"CACHE_HIT",**cached,
+            return {**cached,"status":"CACHE_HIT",
                     "presentation":"pre_take_camera",
                     "source_scene_document_sha256":source["document_sha256"],
                     "source_data_modified":False,"new_task_started":False}
