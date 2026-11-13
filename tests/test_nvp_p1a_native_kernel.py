@@ -53,7 +53,7 @@ def process_terminated_windows(pid):
     import win32api,win32con,win32event
     import pywintypes
     try:
-        handle=win32api.OpenProcess(0x00100000,False,pid)  # SYNCHRONIZE
+        handle=win32api.OpenProcess(0x00101400,False,pid)  # SYNCHRONIZE
     except pywintypes.error as exc:
         if exc.winerror==87:  # ERROR_INVALID_PARAMETER: process no longer exists
             return True
@@ -76,7 +76,7 @@ def test_native_windows_job_cancel_detached_descendant(tmp_path):
         try:
             wait_ready(path/"descendant.ready",p)
             pid=int((path/"descendant.pid").read_text())
-            handle=win32api.OpenProcess(0x00100000,False,pid)
+            handle=win32api.OpenProcess(0x00101400,False,pid)
             assert win32job.IsProcessInJob(handle,p._job), "Detached descendant escaped Windows Job"
             assert win32event.WaitForSingleObject(handle,0)==win32event.WAIT_TIMEOUT
             p.terminate_tree()

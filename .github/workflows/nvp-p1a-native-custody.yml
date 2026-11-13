@@ -80,7 +80,7 @@ jobs:
             -p Delegate=yes -p DelegateSubgroup=nvp-host \
             --working-directory="$ROOT" \
             /usr/bin/env "PYTHONPATH=$ROOT" NVP_REQUIRE_DELEGATED_CGROUP=1 \
-            "$PYTHON" -m pytest -vv tests/test_nvp_p1a_native_kernel.py -k 'linux_'
+            "$PYTHON" tools/nvp_p1a_delegated_scope.py
       - name: Record native kernel and exact source
         if: always()
         shell: bash
