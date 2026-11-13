@@ -15,7 +15,9 @@ from tools.nvp_w1g_reviewed_release import (
     FORMAT, _canonical, license_review_digest, verify_signed_release_review,
 )
 from backend.nvp_w1g_encrypted_source import require_efs_stage, verify_efs_inputs
-from tools.nvp_w1g_windows_efs_proof import _require_new_boot
+from tools.nvp_w1g_windows_efs_proof import (
+    _require_new_boot,_require_efs_recovery_principal,
+)
 
 
 class SignedNativeReleaseReviewContracts(unittest.TestCase):
@@ -103,6 +105,22 @@ class EFSDistinctBootAcceptanceContracts(unittest.TestCase):
             _require_new_boot({},1700003000)
         with self.assertRaisesRegex(PermissionError,"boot observation"):
             _require_new_boot({"windows_boot_estimate_epoch":True},1700003000)
+
+    def test_cross_principal_evidence_refuses_same_windows_token(self):
+        original={"original_windows_token_sid":"S-1-5-21-123-456-789-1000"}
+        with self.assertRaisesRegex(PermissionError,"different Windows token"):
+            _require_efs_recovery_principal(
+                original,"S-1-5-21-123-456-789-1000",cross_principal=True)
+        with self.assertRaisesRegex(PermissionError,"original Windows token"):
+            _require_efs_recovery_principal(
+                original,"S-1-5-21-123-456-789-2000",cross_principal=False)
+        with self.assertRaisesRegex(PermissionError,"token identity missing"):
+            _require_efs_recovery_principal(
+                {}, "S-1-5-21-123-456-789-2000",cross_principal=True)
+        self.assertTrue(_require_efs_recovery_principal(
+            original,"S-1-5-21-123-456-789-2000",cross_principal=True))
+        self.assertTrue(_require_efs_recovery_principal(
+            original,"S-1-5-21-123-456-789-1000",cross_principal=False))
 
     def test_conservative_observed_new_boot_is_only_a_reopen_gate(self):
         # This is a deterministic logic fixture, NOT a real Windows restart
