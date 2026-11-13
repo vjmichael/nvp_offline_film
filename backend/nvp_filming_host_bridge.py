@@ -8,8 +8,12 @@ from __future__ import annotations
 from copy import deepcopy
 from hashlib import sha256
 from contextlib import ExitStack
+import io
+from pathlib import Path
 import struct
 import tempfile
+
+from backend.nvp_w1g_encrypted_source import require_efs_stage, verify_efs_inputs
 
 from backend.nvp_data_av_source import MAX_CHUNK_BYTES, MAX_CHUNKS
 
@@ -17,9 +21,14 @@ from backend.nvp_filming_linux_session import LinuxFilmingSession
 from backend.nvp_filming_windows_session import WindowsFilmingSession
 from backend.nvp_data_first_filming import NativeSceneSoundCapture
 
+# Unencrypted OS temp storage may never receive original Windows capture PCM.
+# Larger Takes require an explicitly provisioned and verified EFS job scratch.
+WINDOWS_RAM_PCM_BUDGET=64*1024*1024
+
 
 def _finish_recording_and_freeze(session, capture, project_id, take_id, *,
-                                recordings, timeout=5.0, expected_scope, **capture_options):
+                                recordings, timeout=5.0, expected_scope,
+                                encrypted_pcm_scratch=None, **capture_options):
     """Finalize a recorded batch only after independently verified process custody.
 
     Always attempt process-tree shutdown, including on cancellation or recorder
@@ -73,11 +82,25 @@ def _finish_recording_and_freeze(session, capture, project_id, take_id, *,
             # Source scope, consent and publication options must be fixed before
             # shutdown callbacks run; never trust caller-owned nested references.
             frozen_options = deepcopy(capture_options)
-            # Bound original PCM before terminating its producer. Spooled files
-            # preserve streaming semantics without holding a full Take in RAM.
+            # Windows original PCM MUST NOT silently roll over into plaintext
+            # system temp. Small Takes remain wholly in memory. A larger Take
+            # requires a caller-provisioned dedicated EFS directory, verified
+            # before creation and again on each new, still-empty spool file.
+            secure_scratch=None
+            if expected_scope=="windows-job-object" and encrypted_pcm_scratch is not None:
+                secure_scratch=Path(encrypted_pcm_scratch)
+                require_efs_stage(secure_scratch)
             for event in batch:
-                spool = streams.enter_context(tempfile.SpooledTemporaryFile(
-                    max_size=MAX_CHUNK_BYTES, mode="w+b"))
+                if expected_scope!="windows-job-object":
+                    spool = streams.enter_context(tempfile.SpooledTemporaryFile(
+                        max_size=MAX_CHUNK_BYTES, mode="w+b"))
+                elif secure_scratch is None:
+                    spool = streams.enter_context(io.BytesIO())
+                else:
+                    spool = streams.enter_context(tempfile.NamedTemporaryFile(
+                        mode="w+b", prefix=".nvp-original-pcm-",
+                        dir=secure_scratch, delete=True))
+                    verify_efs_inputs(secure_scratch, (Path(spool.name).name,))
                 count = 0
                 digest = sha256()
                 for chunk in event["pcm_chunks"]:
@@ -87,6 +110,11 @@ def _finish_recording_and_freeze(session, capture, project_id, take_id, *,
                     batch_pcm_bytes += len(chunk)
                     if batch_pcm_bytes > MAX_CHUNK_BYTES * MAX_CHUNKS:
                         raise ValueError("Original PCM recording batch exceeds spool budget")
+                    if (expected_scope=="windows-job-object" and
+                        secure_scratch is None and
+                        batch_pcm_bytes+4*(count+1)>WINDOWS_RAM_PCM_BUDGET):
+                        raise PermissionError(
+                            "Original PCM exceeds RAM-only staging; provision EFS scratch")
                     header = struct.pack("<I", len(chunk))
                     if spool.write(header) != 4 or spool.write(chunk) != len(chunk):
                         raise OSError("Incomplete original PCM spool write")
@@ -164,8 +192,10 @@ def finish_linux_recording_and_freeze(session,capture,project_id,take_id,*,
 
 
 def finish_windows_recording_and_freeze(session,capture,project_id,take_id,*,
-                                        recordings,timeout=5.0,**capture_options):
-    """Original Windows Job tree + release-fence + held host lease publication."""
+                                        recordings,timeout=5.0,
+                                        encrypted_pcm_scratch=None,**capture_options):
+    """Native Job custody; RAM-only PCM or explicitly EFS-protected spill."""
     return _finish_recording_and_freeze(
         session,capture,project_id,take_id,recordings=recordings,
-        timeout=timeout,expected_scope="windows-job-object",**capture_options)
+        timeout=timeout,expected_scope="windows-job-object",
+        encrypted_pcm_scratch=encrypted_pcm_scratch,**capture_options)
