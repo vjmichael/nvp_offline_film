@@ -11,6 +11,8 @@ on:
       - 'backend/nvp_p1f_cycles_source_admission.py'
       - 'backend/nvp_p1f_imported_actor.py'
       - 'backend/nvp_p1f_cycles_picture_sound.py'
+      - 'backend/nvp_p1f_multishot_reel.py'
+      - 'tests/test_nvp_p1f_multishot_recovery.py'
       - 'tools/nvp_p1f_cycles_actor_worker.py'
       - 'backend/nvp_openusd_scene.py'
       - 'backend/nvp_openusd_assets.py'
@@ -61,7 +63,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_p1de_edit_audio.py backend/nvp_p1f_p2_reel_plan.py backend/nvp_p1f_cycles_source_admission.py backend/nvp_p1f_imported_actor.py backend/nvp_p1f_cycles_picture_sound.py tools/nvp_p1f_cycles_actor_worker.py tests/test_nvp_p1de_edit_audio_native.py tests/test_nvp_p1f_imported_actor_native.py
+          python -m compileall -q backend/nvp_p1de_edit_audio.py backend/nvp_p1f_p2_reel_plan.py backend/nvp_p1f_cycles_source_admission.py backend/nvp_p1f_imported_actor.py backend/nvp_p1f_cycles_picture_sound.py backend/nvp_p1f_multishot_reel.py tools/nvp_p1f_cycles_actor_worker.py tests/test_nvp_p1de_edit_audio_native.py tests/test_nvp_p1f_imported_actor_native.py
           python -m unittest discover -s tests -p 'test_nvp_p1de_edit_audio_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_p1f_imported_actor_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_multishot_recovery.py' -v
