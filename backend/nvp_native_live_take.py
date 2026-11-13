@@ -191,7 +191,7 @@ class NativeLiveSoundSession:
             prefix="nvp-live-original-",dir=str(self._journal.root)))
         self._spool=self._tmp/"recording.pcm"
         try:
-            if self.native_pcm_auditor is not None and os.name=="nt":
+            if (self.native_pcm_auditor is not None or self.device_factory is None) and os.name=="nt":
                 # Device PCM is not allowed to begin in plaintext scratch
                 # when the production compiled-worker audit is enabled.
                 from backend.nvp_w1g_encrypted_source import require_efs_stage
@@ -251,7 +251,7 @@ class NativeLiveSoundSession:
             raise RuntimeError("Recorded microphone samples are incomplete")
         # The worker has closed and fsynced the source bytes. This is only
         # evidence of a durable sound signal, never Take approval.
-        if self.native_pcm_auditor is not None and os.name=="nt":
+        if (self.native_pcm_auditor is not None or self.device_factory is None) and os.name=="nt":
             from backend.nvp_w1g_encrypted_source import verify_efs_inputs
             verify_efs_inputs(self._tmp,("recording.pcm",))
         self._sealed_original_sha=self._source_checksum()
@@ -297,7 +297,7 @@ class NativeLiveSoundSession:
             recorded=NativeSceneSoundCapture(
                 self.index,approve_take=self.approve_freeze,
                 protected_spool_root=(
-                    self._tmp if native_audit is not None and os.name=="nt"
+                    self._tmp if (native_audit is not None or self.device_factory is None) and os.name=="nt"
                     else None))
             receipt=recorded.capture(
                 self.project_id,self.take_id,
