@@ -116,9 +116,10 @@ class NativeActorSceneCasting:
         seen_actors=set()
         identities=ActorDirectory(self.index,verify_director_action=lambda *_:False)
         for number,item in enumerate(cast,1):
-            if type(item) is not dict or set(item)!={
-                "actor_id","character_asset_id","position",
-                "motion_joint","travel"}:
+            old_fields={"actor_id","character_asset_id","position",
+                        "motion_joint","travel"}
+            face_fields=old_fields|{"face_target","face_strength"}
+            if type(item) is not dict or set(item) not in (old_fields,face_fields):
                 raise ValueError("Scene cast requires exact ActorID/source/pose choices")
             actor=_id(item["actor_id"],"source scene ActorID")
             asset=_id(item["character_asset_id"],"source skinned GLB asset")
@@ -137,6 +138,15 @@ class NativeActorSceneCasting:
                 raise ValueError("Acting motion must select an actual original rig joint")
             if type(travel) not in (int,float) or not math.isfinite(travel) or abs(travel)>0.5:
                 raise ValueError("Authored acting joint motion exceeds 0.5 metre")
+            face_target=item.get("face_target")
+            face_strength=item.get("face_strength",0.0)
+            names={x["name"] for x in decoded["skin"].get("facial_targets",[])}
+            if ((face_target is not None and face_target not in names) or
+                (type(face_strength) not in (int,float) or
+                 not math.isfinite(face_strength) or
+                 not 0<=face_strength<=1) or
+                (face_target is None and face_strength!=0)):
+                raise ValueError("Facial expression must be an actual original GLB morph")
             path="/World/Actor"+str(number).zfill(3)
             checked.append({
                 "actor_id":actor,"character_asset_id":asset,
@@ -144,6 +154,7 @@ class NativeActorSceneCasting:
                 "original_glb_sha256":registry["sha"],
                 "path":path,"position":[float(v) for v in position],
                 "motion_joint":motion,"travel":float(travel),
+                "face_target":face_target,"face_strength":float(face_strength),
             })
         scope={"operation":FORMAT,"project_id":project_id,
                "scene_id":scene_id,"creator_cast_sha256":_sha(checked),
@@ -160,6 +171,11 @@ class NativeActorSceneCasting:
         rigs=[]
         actor_bindings=[]
         imported=[]
+        parameters=[{
+            "path":"/World/Key","property":"light.intensity",
+            "samples":[{"tick":0,"value":300.0},
+                       {"tick":TICKS_PER_SECOND,"value":300.0}]
+        }]
         for source in checked:
             # Source read, hash, and extracted geometry are reverified
             # AFTER approval, before any new scene is made authoritative.
@@ -181,21 +197,28 @@ class NativeActorSceneCasting:
                              "path":source["path"],
                              "character_asset_id":source["character_asset_id"],
                              "character_asset_revision":1})
+            if source["face_target"] is not None:
+                parameters.append({
+                    "path":source["path"],
+                    "property":"face."+source["face_target"],
+                    "samples":[{"tick":0,"value":0.0},
+                               {"tick":TICKS_PER_SECOND,
+                                "value":source["face_strength"]}],
+                })
         scene=OpenUSDSceneBridge(self.index).publish(
             project_id,scene_id,prims=prims,curves=[],native_schemas=True,
             skeletal_rigs=rigs,actor_bindings=actor_bindings,
             imported_character_sources=imported,
-            # Actual native SphereLight authored at a useful constant level;
-            # this is an explicit initial lighting authoring choice.
-            performance_channels=[{
-                "path":"/World/Key","property":"light.intensity",
-                "samples":[{"tick":0,"value":300.0},
-                           {"tick":TICKS_PER_SECOND,"value":300.0}]
-            }])
+            # Explicit creator-selected facial and original authored light
+            # controls; never inferred from a GLB filename or recorded voice.
+            performance_channels=parameters)
         return {"format":FORMAT,"scene_id":scene_id,
                 "scene_revision":scene["revision"],
                 "scene_document_sha256":scene["document_sha256"],
                 "cast":checked,"imported_glb_skins":len(rigs),
-                "source_film_time_animated":any(x["travel"]!=0 for x in checked),
+                "source_film_time_animated":any(
+                    x["travel"]!=0 or x["face_strength"]!=0 for x in checked),
+                "original_glb_facial_shapes_animated":sum(
+                    x["face_target"] is not None for x in checked),
                 "original_sources_modified":False,"picture_rendered":False,
                 "director_authorized":True}
