@@ -24,6 +24,10 @@
 #include <string>
 #include <vector>
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <bcrypt.h>
 #pragma comment(lib,"bcrypt.lib")
@@ -37,7 +41,7 @@
 
 namespace fs=std::filesystem;
 using Bytes=std::vector<unsigned char>;
-static constexpr size_t MAX_INPUT=8*1024*1024;
+static constexpr size_t NVP_WORKER_MAX_FILE_BYTES=8*1024*1024;
 static const std::string ROLE=NVP_WORKER_ROLE;
 
 static void require(bool ok,const char *message) {
@@ -47,7 +51,7 @@ static void verify_name(const fs::path &path) {
     require(path.filename()==path && !path.empty(),"Only bounded local worker files permitted");
     require(!fs::is_symlink(path),"Linked worker input/output forbidden");
 }
-static Bytes read_file(const std::string &name,size_t limit=MAX_INPUT) {
+static Bytes read_file(const std::string &name,size_t limit=NVP_WORKER_MAX_FILE_BYTES) {
     fs::path path(name);verify_name(path);
     require(fs::is_regular_file(path),"Required source/input absent");
     const auto len=fs::file_size(path);
@@ -62,7 +66,7 @@ static Bytes read_file(const std::string &name,size_t limit=MAX_INPUT) {
 static void write_file(const std::string &name,const Bytes &data) {
     fs::path path(name);verify_name(path);
     require(!fs::exists(path),"Never overwrite original/previous worker output");
-    require(!data.empty() && data.size()<=MAX_INPUT+1024,
+    require(!data.empty() && data.size()<=NVP_WORKER_MAX_FILE_BYTES+1024,
             "Worker output outside finite bounds");
     std::ofstream out(path,std::ios::binary|std::ios::out|std::ios::trunc);
     require(bool(out),"Worker output creation failed");
@@ -258,7 +262,7 @@ static Operation delivery(){
     append_u64(out,audio.size());
     out.insert(out.end(),picture.begin(),picture.end());
     out.insert(out.end(),audio.begin(),audio.end());
-    require(out.size()<=MAX_INPUT+1024,"Delivery bundle exceeds safety bound");
+    require(out.size()<=NVP_WORKER_MAX_FILE_BYTES+1024,"Delivery bundle exceeds safety bound");
     write_file("delivery.bundle",out);
     return {out,"delivery.bundle","finite_native_media_bundle"};
 }
