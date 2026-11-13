@@ -61,7 +61,7 @@ def run_owned_subprocess(command, *, cwd=None, timeout=120, check=False,
         if (stream not in (None,subprocess.PIPE,subprocess.DEVNULL)
             and not hasattr(stream,"fileno")):
             raise ValueError("Untrusted original native output destination")
-    if os.name!="nt":
+    if os.name != "nt":
         return subprocess.run(
             command,cwd=cwd,timeout=timeout,check=check,
             stdin=stdin,stdout=stdout,stderr=stderr,
