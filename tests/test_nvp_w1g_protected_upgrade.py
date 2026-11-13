@@ -237,8 +237,15 @@ class ProtectedBinaryExecutionContracts(unittest.TestCase):
                 native_approve=lambda scope:True,
                 independent_verify=lambda scope,result,directory:True,
                 independent_os_custody=lambda scope,receipt: True)
+            # Synthetic unowned-PID fixture: EFS is separately tested
+            # against actual Windows fail-closed admission, never claimed
+            # as physical encrypted-source acceptance by these mock files.
             with patch("backend.nvp_w1g_protected_native_worker.launch_contained",
-                       side_effect=fake_launch):
+                       side_effect=fake_launch), patch(
+                       "backend.nvp_w1g_encrypted_source.require_efs_stage",
+                       return_value={"encrypted_at_rest_verified":False}), patch(
+                       "backend.nvp_w1g_encrypted_source.verify_efs_inputs",
+                       return_value=True):
                 with self.assertRaises(RuntimeError):
                     process.run("scene_render","Project01",
                                 {"role":"scene_render","project_id":"Project01"},
