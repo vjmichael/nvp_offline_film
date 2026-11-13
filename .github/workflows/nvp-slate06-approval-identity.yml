@@ -7,6 +7,11 @@ on:
       - 'tests/test_nvp_slate06_approval_identity.py'
       - 'backend/nvp_slate_preview_host.py'
       - '.github/workflows/nvp-slate06-approval-identity.yml'
+  pull_request:
+    paths:
+      - 'tests/test_nvp_slate06_approval_identity.py'
+      - 'backend/nvp_slate_preview_host.py'
+      - '.github/workflows/nvp-slate06-approval-identity.yml'
   workflow_dispatch:
 
 permissions:
