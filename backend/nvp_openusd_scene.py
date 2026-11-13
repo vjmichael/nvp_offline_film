@@ -133,7 +133,7 @@ class OpenUSDSceneBridge:
     def publish(self, project_id, scene_id, *, prims, curves,
                 expected_revision=0, asset_bindings=None,
                 performance_channels=None, native_schemas=False,
-                skeletal_rigs=None):
+                skeletal_rigs=None, actor_bindings=None):
         """Create immutable world+motion layer blobs and an exact scene revision.
 
         A failed FilmIndex publication may leave *orphan blobs*, not an approved
@@ -262,6 +262,23 @@ class OpenUSDSceneBridge:
         if skeletal_rigs:
             from backend.nvp_openusd_skeleton import author_skeleton_layer
             skeleton_layer,rig_manifest=author_skeleton_layer(paths,skeletal_rigs)
+        # P1-B: one canonical, creator-authorized ActorID per genuine
+        # UsdSkel-bound mesh. The stored ActorID/record SHA lives in the
+        # immutable layout USD as source data, not a renderer-only hint.
+        from backend.nvp_p1bc_actor_registry import resolve_scene_actor_bindings
+        cast=resolve_scene_actor_bindings(
+            self.index,project_id,paths,skeletal_rigs or [],
+            actor_bindings or [])
+        for actor in cast:
+            prim=layout.GetPrimAtPath(actor["path"])
+            prim.CreateAttribute(
+                "nvp:actorId",Sdf.ValueTypeNames.String).Set(actor["actor_id"])
+            prim.CreateAttribute(
+                "nvp:actorRevision",Sdf.ValueTypeNames.Int).Set(
+                    actor["actor_revision"])
+            prim.CreateAttribute(
+                "nvp:actorDocumentSHA",Sdf.ValueTypeNames.String).Set(
+                    actor["actor_document_sha256"])
         _native_publish_checkpoint("before_compose")
         composed=_compose(base,motion,Sdf,Usd,parameter_layer,skeleton_layer)
         _native_publish_checkpoint("after_compose")
@@ -308,6 +325,7 @@ class OpenUSDSceneBridge:
                   "parameter_layer_sha256":psha,
                   "skeleton_layer_sha256":ssha,
                   "skeleton_rigs":rig_manifest,
+                  "actor_bindings":cast,
                   "performance_channels":channel_manifest,
                   "native_schema_version":(
                       "nvp.usd.camera_sphere_light.v1" if native_schemas
@@ -321,6 +339,11 @@ class OpenUSDSceneBridge:
                   "rendered":False,
                   "creator_approved":False}
         def guard(db):
+            for actor in cast:
+                row=self.index._read_revision(
+                    db,project_id,actor["actor_id"],actor["actor_revision"])
+                if row is None or row["document_sha"]!=actor["actor_document_sha256"]:
+                    raise RuntimeError("ActorID source changed before original USD scene commit")
             for entry in bindings:
                 record=entry["manifest"]
                 row=db.execute("""SELECT document_sha FROM film_object_revisions
@@ -341,11 +364,15 @@ class OpenUSDSceneBridge:
             expected_revision=expected_revision,
             # One asset may appear at many scene paths, but FilmIndex has
             # exactly one dependency edge per immutable source revision.
-            dependencies=[{"object_id":aid,"revision":rev,"role":"asset"}
-                          for aid,rev in sorted({
-                              (e["manifest"]["asset_id"],
-                               e["manifest"]["asset_revision"])
-                              for e in bindings})],
+            dependencies=(
+                [{"object_id":aid,"revision":rev,"role":"asset"}
+                 for aid,rev in sorted({
+                    (e["manifest"]["asset_id"],
+                     e["manifest"]["asset_revision"])
+                    for e in bindings})] +
+                [{"object_id":actor["actor_id"],
+                  "revision":actor["actor_revision"],"role":"actor"}
+                 for actor in cast]),
             precommit_guard=guard)
         _native_publish_checkpoint("after_scene_revision_commit")
         return committed
@@ -455,6 +482,19 @@ class OpenUSDSceneBridge:
             project_id,doc["prim_roles"],doc.get("asset_bindings",[]),
             verify_manifest=True)
         self._attach_assets(composed,bindings)
+        # Validate archived ActorID against the original actor revision AND
+        # the original USD prim after every fresh FilmIndex/SQLite reopen.
+        from backend.nvp_p1bc_actor_registry import resolve_scene_actor_bindings
+        cast=resolve_scene_actor_bindings(
+            self.index,project_id,doc["prim_roles"],
+            doc.get("skeleton_rigs",[]),doc.get("actor_bindings",[]),
+            verify_manifest=True)
+        for actor in cast:
+            prim=composed.GetPrimAtPath(actor["path"])
+            if (prim.GetAttribute("nvp:actorId").Get()!=actor["actor_id"] or
+                prim.GetAttribute("nvp:actorRevision").Get()!=actor["actor_revision"] or
+                prim.GetAttribute("nvp:actorDocumentSHA").Get()!=actor["actor_document_sha256"]):
+                raise RuntimeError("Original scene USD ActorID metadata changed")
         if skeletons is not None:
             from backend.nvp_openusd_skeleton import evaluate_skeletons
             evaluate_skeletons(composed,doc["skeleton_rigs"],0)
