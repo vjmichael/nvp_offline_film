@@ -72,6 +72,98 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
         self.assertFalse(scope["render_approved"])
         return _png(64,64)
 
+    def test_p2_one_bounded_native_reel_grant_and_cancelled_batch_recovery(self):
+        from backend.nvp_p2_bounded_film_reel import NativeFilmReelBatch
+        self.original.editor.commit(
+            self.pid,"TwoSecondSourceCut",
+            graph_id="slate",graph_revision=1,
+            segments=[
+                {"segment_id":"OriginalHalf","branch_id":"original",
+                 "source_in_tick":0,"source_out_tick":T},
+                {"segment_id":"OriginalNext","branch_id":"original",
+                 "source_in_tick":T,"source_out_tick":2*T},
+            ],editor_event="commit_cut")
+        self.continuity.publish(
+            self.pid,"TwoSecondReview",edit_id="TwoSecondSourceCut",
+            edit_revision=1,cues=[
+                {"segment_id":"OriginalHalf","continuity":"accepted",
+                 "audio_policy":"original_scene","note":"First original scene"},
+                {"segment_id":"OriginalNext","continuity":"accepted",
+                 "audio_policy":"original_scene","note":"Second original scene"},
+            ],creator_event="director_yes")
+        planner=NativeLongformFilmPlan(
+            self.original.editor,self.continuity,
+            verify_creator_action=lambda event,scope:
+            event=="director_yes" and
+            scope["operation"]=="nvp.p2.authorize_original_longform_source_plan.v1")
+        planner.publish(
+            self.pid,"TwoSecondReelPlan",continuity_id="TwoSecondReview",
+            continuity_revision=1,listener_path="/World/Camera",
+            camera_path="/World/Camera",creator_event="director_yes")
+        approved=[]
+        finished=[]
+        can_cancel={"value":False}
+        renderer_calls=[]
+        def render(**kwargs):
+            renderer_calls.append(kwargs["tick"])
+            return _png(64,64)
+        def approval(scope):
+            approved.append(scope)
+            self.assertEqual(scope["source_plan_id"],"TwoSecondReelPlan")
+            self.assertEqual(scope["chunk_count"],2)
+            self.assertEqual(scope["total_frames"],48)
+            self.assertFalse(scope["film_master_approved"])
+            return True
+        first=NativeFilmReelBatch(
+            planner,native_creator_approval=approval,
+            render_png=render,
+            cancelled=lambda:can_cancel["value"],
+            progress=lambda **x:(
+                finished.append(x),
+                can_cancel.__setitem__("value",x["completed"]>=1),
+            ))
+        with TemporaryDirectory() as tmp:
+            description=first.preflight(
+                self.pid,"TwoSecondReelPlan",1,
+                first_index=0,limit=2,output_parent=tmp)
+            self.assertEqual(description["chunk_count"],2)
+            self.assertEqual(description["total_frames"],48)
+            self.assertFalse(description["automatic_replay_allowed"])
+            with self.assertRaises(InterruptedError):
+                first.render(self.pid,"TwoSecondReelPlan",1,
+                             first_index=0,limit=2,output_parent=tmp)
+            self.assertEqual(len(approved),1)
+            self.assertEqual(len(renderer_calls),24)
+            after_crash=planner.reconcile_page(
+                self.pid,"TwoSecondReelPlan",1,
+                output_parent=tmp,first_index=0,limit=2)
+            self.assertEqual(len(after_crash["verified_chunks"]),1)
+            self.assertEqual(len(after_crash["missing_chunks"]),1)
+            can_cancel["value"]=False
+            recovered=NativeFilmReelBatch(
+                planner,native_creator_approval=approval,
+                render_png=render)
+            receipt=recovered.render(
+                self.pid,"TwoSecondReelPlan",1,
+                first_index=0,limit=2,output_parent=tmp)
+            self.assertEqual(len(approved),2)
+            self.assertEqual(receipt["status"],"BOUNDED_REEL_PICTURE_PCM_VERIFIED")
+            self.assertEqual(receipt["verified_frame_count"],48)
+            self.assertEqual(len(receipt["reused_verified_chunks"]),1)
+            self.assertEqual(len(renderer_calls),48)
+            self.assertFalse(receipt["film_master_approved"])
+            complete=planner.reconcile_all(
+                self.pid,"TwoSecondReelPlan",1,output_parent=tmp)
+            self.assertEqual(complete["verified_frames"],48)
+            self.assertEqual(complete["status"],
+                "ALL_TECHNICAL_PICTURE_PCM_DERIVATIVES_VERIFIED_NOT_MASTER")
+            (Path(tmp)/"P1F_P2FilmChunk000000"/"pictures"/"000001.png"
+                ).write_bytes(b"tampered")
+            with self.assertRaises(RuntimeError):
+                recovered.render(self.pid,"TwoSecondReelPlan",1,
+                                 first_index=0,limit=2,output_parent=tmp)
+            self.assertEqual(len(renderer_calls),48)
+
     def test_native_filmmaker_source_cut_audition_and_exact_sha_commit(self):
         from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
         class NativeWindow:
