@@ -76,6 +76,13 @@ class NativeWebviewIPCSurface:
     def data_av_edited_30s_cancel(self, ticket):
         return self._delegate.data_av_edited_30s_cancel(ticket)
 
+    # P1-B: registered source GLB mesh inventory and new 3D cast source.
+    def data_av_actor_asset_catalog(self, project_id):
+        return self._delegate.data_av_actor_asset_catalog(project_id)
+
+    def data_av_actor_scene_cast(self, request):
+        return self._delegate.data_av_actor_scene_cast(request)
+
     # P1-B/C: reviewed, narrow ActorID + original dialogue IPC.
     def data_av_actor_cast(self, project_id):
         return self._delegate.data_av_actor_cast(project_id)

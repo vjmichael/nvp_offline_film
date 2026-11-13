@@ -537,6 +537,69 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
                 "original_modified":False,"master_approved":False}
 
+    # P1-B: convert registered original GLB bytes, not browser-uploaded
+    # arbitrary USD or executable model/texture paths.
+    def data_av_actor_asset_catalog(self,project_id):
+        self._native_window()
+        pid=_require_pid(project_id)
+        from backend.nvp_character_assets import CharacterAssets
+        from backend.nvp_p1bc_glb_character import (
+            ImportedCharacterSources,extract_original_glb_skin)
+        store=CharacterAssets(self.index.studio)
+        source=ImportedCharacterSources(self.index)
+        assets=[]
+        unsupported=[]
+        for registered in store.list(pid)[:64]:
+            record,raw=source._registered(pid,registered["asset_id"])
+            if sha256(raw).hexdigest()!=registered["sha256"]:
+                raise RuntimeError("Native GLB registry source bytes changed")
+            try:
+                decoded=extract_original_glb_skin(raw)
+            except ValueError as exc:
+                # Unsupported complex GLB remains available in the old
+                # CharacterAssets workflow; no proxy mesh is substituted.
+                unsupported.append({
+                    "character_asset_id":registered["asset_id"],
+                    "reason":str(exc)[:200]})
+                continue
+            assets.append({
+                "character_asset_id":registered["asset_id"],
+                "original_glb_sha256":registered["sha256"],
+                "license":registered["license"],
+                "attribution":registered["attribution"],
+                "source":registered["source"],
+                "vertex_count":decoded["original_vertex_count"],
+                "joint_count":len(decoded["joints"]),
+                "joints":decoded["joints"]})
+        return {"format":"nvp.p1bc.native_original_character_assets.v1",
+                "project_id":pid,"assets":assets,"unsupported":unsupported,
+                "source_material_approximated":False,
+                "source_bytes_modified":False,
+                "redistribution_rights_independently_verified":False}
+
+    def data_av_actor_scene_cast(self,request):
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","scene_id","cast","camera_height"}:
+            raise ValueError("Native 3D actor casting requires a bounded typed scene plan")
+        from backend.nvp_p1bc_scene_cast import NativeActorSceneCasting
+        director=NativeActorSceneCasting(
+            self.index,verify_director_action=lambda event,scope:self._ask(
+                "Create one immutable authored OpenUSD scene with real "
+                "source GLB skinned characters?\n"
+                "Project: "+scope["project_id"]+"\n"
+                "New scene: "+scope["scene_id"]+"\n"
+                "Full actor/rig/motion cast digest: "+scope["creator_cast_sha256"]+"\n"
+                "Original GLB SHAs:\n"+", ".join(scope["source_glb_shas"])+"\n"
+                "Camera height: "+str(scope["camera_height"])+" metres\n"
+                "Original source bytes remain unchanged. This is NOT an "
+                "approved movie Take or finished picture."))
+        result=director.publish(
+            request["project_id"],request["scene_id"],
+            cast=request["cast"],camera_height=request["camera_height"],
+            creator_event="native_creator")
+        return {"format":"nvp.p1bc.native_actor_scene_cast_receipt.v1",
+                "status":"AUTHORITATIVE_ACTOR_SCENE_PUBLISHED",**result}
     # P1-B/C: typed native ActorID/scene/skinned-rig/original-voice actions.
     # These are not FastAPI routes or arbitrary scene file selectors.
     def data_av_actor_cast(self,project_id):
