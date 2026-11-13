@@ -2,7 +2,7 @@
 
 This is an actual kernel experiment, not a mocked cgroup or a setsid-only
 test. The test intentionally attempts an adversarial write to the original
-delegated ancestor's cgroup.procs. Any successful migration blocks release.
+delegated ancestor and original host subgroup cgroup.procs. Any migration blocks release.
 
 Run ONLY in an explicitly delegated cgroup-v2 runner. A missing scope,
 skipped test or unavailable kernel evidence is NOT acceptance. The attempted
@@ -23,7 +23,7 @@ import unittest
 
 from backend.nvp_worker_containment import launch_contained
 from backend.nvp_worker_linux_cgroup import (
-    CGROUP_MOUNT, current_delegated_parent,
+    CGROUP_MOUNT, current_delegated_parent, current_cgroup_relative,
 )
 
 
@@ -38,6 +38,13 @@ class IndependentAncestorMigrationGate(unittest.TestCase):
             self.fail("SEC-06 native delegated cgroup unavailable: " + str(error))
         self.assertTrue((ancestor / "cgroup.procs").is_file())
         self.assertTrue((ancestor / "cgroup.controllers").is_file())
+        # An EBUSY ancestor does not exclude movement into a writable host
+        # subgroup, which also lies outside the worker's killed leaf.
+        host_group=(CGROUP_MOUNT/current_cgroup_relative().lstrip("/")).resolve()
+        self.assertTrue(host_group.is_relative_to(ancestor.resolve()))
+        self.assertNotEqual(host_group, ancestor.resolve(),
+                            "SEC-06 requires delegated host subgroup")
+        self.assertTrue((host_group/"cgroup.procs").is_file())
 
         with tempfile.TemporaryDirectory(prefix="nvp-sec06-ancestor-") as td:
             root = Path(td)
@@ -45,26 +52,28 @@ class IndependentAncestorMigrationGate(unittest.TestCase):
             grandchild = r"""
 import json, os, sys, time
 from pathlib import Path
-target = Path(sys.argv[1])
-report = Path(sys.argv[2])
-before = Path("/proc/self/cgroup").read_text("utf8")
-error = None
-try:
-    target.write_text(str(os.getpid()), encoding="ascii")
-except OSError as exc:
-    error = {"errno": exc.errno, "type": type(exc).__name__}
-after = Path("/proc/self/cgroup").read_text("utf8")
-report.write_text(json.dumps({
-    "pid": os.getpid(), "before": before, "after": after,
-    "migration_write_succeeded": error is None, "error": error,
-}, sort_keys=True), encoding="utf8")
+targets=(("ancestor",Path(sys.argv[1])),("host_subgroup",Path(sys.argv[2])))
+report=Path(sys.argv[3])
+attempts=[]
+for label,target in targets:
+    before=Path("/proc/self/cgroup").read_text("utf8")
+    error=None
+    try:
+        target.write_text(str(os.getpid()),encoding="ascii")
+    except OSError as exc:
+        error={"errno":exc.errno,"type":type(exc).__name__}
+    after=Path("/proc/self/cgroup").read_text("utf8")
+    attempts.append({"target":label,"before":before,"after":after,
+                     "migration_write_succeeded":error is None,"error":error})
+report.write_text(json.dumps({"pid":os.getpid(),"attempts":attempts},
+                             sort_keys=True),encoding="utf8")
 time.sleep(20)
 """
             worker = (
                 "import subprocess,sys,time;"
                 "subprocess.Popen([sys.executable,'-c',"
                 + repr(grandchild) +
-                ",sys.argv[1],sys.argv[2]],start_new_session=True);"
+                ",sys.argv[1],sys.argv[2],sys.argv[3]],start_new_session=True);"
                 "time.sleep(30)"
             )
             pid = None
@@ -74,7 +83,7 @@ time.sleep(20)
                 try:
                     proc = launch_contained(
                         [sys.executable, "-c", worker,
-                         str(ancestor / "cgroup.procs"), str(report)],
+                         str(ancestor / "cgroup.procs"), str(host_group / "cgroup.procs"), str(report)],
                         cwd=str(root), stdout=out, stderr=err,
                         memory_mb=512, linux_cgroup_tree_required=True)
                     leaf = Path(proc.cgroup).resolve(strict=True)
@@ -91,15 +100,20 @@ time.sleep(20)
                     pid = observed.get("pid")
                     self.assertIs(type(pid), int)
                     self.assertGreater(pid, 1)
-                    self.assertIn(expected, observed["before"].splitlines(),
-                                  "Child never joined original kernel worker leaf")
-                    self.assertFalse(observed["migration_write_succeeded"],
-                                     "SEC-06 BLOCKER: child wrote to ancestor cgroup.procs")
-                    self.assertEqual(observed["after"], observed["before"],
-                                     "SEC-06 BLOCKER: worker descendant left its kernel cgroup")
-                    self.assertIsNotNone(observed["error"],
-                                         "Missing Linux kernel migration rejection")
-                    print("SEC-06 Linux ancestor migration DENIED:", json.dumps(observed, sort_keys=True))
+                    attempts=observed["attempts"]
+                    self.assertEqual([a["target"] for a in attempts],
+                                     ["ancestor","host_subgroup"])
+                    print("SEC-06 Linux native ancestor and host migration:",
+                          json.dumps(observed,sort_keys=True),flush=True)
+                    for attempt in attempts:
+                        self.assertIn(expected,attempt["before"].splitlines(),
+                                      "Worker escaped leaf before "+attempt["target"])
+                        self.assertFalse(attempt["migration_write_succeeded"],
+                                         "SEC-06 BLOCKER: worker escaped into "+attempt["target"])
+                        self.assertEqual(attempt["after"],attempt["before"],
+                                         "SEC-06 BLOCKER: migration at "+attempt["target"])
+                        self.assertIsNotNone(attempt["error"],
+                                             "Missing kernel refusal at "+attempt["target"])
                 finally:
                     # If migration succeeded, leaf cgroup.kill cannot be
                     # assumed to reach the escaped child. Signal the exact
