@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import re
 
-from backend.nvp_temporal_ledger import _int
+from backend.nvp_temporal_ledger import _int, TICKS_PER_SECOND
 from backend.nvp_openusd_scene import MAX_USD_EXACT_TICK, _usd
 
 MAX_CHANNELS = 128
@@ -51,6 +51,11 @@ def author_parameter_layer(prim_roles, channels, *, native_schemas=False):
     _, Sdf, Usd, _ = _usd()
     layer = Sdf.Layer.CreateAnonymous("nvp_parameters.usda")
     stage = Usd.Stage.Open(layer)
+    # USD otherwise defaults this authored sublayer to 24 tps. When the
+    # composition root is in exact Film Time (7,056,000,000 tps), Sdf
+    # rescales each 24-tps sample by 294,000,000 and mid-key queries
+    # silently evaluate near key zero. Preserve unit identity on every layer.
+    stage.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
     seen = set()
     descriptors = []
     for entry in channels:
