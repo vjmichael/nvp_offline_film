@@ -391,34 +391,19 @@ class RealCharacterAndLens(unittest.TestCase):
         self.assertFalse(picture["frozen_take_created"])
 
 
-    @unittest.skipUnless(os.environ.get("NVP_NATIVE_BLENDER_EXECUTABLE"),
-                         "Real Blender executable not configured")
-    def test_native_desktop_camera_bridge_end_to_end_real_blender(self):
-        """SLATE-08B true original USD skinned scene -> desktop consent
-        -> native supervised Blender -> audited scene/lens PNG, no Take.
+    def test_retired_desktop_camera_bridge_rejects_every_legacy_worker_action(self):
+        """DA-06 production interface cannot mint another pre-Take Blender ticket.
+
+        This tests the actual retired desktop surface. The separate trusted
+        NativeSlatePreviewHost test still exercises positive OS-contained
+        picture acceptance, independent consent and journal recovery.
         """
-        import time
         from backend.nvp_slate08b_native_camera_ipc import (
             TrustedDesktopCameraBridge)
-        binary=Path(os.environ["NVP_NATIVE_BLENDER_EXECUTABLE"]).resolve()
-        self.assertTrue(binary.is_file(),"An actual Blender executable is required")
-        version=subprocess.run(
-            [str(binary),"-b","--version"],capture_output=True,
-            text=True,timeout=30,check=True).stdout.splitlines()[0]
-        root=Path(self.tmp.name)
         created=[]
-        def factory(approval_callback):
-            ledger=TaskLedger(root/"desktop_tasks",sampler=collect_resources)
-            worker=BlenderWorkerSupervisor(
-                root/"desktop_workers",blender_executable=binary,
-                blender_sha256=sha_file(binary),blender_version=version,
-                activity_ledger=ledger)
-            cache=SlatePreviewCache(root/"desktop_cache")
-            host=NativeSlatePreviewHost(self.index,worker,ledger,cache,
-                verify_creator_action=approval_callback)
-            host.recover()
-            created.append(host)
-            return host
+        def forbidden_host(_):
+            created.append(True)
+            raise AssertionError("Retired browser camera worker was launched")
 
         class ConfirmingWindow:
             calls=0
@@ -426,56 +411,37 @@ class RealCharacterAndLens(unittest.TestCase):
                 return "http://127.0.0.1:7777/"
             def create_confirmation_dialog(self,title,message):
                 self.calls+=1
-                assert "Scene: world rev 1" in message
-                assert "Camera: /World/Camera" in message
-                return True
+                raise AssertionError("No retired camera grant may prompt its creator")
         window=ConfirmingWindow()
         bridge=TrustedDesktopCameraBridge(
             self.index,origin="http://127.0.0.1:7777",
-            host_factory=factory)
+            host_factory=forbidden_host)
         bridge._attach_window(window)
-        optics=lens_settings(lens="portrait_85",f_stop=1.4)
         try:
-            requested=bridge.request_camera_still({
-                "project_id":self.pid,"source_scene_id":"world",
-                "source_scene_revision":1,
-                "source_scene_document_sha256":self.original_scene_sha,
-                "source_tick":T,"camera_path":"/World/Camera",
-                "lens_settings":optics,"source_modified":False,
-                "frozen_take_created":False,
-            })
-            self.assertEqual(requested["status"],"QUEUED")
-            deadline=time.monotonic()+240
-            state=None
-            while time.monotonic()<deadline:
-                state=bridge.poll_camera_still(requested["ticket_id"])
-                if state["status"]=="READY":
-                    break
-                if state["status"]!="QUEUED":
-                    self.fail("Actual native desktop render failed closed: "+
-                              str(state))
-                time.sleep(.25)
-            self.assertIsNotNone(state)
-            self.assertEqual(state["status"],"READY")
-            self.assertTrue(state["image_data_url"].startswith(
-                "data:image/png;base64,"))
-            self.assertEqual(state["scene_document_sha256"],
-                             self.original_scene_sha)
-            self.assertEqual(state["lens_settings"],optics)
-            self.assertFalse(state["frozen_take_created"])
-            self.assertFalse(state["film_master_approved"])
-            self.assertEqual(window.calls,1)
-            self.assertEqual(
-                self.index.read_revision(self.pid,"world",1)["document_sha256"],
-                self.original_scene_sha)
+            flags=bridge.camera_render_capabilities()
+            self.assertTrue(flags["native_data_first_scene"])
+            self.assertTrue(flags["legacy_render_retired"])
+            self.assertFalse(flags["supports_approved_still"])
+            with self.assertRaisesRegex(PermissionError,"retired by DA-06"):
+                bridge.request_camera_still({
+                    "project_id":self.pid,"source_scene_id":"world",
+                    "source_scene_revision":1,
+                    "source_scene_document_sha256":self.original_scene_sha,
+                    "source_tick":T,"camera_path":"/World/Camera",
+                    "lens_settings":lens_settings(
+                        lens="portrait_85",f_stop=1.4),
+                    "source_modified":False,
+                    "frozen_take_created":False,
+                })
+            with self.assertRaises(PermissionError):
+                bridge.poll_camera_still("legacy_ticket")
+            with self.assertRaises(PermissionError):
+                bridge.cancel_camera_still("legacy_ticket")
+            self.assertEqual(window.calls,0)
+            self.assertEqual(created,[])
             self.assertEqual(self.index.list_objects(self.pid,kind="take"),[])
-            self.assertTrue(created)
-            jobs=created[0].supervisor
-            with created[0].cache._db() as db:
-                row=db.execute("SELECT job_id FROM slate_preview_cache "
-                               "WHERE project_id=?",(self.pid,)).fetchone()
-            proof=jobs.verify_completed(row[0])
-            self.assertEqual(proof["state"],"SUCCEEDED")
+            self.assertEqual(self.index.read_revision(
+                self.pid,"world",1)["document_sha256"],self.original_scene_sha)
         finally:
             bridge._close()
 

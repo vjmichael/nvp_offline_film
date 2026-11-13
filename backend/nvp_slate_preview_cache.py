@@ -70,7 +70,19 @@ class SlatePreviewCache:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("PRAGMA synchronous=FULL")
             db.execute("PRAGMA busy_timeout=15000")
+            # Explicit BEGIN IMMEDIATE operations are used for reservation,
+            # publication, cancellation and recovery. A mere sqlite3.close()
+            # rolls back all those uncommitted rows, so the independent
+            # approval verifier sees no PENDING job and correctly denies it.
+            # Make commit/rollback ownership explicit and uniform at this
+            # single local database boundary; never accept phantom receipts.
             yield db
+            if db.in_transaction:
+                db.commit()
+        except BaseException:
+            if db.in_transaction:
+                db.rollback()
+            raise
         finally:
             db.close()
 
