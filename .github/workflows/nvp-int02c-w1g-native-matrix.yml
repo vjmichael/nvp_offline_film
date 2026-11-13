@@ -31,6 +31,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_int02_shot_composition.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_native_package.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_protected_upgrade.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_first_party_result_verifier.py' -v
           python -m unittest discover -s tests -p 'test_nvp_webview_ipc_surface.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_release_build_marker.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1f_reel_audit.py' -v
@@ -75,6 +76,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $files=@('test_nvp_int02_edited_film.py','test_nvp_int02_shot_composition.py',
             'test_nvp_w1g_native_package.py','test_nvp_w1g_protected_upgrade.py',
+            'test_nvp_w1g_first_party_result_verifier.py',
             'test_nvp_w1g_release_safety.py','test_nvp_w1g_release_build_marker.py',
             'test_nvp_w1g_release_gate.py','test_nvp_w1g_owned_subprocess.py',
             'test_nvp_w1g_launch_surface_audit.py',
