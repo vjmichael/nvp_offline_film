@@ -188,5 +188,57 @@ class NativeEditActorAudioTests(unittest.TestCase):
                                      first_sample=0, count=4097)
 
 
+    def test_p1f_reel_plan_binds_real_source_and_restart(self):
+        from backend.nvp_p1f_p2_reel_plan import P1FReelPlan
+        edit = self.publish("film_edit", [self.segment()])
+        scheduler = P1FReelPlan(self.index)
+        receipt = scheduler.publish(
+            self.pid, "film_source_plan", edit_id="film_edit",
+            edit_revision=1,
+            expected_edit_document_sha256=edit["document_sha256"])
+        plan = scheduler.read(self.pid, "film_source_plan")["data"]
+        self.assertEqual(plan["state"], "PLANNED_ONLY")
+        self.assertEqual(plan["published_reels"], 0)
+        self.assertFalse(plan["picture_rendered"])
+        self.assertEqual(plan["frame_count"], 24)
+        self.assertEqual(plan["sample_count"], 48000)
+        self.assertEqual(len(plan["reels"]), 1)
+        source = scheduler.picture_instant(self.pid, "film_source_plan", 0, 12)
+        self.assertEqual(source["source_take_id"], "frozen_take")
+        self.assertEqual(source["source_tick"], T//2)
+        self.assertEqual(source["output_tick"], T//2)
+        derived = scheduler.audio_window(
+            self.pid, "film_source_plan", 0, first_sample=120, count=512)
+        self.assertEqual(len(base64.b64decode(derived["pcm_base64"])), 2048)
+        restarted = P1FReelPlan(FilmIndex(Studio(self.path)))
+        self.assertEqual(
+            restarted.read(self.pid, "film_source_plan")["document_sha256"],
+            receipt["document_sha256"])
+        with self.assertRaises(RuntimeError):
+            scheduler.publish(
+                self.pid, "stale_film_plan", edit_id="film_edit",
+                edit_revision=1, expected_edit_document_sha256="0"*64)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid, "stale_film_plan")
+
+    def test_p2_30_minute_and_three_hour_exact_source_clock(self):
+        from backend.nvp_p1f_p2_reel_plan import reel_layout
+        first = reel_layout(30*60*T)
+        self.assertEqual(len(first), 180)
+        self.assertEqual(sum(x["frame_count"] for x in first), 43200)
+        self.assertEqual(sum(x["sample_count"] for x in first), 86400000)
+        self.assertEqual(first[-1]["end_tick"], 30*60*T)
+        feature = reel_layout(3*60*60*T)
+        self.assertEqual(len(feature), 1080)
+        self.assertEqual(sum(x["frame_count"] for x in feature), 259200)
+        self.assertEqual(sum(x["sample_count"] for x in feature), 518400000)
+        self.assertEqual(feature[-1]["end_tick"], 3*60*60*T)
+        self.assertTrue(all(x["status"] == "UNRENDERED" for x in feature))
+        with self.assertRaises(ValueError):
+            reel_layout(3*60*60*T + T)
+        with self.assertRaises(ValueError):
+            reel_layout(T + SAMPLE_TICK)
+
+
 if __name__ == "__main__":
     unittest.main()
