@@ -32,7 +32,10 @@ def wait_ready(path,proc=None,seconds=12):
         if path.exists():
             return
         if proc is not None and proc.poll() is not None:
-            raise AssertionError("Kernel-contained worker exited before descendant ready")
+            logs=path.parent/"native.log"
+            original=logs.read_text(errors="replace") if logs.is_file() else "<no native log>"
+            raise AssertionError("Kernel-contained worker exited before descendant ready; "
+                                 +original[-8000:])
         time.sleep(.05)
     raise AssertionError("Native detached descendant did not become ready")
 
@@ -46,7 +49,9 @@ def host_crash(path):
         cwd=root,env=env,capture_output=True,timeout=35)
     assert outer.returncode==79, (
         f"Original host-crash fixture refused admission: {outer.returncode}\n"
-        +outer.stdout.decode(errors="replace")+outer.stderr.decode(errors="replace"))
+        +outer.stdout.decode(errors="replace")+outer.stderr.decode(errors="replace")
+        +(path/"host.log").read_text(errors="replace") if (path/"host.log").exists()
+        else f"Original host-crash fixture returned {outer.returncode} without log")
 
 
 def process_terminated_windows(pid):
