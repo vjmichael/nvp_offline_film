@@ -4,6 +4,7 @@ import NativeOriginalCapturePanel from './NativeOriginalCapturePanel.jsx';
 import NativeCameraRailPanel from './NativeCameraRailPanel.jsx';
 import EditedFilmDeliveryPanel from './EditedFilmDeliveryPanel.jsx';
 import ActorPerformancePanel from './ActorPerformancePanel.jsx';
+import FilmSourceStagesPanel from './FilmSourceStagesPanel.jsx';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -366,6 +367,8 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     <ActorPerformancePanel projectId={projectId} native={native}
       sourceRevision={captureRevision}
       onScenePublished={()=>setCaptureRevision(n=>n+1)}/>
+    <FilmSourceStagesPanel projectId={projectId} native={native}
+      sourceRevision={captureRevision}/>
     <EditedFilmDeliveryPanel projectId={projectId} native={native}/>
     <section className="card" aria-label="Add creator-supplied original music">
       <h3>Bring in background music or sound effects</h3>
