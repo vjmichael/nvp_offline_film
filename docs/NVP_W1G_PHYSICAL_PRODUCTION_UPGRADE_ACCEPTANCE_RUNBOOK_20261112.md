@@ -29,6 +29,16 @@ py -m tools.nvp_w1g_supply_candidate --platform windows-amd64 --wheelhouse "D:\\
 
 The worker roster is only a SHA-bound *candidate*. Packaging/production admission still requires the reviewed full five-role worker roster, a signed exact-byte release/license inventory, and independently verified worker execution. No source-only placeholder can satisfy this gate.
 
+The offline wheelhouse must now be independently signed **as its own exact-byte evidence set**, separate from the signature over installed NSIS bytes. The independent reviewer signs every wheel's SPDX/license and redistribution reference plus a digest of the full transitive wheel lock. A text field in the lock is not an approval.
+
+After the owner obtains a real signed wheelhouse review and supplies the public-only reviewer key, the read-only verifier is:
+
+```powershell
+py -m tools.nvp_w1g_signed_wheelhouse verify --platform windows-amd64 --wheel-lock "D:\\OwnerEvidence\\wheel-lock.json" --wheelhouse "D:\\OwnerEvidence\\wheelhouse" --signed-review "D:\\OwnerEvidence\\signed-wheelhouse-review.json" --pinned-reviewer-key "D:\\ExternalTrust\\reviewer-ed25519.pub"
+```
+
+For draft review only, the `candidate` action can produce an unsigned wheelhouse inventory, which production admission deliberately refuses. It must **never** be signed by a fabricated CI key and misrepresented as legal acceptance.
+
 Do not treat a successful package/lock verification as proof of executable worker operation or redistribution rights.
 
 ## 2. Physical EFS and key-recovery acceptance
@@ -60,7 +70,14 @@ $common = @(
   '--workspace','audio=D:\NVPJobs\audio',
   '--workspace','delivery=D:\NVPJobs\delivery'
 )
-py -m tools.nvp_w1g_owner_windows_acceptance preflight @common --reviewed-receipt 'D:\OwnerEvidence\reviewed-build.json' --pinned-reviewer-public-key 'D:\ExternalTrust\reviewer-ed25519.pub'
+$review = @(
+  '--reviewed-receipt','D:\OwnerEvidence\reviewed-build.json',
+  '--pinned-reviewer-public-key','D:\ExternalTrust\reviewer-ed25519.pub',
+  '--wheel-lock','D:\OwnerEvidence\wheel-lock.json',
+  '--wheelhouse','D:\OwnerEvidence\wheelhouse',
+  '--signed-wheel-review','D:\OwnerEvidence\signed-wheelhouse-review.json'
+)
+py -m tools.nvp_w1g_owner_windows_acceptance preflight @common @review
 ```
 
 `preflight` independently re-verifies exact staged bytes, signed review, all five real native executables, film inventory, installed version and real release-wide Windows kernel custody under held worker leases. It **never** writes an upgrade journal or invokes a creator approval dialog. It releases its Job/lease locks immediately afterward. Its result is **not reusable** as authorization: activation must remeasure the actual OS and obtain fresh native consent.
@@ -74,11 +91,11 @@ If provisioning is absent, source bytes differ, EFS is unsupported, journal reco
 Only after the preceding evidence and separate EFS/key-recovery review pass, the owner may individually choose to execute:
 
 ```powershell
-py -m tools.nvp_w1g_owner_windows_acceptance prepare @common --reviewed-receipt 'D:\OwnerEvidence\reviewed-build.json' --pinned-reviewer-public-key 'D:\ExternalTrust\reviewer-ed25519.pub'
+py -m tools.nvp_w1g_owner_windows_acceptance prepare @common @review
 py -m tools.nvp_w1g_owner_windows_acceptance activate @common --pinned-reviewer-public-key 'D:\ExternalTrust\reviewer-ed25519.pub'
 ```
 
-The preparation gate now checks independent signed review **before** writing its journal. Activation re-verifies it, holds all five original leases plus release-wide kernel admission, prompts the owner with exact SHA/version scope (default NO), rechecks the original film identities, and preserves `NVP.previous`. An activated release remains `PROMOTED_UNACCEPTED` until physical installed, rollback/restart and filmmaker evidence are independently reviewed.
+The preparation gate now checks both the independently signed release bytes and independently signed offline wheelhouse **before** writing its journal. Activation re-verifies the same exact wheelhouse files, lock and signature from the journaled owner-supplied paths, holds all five original leases plus release-wide kernel admission, prompts the owner with exact SHA/version scope (default NO), rechecks the original film identities, and preserves `NVP.previous`. An activated release remains `PROMOTED_UNACCEPTED` until physical installed, rollback/restart and filmmaker evidence are independently reviewed.
 
 For a separately authorized rollback of this exact promoted candidate:
 
