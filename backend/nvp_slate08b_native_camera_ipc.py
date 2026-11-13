@@ -145,6 +145,7 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         self._native_capture_auditor=native_capture_auditor
         self._original_capture_controller = None
         self._edited_export = None
+        self._p1f_export = None
         self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
@@ -382,6 +383,8 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 raise PermissionError("Native desktop is closing")
             if self._edited_export is not None and not self._edited_export["future"].done():
                 raise RuntimeError("Stop or finish the previous edited film before a new export")
+            if self._p1f_export is not None and not self._p1f_export["future"].done():
+                raise RuntimeError("Stop the current original film chunk before a 30-second export")
             if (self._data_av_controller is not None and
                 self._data_av_controller._active is not None):
                 raise RuntimeError("Stop active source audition before edited film export")
@@ -726,6 +729,184 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             output_parent=derived,first_index=request["first_index"],
             limit=request["limit"])
 
+    # P1-F: one bounded actor/director-approved original picture+PCM chunk.
+    # This production path uses the same existing Windows Job/Linux delegated
+    # cgroup supervisor as INT-02C, never a new privileged script runner.
+    def data_av_film_stage_chunk_preflight(self,request):
+        self._native_window()
+        required={"project_id","continuity_id","continuity_revision",
+                  "first_frame","frame_count","listener_path","camera_path",
+                  "actor_mix_id","actor_mix_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Finite original picture chunk needs exact source metadata")
+        from backend.nvp_p1f_sustained_delivery import NativeSustainedPictureSound
+        from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+        assembly=self._edited_assembly()
+        native=NativeSustainedPictureSound(
+            assembly,NativeEditorialContinuity(
+                assembly,verify_director_action=lambda *_:False),
+            native_creator_approval=lambda *_:False,
+            render_png=lambda **_:None)
+        return native.preflight(
+            request["project_id"],request["continuity_id"],
+            request["continuity_revision"],first_frame=request["first_frame"],
+            frame_count=request["frame_count"],
+            listener_path=request["listener_path"],camera_path=request["camera_path"],
+            actor_mix_id=request["actor_mix_id"],
+            actor_mix_revision=request["actor_mix_revision"])
+
+    def data_av_film_stage_chunk_begin(self,request):
+        self._native_window()
+        required={"project_id","continuity_id","continuity_revision",
+                  "chunk_id","first_frame","frame_count","listener_path",
+                  "camera_path","actor_mix_id","actor_mix_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Original P1-F source render requires one finite typed chunk")
+        _require_pid(request["project_id"])
+        _id(request["chunk_id"],"original picture and PCM chunk identity")
+        source={k:v for k,v in request.items() if k!="chunk_id"}
+        # Even an invalid request may not consume a grant or create a worker.
+        plan=self.data_av_film_stage_chunk_preflight(source)
+        from pathlib import Path
+        import os
+        with self._lock:
+            if self._closing:
+                raise PermissionError("Creator closed the native picture/sound workspace")
+            if (self._p1f_export is not None and
+                not self._p1f_export["future"].done()):
+                raise RuntimeError("One protected picture/sound chunk at a time")
+            if (self._edited_export is not None and
+                not self._edited_export["future"].done()):
+                raise RuntimeError("Finish or cancel the active 30-second export first")
+            if (self._data_av_controller is not None and
+                self._data_av_controller._active is not None):
+                raise RuntimeError("Stop source audio audition before native film export")
+            if (self._original_capture_controller is not None and
+                self._original_capture_controller._active is not None):
+                raise RuntimeError("Finish native sound capture before authoring derivative")
+            home=Path(os.environ["NVP_HOME"])
+            if home.is_symlink() or not home.is_dir():
+                raise RuntimeError("Trusted original project home unavailable")
+            derived=home.parent/"Exports"
+            if (home.parent.is_symlink() or derived.is_symlink() or
+                derived==home or home in derived.parents):
+                raise PermissionError("Plaintext derivatives may not share encrypted source home")
+            derived.mkdir(mode=0o700,exist_ok=True)
+            if (derived/("P1F_"+request["chunk_id"])).exists():
+                raise FileExistsError("Original film chunk ID already exists")
+            cancel=threading.Event()
+            progress={"stage":"QUEUED_NATIVE_AUTHORIZATION","picture_frames":0}
+            ticket=secrets.token_urlsafe(32)
+            requested=dict(request)
+            cycles_renderer=[None]
+            def perform():
+                from backend.nvp_p1f_sustained_delivery import NativeSustainedPictureSound
+                from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+                from backend.nvp_int02_cycles_renderer import build_native_cycles_renderer
+                assembly=self._edited_assembly()
+                continuity=NativeEditorialContinuity(
+                    assembly,verify_director_action=lambda *_:False)
+
+                def cycles_frame(**kwargs):
+                    if cancel.is_set():
+                        raise InterruptedError("Creator cancelled finite picture worker")
+                    if cycles_renderer[0] is None:
+                        if self._ask(
+                            "An original OpenUSD source frame requires supervised "
+                            "Blender Cycles with Windows EFS or verified protected "
+                            "native source staging. NVP refuses any plaintext "
+                            "fallback for protected originals. The OUTPUT PNG/WAV "
+                            "derivative is intentionally UNENCRYPTED, separate "
+                            "from source project storage. Approve this single "
+                            "finite original picture worker?") is not True:
+                            raise PermissionError("Creator refused exact protected Cycles source staging")
+                        cycles_renderer[0]=build_native_cycles_renderer(
+                            self.index,requested["project_id"],
+                            plaintext_consent=True)
+                        with self._lock:
+                            if (self._p1f_export is not None and
+                                self._p1f_export["ticket"]==ticket):
+                                self._p1f_export["cycles_renderer"]=cycles_renderer[0]
+                    result=cycles_renderer[0].render_png(**kwargs)
+                    with self._lock:
+                        progress["stage"]="RENDERING_ORIGINAL_CYCLES"
+                        progress["picture_frames"]+=1
+                    return result
+                exporter=NativeSustainedPictureSound(
+                    assembly,continuity,
+                    native_creator_approval=lambda scope:self._ask(
+                        "Publish ONE source-bound picture+PCM derivative chunk?\n"+
+                        "Project: "+scope["project_id"]+"\n"+
+                        "Chunk: "+scope["chunk_id"]+"\n"+
+                        "Original source plan SHA: "+scope["plan_sha256"]+"\n"+
+                        "Output: "+scope["output_directory"]+"\n"+
+                        "Finite frames: "+str(scope["frames"])+"\n"+
+                        "Requires a new confirmation for every later chunk. "+
+                        "No source changes, film master or production install authority."),
+                    render_png=cycles_frame,cancelled=cancel.is_set)
+                with self._lock:
+                    progress["stage"]="AWAITING_CREATOR_OR_RENDER"
+                return exporter.export_chunk(
+                    requested["project_id"],requested["continuity_id"],
+                    requested["continuity_revision"],requested["chunk_id"],
+                    derived,first_frame=requested["first_frame"],
+                    frame_count=requested["frame_count"],
+                    listener_path=requested["listener_path"],
+                    camera_path=requested["camera_path"],
+                    actor_mix_id=requested["actor_mix_id"],
+                    actor_mix_revision=requested["actor_mix_revision"])
+            future=self._executor.submit(perform)
+            self._p1f_export={"ticket":ticket,"future":future,"cancel":cancel,
+                              "progress":progress,"project_id":request["project_id"]}
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"QUEUED_NATIVE_APPROVAL","ticket":ticket,
+                    "source_plan_sha256":sha256(json.dumps(
+                        plan,sort_keys=True,separators=(",",":")).encode("ascii")
+                        ).hexdigest(),"frame_count":request["frame_count"],
+                    "original_modified":False,"film_master_approved":False}
+
+    def data_av_film_stage_chunk_poll(self,ticket):
+        self._native_window()
+        with self._lock:
+            job=self._p1f_export
+            if type(ticket) is not str or job is None or job["ticket"]!=ticket:
+                raise PermissionError("Unknown native picture/sound source ticket")
+            future=job["future"]
+            progress=dict(job["progress"])
+        if not future.done():
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"RUNNING_OR_AWAITING_NATIVE_APPROVAL",
+                    "progress":progress,"original_modified":False,
+                    "film_master_approved":False}
+        try:
+            result=future.result()
+        except (PermissionError,InterruptedError) as exc:
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"REFUSED_OR_INTERRUPTED",
+                    "reason":str(exc)[:250],"original_modified":False,
+                    "film_master_approved":False}
+        except BaseException as exc:
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"FAILED_UNVERIFIED","reason":str(exc)[:250],
+                    "original_modified":False,"film_master_approved":False}
+        return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                "status":"INDEPENDENT_SOURCE_CHUNK_VERIFIED_NOT_MASTER",
+                "receipt":result,"original_modified":False,
+                "film_master_approved":False}
+
+    def data_av_film_stage_chunk_cancel(self,ticket):
+        self._native_window()
+        with self._lock:
+            job=self._p1f_export
+            if type(ticket) is not str or job is None or job["ticket"]!=ticket:
+                raise PermissionError("Unknown source render cancellation ticket")
+            job["cancel"].set()
+            worker=job.get("cycles_renderer")
+            if worker is not None:worker.cancel_active()
+        return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
+                "original_modified":False,"film_master_approved":False}
+
     # P1-B: convert registered original GLB bytes, not browser-uploaded
     # arbitrary USD or executable model/texture paths.
     def data_av_actor_asset_catalog(self,project_id):
@@ -1005,6 +1186,11 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             if self._edited_export is not None:
                 self._edited_export["cancel"].set()
                 renderer=self._edited_export.get("cycles_renderer")
+                if renderer is not None:
+                    renderer.cancel_active()
+            if self._p1f_export is not None:
+                self._p1f_export["cancel"].set()
+                renderer=self._p1f_export.get("cycles_renderer")
                 if renderer is not None:
                     renderer.cancel_active()
             if self._data_av_controller is not None:
