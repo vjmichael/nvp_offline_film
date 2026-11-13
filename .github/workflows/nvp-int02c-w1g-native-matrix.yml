@@ -35,7 +35,8 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_w1g_release_build_marker.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1f_reel_audit.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_supply_candidate.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_launch_surface_audit.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_owned_subprocess.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_owned_subprocess.py','test_nvp_w1g_launch_surface_audit.py' -v
           python -m unittest discover -s tests -p 'test_nvp_w1g_legacy_blender_launch.py' -v
           python -m unittest discover -s tests -p 'test_nvp_filming_windows_release.py' -v
           python -m unittest discover -s tests -p 'test_nvp_filming_worker_custody.py' -v
