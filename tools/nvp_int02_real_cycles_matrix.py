@@ -92,6 +92,169 @@ def prepare_real_usd(path:Path):
     return sha256(original).hexdigest()
 
 
+def run_real_imported_actor_cycles(out,supervisor,scriptbytes):
+    """P1-B/C: genuine source GLB -> skinned face+joint -> 1920x1080 Cycles.
+
+    Actual original binary mesh, weighted bones, facial shape, SHA-pinned
+    source and kernel-supervised native Blender; no mocked image or proxy
+    mannequin. This is a *test* fixture, not a creator-authorized film master.
+    """
+    import struct
+    from io import BytesIO
+    from tempfile import TemporaryDirectory
+    from PIL import Image
+    from pxr import Sdf,Usd,UsdGeom
+    from backend.nvp_studio import Studio
+    from backend.nvp_film_index import FilmIndex
+    from backend.nvp_character_assets import CharacterAssets
+    from backend.nvp_p1bc_actor_registry import ActorDirectory
+    from backend.nvp_p1bc_scene_cast import NativeActorSceneCasting
+    from backend.nvp_temporal_ledger import TemporalLedger,TICKS_PER_SECOND
+    from backend.nvp_openusd_take import OpenUSDTakeCapture
+    from backend.nvp_int02_cycles_renderer import static_composed_usd
+    from tests.test_nvp_p1bc_glb_scene_native import original_rigged_glb
+
+    studio=Studio(out/"p1bc-native-character.sqlite")
+    pid=studio.create_project("Actual USD Skinned Actor Cycles Matrix","")["id"]
+    index=FilmIndex(studio)
+    ActorDirectory(index,verify_director_action=lambda event,scope:
+        event=="test_creator_yes").register(
+        pid,"ActorLead",display_name="Actual GLB Lead",creator_event="test_creator_yes")
+    original=CharacterAssets(studio).register(
+        pid,original_rigged_glb(),"creator_owned")
+    cast=[{"actor_id":"ActorLead","character_asset_id":original["asset_id"],
+           "position":[0,0,0],"motion_joint":"Bone001","travel":0.4,
+           "face_target":"jaw_open","face_strength":0.5}]
+    published=NativeActorSceneCasting(
+        index,verify_director_action=lambda event,scope:
+        event=="test_creator_yes").publish(
+        pid,"SceneRealImportedGLB",cast=cast,
+        creator_event="test_creator_yes")
+    # Exact actor source must be frozen into an original Digital Take before
+    # any Blender worker receives flattened source geometry.
+    index.register_revision(pid,"MotionEvidence","performance",{
+        "format":"nvp.p1bc.original_actor_fixture.v1",
+        "original_glb_sha256":original["sha256"],
+        "creator_has_not_approved_real_world_film":True,
+    })
+    TemporalLedger(index).publish(pid,"RealActorTimeline",[{
+        "event_id":"ActingOne","event_kind":"gesture",
+        "subject_id":"ActorLead","start_tick":0,
+        "end_tick":TICKS_PER_SECOND,
+        "source_id":"MotionEvidence","source_revision":1,
+        "payload":{"usd_prim_path":"/World/Actor001",
+                   "source":"creator_authored_bone_and_glb_morph"},
+    }],duration_tick=2*TICKS_PER_SECOND)
+    take=OpenUSDTakeCapture(
+        index,verify_creator_action=lambda event,scope:
+        event=="test_creator_yes").freeze(
+        pid,"RealActorTake",scene_id="SceneRealImportedGLB",
+        scene_revision=1,timeline_id="RealActorTimeline",
+        timeline_revision=1,sample_ticks=[0,TICKS_PER_SECOND],
+        creator_event="test_creator_yes")
+    original_usd,_,_=static_composed_usd(
+        index,pid,"RealActorTake",take["document_sha256"],0,
+        camera_path="/World/Camera")
+    middle_usd,optics,original_materials=static_composed_usd(
+        index,pid,"RealActorTake",take["document_sha256"],
+        TICKS_PER_SECOND//2,camera_path="/World/Camera")
+    if (sha256(original_usd).digest()==sha256(middle_usd).digest() or
+        len(original_materials)!=1 or
+        original_materials[0]["prim_path"]!=
+            "/World/Actor001/Rig/CharacterMesh"):
+        raise RuntimeError("Actual imported GLB bone+facial animation not visible in USD")
+    def reopen(text):
+        layer=Sdf.Layer.CreateAnonymous()
+        if not layer.ImportFromString(text.decode("utf8")):
+            raise RuntimeError("Native imported actor USD source was not parseable")
+        usd=Usd.Stage.Open(layer)
+        mesh=usd.GetPrimAtPath("/World/Actor001/Rig/CharacterMesh")
+        if not mesh.IsA(UsdGeom.Mesh) or mesh.GetProperty("skel:skeleton"):
+            raise RuntimeError("Cycles source requires static evaluated actual GLB mesh")
+        return [[float(x) for x in p]
+                for p in UsdGeom.Mesh(mesh).GetPointsAttr().Get()]
+    orig,mid=reopen(original_usd),reopen(middle_usd)
+    if (len(orig)!=3 or len(mid)!=3 or
+        abs((mid[0][0]-orig[0][0])-.2)>1e-4 or
+        abs((mid[0][2]-orig[0][2])-.05)>1e-4):
+        raise RuntimeError("Real source facial/bone deformation changed after Cycles baking")
+    job_id="int02_real_original_glb_actor_001"
+    jobdir=supervisor.root/job_id
+    if jobdir.exists():
+        raise RuntimeError("Original skinned actor Cycles evidence cannot be replayed")
+    jobdir.mkdir()
+    scene_sha=sha256(middle_usd).hexdigest()
+    for name,value in (("source.usda",middle_usd),
+                       ("render.py",scriptbytes)):
+        with (jobdir/name).open("xb") as stream:
+            stream.write(value)
+            stream.flush()
+            os.fsync(stream.fileno())
+    plan={"format":"nvp.int02.cycles.frame_plan.v1",
+          "usd_file":"source.usda","usd_sha256":scene_sha,
+          "camera_path":"/World/Camera",
+          "source_tick":TICKS_PER_SECOND//2,
+          "width":1920,"height":1080,"samples":64,"renderer":"CYCLES",
+          **optics,
+          "material_bindings":original_materials,
+          "actor_paths":["/World/Actor001"],"light_paths":["/World/Key"]}
+    planbytes=json.dumps(plan,sort_keys=True,separators=(",",":")).encode("ascii")
+    (jobdir/"plan.json").write_bytes(planbytes)
+    op=BlenderOperation(
+        job_id=job_id,script="render.py",
+        script_sha256=sha256(scriptbytes).hexdigest(),
+        inputs={"source.usda":scene_sha,
+                "plan.json":sha256(planbytes).hexdigest()},
+        outputs={"frame.png":"png","audit.json":"json_audit"},
+        arguments={"--plan":"plan.json","--output":"frame.png",
+                   "--audit":"audit.json"},
+        timeout_seconds=600,memory_limit_mb=8192,
+        require_linux_cgroup_v2=False)
+    result=supervisor.run(op)
+    if result["state"]!="SUCCEEDED":
+        raise RuntimeError("Original imported skinned GLB native Cycles failed: "+
+                           str(result.get("error")))
+    checked=supervisor.verify_completed(job_id)
+    image=(jobdir/"frame.png").read_bytes()
+    audit=json.loads((jobdir/"audit.json").read_text("utf8"))
+    if (_png_header(image)!=(1920,1080) or
+        audit.get("original_actor_geometry_verified") is not True or
+        audit.get("source_material_bindings_verified") is not True or
+        audit.get("source_material_count")!=1 or
+        checked["outputs"]["frame.png"]["sha256"]!=sha256(image).hexdigest() or
+        audit.get("source_usd_sha256")!=scene_sha):
+        raise RuntimeError("Actual GLB face+bone source was not preserved by Blender")
+    with Image.open(BytesIO(image)) as rendered:
+        rgb=rendered.convert("RGB")
+        visible=sum(1 for red,green,blue in rgb.getdata()
+                    if red>green+15 and red>blue+15 and red>50)
+    if visible<100:
+        raise RuntimeError("Native Cycles image lacks original GLB colored character "+
+                           f"({visible} red source pixels)")
+    receipt={
+        "format":"nvp.p1bc.genuine_imported_glb_cycles.v1",
+        "status":"ACTUAL_IMPORT_SKIN_FACE_CYCLES_VERIFIED",
+        "original_glb_sha256":original["sha256"],
+        "scene_document_sha256":published["scene_document_sha256"],
+        "frozen_take_document_sha256":take["document_sha256"],
+        "sample_tick":TICKS_PER_SECOND//2,
+        "actual_skinned_vertices":len(mid),
+        "native_source_bone_travel_m":.2,
+        "native_source_face_morph_travel_m":.05,
+        "flattened_source_usd_sha256":scene_sha,
+        "cycles_frame_sha256":sha256(image).hexdigest(),
+        "actual_original_actor_color_pixels":visible,
+        "windows_job_supervision":os.name=="nt",
+        "linux_release_cgroup_custody_accepted":False,
+        "original_source_modified":False,
+        "synthetic_voice_generated":False,
+        "physical_performance_accepted":False,
+    }
+    (out/"real_imported_actor_cycles.json").write_text(
+        json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+    return receipt
+
+
 def run_matrix(out:Path,blender:Path):
     if out.exists() or out.is_symlink():
         raise RuntimeError("Real native matrix refuses to overwrite an output")
@@ -192,8 +355,12 @@ def run_matrix(out:Path,blender:Path):
         audit.get("authored_lights_verified") is not True or
         checked["outputs"]["frame.png"]["sha256"]!=sha256(image).hexdigest()):
         raise RuntimeError("Real Cycles USD import/frame/hash/camera/light contract failed")
+    # Same Windows Job / Linux native supervised worker boundary now
+    # exercises a genuinely imported source GLB with facial+joint motion.
+    real_actor=run_real_imported_actor_cycles(out,sup,scriptbytes)
     result={
         "format":FORMAT,"status":"ACTUAL_CYCLES_SOURCE_FRAME_VERIFIED",
+        "actual_imported_glb_actor":real_actor,
         "actual_blender_version":first,
         "actual_blender_binary_sha256":sha_file(executable),
         "source_usd_sha256":scene_sha,
