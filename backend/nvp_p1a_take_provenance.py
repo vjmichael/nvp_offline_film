@@ -119,7 +119,7 @@ def verify_published_native_attestations(index: FilmIndex,project_id,take_id,
         original_camera["scene_revision"]!=manifest["scene_revision"] or
         original_camera["scene_document_sha256"]!=
             manifest["scene_document_sha256"] or
-        original_camera["duration_tick"]!=
+        int(original_camera["duration_tick"])!=
             manifest["duration_tick"]):
         raise PermissionError("Original camera FilmIndex revision no longer matches frozen native Take")
     from backend.nvp_temporal_ledger import TemporalLedger
