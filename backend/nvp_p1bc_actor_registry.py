@@ -129,6 +129,11 @@ class ActorDialogueDirector:
         from backend.nvp_openusd_take import OpenUSDTakeCapture
         OpenUSDTakeCapture(self.index,
             verify_creator_action=lambda *_: False).verify_take(project_id, take_id)
+        # Distinguish a completely unknown/foreign ActorID from an
+        # existing actor who has not been cast into this original USD scene.
+        # Neither is allowed to borrow another actor's recorded voice.
+        ActorDirectory(self.index, verify_director_action=lambda *_: False).open(
+            project_id, actor_id, 1)
         from backend.nvp_openusd_scene import OpenUSDSceneBridge
         scene, stage = OpenUSDSceneBridge(self.index).open(
             project_id, doc["scene_id"], doc["scene_revision"])
