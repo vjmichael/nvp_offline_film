@@ -52,8 +52,9 @@ def _input(directory:Path,role:str,render_bytes:bytes,mix_bytes:bytes):
         (directory/"mix.pcm").write_bytes(mix_bytes)
 
 
-def _execute(executable:Path,work:Path,*,expect_success=True):
-    path=work/"plan.json"
+def _execute(executable:Path,work:Path,*,expect_success=True,
+             plan_path_override:Path|None=None):
+    path=plan_path_override if plan_path_override is not None else work/"plan.json"
     command=[str(executable.resolve()),"--plan",str(path.resolve())]
     if os.name=="nt":
         # Actual suspended CreateProcess + Job assignment BEFORE resuming.
@@ -180,6 +181,19 @@ def functional_acceptance(binary_dir:Path,*,platform:str) -> dict:
             wrong,sort_keys=True,separators=(",",":")),encoding="ascii")
         _execute(binary_dir/roles["original_capture"]["filename"],bad,
                  expect_success=False)
+        assert not (bad/"result.json").exists()
+        assert (bad/"source.pcm").read_bytes()==PCM
+        # A foreign existing plan.json with a valid sealed role is NOT an
+        # authorized task in the worker's current private workspace.
+        # Windows uses actual OS directory identity, not textual case.
+        alien=root/"foreign_plan"
+        alien.mkdir()
+        (alien/"plan.json").write_text(json.dumps({
+            "job_id":"w1g_external_plan","project_id":"NVPFunctionalTest",
+            "role":"original_capture",
+        },sort_keys=True,separators=(",",":")),encoding="ascii")
+        _execute(binary_dir/roles["original_capture"]["filename"],bad,
+                 expect_success=False,plan_path_override=alien/"plan.json")
         assert not (bad/"result.json").exists()
         assert (bad/"source.pcm").read_bytes()==PCM
         # Verify the EXACT tested compiled bytes survive first-party
