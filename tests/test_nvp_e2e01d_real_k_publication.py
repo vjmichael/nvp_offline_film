@@ -23,6 +23,20 @@ from backend.nvp_audio01j_final_av import FORMAT as AV_FORMAT
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_studio import Studio
 
+def _crash_child_env():
+    """Pin the original repository module root in the independently killed child.
+
+    unittest discovery may import the parent via tests/ or the working root;
+    invoking this same test file directly gives the child tests/ as sys.path[0].
+    An exact child PYTHONPATH is required to execute the genuine I/O crash
+    boundary rather than fail during import before touching the journal.
+    """
+    env=os.environ.copy()
+    root=str(Path(__file__).resolve().parents[1])
+    env["PYTHONPATH"]=os.pathsep.join(filter(None,(root,env.get("PYTHONPATH",""))))
+    return env
+
+
 
 def run(argv,*,env=None,timeout=120):
     process=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
@@ -97,7 +111,7 @@ class NativeKCrashIO(unittest.TestCase):
                         "format":AV_FORMAT,"director_approved":True,
                         "final_master":True,"dcp_delivered":False,
                         "rendered_mov_sha256":digest,"frames":12})
-                    env=os.environ.copy()
+                    env=_crash_child_env()
                     env["NVP_AUDIO01K_FAULT_TEST"]="enabled"
                     env["NVP_AUDIO01K_CRASH_AFTER"]=point
                     child=subprocess.run([sys.executable,
@@ -160,7 +174,7 @@ class NativeKCrashIO(unittest.TestCase):
                             "rendered_mov_sha256":digest,
                             "frames":12
                         })
-                    env=os.environ.copy()
+                    env=_crash_child_env()
                     for k in ("NVP_AUDIO01K_FAULT_TEST",
                               "NVP_AUDIO01K_CRASH_AFTER"):
                         env.pop(k,None)
