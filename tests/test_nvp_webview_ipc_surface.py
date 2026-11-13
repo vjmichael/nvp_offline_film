@@ -60,9 +60,16 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_actor_cast","data_av_actor_register",
             "data_av_actor_dialogue_bind","data_av_actor_dialogue_at",
             "data_av_actor_asset_catalog","data_av_actor_scene_cast",
+            "data_av_film_stage_catalog","data_av_film_stage_director_commit",
+            "data_av_film_stage_actor_bus_commit",
+            "data_av_film_stage_longform_publish",
+            "data_av_film_stage_longform_page",
+            "data_av_film_stage_longform_audit_page",
+            "data_av_film_stage_chunk_preflight","data_av_film_stage_chunk_begin",
+            "data_av_film_stage_chunk_poll","data_av_film_stage_chunk_cancel",
         }
         self.assertEqual(names,expected)
-        self.assertEqual(len(names),34)
+        self.assertEqual(len(names),44)
         self.assertFalse(hasattr(self.api,"__dict__"))
         for name in names:
             method=getattr(self.api,name)
@@ -84,6 +91,12 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             self.api.camera_render_capabilities()
         with self.assertRaises(PermissionError):
             self.api.request_camera_still({})
+        with self.assertRaises(PermissionError):
+            self.api.data_av_film_stage_catalog("a"*32)
+        with self.assertRaises(PermissionError):
+            self.api.data_av_film_stage_chunk_begin({})
+        with self.assertRaises(PermissionError):
+            self.api.data_av_film_stage_chunk_cancel("untrusted_ticket")
         self.assertEqual(self.native_window.prompt_count,0)
 
     def test_closed_bridge_stays_closed_through_js_proxy(self):

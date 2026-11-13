@@ -76,6 +76,38 @@ class NativeWebviewIPCSurface:
     def data_av_edited_30s_cancel(self, ticket):
         return self._delegate.data_av_edited_30s_cancel(ticket)
 
+    # P1-D/E/F/P2: tightly bounded source-only editorial and sound stages.
+    # All writes use the host's original native OS approval, not JS.
+    def data_av_film_stage_catalog(self, project_id):
+        return self._delegate.data_av_film_stage_catalog(project_id)
+
+    def data_av_film_stage_director_commit(self, request):
+        return self._delegate.data_av_film_stage_director_commit(request)
+
+    def data_av_film_stage_actor_bus_commit(self, request):
+        return self._delegate.data_av_film_stage_actor_bus_commit(request)
+
+    def data_av_film_stage_longform_publish(self, request):
+        return self._delegate.data_av_film_stage_longform_publish(request)
+
+    def data_av_film_stage_longform_page(self, request):
+        return self._delegate.data_av_film_stage_longform_page(request)
+
+    def data_av_film_stage_longform_audit_page(self, request):
+        return self._delegate.data_av_film_stage_longform_audit_page(request)
+
+    def data_av_film_stage_chunk_preflight(self, request):
+        return self._delegate.data_av_film_stage_chunk_preflight(request)
+
+    def data_av_film_stage_chunk_begin(self, request):
+        return self._delegate.data_av_film_stage_chunk_begin(request)
+
+    def data_av_film_stage_chunk_poll(self, ticket):
+        return self._delegate.data_av_film_stage_chunk_poll(ticket)
+
+    def data_av_film_stage_chunk_cancel(self, ticket):
+        return self._delegate.data_av_film_stage_chunk_cancel(ticket)
+
     # P1-B: registered source GLB mesh inventory and new 3D cast source.
     def data_av_actor_asset_catalog(self, project_id):
         return self._delegate.data_av_actor_asset_catalog(project_id)
