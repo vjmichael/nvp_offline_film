@@ -76,6 +76,7 @@ jobs:
           python -m unittest discover -s tests -p test_nvp_w1g_production_authority.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_w1g_encrypted_review.py -v
+          python -m unittest discover -s tests -p test_nvp_w1g_signed_wheelhouse.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_w1g_supply_chain_hardening.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
