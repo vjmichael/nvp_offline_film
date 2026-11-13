@@ -9,6 +9,7 @@ on:
       - native/**
       - tools/nvp_w1g_compile_first_party_workers.py
       - tools/nvp_w1g_native_worker_functional_acceptance.py
+      - tools/nvp_w1g_native_link_audit.py
       - packaging/build-w1g-compiled-windows.cmd
       - .github/workflows/nvp-w1g-compiled-workers.yml
   workflow_dispatch:
@@ -33,6 +34,7 @@ jobs:
           mkdir -p acceptance_artifacts
           python -m tools.nvp_w1g_compile_first_party_workers --out acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --compiler g++
           python -m tools.nvp_w1g_native_worker_functional_acceptance --binary-dir acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --evidence acceptance_artifacts/w1g-linux-native-functional.json
+          python -m tools.nvp_w1g_native_link_audit --binary-dir acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --output acceptance_artifacts/w1g-linux-native-imports.json
       - name: Preserve exact source-head native candidates (NO LICENSE APPROVAL)
         if: always()
         uses: actions/upload-artifact@v4
