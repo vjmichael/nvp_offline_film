@@ -67,9 +67,20 @@ class OpenUSDAssetRegistry:
             expected_revision=expected_revision, dependencies=[],
             precommit_guard=guard)
 
+    def import_rigged_actor(self, project_id, asset_id, source, *,
+                            actor_id, approve_import, creator_event):
+        """Import reviewed original USD; no external files or model authority."""
+        from backend.nvp_p1f_imported_actor import import_actor
+        return import_actor(
+            self.index, project_id, asset_id, source, actor_id=actor_id,
+            approve_import=approve_import, creator_event=creator_event)
+
     def open(self, project_id, asset_id, revision):
         record = self.index.read_revision(project_id, asset_id, revision)
         doc = record["data"]
+        from backend.nvp_p1f_imported_actor import FORMAT as RIGGED_FORMAT,open_actor
+        if doc.get("format")==RIGGED_FORMAT:
+            return open_actor(self.index,project_id,asset_id,revision)
         if (record["kind"] != "asset" or
             doc.get("format") != FORMAT or
             doc.get("source") != "nvp_authored_procedural_geometry" or
