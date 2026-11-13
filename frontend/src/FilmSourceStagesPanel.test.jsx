@@ -19,6 +19,10 @@ const catalog={
   continuity:[{continuity_id:'ReviewedCut',revision:1,
     edit_id:'OriginalCut',edit_sha256:editSha,
     review_status:'READY_FOR_SEPARATE_EXPORT_AUTHORIZATION'}],
+  actor_spatial_mixes:[{mix_id:'LeadVoiceBus',revision:1,
+    mix_sha256:'e'.repeat(64),take_id:'TakeOriginal',
+    take_sha256:'d'.repeat(64),listener_path:'/World/Camera',
+    actor_ids:['ActorLead']}],
   longform_plans:[{plan_id:'OriginalPlan',revision:1,plan_sha256:planSha,
     source_edit_sha256:editSha,total_chunks:1,total_frames:24,longform:false}],
 };
@@ -144,7 +148,8 @@ describe('P1-D/E/F/P2 original film stages creator GUI',()=>{
     expect(req.frame_count).toBe(24);
     expect(req.first_frame).toBe(0);
     expect(req.camera_path).toBe('/World/Camera');
-    expect(req.actor_mix_id).toBe(null);
+    expect(req.actor_mix_id).toBe('LeadVoiceBus');
+    expect(req.actor_mix_revision).toBe(1);
     expect(req.output_directory).toBeUndefined();
     await waitFor(()=>expect(native.data_av_film_stage_chunk_poll)
       .toHaveBeenCalled());

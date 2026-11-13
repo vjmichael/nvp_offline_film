@@ -27,6 +27,7 @@ export default function FilmSourceStagesPanel({
   const [continuityId,setContinuityId]=useState('DirectorReview001');
   const [continuitySource,setContinuitySource]=useState('');
   const [actorDialogue,setActorDialogue]=useState('');
+  const [chosenActorMix,setChosenActorMix]=useState('');
   const [mixId,setMixId]=useState('OriginalActorMix001');
   const [listener,setListener]=useState('');
   const [camera,setCamera]=useState('');
@@ -50,6 +51,8 @@ export default function FilmSourceStagesPanel({
   const selectedPlan=plans.find(x=>x.plan_id===chosenPlan);
   const dialogues=catalog?.original_dialogue||[];
   const chosenDialogue=dialogues.find(x=>x.dialogue_id===actorDialogue);
+  const mixes=(catalog?.actor_spatial_mixes||[]);
+  const chosenMix=mixes.find(x=>x.mix_id===chosenActorMix);
 
   async function refresh(){
     if(!ready||!projectId)return;
@@ -62,7 +65,8 @@ export default function FilmSourceStagesPanel({
        !Array.isArray(result.edits)||
        !Array.isArray(result.continuity)||
        !Array.isArray(result.original_dialogue)||
-       !Array.isArray(result.longform_plans))
+       !Array.isArray(result.longform_plans)||
+       !Array.isArray(result.actor_spatial_mixes))
       throw Error('Original film sources are not verified by the native host');
     setCatalog(result);
     setEditId(old=>result.edits.some(x=>x.edit_id===old)
@@ -75,6 +79,8 @@ export default function FilmSourceStagesPanel({
       ?old:(result.original_dialogue[0]?.dialogue_id||''));
     setChosenPlan(old=>result.longform_plans.some(x=>x.plan_id===old)
       ?old:(result.longform_plans[0]?.plan_id||''));
+    setChosenActorMix(old=>result.actor_spatial_mixes.some(x=>x.mix_id===old)
+      ?old:(result.actor_spatial_mixes[0]?.mix_id||''));
     return result;
   }
 
@@ -89,7 +95,8 @@ export default function FilmSourceStagesPanel({
          result.source_modified!==false||result.film_master_approved!==false||
          !Array.isArray(result.edits)||!Array.isArray(result.continuity)||
          !Array.isArray(result.longform_plans)||
-         !Array.isArray(result.original_dialogue))
+         !Array.isArray(result.original_dialogue)||
+         !Array.isArray(result.actor_spatial_mixes))
         throw Error('Native project source catalog cannot be verified');
       setCatalog(result);
       setEditId(result.edits[0]?.edit_id||'');
@@ -98,6 +105,7 @@ export default function FilmSourceStagesPanel({
       )?.continuity_id||'');
       setActorDialogue(result.original_dialogue[0]?.dialogue_id||'');
       setChosenPlan(result.longform_plans[0]?.plan_id||'');
+      setChosenActorMix(result.actor_spatial_mixes[0]?.mix_id||'');
     }).catch(e=>{if(active)setError(e.message)});
     return ()=>{active=false};
   },[native,projectId,sourceRevision,ready]);
@@ -168,6 +176,7 @@ export default function FilmSourceStagesPanel({
          receipt.sound_master_approved!==false)
         throw Error('Original actor voice bus has no native source receipt');
       await refresh();
+      setChosenActorMix(receipt.mix_id);
       setMessage('Original ActorID dry spatial dialogue bus saved, no voice synthesis.');
     });
   }
@@ -230,13 +239,18 @@ export default function FilmSourceStagesPanel({
     run(async()=>{
       if(!selectedPlan||!selectedReview)
         throw Error('A director-reviewed original cut is required for rendering');
+      if(chosenMix&&(
+          chosenMix.take_sha256!==chunk.source_take_sha256||
+          chosenMix.listener_path!==listener))
+        throw Error('Selected original actor sound bus belongs to a different Take or listener');
       const choice={
         project_id:projectId,
         continuity_id:selectedReview.continuity_id,
         continuity_revision:selectedReview.revision,
         first_frame:chunk.first_frame,frame_count:chunk.frame_count,
         listener_path:listener,camera_path:camera,
-        actor_mix_id:null,actor_mix_revision:null,
+        actor_mix_id:chosenMix?.mix_id||null,
+        actor_mix_revision:chosenMix?.revision||null,
       };
       const preflight=await native.data_av_film_stage_chunk_preflight(choice);
       if(preflight?.format!=='nvp.p1f.immutable_picture_sound_chunk.v1'||
@@ -346,6 +360,15 @@ export default function FilmSourceStagesPanel({
       onClick={commitActorBus}>Ask director to save original actor mix</button>
     <p className="fineprint">Dry 48-kHz source dialogue, not synthesized voices,
       acoustic HRTF or automatic phoneme lip-sync.</p>
+
+    <label>Optional approved original ActorID bus for finite picture chunks
+      <select aria-label="Original film ActorID sound bus" disabled={busy}
+        value={chosenActorMix} onChange={e=>setChosenActorMix(e.target.value)}>
+        <option value="">Use complete original scene sound</option>
+        {mixes.map(x=><option key={x.mix_id} value={x.mix_id}>
+          {x.mix_id} · original {x.take_id} · {x.actor_ids.join(', ')}</option>)}
+      </select>
+    </label>
 
     <h3>3 · Film — plan the original movie</h3>
     <label>Reviewed director cut
