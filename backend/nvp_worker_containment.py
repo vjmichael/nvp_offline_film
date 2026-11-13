@@ -85,7 +85,8 @@ class WindowsJobProcess:
             self._process = None
 
 
-def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False):
+def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False,
+                     linux_write_spool=None):
     """Trusted host launches pinned absolute executable with OS containment."""
     if not isinstance(command, list) or not command or not Path(command[0]).is_absolute():
         raise ValueError("Containment requires an absolute executable path")
@@ -93,12 +94,15 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
         raise ValueError("Invalid OS memory limit")
     if type(linux_cgroup_tree_required) is not bool:
         raise ValueError("Linux whole-tree containment mode must be boolean")
+    if linux_write_spool is not None and not linux_cgroup_tree_required:
+        raise ValueError("Original-device write sandbox requires strict cgroup custody")
     if os.name == "nt":
         return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr, memory_mb=memory_mb)
     if sys.platform == "linux":
         if linux_cgroup_tree_required:
             from backend.nvp_worker_linux_cgroup import launch_cgroup_tree
-            return launch_cgroup_tree(command,cwd=cwd,stdout=stdout,stderr=stderr,memory_mb=memory_mb)
+            return launch_cgroup_tree(command,cwd=cwd,stdout=stdout,stderr=stderr,
+                                      memory_mb=memory_mb,linux_write_spool=linux_write_spool)
         shim = Path(__file__).with_name("nvp_worker_linux_launcher.py").resolve()
         command = [sys.executable, str(shim), "--parent", str(os.getpid()),
                    "--memory-mb", str(memory_mb)] + command

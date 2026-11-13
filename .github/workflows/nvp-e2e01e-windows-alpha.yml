@@ -49,7 +49,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q tools/nvp_desktop_alpha.py
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-submodules backend tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all miniaudio --collect-all sounddevice --collect-all _sounddevice_data --collect-submodules backend --hidden-import tools.nvp_native_device_producer_worker --hidden-import tools.nvp_p1b_physical_device_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
           python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
@@ -59,10 +59,19 @@ jobs:
       - name: Create NSIS single-click installer
         shell: pwsh
         run: |
-          $nsis = Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
-          if (-not (Test-Path $nsis)) {
-            $nsis = (Get-Command makensis -ErrorAction Stop).Source
+          $roots = @(
+            [Environment]::GetEnvironmentVariable('ProgramFiles(x86)'),
+            $env:ProgramFiles,
+            $env:ChocolateyInstall
+          ) | Where-Object { $_ }
+          $candidates = foreach ($root in $roots) {
+            Join-Path $root 'NSIS/makensis.exe'
+            Join-Path $root 'bin/makensis.exe'
           }
+          $nsis = $candidates | Where-Object {
+            Test-Path -LiteralPath $_ -PathType Leaf
+          } | Select-Object -First 1
+          if (-not $nsis) { throw 'Reviewed NSIS compiler missing after native provisioning' }
           & $nsis '/V3' 'packaging/nvp-alpha.nsi'
           if ($LASTEXITCODE -ne 0) { throw 'NSIS failed' }
           if (-not (Test-Path 'dist/NVP-Alpha-Setup.exe')) { throw 'Missing NSIS installer' }

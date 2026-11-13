@@ -432,10 +432,24 @@ def main(argv=None):
                         help="Launch a real native Windows WebView2 and verify page loaded")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
+    parser.add_argument("--smoke-producer-bundle",action="store_true",
+                        help="Verify child ADC code and bundled PortAudio/miniaudio without recording")
     args=parser.parse_args(argv)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
-            args.smoke_window,args.smoke_data_av))>1:
+            args.smoke_window,args.smoke_data_av,args.smoke_producer_bundle))>1:
         parser.error("Choose only one installed-app smoke mode")
+    if args.smoke_producer_bundle:
+        # No device is opened or consent simulated in package verification.
+        from tools.nvp_native_device_producer_worker import Recorder
+        from backend.nvp_device_producer_custody import SupervisedNativeDevice
+        import miniaudio
+        import sounddevice
+        if not callable(Recorder) or not callable(SupervisedNativeDevice):
+            raise RuntimeError("Bundled P1-A recorder is unavailable")
+        if not hasattr(miniaudio,"CaptureDevice") or not hasattr(sounddevice,"RawInputStream"):
+            raise RuntimeError("Bundled native physical recording adapters unavailable")
+        _smoke_checkpoint("producer_bundle_verified")
+        return 0
     if args.smoke:
         return run_smoke()
     if args.smoke_window:
@@ -493,9 +507,17 @@ def _smoke_checkpoint(stage):
 
 
 def installed_smoke_entry():
-    """Report packaged --windowed smoke exceptions through an opt-in CI file."""
+    """Package-local original producer role and visible installed smoke gates.
+
+    The native desktop never accepts a worker launch as a browser IPC method;
+    only the supervised host constructs the command. This subprocess role is
+    intentionally dispatched BEFORE desktop WebView2 / FastAPI initialization.
+    """
     try:
         _smoke_checkpoint("entry")
+        if len(sys.argv) >= 2 and sys.argv[1] == "--device-producer-worker":
+            from tools.nvp_native_device_producer_worker import main as producer_main
+            return producer_main(sys.argv[2:])
         return main()
     except Exception:
         import traceback
