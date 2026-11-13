@@ -21,6 +21,9 @@ from tools.nvp_w1g_native_dependencies import (
 from tools.nvp_w1g_reviewed_release import (
     FORMAT as REVIEW_FORMAT, license_review_digest,
 )
+from tools.nvp_w1g_worker_package import (
+    FORMAT as WORKER_FORMAT, ROLES, _check_roster, _verify_binary,
+)
 
 UNKNOWN="REVIEW_REQUIRED"
 
@@ -54,6 +57,36 @@ def candidate_wheel_lock(wheelhouse: Path, *, platform: str) -> dict:
             "candidate_only":True,"redistribution_approved":False}
 
 
+def candidate_native_worker_roster(binary_root: Path, filenames_by_role: dict,
+                                   *, platform: str) -> dict:
+    """Inventory five real compiled binaries; never mint a review or license.
+
+    The input is an explicit owner-supplied role -> filename mapping, not a
+    discoverable or guessed assignment of one binary to five worker roles.
+    """
+    binary_root=Path(binary_root)
+    if (not binary_root.is_dir() or binary_root.is_symlink() or
+        type(filenames_by_role) is not dict or
+        set(filenames_by_role)!=set(ROLES)):
+        raise RuntimeError("All five original compiled worker roles and actual binary directory required")
+    workers=[]
+    for role,name in sorted(filenames_by_role.items()):
+        if type(name) is not str or name!=Path(name).name or (
+                "/" in name or "\\" in name):
+            raise RuntimeError("Untrusted original native worker filename")
+        binary=binary_root/name
+        _verify_binary(binary,platform)
+        workers.append({"role":role,"filename":name,"sha256":_sha(binary)})
+    roster={"format":WORKER_FORMAT,"platform":platform,"workers":workers}
+    _check_roster(roster)
+    return {"status":"UNSIGNED_NATIVE_EXECUTABLE_ROSTER_CANDIDATE",
+            "roster":roster,
+            "executable_bytes_examined":True,
+            "native_executables_executed":False,
+            "creator_review_completed":False,
+            "redistribution_approved":False}
+
+
 def candidate_redistribution_review(receipt: dict) -> dict:
     files=receipt.get("files")
     if type(files) is not dict or not files:
@@ -81,6 +114,9 @@ def main(argv=None):
     ap.add_argument("--wheelhouse",type=Path,required=True)
     ap.add_argument("--build-receipt",type=Path,required=True)
     ap.add_argument("--platform",choices=("windows-amd64","linux-amd64"),required=True)
+    ap.add_argument("--worker-binaries",type=Path)
+    ap.add_argument("--worker-role",action="append",default=[],
+                    help="Explicit first-party role=compiled_executable, repeat for all five")
     ap.add_argument("--output",type=Path,required=True)
     args=ap.parse_args(argv)
     if args.output.exists() or args.output.is_symlink():
@@ -88,10 +124,23 @@ def main(argv=None):
     receipt=json.loads(args.build_receipt.read_text("utf8"))
     if receipt.get("platform") != args.platform:
         raise RuntimeError("Native package platform differs from offline wheelhouse")
+    candidate_workers=None
+    if args.worker_binaries is not None or args.worker_role:
+        if args.worker_binaries is None:
+            raise RuntimeError("Compiled worker binary directory is required")
+        mapping={}
+        for raw in args.worker_role:
+            role,sep,name=raw.partition("=")
+            if not sep or role in mapping:
+                raise RuntimeError("Explicit duplicate or untyped worker role")
+            mapping[role]=name
+        candidate_workers=candidate_native_worker_roster(
+            args.worker_binaries,mapping,platform=args.platform)
     result={
         "status":"OWNER_REVIEW_REQUIRED",
         "candidate_wheel_lock":candidate_wheel_lock(args.wheelhouse,platform=args.platform),
         "unsigned_redistribution_review":candidate_redistribution_review(receipt),
+        "candidate_native_worker_roster":candidate_workers,
         "native_worker_executable_roster_reviewed":False,
         "redistribution_licenses_verified":False,
         "signed_release":False,
