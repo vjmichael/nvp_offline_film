@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import wave
 
 from backend.nvp_b14_edited_movie import verify_edited_technical_mov
@@ -43,7 +44,7 @@ def _canonical(value):
 
 
 def _run(command, *, stdout=None, timeout=600):
-    done=subprocess.run(command,stdout=stdout or subprocess.PIPE,
+    done=run_owned_subprocess(command,stdout=stdout or subprocess.PIPE,
                         stderr=subprocess.PIPE,stdin=subprocess.DEVNULL,
                         timeout=timeout,check=False)
     if done.returncode!=0:
@@ -97,6 +98,8 @@ def _decoded_sha(movie, stream, ffmpeg):
         unit=4
     else:
         raise ValueError("Unrecognized stream")
+    if os.name == "nt":
+        raise RuntimeError("Legacy direct-pipe FFmpeg decode cannot run outside the release-owned native decoder")
     proc=subprocess.Popen([ffmpeg,"-nostdin","-hide_banner","-v","error",
                            "-xerror","-i",str(movie),*args,"pipe:1"],
                           stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,

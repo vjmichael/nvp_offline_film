@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 
 from backend.nvp_audio01j_picture_lock import validate_picture_lock
 from backend.nvp_audio01j_fault_matrix import crash_after
@@ -33,7 +34,7 @@ def candidate_id_for(project_id,export_id):
 
 
 def _run(command,timeout=600):
-    p=subprocess.run(command,stdin=subprocess.DEVNULL,
+    p=run_owned_subprocess(command,stdin=subprocess.DEVNULL,
                      stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                      timeout=timeout,check=False)
     if p.returncode:

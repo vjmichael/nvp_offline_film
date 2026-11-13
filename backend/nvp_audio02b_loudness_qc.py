@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import wave
 
 FORMAT="nvp.audio.loudness_technical_qc.v1"
@@ -40,7 +41,7 @@ def measure_mix(wav_path,*,ffmpeg="ffmpeg",target_lufs=-16.0,
         "-i",str(path),"-map","0:a:0",
         "-af",f"loudnorm=I={target_lufs}:TP={ceiling_dbtp}:LRA=11:print_format=json",
         "-f","null","-"]
-    run=subprocess.run(cmd,capture_output=True,timeout=240,check=False)
+    run=run_owned_subprocess(cmd,capture_output=True,timeout=240,check=False)
     if run.returncode:
         raise RuntimeError("Native loudness analysis failed: "+
                            run.stderr.decode("utf8","replace")[-700:])
