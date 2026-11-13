@@ -4,7 +4,7 @@ import React,{useEffect,useState} from 'react';
 // No browser URI, local executable path, GLB bytes, or approval token crosses IPC.
 const IDENT=/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/;
 const initial={actor_id:'',character_asset_id:'',position:'0,0,0',
-  motion_joint:'',travel:'0'};
+  motion_joint:'',travel:'0',face_target:'',face_strength:'0'};
 
 export default function ActorSceneCastingPanel({
     projectId,native,actorCatalog=[],sourceRevision=0,onScenePublished=()=>{}}){
@@ -66,9 +66,15 @@ export default function ActorSceneCastingPanel({
         throw Error('Rig motion must be between -0.5 and 0.5 metres.');
       if(item.motion_joint&&!glb.joints.includes(item.motion_joint))
         throw Error('Acting motion joint is not in the original GLB rig.');
+      const faceStrength=Number(item.face_strength);
+      if(!Number.isFinite(faceStrength)||faceStrength<0||faceStrength>1||
+         (item.face_target&&!glb.facial_targets?.includes(item.face_target))||
+         (!item.face_target&&faceStrength!==0))
+        throw Error('Facial performance must use original imported GLB morphs.');
       return {actor_id:item.actor_id,
         character_asset_id:item.character_asset_id,
-        position:xyz,motion_joint:item.motion_joint||null,travel};
+        position:xyz,motion_joint:item.motion_joint||null,travel,
+        face_target:item.face_target||null,face_strength:faceStrength};
     });
     return {project_id:projectId,scene_id:sceneId,camera_height:height,cast};
   }
@@ -131,7 +137,8 @@ export default function ActorSceneCastingPanel({
         <label>Imported GLB source {i+1}
           <select value={row.character_asset_id} disabled={busy}
             onChange={e=>setRows(old=>old.map((x,n)=>n===i
-              ?{...x,character_asset_id:e.target.value,motion_joint:''}:x))}>
+              ?{...x,character_asset_id:e.target.value,
+                 motion_joint:'',face_target:'',face_strength:'0'}:x))}>
             <option value="">Choose imported, source-verified GLB</option>
             {assets.map(x=><option key={x.character_asset_id}
               value={x.character_asset_id}>
@@ -150,6 +157,21 @@ export default function ActorSceneCastingPanel({
             {(asset?.joints||[]).map(x=>
               <option key={x} value={x}>{x}</option>)}
           </select>
+        </label>
+        <label>Original GLB facial morph {i+1}
+          <select value={row.face_target} disabled={busy||!asset}
+            onChange={e=>setRows(old=>old.map((x,n)=>n===i
+              ?{...x,face_target:e.target.value,
+                face_strength:e.target.value?x.face_strength:'0'}:x))}>
+            <option value="">No facial expression</option>
+            {(asset?.facial_targets||[]).map(x=>
+              <option key={x} value={x}>{x}</option>)}
+          </select>
+        </label>
+        <label>Author facial strength 0..1 {i+1}
+          <input value={row.face_strength} inputMode="decimal"
+            disabled={busy||!row.face_target}
+            onChange={e=>replaceRow(i,'face_strength',e.target.value)}/>
         </label>
         <label>Director-authored joint X travel (metres) {i+1}
           <input value={row.travel} inputMode="decimal" disabled={busy}
@@ -172,6 +194,8 @@ export default function ActorSceneCastingPanel({
     <p className="fineprint">Original GLB rights remain creator-declared,
       not independently cleared for distribution. Joint travel is a
       director-authored test gesture, not captured actor motion.
+      Facial morph deltas are real original GLB geometry, with explicit
+      creator keyframes rather than inferred speech phonemes.
       Complex glTF materials and incompatible rigs fail closed.</p>
   </section>;
 }

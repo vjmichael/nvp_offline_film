@@ -184,7 +184,9 @@ export default function ActorPerformancePanel({
       {verified&&<p role="status">Actor {verified.actor_id} at tick
         {' '}{verified.time_tick}: {verified.dialogue_active?'original dialogue active':
         'original dialogue inactive'} · USD {verified.usd_prim_path}
-        {' '}· {verified.source_skin_vertex_count} evaluated source skin vertices</p>}
+        {' '}· {verified.source_skin_vertex_count} evaluated source skin vertices
+        {verified.native_facial_deformation_evaluated&&
+          ' · original GLB facial morph evaluated'}</p>}
     </>}
     <ActorSceneCastingPanel projectId={projectId} native={native}
       actorCatalog={cast?.actors||[]} sourceRevision={sourceRevision}
