@@ -196,13 +196,18 @@ def run_persistent_installed_smoke(mode):
             raise RuntimeError("Installed NVP failed to exit cleanly")
 
 
-def create_trusted_camera_bridge(port):
-    """Desktop-only pywebview IPC; never registered as an HTTP route."""
+def create_trusted_camera_bridge(port, *, native_capture_auditor=None):
+    """Desktop-only IPC; a native worker auditor is injected by the host ONLY.
+
+    The default alpha has no independently signed native capture worker roster
+    and deliberately does not self-enable or self-approve developer candidates.
+    """
     from backend.nvp_api import studio
     from backend.nvp_film_index import FilmIndex
     from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
     return TrustedDesktopCameraBridge(
-        FilmIndex(studio),origin="http://127.0.0.1:"+str(port))
+        FilmIndex(studio),origin="http://127.0.0.1:"+str(port),
+        native_capture_auditor=native_capture_auditor)
 
 
 def run_basic_edge_window_smoke():
