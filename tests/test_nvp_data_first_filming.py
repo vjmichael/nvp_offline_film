@@ -46,6 +46,27 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
             }]
         )
 
+    def test_shared_device_iterator_refused_before_pcm_consumption(self):
+        req=self.payload()
+        consumed=[]
+        def device_stream():
+            consumed.append("read")
+            yield self.original
+        shared=device_stream()
+        first=req["recordings"][0]
+        first["pcm_chunks"]=shared
+        second=dict(first)
+        second.update(event_id="Speech002",source_id="SecondRecordedSpeech")
+        req["recordings"].append(second)
+        with self.assertRaisesRegex(ValueError,"iterator shared"):
+            self.capture.capture(**req)
+        self.assertEqual(consumed,[])
+        for identity in ("NewRecordedSpeech","SecondRecordedSpeech",
+                         "FilmingSoundTimeline","FilmedTake"):
+            with self.assertRaises(KeyError):
+                self.index.read_revision(self.pid,identity,1)
+        self.assertEqual(self.capture.publications.unresolved(self.pid),[])
+
     def test_equal_length_substituted_publication_cannot_freeze_take(self):
         from unittest.mock import patch
         req=self.payload()
