@@ -112,6 +112,16 @@ class OriginalMicrophoneNativeWorkerAudit:
                     verified.get("process_tree_custody_verified") is not True or
                     verified.get("input_sha256")!={"source.pcm":window_sha}):
                     raise PermissionError("Original native capture worker lacked final OS/result evidence")
+                worker_sha=verified.get("worker_sha256")
+                plan_sha=verified.get("plan_sha256")
+                kernel=verified.get("os_custody_receipt")
+                if (type(worker_sha) is not str or not SHA.fullmatch(worker_sha) or
+                    type(plan_sha) is not str or not SHA.fullmatch(plan_sha) or
+                    type(kernel) is not dict or
+                    kernel.get("process_tree_custody_verified") is not True):
+                    raise PermissionError("Original native capture requires exact worker, plan and kernel receipt identities")
+                from backend.nvp_p1a_take_provenance import audit_sha256
+                kernel_sha=audit_sha256(kernel)
                 job=verified.get("job_id")
                 if type(job) is not str or not re.fullmatch(r"w1g_[0-9a-f]{24}",job):
                     raise PermissionError("Original native capture receipt lacks authentic job identity")
@@ -134,6 +144,9 @@ class OriginalMicrophoneNativeWorkerAudit:
                     "sample_count":window_samples,
                     "window_pcm_sha256":window_sha,
                     "worker_result_sha256":verified["result_sha256"],
+                    "native_worker_binary_sha256":worker_sha,
+                    "native_worker_plan_sha256":plan_sha,
+                    "os_custody_receipt_sha256":kernel_sha,
                     "original_native_kernel_custody_verified":True,
                 })
                 total_samples+=window_samples
