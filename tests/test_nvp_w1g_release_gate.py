@@ -165,7 +165,6 @@ class ReleaseWideKernelFence(unittest.TestCase):
                 self.assertTrue(crash_journal.is_file())
                 original_journal=Path(crash_journal.read_text())
                 try:
-                    import json
                     self.assertEqual(json.loads(original_journal.read_text())["state"],"RUNNING")
                     with self.assertRaisesRegex(PermissionError,"interrupted or unverified"):
                         inspect_original_process_journals()
