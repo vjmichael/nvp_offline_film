@@ -33,7 +33,7 @@ py -m tools.nvp_w1g_windows_efs_proof prepare --parent "D:\ProtectedScratch" --r
 py -m tools.nvp_w1g_windows_efs_proof reopen --receipt "D:\OwnerEvidence\w1g-efs-test.json"
 ```
 
-The `reopen` status demonstrates same-user encrypted-file reopen **only**. It does *not* prove that the owner has independently backed up and restored the EFS certificate/private key. The creator must verify that recovery separately through their OS-approved secure backup/recovery process. Never upload private EFS keys, decrypted films, or recovery secrets to GitHub, a model, or a CI artifact.
+The `reopen` command now refuses the same Windows boot: a distinct, conservative native boot-time observation and encrypted-file reopen are both required. A changed wall clock can affect the estimate, so this is **not** independent physical-owner authentication or key recovery evidence. It does *not* prove that the owner has independently backed up and restored the EFS certificate/private key. The creator must verify that recovery separately through their OS-approved secure backup/recovery process. Never upload private EFS keys, decrypted films, or recovery secrets to GitHub, a model, or a CI artifact.
 
 Original Windows filming PCM now stays in bounded RAM by default. Long recordings must provide a dedicated `encrypted_pcm_scratch` directory admitted by `require_efs_stage` before PCM is written; an ordinary system temp spill is denied. Original FilmIndex key custody, derivatives and full-project encryption remain independent requirements.
 
@@ -56,6 +56,8 @@ py -m tools.nvp_w1g_owner_windows_acceptance preflight @common --reviewed-receip
 ```
 
 `preflight` independently re-verifies exact staged bytes, signed review, all five real native executables, film inventory, installed version and real release-wide Windows kernel custody under held worker leases. It **never** writes an upgrade journal or invokes a creator approval dialog. It releases its Job/lease locks immediately afterward. Its result is **not reusable** as authorization: activation must remeasure the actual OS and obtain fresh native consent.
+
+The NSIS program root, original-film root and upgrade-journal root must be pairwise disjoint, even when Windows resolves directory aliases; never store a production journal inside an original-film tree. An old or interrupted activation journal also blocks a fresh preflight.
 
 If provisioning is absent, source bytes differ, EFS is unsupported, journal recovery is uncertain, a worker survives, or the reviewer key is not externally pinned, stop. Do not weaken the guard to pass.
 
