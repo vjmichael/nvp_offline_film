@@ -247,7 +247,13 @@ class P1DEConform:
         if row["kind"] != "edit" or row["data"].get("format") != FORMAT:
             raise RuntimeError("Not a P1-D/E native source edit")
         doc = row["data"]
-        bound, duration, deps = _bound_segments(self.index, pid, doc["segments"])
+        source_segments = [
+            {key: segment[key] for key in (
+                "take_id", "take_sha256", "in_tick", "out_tick",
+                "listener_path", "audio")}
+            for segment in doc["segments"]
+        ]
+        bound, duration, deps = _bound_segments(self.index, pid, source_segments)
         if (bound != doc["segments"] or duration != doc["duration_tick"] or
                 doc.get("ticks_per_second") != TICKS_PER_SECOND or
                 doc.get("sample_rate") != SAMPLE_RATE or
