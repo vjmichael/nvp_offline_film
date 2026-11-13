@@ -136,6 +136,14 @@ def verify_published_native_attestations(index: FilmIndex,project_id,take_id,
         record=source["data"]
         digest=sha256()
         samples=0
+        original_windows=att.get("native_worker_receipts")
+        if type(original_windows) is not list or not original_windows:
+            raise PermissionError("Missing original native worker source windows")
+        current=0
+        remaining=original_windows[0].get("sample_count",0)*2
+        window_digest=sha256()
+        if type(remaining) is not int or remaining<=0:
+            raise PermissionError("Invalid original worker window size")
         for chunk in record["chunks"]:
             blob=index.get_blob(project_id,chunk["blob_sha256"])
             if (type(blob) is not bytes or len(blob)!=chunk["byte_count"] or
@@ -143,8 +151,30 @@ def verify_published_native_attestations(index: FilmIndex,project_id,take_id,
                 raise PermissionError("Original PCM immutable chunk content changed")
             digest.update(blob)
             samples+=len(blob)//2
-        if samples!=record["sample_count"]:
-            raise PermissionError("Published original sample count changed")
+            # Original FilmIndex PCM chunks are 1MiB, but compiled-worker
+            # windows are 4MiB. Reconstruct each SHA incrementally across
+            # immutable chunk boundaries without materializing the Take.
+            pos=0
+            while pos<len(blob):
+                if current>=len(original_windows) or remaining<=0:
+                    raise PermissionError("Original worker window mapping overflow")
+                size=min(remaining,len(blob)-pos)
+                window_digest.update(blob[pos:pos+size])
+                pos+=size
+                remaining-=size
+                if remaining==0:
+                    if window_digest.hexdigest()!=original_windows[current].get(
+                            "window_pcm_sha256"):
+                        raise PermissionError("Native worker window digest differs from published original PCM")
+                    current+=1
+                    if current<len(original_windows):
+                        remaining=original_windows[current].get("sample_count",0)*2
+                        if type(remaining) is not int or remaining<=0:
+                            raise PermissionError("Invalid following native worker sample count")
+                        window_digest=sha256()
+        if (samples!=record["sample_count"] or
+            current!=len(original_windows)):
+            raise PermissionError("Published original samples did not fill every native worker window")
         validate_original_audit(
             att,project_id=project_id,take_id=take_id,
             scene_id=manifest["scene_id"],
