@@ -537,6 +537,195 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                 "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
                 "original_modified":False,"master_approved":False}
 
+    # P1-D/E/P2: original creator-facing director's source stages.
+    # Strict, reviewed finite methods; no native filesystem path or
+    # human-approval token is accepted from the webview.
+    def _film_continuity(self):
+        from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+        return NativeEditorialContinuity(
+            self._edited_assembly(),verify_director_action=lambda *_:False)
+
+    def _film_schedule(self,approval=None):
+        from backend.nvp_p2_longform_source_plan import NativeLongformFilmPlan
+        assembly=self._edited_assembly()
+        from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+        continuity=NativeEditorialContinuity(
+            assembly,verify_director_action=lambda *_:False)
+        return NativeLongformFilmPlan(
+            assembly,continuity,
+            verify_creator_action=approval or (lambda *_:False))
+
+    def data_av_film_stage_catalog(self,project_id):
+        self._native_window()
+        pid=_require_pid(project_id)
+        assembly=self._edited_assembly()
+        edits=[]
+        for row in self.index.list_objects(pid,kind="edit")[:64]:
+            rec=assembly.open_edit(pid,row["object_id"],row["head_revision"])
+            data=rec["data"]
+            edits.append({
+                "edit_id":rec["object_id"],"edit_revision":rec["revision"],
+                "edit_sha256":rec["document_sha256"],
+                "duration_tick":str(data["duration_tick"]),
+                "segments":[{"segment_id":s["segment_id"],
+                             "source_take_id":s["source_take_id"],
+                             "source_take_sha256":s["source_take_document_sha256"],
+                             "source_shot_id":s["source_shot_id"]}
+                            for s in data["segments"]][:500]})
+        dialogue=[]
+        for row in self.index.list_objects(pid,kind="dialogue")[:128]:
+            rec=self.index.read_revision(pid,row["object_id"],row["head_revision"])
+            doc=rec["data"]
+            if doc.get("format")!="nvp.p1bc.actor_original_dialogue.v1":
+                continue
+            dialogue.append({
+                "dialogue_id":rec["object_id"],"revision":rec["revision"],
+                "dialogue_sha256":rec["document_sha256"],
+                "actor_id":doc["actor_id"],"take_id":doc["source_take_id"]})
+        continuity=[]
+        plans=[]
+        for row in self.index.list_objects(pid,kind="presentation")[:256]:
+            rec=self.index.read_revision(pid,row["object_id"],row["head_revision"])
+            fmt=rec["data"].get("format")
+            if fmt=="nvp.p1d.director_edit_continuity.v1":
+                self._film_continuity().open(pid,rec["object_id"],rec["revision"])
+                continuity.append({
+                    "continuity_id":rec["object_id"],"revision":rec["revision"],
+                    "continuity_sha256":rec["document_sha256"],
+                    "edit_id":rec["data"]["edit_id"],
+                    "edit_sha256":rec["data"]["edit_document_sha256"],
+                    "review_status":rec["data"]["review_status"]})
+            elif fmt=="nvp.p2.original_film_longform_source_schedule.v1":
+                self._film_schedule().open(pid,rec["object_id"],rec["revision"])
+                plans.append({"plan_id":rec["object_id"],"revision":rec["revision"],
+                              "plan_sha256":rec["document_sha256"],
+                              "source_edit_sha256":rec["data"]["edit_document_sha256"],
+                              "total_chunks":rec["data"]["total_chunks"],
+                              "total_frames":rec["data"]["total_frames"],
+                              "longform":rec["data"]["is_thirty_minute_longform"]})
+        return {"format":"nvp.p1def.p2.native_source_stage_catalog.v1",
+                "project_id":pid,"edits":edits,"original_dialogue":dialogue,
+                "continuity":continuity,"longform_plans":plans,
+                "source_modified":False,"export_authorized":False,
+                "film_master_approved":False}
+
+    def data_av_film_stage_director_commit(self,request):
+        self._native_window()
+        required={"project_id","continuity_id","edit_id",
+                  "edit_revision","cues","expected_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Director editing requires exact source and segment cue IDs")
+        from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
+        editor=NativeEditorialContinuity(
+            self._edited_assembly(),verify_director_action=lambda event,scope:
+            self._ask(
+                "Approve one immutable, non-destructive SOURCE CUT review?\n"
+                "Project: "+scope["project_id"]+"\n"
+                "Director review: "+scope["continuity_id"]+"\n"
+                "Edit SHA: "+scope["edit_document_sha256"]+"\n"
+                "All segment cues SHA: "+scope["cues_sha256"]+"\n"
+                "Continuity: "+scope["review_status"]+"\n"
+                "This changes no frozen Take and grants NO export or film master."))
+        rec=editor.publish(
+            request["project_id"],request["continuity_id"],
+            edit_id=request["edit_id"],edit_revision=request["edit_revision"],
+            cues=request["cues"],expected_revision=request["expected_revision"],
+            creator_event="native_director")
+        return {"format":"nvp.p1d.native_director_commit_receipt.v1",
+                "status":"ORIGINAL_EDIT_REVIEW_COMMITTED",
+                "continuity_id":rec["object_id"],"revision":rec["revision"],
+                "document_sha256":rec["document_sha256"],
+                "original_source_modified":False,"export_approved":False}
+
+    def data_av_film_stage_actor_bus_commit(self,request):
+        self._native_window()
+        required={"project_id","mix_id","take_id","listener_path",
+                  "routes","expected_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Actor spatial mix needs exact source dialogue routes")
+        from backend.nvp_p1e_actor_spatial_bus import NativeActorSpatialBus
+        mixer=NativeActorSpatialBus(
+            self.index,verify_director_action=lambda event,scope:self._ask(
+                "Approve the source ActorID-owned dry stereo bus?\n"
+                "Take SHA: "+scope["take_document_sha256"]+"\n"
+                "Original dialogue route digest: "+scope["routes_sha256"]+"\n"
+                "Listener: "+scope["listener_path"]+"\n"
+                "This is NOT a generated voice, HRTF or approved sound master."))
+        rec=mixer.publish(
+            request["project_id"],request["mix_id"],
+            take_id=request["take_id"],listener_path=request["listener_path"],
+            routes=request["routes"],expected_revision=request["expected_revision"],
+            creator_event="native_director")
+        return {"format":"nvp.p1e.native_actor_bus_receipt.v1",
+                "status":"SOURCE_DIALOGUE_BUS_COMMITTED",
+                "mix_id":rec["object_id"],"revision":rec["revision"],
+                "document_sha256":rec["document_sha256"],
+                "sound_master_approved":False,"original_pcm_modified":False}
+
+    def data_av_film_stage_longform_publish(self,request):
+        self._native_window()
+        required={"project_id","plan_id","continuity_id","continuity_revision",
+                  "listener_path","camera_path","expected_revision"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Longform source plan requires exact director intent")
+        planner=self._film_schedule(
+            approval=lambda event,scope:self._ask(
+                "Index a source-only original film schedule?\n"
+                "Continuity SHA: "+scope["continuity_sha256"]+"\n"
+                "Original edited film SHA: "+scope["edit_sha256"]+"\n"
+                "All finite source chunks digest: "+scope["chunk_manifest_sha256"]+"\n"
+                "Duration Film Time ticks: "+scope["duration_tick"]+"\n"
+                "Only a plan. No footage has been generated; no production "
+                "worker, installation or film master is authorized."))
+        rec=planner.publish(
+            request["project_id"],request["plan_id"],
+            continuity_id=request["continuity_id"],
+            continuity_revision=request["continuity_revision"],
+            listener_path=request["listener_path"],
+            camera_path=request["camera_path"],
+            expected_revision=request["expected_revision"],
+            creator_event="native_creator")
+        reopened=planner.open(request["project_id"],request["plan_id"],rec["revision"])
+        return {"format":"nvp.p2.native_longform_source_plan_receipt.v1",
+                "status":"SOURCE_ONLY_LONGFORM_PLAN_INDEXED",
+                "plan_id":rec["object_id"],"revision":rec["revision"],
+                "document_sha256":rec["document_sha256"],
+                "total_frames":reopened["data"]["total_frames"],
+                "total_chunks":reopened["data"]["total_chunks"],
+                "is_thirty_minute_longform":reopened["data"]["is_thirty_minute_longform"],
+                "rendered_frames":0,"film_master_approved":False}
+
+    def data_av_film_stage_longform_page(self,request):
+        self._native_window()
+        required={"project_id","plan_id","revision","first_index","limit"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Longform page needs exact original source cursor")
+        return self._film_schedule().page(
+            request["project_id"],request["plan_id"],request["revision"],
+            first_index=request["first_index"],limit=request["limit"])
+
+    def data_av_film_stage_longform_audit_page(self,request):
+        self._native_window()
+        required={"project_id","plan_id","revision","first_index","limit"}
+        if type(request) is not dict or set(request)!=required:
+            raise ValueError("Longform derivative audit needs a bounded source page")
+        from pathlib import Path
+        import os
+        home=Path(os.environ["NVP_HOME"])
+        if home.is_symlink() or not home.is_dir():
+            raise RuntimeError("Native source project home not verified")
+        derived=home.parent/"Exports"
+        if derived.is_symlink() or not derived.is_dir():
+            # No creator-approved picture chunk has been published yet.
+            return {"format":"nvp.p2.original_film_longform_source_schedule.v1",
+                    "status":"NO_VERIFIED_DERIVATIVE_OUTPUT_PARENT",
+                    "verified_chunks":[],"missing_chunks":[],
+                    "full_film_master_approved":False}
+        return self._film_schedule().reconcile_page(
+            request["project_id"],request["plan_id"],request["revision"],
+            output_parent=derived,first_index=request["first_index"],
+            limit=request["limit"])
+
     # P1-B: convert registered original GLB bytes, not browser-uploaded
     # arbitrary USD or executable model/texture paths.
     def data_av_actor_asset_catalog(self,project_id):
