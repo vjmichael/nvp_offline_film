@@ -72,6 +72,58 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
         self.assertFalse(scope["render_approved"])
         return _png(64,64)
 
+    def test_native_filmmaker_source_cut_audition_and_exact_sha_commit(self):
+        from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+        class NativeWindow:
+            def __init__(self):
+                self.authorizations=[]
+                self.url="http://127.0.0.1:7777/"
+            def get_current_url(self):
+                return self.url
+            def create_confirmation_dialog(self,title,message):
+                self.authorizations.append(message)
+                return "Original source segments SHA" in message
+        host=TrustedDesktopCameraBridge(
+            self.index,origin="http://127.0.0.1:7777")
+        window=NativeWindow()
+        host._attach_window(window)
+        self.addCleanup(host._close)
+        available=host.data_av_film_stage_graph_catalog(self.pid)
+        self.assertEqual(available["format"],
+            "nvp.p1d.native_original_source_graph_catalog.v1")
+        self.assertFalse(available["active_cut_changed"])
+        graph=next(g for g in available["graphs"] if g["graph_id"]=="slate")
+        self.assertEqual(graph["graph_sha256"],
+            self.index.read_revision(self.pid,"slate",1)["document_sha256"])
+        source=[{"segment_id":"NativeFirst",
+                 "branch_id":"original",
+                 "source_in_tick":T,
+                 "source_out_tick":2*T}]
+        request={"project_id":self.pid,"graph_id":"slate",
+                 "graph_revision":1,"segments":source}
+        before=self.index.read_revision(self.pid,"take",1)["document_sha256"]
+        draft=host.data_av_film_stage_edit_draft(request)
+        self.assertTrue(draft["draft_uncommitted"])
+        self.assertFalse(draft["render_approved"])
+        self.assertNotEqual(draft["source_segment_sha256"],
+                            draft["normalized_original_segments_sha256"])
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"NativeEdit",1)
+        receipt=host.data_av_film_stage_edit_commit(
+            {**request,"edit_id":"NativeEdit","expected_revision":0})
+        self.assertEqual(receipt["status"],"IMMUTABLE_EDIT_SOURCE_COMMITTED")
+        self.assertEqual(receipt["source_segments_sha256"],
+                         draft["normalized_original_segments_sha256"])
+        self.assertEqual(len(window.authorizations),1)
+        self.assertEqual(self.index.read_revision(
+            self.pid,"take",1)["document_sha256"],before)
+        window.url="http://untrusted.example/"
+        with self.assertRaises(PermissionError):
+            host.data_av_film_stage_edit_commit(
+                {**request,"edit_id":"HostileEdit","expected_revision":0})
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,"HostileEdit",1)
+
     def test_director_review_and_source_tick_survive_restart(self):
         before=self.index.read_revision(self.pid,"take",1)["document_sha256"]
         detail=self.continuity.at(self.pid,"DirectorCutProof",1,0)
