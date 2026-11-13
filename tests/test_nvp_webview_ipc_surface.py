@@ -60,6 +60,8 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_actor_cast","data_av_actor_register",
             "data_av_actor_dialogue_bind","data_av_actor_dialogue_at",
             "data_av_actor_asset_catalog","data_av_actor_scene_cast",
+            "data_av_film_stage_graph_catalog","data_av_film_stage_edit_draft",
+            "data_av_film_stage_edit_commit",
             "data_av_film_stage_catalog","data_av_film_stage_director_commit",
             "data_av_film_stage_actor_bus_commit",
             "data_av_film_stage_longform_publish",
@@ -69,7 +71,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_film_stage_chunk_poll","data_av_film_stage_chunk_cancel",
         }
         self.assertEqual(names,expected)
-        self.assertEqual(len(names),44)
+        self.assertEqual(len(names),47)
         self.assertFalse(hasattr(self.api,"__dict__"))
         for name in names:
             method=getattr(self.api,name)

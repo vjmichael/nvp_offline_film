@@ -76,6 +76,16 @@ class NativeWebviewIPCSurface:
     def data_av_edited_30s_cancel(self, ticket):
         return self._delegate.data_av_edited_30s_cancel(ticket)
 
+    # P1-D original slate source edit: no browser edit mutation without OS grant.
+    def data_av_film_stage_graph_catalog(self, project_id):
+        return self._delegate.data_av_film_stage_graph_catalog(project_id)
+
+    def data_av_film_stage_edit_draft(self, request):
+        return self._delegate.data_av_film_stage_edit_draft(request)
+
+    def data_av_film_stage_edit_commit(self, request):
+        return self._delegate.data_av_film_stage_edit_commit(request)
+
     # P1-D/E/F/P2: tightly bounded source-only editorial and sound stages.
     # All writes use the host's original native OS approval, not JS.
     def data_av_film_stage_catalog(self, project_id):
