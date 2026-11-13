@@ -155,6 +155,8 @@ class NativeSceneSoundCapture:
         # invalid emitter, or checkpoint overflow must not trigger capture.
         preflight_events=set()
         preflight_sources=set()
+        minimum_unclocked_pcm_bytes=0
+        expected_samples_by_source={}
         for entry in frozen_recordings:
             eid=_id(entry["event_id"],"recorded sound event")
             sid=_id(entry["source_id"],"original audio source")
@@ -184,18 +186,58 @@ class NativeSceneSoundCapture:
                     boundaries.add(tick)
             if len(boundaries)>MAX_CHECKPOINTS:
                 raise ValueError("Filming event boundaries exceed frozen Take checkpoint capacity")
+            clock_map=None
             if "source_sync" in entry:
-                verified_original_clock(
+                clock_map=verified_original_clock(
                     self.index,project_id,sid,start,end,
                     entry["source_sync"],entry["clock_evidence"])
-            # Reject malformed later recording streams before touching the first
-            # original PCM iterator. Do not advance or consume valid iterators.
-            try:
-                iter(entry["pcm_chunks"])
-            except TypeError as exc:
-                raise ValueError("Captured PCM chunks must be iterable") from exc
+            # Refuse physically impossible unclocked recordings before any
+            # one-shot PCM stream is consumed. The maximum per-source spool
+            # is bounded independently of the aggregate batch budget.
+            # Clock-attested sources use their separately verified sample count.
+            expected_samples=(clock_map["source_sample_count"] if clock_map is not None
+                              else (end-start+SAMPLE_TICK-1)//SAMPLE_TICK)
+            expected_samples_by_source[sid]=expected_samples
+            minimum_unclocked_pcm_bytes+=expected_samples*2
+            if expected_samples*2>MAX_CHUNK_BYTES*MAX_CHUNKS:
+                raise ValueError("Captured PCM duration exceeds source spool budget")
+            if minimum_unclocked_pcm_bytes>MAX_CHUNK_BYTES*MAX_CHUNKS:
+                raise ValueError("Captured PCM batch durations exceed aggregate spool budget")
             preflight_events.add(eid)
             preflight_sources.add(sid)
+        # Validate ALL event metadata, identities, clock evidence and quotas
+        # before invoking any caller-defined __iter__. Such a method can have
+        # irreversible device side effects even without yielding PCM samples.
+        # Iterator construction can open a real capture device. If a later
+        # source refuses initialization, release every earlier admitted
+        # iterator before returning; no immutable source has been published.
+        admitted_iterators=[]
+        admitted_iterator_ids=set()
+        try:
+            for entry in frozen_recordings:
+                try:
+                    # Pin the exact iterator admitted by preflight; never call
+                    # __iter__ again when ingestion begins.
+                    iterator=iter(entry["pcm_chunks"])
+                except TypeError as exc:
+                    raise ValueError("Captured PCM chunks must be iterable") from exc
+                # Two independent source identities must not consume the same
+                # one-shot device stream. Reject aliasing before reading PCM.
+                # Do not close an alias twice during admission cleanup.
+                if id(iterator) in admitted_iterator_ids:
+                    raise ValueError("Original PCM iterator shared by multiple sound sources")
+                admitted_iterator_ids.add(id(iterator))
+                entry["pcm_chunks"]=iterator
+                admitted_iterators.append(iterator)
+        except BaseException:
+            for iterator in reversed(admitted_iterators):
+                close=getattr(iterator,"close",None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass  # Preserve the original admission failure.
+            raise
         publication_started=False
         try:
             for entry in frozen_recordings:
@@ -268,9 +310,10 @@ class NativeSceneSoundCapture:
                         not 0<len(chunk)<=MAX_CHUNK_BYTES or len(chunk)%2 or
                         count>=MAX_CHUNKS):
                         raise ValueError("Invalid captured PCM16LE chunk")
-                    # Refuse unclocked surplus before writing the offending chunk.
-                    if ("source_sync" not in entry and
-                        samples+len(chunk)//2>(end-start+SAMPLE_TICK-1)//SAMPLE_TICK):
+                    # Refuse surplus from either clock-attested or unclocked
+                    # recordings before spilling the offending chunk to disk.
+                    # The clocked bound was independently verified at preflight.
+                    if samples+len(chunk)//2>expected_samples_by_source[sid]:
                         raise ValueError("Captured PCM sample count does not match its Film Time event")
                     batch_pcm_bytes+=len(chunk)
                     if batch_pcm_bytes>MAX_CHUNK_BYTES*MAX_CHUNKS:
@@ -284,11 +327,6 @@ class NativeSceneSoundCapture:
                     digests.append(hashlib.sha256(chunk).digest())
                     original_digest.update(chunk)
                     samples+=len(chunk)//2
-                    # Reject excess samples during ingestion, not after a potentially
-                    # multi-gigabyte spool. Clock-attested sources retain their
-                    # independent exact sample-count verification below.
-                    if "source_sync" not in entry and samples>(end-start+SAMPLE_TICK-1)//SAMPLE_TICK:
-                        raise ValueError("Captured PCM sample count does not match its Film Time event")
                     count+=1
                 clock=(verified_original_clock(
                     self.index,project_id,sid,start,end,
@@ -431,6 +469,16 @@ class NativeSceneSoundCapture:
                 source_record=self.index.read_revision(
                     project_id,audio_id,receipt["revision"])
                 available=source_record["data"]["sample_count"]
+                # The published revision must describe the exact PCM chunks
+                # admitted and SHA-verified during capture, not merely an
+                # equal-length substitute supplied by a faulty writer.
+                published_chunks=source_record["data"]["chunks"]
+                expected_digests=chunk_digests[audio_id]
+                if (len(published_chunks)!=len(expected_digests) or
+                    any(type(part) is not dict or
+                        part.get("blob_sha256")!=digest.hex()
+                        for part,digest in zip(published_chunks,expected_digests))):
+                    raise RuntimeError("Published original PCM identity differs from validated recording")
                 clock=(verified_original_clock(
                     self.index,project_id,audio_id,start,end,
                     entry.get("source_sync"),entry.get("clock_evidence"),
@@ -526,5 +574,21 @@ class NativeSceneSoundCapture:
                         + repr(journal_error))
             raise
         finally:
-            for spool in spooled:
-                spool.close()
+            # Device-backed iterators can retain microphone handles even after
+            # normal exhaustion. Release all admitted iterators on success,
+            # rejection, cancellation, or publication failure. Cleanup must
+            # never replace the original capture/journal exception.
+            for iterator in reversed(admitted_iterators):
+                close=getattr(iterator,"close",None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+            # Temporary-file close can fail due to delayed filesystem I/O.
+            # Preserve the original capture outcome and cancellation receipt.
+            for spool in reversed(spooled):
+                try:
+                    spool.close()
+                except Exception:
+                    pass
