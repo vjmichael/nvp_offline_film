@@ -31,6 +31,33 @@ def sha(data):
     return hashlib.sha256(canonical(data)).hexdigest()
 
 
+def _imported_actor_skin_checkpoint(stage, entries, tick):
+    """Hash actual original skinned + facial source geometry at one Film Time.
+
+    Keep vertices out of the immutable Take JSON: their bounded digest
+    and original GLB SHA pin the actual evaluated motion source.
+    Historical Takes/scenes without imported cast preserve their old digest.
+    """
+    if not entries:
+        return []
+    from backend.nvp_openusd_skinning import evaluate_skin
+    result=[]
+    for source in entries:
+        path=source["path"]
+        skin=evaluate_skin(
+            stage,stage.GetPrimAtPath(path+"/Rig/CharacterMesh"),path,tick)
+        if (skin["skinning_evaluated"] is not True or
+            skin["usd_skin_binding_verified"] is not True):
+            raise RuntimeError("Imported facial/rigged source did not evaluate")
+        result.append({
+            "actor_id":source["actor_id"],
+            "original_glb_sha256":source["original_glb_sha256"],
+            "source_vertex_count":len(skin["deformed_points"]),
+            "source_skin_state_sha256":sha(skin),
+        })
+    return sorted(result,key=lambda x:x["actor_id"])
+
+
 class OpenUSDTakeCapture:
     def __init__(self, index: FilmIndex, *, verify_creator_action):
         if not isinstance(index,FilmIndex) or not callable(verify_creator_action):
@@ -188,6 +215,10 @@ class OpenUSDTakeCapture:
                 from backend.nvp_openusd_skeleton import evaluate_skeletons
                 checkpoint["skeletal_pose"]=evaluate_skeletons(
                     stage,source["data"]["skeleton_rigs"],tick)
+            if source["data"].get("imported_characters"):
+                checkpoint["imported_actor_skin"]=(
+                    _imported_actor_skin_checkpoint(
+                        stage,source["data"]["imported_characters"],tick))
             checkpoints.append(checkpoint)
         snapshot_sha=sha(checkpoints)
         scoped={
@@ -323,6 +354,10 @@ class OpenUSDTakeCapture:
                 from backend.nvp_openusd_skeleton import evaluate_skeletons
                 checkpoint["skeletal_pose"]=evaluate_skeletons(
                     stage,src["data"]["skeleton_rigs"],tick)
+            if src["data"].get("imported_characters"):
+                checkpoint["imported_actor_skin"]=(
+                    _imported_actor_skin_checkpoint(
+                        stage,src["data"]["imported_characters"],tick))
             poses.append(checkpoint)
         if sha(poses)!=manifest["sample_digest_sha256"]:
             raise RuntimeError("Frozen Digital Take sampled state digest changed")
