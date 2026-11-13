@@ -51,8 +51,10 @@ def test_two_independent_physical_devices_reject_identical_endpoints():
 
 def test_real_adc_requires_actual_clock_evidence(tmp_path):
     frame=tmp_path/"recorded.frames"
-    packet=struct.pack("<IqB",480,0,1)
-    frame.write_bytes(packet*100)
+    # Genuine 48-kHz ADC callbacks advance by 10 ms for 480 samples.
+    # Missing calibration (not a fabricated discontinuity) is this gate.
+    frame.write_bytes(b"".join(
+        struct.pack("<IqB",480,i*10_000_000,1) for i in range(100)))
     with pytest.raises(RuntimeError,match="insufficient clock evidence"):
         verify_adc_packets(frame,1,48000,calibrations=[])
 
