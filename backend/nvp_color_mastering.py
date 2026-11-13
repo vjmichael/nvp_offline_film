@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 
 from backend.nvp_color_ocio import SOURCE_COLOR_SPACE, OCIO_VERSION, CONFIG_NAME, OUTPUT_VIEW, _config, _deps, _ffmpeg_bin, decode_scene_linear_exr
@@ -140,7 +141,7 @@ def view_to_rgb48(graded_linear,cpu,*,max_clip_fraction=.02):
 def _execute(command,*,output=None,timeout=240):
     try:
         with (Path(output).open("wb") if output else open(os.devnull,"wb")) as target:
-            p=subprocess.run(command,stdout=target,stderr=subprocess.PIPE,timeout=timeout,check=False)
+            p=run_owned_subprocess(command,stdout=target,stderr=subprocess.PIPE,timeout=timeout,check=False)
     except (OSError,subprocess.TimeoutExpired) as exc:
         raise RuntimeError("Mastering encoder/decoder failed or timed out") from exc
     if p.returncode:
@@ -152,7 +153,7 @@ def _ffprobe(path,ffprobe):
              "-show_entries","stream=codec_name,profile,codec_tag_string,pix_fmt,width,height,r_frame_rate,nb_read_frames,color_range,color_space,color_transfer,color_primaries",
              "-of","json",str(path)]
     try:
-        p=subprocess.run(command,capture_output=True,timeout=90,check=False)
+        p=run_owned_subprocess(command,capture_output=True,timeout=90,check=False)
     except (OSError,subprocess.TimeoutExpired) as exc:
         raise RuntimeError("Independent metadata probe failed") from exc
     if p.returncode:

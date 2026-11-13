@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 from pathlib import Path
 
 from backend.nvp_blender_acceptance import blender_available
@@ -176,7 +177,7 @@ def run_native_sole_region(service:FootLockPlan,pid,sid,approved_blend,directory
     observation=out/'sole_region_observation.json';observation.unlink(missing_ok=True)
     command=[probe['path'],'-b',str(approved_blend),'-t','2','--python-exit-code','30',
              '--python',str(script),'--','--package',str(manifest),'--output',str(observation)]
-    try:run=subprocess.run(command,cwd=out,capture_output=True,text=True,timeout=timeout)
+    try:run=run_owned_subprocess(command,cwd=out,capture_output=True,text=True,timeout=timeout)
     except subprocess.TimeoutExpired:return {'status':'failed','reason':'Native sole-region survey timed out'}
     if run.returncode or not observation.is_file():
         return {'status':'failed','reason':'Native sole-region survey refused',
