@@ -89,7 +89,13 @@ class OriginalMicrophoneCompiledAuditContracts(TestCase):
                     "input_sha256":{"source.pcm":checksum},
                     "result_sha256":sha256(receipt).hexdigest(),
                     "output_independently_verified":True,
-                    "process_tree_custody_verified":True}
+                    "process_tree_custody_verified":True,
+                    "worker_sha256":"c"*64,
+                    "plan_sha256":"d"*64,
+                    "os_custody_receipt":{
+                        "scope":"synthetic-test-only",
+                        "process_tree_custody_verified":True,
+                    }}
         return calls,run
 
     def test_bounded_windows_cover_every_original_sample_and_bind_scene(self):
