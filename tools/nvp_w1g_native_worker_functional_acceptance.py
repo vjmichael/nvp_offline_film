@@ -192,10 +192,26 @@ def functional_acceptance(binary_dir:Path,*,platform:str) -> dict:
             "job_id":"w1g_external_plan","project_id":"NVPFunctionalTest",
             "role":"original_capture",
         },sort_keys=True,separators=(",",":")),encoding="ascii")
-        _execute(binary_dir/roles["original_capture"]["filename"],bad,
-                 expect_success=False,plan_path_override=alien/"plan.json")
-        assert not (bad/"result.json").exists()
-        assert (bad/"source.pcm").read_bytes()==PCM
+        # A separate, never-before-used workspace is mandatory. Original
+        # Windows stdout/stderr evidence is opened exclusively ("xb") and
+        # must not be overwritten just to repeat a negative fixture.
+        foreign_work=root/"foreign_execution"
+        foreign_work.mkdir()
+        (foreign_work/"source.pcm").write_bytes(PCM)
+        (foreign_work/"plan.json").write_text(json.dumps({
+            "job_id":"w1g_private_plan","project_id":"NVPFunctionalTest",
+            "role":"original_capture",
+        },sort_keys=True,separators=(",",":")),encoding="ascii")
+        _execute(binary_dir/roles["original_capture"]["filename"],
+                 foreign_work,expect_success=False,
+                 plan_path_override=alien/"plan.json")
+        assert not (foreign_work/"result.json").exists()
+        assert (foreign_work/"source.pcm").read_bytes()==PCM
+        assert (alien/"plan.json").is_file()
+        if os.name=="nt":
+            assert (bad/"stdout.log").is_file()
+            assert (foreign_work/"stdout.log").is_file()
+            assert (bad/"stdout.log").resolve()!=(foreign_work/"stdout.log").resolve()
         # Verify the EXACT tested compiled bytes survive first-party
         # private worker packaging, without ever calling this a reviewed
         # production install or requiring any user originals.
