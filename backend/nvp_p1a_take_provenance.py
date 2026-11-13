@@ -109,6 +109,19 @@ def verify_published_native_attestations(index: FilmIndex,project_id,take_id,
         manifest.get("native_original_capture_attestations_sha256")!=
             audit_sha256(attestations)):
         raise PermissionError("Immutable Take native capture attestation hash changed")
+    from backend.nvp_exact_time_shots import ExactTimeShotSequence
+    original_camera=ExactTimeShotSequence(index).read(
+        project_id,manifest["original_camera_timeline_id"],
+        manifest["original_camera_timeline_revision"])
+    if (original_camera["document_sha256"]!=
+            manifest["original_camera_timeline_sha256"] or
+        original_camera["scene_id"]!=manifest["scene_id"] or
+        original_camera["scene_revision"]!=manifest["scene_revision"] or
+        original_camera["scene_document_sha256"]!=
+            manifest["scene_document_sha256"] or
+        original_camera["duration_tick"]!=
+            manifest["duration_tick"]):
+        raise PermissionError("Original camera FilmIndex revision no longer matches frozen native Take")
     from backend.nvp_temporal_ledger import TemporalLedger
     ledger=TemporalLedger(index)
     events=ledger.events_in(
