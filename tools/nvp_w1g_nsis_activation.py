@@ -128,6 +128,30 @@ class NativeNSISActivation:
             receipt,receipt.get("signed_redistribution_review"),
             pinned_reviewer_public_key=key)
 
+
+    def _require_offline_supply(self, supply):
+        """Independently verify exact local wheels and reviewer signature.
+
+        An unsigned lock, an arbitrary Boolean in the installed package, or
+        a previous tool's JSON success result is never admission.
+        """
+        if self.test_only_simulation:
+            return None
+        expected={"wheel_lock","wheelhouse","signed_wheel_review"}
+        if type(supply) is not dict or set(supply)!=expected:
+            raise PermissionError(
+                "Production NSIS requires actual signed offline wheelhouse supply")
+        paths={name:Path(value) for name,value in supply.items()
+               if type(value) is str}
+        if len(paths)!=len(expected):
+            raise PermissionError("Offline supply paths must be trusted absolute paths")
+        from tools.nvp_w1g_signed_wheelhouse import verify_from_paths
+        return verify_from_paths(
+            lock_path=paths["wheel_lock"],wheelhouse=paths["wheelhouse"],
+            signed_review_path=paths["signed_wheel_review"],
+            reviewer_key=self.pinned_reviewer_public_key,
+            platform="windows-amd64")
+
     def _kernel_empty(self,original_sha):
         # A native host must provide this from its actual Windows Job
         # supervisor. The receipt is re-fetched after human approval.
@@ -145,7 +169,7 @@ class NativeNSISActivation:
             raise PermissionError("Real native Windows kernel stop receipt unavailable/stale")
         return proof
 
-    def prepare(self, trusted_external_receipt):
+    def prepare(self, trusted_external_receipt, *, offline_supply_paths=None):
         if self.journal.exists() or self.journal.is_symlink():
             raise RuntimeError("Previously prepared native activation must reconcile")
         _snapshot_root(self.owner)
@@ -156,6 +180,7 @@ class NativeNSISActivation:
         if type(trusted_external_receipt) is not dict:
             raise RuntimeError("Externally reviewed package build receipt required")
         verify_installed(trusted_external_receipt,self.owner.pending)
+        supply_evidence=self._require_offline_supply(offline_supply_paths)
         if not self.test_only_simulation:
             from tools.nvp_w1g_release_build_marker import verify_build_marker
             verify_build_marker(self.owner.active)
@@ -177,6 +202,8 @@ class NativeNSISActivation:
             "original_films_sha256":_digest(sources),
             "current_version":current_version,"new_version":next_version,
             "reviewed_package_receipt":trusted_external_receipt,
+            "offline_supply_paths":offline_supply_paths if not self.test_only_simulation else None,
+            "offline_supply_evidence":supply_evidence,
             "active_path":str(self.owner.active),
             "pending_path":str(self.owner.pending),
             "previous_path":str(self.owner.old),
@@ -222,6 +249,13 @@ class NativeNSISActivation:
             raise RuntimeError("Release changed after authorizing staged upgrade")
         verify_installed(record["reviewed_package_receipt"],self.owner.pending)
         if not self.test_only_simulation:
+            supply_again=self._require_offline_supply(record.get("offline_supply_paths"))
+            previous=record.get("offline_supply_evidence")
+            if (type(previous) is not dict or
+                supply_again["wheel_lock_sha256"]!=previous.get("wheel_lock_sha256") or
+                supply_again["review_scope_sha256"]!=previous.get("review_scope_sha256")):
+                raise PermissionError("Offline release wheels changed since original production approval")
+
             from tools.nvp_w1g_release_build_marker import verify_build_marker
             verify_build_marker(self.owner.active)
             verify_build_marker(self.owner.pending)
