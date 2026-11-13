@@ -152,6 +152,27 @@ class NativeNSISActivation:
             reviewer_key=self.pinned_reviewer_public_key,
             platform="windows-amd64")
 
+
+    def _require_physical_efs_review(self, recovery_supply):
+        """Recheck signed independent recovery review AND live native EFS.
+
+        A signed human statement alone does not prove the scratch volume is
+        currently encrypting. A current OS probe alone does not prove backup
+        recovery. Require both; never use a CI receipt as owner authority.
+        """
+        if self.test_only_simulation:
+            return None
+        if (type(recovery_supply) is not dict or
+            set(recovery_supply)!={"efs_scratch_root","signed_efs_review"} or
+            any(type(value) is not str for value in recovery_supply.values())):
+            raise PermissionError(
+                "Production NSIS requires physical EFS scratch and independently signed recovery review")
+        from tools.nvp_w1g_physical_efs_review import verify_physical_efs_supply
+        return verify_physical_efs_supply(
+            scratch_root=Path(recovery_supply["efs_scratch_root"]),
+            signed_review_path=Path(recovery_supply["signed_efs_review"]),
+            reviewer_public_key=self.pinned_reviewer_public_key)
+
     def _kernel_empty(self,original_sha):
         # A native host must provide this from its actual Windows Job
         # supervisor. The receipt is re-fetched after human approval.
@@ -169,7 +190,8 @@ class NativeNSISActivation:
             raise PermissionError("Real native Windows kernel stop receipt unavailable/stale")
         return proof
 
-    def prepare(self, trusted_external_receipt, *, offline_supply_paths=None):
+    def prepare(self, trusted_external_receipt, *, offline_supply_paths=None,
+                physical_efs_supply=None):
         if self.journal.exists() or self.journal.is_symlink():
             raise RuntimeError("Previously prepared native activation must reconcile")
         _snapshot_root(self.owner)
@@ -181,6 +203,7 @@ class NativeNSISActivation:
             raise RuntimeError("Externally reviewed package build receipt required")
         verify_installed(trusted_external_receipt,self.owner.pending)
         supply_evidence=self._require_offline_supply(offline_supply_paths)
+        efs_evidence=self._require_physical_efs_review(physical_efs_supply)
         if not self.test_only_simulation:
             from tools.nvp_w1g_release_build_marker import verify_build_marker
             verify_build_marker(self.owner.active)
@@ -204,6 +227,8 @@ class NativeNSISActivation:
             "reviewed_package_receipt":trusted_external_receipt,
             "offline_supply_paths":offline_supply_paths if not self.test_only_simulation else None,
             "offline_supply_evidence":supply_evidence,
+            "physical_efs_supply":physical_efs_supply if not self.test_only_simulation else None,
+            "physical_efs_evidence":efs_evidence,
             "active_path":str(self.owner.active),
             "pending_path":str(self.owner.pending),
             "previous_path":str(self.owner.old),
@@ -255,6 +280,11 @@ class NativeNSISActivation:
                 supply_again["wheel_lock_sha256"]!=previous.get("wheel_lock_sha256") or
                 supply_again["review_scope_sha256"]!=previous.get("review_scope_sha256")):
                 raise PermissionError("Offline release wheels changed since original production approval")
+            efs_again=self._require_physical_efs_review(record.get("physical_efs_supply"))
+            original_efs=record.get("physical_efs_evidence")
+            if (type(original_efs) is not dict or
+                efs_again["signed_efs_review_sha256"]!=original_efs.get("signed_efs_review_sha256")):
+                raise PermissionError("Physical EFS recovery acceptance changed since preparation")
 
             from tools.nvp_w1g_release_build_marker import verify_build_marker
             verify_build_marker(self.owner.active)
