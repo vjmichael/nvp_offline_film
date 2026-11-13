@@ -75,7 +75,14 @@ def _execute(executable:Path,work:Path,*,expect_success=True):
         os_evidence="linux-functional-only-no-delegated-cgroup-claim"
     if expect_success:
         if rc!=0:
-            raise RuntimeError(f"Actual {executable.name} failed with exit {rc}")
+            if os.name=="nt":
+                diagnostic=(work/"stderr.log").read_bytes()[:8192].decode(
+                    "utf8",errors="replace")
+            else:
+                diagnostic=completed.stderr[:8192].decode("utf8",errors="replace")
+            raise RuntimeError(
+                f"Actual {executable.name} failed with exit {rc}; "
+                f"original native worker stderr={diagnostic!r}")
     elif rc==0:
         raise RuntimeError(f"Actual {executable.name} wrongly accepted invalid role")
     return rc,os_evidence,evidence
