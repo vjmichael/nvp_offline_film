@@ -9,6 +9,8 @@ on:
     paths:
       - native/**
       - tools/nvp_w1g_compile_first_party_workers.py
+      - tools/nvp_w1g_source_identity_audit.py
+      - .gitattributes
       - tools/nvp_w1g_native_worker_functional_acceptance.py
       - tools/nvp_w1g_native_link_audit.py
       - backend/nvp_w1g_protected_native_worker.py
@@ -44,6 +46,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends g++ libssl-dev
+      - name: Verify canonical exact-head ELF compiler input bytes
+        run: python -m tools.nvp_w1g_source_identity_audit
       - name: Compile all five ELF64 binaries and run actual operations
         run: |
           set -euo pipefail
@@ -74,6 +78,11 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: pywin32
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify canonical exact-head PE compiler input bytes
+        shell: pwsh
+        run: |
+          python -m tools.nvp_w1g_source_identity_audit
+          if ($LASTEXITCODE -ne 0) { throw 'Native source byte identity mismatch' }
       - name: Compile all five PE64 and verify actual Windows Job-controlled outcomes
         shell: cmd
         run: |
