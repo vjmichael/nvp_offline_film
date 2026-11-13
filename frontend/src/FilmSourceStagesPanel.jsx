@@ -9,6 +9,9 @@ export default function FilmSourceStagesPanel({
   projectId,native,sourceRevision=0
 }){
   const required=[
+    'data_av_film_stage_graph_catalog',
+    'data_av_film_stage_edit_draft',
+    'data_av_film_stage_edit_commit',
     'data_av_film_stage_catalog',
     'data_av_film_stage_director_commit',
     'data_av_film_stage_actor_bus_commit',
@@ -22,6 +25,12 @@ export default function FilmSourceStagesPanel({
   ];
   const ready=Boolean(native&&required.every(k=>typeof native[k]==='function'));
   const [catalog,setCatalog]=useState(null);
+  const [graphs,setGraphs]=useState([]);
+  const [graphId,setGraphId]=useState('');
+  const [graphBranchId,setGraphBranchId]=useState('');
+  const [sourceSegments,setSourceSegments]=useState([]);
+  const [newEditId,setNewEditId]=useState('EditedScene001');
+  const [draftPreview,setDraftPreview]=useState(null);
   const [editId,setEditId]=useState('');
   const [checks,setChecks]=useState({});
   const [continuityId,setContinuityId]=useState('DirectorReview001');
@@ -41,6 +50,9 @@ export default function FilmSourceStagesPanel({
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
 
+  const currentGraph=graphs.find(x=>x.graph_id===graphId);
+  const graphBranches=currentGraph?.branches||[];
+  const currentBranch=graphBranches.find(x=>x.branch_id===graphBranchId);
   const edits=catalog?.edits||[];
   const edit=edits.find(x=>x.edit_id===editId);
   const continuity=catalog?.continuity||[];
@@ -86,6 +98,30 @@ export default function FilmSourceStagesPanel({
 
   useEffect(()=>{
     let active=true;
+    setGraphs([]);setGraphId('');setGraphBranchId('');
+    setSourceSegments([]);setDraftPreview(null);
+    if(!ready||!projectId)return;
+    Promise.resolve(native.data_av_film_stage_graph_catalog(projectId))
+      .then(result=>{
+        if(!active)return;
+        if(result?.format!=='nvp.p1d.native_original_source_graph_catalog.v1'||
+           result.project_id!==projectId||
+           result.original_source_modified!==false||
+           result.active_cut_changed!==false||!Array.isArray(result.graphs))
+          throw Error('Original digital slate graph cannot be source-verified');
+        setGraphs(result.graphs);
+        setGraphId(result.graphs[0]?.graph_id||'');
+      }).catch(e=>{if(active)setError(e.message)});
+    return ()=>{active=false};
+  },[native,projectId,sourceRevision,ready]);
+
+  useEffect(()=>{
+    setSourceSegments([]);setDraftPreview(null);
+    setGraphBranchId(currentGraph?.branches?.[0]?.branch_id||'');
+  },[graphId]);
+
+  useEffect(()=>{
+    let active=true;
     setCatalog(null);setPage(null);setTicket(null);setJob(null);
     setChecks({});setError('');setMessage('');setAudit(null);
     if(!ready||!projectId)return;
@@ -118,6 +154,88 @@ export default function FilmSourceStagesPanel({
     setCamera(old=>edit.cameras?.includes(old)?old:(edit.cameras?.[0]||''));
     setChecks({});
   },[edit?.edit_id,edit?.edit_sha256]);
+
+  function addOriginalSegment(){
+    if(!currentBranch)return;
+    const used=new Set(sourceSegments.map(x=>x.segment_id));
+    let serial=sourceSegments.length+1;
+    while(used.has('Cut'+String(serial).padStart(3,'0')))serial+=1;
+    const start=Number(currentBranch.source_start_tick);
+    const end=Number(currentBranch.source_end_tick);
+    if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||end<=start){
+      setError('Original source Film Time cannot be represented precisely');
+      return;
+    }
+    setSourceSegments(v=>[...v,{
+      segment_id:'Cut'+String(serial).padStart(3,'0'),
+      branch_id:currentBranch.branch_id,
+      source_in_tick:start,source_out_tick:end,
+    }]);
+    setDraftPreview(null);setError('');
+  }
+
+  function changeOriginalSegment(i,field,value){
+    const n=Number(value);
+    setSourceSegments(previous=>previous.map((row,k)=>k===i
+      ?{...row,[field]:Number.isSafeInteger(n)&&n>=0?n:-1}:row));
+    setDraftPreview(null);
+  }
+
+  function moveOriginalSegment(i,shift){
+    setSourceSegments(old=>{
+      const target=i+shift;
+      if(target<0||target>=old.length)return old;
+      const reordered=[...old];
+      [reordered[target],reordered[i]]=[reordered[i],reordered[target]];
+      return reordered;
+    });
+    setDraftPreview(null);
+  }
+
+  function previewSourceCut(){
+    run(async()=>{
+      if(!currentGraph||!sourceSegments.length)
+        throw Error('Choose an original slate and at least one source segment');
+      const result=await native.data_av_film_stage_edit_draft({
+        project_id:projectId,graph_id:currentGraph.graph_id,
+        graph_revision:currentGraph.graph_revision,segments:sourceSegments,
+      });
+      if(result?.format!=='nvp.p1d.native_source_cut_draft.v1'||
+         result.project_id!==projectId||
+         result.graph_sha256!==currentGraph.graph_sha256||
+         result.draft_uncommitted!==true||
+         result.render_approved!==false||
+         result.original_source_modified!==false||
+         result.segment_count!==sourceSegments.length)
+        throw Error('Draft is not source-authentic or immutable');
+      setDraftPreview(result);
+      setMessage('Original cut is ready for a separate native editorial confirmation.');
+    });
+  }
+
+  function commitSourceCut(){
+    run(async()=>{
+      if(!draftPreview||!currentGraph)
+        throw Error('Review the exact original cut before committing');
+      validateIdentity(newEditId,'Unique source edit');
+      const receipt=await native.data_av_film_stage_edit_commit({
+        project_id:projectId,edit_id:newEditId,
+        graph_id:currentGraph.graph_id,
+        graph_revision:currentGraph.graph_revision,
+        segments:sourceSegments,expected_revision:0,
+      });
+      if(receipt?.format!=='nvp.p1d.native_original_cut_commit_receipt.v1'||
+         receipt.status!=='IMMUTABLE_EDIT_SOURCE_COMMITTED'||
+         receipt.source_modified!==false||
+         receipt.render_approved!==false||
+         receipt.source_segments_sha256!==draftPreview.source_segment_sha256)
+        throw Error('OS-native committed cut failed original source digest check');
+      setDraftPreview(null);setSourceSegments([]);
+      await refresh();
+      setEditId(receipt.edit_id);
+      setMessage('New source cut committed with original Take SHA and zero retiming.');
+    });
+  }
 
   async function run(action){
     if(busy)return;
@@ -314,7 +432,67 @@ export default function FilmSourceStagesPanel({
     {error&&<p role="alert">{error}</p>}
     {message&&<p role="status">{message}</p>}
 
-    <h3>1 · Edit film — preserve your source performances</h3>
+    <h3>1 · Assemble a non-destructive film cut</h3>
+    <p className="fineprint">Choose original digital slate Takes and their
+      source Film Time ranges, trim and reorder without changing performances.
+      Preview is read-only. The final cut requires a native creator approval.</p>
+    <label>Original digital slate
+      <select aria-label="Original film slate" value={graphId}
+        disabled={busy} onChange={e=>setGraphId(e.target.value)}>
+        <option value="">Choose recorded slate</option>
+        {graphs.map(x=><option key={x.graph_id} value={x.graph_id}>
+          {x.graph_id} · {x.branches.length} recorded angles or Takes</option>)}
+      </select>
+    </label>
+    <label>Original Take or camera angle to add
+      <select aria-label="Original source branch" value={graphBranchId}
+        disabled={busy} onChange={e=>setGraphBranchId(e.target.value)}>
+        <option value="">Choose original source</option>
+        {graphBranches.map(x=><option key={x.branch_id} value={x.branch_id}>
+          {x.branch_id} · {x.kind} · {x.take_id}</option>)}
+      </select>
+    </label>
+    {currentBranch&&<p className="fineprint">Source interval:
+      {' '}{currentBranch.source_start_tick}–
+      {currentBranch.source_end_tick} exact native Film Time ticks</p>}
+    <button disabled={!ready||busy||!currentBranch||sourceSegments.length>=500}
+      onClick={addOriginalSegment}>Add source clip to cut</button>
+    {sourceSegments.map((segment,i)=><fieldset key={segment.segment_id}>
+      <legend>Clip {i+1} · {segment.branch_id}</legend>
+      <label>Source in (Film Time ticks) {segment.segment_id}
+        <input aria-label={'Source in '+segment.segment_id}
+          type="number" min="0" step="1" disabled={busy}
+          value={segment.source_in_tick}
+          onChange={e=>changeOriginalSegment(i,'source_in_tick',e.target.value)}/>
+      </label>
+      <label>Source out (Film Time ticks) {segment.segment_id}
+        <input aria-label={'Source out '+segment.segment_id}
+          type="number" min="1" step="1" disabled={busy}
+          value={segment.source_out_tick}
+          onChange={e=>changeOriginalSegment(i,'source_out_tick',e.target.value)}/>
+      </label>
+      <button disabled={busy||i===0} onClick={()=>moveOriginalSegment(i,-1)}>
+        Earlier</button>
+      <button disabled={busy||i===sourceSegments.length-1}
+        onClick={()=>moveOriginalSegment(i,1)}>Later</button>
+      <button disabled={busy} onClick={()=>{
+        setSourceSegments(old=>old.filter((_,j)=>j!==i));setDraftPreview(null);
+      }}>Remove source clip</button>
+    </fieldset>)}
+    <button disabled={!ready||busy||!sourceSegments.length}
+      onClick={previewSourceCut}>Preview authentic cut without saving</button>
+    {draftPreview&&<p role="status">Original source preview verified:
+      {' '}{draftPreview.segment_count} clips,
+      {' '}{draftPreview.duration_tick} Film Time ticks.
+      Nothing has been committed or rendered.</p>}
+    <label>Unique new film cut ID
+      <input value={newEditId} maxLength={80} disabled={busy}
+        onChange={e=>{setNewEditId(e.target.value);setDraftPreview(null)}}/>
+    </label>
+    <button disabled={!ready||busy||!draftPreview}
+      onClick={commitSourceCut}>Ask native editor to commit this source cut</button>
+
+    <h3>Review the committed source cut</h3>
     <label>Committed movie cut
       <select aria-label="Committed original movie cut" value={editId}
         disabled={busy} onChange={e=>setEditId(e.target.value)}>

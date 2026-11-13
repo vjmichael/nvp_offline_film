@@ -33,6 +33,33 @@ const chunk={index:0,chunk_id:'P2FilmChunk000000',first_frame:0,
 
 function bridge(){
   return {
+    data_av_film_stage_graph_catalog:vi.fn(async()=>({
+      format:'nvp.p1d.native_original_source_graph_catalog.v1',
+      project_id:pid,original_source_modified:false,
+      active_cut_changed:false,
+      graphs:[{graph_id:'OriginalGraph',graph_revision:1,
+        graph_sha256:'a'.repeat(64),scene_id:'FullWorld',
+        branches:[{branch_id:'FirstOriginal',kind:'performance',
+          take_id:'TakeOriginal',shot_id:null,
+          source_start_tick:'0',source_end_tick:'7056000000',
+          original_default:true}]}],
+    })),
+    data_av_film_stage_edit_draft:vi.fn(async req=>({
+      format:'nvp.p1d.native_source_cut_draft.v1',
+      project_id:pid,graph_id:req.graph_id,
+      graph_sha256:'a'.repeat(64),source_segment_sha256:'e'.repeat(64),
+      duration_tick:'7056000000',segment_count:req.segments.length,
+      original_source_modified:false,render_approved:false,
+      draft_uncommitted:true,
+    })),
+    data_av_film_stage_edit_commit:vi.fn(async req=>({
+      format:'nvp.p1d.native_original_cut_commit_receipt.v1',
+      status:'IMMUTABLE_EDIT_SOURCE_COMMITTED',
+      edit_id:req.edit_id,revision:1,
+      edit_sha256:'f'.repeat(64),
+      source_segments_sha256:'e'.repeat(64),
+      source_modified:false,render_approved:false,
+    })),
     data_av_film_stage_catalog:vi.fn(async()=>catalog),
     data_av_film_stage_director_commit:vi.fn(async request=>({
       format:'nvp.p1d.native_director_commit_receipt.v1',
@@ -92,6 +119,34 @@ function bridge(){
 }
 
 describe('P1-D/E/F/P2 original film stages creator GUI',()=>{
+  it('previews a real slate source cut, and only then requests native commit',async()=>{
+    const native=bridge();
+    render(<FilmSourceStagesPanel projectId={pid} native={native}/>);
+    await screen.findByText(/Reviewed original SourceClip1/);
+    await screen.findByText(/OriginalGraph/);
+    fireEvent.click(screen.getByText('Add source clip to cut'));
+    expect(screen.getByText('Ask native editor to commit this source cut').disabled)
+      .toBe(true);
+    fireEvent.click(screen.getByText('Preview authentic cut without saving'));
+    await waitFor(()=>expect(native.data_av_film_stage_edit_draft)
+      .toHaveBeenCalledOnce());
+    const draft=native.data_av_film_stage_edit_draft.mock.calls[0][0];
+    expect(draft).toEqual({
+      project_id:pid,graph_id:'OriginalGraph',graph_revision:1,
+      segments:[{segment_id:'Cut001',branch_id:'FirstOriginal',
+        source_in_tick:0,source_out_tick:7056000000}],
+    });
+    const save=screen.getByText('Ask native editor to commit this source cut');
+    await waitFor(()=>expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+    await waitFor(()=>expect(native.data_av_film_stage_edit_commit)
+      .toHaveBeenCalledOnce());
+    const source=native.data_av_film_stage_edit_commit.mock.calls[0][0];
+    expect(source.edit_id).toBe('EditedScene001');
+    expect(source.expected_revision).toBe(0);
+    expect(source.creator_approved).toBeUndefined();
+    expect(source.native_filepath).toBeUndefined();
+  });
   it('publishes only a source cut with every explicit continuity checkbox',async()=>{
     const native=bridge();
     render(<FilmSourceStagesPanel projectId={pid} native={native}/>);
