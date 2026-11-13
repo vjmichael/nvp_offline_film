@@ -26,9 +26,8 @@ class NativePreviewApprovalReconciliation(unittest.TestCase):
                     calls.append(("denied",frame.f_code.co_name,frame.f_lineno))
                 elif event=="exception":
                     et,exc,_=arg
-                    if et not in (KeyError,):
-                        calls.append(("exception",frame.f_code.co_name,
-                                      frame.f_lineno,et.__name__,str(exc)[:180]))
+                    calls.append(("exception",frame.f_code.co_name,
+                                  frame.f_lineno,et.__name__,str(exc)[:180]))
             return diagnostic
 
         def instrument(*args):
