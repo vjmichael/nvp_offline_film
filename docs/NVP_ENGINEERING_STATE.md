@@ -628,3 +628,21 @@ Production commit `eb9961c` records that a termination request was already issue
 **Not accepted by this result:** unattended or production-authorized upgrades/cut-power recovery, original kernel custody across a real operator-approved production upgrade, redistributable signed/licensed worker and wheelhouse provisioning, encryption/key-custody release, physical creator-operated Windows acceptance (W1-F), sustained real 30-minute/feature film, a full 720-frame production render/finished master and real hardware spatial-sound acceptance. The staged NSIS matrix uses simulated creator authorization; its success is not live authorization for upgrading the owner's machine. No physical-human gate or release approval is implied. W1-G **automated desktop/installed slice: CLOSED**; W1-G **production-release slice: OPEN**; INT-02C **full-film acceptance: OPEN**; W1-F **physical and sustained acceptance: DEFERRED/OPEN**.
 
 Detailed closeout: [W1-G WebView2 automated installed acceptance](NVP_W1G_WEBVIEW2_AUTOMATED_INSTALLED_CLOSEOUT_20261112.md).
+
+### 2026-11-12 — NVP ordered W1-G → full-film → physical release engineering plan (backlog entry)
+
+Canonical detailed plan: [NVP_DATA_ALL_TASK_LEDGER.md](NVP_DATA_ALL_TASK_LEDGER.md), section **“W1-G → INT-02 → DATA-AV → W1-F ordered closeout backlog”**. This is an ordered closeout plan, NOT production acceptance.
+
+**P0-1 immediate repair:** real Windows five-native-worker run [43355599750](https://github.com/vjmichael/nvp_offline_film/actions/runs/43355599750) FAILED at the second hostile-plan fixture when it reopened `stdout.log` exclusively (`FileExistsError`) inside a previously used workspace. Windows PE64 and Linux ELF64 compiled, Linux five-worker acceptance passed. Fix the fixture with separate private negative-case workspaces and retain hostile role/plan denial; rerun Windows and Linux against one exact final SHA.
+
+**P0-2 acceptance:** Windows installed NSIS/WebView2 run [43355599733](https://github.com/vjmichael/nvp_offline_film/actions/runs/43355599733) PASSED at baseline `703101bb62ec253a5bf97c5619684f635f57955c`. Consolidated native/Cycles [43355599730](https://github.com/vjmichael/nvp_offline_film/actions/runs/43355599730) was QUEUED at last review. After the P0-1 source repair, require all native Windows/Linux and installed gates on the same SHA, with actual process-custody and original logs. Prior successes cannot close a later head.
+
+**P1 functional engineering:** replace five bounded first-party PCM/picture/edit/audio/bundle slices with actual original native filming/camera, OpenUSD/Cycles scenes, source-referenced editorial, spatial sound and delivery; finish release-wide enrollment of legacy/direct-child workers, job custody, verified source/output, cancellation and restart.
+
+**P2 full-film integration:** finish DATA-AV DA-00..DA-07 and INT-02/INT-02C original immutable Take → exact Film Time → live picture+spatial audio → non-FFmpeg final film output; prove original 720-frame/30-second source render, then continuous finished master. No restoration of FFmpeg/native proxy authoring.
+
+**P3 owner-gated release:** independently reviewed executable and VC/libcrypto dependencies, hash-locked offline wheelhouse, external signed redistribution approvals, physical Windows EFS source and real cross-principal/key backup recovery; only *after* these and full source/OS acceptance run an actual one-use creator-authorized NSIS upgrade and rollback/restart/power-loss evaluation. Test signature/fixture is never legal or owner approval.
+
+**P4 W1-F:** physical creator-operated GUI and sustained 30-minute then extended feature/three-hour filmmaking, picture/audio/sync/quality/hardware/recovery acceptance. Read-only reel manifests do not prove a playable master.
+
+**Promotion boundaries:** W1-G automated visible desktop and installed alpha remain CLOSED for their previously verified bounded scopes. Consolidated native worker, production authorization/NSIS and human filmmaker/long-form acceptance remain OPEN. No release/merge into main, independent redistribution approval, physical EFS recovery or full-feature film claim was made by this ledger change.
