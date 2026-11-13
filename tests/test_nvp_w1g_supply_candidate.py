@@ -38,7 +38,7 @@ class ActualByteInventoryNotLicenseApproval(unittest.TestCase):
 
 
 
-    def test_five_distinct_real_pe_workers_can_be_inventoried_but_not_approved(self):
+    def test_five_distinct_pe_shaped_candidates_inventoried_but_not_approved(self):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)
             mapping={}
