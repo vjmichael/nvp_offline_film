@@ -107,7 +107,9 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
         self.second_emitter_path=second_emitter_path
         self.second_event_id=second_event_id
         self.second_subject_id=second_subject_id
-        self.input_factory=device_factory or PortAudioMonoInput
+        # Never open the physical PortAudio stream in the desktop host.
+        # Explicit test-only factories are trusted Python dependencies.
+        self.input_factory=device_factory
         self.host_clock_ns=host_clock_ns or time.perf_counter_ns
         self.tracks=[DeviceTimeTrack(i) for i in self.device_ids]
         self.devices=[]
@@ -136,7 +138,13 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             if (self.enqueued[channel]>MAX_DURATION_S*RATE or
                 len(raw)>CHUNK_BYTES):
                 raise RuntimeError("Independent source exceeded bounded original capture")
-            self.queues[channel].put_nowait(raw)
+            # A supervised child is already reaped when its original packets
+            # are replayed. Block only that post-custody replay, never the
+            # actual PortAudio device callback.
+            if self.input_factory is None and self._state=="FINALIZING":
+                self.queues[channel].put(raw,timeout=5)
+            else:
+                self.queues[channel].put_nowait(raw)
         except Exception as exc:
             self.errors[channel]=exc
 
@@ -156,6 +164,10 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
         try:
             while self.running_calibration.is_set():
                 for channel,dev in enumerate(self.devices):
+                    # A child-owned ADC clock must be bracketed in that same
+                    # supervised child, not against a stale host-side reading.
+                    if getattr(dev,"uses_worker_clock",False):
+                        continue
                     before=self.host_clock_ns()
                     stream=dev.stream_time_ns
                     after=self.host_clock_ns()
@@ -213,7 +225,18 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
             for channel,device_id in enumerate(self.device_ids):
                 def callback(raw,frames,adc_ns,good,ch=channel):
                     self._append_original(ch,raw,frames,adc_ns,good)
-                dev=self.input_factory(device_id,callback)
+                if self.input_factory is None:
+                    from backend.nvp_device_producer_custody import (
+                        SupervisedNativeDevice, scope_sha256)
+                    dev=SupervisedNativeDevice(
+                        self._tmp, mode="port", max_samples=self.max_samples,
+                        scope_digest=scope_sha256(scope),
+                        device_id=device_id,
+                        device_descriptor=self.device_descriptors[channel],
+                        channel=channel)
+                    dev._callback=callback
+                else:
+                    dev=self.input_factory(device_id,callback)
                 self.devices.append(dev)
             for dev in self.devices:dev.start()
             self.running_calibration.set()
@@ -235,8 +258,22 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
         # Stop callback producers FIRST, then readers; never put a sentinel
         # into a queue while a native device can still enqueue original PCM.
         faults=[]
-        for dev in reversed(self.devices):
-            try:dev.stop()
+        # Stop every device's producer before replaying the original PCM:
+        # otherwise one recorder may still be acquiring while its peer is
+        # consumed. Both attached workers remain under their OS supervisors.
+        if require_complete:
+            for dev in self.devices:
+                if getattr(dev,"uses_worker_clock",False):
+                    try:dev.request_stop()
+                    except Exception as exc:faults.append(exc)
+        for channel in range(len(self.devices)-1,-1,-1):
+            dev=self.devices[channel]
+            try:
+                if require_complete or not getattr(dev,"uses_worker_clock",False):
+                    dev.stop()
+                if require_complete and getattr(dev,"uses_worker_clock",False):
+                    for anchor in dev.calibration_anchors():
+                        self.tracks[channel].calibrate(*anchor)
             except Exception as exc:faults.append(exc)
             try:dev.close()
             except Exception as exc:faults.append(exc)
@@ -387,7 +424,7 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                 "max_residual_ns":[model["max_adc_residual_ns"] for model in models],
                 "independent_device_clocks_synchronized":True,
                 "shared_capture_clock":False,"hardware_genlock":False,
-                "device_runtime":"portaudio_two_independent_monotonic_calibrated",
+                "device_runtime":("supervised_dual_job_cgroup_portaudio" if self.input_factory is None else "trusted_injected_test_devices"),
                 "compiled_capture_worker_audits":native_audits,
                 "compiled_worker_is_device_recorder":False,
                 "source_modified":False}
