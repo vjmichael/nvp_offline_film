@@ -94,11 +94,11 @@ class BlenderWorkerTests(unittest.TestCase):
                 blender_executable=self.executable,
                 blender_sha256="a"*64,blender_version="Blender 5.2.3")
             bad.probe()
-        with patch("backend.nvp_blender_worker.subprocess.run",
+        with patch("backend.nvp_blender_worker.run_owned_subprocess",
                    return_value=SimpleNamespace(returncode=0,stdout="Blender 5.2.2\n")):
             with self.assertRaisesRegex(RuntimeError,"version differs"):
                 self.sup.probe()
-        with patch("backend.nvp_blender_worker.subprocess.run",
+        with patch("backend.nvp_blender_worker.run_owned_subprocess",
                    return_value=SimpleNamespace(returncode=0,stdout="Blender 5.2.3\n")):
             self.assertEqual(self.sup.probe()["blender"],"Blender 5.2.3")
 
