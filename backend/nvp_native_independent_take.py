@@ -370,7 +370,8 @@ class IndependentNativeSoundSession(NativeLiveSoundSession):
                 camera_timeline_id=self.camera_id,
                 camera_timeline_revision=self.camera_revision,
                 sound_timeline_id=self.sound_id,
-                recordings=recordings)
+                recordings=recordings,
+                native_capture_audits=(native_audits if native_audits else None))
             self._journal.update(
                 self._tmp,phase="FROZEN",
                 recorded_samples=min(self.written),
