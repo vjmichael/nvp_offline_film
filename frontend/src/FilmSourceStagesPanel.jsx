@@ -204,6 +204,7 @@ export default function FilmSourceStagesPanel({
          result.project_id!==projectId||
          result.graph_sha256!==currentGraph.graph_sha256||
          result.draft_uncommitted!==true||
+         !/^[0-9a-f]{64}$/.test(result.normalized_original_segments_sha256||'')||
          result.render_approved!==false||
          result.original_source_modified!==false||
          result.segment_count!==sourceSegments.length)
@@ -228,7 +229,7 @@ export default function FilmSourceStagesPanel({
          receipt.status!=='IMMUTABLE_EDIT_SOURCE_COMMITTED'||
          receipt.source_modified!==false||
          receipt.render_approved!==false||
-         receipt.source_segments_sha256!==draftPreview.source_segment_sha256)
+         receipt.source_segments_sha256!==draftPreview.normalized_original_segments_sha256)
         throw Error('OS-native committed cut failed original source digest check');
       setDraftPreview(null);setSourceSegments([]);
       await refresh();

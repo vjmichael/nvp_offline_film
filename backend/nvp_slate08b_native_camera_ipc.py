@@ -593,6 +593,9 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
             "graph_id":verified["graph_id"],
             "graph_sha256":verified["graph_document_sha256"],
             "source_segment_sha256":verified["draft_sha256"],
+            "normalized_original_segments_sha256":sha256(json.dumps(
+                verified["segments"],sort_keys=True,separators=(",",":"),
+                ensure_ascii=True,allow_nan=False).encode("ascii")).hexdigest(),
             "duration_tick":str(verified["duration_tick"]),
             "segment_count":len(verified["segments"]),
             "draft_uncommitted":True,

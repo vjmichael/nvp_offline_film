@@ -47,7 +47,8 @@ function bridge(){
     data_av_film_stage_edit_draft:vi.fn(async req=>({
       format:'nvp.p1d.native_source_cut_draft.v1',
       project_id:pid,graph_id:req.graph_id,
-      graph_sha256:'a'.repeat(64),source_segment_sha256:'e'.repeat(64),
+      graph_sha256:'a'.repeat(64),source_segment_sha256:'f'.repeat(64),
+      normalized_original_segments_sha256:'e'.repeat(64),
       duration_tick:'7056000000',segment_count:req.segments.length,
       original_source_modified:false,render_approved:false,
       draft_uncommitted:true,
