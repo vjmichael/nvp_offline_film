@@ -1,6 +1,8 @@
 """PLAN-02-B trusted host never accepts browser approval as a Take grant."""
 import unittest
 from contextlib import ExitStack
+from hashlib import sha256
+from pathlib import Path
 from unittest.mock import patch
 import test_nvp_data_av_native as fixture
 from backend.nvp_exact_time_shots import ExactTimeShotSequence
@@ -102,6 +104,37 @@ class NativeCaptureHostTests(unittest.TestCase):
             self.trusted.begin(self.request)
         self.assertEqual(len(self.calls),1)
 
+    @staticmethod
+    def synthetic_native_result(kwargs):
+        # This is NOT an original Windows Job/cgroup result. It is only a
+        # fixture for immutable FilmIndex provenance binding/reopen tests.
+        pcm=Path(kwargs["source_path"]).read_bytes()
+        digest=sha256(pcm).hexdigest()
+        return {
+            "format":"nvp.w1g.original_microphone_worker_audit.v1",
+            "project_id":kwargs["project_id"],"take_id":kwargs["take_id"],
+            "source_id":kwargs["source_id"],"scene_id":kwargs["scene_id"],
+            "scene_document_sha256":kwargs["scene_document_sha256"],
+            "camera_timeline_document_sha256":
+                kwargs["camera_timeline_document_sha256"],
+            "subject_id":kwargs["subject_id"],"emitter_path":kwargs["emitter_path"],
+            "start_tick":str(kwargs["start_tick"]),
+            "end_tick":str(kwargs["end_tick"]),
+            "original_pcm_sha256":digest,
+            "sample_count":len(pcm)//2,"window_count":1,
+            "native_worker_receipts":[{
+                "job_id":"w1g_"+"1"*24,"first_sample":0,
+                "sample_count":len(pcm)//2,
+                "window_pcm_sha256":digest,
+                "worker_result_sha256":"2"*64,
+                "original_native_kernel_custody_verified":True,
+            }],
+            "all_window_results_and_os_custody_verified":True,
+            "device_capture_implemented_by_compiled_worker":False,
+            "immutable_take_published":False,
+            "physical_microphone_hardware_accepted":False,
+        }
+
     def _native_audit_controller(self,callback):
         # Isolated host-injected audit fixture. Actual ProtectedNativeWorker
         # compiler/job/cgroup evidence is tested separately; never invented.
@@ -120,9 +153,7 @@ class NativeCaptureHostTests(unittest.TestCase):
         def audit(self_auditor,**kwargs):
             calls.append(("AUDIT",kwargs["original_pcm_sha256"],
                           kwargs["recorded_samples"],kwargs["source_id"]))
-            return {"format":"test-only-native-capture-audit",
-                    "all_window_results_and_os_custody_verified":True,
-                    "device_capture_implemented_by_compiled_worker":False}
+            return self.synthetic_native_result(kwargs)
         with ExitStack() as stack:
             stack.enter_context(patch.object(
                 OriginalMicrophoneNativeWorkerAudit,
@@ -148,6 +179,12 @@ class NativeCaptureHostTests(unittest.TestCase):
         self.assertTrue(result["compiled_capture_worker_audit"][
             "all_window_results_and_os_custody_verified"])
         self.assertFalse(result["compiled_worker_is_device_recorder"])
+        self.assertIsNotNone(result["native_capture_attestations_sha256"])
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        reopened=OpenUSDTakeCapture(
+            self.index,verify_creator_action=lambda event,scope:False
+        ).verify_take(self.pid,"RecordedTake")
+        self.assertTrue(reopened["native_capture_attestations_verified"])
         self.assertEqual(self.index.read_revision(
             self.pid,"RecordedTake",1)["document_sha256"],
             result["take_document_sha256"])
@@ -193,8 +230,7 @@ class NativeCaptureHostTests(unittest.TestCase):
                          "Windows second-stage EFS inheritance gate")
     def test_windows_take_spool_efs_refusal_preserves_unapproved_take(self):
         def audit(self_auditor,**kwargs):
-            return {"format":"test-only-original-native-audit",
-                    "all_window_results_and_os_custody_verified":True}
+            return self.synthetic_native_result(kwargs)
         with ExitStack() as stack:
             stack.enter_context(patch.object(
                 OriginalMicrophoneNativeWorkerAudit,
