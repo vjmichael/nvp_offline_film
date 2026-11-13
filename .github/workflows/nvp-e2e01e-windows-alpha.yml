@@ -74,6 +74,9 @@ jobs:
           python -m unittest discover -s tests -p test_nvp_w1g_legacy_blender_launch.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_filming_windows_release.py -v
+          python -m unittest discover -s tests -p test_nvp_p1a_original_capture_worker_bridge.py -v
+          python -m unittest discover -s tests -p test_nvp_plan02b_native_capture.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_nvp_w1g_release_gate.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
