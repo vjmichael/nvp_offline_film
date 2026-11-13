@@ -366,6 +366,17 @@ class Slate06NativeTests(unittest.TestCase):
             creator_event=self.trusted_event,presentation="geometry",
             camera_path="/World/Camera",ram_mb=4096,timeout_seconds=240)
         result=native_host.run_next()
+        if result["state"]!="SUCCEEDED":
+            # The original supervisor owns these on-disk receipts. Log tails
+            # are diagnostic only; they can never authorize a worker or PNG.
+            native_logs={}
+            for native_name in ("worker_stdout.log","worker_stderr.log"):
+                original_path=native_supervisor.root/req["job_id"]/native_name
+                if original_path.is_file():
+                    native_logs[native_name]=original_path.read_text(
+                        "utf8",errors="replace")[-6000:]
+            self.fail("Genuine SLATE-06 native Blender failed; receipt="+
+                      repr(result)+"; stdout/stderr="+repr(native_logs))
         self.assertEqual(result["state"],"SUCCEEDED",result)
         image=native_host.read_preview_png(self.pid,req["cache_key"])
         self.assertTrue(image["authored_geometry_preview_only"])

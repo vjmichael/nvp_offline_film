@@ -361,6 +361,17 @@ class Slate05RealBlenderSmoke(Slate05NativeTests):
             self.pid,"cut",1,film_tick=0,quality="thumbnail",
             creator_event=self.trusted_event,ram_mb=3072,timeout_seconds=180)
         result=host.run_next()
+        if result["state"]!="SUCCEEDED":
+            # The original supervisor owns these on-disk receipts. Log tails
+            # are diagnostic only; they can never authorize a worker or PNG.
+            native_logs={}
+            for native_name in ("worker_stdout.log","worker_stderr.log"):
+                original_path=supervisor.root/request["job_id"]/native_name
+                if original_path.is_file():
+                    native_logs[native_name]=original_path.read_text(
+                        "utf8",errors="replace")[-6000:]
+            self.fail("Genuine SLATE-05 native Blender failed; receipt="+
+                      repr(result)+"; stdout/stderr="+repr(native_logs))
         self.assertEqual(result["state"],"SUCCEEDED",result)
         png=real_cache.lookup(self.pid,request["cache_key"])
         self.assertEqual(png["status"],"READY")

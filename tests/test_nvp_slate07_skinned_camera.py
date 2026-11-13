@@ -384,6 +384,17 @@ class RealCharacterAndLens(unittest.TestCase):
             quality="thumbnail",creator_event=self.auth,
             ram_mb=4096,timeout_seconds=240)
         receipt=host.run_next()
+        if receipt["state"]!="SUCCEEDED":
+            # The original supervisor owns these on-disk receipts. Log tails
+            # are diagnostic only; they can never authorize a worker or PNG.
+            native_logs={}
+            for native_name in ("worker_stdout.log","worker_stderr.log"):
+                original_path=worker.root/approved["job_id"]/native_name
+                if original_path.is_file():
+                    native_logs[native_name]=original_path.read_text(
+                        "utf8",errors="replace")[-6000:]
+            self.fail("Genuine SLATE-07 native Blender failed; receipt="+
+                      repr(receipt)+"; stdout/stderr="+repr(native_logs))
         self.assertEqual(receipt["state"],"SUCCEEDED",receipt)
         picture=host.read_camera_workbench_png(self.pid,approved["cache_key"])
         self.assertEqual((picture["width"],picture["height"]),(320,180))
