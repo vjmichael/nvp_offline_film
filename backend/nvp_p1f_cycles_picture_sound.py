@@ -98,12 +98,16 @@ class P1FOriginalPictureSound:
         if vals is None or len(vals)!=len(SHAPES):
             raise RuntimeError("Original facial performance cannot be sampled")
         facial=[float(v) for v in vals]
+        actor=stage.GetPrimAtPath(path)
+        actor_id=actor.GetAttribute("nvp:actorID").Get()
+        if type(actor_id) is not str or not actor_id.startswith("ACT_"):
+            raise RuntimeError("Composed original actor lost its authoritative ActorID")
         flattened=stage.Flatten().ExportToString().encode("utf8")
         if (not 100<=len(flattened)<=MAX_USDA or
                 b"@" in flattened or
                 not flattened.lstrip().startswith(b"#usda 1.0")):
             raise RuntimeError("Original composed shot cannot be flattened without external assets")
-        return admission,path,facial,flattened
+        return admission,path,actor_id,facial,flattened
 
     def render_frame(self,pid,plan_id,reel_index,frame_offset,job_id, *,
                      creator_event,width=320,height=180,samples=12):
@@ -114,11 +118,18 @@ class P1FOriginalPictureSound:
                 not 128<=width<=1920 or not 72<=height<=1080 or
                 type(samples) is not int or not 4<=samples<=128):
             raise ValueError("Invalid bounded genuine Cycles output contract")
-        original,path,facial,usda=self._original(
+        original,path,actor_id,facial,usda=self._original(
             pid,plan_id,reel_index,frame_offset)
         reel=self.plan.read(pid,plan_id)
         source=self.plan.picture_instant(pid,plan_id,reel_index,frame_offset)
         first=source["output_tick"]//(TICKS_PER_SECOND//48000)
+        edit_doc=reel["data"]
+        selected=self.plan.editor.plan(
+            pid,edit_doc["edit_id"],edit_doc["edit_revision"],
+            first_sample=first,count=1)
+        for sound in selected["slices"][0]["audio"]:
+            if sound["enabled"] and sound["actor_id"]!=actor_id:
+                raise RuntimeError("Actor-owned PCM and original 3D actor identity disagree")
         mix=self.plan.audio_window(
             pid,plan_id,reel_index,
             first_sample=first,count=SAMPLES_PER_FRAME)
@@ -131,7 +142,7 @@ class P1FOriginalPictureSound:
             "scene_sha256":original["scene_document_sha256"],
             "usd_sha256":sha256(usda).hexdigest(),
             "camera":original["camera_path"],
-            "actor_id":path.rsplit("/",1)[-1],
+            "actor_id":actor_id,
             "actor_path":path,
             "source_tick":original["source_tick"],
             "expected_face_weights":facial,
