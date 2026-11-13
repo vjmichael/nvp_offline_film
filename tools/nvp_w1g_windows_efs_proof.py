@@ -8,6 +8,7 @@ An UNSUPPORTED EFS volume is a refused protected source, not a test pass.
 from __future__ import annotations
 
 import argparse
+import ctypes
 from hashlib import sha256
 import json
 import os
@@ -15,10 +16,41 @@ from pathlib import Path
 import secrets
 import shutil
 import tempfile
+import time
 
 from backend.nvp_w1g_encrypted_source import require_efs_stage,verify_efs_inputs
 
 FORMAT="nvp.w1g.original_source_disposable_efs_acceptance.v1"
+
+
+def _windows_boot_estimate_epoch() -> int:
+    """Conservative observed boot-time estimate; not a key-recovery receipt.
+
+    The native monotonic GetTickCount64 clock resets on boot. Comparing the
+    epoch estimate between two separate processes denies same-boot reenactment,
+    but an OS wall-clock adjustment could still make this observation wrong.
+    Human/independent EFS recovery acceptance is always required separately.
+    """
+    if os.name!="nt":
+        raise RuntimeError("Only native Windows can provide EFS boot observation")
+    fn=ctypes.windll.kernel32.GetTickCount64
+    fn.restype=ctypes.c_ulonglong
+    uptime_ms=fn()
+    if type(uptime_ms) is not int or uptime_ms<0:
+        raise RuntimeError("Windows uptime could not be measured")
+    return int(time.time()-uptime_ms/1000)
+
+
+def _require_new_boot(saved: dict, observed_boot_epoch: int):
+    previous=saved.get("windows_boot_estimate_epoch")
+    if (type(previous) is not int or previous<=0 or
+        type(observed_boot_epoch) is not int or observed_boot_epoch<=0):
+        raise PermissionError("EFS test lacks an original Windows boot observation")
+    # A short difference can be sampling, rounding or clock drift. Refuse it
+    # instead of claiming that a second Python process proves restart.
+    if abs(observed_boot_epoch-previous)<=60:
+        raise PermissionError("EFS stage has not demonstrated a distinct Windows boot")
+    return True
 
 
 def prepare_disposable_efs(parent: Path) -> dict:
@@ -43,6 +75,7 @@ def prepare_disposable_efs(parent: Path) -> dict:
             "file":name,
             "sha256":sha256(data).hexdigest(),
             "original_film_data_used":False,
+            "windows_boot_estimate_epoch":_windows_boot_estimate_epoch(),
             "physical_efs_key_recovery_verified":False,
             "creator_authorization_verified":False,
         }
@@ -71,6 +104,7 @@ def reopen_disposable_efs(saved: dict) -> dict:
         len(stage.name)<len("nvp-w1g-efs-test-")+6 or
         stage.is_symlink() or not stage.is_dir()):
         raise RuntimeError("EFS original stage unavailable or not a disposable test after restart")
+    _require_new_boot(saved,_windows_boot_estimate_epoch())
     verify_efs_inputs(stage,(saved["file"],))
     if sha256((stage/saved["file"]).read_bytes()).hexdigest()!=saved["sha256"]:
         raise RuntimeError("Native EFS re-opened encrypted bytes differ from original")
@@ -78,8 +112,11 @@ def reopen_disposable_efs(saved: dict) -> dict:
     stage.rmdir()
     return {
         "format":FORMAT,
-        "status":"NATIVE_WINDOWS_EFS_SAME_USER_REOPEN_VERIFIED",
+        "status":"NATIVE_WINDOWS_EFS_POST_REBOOT_REOPEN_VERIFIED",
         "encrypted_original_input_at_rest_verified":True,
+        "distinct_windows_boot_observed":True,
+        "windows_boot_epoch_method":"GetTickCount64-wall-clock-estimate",
+        "key_recovery_or_physical_owner_identity_proven":False,
         "original_film_data_used":False,
         "disposable_stage_removed":True,
         "owner_physical_session_proven":False,
