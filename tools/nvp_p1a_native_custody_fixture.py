@@ -70,6 +70,15 @@ def crash_host(output):
     from backend.nvp_worker_containment import launch_contained
     output=Path(output)
     output.mkdir(parents=True,exist_ok=True)
+    from backend.nvp_capture_recovery import OriginalCaptureJournal
+    OriginalCaptureJournal(output.parent).begin(output,{
+        "project_id":"P1NativeRecovery",
+        "take_id":"InterruptedOriginalTake",
+        "source_id":"OriginalMicSource",
+        "scene_sha256":"a"*64,
+        "camera_timeline_sha256":"b"*64,
+        "sample_rate":48000,
+    })
     script=Path(__file__).resolve()
     with (output/"host.log").open("wb") as logs:
         process=launch_contained(

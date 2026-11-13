@@ -54,6 +54,22 @@ def host_crash(path):
         else f"Original host-crash fixture returned {outer.returncode} without log")
 
 
+def verify_restarted_host_has_only_unapproved_original(path):
+    from backend.nvp_capture_recovery import OriginalCaptureJournal
+    receipt=OriginalCaptureJournal(path.parent).catalog("P1NativeRecovery")
+    assert receipt["status"]=="READ_ONLY_RECOVERY_EVIDENCE"
+    assert receipt["auto_freeze"] is False
+    assert receipt["auto_delete"] is False
+    assert len(receipt["items"])==1
+    row=receipt["items"][0]
+    assert row["take_id"]=="InterruptedOriginalTake"
+    assert row["phase"]=="CAPTURING"
+    assert row["source_verified_for_freeze"] is False
+    assert row["take_approved"] is False
+    assert row["requires_native_owner_reconciliation"] is True
+    assert not (path/"take.approved").exists()
+
+
 def process_terminated_windows(pid):
     import win32api,win32con,win32event
     import pywintypes
@@ -105,6 +121,7 @@ def test_native_windows_hard_host_exit_kills_detached_descendant(tmp_path):
     end=time.monotonic()+10
     while time.monotonic()<end:
         if process_terminated_windows(pid):
+            verify_restarted_host_has_only_unapproved_original(path)
             return
         time.sleep(.05)
     pytest.fail("Windows host crash left actual detached Job descendant active")
@@ -203,7 +220,7 @@ def test_linux_hard_host_exit_guardian_reconciles_descendants(tmp_path):
     while leaf.exists() and time.monotonic()<end:
         time.sleep(.05)
     assert not leaf.exists(), "Independent kernel guardian failed restart cleanup"
-    assert not (path/"take.approved").exists()
+    verify_restarted_host_has_only_unapproved_original(path)
 
 
 @pytest.mark.skipif(sys.platform!="linux",reason="Real Linux kernel only")
