@@ -31,18 +31,18 @@ def full_body_glb(mutation=None):
         nodes[i]["translation"] = xyz
         if children:
             nodes[i]["children"] = children
-    pose(0, [0., 0., 1.], [1, 3, 4, 5, 6])
-    pose(1, [0., 0., .4], [2])
-    pose(2, [0., 0., .3])
+    pose(0, [0., 1., 0.], [1, 3, 4, 5, 6])
+    pose(1, [0., .4, 0.], [2])
+    pose(2, [0., .3, 0.])
     pose(3, [-.4, 0., 0.])
     pose(4, [.4, 0., 0.])
-    pose(5, [-.16, 0., -.45], [8])
-    pose(6, [.16, 0., -.45], [10])
+    pose(5, [-.16, -.45, 0.], [8])
+    pose(6, [.16, -.45, 0.], [10])
     nodes.extend([
-        {"name": "shin_left", "translation": [0., 0., -.4], "children": [9]},
-        {"name": "foot_left", "translation": [0., -.16, -.13]},
-        {"name": "shin_right", "translation": [0., 0., -.4], "children": [11]},
-        {"name": "foot_right", "translation": [0., -.16, -.13]},
+        {"name": "shin_left", "translation": [0., -.4, 0.], "children": [9]},
+        {"name": "foot_left", "translation": [0., -.13, .16]},
+        {"name": "shin_right", "translation": [0., -.4, 0.], "children": [11]},
+        {"name": "foot_right", "translation": [0., -.13, .16]},
     ])
     doc["skins"][0]["joints"] += [8, 9, 10, 11]
     matrix_accessor = doc["skins"][0]["inverseBindMatrices"]
@@ -53,17 +53,17 @@ def full_body_glb(mutation=None):
     # Replace the synthetic all-ones matrices with authentic inverse rest
     # transforms, matching the exact source hierarchy and mesh bind frame.
     rest_world = {
-        0: (0., 0., 1.),
-        1: (0., 0., 1.4),
-        2: (0., 0., 1.7),
-        3: (-.4, 0., 1.4),
-        4: (.4, 0., 1.4),
-        5: (-.16, 0., .55),
-        6: (.16, 0., .55),
-        8: (-.16, 0., .15),
-        9: (-.16, -.16, .02),
-        10: (.16, 0., .15),
-        11: (.16, -.16, .02),
+        0: (0., 1., 0.),
+        1: (0., 1.4, 0.),
+        2: (0., 1.7, 0.),
+        3: (-.4, 1.4, 0.),
+        4: (.4, 1.4, 0.),
+        5: (-.16, .55, 0.),
+        6: (.16, .55, 0.),
+        8: (-.16, .15, 0.),
+        9: (-.16, .02, .16),
+        10: (.16, .15, 0.),
+        11: (.16, .02, .16),
     }
     ibm_start = doc["bufferViews"][matrix_view]["byteOffset"]
     for ordinal, joint in enumerate(doc["skins"][0]["joints"]):
@@ -101,6 +101,8 @@ class FullBodyRestAndFootTests(unittest.TestCase):
         self.assertEqual(len(result["axis_corrections"]), 10)
         self.assertGreater(result["axis_corrections"]["shin_l"]["bone_length_m"], .3)
         self.assertTrue(result["glb_inverse_bind_rest_verified"])
+        self.assertEqual(result["source_to_stage_axes"], "glTF_Yup_to_OpenUSD_Zup_(x,-z,y)")
+        self.assertAlmostEqual(result["source_joint_positions_m"]["foot_l"][2], .02)
         self.assertFalse(result["full_body_deformation_verified"])
         self.assertFalse(result["usd_rest_pose_equivalence_verified"])
         self.assertFalse(result["rendered_performance_verified"])
@@ -109,7 +111,7 @@ class FullBodyRestAndFootTests(unittest.TestCase):
 
     def test_reject_incomplete_parented_mirrored_crossed_and_zero_length_bones(self):
         cases = [
-            (lambda d: d["nodes"][6].update({"translation": [-.16, 0., -.45]})),
+            (lambda d: d["nodes"][6].update({"translation": [-.16, -.45, 0.]})),
             (lambda d: d["nodes"][8].update({"translation": [0., 0., 0.]})),
             (lambda d: d["nodes"][2].update({"children": [0]})),
             (lambda d: d["nodes"][3].update({"scale": [-1, 1, 1]})),
