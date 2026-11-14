@@ -108,9 +108,11 @@ def build_fixture(out:Path,*,render_preview=True, blender='blender'):
                             revision['revision'])
     skin.approve(pid,sid,revision['revision'])
 
-    binary=Path(blender).resolve()
-    if not binary.is_file():
+    candidate=Path(blender)
+    located=str(candidate.resolve()) if candidate.is_file() else shutil.which(blender)
+    if not located:
         return {"status":"blocked_no_blender","reason":"No original Blender binary found"}
+    binary=Path(located).resolve()
     # Pinned by the provisioned public CI environment. Wrong version must
     # fail closed, never silently run an unreviewed executable.
     version=os.environ.get("NVP_TEST_BLENDER_VERSION","Blender 5.3.0")
@@ -225,7 +227,7 @@ def build_fixture(out:Path,*,render_preview=True, blender='blender'):
             "version":version,
             "independent_blender_journal_reopen":True}
     return {"status":native["status"],"import":imported,"native":native,
-            "source_worker_ids":[*receipts],
+            "source_worker_ids":[receipt["id"] for receipt in receipts.values()],
             "source_worker_receipts_verified":True,
             "public_fixture_only":True,
             "private_worker_authorized":False,
