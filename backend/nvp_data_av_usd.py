@@ -60,6 +60,12 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
         prim.CreateAuralModeAttr("spatial")
         prim.CreatePlaybackModeAttr("onceFromStartToEnd")
         prim.CreateGainAttr(float(gain))
+        # USD floating time codes are not an exact Film Time representation.
+        # Preserve integer ticks as private review-stage metadata; the indexed
+        # frozen event remains authoritative for playback and synchronization.
+        prim.GetPrim().SetCustomDataByKey("nvp:filmTimeStartTick", str(event["start_tick"]))
+        prim.GetPrim().SetCustomDataByKey("nvp:filmTimeEndTick", str(event["end_tick"]))
+        prim.GetPrim().SetCustomDataByKey("nvp:filmTimeTicksPerSecond", "7056000000")
         prim.CreateStartTimeAttr(Sdf.TimeCode(float(event["start_tick"])))
         prim.CreateEndTimeAttr(Sdf.TimeCode(float(event["end_tick"])))
         descriptors.append({
