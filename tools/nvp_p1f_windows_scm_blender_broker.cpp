@@ -59,7 +59,12 @@ static std::wstring sha256(const fs::path& file) {
         require(CryptCreateHash(prov,CALG_SHA_256,0,0,&hash)!=FALSE,
                 "Cannot create native original source SHA256");
         std::ifstream in(file,std::ios::binary);
-        require(in.good(),"Pinned original film source missing");
+        if(!in.good()) {
+            // All operands are trusted, fixed filenames; never emit a
+            // project-controlled host path or source content in the receipt.
+            throw std::runtime_error("Pinned source open failed for reviewed file "+
+                file.filename().string()+"; CRT errno="+std::to_string(errno));
+        }
         std::array<char,1024*128> buffer{};
         while(in) {
             in.read(buffer.data(),buffer.size());
