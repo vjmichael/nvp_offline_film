@@ -182,8 +182,12 @@ class P1FOriginalPictureSound:
             # No caller-supplied True can bypass native OS preflight. Linux
             # requires a root-owned bubblewrap namespace and delegated
             # cgroup; Windows private AppContainer/WFP remains fail closed.
-            from backend.nvp_worker_private_sandbox import private_os_preflight
-            private_os_preflight()
+            from backend.nvp_worker_private_sandbox import prove_private_kernel_boundary
+            # A successful constructor/argv check is not kernel proof. This
+            # launches and independently observes a real delegated cgroup +
+            # private mount/network namespace before any actor USD/PCM bytes
+            # are staged for the production Blender worker.
+            prove_private_kernel_boundary(self.supervisor.root)
         jobdir=self.supervisor.root/job_id
         jobdir.mkdir(parents=False,exist_ok=False)
         source_script=WORKER.read_bytes()
