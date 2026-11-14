@@ -298,6 +298,65 @@ class P1FOriginalPictureSound:
                 any(abs(faces[name]-spec["expected_face_weights"][i])>.035
                     for i,name in enumerate(SHAPES))):
             raise RuntimeError("Rendered facial performance changed from original USD")
+        # Reopen the independent original scene/Take/PBR source across
+        # process restarts. Never trust the worker's material claims alone.
+        reviewed=spec.get("reviewed_material")
+        verified_material=None
+        if reviewed is not None:
+            from backend.nvp_p1f_shot_material_binding import P1FOriginalShotMaterialBinding
+            from backend.nvp_p1f_reviewed_pbr_materials import P1FReviewedPBRMaterials
+            from backend.nvp_p1f_p2_reel_plan import P1FReelPlan
+            binding=P1FOriginalShotMaterialBinding(self.index)
+            look=binding.open(pid,reviewed["look_id"])
+            data=look["data"]
+            if (reviewed.get("look_document_sha256")!=look["document_sha256"] or
+                    reviewed.get("material_set_id")!=data["material_set_id"] or
+                    reviewed.get("material_set_document_sha256")!=
+                        data["material_set_document_sha256"] or
+                    reviewed.get("composed_material_path")!=
+                        data["composed_material_path"] or
+                    reviewed.get("bound_mesh_paths")!=data["bound_mesh_paths"] or
+                    reviewed.get("texture_sources")!=data["texture_sources"] or
+                    data["scene_document_sha256"]!=original["scene_document_sha256"] or
+                    self.index.read_revision(pid,original["take_id"],1)["data"][
+                        "scene_id"]!=data["scene_id"]):
+                raise RuntimeError("Independently reopened source Take/PBR binding changed")
+            material_library=P1FReviewedPBRMaterials(self.index)
+            material_library.open(pid,data["material_set_id"],
+                                  data["material_set_revision"])
+            observed=audit.get("reviewed_material")
+            if (type(observed) is not dict or
+                    observed.get("look_id")!=reviewed["look_id"] or
+                    observed.get("look_document_sha256")!=look["document_sha256"] or
+                    observed.get("material_set_document_sha256")!=
+                        data["material_set_document_sha256"] or
+                    observed.get("composed_material_path")!=data["composed_material_path"] or
+                    observed.get("bound_mesh_paths")!=data["bound_mesh_paths"] or
+                    sorted(observed.get("imported_uv_meshes",[]))!=sorted(
+                        p.rsplit("/",1)[-1] for p in data["bound_mesh_paths"])):
+                raise RuntimeError("Actual rendered UV material differs from original shot")
+            images=observed.get("textures")
+            if type(images) is not dict or set(images)!=set(data["texture_sources"]):
+                raise RuntimeError("Blender audit omitted original reviewed PBR channel")
+            for slot,source_meta in data["texture_sources"].items():
+                img=images[slot]
+                src=jobdir/("reviewed_"+slot+".png")
+                if (src.is_symlink() or not src.is_file() or
+                        sha_file(src)!=source_meta["sha256"] or
+                        img.get("sha256")!=source_meta["sha256"] or
+                        img.get("width")!=source_meta["width"] or
+                        img.get("height")!=source_meta["height"]):
+                    raise RuntimeError("Actual native reviewed PBR image audit changed")
+            verified_material={
+                "look_id":look["object_id"],
+                "look_document_sha256":look["document_sha256"],
+                "material_set_document_sha256":data["material_set_document_sha256"],
+                "rendered_uv_meshes":observed["imported_uv_meshes"],
+                "texture_sha256":{slot:meta["sha256"] for slot,meta in
+                                  data["texture_sources"].items()},
+            }
+        elif "reviewed_material" in audit:
+            raise RuntimeError("Worker added a look without original-source approval")
         png=jobdir/"original_frame.png"
         if sha_file(png)!=audit["png_sha256"]:
             raise RuntimeError("Blender PNG no longer matches worker picture receipt")
@@ -324,8 +383,11 @@ class P1FOriginalPictureSound:
             count=SAMPLES_PER_FRAME)
         if sound_again["pcm_sha256"]!=mix["pcm_sha256"]:
             raise RuntimeError("Original actor PCM changed between render and independent verification")
-        return {"picture":{"png_sha256":sha_file(png),"width":width,"height":height,
-                           "engine":"Cycles","source_tick":original["source_tick"]},
+        picture={"png_sha256":sha_file(png),"width":width,"height":height,
+                 "engine":"Cycles","source_tick":original["source_tick"]}
+        if verified_material is not None:
+            picture["reviewed_material"]=verified_material
+        return {"picture":picture,
                 "audio":{"wav_sha256":sha_file(wav),
                          "pcm_sha256":mix["pcm_sha256"],
                          "sample_count":SAMPLES_PER_FRAME,
