@@ -151,6 +151,142 @@ class ConvergedDirectorDesktopActions(CameraRailDirectorMixin):
             director_event="native_director"
         )
 
+    def film02md_architecture_catalog(self, project_id):
+        """List only independently reopened original architecture sources.
+
+        No arbitrary source path, file picker, creator grant, GPU call or
+        private source bytes crosses the browser/native boundary.
+        """
+        pid = self._wo5_project(project_id)
+        from backend.nvp_usd_film02m_modular_buildings import (
+            OriginalBuildingKit, BUILD_FORMAT)
+        from backend.nvp_usd_film02m_d_cells import (
+            OriginalBuildingCells, FORMAT as CELL_FORMAT)
+        kit = OriginalBuildingKit(
+            self.index, verify_director_action=lambda *_: False)
+        cells = OriginalBuildingCells(
+            self.index, verify_director_action=lambda *_: False)
+        buildings = []
+        for row in self.index.list_objects(pid, kind="world")[:64]:
+            record = self.index.read_revision(
+                pid, row["object_id"], row["head_revision"])
+            if record["data"].get("format") != BUILD_FORMAT:
+                continue
+            with kit.open_building(
+                    pid, row["object_id"], row["head_revision"]) as source:
+                if (source["record"]["document_sha256"] !=
+                        record["document_sha256"]):
+                    raise RuntimeError("Original architecture source changed on reopen")
+                buildings.append({
+                    "building_id": row["object_id"],
+                    "revision": row["head_revision"],
+                    "document_sha256": record["document_sha256"],
+                    "original_mesh_count": source["mesh_count"],
+                    "rendered": False,
+                })
+        published_cells = []
+        for row in self.index.list_objects(pid, kind="presentation")[:64]:
+            record = self.index.read_revision(
+                pid, row["object_id"], row["head_revision"])
+            if record["data"].get("format") != CELL_FORMAT:
+                continue
+            with cells.open(pid, row["object_id"], row["head_revision"]) as source:
+                published_cells.append({
+                    "cell_world_id": row["object_id"],
+                    "revision": row["head_revision"],
+                    "document_sha256": record["document_sha256"],
+                    "cell_ids": sorted(source.original),
+                    "camera_distance_only_prefetch": True,
+                    "source_take_binding_verified": False,
+                })
+        return {
+            "format": "nvp.conv06.original_architecture_source_catalog.v1",
+            "project_id": pid,
+            "buildings": buildings, "cell_worlds": published_cells,
+            "native_source_reopened": True,
+            "actual_cycles_accepted": False,
+            "original_take_or_pcm_modified": False,
+        }
+
+    def film02md_publish_cells(self, request):
+        """One creator-confirmed, exact original source-only cell manifest.
+
+        Publishing source cells does NOT stage/authorize a private film render
+        or bind the cells into any original performance Take.
+        """
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+            "project_id", "cell_world_id", "cells", "expected_revision"
+        } or type(request["expected_revision"]) is not int:
+            raise PermissionError("Exact source building-cell request required")
+        pid = self._wo5_project(request["project_id"])
+        from backend.nvp_usd_film02m_d_cells import OriginalBuildingCells
+
+        def approve(event, scope):
+            if (event != "native_director" or
+                scope.get("operation") !=
+                    "nvp.film02m.publish_original_building_cells.v1" or
+                scope.get("project_id") != pid or
+                scope.get("cell_world_id") != request["cell_world_id"] or
+                scope.get("expected_revision") != request["expected_revision"]):
+                return False
+            return self._ask(
+                "Publish ONE exact original architectural camera-cell inventory?\n"
+                "Project: " + pid +
+                "\nWorld: " + scope["cell_world_id"] +
+                "\nOriginal cell SHA: " + scope["source_cell_sha256"] +
+                "\nImmutable manifest SHA: " +
+                scope["source_cell_manifest_sha256"] +
+                "\nNative building sources remain original. This does NOT "
+                "authorize render, camera/Take edits, project decryption, "
+                "original PCM editing or film-master release.")
+        result = OriginalBuildingCells(
+            self.index, verify_director_action=approve).publish(
+                pid, request["cell_world_id"],
+                cells=request["cells"], expected_revision=request["expected_revision"],
+                director_event="native_director")
+        return {
+            "format": "nvp.conv06.original_architecture_cell_native_receipt.v1",
+            "project_id": pid,
+            "cell_world_id": request["cell_world_id"],
+            "revision": result["revision"],
+            "document_sha256": result["document_sha256"],
+            "native_director_approved": True,
+            "original_take_or_pcm_modified": False,
+            "film_master_approved": False,
+        }
+
+    def film01c_texture_catalog(self, project_id):
+        """Expose only source-verified texture metadata, never PNG bytes/paths."""
+        pid = self._wo5_project(project_id)
+        from backend.nvp_usd_film01c_texture import source_texture_descriptors
+        sources = []
+        for kind in ("asset", "scene"):
+            for row in self.index.list_objects(pid, kind=kind)[:64]:
+                record = self.index.read_revision(
+                    pid, row["object_id"], row["head_revision"])
+                original = source_texture_descriptors(
+                    self.index, pid, kind=kind, record=record)
+                if not original:
+                    continue
+                sources.append({
+                    "source_kind": kind,
+                    "source_id": row["object_id"],
+                    "revision": row["head_revision"],
+                    "document_sha256": record["document_sha256"],
+                    "png_sha256": sorted(original),
+                    "original_png_hashes_verified": True,
+                })
+                if len(sources) > 64:
+                    raise ValueError("Too many verified original film texture sources")
+        return {
+            "format": "nvp.conv06.original_texture_metadata_catalog.v1",
+            "project_id": pid, "sources": sources,
+            "original_png_bytes_exposed": False,
+            "external_texture_paths_allowed": False,
+            "film_master_approved": False,
+        }
+
     def film03_actor_catalog(self, project_id):
         pid = self._wo5_project(project_id)
         from backend.nvp_production_bible_actors import ProductionBibleActors
