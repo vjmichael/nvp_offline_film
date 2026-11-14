@@ -137,6 +137,35 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
         self.assertEqual(self.index.read_revision(
             self.pid,"spatial_world",1)["document_sha256"],before)
 
+    def test_usd_sound_time_metadata_keeps_subframe_exact_integer_ticks(self):
+        # Sound-event times need not fall on any video frame boundary.
+        event = self.timeline.events_at(
+            self.pid, "sound_events", 1, tick=T//2)[0]
+        self.assertEqual(event["start_tick"], 0)
+        self.assertEqual(event["end_tick"], 2*T)
+        result = spatial_audio_at(
+            self.index, self.pid, "spatial_world", 1,
+            "sound_events", 1, T//2)
+        binding = result["bindings"][0]
+        record, stage = self.scene.open(self.pid, "spatial_world", 1)
+        # The overlay is deliberately transient; reopen cannot expose it.
+        self.assertFalse(stage.GetPrimAtPath(binding["usd_prim_path"]).IsValid())
+        self.assertEqual(binding["start_tick"], "0")
+        self.assertEqual(binding["end_tick"], str(2*T))
+        self.assertEqual(self.index.read_revision(
+            self.pid, "spatial_world", 1)["document_sha256"],
+            record["document_sha256"])
+
+    def test_usd_spatial_query_rejects_invalid_time_and_budget(self):
+        for tick in (-1, True, 1.5, "0", 2**63):
+            with self.subTest(tick=tick), self.assertRaises(ValueError):
+                spatial_audio_at(self.index, self.pid, "spatial_world", 1,
+                                 "sound_events", 1, tick)
+        for limit in (0, True, 33, 1.5):
+            with self.subTest(limit=limit), self.assertRaises(ValueError):
+                spatial_audio_at(self.index, self.pid, "spatial_world", 1,
+                                 "sound_events", 1, 0, limit=limit)
+
     def test_native_creator_permission_seek_and_stop_are_window_scoped(self):
         bridge=TrustedDesktopCameraBridge(
             self.index,origin="http://127.0.0.1:7777")
