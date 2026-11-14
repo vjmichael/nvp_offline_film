@@ -54,7 +54,8 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                 refuse=P1FOriginalPictureSound(
                     fixture.index,supervisor,
                     approve_render=lambda *_:False,
-                    verify_isolated_worker=synthetic_only_boundary)
+                    verify_isolated_worker=synthetic_only_boundary,
+                    public_fixture_mode=True)
                 with self.assertRaises(PermissionError):
                     refuse.render_frame(
                         fixture.pid,"rigged_reel_plan",0,12,"refused_frame",
@@ -66,7 +67,8 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                     ev=="public_fixture_only" and
                     scope["operation"]==
                         "nvp.p1f.render_original_cycles_frame.v1",
-                    verify_isolated_worker=synthetic_only_boundary)
+                    verify_isolated_worker=synthetic_only_boundary,
+                    public_fixture_mode=True)
                 try:
                     result=worker.render_frame(
                         fixture.pid,"rigged_reel_plan",0,12,"public_rigged_frame",
