@@ -451,6 +451,19 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
     def data_av_audio_window(self,session_id,first_sample,count):
         return self._data_av().read_audio(session_id,first_sample,count)
 
+    def data_av_texture_tile(self,session_id,request):
+        """Read a bounded PNG tile only from the approved live original Take.
+
+        The existing native source controller verifies project, immutable
+        scene/asset binding and texture SHA. No URL/path or renderer authority.
+        """
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "asset_id","asset_revision","asset_document_sha256",
+                "texture_sha256","mip_level","tile_x","tile_y"}:
+            raise PermissionError("Only a native Take-bound source PNG tile")
+        return self._data_av().read_original_texture_tile(session_id,request)
+
     def data_av_scene_at(self,session_id,tick):
         return self._data_av().scene_at(session_id,tick)
 
