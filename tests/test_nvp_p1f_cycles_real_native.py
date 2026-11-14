@@ -10,6 +10,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from backend.nvp_blender_worker import BlenderWorkerSupervisor, sha_file
 from backend.nvp_p1f_cycles_picture_sound import P1FOriginalPictureSound
@@ -29,6 +30,21 @@ class P1FRealCyclesJobTests(unittest.TestCase):
             check=True,capture_output=True,text=True,timeout=25)
         version=out.stdout.splitlines()[0]
         self.assertTrue(version.startswith("Blender "))
+        # PUBLIC synthetic acceptance only. These monkeypatches are present
+        # EXCLUSIVELY in this unpackaged test file and never expose an opt-out
+        # flag in the installed renderer. The real Win32 Job still runs Blender.
+        # This test cannot be cited as AppContainer/WFP private-film custody.
+        synthetic_only_patches=(
+            patch("backend.nvp_worker_private_sandbox.prove_private_kernel_boundary",
+                  return_value={"public_fixture_only":True}),
+            patch("backend.nvp_worker_private_sandbox.private_os_preflight",
+                  return_value={"public_fixture_only":True}),
+            patch("backend.nvp_worker_private_sandbox.sandbox_command",
+                  side_effect=lambda cmd,jobdir:{"command":cmd}),
+        )
+        for controlled_patch in synthetic_only_patches:
+            controlled_patch.start()
+            self.addCleanup(controlled_patch.stop)
         fixture=RealImportedActorTests(
             "test_composed_facial_actor_in_real_source_take_shot")
         fixture.setUp()
@@ -54,8 +70,7 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                 refuse=P1FOriginalPictureSound(
                     fixture.index,supervisor,
                     approve_render=lambda *_:False,
-                    verify_isolated_worker=synthetic_only_boundary,
-                    public_fixture_mode=True)
+                    verify_isolated_worker=synthetic_only_boundary)
                 with self.assertRaises(PermissionError):
                     refuse.render_frame(
                         fixture.pid,"rigged_reel_plan",0,12,"refused_frame",
@@ -67,8 +82,7 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                     ev=="public_fixture_only" and
                     scope["operation"]==
                         "nvp.p1f.render_original_cycles_frame.v1",
-                    verify_isolated_worker=synthetic_only_boundary,
-                    public_fixture_mode=True)
+                    verify_isolated_worker=synthetic_only_boundary)
                 try:
                     result=worker.render_frame(
                         fixture.pid,"rigged_reel_plan",0,12,"public_rigged_frame",
