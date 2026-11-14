@@ -70,7 +70,15 @@ class SlatePreviewCache:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("PRAGMA synchronous=FULL")
             db.execute("PRAGMA busy_timeout=15000")
-            yield db
+            try:
+                yield db
+            except BaseException:
+                if db.in_transaction:
+                    db.rollback()
+                raise
+            else:
+                if db.in_transaction:
+                    db.commit()
         finally:
             db.close()
 
