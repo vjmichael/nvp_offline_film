@@ -60,27 +60,15 @@ jobs:
           python -m unittest discover -s tests -p "test_nvp_digital_slate_branches_native.py" -v
           python -m unittest discover -s tests -p "test_nvp_openusd_shot_overrides_native.py" -v
 
-  actual-contained-blender:
-    name: SLATE-05 Linux real Blender PNG with native supervisor receipt
+  blender-runtime-quarantined:
+    name: FFmpeg-bearing apt Blender excluded; genuine render NOT ACCEPTED
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install pinned OpenUSD wheel and real OS Blender
+      - name: Confirm rendering is deliberately unavailable pending audited non-FFmpeg runtime
         shell: bash
         run: |
-          python -m pip install --only-binary=:all: "usd-core==26.11"
-          sudo apt-get update -qq
-          sudo apt-get install -y blender
-          /usr/bin/blender -b --version
-      - name: Execute real contained Blender blocking preview through approved native dispatch
-        shell: bash
-        env:
-          NVP_NATIVE_BLENDER_EXECUTABLE: /usr/bin/blender
-        run: |
-          python -m unittest discover -s tests -p "test_nvp_slate05_preview_native.py" -v
+          echo "DA-00: apt Blender and its FFmpeg/libav dependencies are prohibited."
+          echo "No genuine Blender render acceptance is claimed by this job."
 
   preview-pane-ui:
     name: SLATE-05 React verified-preview status/segment scope
