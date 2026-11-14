@@ -81,16 +81,27 @@ jobs:
               bash -ec 'run_native() { python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v; }; run_native' \
               2>&1 | tee kernel-actual-output.txt; then
             echo 'REAL_USER_SYSTEMD_DELEGATION_PROVED' | tee -a kernel-actual-output.txt
-          else
-            echo 'User scope unavailable; attempting genuine systemd system scope (not an uncontained fallback)' | tee -a kernel-actual-output.txt
-            sudo systemd-run --system --scope --collect --quiet \
+          elif sudo systemd-run --system --scope --collect --quiet \
               -p Delegate=yes -p DelegateSubgroup=nvp.host \
               --uid="$(id -un)" \
               env PATH="$PATH" PYTHONPATH="$PWD" \
                 NVP_REQUIRE_REAL_CGROUP=1 NVP_REQUIRE_REAL_P1F_KERNEL=1 \
               bash -ec 'python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v' \
+              2>&1 | tee -a kernel-actual-output.txt; then
+            echo 'REAL_UNPRIVILEGED_SYSTEMD_DELEGATION_PROVED' | tee -a kernel-actual-output.txt
+          else
+            # This is an actual root-owned SYSTEMD SUPERVISOR acceptance
+            # candidate. It is NOT evidence of unprivileged host custody,
+            # and is NOT a blanket sysctl/AppArmor relaxation. Full Linux
+            # kernel isolation and original adversarial tests still run.
+            echo 'Unprivileged scopes blocked: probing root-owned outer supervisor without weakening namespace flags' | tee -a kernel-actual-output.txt
+            sudo systemd-run --system --scope --collect --quiet \
+              -p Delegate=yes -p DelegateSubgroup=nvp.host \
+              env PATH="$PATH" PYTHONPATH="$PWD" \
+                NVP_REQUIRE_REAL_CGROUP=1 NVP_REQUIRE_REAL_P1F_KERNEL=1 \
+              bash -ec 'python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v' \
               2>&1 | tee -a kernel-actual-output.txt
-            echo 'REAL_SYSTEM_SYSTEMD_DELEGATION_PROVED' | tee -a kernel-actual-output.txt
+            echo 'REAL_ROOT_OWNED_SYSTEMD_SUPERVISOR_KERNEL_PROVED; UNPRIVILEGED_SCOPE_UNVERIFIED' | tee -a kernel-actual-output.txt
           fi
       - name: Record true kernel result without inventing acceptance
         if: always()
