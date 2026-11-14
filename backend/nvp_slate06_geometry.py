@@ -328,7 +328,17 @@ def required(name):
     pos=args.index(name)+1
     if pos>=len(args): raise RuntimeError("Incomplete sealed preview argument")
     value=args[pos]
-    if not value or "/" in value or chr(92) in value or value in (".",".."):
+    expected={"--manifest":"slate_source_preview.json",
+              "--preview":"preview.png"}.get(name)
+    # The native supervisor deliberately resolves approved operands to their
+    # absolute job-root paths. Reject traversal, symlinks, directory changes
+    # and any name other than the two sealed worker contract files.
+    cwd=os.path.realpath(os.getcwd())
+    if (not expected or not os.path.isabs(value) or
+            os.path.dirname(os.path.realpath(value))!=cwd or
+            os.path.basename(value)!=expected or
+            os.path.realpath(value)!=os.path.join(cwd,expected) or
+            os.path.islink(value)):
         raise RuntimeError("Untrusted preview output path")
     return value
 manifest=required("--manifest");output=required("--preview")
