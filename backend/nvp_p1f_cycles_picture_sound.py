@@ -62,8 +62,7 @@ def _wav_pcm(pcm):
 
 class P1FOriginalPictureSound:
     def __init__(self,index:FilmIndex,supervisor:BlenderWorkerSupervisor,
-                 *,approve_render, verify_isolated_worker,
-                 public_fixture_mode=False):
+                 *,approve_render, verify_isolated_worker):
         if (not isinstance(index,FilmIndex) or
                 not isinstance(supervisor,BlenderWorkerSupervisor) or
                 not callable(approve_render) or
@@ -73,11 +72,6 @@ class P1FOriginalPictureSound:
             raise RuntimeError("Reviewed bundled Cycles script is unavailable")
         self.index=index
         self.supervisor=supervisor
-        if type(public_fixture_mode) is not bool:
-            raise TypeError("Production vs synthetic test mode must be explicit")
-        if public_fixture_mode and os.environ.get("NVP_PUBLIC_SYNTHETIC_CI")!="1":
-            raise PermissionError("Public fixture exception unavailable in installed NVP")
-        self.public_fixture_mode=public_fixture_mode
         self.approve=approve_render
         self.verify_isolated_worker=verify_isolated_worker
         self.plan=P1FReelPlan(index)
@@ -178,16 +172,12 @@ class P1FOriginalPictureSound:
         }
         if self.verify_isolated_worker(dict(sandbox_scope)) is not True:
             raise PermissionError("Genuine private film Cycles worker isolation not established")
-        if not self.public_fixture_mode:
-            # No caller-supplied True can bypass native OS preflight. Linux
-            # requires a root-owned bubblewrap namespace and delegated
-            # cgroup; Windows private AppContainer/WFP remains fail closed.
-            from backend.nvp_worker_private_sandbox import prove_private_kernel_boundary
-            # A successful constructor/argv check is not kernel proof. This
-            # launches and independently observes a real delegated cgroup +
-            # private mount/network namespace before any actor USD/PCM bytes
-            # are staged for the production Blender worker.
-            prove_private_kernel_boundary(self.supervisor.root)
+        # There is NO test/public mode in production: every film source
+        # needs a genuine native OS boundary before any USD/PCM staging.
+        # The Windows production SCM/AppContainer/WFP broker is not yet
+        # installed and Windows requests necessarily fail closed.
+        from backend.nvp_worker_private_sandbox import prove_private_kernel_boundary
+        prove_private_kernel_boundary(self.supervisor.root)
         jobdir=self.supervisor.root/job_id
         jobdir.mkdir(parents=False,exist_ok=False)
         source_script=WORKER.read_bytes()
@@ -214,7 +204,7 @@ class P1FOriginalPictureSound:
             # Kernel-level whole-tree containment is REQUIRED; do not use
             # the legacy Linux PDEATHSIG/process-group-only fallback.
             require_linux_cgroup_v2=True,
-            require_private_isolation=not self.public_fixture_mode)
+            require_private_isolation=True)
         outcome=self.supervisor.run(op)
         if outcome.get("state")!="SUCCEEDED":
             return {"status":"NOT_DELIVERED","job_id":job_id,
