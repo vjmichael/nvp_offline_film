@@ -290,7 +290,7 @@ class BlenderWorkerSupervisor:
             if value not in op.inputs and value not in op.outputs:
                 if not (flag=="--out" and target.is_relative_to(jobdir)):
                     raise ValueError("Unlisted worker input/output path")
-            argv.extend([flag,str(target)])
+            # The trusted SLATE preview scripts intentionally accept only sealed\n            # basenames, never absolute filesystem paths. The supervisor has\n            # already resolved, confined and authorized these paths above.\n            # Preserve absolute arguments for other reviewed worker domains.\n            argv.extend([flag,value if flag in ("--manifest","--preview") else str(target)])
         return jobdir,script,argv
 
     def _audit_outputs(self, op: BlenderOperation, jobdir: Path):
