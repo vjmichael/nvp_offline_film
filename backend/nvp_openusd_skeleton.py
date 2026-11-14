@@ -79,8 +79,21 @@ def validate_rigs(roles, rigs):
         previous=-1
         for entry in samples:
             if type(entry) is not dict or set(entry) not in (
-                    {"tick","translations"},{"tick","joint_transforms"}):
+                    {"tick","translations"},{"tick","joint_transforms"},
+                    {"tick","translations","face_weights"},
+                    {"tick","joint_transforms","face_weights"}):
                 raise ValueError("Unsupported joint key schema")
+            if "face_weights" in entry:
+                shapes=rig.get("skin",{}).get("blend_shapes")
+                weights=entry["face_weights"]
+                if (type(shapes) is not list or type(weights) is not dict or
+                    set(weights)!={item["name"] for item in shapes
+                                   if type(item) is dict and "name" in item}):
+                    raise ValueError("Face animation must match every authored USD morph")
+                if any(type(weight) not in (float,int) or
+                       not math.isfinite(weight) or not 0<=weight<=1
+                       for weight in weights.values()):
+                    raise ValueError("Original facial weights must be bounded")
             tick=_int(entry["tick"],"joint sample time",maximum=MAX_USD_EXACT_TICK)
             if tick<=previous:
                 raise ValueError("Joint time keys must strictly increase")
@@ -109,6 +122,10 @@ def validate_rigs(roles, rigs):
                 "skin_weighted":True,
                 "facial_animation_rendered":False,
             })
+            if "blend_shapes" in skin:
+                descriptor["facial_shape_names"]=[
+                    item["name"] for item in skin["blend_shapes"]]
+                descriptor["facial_animation_rendered"]=False
             if "source_glb_sha256" in skin:
                 descriptor.update({
                     "original_glb_sha256":skin["source_glb_sha256"],
@@ -164,7 +181,21 @@ def author_skeleton_layer(roles, rigs):
                 rig["skin"],len(rig["joints"]))
             if source["mesh_path"]!=rig["path"]+"/Rig/CharacterMesh":
                 raise RuntimeError("Author did not preserve canonical skeleton mesh path")
+        original_shapes=(
+            [item["name"] for item in rig["skin"]["blend_shapes"]]
+            if "skin" in rig and "blend_shapes" in rig["skin"] else [])
+        if original_shapes:
+            if not animation.GetBlendShapesAttr().Set(Vt.TokenArray(original_shapes)):
+                raise RuntimeError("Native facial animation names not authored")
         for sample in rig["samples"]:
+            if original_shapes:
+                weights=sample.get("face_weights")
+                if weights is None or set(weights)!=set(original_shapes):
+                    raise ValueError("Incomplete original facial source time key")
+                if not animation.GetBlendShapeWeightsAttr().Set(
+                    Vt.FloatArray([float(weights[name]) for name in original_shapes]),
+                    Usd.TimeCode(float(sample["tick"]))):
+                    raise RuntimeError("Native face animation weights could not be authored")
             matrices=[]
             if "joint_transforms" in sample:
                 matrices=[_source_matrix(x) for x in sample["joint_transforms"]]
