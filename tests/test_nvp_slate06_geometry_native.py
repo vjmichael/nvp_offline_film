@@ -260,6 +260,20 @@ class Slate06NativeTests(unittest.TestCase):
             req=self.request(camera_path="/World/Camera")
         self.assertEqual(req["status"],"QUEUED")
 
+    def test_preview_cache_reservation_commits_across_connections(self):
+        """Approval reopens SQLite; reservation must survive that boundary."""
+        key="a"*64
+        job="slateprev_durable_reservation"
+        reserved=self.cache.reserve(self.pid,key,job_id=job,
+            source_sha256="b"*64,recipe_sha256="c"*64,
+            width=128,height=128)
+        self.assertEqual(reserved["status"],"PENDING")
+        row=self.cache._job(job)
+        self.assertEqual(row["state"],"PENDING")
+        self.assertEqual(row["recipe_sha256"],"c"*64)
+        self.cache.fail(job,state="INTERRUPTED")
+        self.assertEqual(self.cache._job(job)["state"],"INTERRUPTED")
+
     def ticket(self):
         return self.lazy.select(
             self.pid,"cut",1,film_tick=0,quality="thumbnail")
