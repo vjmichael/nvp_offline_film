@@ -36,7 +36,12 @@ describe('PLAN-02-B trusted original PCM control',()=>{
     render(<NativeOriginalCapturePanel projectId={pid} native={native}
       onCompleted={onCompleted}/>);
     await screen.findByText(/CameraSource · revision 1/);
-    fireEvent.click(screen.getByText('Start original recording (OS approval)'));
+    // Catalog option can render before the emitter-selection effect settles.
+    // Wait for the creator action to become admissible, not just for its label.
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Start original recording (OS approval)'}).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button',{
+      name:'Start original recording (OS approval)'}));
     await waitFor(()=>expect(native.data_av_capture_begin).toHaveBeenCalledOnce());
     const req=native.data_av_capture_begin.mock.calls[0][0];
     expect(req.project_id).toBe(pid);
@@ -65,7 +70,12 @@ describe('PLAN-02-B trusted original PCM control',()=>{
     const native=bridge();
     render(<NativeOriginalCapturePanel projectId={pid} native={native}/>);
     await screen.findByText(/CameraSource · revision 1/);
-    fireEvent.click(screen.getByText('Start original recording (OS approval)'));
+    // Catalog option can render before the emitter-selection effect settles.
+    // Wait for the creator action to become admissible, not just for its label.
+    await waitFor(()=>expect(screen.getByRole('button',{
+      name:'Start original recording (OS approval)'}).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button',{
+      name:'Start original recording (OS approval)'}));
     await screen.findByText(/Recording original PCM/);
     fireEvent.click(screen.getByText('Cancel without freezing'));
     await screen.findByText(/Recording stopped without freezing/);
