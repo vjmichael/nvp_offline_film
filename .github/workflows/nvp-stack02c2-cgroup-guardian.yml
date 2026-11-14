@@ -112,6 +112,9 @@ jobs:
           echo "The unit/fail-closed lanes are not a substitute for real delegated kernel cgroup.kill proof." >> "$GITHUB_STEP_SUMMARY"
 
   native-linux-blender-real-crash:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: Real Ubuntu Blender kills detached child after hard NVP supervisor crash
     runs-on: ubuntu-24.04
     timeout-minutes: 23
@@ -125,7 +128,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
           echo "Ubuntu Blender package version:"
           dpkg-query -W -f='${Version}\n' blender | tee apt_blender_version.txt
           blender -b --version | head -n 2
