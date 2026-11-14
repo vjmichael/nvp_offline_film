@@ -62,8 +62,13 @@ struct PrivateDesktop {
             throw std::runtime_error("SCM failed to switch to private station for desktop creation");
         try {
             attr.lpSecurityDescriptor=desktop_security;
+            // WinUser exposes DESKTOP_* bits, but not a portable
+            // DESKTOP_ALL_ACCESS macro across all Windows 10/11 SDKs.
+            // Numeric 0xF01FF is STANDARD_RIGHTS_REQUIRED | 0x1FF
+            // and matches the exact private object DACL below.
+            static constexpr ACCESS_MASK PRIVATE_DESKTOP_ALL=0x000F01FF;
             desktop=CreateDesktopW(L"Default",nullptr,nullptr,0,
-                                   DESKTOP_ALL_ACCESS,&attr);
+                                   PRIVATE_DESKTOP_ALL,&attr);
         } catch(...) {
             SetProcessWindowStation(original);
             throw;
