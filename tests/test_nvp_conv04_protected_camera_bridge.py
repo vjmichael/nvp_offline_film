@@ -51,10 +51,12 @@ def test_protected_film_cancel_only_requests_recovery_and_never_claims_reap():
 
 def test_untrusted_project_lock_callback_rejected_before_native_authority():
     from backend.nvp_film_index import FilmIndex
+    from backend.nvp_studio import Studio
     from tempfile import TemporaryDirectory
     from pathlib import Path
     with TemporaryDirectory() as tmp:
+        index = FilmIndex(Studio(Path(tmp) / "studio.sqlite3"))
         with pytest.raises(TypeError,match="trusted host callback"):
             TrustedDesktopCameraBridge(
-                FilmIndex(Path(tmp)),origin="http://127.0.0.1:12345",
+                index,origin="http://127.0.0.1:12345",
                 project_lock_check="browser provided")
