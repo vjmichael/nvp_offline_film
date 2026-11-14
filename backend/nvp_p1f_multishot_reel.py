@@ -83,7 +83,8 @@ class P1FDurableShotReels:
             db.close()
 
     def create_batch(self,pid,plan_id,batch_id,*,reel_index,
-                     first_frame_offset,frame_count,creator_event):
+                     first_frame_offset,frame_count,creator_event,
+                     reviewed_look_id=None):
         _require_pid(pid);_id(plan_id,"original reel plan")
         if type(batch_id) is not str or not BATCH_ID.fullmatch(batch_id):
             raise ValueError("Invalid durable source batch identity")
@@ -113,6 +114,19 @@ class P1FDurableShotReels:
                 "camera_path":shot["source_camera"],
                 "job_id":f"p1f_{slug}_{offset:05d}",
             })
+        look_digest=None
+        if reviewed_look_id is not None:
+            _id(reviewed_look_id,"original batch reviewed material look")
+            from backend.nvp_p1f_shot_material_binding import P1FOriginalShotMaterialBinding
+            binder=P1FOriginalShotMaterialBinding(self.index)
+            for shot in shots:
+                look=binder.for_frame(
+                    pid,reviewed_look_id,plan_id,
+                    shot["reel_index"],shot["frame_offset"])
+                if look_digest is None:
+                    look_digest=look["look_document_sha256"]
+                elif look["look_document_sha256"]!=look_digest:
+                    raise RuntimeError("Finite batch spans incompatible original scene PBR source")
         doc={
             "format":FORMAT,"project_id":pid,"plan_id":plan_id,
             "plan_document_sha256":plan["document_sha256"],
@@ -121,6 +135,9 @@ class P1FDurableShotReels:
             "entire_reel_rendered":False,
             "film_master_approved":False,
         }
+        if look_digest is not None:
+            doc["reviewed_look_id"]=reviewed_look_id
+            doc["reviewed_look_document_sha256"]=look_digest
         hash_=_sha(doc)
         approval={
             "operation":"nvp.p1f.admit_finite_source_batch.v1",
@@ -129,6 +146,9 @@ class P1FDurableShotReels:
             "batch_id":batch_id,"batch_document_sha256":hash_,
             "frame_count":len(shots),
         }
+        if look_digest is not None:
+            approval["reviewed_look_id"]=reviewed_look_id
+            approval["reviewed_look_document_sha256"]=look_digest
         if self.approve_batch(creator_event,dict(approval)) is not True:
             raise PermissionError("Creator did not authorize this exact finite source manifest")
         with self._connect() as db:
@@ -217,6 +237,16 @@ class P1FDurableShotReels:
         doc,state=self._manifest(batch_id)
         if state!="PLANNED":
             raise RuntimeError("Batch cancelled/blocked; no further worker dispatch")
+        if reviewed_look_id!=doc.get("reviewed_look_id"):
+            raise RuntimeError("Original material look may not change inside approved batch")
+        if reviewed_look_id is not None:
+            from backend.nvp_p1f_shot_material_binding import P1FOriginalShotMaterialBinding
+            look=P1FOriginalShotMaterialBinding(self.index).for_frame(
+                doc["project_id"],reviewed_look_id,doc["plan_id"],
+                doc["source_frames"][0]["reel_index"],
+                doc["source_frames"][0]["frame_offset"])
+            if look["look_document_sha256"]!=doc["reviewed_look_document_sha256"]:
+                raise RuntimeError("Original batch-reviewed material source changed")
         # Recheck current host creator policy for EACH new worker; approval
         # of a batch does not create an indefinite or revocation-proof grant.
         scope={
@@ -227,6 +257,9 @@ class P1FDurableShotReels:
             "batch_document_sha256":_sha(doc),
             "frame_count":len(doc["source_frames"]),
         }
+        if reviewed_look_id is not None:
+            scope["reviewed_look_id"]=reviewed_look_id
+            scope["reviewed_look_document_sha256"]=doc["reviewed_look_document_sha256"]
         if self.verify_batch_live(dict(scope)) is not True:
             raise PermissionError("Finite creator approval revoked or no longer current")
         with self._connect() as db:
