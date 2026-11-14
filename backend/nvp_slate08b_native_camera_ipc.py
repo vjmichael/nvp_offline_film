@@ -118,7 +118,7 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
     """Per-WebView native authority. No browser can self-sign an approval."""
 
     def __init__(self, index: FilmIndex, *, origin, host_factory=None,
-                 native_capture_auditor=None):
+                 native_capture_auditor=None, project_lock_check=None):
         if not isinstance(index, FilmIndex):
             raise TypeError("Actual native FilmIndex required")
         parsed = urlsplit(origin)
@@ -147,6 +147,11 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         self._edited_export = None
         self._p1f_export = None
         self._closing = False
+        if project_lock_check is not None and not callable(project_lock_check):
+            raise TypeError("Native project-lock check must be a trusted host callback")
+        # A protected film cannot silently enter native camera/PCM controls.
+        # The installed host supplies ProjectAccess.any_protected dynamically.
+        self._project_lock_check = project_lock_check
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
         self._executor = ThreadPoolExecutor(
@@ -160,6 +165,9 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         self.window=window
 
     def _native_window(self):
+        if self._project_lock_check is not None and self._project_lock_check():
+            raise PermissionError(
+                "Native source controls disabled while any movie is protected")
         if self._closing:
             raise PermissionError("Desktop camera bridge is shutting down")
         if self.window is None:
@@ -295,6 +303,11 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         return self._data_av().scene_at(session_id,tick)
 
     def data_av_stop(self,session_id):
+        if self._project_lock_check is not None and self._project_lock_check():
+            if self._data_av_controller is not None:
+                self._data_av_controller.close()
+            return {"status":"STOPPED","source_exposed":False,
+                    "original_modified":False}
         return self._data_av().stop(session_id)
 
 
@@ -1455,6 +1468,11 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
         return self._original_capture().finish()
 
     def data_av_capture_cancel(self):
+        if self._project_lock_check is not None and self._project_lock_check():
+            if self._original_capture_controller is not None:
+                self._original_capture_controller.close()
+            return {"status":"CANCELLATION_REQUESTED",
+                    "terminal_verified":False,"source_exposed":False}
         self._native_window()
         return self._original_capture().cancel()
 

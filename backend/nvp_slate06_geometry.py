@@ -384,8 +384,11 @@ scene.cycles.device="CPU"
 # optional denoiser must not turn authentic Cycles geometry into a false
 # worker failure. This disables only post-render image denoising, never
 # changes the camera/mesh, compositor or source-authenticated pixels.
-if hasattr(bpy.context.view_layer,"cycles") and hasattr(bpy.context.view_layer.cycles,"use_denoising"):
-    bpy.context.view_layer.cycles.use_denoising=False
+if hasattr(scene.cycles,"use_denoising"):
+    scene.cycles.use_denoising=False
+for layer in scene.view_layers:
+    if hasattr(layer,"cycles") and hasattr(layer.cycles,"use_denoising"):
+        layer.cycles.use_denoising=False
 scene.cycles.samples=int({"thumbnail":8,"interactive":16,
                           "inspection":24}[src["quality"]])
 scene.render.resolution_x=src["width"]
