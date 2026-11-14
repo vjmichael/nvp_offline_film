@@ -1,0 +1,23 @@
+/* Portable film publication and persistent original-film Library. */
+.director-distribution,.director-film-library{margin:18px 0;padding:17px;border-radius:13px;border:1px solid #665c70;background:#252d39;min-width:0}
+.director-distribution-head{display:flex;justify-content:space-between;align-items:start;gap:15px;flex-wrap:wrap}
+.director-distribution-head :is(h3,h4){color:#efd9bd;font-size:18px;margin:0 0 9px}
+.director-distribution-head p{font-size:13px;line-height:1.55;max-width:620px;margin:0 0 12px}
+.director-distribution-head>span{border:1px solid #80715f;border-radius:15px;padding:7px 12px;font-size:12px;color:#e8d3bf}
+.director-dist-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:13px 0}
+.director-dist-actions :is(a,button){display:inline-flex;align-items:center;justify-content:center}
+.director-dist-error,.director-dist-note,.director-dist-warning{border:1px solid #a47474;background:#49383d;color:#f3d9d5;border-radius:8px;padding:12px;margin:10px 0;font-size:13px;line-height:1.55}
+.director-dist-note{border-color:#759e81;background:#294337;color:#e2f0e3}
+.director-dist-progress{color:#e9cdb4;font-size:13px}
+.director-library-form{display:flex;gap:13px;align-items:end;flex-wrap:wrap;border:1px solid #5f5b69;background:#1b2531;padding:12px;border-radius:8px;margin:14px 0}
+.director-library-form label{display:flex;flex-direction:column;gap:8px;min-width:220px;max-width:100%;font-size:12px;color:#efdbc8}
+.director-library-form input[type=file]{font-size:12px;color:#e9d4bd;max-width:100%}
+.director-library-form input[type=file]::file-selector-button{background:#574c5b;color:#f6e2d1;border:1px solid #8a7585;border-radius:7px;padding:7px 9px;margin-right:10px;cursor:pointer}
+.director-library-items article{border:1px solid #59616a;border-radius:10px;background:#1b2735;padding:13px;margin:12px 0;display:flex;gap:15px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.director-library-items article .director-reel-player{width:100%}
+.director-library-items strong{font-size:14px;color:#efd8c2}
+.director-library-items p{font-size:12px;line-height:1.5;margin:6px 0 0}
+.director-library-items h4{font-size:16px;color:#f4dec5}
+.director-film-library :is(input,button,a):focus-visible,.director-distribution :is(button,a):focus-visible{outline:3px solid #f0c69a;outline-offset:3px}
+@media(max-width:600px){.director-film-library,.director-distribution{padding:10px}.director-dist-actions,.director-library-form{flex-direction:column;align-items:stretch}}
+@media(prefers-reduced-motion:reduce){.director-film-library *,.director-distribution *{animation:none!important;transition:none!important}}

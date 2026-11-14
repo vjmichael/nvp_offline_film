@@ -1,0 +1,8 @@
+.director-screenplay-helper{padding:20px;border:1px solid #5b4d4d;background:#2a2b36;border-radius:12px;margin-top:25px}
+.director-screenplay-helper h3{font-size:18px;margin:0 0 8px}
+.director-screenplay-helper h4{font-size:14px;margin:19px 0 8px}
+.director-screenplay-helper label{display:block;font-size:13px;margin:13px 0 7px;color:#eadbcc}
+.director-screenplay-helper textarea{width:100%;resize:vertical;box-sizing:border-box;background:#191d26;border:1px solid #59505a;color:#f8efea;padding:12px;border-radius:10px;line-height:1.5;font:inherit}
+.director-screenplay-error,.director-screenplay-notice{padding:12px;border-radius:9px;line-height:1.5;font-size:13px}
+.director-screenplay-error{border:1px solid #a5606a;background:#482c37}
+.director-screenplay-notice{border:1px solid #578265;background:#2b3b30}
