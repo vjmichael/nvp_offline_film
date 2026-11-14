@@ -1,5 +1,8 @@
 # NVP P1-F — Production Assets and Sustained Multi-Reel Execution
 
+> **Tracking notice (2026-11-13/14):** This is a historical/technical reference, **not an active task ledger or backlog**. The sole current NVP task journal, priorities, statuses, acceptance gates and branch/PR dispositions are maintained in [NVP_DATA_ALL_TASK_LEDGER.md](NVP_DATA_ALL_TASK_LEDGER.md), through draft convergence [PR #161](https://github.com/vjmichael/nvp_offline_film/pull/161). Older branch/PR claims below are source snapshots; preserve technical evidence but do not use them to decide current task priority.
+
+
 This ledger continues the canonical data-first NVP sequence after the passing public-fixture Windows SCM AppContainer/WFP/Job Cycles and original Linux delegated-cgroup/namespace acceptance. The current branch is draft PR #159, not a production release.
 
 ## P1-F-A1 — Reviewed UV/PBR source maps (implemented, native acceptance pending)
