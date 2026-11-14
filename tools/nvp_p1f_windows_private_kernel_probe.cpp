@@ -133,7 +133,7 @@ static void add_wfp_block(HANDLE engine,PSID sid,const GUID& layer) {
     condition.fieldKey=FWPM_CONDITION_ALE_PACKAGE_ID;
     condition.matchType=FWP_MATCH_EQUAL;
     condition.conditionValue.type=FWP_SID;
-    condition.conditionValue.sid=sid;
+    condition.conditionValue.sid=reinterpret_cast<SID*>(sid);
     FWPM_FILTER0 filter{};
     filter.displayData.name=const_cast<wchar_t*>(L"NVP-P1F one-use no-egress native proof");
     filter.layerKey=layer;
