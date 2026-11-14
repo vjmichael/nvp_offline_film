@@ -76,7 +76,8 @@ class NVPRealReviewedMaterialMultiShot(unittest.TestCase):
             admitted=journal.create_batch(
                 fixture.fixture.pid,"combined_set_reel_plan","reviewed_pbr_batch",
                 reel_index=0,first_frame_offset=0,frame_count=2,
-                creator_event="finite_public_batch_review")
+                creator_event="finite_public_batch_review",
+                reviewed_look_id="original_scene_look")
             self.assertEqual(admitted["frames"],2)
             for offset in range(2):
                 result=journal.run_next(
