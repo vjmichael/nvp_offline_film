@@ -310,7 +310,9 @@ class OriginalWorldCinematicTakeTests(unittest.TestCase):
         self.assertEqual(reopened["source_preview"],result)
         # Installed bridge: exact first-party origin and genuine OS window
         # confirmation required, never a model-supplied creator_approved flag.
-        from backend.nvp_wo5_desktop_bridge import TrustedDesktopWO5Bridge
+        # The recovered original source test now exercises the newer
+        # exact-origin native bridge, NOT the retired WO5 alternate authority.
+        from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
         class InstalledWindow:
             url="http://127.0.0.1:43141/"
             allowed=False
@@ -323,9 +325,8 @@ class OriginalWorldCinematicTakeTests(unittest.TestCase):
                 self.last_message=message
                 return self.allowed
         window=InstalledWindow()
-        bridge=TrustedDesktopWO5Bridge(
-            self.b.index,origin="http://127.0.0.1:43141",
-            production_root=Path(self.b.tmp.name)/"02mh_installed_bridge")
+        bridge=TrustedDesktopCameraBridge(
+            self.b.index,origin="http://127.0.0.1:43141")
         bridge._attach_window(window)
         try:
             request={
