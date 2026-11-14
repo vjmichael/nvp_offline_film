@@ -32,23 +32,24 @@ jobs:
         shell: bash
         run: |
           python -m compileall -q backend tools
-          for f in
-            test_nvp_film03_actor_identity_core.py \
-            test_nvp_film03_expressive_voice_direction.py \
-            test_nvp_film03_voice_performance_lab.py \
-            test_nvp_film03_voice_conversion_intent.py \
-            test_nvp_film03_independent_facial_direction.py \
-            test_nvp_film03_phoneme_alignment.py \
-            test_nvp_film03_facial_rig_compositor.py \
-            test_nvp_usd_film01_world.py \
-            test_nvp_usd_film01d_shot_working_set.py \
-            test_nvp_usd_film01e_world_take.py \
-            test_nvp_cam_fx01_02_native_rails.py \
-            test_nvp_cam_fx03_04_native_director.py \
-            test_nvp_cam_fx05_staged_rail_source.py \
-            test_nvp_conv06_private_cycles_source_contract.py \
+          files=(
+            test_nvp_film03_actor_identity_core.py
+            test_nvp_film03_expressive_voice_direction.py
+            test_nvp_film03_voice_performance_lab.py
+            test_nvp_film03_voice_conversion_intent.py
+            test_nvp_film03_independent_facial_direction.py
+            test_nvp_film03_phoneme_alignment.py
+            test_nvp_film03_facial_rig_compositor.py
+            test_nvp_usd_film01_world.py
+            test_nvp_usd_film01d_shot_working_set.py
+            test_nvp_usd_film01e_world_take.py
+            test_nvp_cam_fx01_02_native_rails.py
+            test_nvp_cam_fx03_04_native_director.py
+            test_nvp_cam_fx05_staged_rail_source.py
+            test_nvp_conv06_private_cycles_source_contract.py
             test_nvp_conv06_no_legacy_blender_fallback.py
-          ; do
+          )
+          for f in "${files[@]}"; do
             python -m unittest discover -s tests -p "$f" -v
           done
       - name: Preserve source head identity for later Windows/Linux reconciliation
