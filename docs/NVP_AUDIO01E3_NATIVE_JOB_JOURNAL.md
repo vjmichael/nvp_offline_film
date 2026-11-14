@@ -1,5 +1,8 @@
 # NVP AUDIO-01E.3 — Native audio job journal and recovery admission
 
+> **Tracking notice (2026-11-13/14):** This is a historical/technical reference, **not an active task ledger or backlog**. The sole current NVP task journal, priorities, statuses, acceptance gates and branch/PR dispositions are maintained in [NVP_DATA_ALL_TASK_LEDGER.md](NVP_DATA_ALL_TASK_LEDGER.md), through draft convergence [PR #161](https://github.com/vjmichael/nvp_offline_film/pull/161). Older branch/PR claims below are source snapshots; preserve technical evidence but do not use them to decide current task priority.
+
+
 **Status:** First host-side contract committed; exact-head Windows/Linux CI pending. This gate does **not** yet launch an audio worker inside Windows Job Objects or Linux process groups, and it does not independently prove trusted OS process-tree termination. Those functions exist elsewhere in NVP's B14 native host architecture and must be explicitly connected in the next increment.
 
 ## Existing NVP infrastructure
