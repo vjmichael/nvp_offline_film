@@ -8,24 +8,40 @@ from __future__ import annotations
 from copy import deepcopy
 from hashlib import sha256
 from contextlib import ExitStack
+import io
+from pathlib import Path
 import struct
 import tempfile
+
+from backend.nvp_w1g_encrypted_source import require_efs_stage, verify_efs_inputs
 
 from backend.nvp_data_av_source import MAX_CHUNK_BYTES, MAX_CHUNKS
 
 from backend.nvp_filming_linux_session import LinuxFilmingSession
+from backend.nvp_filming_windows_session import WindowsFilmingSession
 from backend.nvp_data_first_filming import NativeSceneSoundCapture
 
+# Unencrypted OS temp storage may never receive original Windows capture PCM.
+# Larger Takes require an explicitly provisioned and verified EFS job scratch.
+WINDOWS_RAM_PCM_BUDGET=64*1024*1024
 
-def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
-                                      recordings, timeout=5.0, **capture_options):
+
+def _finish_recording_and_freeze(session, capture, project_id, take_id, *,
+                                recordings, timeout=5.0, expected_scope,
+                                encrypted_pcm_scratch=None, **capture_options):
     """Finalize a recorded batch only after independently verified process custody.
 
     Always attempt process-tree shutdown, including on cancellation or recorder
     failure. A failed shutdown cannot authorize a Take, even if PCM exists.
     """
-    if not isinstance(session, LinuxFilmingSession):
-        raise TypeError("Host-owned Linux filming session required")
+    if expected_scope=="linux-cgroup-v2":
+        if not isinstance(session,LinuxFilmingSession):
+            raise TypeError("Host-owned Linux filming session required")
+    elif expected_scope=="windows-job-object":
+        if not isinstance(session,WindowsFilmingSession):
+            raise TypeError("Original Windows Job Object filming session required")
+    else:
+        raise RuntimeError("Unrecognized original kernel filming custody scope")
     batch = None
     frozen_options = None
     recording_error = None
@@ -33,9 +49,14 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
     # Bound the entire recording batch, not just each individual sound source.
     # A 32-source batch must not consume 32 times the per-source spool budget.
     batch_pcm_bytes = 0
+    batch_pcm_spool_bytes = 0
     # The worker may own the PCM iterator. Drain it while the worker is alive;
     # publication after shutdown must never depend on a terminated producer.
     with ExitStack() as streams:
+        if expected_scope=="windows-job-object":
+            # The original filming host lease survives the worker kill and
+            # protects the ENTIRE immutable Take publication or refusal.
+            streams.callback(session.close)
         try:
             # Even invalid host inputs must not leave an admitted worker running.
             # Validate them inside the protected shutdown region, not before it.
@@ -62,11 +83,25 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
             # Source scope, consent and publication options must be fixed before
             # shutdown callbacks run; never trust caller-owned nested references.
             frozen_options = deepcopy(capture_options)
-            # Bound original PCM before terminating its producer. Spooled files
-            # preserve streaming semantics without holding a full Take in RAM.
+            # Windows original PCM MUST NOT silently roll over into plaintext
+            # system temp. Small Takes remain wholly in memory. A larger Take
+            # requires a caller-provisioned dedicated EFS directory, verified
+            # before creation and again on each new, still-empty spool file.
+            secure_scratch=None
+            if expected_scope=="windows-job-object" and encrypted_pcm_scratch is not None:
+                secure_scratch=Path(encrypted_pcm_scratch)
+                require_efs_stage(secure_scratch)
             for event in batch:
-                spool = streams.enter_context(tempfile.SpooledTemporaryFile(
-                    max_size=MAX_CHUNK_BYTES, mode="w+b"))
+                if expected_scope!="windows-job-object":
+                    spool = streams.enter_context(tempfile.SpooledTemporaryFile(
+                        max_size=MAX_CHUNK_BYTES, mode="w+b"))
+                elif secure_scratch is None:
+                    spool = streams.enter_context(io.BytesIO())
+                else:
+                    spool = streams.enter_context(tempfile.NamedTemporaryFile(
+                        mode="w+b", prefix=".nvp-original-pcm-",
+                        dir=secure_scratch, delete=True))
+                    verify_efs_inputs(secure_scratch, (Path(spool.name).name,))
                 count = 0
                 digest = sha256()
                 for chunk in event["pcm_chunks"]:
@@ -74,8 +109,14 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
                             or len(chunk) % 2 or count >= MAX_CHUNKS):
                         raise ValueError("Invalid original PCM16LE chunk")
                     batch_pcm_bytes += len(chunk)
+                    batch_pcm_spool_bytes += 4+len(chunk)
                     if batch_pcm_bytes > MAX_CHUNK_BYTES * MAX_CHUNKS:
                         raise ValueError("Original PCM recording batch exceeds spool budget")
+                    if (expected_scope=="windows-job-object" and
+                        secure_scratch is None and
+                        batch_pcm_spool_bytes>WINDOWS_RAM_PCM_BUDGET):
+                        raise PermissionError(
+                            "Original PCM exceeds RAM-only staging; provision EFS scratch")
                     header = struct.pack("<I", len(chunk))
                     if spool.write(header) != 4 or spool.write(chunk) != len(chunk):
                         raise OSError("Incomplete original PCM spool write")
@@ -124,7 +165,7 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
             custody_receipt.get("process_tree_custody_verified") is not True or
             custody_receipt.get("empty_group_verified") is not True or
             custody_receipt.get("worker_exit_verified") is not True or
-            custody_receipt.get("scope") != "linux-cgroup-v2"):
+            custody_receipt.get("scope") != expected_scope):
             raise RuntimeError("Filming custody unverified; frozen Take publication denied")
         if recording_error is not None:
             raise recording_error
@@ -142,3 +183,21 @@ def finish_linux_recording_and_freeze(session, capture, project_id, take_id, *,
                 raise RuntimeError("Original PCM spool integrity verification failed")
             source.seek(0)
         return capture.capture(project_id, take_id, recordings=batch, **frozen_options)
+
+
+def finish_linux_recording_and_freeze(session,capture,project_id,take_id,*,
+                                      recordings,timeout=5.0,**capture_options):
+    """Original Linux cgroup-v2 native film publication boundary."""
+    return _finish_recording_and_freeze(
+        session,capture,project_id,take_id,recordings=recordings,
+        timeout=timeout,expected_scope="linux-cgroup-v2",**capture_options)
+
+
+def finish_windows_recording_and_freeze(session,capture,project_id,take_id,*,
+                                        recordings,timeout=5.0,
+                                        encrypted_pcm_scratch=None,**capture_options):
+    """Native Job custody; RAM-only PCM or explicitly EFS-protected spill."""
+    return _finish_recording_and_freeze(
+        session,capture,project_id,take_id,recordings=recordings,
+        timeout=timeout,expected_scope="windows-job-object",
+        encrypted_pcm_scratch=encrypted_pcm_scratch,**capture_options)
