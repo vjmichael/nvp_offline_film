@@ -52,7 +52,7 @@ def dotted(node):
     return ""
 
 
-def imports(tree):
+def imports(tree, current_path=None):
     result=[]
     for node in ast.walk(tree):
         if isinstance(node,ast.Import):
@@ -63,6 +63,15 @@ def imports(tree):
             if node.level==0:
                 result.extend(name+"."+a.name for a in node.names
                               if a.name!="*")
+            elif current_path:
+                package=current_path.removesuffix(".py").split("/")[:-1]
+                if node.level <= len(package):
+                    prefix=package[:len(package)-node.level+1]
+                    base=".".join(prefix+([name] if name else []))
+                    if base:
+                        result.append(base)
+                        result.extend(base+"."+a.name for a in node.names
+                                      if a.name!="*")
     return result
 
 
@@ -77,10 +86,10 @@ def reached_runtime():
         absolute=ROOT/path
         if not absolute.is_file():
             raise RuntimeError("Missing packaged native source: "+path)
-        yield path,ast.parse(absolute.read_text("utf-8"),filename=path)
-        # Intentional, bounded traversal. Relative internal imports need
-        # explicit module resolution and are not taken as proven by this pass.
-        for mod in imports(ast.parse(absolute.read_text("utf-8"))):
+        tree=ast.parse(absolute.read_text("utf-8"),filename=path)
+        yield path,tree
+        # Traverse local absolute and relative imports without escaping packages.
+        for mod in imports(tree, path):
             dep=source_path(mod)
             if dep:
                 rel=dep.relative_to(ROOT).as_posix()
