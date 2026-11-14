@@ -208,6 +208,16 @@ class DurableOriginalShotTests(unittest.TestCase):
                 expected_review_sha256=offered["review_sha256"],
                 creator_event="approved_batch",max_frames=2)
 
+    def test_picture_audio_prefix_refuses_planned_only_sources(self):
+        from backend.nvp_p1f_picture_audio_prefix import P1FVerifiedPictureAudioPrefix
+        exporter=P1FVerifiedPictureAudioPrefix(self.journal)
+        with self.assertRaisesRegex(RuntimeError,"No independently verified"):
+            exporter.review(self.fixture.pid,"rigged_reel_plan")
+        self.create()
+        with self.assertRaisesRegex(RuntimeError,"No independently verified"):
+            exporter.review(self.fixture.pid,"rigged_reel_plan")
+        self.assertFalse((self.supervisor.root/"p1f_picture_audio_prefixes").exists())
+
     def test_unverified_private_worker_is_refused_before_staging_any_bytes(self):
         from backend.nvp_p1f_cycles_picture_sound import P1FOriginalPictureSound
         trusted=P1FOriginalPictureSound(
