@@ -221,14 +221,22 @@ def audit_full_body_rest_pose(payload, mapping, *, meters_per_source_unit=1.):
     if not mesh_nodes:
         raise ValueError("No original full-body skin mesh node")
     mesh_world = world[mesh_nodes[0]]
+    if any(any(abs(world[n][r][c]-mesh_world[r][c]) > .001
+               for r in range(4) for c in range(4)) for n in mesh_nodes):
+        raise ValueError("Multiple skinned meshes use different unreviewed bind spaces")
     if any(any(abs(rest[r][c]-mesh_world[r][c]) > .001
                for r in range(4) for c in range(4))
            for i,j in enumerate(skin["joints"])
            for rest in [_mul(world[j], ibms[i])]):
         raise ValueError("Inverse binds do not restore full-body mesh rest pose")
-    positions = {role: tuple(world[by_name[mapping[role]]][i][3] *
-                             meters_per_source_unit for i in range(3))
-                 for role in ROLES}
+    # glTF is Y-up, while NVP's authoritative film geometry is Z-up.
+    # Rotate +90 degrees around X: (x,y,z) -> (x,-z,y). Never
+    # interpret native glTF-Y positions as source-stage-Z positions.
+    def to_stage(joint):
+        x, y, z = (world[joint][i][3] * meters_per_source_unit
+                   for i in range(3))
+        return (x, -z, y)
+    positions = {role: to_stage(by_name[mapping[role]]) for role in ROLES}
     axes = {}
     for role, ancestor in PARENTS.items():
         child = by_name[mapping[role]]
@@ -254,6 +262,7 @@ def audit_full_body_rest_pose(payload, mapping, *, meters_per_source_unit=1.):
         "glb_sha256": sha256(payload).hexdigest(),
         "role_to_joint": {r: mapping[r] for r in ROLES},
         "meters_per_source_unit": float(meters_per_source_unit),
+        "source_to_stage_axes": "glTF_Yup_to_OpenUSD_Zup_(x,-z,y)",
         "source_joint_positions_m": {r: list(positions[r]) for r in ROLES},
         "axis_corrections": axes,
         "glb_inverse_bind_rest_verified": True,
