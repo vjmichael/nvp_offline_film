@@ -5,6 +5,7 @@ without ever pretending the silence contains a performed screenplay line.
 """
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest

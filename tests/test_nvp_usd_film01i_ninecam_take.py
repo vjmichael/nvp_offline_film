@@ -370,6 +370,15 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                     self.pid,"OriginalThreeViewTechnicalCut",frame,job,
                     director_event="CI_ONLY_NATIVE_FRAME_APPROVAL")
         self.assertEqual(len(camera_paths),3)
+        # Tampered standalone PCM must invalidate the independently reopened
+        # original Blender picture/sound receipt, including after restart.
+         prior=supervisor.root/"NineCamPhysical_0"/"original_audio"
+        original_stems=[x for x in prior.glob("stem_*.wav")]
+        self.assertEqual(len(original_stems),1)
+        original_stems[0].write_bytes(b"tampered")
+        with self.assertRaises((RuntimeError,PermissionError,EOFError)):
+            host.verify_selected_frame(
+                self.pid,"OriginalThreeViewTechnicalCut",0,"NineCamPhysical_0")
         self.assertEqual(self.index.read_revision(
             self.pid,"OneThirtySecondWorldTake",1)["document_sha256"],
             original_take_sha)
