@@ -11,6 +11,7 @@
 #define NVP_P1F_EMBEDDED_IN_SCM_SERVICE 1
 #include "nvp_p1f_windows_private_kernel_probe.cpp"
 #include "nvp_p1f_windows_creator_signature.hpp"
+#include "nvp_p1f_windows_private_desktop.hpp"
 #include <wincrypt.h>
 #include <algorithm>
 #include <array>
@@ -292,8 +293,16 @@ static int run_source_bound_blender() {
             PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
             &cap,sizeof(cap),nullptr,nullptr),
             "No actual lowbox SCM worker token attachment");
+    // SCM runs in noninteractive Session 0. USER32-dependent Blender can
+    // fail loader initialization (0xC0000142) on the inherited service
+    // station/desktop even when AppContainer/WFP/Job permissions are valid.
+    // Supply an ephemeral ticket-scoped Low-IL private window station and
+    // desktop. Never expose the human desktop or change WinSta0 ACL/SACL.
+    nvp_p1f_private_desktop::PrivateDesktop private_desktop(r.ticket);
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb=sizeof(startup);
+    startup.StartupInfo.lpDesktop=
+        const_cast<LPWSTR>(private_desktop.qualified.c_str());
     startup.lpAttributeList=attrs;
     std::wstring command=quoted(binary.wstring())+
         L" -b --factory-startup -t 2 --python-exit-code 70 --python "+
