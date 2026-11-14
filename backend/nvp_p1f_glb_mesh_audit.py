@@ -149,5 +149,5 @@ def audit_glb_skinned_mesh(payload, info):
         "bounds_min": [float(v) for v in bounds_min],
         "bounds_max": [float(v) for v in bounds_max],
         "actual_mesh_deformation_verified": False,
-        "full_body_retarged_in_blender": False,
+        "full_body_retargeted_in_blender": False,
     }
