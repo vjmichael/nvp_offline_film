@@ -340,6 +340,7 @@ def run_reviewed_mfa_one(index, plan, *, work_root, mfa_binary, mfa_sha256,
                 process = launch_contained(
                     args, cwd=work, stdout=out, stderr=err,
                     memory_mb=8192, linux_cgroup_tree_required=True,
+                    private_isolation_required=True,
                 )
                 rc = process.wait(timeout=timeout_seconds)
                 if rc != 0:

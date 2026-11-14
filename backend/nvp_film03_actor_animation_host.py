@@ -200,7 +200,7 @@ class ReviewedActorAnimationHost:
             arguments={"--manifest":"source.json","--output":"scene.blend",
                        "--audit":"audit.json","--preview":"preview.png"},
             timeout_seconds=600,memory_limit_mb=4096,
-            gpu_memory_mb=0,require_linux_cgroup_v2=False,
+            gpu_memory_mb=0,require_linux_cgroup_v2=True, require_private_isolation=True,
         )
         # This is THE existing native Blender worker, not a new renderer.
         # Its journal, native containment, resource admission, cancellation,

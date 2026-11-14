@@ -227,7 +227,7 @@ class ReviewedBlenderFacialHost:
                 "--audit": "audit.json", "--preview": "facial_at_2.png",
             },
             timeout_seconds=600, memory_limit_mb=8192,
-            gpu_memory_mb=0, require_linux_cgroup_v2=False,
+            gpu_memory_mb=0, require_linux_cgroup_v2=True, require_private_isolation=True,
         )
         outcome = self.supervisor.run(op)
         if outcome["state"] != "SUCCEEDED":
@@ -283,7 +283,7 @@ class ReviewedBlenderFacialHost:
                 "--manifest": "source.json", "--audit": "audit.json",
             },
             memory_limit_mb=8192, timeout_seconds=600,
-            gpu_memory_mb=0, require_linux_cgroup_v2=False,
+            gpu_memory_mb=0, require_linux_cgroup_v2=True, require_private_isolation=True,
         )
         follow = self.supervisor.run(reopen_op)
         if follow["state"] != "SUCCEEDED":
