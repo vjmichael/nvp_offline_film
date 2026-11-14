@@ -45,6 +45,7 @@ def full_body_glb(mutation=None):
         {"name": "foot_right", "translation": [0., -.13, .16]},
     ])
     doc["skins"][0]["joints"] += [8, 9, 10, 11]
+    doc["scenes"][0]["nodes"] = [0, 7]
     matrix_accessor = doc["skins"][0]["inverseBindMatrices"]
     matrix_view = doc["accessors"][matrix_accessor]["bufferView"]
     doc["accessors"][matrix_accessor]["count"] = 11
@@ -111,6 +112,7 @@ class FullBodyRestAndFootTests(unittest.TestCase):
 
     def test_reject_incomplete_parented_mirrored_crossed_and_zero_length_bones(self):
         cases = [
+            (lambda d: d["scenes"][0].update({"nodes": [7]})),
             (lambda d: d["nodes"][6].update({"translation": [-.16, -.45, 0.]})),
             (lambda d: d["nodes"][8].update({"translation": [0., 0., 0.]})),
             (lambda d: d["nodes"][2].update({"children": [0]})),
