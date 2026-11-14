@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from backend.nvp_blender_worker import BlenderOperation, BlenderWorkerSupervisor, sha_file
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 from backend.nvp_skinning import SkinnedPerformance, SKIN_AUDIT_SCRIPT
 from backend.nvp_character_assets import CharacterAssets, CHARACTER_AUDIT_SCRIPT
 from backend.nvp_production_scene import compact
@@ -113,10 +114,25 @@ def build_fixture(out:Path,*,render_preview=True, blender='blender'):
     if not located:
         return {"status":"blocked_no_blender","reason":"No original Blender binary found"}
     binary=Path(located).resolve()
-    # Pinned by the provisioned public CI environment. Wrong version must
-    # fail closed, never silently run an unreviewed executable.
-    version=os.environ.get("NVP_TEST_BLENDER_VERSION","Blender 5.3.0")
+    # Derive the exact Blender version string from the *same* pinned
+    # runner-provisioned executable. Host policy can still require its own
+    # precise expected version; never guess that upstream's actual first
+    # --version line is exactly "Blender 5.3.0".
     binary_sha=sha_file(binary)
+    approved_binary=os.environ.get("NVP_TEST_BLENDER_SHA256")
+    if approved_binary and approved_binary!=binary_sha:
+        raise PermissionError("Runner-approved Blender executable SHA mismatch")
+    probe=run_owned_subprocess(
+        [str(binary),"-b","--version"],
+        capture_output=True,text=True,timeout=15,check=False)
+    version=probe.stdout.splitlines()[0].strip() if probe.stdout.splitlines() else ""
+    if probe.returncode or not version.startswith("Blender "):
+        raise RuntimeError("Actual pinned Blender binary version probe failed")
+    required=os.environ.get("NVP_TEST_BLENDER_VERSION")
+    if required and version!=required:
+        raise PermissionError("Runner-approved Blender version differs from actual executable")
+    if sha_file(binary)!=binary_sha:
+        raise RuntimeError("Pinned Blender executable changed during native version probe")
     worker_root=out/"protected_blender_jobs"
     supervisor=BlenderWorkerSupervisor(
         worker_root,blender_executable=binary,
