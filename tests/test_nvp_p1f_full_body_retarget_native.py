@@ -50,6 +50,29 @@ def full_body_glb(mutation=None):
     doc["accessors"][matrix_accessor]["count"] = 11
     doc["bufferViews"][matrix_view]["byteLength"] += 16 * 4 * 4
     raw.extend(struct.pack("<64f", *([1.] * 64)))
+    # Replace the synthetic all-ones matrices with authentic inverse rest
+    # transforms, matching the exact source hierarchy and mesh bind frame.
+    rest_world = {
+        0: (0., 0., 1.),
+        1: (0., 0., 1.4),
+        2: (0., 0., 1.7),
+        3: (-.4, 0., 1.4),
+        4: (.4, 0., 1.4),
+        5: (-.16, 0., .55),
+        6: (.16, 0., .55),
+        8: (-.16, 0., .15),
+        9: (-.16, -.16, .02),
+        10: (.16, 0., .15),
+        11: (.16, -.16, .02),
+    }
+    ibm_start = doc["bufferViews"][matrix_view]["byteOffset"]
+    for ordinal, joint in enumerate(doc["skins"][0]["joints"]):
+        x, y, z = rest_world[joint]
+        mat = [1., 0., 0., 0.,
+               0., 1., 0., 0.,
+               0., 0., 1., 0.,
+               -x, -y, -z, 1.]
+        struct.pack_into("<16f", raw, ibm_start+ordinal*64, *mat)
     doc["buffers"][0]["byteLength"] = len(raw)
     if mutation:
         mutation(doc)
@@ -77,6 +100,7 @@ class FullBodyRestAndFootTests(unittest.TestCase):
         self.assertEqual(set(result["role_to_joint"]), set(ROLES))
         self.assertEqual(len(result["axis_corrections"]), 10)
         self.assertGreater(result["axis_corrections"]["shin_l"]["bone_length_m"], .3)
+        self.assertTrue(result["glb_inverse_bind_rest_verified"])
         self.assertFalse(result["full_body_deformation_verified"])
         self.assertFalse(result["usd_rest_pose_equivalence_verified"])
         self.assertFalse(result["rendered_performance_verified"])
@@ -102,6 +126,17 @@ class FullBodyRestAndFootTests(unittest.TestCase):
                                       meters_per_source_unit=float("nan"))
         with self.assertRaises(ValueError):
             audit_full_body_rest_pose(synthetic_glb(), ROLE_MAP)
+        # Source still passes glTF structural inspection: actual inverse
+        # bind floats disagree with rest pose, so full-body proof refuses.
+        wrong = bytearray(full_body_glb())
+        json_len = struct.unpack_from("<I", wrong, 12)[0]
+        doc = json.loads(wrong[20:20+json_len])
+        acc = doc["accessors"][doc["skins"][0]["inverseBindMatrices"]]
+        start = (20 + json_len + 8 +
+                 doc["bufferViews"][acc["bufferView"]]["byteOffset"])
+        struct.pack_into("<f", wrong, start+12*4, 0.5)
+        with self.assertRaisesRegex(ValueError, "Inverse binds"):
+            audit_full_body_rest_pose(bytes(wrong), ROLE_MAP)
 
     def test_original_frame_sole_ground_slope_and_stance_validation(self):
         samples = [
