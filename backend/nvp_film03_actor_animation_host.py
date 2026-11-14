@@ -14,7 +14,7 @@ import json
 import math
 import shutil
 
-from backend.nvp_film03_actor_identity_core import ActorIdentityCore, canonical, digest
+from backend.nvp_film03_actor_identity_core import ActorIdentityCore, HEX_ACTOR, canonical, digest
 from backend.nvp_blender_worker import BlenderWorkerSupervisor, BlenderOperation, sha_file
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_production_bible_actors import ProductionBibleActors
@@ -54,7 +54,8 @@ class ReviewedActorAnimationHost:
              first_frame_in_take=0,frame_count=8):
         _require_pid(pid)
         _id(take_id,"frozen original OpenUSD source Take")
-        _id(actor_id,"canonical ActorID")
+        if type(actor_id) is not str or not HEX_ACTOR.fullmatch(actor_id):
+            raise ValueError("Invalid canonical ActorID")
         if (type(first_frame_in_take) is not int or first_frame_in_take<0
                 or type(frame_count) is not int or
                 not 2<=frame_count<=MAX_FRAMES):

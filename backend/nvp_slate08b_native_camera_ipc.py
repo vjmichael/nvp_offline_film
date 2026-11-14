@@ -209,6 +209,18 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                 self._host=self._host_factory(self._approve)
             return self._host
 
+    def film03_run_actor_voice_candidate(self, request):
+        """Never start the retired WO6 unqualified film-speech worker.
+
+        A read-only script/VoiceID contract is not a creative production
+        authorization. No command, input, profile or test fixture can grant
+        execution of a film-qualified expressive speech engine here.
+        """
+        self._native_window()
+        raise PermissionError(
+            "NVP has no expressive, film-qualified native speech worker; "
+            "original source recordings and approved VoiceID remain authoritative")
+
     def film03_preview_actor_ai_voice_contract(self, request):
         """Read-only source-pinned ActorID/VoiceID contract; never invoke TTS.
 

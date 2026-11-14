@@ -145,7 +145,7 @@ class NativeRealActorWorkerExecution(unittest.TestCase):
     def test_unqualified_film_speech_worker_is_unavailable_in_trusted_host(self):
         import os
         from unittest.mock import patch
-        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+        from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 
         class HumanWindow:
             def get_current_url(self):
@@ -156,7 +156,7 @@ class NativeRealActorWorkerExecution(unittest.TestCase):
             s=prepared_source(Path(d).resolve())
             with patch.dict(os.environ,{
                 "NVP_HOME":str(Path(d).resolve()/"desktop")}):
-                host=TrustedDesktopWO6Bridge(
+                host=TrustedDesktopCameraBridge(
                     s["index"],origin="http://127.0.0.1:43231",
                     host_factory=lambda *_:None)
                 self.addCleanup(host._close)
