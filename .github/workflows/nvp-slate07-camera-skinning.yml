@@ -70,6 +70,9 @@ jobs:
           python -m unittest discover -s tests -p "test_nvp_slate06_geometry_native.py" -v
 
   real-contained-blender-performance:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: SLATE-07 actual native Blender skinned actor and pre-Take optical PNG
     runs-on: ubuntu-24.04
     steps:
@@ -82,7 +85,7 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: "usd-core==26.11"
           sudo apt-get update -qq
-          sudo apt-get install -y blender
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
           /usr/bin/blender -b --version
       - name: Real CPU Cycles acting mesh, optical aperture and supervised PNG worker
         shell: bash
