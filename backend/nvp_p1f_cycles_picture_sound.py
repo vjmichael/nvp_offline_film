@@ -179,7 +179,14 @@ class P1FOriginalPictureSound:
         from backend.nvp_worker_private_sandbox import prove_private_kernel_boundary
         prove_private_kernel_boundary(self.supervisor.root)
         jobdir=self.supervisor.root/job_id
-        jobdir.mkdir(parents=False,exist_ok=False)
+        # User-owned private USD and original actor PCM must never be staged
+        # in the default 0755 Linux workspace. Restrict before first write.
+        jobdir.mkdir(mode=0o700,parents=False,exist_ok=False)
+        if os.name=="posix":
+            import stat
+            if (jobdir.is_symlink() or
+                    stat.S_IMODE(jobdir.stat().st_mode)!=0o700):
+                raise RuntimeError("Private source directory permissions are not 0700")
         source_script=WORKER.read_bytes()
         _add_file(jobdir/"fixed_cycles.py",source_script)
         _add_file(jobdir/"original.usda",usda)
