@@ -35,7 +35,8 @@ class P1FReviewedReelQueue:
         self.coverage=P1FVerifiedFilmCoverage(P1FVerifiedSegmentDelivery(journal))
         self.plans=P1FReelPlan(journal.index)
 
-    def review_next(self,pid,plan_id,*,max_frames=MAX_BATCH):
+    def review_next(self,pid,plan_id,*,max_frames=MAX_BATCH,
+                    reviewed_look_id=None):
         _require_pid(pid);_id(plan_id,"original movie source plan")
         if type(max_frames) is not int or not 1<=max_frames<=MAX_BATCH:
             raise ValueError("One bounded native approval cannot exceed a 240-frame reel")
@@ -90,16 +91,29 @@ class P1FReviewedReelQueue:
             "all_source_frames_rendered":False,
             "film_master_created":False,
         }
+        if reviewed_look_id is not None:
+            from backend.nvp_p1f_shot_material_binding import P1FOriginalShotMaterialBinding
+            binding=P1FOriginalShotMaterialBinding(self.journal.index)
+            first=binding.for_frame(pid,reviewed_look_id,plan_id,reel_index,offset)
+            last=binding.for_frame(pid,reviewed_look_id,plan_id,
+                                   reel_index,offset+length-1)
+            if (first["look_document_sha256"]!=last["look_document_sha256"] or
+                    first["scene_document_sha256"]!=last["scene_document_sha256"]):
+                raise RuntimeError("Reviewed source range spans changed original scene look")
+            review["reviewed_look_id"]=reviewed_look_id
+            review["reviewed_look_document_sha256"]=first["look_document_sha256"]
         return {**review,"review_sha256":_digest(review)}
 
     def reserve_next(self,pid,plan_id,batch_id,*,expected_review_sha256,
-                     creator_event,max_frames=MAX_BATCH):
+                     creator_event,max_frames=MAX_BATCH,
+                     reviewed_look_id=None):
         _require_pid(pid);_id(plan_id,"original movie source plan")
         if (type(expected_review_sha256) is not str or
                 len(expected_review_sha256)!=64 or
                 any(c not in "0123456789abcdef" for c in expected_review_sha256)):
             raise ValueError("Sustained production requires exact reviewed source hash")
-        fresh=self.review_next(pid,plan_id,max_frames=max_frames)
+        fresh=self.review_next(pid,plan_id,max_frames=max_frames,
+                               reviewed_look_id=reviewed_look_id)
         if (fresh.get("status")!="REVIEW_REQUIRED_NOT_AUTHORIZED" or
                 fresh["review_sha256"]!=expected_review_sha256):
             raise RuntimeError("Source coverage/reel changed; fresh human review required")
@@ -111,7 +125,8 @@ class P1FReviewedReelQueue:
             reel_index=fresh["reel_index"],
             first_frame_offset=fresh["first_frame_offset"],
             frame_count=fresh["frame_count"],
-            creator_event=creator_event)
+            creator_event=creator_event,
+            reviewed_look_id=reviewed_look_id)
         return {**receipt,
                 "status":"BOUNDED_SOURCE_BATCH_PLANNED_ONLY",
                 "source_review_sha256":expected_review_sha256,
