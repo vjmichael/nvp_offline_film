@@ -183,6 +183,132 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
                                  first_index=0,limit=2,output_parent=tmp)
             self.assertEqual(len(renderer_calls),48)
 
+    def test_physical_protected_two_reels_cancel_restart_and_pcm(self):
+        """True 48 original Cycles frames + 96,000 stereo PCM samples, OS-gated.
+
+        Physically provisioned Windows/EFS/SCM-only. This tests technical
+        source custody using a disposable actual OpenUSD fixture; director
+        art/voice/feature film-master acceptance is a different authority.
+        """
+        import os
+        from unittest.mock import patch
+        from backend.nvp_int02_cycles_renderer import build_native_cycles_renderer
+        from backend.nvp_p2_bounded_film_reel import NativeFilmReelBatch
+        from backend.nvp_blender_worker import sha_file
+        path=os.environ.get("NVP_P2_REAL_PROTECTED_BLENDER_BIN")
+        if not path:
+            self.skipTest("Real protected Windows Blender/EFS runtime is not provisioned")
+        if os.name!="nt":
+            raise PermissionError("Private original USD needs verified Windows EFS")
+        native=Path(path).resolve(strict=True)
+        self.assertTrue(native.is_file())
+        self.original.editor.commit(
+            self.pid,"PhysicalTwoReelCut",
+            graph_id="slate",graph_revision=1,
+            segments=[
+                {"segment_id":"NativeReelOne","branch_id":"original",
+                 "source_in_tick":0,"source_out_tick":T},
+                {"segment_id":"NativeReelTwo","branch_id":"original",
+                 "source_in_tick":T,"source_out_tick":2*T},
+            ],editor_event="commit_cut")
+        self.continuity.publish(
+            self.pid,"PhysicalTwoReelReview",edit_id="PhysicalTwoReelCut",
+            edit_revision=1,cues=[
+                {"segment_id":"NativeReelOne","continuity":"accepted",
+                 "audio_policy":"original_scene",
+                 "note":"First unchanged original source scene"},
+                {"segment_id":"NativeReelTwo","continuity":"accepted",
+                 "audio_policy":"original_scene",
+                 "note":"Second unchanged original source scene"},
+            ],creator_event="director_yes")
+        scheduler=NativeLongformFilmPlan(
+            self.original.editor,self.continuity,
+            verify_creator_action=lambda event,scope:
+                event=="director_yes" and
+                scope["operation"]==
+                    "nvp.p2.authorize_original_longform_source_plan.v1")
+        film=scheduler.publish(
+            self.pid,"PhysicalTwoReelPlan",
+            continuity_id="PhysicalTwoReelReview",continuity_revision=1,
+            listener_path="/World/Camera",camera_path="/World/Camera",
+            creator_event="director_yes")
+        self.assertEqual(film["data"]["total_chunks"],2)
+        self.assertEqual(film["data"]["total_frames"],48)
+        original_source=self.index.read_revision(
+            self.pid,"world",1)["document_sha256"]
+        stopped={"now":False}
+        authorizations=[]
+        def approve(scope):
+            authorizations.append(scope["source_plan_sha256"])
+            return scope["source_plan_sha256"]==film["document_sha256"]
+        def progress(**data):
+            if data["stage"]=="SOURCE_REEL_CHUNK_VERIFIED" and data["completed"]>=1:
+                stopped["now"]=True
+        with TemporaryDirectory(prefix="nvp-protected-2real-reels-") as tmp:
+            app=Path(tmp)/"App"/"Data"
+            app.mkdir(parents=True)
+            with patch.dict(os.environ,{
+                    "NVP_HOME":str(app),
+                    "NVP_NATIVE_BLENDER_EXECUTABLE":str(native)}):
+                original_host=build_native_cycles_renderer(
+                    self.index,self.pid,plaintext_consent=True)
+                first=NativeFilmReelBatch(
+                    scheduler,native_creator_approval=approve,
+                    render_png=original_host.render_proven_png,
+                    native_worker_verifier=original_host.verify_native_worker_receipt,
+                    require_protected_worker=True,
+                    cancelled=lambda:stopped["now"],progress=progress)
+                with self.assertRaises(InterruptedError):
+                    first.render(
+                        self.pid,"PhysicalTwoReelPlan",1,
+                        first_index=0,limit=2,output_parent=tmp)
+                first_dir=Path(tmp)/"P1F_P2FilmChunk000000"
+                self.assertTrue(first_dir.is_dir())
+                first_manifest=sha_file(first_dir/"manifest.json")
+                proof=first._prepare(
+                    self.pid,"PhysicalTwoReelPlan",1,first_index=0,
+                    limit=2,output_parent=tmp,actor_mix_id=None,
+                    actor_mix_revision=None)
+                self.assertEqual(len(proof[1]),2)
+                stopped["now"]=False
+                # New host and supervisor must reopen exact previous job
+                # journals and immutable frame/audio hashes after restart.
+                fresh=build_native_cycles_renderer(
+                    self.index,self.pid,plaintext_consent=True)
+                resumed=NativeFilmReelBatch(
+                    scheduler,native_creator_approval=approve,
+                    render_png=fresh.render_proven_png,
+                    native_worker_verifier=fresh.verify_native_worker_receipt,
+                    require_protected_worker=True)
+                receipt=resumed.render(
+                    self.pid,"PhysicalTwoReelPlan",1,
+                    first_index=0,limit=2,output_parent=tmp)
+                self.assertEqual(receipt["verified_frame_count"],48)
+                self.assertTrue(receipt["protected_worker_receipts_recorded"])
+                self.assertEqual(len(receipt["reused_verified_chunks"]),1)
+                self.assertEqual(sha_file(first_dir/"manifest.json"),first_manifest)
+                self.assertEqual(len(authorizations),2)
+                independently=scheduler.reconcile_all(
+                    self.pid,"PhysicalTwoReelPlan",1,output_parent=tmp,
+                    require_protected_worker=True,
+                    native_worker_verifier=fresh.verify_native_worker_receipt)
+                self.assertEqual(independently["verified_chunks"],2)
+                self.assertEqual(independently["verified_frames"],48)
+                self.assertEqual(independently["verified_audio_samples_48khz"],96000)
+                self.assertTrue(independently["protected_workers_independently_reopened"])
+                self.assertFalse(independently["verified_30_minute_original_film"])
+                self.assertFalse(independently["master_approved"])
+                self.assertEqual(self.index.read_revision(
+                    self.pid,"world",1)["document_sha256"],original_source)
+                with self.assertRaises(InterruptedError):
+                    scheduler.reconcile_all(
+                        self.pid,"PhysicalTwoReelPlan",1,output_parent=tmp,
+                        require_protected_worker=True,
+                        native_worker_verifier=fresh.verify_native_worker_receipt,
+                        cancelled=lambda:True)
+        # A restart/reused source chunk is NOT permission to render every
+        # frame of a 30-minute feature or distribute a finished film.
+
     def test_native_filmmaker_source_cut_audition_and_exact_sha_commit(self):
         from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
         class NativeWindow:
