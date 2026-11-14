@@ -206,6 +206,8 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
                 assert not self.approve(director_event,{
                     **scope,"operation":"self_authorized_render"})
                 assert self.approve(director_event,scope)
+                assert not self.approve(director_event,scope), (
+                    "Source publication consumed its one native consent")
                 return {"revision":1,"document_sha256":"d"*64}
         request={
             "project_id":"movie001","cell_world_id":"CellWorld01",
