@@ -170,8 +170,14 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
-          $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
-          if ($bundled.Count -ne 0) { throw 'Legacy FFmpeg was accidentally bundled into native data AV' }
+          # DA-00: reject codec libraries and Python codec packages as well as CLI executables.
+          # A package may embed FFmpeg without shipping ffmpeg.exe or ffprobe.exe.
+          $forbiddenCodecName='(?i)(?:^|[._-])(?:ffmpeg|ffprobe|imageio[_-]ffmpeg|libavcodec|libavformat|libavutil|libavfilter|libavdevice|libswscale|libswresample|avcodec|avformat)(?:[._-]|[0-9]|$)'
+          $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -match $forbiddenCodecName -or $_.DirectoryName -match $forbiddenCodecName })
+          if ($bundled.Count -ne 0) {
+            $bundled | Select-Object -First 20 -ExpandProperty FullName | Write-Output
+            throw 'DA-00: forbidden FFmpeg executable, codec library or Python package bundled into NVP'
+          }
           $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-packaged-data-av-failure.txt'
           Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
           $packaged=Start-Process -FilePath (Resolve-Path 'dist/NVP/NVP.exe').Path -ArgumentList '--smoke-data-av' -Wait -PassThru
