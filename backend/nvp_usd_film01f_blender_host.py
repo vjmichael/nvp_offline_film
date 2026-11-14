@@ -505,6 +505,146 @@ class ReviewedWorldTakeCyclesHost:
 class ReviewedNineCameraCyclesHost(ReviewedWorldTakeCyclesHost):
     """Exact original 01I selected-view Cycles frame + independent OS reopen."""
 
+    def verify_selected_frame(self,pid,cut_id,frame,job_id):
+        """Cold-restart original camera/Blender/48k source proof, NO rerender.
+
+        Reopens BOTH supervisor journals, the first worker's saved PNG/.blend,
+        the independent Blender reopener audit, the frozen FilmIndex source,
+        and each original source WAV. Mere JSON receipts aren't authority.
+        """
+        from backend.nvp_film_index import _require_pid
+        from backend.nvp_usd_film01i_ninecam_take import (
+            OriginalNineCameraEditorialCut,FRAMES_PER_CAMERA,FPS)
+        from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+        from backend.nvp_usd_film01f_original_audio import (
+            _reopen_wav,FORMAT as STEM_FORMAT)
+        from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+        _require_pid(pid)
+        _id(cut_id,"original approved camera source cut")
+        _id(job_id,"one-use original Blender camera job")
+        if type(frame) is not int or not 0<=frame<FRAMES_PER_CAMERA:
+            raise ValueError("Native source camera output frame outside original performance")
+        cut_service=OriginalNineCameraEditorialCut(
+            self.index,verify_director_action=lambda *_:False)
+        cut=cut_service.verify(pid,cut_id)
+        selected=cut_service.at_frame(pid,cut_id,frame)
+        take=self.index.read_revision(pid,cut["world_take_id"],1)
+        if take["document_sha256"]!=cut["world_take_sha256"]:
+            raise RuntimeError("Original actor world Take was substituted")
+        first=self.supervisor.verify_completed(job_id)
+        second=self.supervisor.verify_completed(job_id+"_reopen")
+        if (first["state"]!="SUCCEEDED" or second["state"]!="SUCCEEDED"):
+            raise RuntimeError("Both original native Blender jobs must be successful")
+        root=self.supervisor.root/job_id
+        reopen=self.supervisor.root/(job_id+"_reopen")
+        if (root.is_symlink() or not root.is_dir() or
+                reopen.is_symlink() or not reopen.is_dir()):
+            raise RuntimeError("Independent native Blender job directories changed")
+        verify_efs_inputs(root,names=(USD,MANIFEST,SCRIPT,FRAME,BLEND,AUDIT))
+        verify_efs_inputs(reopen,names=(BLEND,MANIFEST,REOPEN_SCRIPT,AUDIT))
+        packet=json.loads((root/MANIFEST).read_bytes())
+        source=packet.get("source")
+        original_tick=frame*TICKS_PER_SECOND//FPS
+        if (packet.get("format")!=PACKET_FORMAT or
+            type(source) is not dict or
+            packet.get("source_sha256")!=sha256(_canonical(source)).hexdigest() or
+            source.get("original_world_take_id")!=cut["world_take_id"] or
+            source.get("original_world_take_sha256")!=take["document_sha256"] or
+            source.get("original_world_sha256")!=cut["original_world_sha256"] or
+            source.get("original_camera_shot_sha256")!=
+                selected["selected_camera_shot_sha256"] or
+            source.get("original_camera_path")!=
+                selected["selected_native_camera_path"] or
+            source.get("original_film_tick")!=original_tick or
+            source.get("source_usd_sha256")!=sha_file(root/USD) or
+            source.get("native_source_usd_size_bytes")!=(root/USD).stat().st_size or
+            source.get("blender_profile")!="cycles_cpu_320x180_12samples_v1"):
+            raise RuntimeError("Original selected camera/source USD provenance invalid")
+        original_script=Path(__file__).resolve().parents[1]/"tools"/SCRIPT
+        reopener_script=Path(__file__).resolve().parents[1]/"tools"/REOPEN_SCRIPT
+        if (original_script.is_symlink() or reopener_script.is_symlink() or
+            sha_file(root/SCRIPT)!=sha_file(original_script) or
+            sha_file(reopen/REOPEN_SCRIPT)!=sha_file(reopener_script)):
+            raise RuntimeError("Reviewed fixed Blender script changed")
+        audit=json.loads((root/AUDIT).read_bytes())
+        proof=json.loads((reopen/AUDIT).read_bytes())
+        other=json.loads((reopen/MANIFEST).read_bytes())
+        png_sha=sha_file(root/FRAME)
+        blend_sha=sha_file(root/BLEND)
+        if (audit.get("format")!=AUDIT_FORMAT or audit.get("passed") is not True
+            or audit.get("source_packet_sha256")!=packet["source_sha256"]
+            or audit.get("source_usd_sha256")!=source["source_usd_sha256"]
+            or audit.get("original_world_take_sha256")!=take["document_sha256"]
+            or audit.get("original_camera_shot_sha256")!=
+                selected["selected_camera_shot_sha256"]
+            or audit.get("original_film_tick")!=original_tick
+            or audit.get("rendered_png_sha256")!=png_sha
+            or audit.get("saved_blend_sha256")!=blend_sha
+            or audit.get("actual_native_cycles_image") is not True
+            or other!={"source":source,"source_blend_sha256":blend_sha}
+            or sha_file(reopen/BLEND)!=blend_sha
+            or proof.get("format")!=
+                "nvp.usd_film01f.independent_cycles_scene_reopen.v1"
+            or proof.get("passed") is not True
+            or proof.get("source_blend_sha256")!=blend_sha
+            or proof.get("original_take_sha256")!=take["document_sha256"]
+            or proof.get("source_usd_sha256")!=source["source_usd_sha256"]
+            or proof.get("actor_count")!=len(source["actor_sources"])
+            or proof.get("real_saved_usd_actor_objects_reopened") is not True):
+            raise RuntimeError("Independently reopened Blender picture/actor source mismatch")
+        folder=root/"original_audio"
+        manifest_file=folder/"source_stems_manifest.json"
+        if (folder.is_symlink() or not folder.is_dir() or
+            manifest_file.is_symlink() or not manifest_file.is_file()):
+            raise RuntimeError("Original recorded PCM proof missing")
+        stems=json.loads(manifest_file.read_bytes())
+        rows=stems.get("original_stems")
+        if (stems.get("format")!=STEM_FORMAT or
+            stems.get("project_id")!=pid or
+            stems.get("world_take_id")!=cut["world_take_id"] or
+            stems.get("world_take_sha256")!=take["document_sha256"] or
+            stems.get("actual_original_pcm_readback_verified") is not True or
+            stems.get("final_picture_sound_mux_verified") is not False or
+            type(rows) is not list or not 1<=len(rows)<=64 or
+            stems.get("stem_count")!=len(rows)):
+            raise RuntimeError("Original actor/VoiceID source sound proof changed")
+        names={"source_stems_manifest.json"}
+        for stem in rows:
+            name=stem["file"]
+            if (type(name) is not str or not name.startswith("stem_") or
+                not name.endswith(".wav") or "/" in name or "\\" in name or
+                name in names or stem.get("sample_rate")!=48000 or
+                stem.get("channels")!=1 or
+                stem.get("original_pcm_unmixed") is not True):
+                raise RuntimeError("Original PCM stem source path/format invalid")
+            names.add(name)
+            path=folder/name
+            verify_efs_inputs(root,names=("original_audio/"+name,))
+            if (_reopen_wav(path,stem["source_samples"],
+                    stem["original_pcm_sha256"])!=stem["file_sha256"]):
+                raise RuntimeError("Original 48k PCM derivative changed after render")
+            sound=self.index.read_revision(
+                pid,stem["source_id"],stem["source_revision"])
+            if sound["document_sha256"]!=stem["source_document_sha256"]:
+                raise RuntimeError("Original FilmIndex PCM revision changed")
+        if {x.name for x in folder.iterdir()}!=names:
+            raise RuntimeError("Unknown original audio source candidate attached to native job")
+        return {
+            "status":"ORIGINAL_NATIVE_CAMERA_PICTURE_PCM_COLD_REOPEN_VERIFIED",
+            "original_world_take_sha256":take["document_sha256"],
+            "source_cut_id":cut_id,
+            "selected_source_camera_sha256":selected["selected_camera_shot_sha256"],
+            "frame":frame,
+            "source_tick":original_tick,
+            "rendered_png_sha256":png_sha,
+            "independent_saved_blend_sha256":blend_sha,
+            "original_pcm_source_stems":len(rows),
+            "real_native_cycles_and_fresh_blender_reopen_ledger_verified":True,
+            "read_only_no_rerender":True,
+            "all_720_frames_delivered":False,
+            "film_master_approved":False,
+        }
+
     def render_selected_frame(self,pid,cut_id,frame,job_id,*,
                               director_event,cancelled=lambda:False):
         from backend.nvp_usd_film01i_ninecam_take import (
@@ -565,6 +705,9 @@ class ReviewedNineCameraCyclesHost(ReviewedWorldTakeCyclesHost):
                 proof["audit"]["original_camera_shot_sha256"]!=
                 scope["camera_shot_sha256"]):
             raise RuntimeError("Real native selected-camera output disagrees with director")
+        if self.verify_selected_frame(pid,cut_id,frame,job_id)[
+                "real_native_cycles_and_fresh_blender_reopen_ledger_verified"] is not True:
+            raise RuntimeError("Original camera cold-reopen receipt unavailable")
         return {
             "format":"nvp.usd_film01i.protected_original_camera_picture_pcm.v1",
             "status":"ORIGINAL_SELECTED_CAMERA_NATIVE_FRAME_REOPEN_VERIFIED",
