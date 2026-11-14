@@ -150,6 +150,7 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
         record, stage = self.scene.open(self.pid, "spatial_world", 1)
         # The overlay is deliberately transient; reopen cannot expose it.
         self.assertFalse(stage.GetPrimAtPath(binding["usd_prim_path"]).IsValid())
+        self.assertEqual(binding["film_time_ticks_per_second"], str(T))
         self.assertEqual(binding["start_tick"], "0")
         self.assertEqual(binding["end_tick"], str(2*T))
         self.assertEqual(self.index.read_revision(
