@@ -13,6 +13,9 @@ This order **supersedes older execution-order recommendations elsewhere in this 
 
 **Release decision:** draft only; no merge or production installation, no complete 30-second/30-minute/three-hour film accepted.
 
+**Step 2 active while Step 1 CI runs (2026-11-13):** reviewed rigged GLB character source now connects legacy PROD-06C bounded self-contained GLB inspection to the authoritative data-first FilmIndex actor asset/ActorID with durable original GLB SHA, explicit joint map, rest-pose calibration, creator-scoped rights evidence, and separately approved original scene casting. Per-frame evidence independently reopens source GLB, USD, scene, Take and source-time facial expression. No retargeted full-body deform, licensing verification, private Blender approval, actual professional assets or finished film accepted. `backend/nvp_p1f_production_character_assets.py`; original Windows/Linux test `tests/test_nvp_p1f_production_character_assets_native.py`. Exact current-head acceptance pending. Step 1's previously demonstrated source-look alias repair remains a separate native gate.
+
+
 ---
 
 2026-11-13 P1-F ASSET/SUSTAINED BACKLOG ADVANCE (DRAFT, NOT RELEASE): implemented source-reviewed authored UV/PBR PNG material sets with original license/ownership evidence, exact FilmIndex source/dependency hashes, and original UV mesh bindings; implemented contiguous verified-frame next-reel review plus per-frame durable no-overlap across distinct batch IDs. Original Windows/Linux Python 3.11/3.13 native/no-FFmpeg acceptance queued; no completed professional assets, genuine textured Cycles output, 30-minute or 3-hour film. See docs/NVP_P1F_ASSET_AND_SUSTAINED_REEL_PROGRESS.md for implementation and remaining acceptance gates. No SCM/AppContainer private creator release or P2 long-film acceptance inferred from earlier public fixture tests.
