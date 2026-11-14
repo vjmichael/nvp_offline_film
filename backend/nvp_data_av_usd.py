@@ -12,7 +12,7 @@ import math
 
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
-from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND, MAX_TICK, _int
+from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND, _int
 
 SCHEMA="nvp.data_av.usd_spatial_bindings.v1"
 
@@ -82,6 +82,7 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
             "source_id":event["source_id"],
             "source_revision":event["source_revision"],
             "source_document_sha256":source["document_sha256"],
+            "film_time_ticks_per_second":str(TICKS_PER_SECOND),
             "start_tick":str(start_tick),
             "end_tick":str(end_tick),
             "gain":float(gain),
