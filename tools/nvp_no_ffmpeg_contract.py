@@ -105,7 +105,11 @@ def violations():
                     if BAN.search(imp.name):
                         issues.append((path,node.lineno,"forbidden imported codec"))
             elif isinstance(node,ast.ImportFrom):
-                if node.module and BAN.search(node.module):
+                # Inspect the complete imported symbols, not just the module.
+                # 'from . import av' and 'from safe import ffmpeg' otherwise
+                # evade the codec ban even when reached by a native entrypoint.
+                names=imports(ast.Module(body=[node],type_ignores=[]),path)
+                if any(BAN.search(name) for name in names):
                     issues.append((path,node.lineno,"forbidden imported codec"))
             elif isinstance(node,ast.Call):
                 target=dotted(node.func)
