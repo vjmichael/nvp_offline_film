@@ -337,6 +337,17 @@ static void WINAPI service_main(DWORD,LPWSTR*) {
         result=run_source_bound_blender();
     } catch(const std::exception& error) {
         OutputDebugStringA(error.what());
+        // This binary categorically accepts PUBLIC fixtures only. Preserve
+        // the exact failing native stage for independent SCM diagnostics;
+        // never include source content or a creator path in this receipt.
+        try {
+            auto folder=program_data()/L"NVP"/L"P1F"/L"KernelOnly";
+            fs::create_directories(folder);
+            std::ofstream log(folder/L"scm_blender_last_error.txt",
+                              std::ios::binary|std::ios::trunc);
+            log<<error.what()<<std::endl;
+            log.flush();
+        } catch(...) {}
     }
     update_service(SERVICE_STOPPED,result);
 }
