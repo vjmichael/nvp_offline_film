@@ -29,7 +29,7 @@ ENTRYPOINTS=(
 )
 BAN=re.compile(r"(?:^|[._/\\])(?:ffmpeg|ffprobe|imageio_ffmpeg|libavcodec|"
                r"libavformat|libavutil)(?:$|[._/\\-])",re.I)
-NAME=re.compile(r"\b(?:ffmpeg|ffprobe|imageio_ffmpeg|avcodec|avformat)\b",re.I)
+NAME=re.compile(r"\b(?:ffmpeg|ffprobe|imageio_ffmpeg|avcodec|avformat|libavfilter|libavdevice|libswscale|libswresample)\b",re.I)
 SHELL_CALLS={"run","Popen","check_call","check_output","call","which",
              "system","spawnv","spawnve","execv","execve","execvp","execvpe",
              "popen"}
