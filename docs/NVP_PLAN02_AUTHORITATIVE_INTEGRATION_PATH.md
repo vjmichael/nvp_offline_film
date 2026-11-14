@@ -1,5 +1,8 @@
 # NVP PLAN-02 — Authoritative data-first integration and source evidence map
 
+> **Tracking notice (2026-11-13/14):** This is a historical/technical reference, **not an active task ledger or backlog**. The sole current NVP task journal, priorities, statuses, acceptance gates and branch/PR dispositions are maintained in [NVP_DATA_ALL_TASK_LEDGER.md](NVP_DATA_ALL_TASK_LEDGER.md), through draft convergence [PR #161](https://github.com/vjmichael/nvp_offline_film/pull/161). Older branch/PR claims below are source snapshots; preserve technical evidence but do not use them to decide current task priority.
+
+
 **Decision:** 2026-11-09 America/Phoenix / 2026-11-10 UTC. **Status:** ROUTE ESTABLISHED; selective implementation ports and integrated native acceptance OPEN.
 **Canonical development branch:** `nvp/data-av01-native-scene-playback-20261106` / draft [PR #74](https://github.com/vjmichael/nvp_offline_film/pull/74).
 **Inspected source snapshot, not an installed release:** `bf4cd892d5a2c7f1268af1e594ed828b52ecea8a`.
